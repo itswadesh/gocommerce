@@ -329,6 +329,12 @@ func (t *Transfer) ExportOrders(ctx context.Context, out io.Writer, q OrderQuery
 	if q.Status != "" {
 		add("o.status = $%d", q.Status)
 	}
+	// The same predicate the listing uses, from the same function: an export
+	// taken from a filtered screen must be the rows on that screen. The
+	// statement below aliases orders as `o`, which is what lets it transfer.
+	if clause := orderSearchClause(q.Search, &args); clause != "" {
+		where = append(where, clause)
+	}
 	if q.From != nil {
 		add("o.created_at >= $%d", *q.From)
 	}

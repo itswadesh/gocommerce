@@ -395,7 +395,8 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 	if err != nil {
 		return nil, err
 	}
-	// Returned once, to the shopper who just placed the order.
+	// Returned once, to the shopper who just placed the order. Deliberately not
+	// Redact(): this is the one response that must carry the token.
 	if err := s.app.db.QueryRowContext(ctx,
 		`SELECT access_token FROM orders WHERE id = $1`, orderID).Scan(&o.AccessToken); err != nil {
 		return nil, err
@@ -561,6 +562,21 @@ func validateCheckoutInput(in *CheckoutInput) error {
 	}
 	if in.Email == "" || !strings.Contains(in.Email, "@") {
 		return Validationf("a valid email is required")
+	}
+	// The note is the shop's, not the shopper's. POST /api/checkout/{code} is
+	// unauthenticated and this metadata is stored verbatim, so without this a
+	// storefront could write the shop's own internal note on an order — text an
+	// operator would then read as a colleague's, and overwrite on the first
+	// save without ever seeing where it came from. Refused rather than dropped,
+	// so a client already using the key learns it now instead of losing data
+	// quietly.
+	//
+	// Here rather than beside the INSERT because it is the one point both entry
+	// paths pass: Orders.Create — the operator's phone order — builds a
+	// CheckoutInput and goes through Checkout too. It is also outside any
+	// transaction, which is where validation belongs.
+	if _, taken := in.Metadata[OrderNoteKey]; taken {
+		return Validationf("metadata key %q is reserved for the shop's own note on an order", OrderNoteKey)
 	}
 	return in.Address.Validate()
 }

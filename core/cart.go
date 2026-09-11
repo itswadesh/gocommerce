@@ -28,10 +28,13 @@ const (
 	CartStateConverted = "converted"
 )
 
-// cartSweepBatch bounds one abandon or purge pass. It paces the first sweep
-// after M28 on a store carrying a backlog, instead of one transaction holding
-// fifty thousand rows.
-const cartSweepBatch = 500
+// cartSweepBatch bounds one pass of any of the three cart phases. It paces the
+// first sweep after M28 on a store carrying a backlog, instead of one
+// transaction holding fifty thousand rows.
+//
+// A var rather than a const so a test can lower it and reach the capped path
+// without building a five-hundred-cart backlog.
+var cartSweepBatch = 500
 
 // Cart is a guest's basket. Its token is the only credential involved —
 // there is no account, and there never has to be, because guest checkout is a
@@ -798,7 +801,15 @@ func (c *Carts) Abandon(ctx context.Context) (int, error) {
 	return claimed, nil
 }
 
-// SweepExpired deletes expired carts that hold nothing.
+// SweepExpired deletes expired carts that hold nothing. It is the pass without
+// the bookkeeping, which is all the ticker needs.
+func (c *Carts) SweepExpired(ctx context.Context) (int64, error) {
+	n, _, err := c.SweepExpiredPass(ctx)
+	return n, err
+}
+
+// SweepExpiredPass deletes at most one batch of expired carts that hold
+// nothing, and says whether it filled that batch.
 //
 // It used to delete every expired cart, and the reason was good: POST
 // /api/carts is unauthenticated, so unswept carts are an unbounded-growth
@@ -811,15 +822,84 @@ func (c *Carts) Abandon(ctx context.Context) (int, error) {
 // The NOT EXISTS is load-bearing: Abandon is capped at cartSweepBatch per pass,
 // and without it this statement would delete the non-empty carts the cap has
 // not reached yet.
-func (c *Carts) SweepExpired(ctx context.Context) (int64, error) {
+//
+// The LIMIT is the last of the three phases to get one, and this is the phase
+// that needed it most, since this is the table a stranger can grow: an
+// unbounded DELETE over a backlog is one long transaction cascading into
+// cart_line_items. Bounding it paces the ticker as well — a backlog now drains
+// over successive five-minute passes rather than in one statement — and it is
+// what lets the on-demand route say it has not finished. capped is exact here,
+// unlike the unpaid sweep's: a DELETE cannot half-remove a row.
+func (c *Carts) SweepExpiredPass(ctx context.Context) (removed int64, capped bool, err error) {
 	res, err := c.app.db.ExecContext(ctx, `
-		DELETE FROM carts
-		WHERE status = 'open' AND expires_at < now()
-		  AND NOT EXISTS (SELECT 1 FROM cart_line_items l WHERE l.cart_id = carts.id)`)
+		DELETE FROM carts c
+		USING (
+			SELECT id FROM carts
+			WHERE status = 'open' AND expires_at < now()
+			  AND NOT EXISTS (SELECT 1 FROM cart_line_items l WHERE l.cart_id = carts.id)
+			ORDER BY expires_at
+			FOR UPDATE SKIP LOCKED
+			LIMIT $1
+		) AS claimed
+		WHERE c.id = claimed.id`, cartSweepBatch)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
-	return res.RowsAffected()
+	removed, err = res.RowsAffected()
+	if err != nil {
+		return 0, false, err
+	}
+	return removed, removed >= int64(cartSweepBatch), nil
+}
+
+// CartSweep is what one pass over the whole cart lifecycle moved.
+//
+// Three numbers rather than one because they are three different events in a
+// basket's life and an operator reads them differently: a basket that was
+// filled and given up on is recorded and announced, an empty one is deleted,
+// and an abandoned one is deleted again once Config.CartRetention runs out.
+// Collapsing them into a total would hide the only one that carries a customer's
+// email.
+type CartSweep struct {
+	Abandoned int   `json:"abandoned"`
+	Removed   int64 `json:"removed"`
+	Purged    int64 `json:"purged"`
+	// Capped is true when any phase filled its batch, so the caller knows the
+	// answer is "some of it" rather than "all of it".
+	Capped bool `json:"capped"`
+}
+
+// SweepPass runs the three cart phases the five-minute ticker runs, in the same
+// order and through the same methods, and reports what each moved.
+//
+// The order is the ticker's: abandonment first, so a log or a response reads in
+// the order things happen to a basket. Correctness does not depend on it — the
+// three predicates are mutually exclusive, so no two phases can claim the same
+// row — and it is one method rather than three routes because "sweep the carts"
+// is one operational act.
+func (c *Carts) SweepPass(ctx context.Context) (CartSweep, error) {
+	var out CartSweep
+
+	abandoned, err := c.Abandon(ctx)
+	if err != nil {
+		return out, err
+	}
+	out.Abandoned = abandoned
+
+	removed, cappedRemoved, err := c.SweepExpiredPass(ctx)
+	if err != nil {
+		return out, err
+	}
+	out.Removed = removed
+
+	purged, err := c.PurgeAbandoned(ctx)
+	if err != nil {
+		return out, err
+	}
+	out.Purged = purged
+
+	out.Capped = cappedRemoved || abandoned >= cartSweepBatch || purged >= int64(cartSweepBatch)
+	return out, nil
 }
 
 // PurgeAbandoned deletes abandoned carts older than Config.CartRetention. This

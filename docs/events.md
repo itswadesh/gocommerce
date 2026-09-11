@@ -51,7 +51,10 @@ Every event carries a stable `id`. If nothing else fits, remember it.
 Returning an error from a handler asks for redelivery with exponential
 backoff. After twelve failures the row is marked dead rather than deleted: an
 event nobody could deliver is evidence, and evidence should outlive the
-incident.
+incident. Acting on that evidence is `POST /api/admin/events/{event_id}/retry`,
+or the panel's **Settings → Events** — which un-parks the row with a fresh
+twelve-attempt budget and does not clear `last_error`, because the diagnosis
+should outlive the repair too.
 
 ## The taxonomy
 
@@ -255,6 +258,10 @@ Adding an optional field is safe. Removing or repurposing one is not: a
 consumer written last year is still running. If a payload has to change
 incompatibly, publish it under a new event version — `Event.V` exists for
 exactly that — and keep emitting the old one until consumers have moved.
+
+There is a second reader now. `GET /api/admin/orders/{id}/timeline` projects
+these payloads onto a screen an operator reads a support call from, so a change
+a consumer could tolerate can still empty a column somebody is looking at.
 
 ## Subscribing
 

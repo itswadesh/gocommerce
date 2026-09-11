@@ -108,11 +108,35 @@ FROM outbox_events;
 The dispatcher polls every second, so minutes of backlog means it is failing,
 not busy. `gocommerce doctor` encodes exactly that: over 30 seconds is a warn,
 over 5 minutes is a fail. Read `last_error` on the stuck rows, fix the cause,
-then requeue with the `UPDATE … SET dead = false, attempts = 0` in
-[`docs/operations.md`](../docs/operations.md).
+then requeue with `POST /api/admin/events/retry-dead?name=…` — which runs that
+same `UPDATE … SET dead = false, attempts = 0`, 500 rows at a time, logged with
+the operator's name, and cannot be typed without its `WHERE`.
 
 `App.DrainOutbox(ctx)` delivers everything due, synchronously, and returns the
-count. Tests and CLI flows use it instead of waiting on the poll interval.
+count. Tests use it instead of waiting on the poll interval; it cannot recover a
+dead-lettered row.
+
+`App.DrainOutboxFor(ctx, budget)` is the same pass with a wall-clock ceiling,
+returning `(delivered, capped, err)`. It is what the panel button and
+`POST /api/admin/maintenance/drain-outbox` call, and it differs from
+`DrainOutbox` in two ways that both exist because an HTTP request can reach it.
+
+The delivery work runs on `context.WithoutCancel(ctx)`, and the budget is
+checked **between** passes, never inside one. `deliverBatch` claims a whole
+batch in a single `UPDATE` — `attempts + 1`, `available_at` pushed out — before
+it dispatches any of it, so a pass cut off mid-dispatch records a delivery
+failure against every event it had claimed and not yet reached: retries burned,
+backoff scheduled, and at twelve attempts a healthy event parked as dead. The
+background dispatcher never meets that because `o.run` holds the server's
+lifetime context; a request would meet it every time a browser navigated away.
+The honest residual is one pass beyond the budget — `Config.OutboxBatchSize`
+events, each capped by `Config.HandlerTimeout` — and a store wanting a tighter
+ceiling lowers one of those rather than cutting a claimed batch in half.
+
+Neither form resurrects a dead-lettered row: the claim filters `NOT dead`, so
+`App.RequeueEvent(ctx, eventID)` and `App.RequeueDeadEvents(ctx, name, limit)`
+— **Settings → Events**, or `POST /api/admin/events/{id}/retry` and
+`POST /api/admin/events/retry-dead` — are the only remedy for those.
 
 ## The sweepers
 
@@ -127,6 +151,9 @@ and once immediately at boot. It reclaims what abandoned traffic leaves behind:
   outright. `POST /api/carts` is unauthenticated, so unswept carts are an
   unbounded-growth vector, not merely untidy — and an empty basket is the shape
   that traffic takes, because minting one costs an anonymous POST with no body.
+  Bounded at 500 a pass like the other two, so a store sitting on a backlog
+  clears it over successive ticks rather than in one long DELETE cascading into
+  `cart_line_items`.
 - `carts.PurgeAbandoned` — an abandoned cart is deleted once
   `Config.CartRetention` (default 720h) has passed, measured from
   `abandoned_at`, never from `expires_at`: draining a backlog would otherwise
@@ -148,14 +175,48 @@ exactly once however many replicas are running. If reserved quantities climb
 anyway, the sweeper is not running — check that the process actually called
 `ListenAndServe`.
 
+Every pass is also reachable on demand, behind `store.operate`, so an operator
+reading a hint that ends "check that background work is running" has a button
+beside it rather than a shell prompt:
+
+```http
+POST /api/admin/maintenance/sweep-carts    # the three cart phases, in the ticker's order
+POST /api/admin/maintenance/sweep-unpaid   # the unpaid-order sweep
+POST /api/admin/maintenance/drain-outbox   # a delivery pass
+```
+
+Each is the same service method the ticker calls — there is no panel-only
+maintenance path and no second state machine — and each returns what it moved
+plus a `capped` flag. `sweep-unpaid` examines at most 200 expired orders per
+pass and derives `capped` from what it *found*, not from what it cancelled: an
+order the service could not cancel is logged and skipped, so a cancellation
+count would report a clear queue in exactly the backlogged-and-partly-broken
+state the button exists for. `sweep-carts` bounds each phase at 500. A drain is
+refused with 409 while one is already running in that process, because every
+delivery is a handler doing network I/O and N tabs is N-way amplification; and
+it does not resurrect dead-lettered rows.
+
 ## `gocommerce doctor`
 
 `Diagnose` (in `doctor.go`) is a core service, not a CLI feature: the CLI
-renders it, an MCP tool can call it, a panel screen could show it. It never
-returns an error — a check that cannot run is itself a finding, and an operator
-asking "what is wrong" should not be answered with one problem when there are
-six. `-json` prints the full `Report`; either form **exits non-zero when any
-check fails**, so it gates CI or an agent without being parsed.
+renders it, an MCP tool can call it, and the panel draws it at
+**Settings → Diagnostics** over `GET /api/admin/diagnostics` (behind
+`store.operate`). It never returns an error — a check that cannot run is itself
+a finding, and an operator asking "what is wrong" should not be answered with
+one problem when there are six. `-json` prints the full `Report`; either form
+**exits non-zero when any check fails**, so it gates CI or an agent without
+being parsed.
+
+The HTTP route answers **200 even when the report says the store is unwell**:
+the report is the answer rather than the error, and a non-2xx would send a
+client down its error path at the one moment the detail matters most.
+`/health/ready` keeps its 503 because an orchestrator needs a status code.
+
+A check that fails because it could not *run* records its cause separately from
+its finding — `Diagnostic.Cause` beside `Diagnostic.Detail`. The CLI prints
+both and `-json` carries both; the HTTP route sends only the finding and logs
+the cause, because a pgx error names a host, a port and a user and the rest of
+this API never sends driver text to a client.
 
 The checks, in order:
 
@@ -164,7 +225,7 @@ The checks, in order:
 | `database` | every pooled connection checked out — look for long transactions | cannot reach PostgreSQL |
 | `migrations` | — | something is unapplied; run `gocommerce migrate` |
 | `admin access` | no superusers but tokens configured (the panel needs one), or `Dev` is on | no superusers **and** no admin tokens — nobody can administer the store |
-| `outbox` | oldest unpublished > 30s, or any dead-lettered rows | oldest unpublished > 5m, or the table is unreadable |
+| `outbox` | oldest unpublished > 30s, or any dead-lettered rows — the hint names **Settings → Platform → Events**, where the rows are read and retried | oldest unpublished > 5m, or the table is unreadable |
 | `stock reservations` | unpaid or failed orders past their reservation window still holding units | — |
 | `carts` | more than 1000 expired-but-open carts — the sweeper is not running | — |
 | `catalog` | active products with no sellable variant (invisible to shoppers, fine in the admin list) | a `variant_stock` row with `reserved > on_hand` on a variant that does not sell past zero |
@@ -235,7 +296,8 @@ create|update|list`, `doctor` (with `-json`), `spec`, `version`. Flags: `-db`,
 - **Editing a released migration.** See above; it is the single most expensive
   mistake available in this repo.
 - **Deleting dead outbox rows to clear an alert.** They are the evidence. Read
-  `last_error`, fix the handler, requeue.
+  `last_error` on the Events screen, fix the handler, retry. The retry does not
+  clear `last_error` either, for the same reason.
 - **Treating pending outbox depth as the alarm.** A spike during a sale is
   normal; age is the signal.
 - **Raising the pool ceiling because it looks saturated.** The `database` check

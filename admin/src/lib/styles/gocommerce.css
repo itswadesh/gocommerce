@@ -3966,6 +3966,127 @@ tr.handle:focus-visible {
     }
 }
 
+/* --------------------------------------------------------------------------
+ * The order's note, and its history
+ * -------------------------------------------------------------------------- */
+
+/* A note is prose an operator typed, with their line breaks in it. The only
+   pre-wrap utility in the copied sheets is `.txt-code`, which is monospace and
+   wrong for a sentence. `anywhere` because a pasted tracking URL is one word
+   and would otherwise push the card wider than the column. */
+.order-note {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: var(--smFontSize);
+}
+
+/* The history's icon column. `.order-card .list-item` is a wrapping flex row,
+   and without a fixed width the rows do not line up — every phrase starts at a
+   different x depending on how wide its glyph happens to be, which is what
+   makes a chronology hard to read down. */
+.order-history .list-item > i {
+    width: 16px;
+    flex: 0 0 auto;
+    color: var(--txtHintColor);
+    text-align: center;
+}
+
+/* The phrase takes whatever is left, and takes it from zero.
+   `.order-card .list-item` wraps, and a wrapping flex line places items at
+   their base size before it shrinks any of them — so a subtitle wide enough to
+   want the whole row pushes itself onto a second line and leaves the icon
+   sitting alone on the first. A basis of 0 means it asks for nothing and grows
+   into the rest. */
+.order-history .order-item-text {
+    flex: 1 1 0;
+}
+
+/* A note's own text under the phrase, which is the one subtitle here that can
+   run long. Three lines, then an ellipsis: the whole note is on the card above,
+   and the last thing to be cut should still be who did it. */
+.order-history .order-item-text .txt-hint {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow: hidden;
+}
+
+/* On a phone the timestamp drops under the phrase instead of taking half the
+   row from it. "Payment recorded" broken across two lines with its subtitle
+   clipped to an ellipsis is a worse answer than a date on its own line, and
+   this is the same trick the parcel contents use one card up. */
+@media (max-width: 700px) {
+    .order-history-when {
+        flex-basis: 100%;
+        padding-left: 26px;
+    }
+}
+
+/* --------- Diagnostics ---------
+ *
+ * The store as a running system: a badge in the shell, and the Settings
+ * screen that explains it. Built from tokens vars.css already defines — no new
+ * colour, radius or duration.
+ */
+
+/* The failing-check badge. margin-left:auto is what puts it at the end of the
+   row rather than against the label, and is why one rule serves both the main
+   nav and the settings sidebar: neither has a spare column for it. */
+.app-nav-dot {
+    width: 7px;
+    height: 7px;
+    flex-shrink: 0;
+    margin-left: auto;
+    border-radius: 50%;
+    background: var(--dangerColor);
+}
+
+/* The same alarm on a phone, where the Settings item is inside a closed drawer
+   and the badge on it cannot be seen. The topbar has no room for a label, so
+   the icon is the whole affordance. */
+.app-topbar-alert {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    margin-left: auto;
+    color: var(--dangerColor);
+    text-decoration: none;
+}
+
+/* list.css lays .content out as a centred row, which is right for a one-line
+   item and wrong for a check that has a name, a verdict, a detail and a hint.
+   Stacking them is the whole deviation.
+
+   The selectors carry .list and .list-item because list.css writes its own as
+   `.list .list-item .content`, and a shorter one here loses on specificity
+   however late this file is imported — which is exactly what left the first
+   draft's rows centred. */
+.list.diagnostics-list .list-item {
+    /* So the status icon and the Run-now button sit against the first line
+       rather than the middle of a four-line row. */
+    align-items: flex-start;
+}
+.list.diagnostics-list .list-item > i {
+    /* Optical alignment with the check name beside it, which is bold and a
+       couple of pixels taller than the icon's own box. */
+    margin-top: 2px;
+}
+.list.diagnostics-list .list-item .content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+}
+.diagnostics-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
 /* --------- @media print — KEEP LAST ---------
  *
  * Append your section ABOVE this block. These rules carry no `!important`, so a

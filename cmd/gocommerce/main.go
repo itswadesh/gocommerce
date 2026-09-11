@@ -260,6 +260,12 @@ func doctorCmd(ctx context.Context, app *gocommerce.App, asJSON bool) error {
 		if c.Hint != "" {
 			fmt.Printf("        %-18s → %s\n", "", c.Hint)
 		}
+		// The admin API strips this and logs it instead; a local operator at a
+		// terminal is not a browser session, and the driver message is usually
+		// the whole answer.
+		if c.Cause != "" {
+			fmt.Printf("        %-18s   %s\n", "", c.Cause)
+		}
 	}
 
 	fmt.Println()

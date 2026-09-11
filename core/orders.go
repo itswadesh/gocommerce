@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"reflect"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -216,6 +219,12 @@ type OrderRefund struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// OrderNoteKey is the one metadata key core reserves on an order: the
+// operator's note to the shop. It is refused on the way in at checkout and
+// removed by [Order.Redact] on the way out, so it is the shop's and not the
+// shopper's. A module attaching its own data uses its own key.
+const OrderNoteKey = "notes"
+
 // Redact drops what belongs to the operator, leaving a copy safe to hand the
 // person who placed the order.
 //
@@ -226,12 +235,30 @@ type OrderRefund struct {
 // Anything later added to an order that an operator writes for themselves
 // belongs in here, rather than in a second stripping beside it.
 //
-// Today that is the refunds. How much came back and the gateway's reference are
-// the customer's business — they are what reconciles their own statement. Who
-// inside the store authorised it, the note they typed to justify it, and an
-// attempt that failed are not, and AGENTS rule 8 keeps operator identities out
-// of the commerce path.
+// Today that is the operator's note, the access token, the returns and the
+// refunds. How much came back and the gateway's reference are the customer's
+// business — they are what reconciles their own statement. Who inside the store
+// authorised it, the note they typed to justify it, and an attempt that failed
+// are not, and AGENTS rule 8 keeps operator identities out of the commerce path.
+//
+// Deliberately not called on the checkout response, which is the one reply that
+// must carry the access token: it is returned once, to the shopper who just
+// placed the order, and clearing it there would destroy their only handle on it
+// (D22).
 func (o *Order) Redact() {
+	// The note is the shop writing to itself about this order — "customer
+	// sounded unhappy", "do not ship until the transfer clears". It is at a
+	// reserved key rather than under the whole object, because metadata is
+	// documented as where a module attaches its own data and a storefront may
+	// be reading its own keys off the guest response.
+	delete(o.Metadata, OrderNoteKey)
+
+	// For callers that populated it themselves, the way checkout does.
+	// orderColumns does not select access_token, so an order from Get or
+	// GetByNumber already has none — which is not something a future caller
+	// should have to know before handing one to a shopper.
+	o.AccessToken = ""
+
 	// A return is the store's record of goods it took back and what it judged
 	// them to be worth: which shelf they went on, and whether it decided a line
 	// was unsellable. The shopper's view of their order is what they bought,
@@ -269,6 +296,14 @@ type OrderQuery struct {
 	Status        string
 	PaymentStatus string
 	Email         string
+	// Search is the operator's search box — an order number by prefix, or an
+	// email or a name containing it. Email stays exact beside it, because the
+	// Customers screen links here with a whole address and means that person.
+	//
+	// List and Transfer.ExportOrders both honour it. The MCP list_orders tool
+	// and the export HTTP handler do not yet: both build this struct by named
+	// fields, so they compile and quietly ignore it.
+	Search string
 	// Sort is an operator-chosen ordering; zero keeps the listing's own,
 	// newest first.
 	Sort          Sort
@@ -398,6 +433,32 @@ var orderSorts = SortSpec{
 	},
 }
 
+// orderSearchClause turns the operator's search box into one predicate over the
+// three columns somebody actually searches an order by, appending its two
+// arguments to the caller's list. An empty needle is no filter at all.
+//
+// One function rather than the same six lines in two places: List and
+// ExportOrders are the two consumers that build a WHERE from an OrderQuery, and
+// an export taken from a filtered screen has to be the rows on that screen. Two
+// copies of this would drift the first time either was widened. Both statements
+// alias orders as `o`, which is what lets the predicate transfer verbatim.
+//
+// The number is anchored and the rest contained because that is how each is
+// read: an order number comes off a receipt from the left, while a name or an
+// address is remembered from the middle. LIKE metacharacters are not escaped,
+// following every other search in the engine — which is precisely why ?email=
+// stays exact equality, since `_` is a wildcard and is common in real addresses.
+func orderSearchClause(search string, args *[]any) string {
+	needle := strings.ToLower(strings.TrimSpace(search))
+	if needle == "" {
+		return ""
+	}
+	*args = append(*args, needle+"%", "%"+needle+"%")
+	prefix, contains := len(*args)-1, len(*args)
+	return fmt.Sprintf("(lower(o.number) LIKE $%d OR lower(o.email) LIKE $%d"+
+		" OR lower(coalesce(o.name, '')) LIKE $%d)", prefix, contains, contains)
+}
+
 func (s *Orders) List(ctx context.Context, q OrderQuery) ([]*Order, int, error) {
 	where, args := []string{"1 = 1"}, []any{}
 	add := func(expr string, v any) {
@@ -412,6 +473,9 @@ func (s *Orders) List(ctx context.Context, q OrderQuery) ([]*Order, int, error) 
 	}
 	if q.Email != "" {
 		add("lower(o.email) = $%d", strings.ToLower(q.Email))
+	}
+	if clause := orderSearchClause(q.Search, &args); clause != "" {
+		where = append(where, clause)
 	}
 	if q.From != nil {
 		add("o.created_at >= $%d", *q.From)
@@ -868,16 +932,28 @@ func lockOrder(ctx context.Context, tx *sql.Tx, id int64) (*Order, error) {
 	// would be evaluated against the statement's pre-block snapshot under READ
 	// COMMITTED — exactly how a second serialised refund misses the first.
 	var refunded int64
+	// metadata comes off the same row for the same reason, and pays for itself
+	// once: the locked row is the only place a transition can tell an operator
+	// typing a note apart from a save that wiped a module's key, and those two
+	// have to end differently — one silent, one announced. Nothing starts
+	// riding event payloads by reading it here, and nothing may: eventPayload
+	// leaves OrderEvent.Metadata unset, which is what keeps the note off every
+	// notifier's template data.
+	var meta []byte
 	err := tx.QueryRowContext(ctx, `
 		SELECT id, number, status, payment_status, payment_provider, currency,
-		       total_minor, refunded_minor, email, coalesce(phone,''), coalesce(name,''), lang
+		       total_minor, refunded_minor, email, coalesce(phone,''), coalesce(name,''),
+		       lang, metadata
 		FROM orders WHERE id = $1 FOR UPDATE`, id,
 	).Scan(&o.ID, &o.Number, &o.Status, &o.PaymentStatus, &o.PaymentProvider, &o.Currency,
-		&o.Total.AmountMinor, &refunded, &o.Email, &o.Phone, &o.Name, &o.Language)
+		&o.Total.AmountMinor, &refunded, &o.Email, &o.Phone, &o.Name, &o.Language, &meta)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, NotFoundf("order %d does not exist", id)
 	}
 	if err != nil {
+		return nil, err
+	}
+	if err := scanMetadata(meta, &o.Metadata); err != nil {
 		return nil, err
 	}
 	o.Total.Currency = o.Currency
@@ -998,6 +1074,21 @@ func (s *Orders) eventPayload(o *Order) *OrderEvent {
 }
 
 // SweepUnpaid cancels pending orders whose payment never settled, returning
+// their stock to the shelf. It is the pass without the bookkeeping, which is
+// all the five-minute ticker needs.
+func (s *Orders) SweepUnpaid(ctx context.Context) (int, error) {
+	n, _, err := s.SweepUnpaidPass(ctx)
+	return n, err
+}
+
+// sweepUnpaidBatch bounds one pass. Each cancellation is its own transaction
+// with its own event, so an unbounded pass would hold the ticker's goroutine —
+// or an HTTP request — open for as long as the backlog takes. A var rather than
+// a const so a test can lower it and reach the capped path without building a
+// two-hundred-order backlog.
+var sweepUnpaidBatch = 200
+
+// SweepUnpaidPass cancels pending orders whose payment never settled, returning
 // their stock to the shelf. Without it an abandoned redirect holds inventory
 // out of sale forever, which is invisible until the day it sells out a product
 // that is actually in stock.
@@ -1008,38 +1099,53 @@ func (s *Orders) eventPayload(o *Order) *OrderEvent {
 // [Payments.MarkFailed] removed an order from the sweep permanently — a stock
 // leak with no cleanup path, which mattered little while two webhooks were the
 // only callers and matters a great deal now there is a button.
-func (s *Orders) SweepUnpaid(ctx context.Context) (int, error) {
+//
+// It reports both halves of what happened. scanned is how many expired orders
+// it found, cancelled how many it could actually cancel, and a caller with a
+// button to draw needs both: a full batch means "come back", and a full batch
+// that cancelled fewer means something else is wrong as well. Deriving "was
+// there more" from the cancellation count alone would report a clear queue in
+// exactly the backlogged-and-partly-broken state an operator presses the button
+// in — an order that cannot be cancelled is logged and skipped just below.
+func (s *Orders) SweepUnpaidPass(ctx context.Context) (cancelled, scanned int, err error) {
 	// Named once, before the loop, so two hundred cancellations at 3am read as
 	// the store doing maintenance rather than as somebody's night's work.
 	ctx = WithActorLabel(ctx, "unpaid sweeper")
 
-	// The constants are inline rather than bound, which is the one thing about
-	// this query worth a comment. orders_unsettled_idx (M23) is a partial index,
-	// and the planner uses one only when it can prove the query's WHERE implies
-	// the index predicate. This runs every five minutes through a cached
-	// statement, so a generic plan over $1/$2 proves nothing about 'pending' —
-	// the index would be ignored and every pass would seq-scan orders. They are
-	// compile-time constants and never caller input, so nothing is lost.
+	// The status constants are inline rather than bound, which is the one thing
+	// about this query worth a comment. orders_unsettled_idx (M23) is a partial
+	// index, and the planner uses one only when it can prove the query's WHERE
+	// implies the index predicate. This runs every five minutes through a
+	// cached statement, so a generic plan over $1/$2 proves nothing about
+	// 'pending' — the index would be ignored and every pass would seq-scan
+	// orders. They are compile-time constants and never caller input, so
+	// nothing is lost.
+	//
+	// The LIMIT is bound, and safely: it takes no part in the index predicate,
+	// so a generic plan is as good as a specific one. It is a parameter because
+	// the bound has to be one value — the caller that derives "was there more"
+	// compares against sweepUnpaidBatch, and two copies of 200 are two things
+	// that can drift.
 	rows, err := s.app.db.QueryContext(ctx, `
 		SELECT id FROM orders
 		WHERE status = 'pending' AND payment_status IN ('pending', 'failed')
 		  AND reservation_expires_at IS NOT NULL AND reservation_expires_at < now()
-		LIMIT 200`)
+		LIMIT $1`, sweepUnpaidBatch)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	var ids []int64
 	for rows.Next() {
 		var id int64
 		if err := rows.Scan(&id); err != nil {
 			rows.Close()
-			return 0, err
+			return 0, 0, err
 		}
 		ids = append(ids, id)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	var swept int
@@ -1057,7 +1163,7 @@ func (s *Orders) SweepUnpaid(ctx context.Context) (int, error) {
 	if swept > 0 {
 		s.app.log.Info("released inventory from expired unpaid orders", "orders", swept)
 	}
-	return swept, nil
+	return swept, len(ids), nil
 }
 
 // ------------------------------------------------------------- editing lines
@@ -1440,6 +1546,36 @@ type OrderPatch struct {
 
 	PaymentProvider  *string `json:"payment_provider"`
 	PaymentReference *string `json:"payment_reference"`
+
+	// Metadata replaces the whole object, like every other patch that carries
+	// one, so the read-modify-write is the caller's. OrderNoteKey is the
+	// operator's note; a patch that changes nothing else stays quiet, because a
+	// note is not a state change.
+	//
+	// A pointer rather than a bare map, which is what separates "the patch did
+	// not mention metadata" from "the patch cleared it".
+	Metadata *Metadata `json:"metadata"`
+}
+
+// onlyTheNoteMoved reports whether two metadata objects agree everywhere except
+// at OrderNoteKey. It is what separates an operator typing a note — which
+// nothing downstream can act on, and which therefore stays quiet — from a save
+// that also rewrote or dropped a module's key, which is a real change and
+// announces itself like any other.
+//
+// Both sides arrived through encoding/json, so their numbers are both float64
+// and DeepEqual compares like with like.
+func onlyTheNoteMoved(stored, incoming Metadata) bool {
+	a, b := maps.Clone(stored), maps.Clone(incoming)
+	if a == nil {
+		a = Metadata{}
+	}
+	if b == nil {
+		b = Metadata{}
+	}
+	delete(a, OrderNoteKey)
+	delete(b, OrderNoteKey)
+	return reflect.DeepEqual(a, b)
 }
 
 // Update corrects an order's contact details and payment record.
@@ -1450,6 +1586,16 @@ type OrderPatch struct {
 // a screen is the thing somebody reconciles against a bank statement. None of
 // them is a state change, and until now the only way to correct any of them was
 // a row in the database.
+//
+// Metadata is the third half, and it behaves differently on purpose. It is
+// replaced whole, like every other patch that carries one, and its reserved
+// OrderNoteKey is the operator's note on this order. A patch carrying nothing
+// but metadata is accepted on a cancelled order — a note is never a fact of the
+// order, and "refunded manually by bank transfer" is written precisely on the
+// one that went wrong — and emits no event when it leaves every other key as it
+// found them, because a note changes nothing anybody downstream can act on. A
+// save that also rewrote or dropped a module's key is an ordinary edit again
+// and announces itself like one.
 //
 // The one that needs care is the provider, because Refund books through it. It
 // may be changed while nothing has been refunded — an order taken as cash on
@@ -1475,9 +1621,9 @@ func (s *Orders) Update(ctx context.Context, id int64, patch OrderPatch) (*Order
 	}
 
 	return s.transition(ctx, id, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
-		if o.Status == OrderCancelled {
-			return transitionResult{}, Conflictf("order %s has been cancelled", o.Number)
-		}
+		// The cancellation guard is no longer the first thing here: whether a
+		// dead order may be written to depends on what the patch turned out to
+		// carry, which is only known once the apply loop below has run.
 		if patch.PaymentProvider != nil && *patch.PaymentProvider != o.PaymentProvider &&
 			o.Refunded.AmountMinor > 0 {
 			return transitionResult{}, Conflictf(
@@ -1530,6 +1676,41 @@ func (s *Orders) Update(ctx context.Context, id int64, patch OrderPatch) (*Order
 			o.PaymentReference = strings.TrimSpace(*patch.PaymentReference)
 			add("payment_reference", o.PaymentReference, was, o.PaymentReference)
 		}
+
+		// Two questions, two answers, both derived from what the apply loop
+		// actually produced rather than from a list of field names — a list
+		// would silently misclassify the next field somebody adds above.
+		metadataOnly := patch.Metadata != nil && len(set) == 0
+		// A note is never a fact of the order, so it is the one thing still
+		// worth writing on a cancelled one: "refunded manually by bank
+		// transfer, ref 88213" belongs on the order that went wrong. The guard
+		// protects facts that can no longer matter on a dead order — an
+		// address, a payment method — and a note is not one of them.
+		if o.Status == OrderCancelled && !metadataOnly {
+			return transitionResult{}, Conflictf("order %s has been cancelled", o.Number)
+		}
+		// Silence has to be earned: the patch replaces the object whole, so a
+		// save that also dropped a module's key is a real change and says so.
+		noteOnly := metadataOnly && onlyTheNoteMoved(o.Metadata, *patch.Metadata)
+
+		if patch.Metadata != nil {
+			if v, ok := (*patch.Metadata)[OrderNoteKey]; ok {
+				if _, isString := v.(string); !isString {
+					// The panel edits this in a textarea and trims it. jsonb
+					// would take an object here quite happily, and the operator
+					// would meet it as a crash on their first click.
+					return transitionResult{}, Validationf("metadata.%s must be a string", OrderNoteKey)
+				}
+			}
+			encoded, err := patch.Metadata.value()
+			if err != nil {
+				return transitionResult{}, Validationf("metadata is not valid JSON: %v", err)
+			}
+			was := o.Metadata
+			o.Metadata = *patch.Metadata
+			add("metadata", encoded, was, o.Metadata)
+		}
+
 		if len(set) == 0 {
 			return transitionResult{}, Validationf("nothing to change")
 		}
@@ -1538,6 +1719,23 @@ func (s *Orders) Update(ctx context.Context, id int64, patch OrderPatch) (*Order
 			`UPDATE orders SET `+strings.Join(set, ", ")+`, updated_at = now() WHERE id = $1`,
 			args...); err != nil {
 			return transitionResult{}, err
+		}
+		if noteOnly {
+			// transition's documented quiet path. Every order.* event reaches
+			// the notifier bridge and fans out to the customer's email and
+			// phone, and a note is not a state change — so announcing one would
+			// put "your order has been updated" in the shopper's inbox for each
+			// line an operator wrote to themselves.
+			//
+			// Quiet in the outbox is not quiet in the trail: who wrote a note,
+			// and what it said before, is exactly what somebody reading the
+			// order back later is asking, and an audit row announces nothing to
+			// anybody outside the store.
+			return transitionResult{
+				Action:  AuditOrderNote,
+				Summary: "Wrote a note on order " + o.Number,
+				Before:  before, After: after,
+			}, nil
 		}
 		// order.edited, because that is what happened and a notifier keyed to
 		// this order needs to know the address it holds has changed. The action
@@ -1627,4 +1825,203 @@ func (s *Orders) loadLineImages(ctx context.Context, orders []*Order) error {
 		}
 	}
 	return nil
+}
+
+// ----------------------------------------------------------- the timeline
+
+// OrderTimelineEntry is one thing that happened to an order.
+//
+// It is a projection of two tables, not either one of them: outbox_events says
+// what the order announced and whether anybody heard it, admin_audit says who
+// did it and which fields moved, and the two are written by the same
+// transaction whenever an operator causes a transition. Rendering both raw
+// would show every such moment twice.
+//
+// The payload half is a reading rather than the payload: OrderEvent is a public
+// contract for consumers, and this is an operator looking at one order.
+type OrderTimelineEntry struct {
+	At time.Time `json:"at"`
+	// Kind is `action` when a person, a token or the engine's own background
+	// work was recorded doing this, and `event` when all that survives is the
+	// announcement — a transition from before the trail existed, or one whose
+	// audit row names no event.
+	Kind string `json:"kind"`
+	// Name is the event this announced, empty where it announced nothing. An
+	// operator's note is the one order write that is deliberately quiet.
+	Name string `json:"name,omitempty"`
+	// Action is the operator's verb — order.mark_paid, order.note — and is
+	// deliberately not the event name: EditLines and Update both emit
+	// order.edited, and "who changed the lines" must stay a different question
+	// from "who changed the address".
+	Action  string `json:"action,omitempty"`
+	Summary string `json:"summary,omitempty"`
+
+	// Who. Empty on an entry that has no audit row behind it; ActorEmail is
+	// empty for a token and for the engine's own work, because a credential is
+	// not a person.
+	ActorKind  string `json:"actor_kind,omitempty"`
+	ActorEmail string `json:"actor_email,omitempty"`
+	ActorRole  string `json:"actor_role,omitempty"`
+	ActorLabel string `json:"actor_label,omitempty"`
+
+	// Delivery, present only where there is an event. PublishedAt is set once
+	// every subscribed handler accepted it; nil means it is still queued — or,
+	// with Dead, that nobody could be told at all.
+	EventID     string     `json:"event_id,omitempty"`
+	PublishedAt *time.Time `json:"published_at,omitempty"`
+	Attempts    int        `json:"attempts,omitempty"`
+	Dead        bool       `json:"dead,omitempty"`
+	// LastError is the handler's own words, so it can carry an upstream URL or
+	// a fragment of a key. The service returns it; the handler blanks it for a
+	// caller without store.operate.
+	LastError string `json:"last_error,omitempty"`
+
+	// What the order looked like afterwards, read off the event payload.
+	Status        string       `json:"status,omitempty"`
+	PaymentStatus string       `json:"payment_status,omitempty"`
+	Tracking      string       `json:"tracking,omitempty"`
+	Reason        string       `json:"reason,omitempty"`
+	Change        *OrderChange `json:"change,omitempty"`
+
+	// Which fields moved, from the audit row. Money keys are the same *_minor
+	// integers the API uses. An absent Before means the previous value was not
+	// recorded, never that it was empty.
+	Before map[string]any `json:"before,omitempty"`
+	After  map[string]any `json:"after,omitempty"`
+}
+
+// orderTimelineSource merges the two tables an order's history is spread across.
+//
+// The join is changes.event plus an identical created_at. Both rows are written
+// by one InTx and both take now(), which is transaction_timestamp() and so is
+// the same instant to the microsecond for every statement in that transaction —
+// there is no other correlation, because outbox_events carries no audit id and
+// admin_audit carries no event id. An audit row that claims an event supersedes
+// it and carries its delivery fields along, so one moment renders once.
+//
+// Reading rows the dispatcher may be claiming needs no lock and takes none:
+// this is a plain SELECT, so it never blocks a delivery pass and is never
+// blocked by one. What it can see is a row mid-flight — attempts one behind,
+// published_at not yet set — which is the honest answer a moment earlier and
+// the only one a reader could have had anyway.
+const orderTimelineSource = `
+WITH ev AS (
+	SELECT id, event_id, event_name, created_at, published_at, attempts, dead,
+	       coalesce(last_error, '') AS last_error, payload
+	FROM outbox_events
+	WHERE aggregate_type = $1 AND aggregate_id = $2
+), au AS (
+	SELECT id, created_at, actor_kind, actor_email, actor_role, actor_label,
+	       action, summary, changes, nullif(changes->>'event', '') AS event_name
+	FROM admin_audit
+	WHERE entity_type = $3 AND entity_id = $4
+), merged AS (
+	SELECT au.created_at AS at, 'action' AS kind, au.id AS row_id,
+	       au.action, au.summary, au.actor_kind, au.actor_email, au.actor_role,
+	       au.actor_label, au.changes, coalesce(au.event_name, '') AS event_name,
+	       e.event_id, e.published_at, e.attempts, e.dead, e.last_error, e.payload
+	FROM au
+	LEFT JOIN LATERAL (
+		SELECT * FROM ev
+		WHERE ev.event_name = au.event_name AND ev.created_at = au.created_at
+		ORDER BY ev.id LIMIT 1
+	) e ON true
+	UNION ALL
+	SELECT ev.created_at, 'event', ev.id,
+	       '', '', '', '', '', '', NULL::jsonb, ev.event_name,
+	       ev.event_id, ev.published_at, ev.attempts, ev.dead, ev.last_error, ev.payload
+	FROM ev
+	WHERE NOT EXISTS (
+		SELECT 1 FROM au
+		WHERE au.event_name = ev.event_name AND au.created_at = ev.created_at
+	)
+)`
+
+// Timeline is the order's own history, oldest first: what happened, who did it,
+// and whether what it announced actually went out.
+//
+// Ordered by the instant and then by the row, which is a total order, so paging
+// never repeats or skips an entry. Ascending because a history is read
+// top-down.
+func (s *Orders) Timeline(ctx context.Context, id int64, limit, offset int) ([]OrderTimelineEntry, int, error) {
+	// An id no order has is a 404 rather than an empty history: the two mean
+	// very different things to somebody asking what happened to an order, and
+	// an order that genuinely has no entries is a real answer.
+	var exists bool
+	if err := s.app.db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM orders WHERE id = $1)`, id).Scan(&exists); err != nil {
+		return nil, 0, err
+	}
+	if !exists {
+		return nil, 0, NotFoundf("order not found")
+	}
+
+	args := []any{AggregateOrder, id, AuditEntityOrder, strconv.FormatInt(id, 10)}
+
+	var total int
+	if err := s.app.db.QueryRowContext(ctx,
+		orderTimelineSource+` SELECT count(*) FROM merged`, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	if limit <= 0 {
+		limit = DefaultLimit
+	}
+	rows, err := s.app.db.QueryContext(ctx, orderTimelineSource+`
+		SELECT at, kind, action, summary, actor_kind, actor_email, actor_role,
+		       actor_label, changes, event_name, event_id, published_at,
+		       attempts, dead, last_error, payload
+		FROM merged ORDER BY at, kind, row_id LIMIT $5 OFFSET $6`,
+		append(args, limit, offset)...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	// Never nil: an order with nothing recorded serializes as [], not null.
+	out := []OrderTimelineEntry{}
+	for rows.Next() {
+		var e OrderTimelineEntry
+		var changes, payload []byte
+		var eventID, lastError sql.NullString
+		var published sql.NullTime
+		var attempts sql.NullInt64
+		var dead sql.NullBool
+		if err := rows.Scan(&e.At, &e.Kind, &e.Action, &e.Summary, &e.ActorKind,
+			&e.ActorEmail, &e.ActorRole, &e.ActorLabel, &changes, &e.Name,
+			&eventID, &published, &attempts, &dead, &lastError, &payload); err != nil {
+			return nil, 0, err
+		}
+		// The event columns are NULL on an audit row that claimed nothing,
+		// which is every act the taxonomy has no name for — a refund settled by
+		// hand, a shipment corrected, a note.
+		e.EventID, e.LastError = eventID.String, lastError.String
+		e.Attempts, e.Dead = int(attempts.Int64), dead.Bool
+		if published.Valid {
+			at := published.Time
+			e.PublishedAt = &at
+		}
+		if len(changes) > 0 {
+			c, err := scanAuditChanges(changes)
+			if err != nil {
+				return nil, 0, err
+			}
+			e.Before, e.After = c.Before, c.After
+		}
+		// A payload that will not decode still yields its row, with what the
+		// delivery columns say and no projection. A history with a hole in it
+		// is worse than a history with a quiet entry in it.
+		if len(payload) > 0 {
+			var ev OrderEvent
+			if json.Unmarshal(payload, &ev) == nil {
+				e.Status, e.PaymentStatus = ev.Status, ev.PaymentStatus
+				e.Tracking, e.Reason, e.Change = ev.Tracking, ev.Reason, ev.Change
+			}
+		}
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
 }

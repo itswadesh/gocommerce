@@ -143,7 +143,10 @@ token opens no admin route and an admin token reads no address book.
 
 `ext/mcp` mounts `POST /api/admin/x/mcp` through `HandleAdmin`, so the store's
 admin credential is the agent's credential and the module writes no
-authentication of its own. `mcp.ServeStdio(app, m)` runs the same dispatcher
+authentication of its own. Both its routes name `store.operate` — a second
+operating surface onto the store, handed to an agent, is what that right means —
+and the reply is JSON-RPC rather than the engine's `{data}` envelope, which is a
+standing exception recorded in AGENTS rule 10. `mcp.ServeStdio(app, m)` runs the same dispatcher
 over stdin/stdout for a desktop agent — called from `main()` in place of
 `ListenAndServe`, because which mode a binary runs in is the application
 author's decision, not a module's.
@@ -174,7 +177,7 @@ Call: func(ctx context.Context, raw json.RawMessage) (any, error) {
 },
 ```
 
-Five things to get right:
+Six things to get right:
 
 1. **Wrap a service method.** If the operation you want has no service, the
    change belongs in core first, not in a tool.
@@ -188,6 +191,16 @@ Five things to get right:
 5. **Return a domain error, not a transport error.** A failing `Call` becomes
    tool content with `isError` set: "that order is already shipped" is
    information the agent can act on.
+6. **Name the rights the tool needs**, the ones core names on the equivalent
+   REST route — `Rights: []gocommerce.Right{gocommerce.RightOrdersWrite}` for
+   `mark_order_paid`, `RightInventoryWrite` for `update_variant_inventory`.
+   The mount cannot decide this: `requireRights` runs once before the body is
+   parsed, so one route dispatching twelve tools either locks out a read-only
+   agent or hands a catalog-only role `mark_order_paid`. `callTool` checks
+   them against the operator on the context and answers a refusal as a JSON-RPC
+   error (`-32600`) naming the missing right, which is also written to
+   `mcp_audit` when the tool mutates. A static admin token and `ServeStdio`
+   carry no operator and are exempt, exactly as they are on a core route.
 
 Other modules contribute tools explicitly — `mcp.New(mcp.Config{Tools:
 invoices.Tools()})`. There is no discovery: if you want a module's tools

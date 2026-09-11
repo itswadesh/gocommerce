@@ -290,6 +290,28 @@ export function paymentLabel(order) {
     return { text: status, cls: paymentStatusClass(status) };
 }
 
+/**
+ * eventStateClass colours an outbox row by how worried to be about it.
+ *
+ * `pending` is neutral, not warning: it is the normal state of every event
+ * between the write and the delivery a second later, and an outbox working
+ * perfectly would otherwise render a full page of amber. It earns the warning
+ * only when it is genuinely stuck — five minutes is where the doctor stops
+ * warning about a backlog and starts failing on it.
+ */
+export function eventStateClass(event) {
+    switch (event?.state) {
+        case "dead":
+            return "danger";
+        case "published":
+            return "success";
+        case "pending":
+            return Date.now() - new Date(event.created_at) > 5 * 60 * 1000 ? "warning" : "";
+        default:
+            return "";
+    }
+}
+
 export function productStatusClass(status) {
     switch (status) {
         case "active":
@@ -347,4 +369,28 @@ export function currencySymbol(currency) {
     }
     symbolCache.set(code, symbol);
     return symbol;
+}
+
+/**
+ * What an order edit came to, in sentences rather than three lists.
+ *
+ * Here rather than on the orders screen because two callers now need it and
+ * they are far apart: the toast after a line edit, and the history card's
+ * subtitle on an `order.edited` entry that moved lines. The currency is a
+ * parameter for the same reason — the amounts are the order's, and this file
+ * has no order to read one off.
+ */
+export function summarizeEdit(change, currency) {
+    if (!change) return [];
+    const amount = (minor) => formatMoney({ amount_minor: minor, currency: currency || "USD" });
+    const out = [];
+    if (change.lines_added?.length) out.push(`Added ${change.lines_added.join(", ")}`);
+    if (change.lines_removed?.length) out.push(`Removed ${change.lines_removed.join(", ")}`);
+    if (change.lines_changed?.length) out.push(change.lines_changed.join(", "));
+    if (change.balance_minor > 0) {
+        out.push(`${amount(change.balance_minor)} to collect`);
+    } else if (change.balance_minor < 0) {
+        out.push(`${amount(-change.balance_minor)} to refund`);
+    }
+    return out;
 }

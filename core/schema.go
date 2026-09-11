@@ -38,6 +38,7 @@ func coreMigrations() []Migration {
 		{ID: "0027_collection_curation", SQL: migration0027CollectionCuration},
 		{ID: "0028_cart_abandonment", SQL: migration0028CartAbandonment},
 		{ID: "0029_sort_indexes", SQL: migration0029SortIndexes},
+		{ID: "0030_outbox_indexes", SQL: migration0030OutboxIndexes},
 	}
 }
 
@@ -1592,4 +1593,41 @@ CREATE INDEX IF NOT EXISTS media_size_sort_idx       ON media    (size_bytes, id
 -- by. That index does not carry price_minor, so min(v.price_minor) is a heap
 -- fetch per variant; this makes it one index-only lookup per product.
 CREATE INDEX IF NOT EXISTS variants_product_price_idx ON variants (product_id, price_minor);
+`
+
+// M30 — the two lookups the events screen makes, which the dispatcher's own
+// index cannot serve.
+//
+// outbox_unpublished_idx (M3) is partial on `published_at IS NULL AND NOT
+// dead`, which is exactly the half an operator does not need: the rows worth
+// looking at are the ones it excludes. Neither state nor event_name has an
+// index, over a table that keeps every delivered event forever.
+//
+// IF NOT EXISTS earns its place here rather than by following M29. This is the
+// first migration whose DDL locks a table that every checkout writes to, and a
+// migration runs inside one transaction (migrate.go) so CONCURRENTLY is
+// unavailable here. IF NOT EXISTS is therefore the escape hatch: a store with a
+// large outbox builds the identical index with CREATE INDEX CONCURRENTLY before
+// deploying, and this migration finds it already there and does nothing. That
+// only reaches somebody if the release note carries the two statements, so it
+// must.
+const migration0030OutboxIndexes = `
+-- Partial, so it costs an insert nothing: a row is written dead = false and
+-- never enters this index until something parks it.
+--
+-- The predicate carries published_at IS NULL as well as dead, matching the
+-- screen's dead filter rather than the bare column. A row can hold both flags —
+-- markPublished does not clear dead, fail does not check published_at, and a
+-- slow batch outlives its sixty-second visibility window — and published wins,
+-- so a row that raced is a delivered event and not a dead letter. The same
+-- predicate in the index, the filter and the remaining count, so all three
+-- agree and the count is an index-only scan.
+CREATE INDEX IF NOT EXISTS outbox_dead_idx ON outbox_events (id)
+    WHERE dead AND published_at IS NULL;
+
+-- Full, and it is the one insert cost this migration adds: one btree entry per
+-- event. It buys the question a broken consumer forces — "every order.paid,
+-- what happened to them" — staying constant-time as history grows, instead of a
+-- sequential scan over every event the store has ever delivered.
+CREATE INDEX IF NOT EXISTS outbox_name_idx ON outbox_events (event_name, id);
 `

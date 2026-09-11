@@ -55,6 +55,30 @@ func callTool(t *testing.T, app *gocommerce.App, name string, args map[string]an
 	return text, isError
 }
 
+// sessionTool calls a tool as a signed-in operator rather than with the static
+// admin token, which is the only way to see a right enforced at all: a static
+// token carries every right by design.
+//
+// It returns the JSON-RPC error rather than failing on it, because a refusal is
+// what several of these tests are looking for.
+func sessionTool(t *testing.T, app *gocommerce.App, token, name string, args map[string]any) (map[string]any, *rpcError) {
+	t.Helper()
+	body := map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": name, "arguments": args}}
+	rec := gctest.SessionRequest(t, app, token, http.MethodPost, "/api/admin/x/mcp", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%s: status = %d: %s", name, rec.Code, rec.Body)
+	}
+	var resp struct {
+		Result map[string]any `json:"result"`
+		Error  *rpcError      `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("%s: decode: %v (body %s)", name, err, rec.Body)
+	}
+	return resp.Result, resp.Error
+}
+
 func TestEndpointRequiresAdminToken(t *testing.T) {
 	app := gctest.New(t, New(Config{}))
 
@@ -379,6 +403,126 @@ func TestAuditCalledAtIsATimestamp(t *testing.T) {
 	}
 	if entries[0].CalledAt.IsZero() {
 		t.Errorf("called_at did not decode as a timestamp: %s", rec.Body)
+	}
+}
+
+// TestToolRightsAreCheckedPerCall: store.operate opens the door, and the tool
+// decides what may come through it.
+//
+// This is the hole the mount-time right leaves open on its own: requireRights
+// runs once before the body is parsed, so without a check inside callTool a
+// session operator holding store.operate could settle payments, ship, cancel
+// and move stock without orders.write, orders.fulfill or inventory.write, and
+// read every order without orders.read.
+func TestToolRightsAreCheckedPerCall(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	ctx := context.Background()
+
+	// Staff re-cut to reach the endpoint at all, and deliberately without
+	// inventory.write: store.operate is what the mount asks for, and the
+	// question this test asks is what the mount does NOT decide.
+	if _, err := app.Roles().Set(ctx, gocommerce.RoleStaff, []gocommerce.Right{
+		gocommerce.RightCatalogRead, gocommerce.RightOrdersRead,
+		gocommerce.RightOrdersWrite, gocommerce.RightStoreOperate,
+	}, nil); err != nil {
+		t.Fatalf("re-cut staff: %v", err)
+	}
+	staff := gctest.OperatorToken(t, app, "staff@example.com", gocommerce.RoleStaff)
+	owner := gctest.OperatorToken(t, app, "owner@example.com", gocommerce.RoleOwner)
+
+	order := gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
+	variant, err := app.Products().GetVariantBySKU(ctx, "GCTEST-cod")
+	if err != nil {
+		t.Fatalf("get variant: %v", err)
+	}
+
+	// The right it holds: mark_order_paid is orders.write, as it is on
+	// POST /api/admin/orders/{id}/pay.
+	result, rpcErr := sessionTool(t, app, staff, "mark_order_paid",
+		map[string]any{"order_id": order.Order.ID, "reference": "cash"})
+	if rpcErr != nil {
+		t.Fatalf("staff holds orders.write and was refused: %s", rpcErr.Message)
+	}
+	if isError, _ := result["isError"].(bool); isError {
+		t.Fatalf("mark_order_paid failed: %v", result["content"])
+	}
+
+	// The one it does not.
+	_, rpcErr = sessionTool(t, app, staff, "update_variant_inventory",
+		map[string]any{"variant_id": variant.ID, "adjust": 5})
+	if rpcErr == nil {
+		t.Fatal("staff without inventory.write moved stock through the agent door")
+	}
+	if rpcErr.Code != codeInvalidRequest {
+		t.Errorf("refusal code = %d, want %d", rpcErr.Code, codeInvalidRequest)
+	}
+	if !strings.Contains(rpcErr.Message, string(gocommerce.RightInventoryWrite)) {
+		t.Errorf("the refusal does not name the missing right: %s", rpcErr.Message)
+	}
+	// Refused rather than half-done.
+	after, err := app.Products().GetVariantBySKU(ctx, "GCTEST-cod")
+	if err != nil {
+		t.Fatalf("get variant: %v", err)
+	}
+	if after.StockOnHand != variant.StockOnHand {
+		t.Errorf("stock moved to %d from %d on a refused call", after.StockOnHand, variant.StockOnHand)
+	}
+
+	// An owner carries every right, and so does the static admin token: a
+	// documented agent integration is not narrowed by any of this.
+	if _, rpcErr := sessionTool(t, app, owner, "update_variant_inventory",
+		map[string]any{"variant_id": variant.ID, "adjust": 5}); rpcErr != nil {
+		t.Errorf("owner was refused: %s", rpcErr.Message)
+	}
+	if _, isErr := callTool(t, app, "update_variant_inventory",
+		map[string]any{"variant_id": variant.ID, "adjust": 5}); isErr {
+		t.Error("the static admin token was refused")
+	}
+}
+
+// TestRefusedMutatingCallIsAudited: an attempted privileged call is the thing
+// the trail is read for, so it is written even though nothing changed.
+func TestRefusedMutatingCallIsAudited(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	ctx := context.Background()
+
+	if _, err := app.Roles().Set(ctx, gocommerce.RoleStaff, []gocommerce.Right{
+		gocommerce.RightCatalogRead, gocommerce.RightStoreOperate,
+	}, nil); err != nil {
+		t.Fatalf("re-cut staff: %v", err)
+	}
+	staff := gctest.OperatorToken(t, app, "staff@example.com", gocommerce.RoleStaff)
+
+	order := gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
+	if _, rpcErr := sessionTool(t, app, staff, "mark_order_paid",
+		map[string]any{"order_id": order.Order.ID}); rpcErr == nil {
+		t.Fatal("staff without orders.write settled an order")
+	}
+
+	var tool, outcome, detail string
+	if err := app.DB().QueryRowContext(ctx, `
+		SELECT tool, outcome, coalesce(detail, '') FROM mcp_audit ORDER BY id DESC LIMIT 1`).
+		Scan(&tool, &outcome, &detail); err != nil {
+		t.Fatalf("read the audit: %v", err)
+	}
+	if tool != "mark_order_paid" || outcome != "error" {
+		t.Errorf("audited (%s, %s), want (mark_order_paid, error)", tool, outcome)
+	}
+	if !strings.Contains(detail, string(gocommerce.RightOrdersWrite)) {
+		t.Errorf("the audited detail does not name the missing right: %q", detail)
+	}
+
+	// A read refused the same way leaves nothing behind, because a read leaves
+	// nothing behind either way: only tools declaring Mutates are audited.
+	if _, rpcErr := sessionTool(t, app, staff, "list_orders", nil); rpcErr == nil {
+		t.Fatal("staff without orders.read listed orders")
+	}
+	var rows int
+	if err := app.DB().QueryRowContext(ctx, `SELECT count(*) FROM mcp_audit`).Scan(&rows); err != nil {
+		t.Fatalf("count the audit: %v", err)
+	}
+	if rows != 1 {
+		t.Errorf("audit rows = %d, want 1 — a refused read is not a mutation", rows)
 	}
 }
 

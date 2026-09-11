@@ -43,6 +43,20 @@ type Event struct {
 }
 ```
 
+The events an order accumulates are also its history. `GET
+/api/admin/orders/{id}/timeline` reads them back over `outbox_aggregate_idx`,
+merged with the audit trail's rows for the same order — see
+[orders](orders.md#how-to-read-an-orders-history). That is a read and changes
+nothing here: a module still must never write the table, and a handler must still
+be idempotent, because a redelivery is normal rather than exceptional.
+
+The quiet path is real and has one live example. `Orders.Update` returns an empty
+event name when the patch carried nothing but `metadata` and the stored object
+differs at nothing but the reserved `notes` key — an operator's note to the shop,
+which nothing downstream can act on. It is quiet only because it compared: the
+metadata comes off the row `lockOrder` already holds, and a save that also
+dropped a module's key emits `order.edited` like any other edit.
+
 ## The names
 
 All of them live in `events.go`, all `AggregateOrder`. The transitions:
@@ -147,7 +161,9 @@ Idempotency is not only about your own crashes.
 on claim, `available_at` moves out by `2^(attempts-1)` seconds capped at 15
 minutes, and `last_error` records why. After **12** attempts the row is marked
 `dead = true` rather than deleted — an event nobody could deliver is evidence,
-and evidence should outlive the incident. A claimed row is also invisible for 60
+and evidence should outlive the incident. A parked row is then invisible to the
+dispatcher forever, because the claim filters `NOT dead`: recovering one needs
+the retry route below, not another drain. A claimed row is also invisible for 60
 seconds, so a process that dies mid-delivery releases its work automatically.
 
 ## How to subscribe
@@ -200,15 +216,29 @@ pending, dead, err := app.PendingEvents(ctx)
 ```
 
 `gocommerce doctor -json` reports the same thing and exits non-zero, so it can
-gate work without being parsed. When `dead` is non-zero, read the rows:
+gate work without being parsed. When `dead` is non-zero, read the rows — in the
+panel at **Settings → Platform → Events**, or over the API:
 
-```sql
-SELECT event_name, aggregate_id, attempts, last_error
-FROM outbox_events WHERE dead ORDER BY id DESC;
+```
+GET  /api/admin/events?state=dead        # the parked rows, with last_error
+GET  /api/admin/events/{event_id}        # one of them, with its payload
+POST /api/admin/events/{event_id}/retry  # make that one deliverable again
+POST /api/admin/events/retry-dead?name=order.paid   # the whole backlog, 500 at a time
 ```
 
-Fix the handler, then clear `dead` and `published_at` on the rows you want
-redelivered. That is a repair, not a routine.
+All four are behind `store.operate`, and `{event_id}` is the event's uuid —
+the value the log line prints and a handler dedupes on — not the row's `seq`.
+
+Two things the retry deliberately does not do. It **refuses a delivered event**
+with a 409: redelivering one is a replay, and this engine has no verb for that.
+And on an event that is merely backed off it brings the next attempt forward
+**without resetting `attempts`**, so a fix that did not work still dead-letters
+on schedule; only a dead row gets a fresh twelve-attempt budget, because there
+the budget is spent and somebody has just fixed the cause. Neither clears
+`last_error` — the diagnosis outlives the repair.
+
+Fix the handler first. Retrying into a consumer that is still down spends
+twelve more attempts and parks the row again.
 
 ## Common mistakes
 

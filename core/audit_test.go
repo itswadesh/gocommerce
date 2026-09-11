@@ -1054,6 +1054,9 @@ func TestTheVocabularyIsReachable(t *testing.T) {
 		{"POST", "/api/admin/orders/" + id + "/mark-unpaid", `{}`},
 		{"POST", "/api/admin/orders/" + id + "/mark-paid", `{"reference":"R2"}`},
 		{"PATCH", "/api/admin/orders/" + id, `{"name":"A Different Name"}`},
+		// The shop's own note, which is the one order write that publishes no
+		// event at all — so this row is the only record that it happened.
+		{"PATCH", "/api/admin/orders/" + id, `{"metadata":{"notes":"rang the customer"}}`},
 	} {
 		if rec := doBody(t, app, step.method, step.path, step.body, bearer(token)); rec.Code != http.StatusOK {
 			t.Fatalf("%s %s = %d: %s", step.method, step.path, rec.Code, rec.Body.String())

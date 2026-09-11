@@ -64,9 +64,14 @@ func TestRolesDrawFromTheOneList(t *testing.T) {
 		{RoleStaff, RightOrdersRefund, false},
 		{RoleStaff, RightCatalogWrite, false},
 		{RoleStaff, RightInventoryWrite, false},
-		// The twenty-first right is in nobody's default set: an owner reaches
-		// it through AllRights, and a store that wants a manager operating it
-		// grants it in the matrix rather than receiving it from an upgrade.
+		// The twenty-first right is in nobody's default set, now that it gates
+		// real routes and not only a plan. Manager runs the shop and is the
+		// obvious candidate — but the right that carries the Run-now buttons
+		// also reads every colleague's actions by name, hands ext/mcp its whole
+		// dispatch surface, and completes the pair that erases a customer's
+		// account. An owner reaches it through AllRights; a store that wants a
+		// manager operating it grants it in the matrix rather than receiving it
+		// from an upgrade.
 		{RoleManager, RightStoreOperate, false},
 		{RoleStaff, RightStoreOperate, false},
 		{"nonsense", RightCatalogRead, false},
@@ -142,6 +147,26 @@ func TestRightsAreEnforcedOnAdminRoutes(t *testing.T) {
 		{"manager may not export the catalog", manager, "GET", "/api/admin/export/admin-products", 403},
 		{"manager may not import", manager, "POST", "/api/admin/import/products", 403},
 		{"owner may export", owner, "GET", "/api/admin/export/admin-products", 200},
+
+		// The plumbing. Nobody but an owner carries store.operate by default:
+		// a page of event payloads is a page of buyers' contact details.
+		{"manager may not read the outbox", manager, "GET", "/api/admin/events", 403},
+		{"staff may not retry a dead letter", staff, "POST", "/api/admin/events/retry-dead", 403},
+		{"owner may read the outbox", owner, "GET", "/api/admin/events", 200},
+
+		// The store as a running system, which is neither merchandise nor
+		// people. Owner alone by default, and manager is the interesting row:
+		// the role that runs the shop still does not run the machine it runs
+		// on, because the same right reads the whole audit trail and drives
+		// ext/mcp.
+		{"staff may not read the health report", staff, "GET", "/api/admin/diagnostics", 403},
+		{"manager may not read the health report", manager, "GET", "/api/admin/diagnostics", 403},
+		{"owner may read the health report", owner, "GET", "/api/admin/diagnostics", 200},
+		{"staff may not sweep the carts", staff, "POST", "/api/admin/maintenance/sweep-carts", 403},
+		{"manager may not sweep the carts", manager, "POST", "/api/admin/maintenance/sweep-carts", 403},
+		{"owner may sweep the carts", owner, "POST", "/api/admin/maintenance/sweep-carts", 200},
+		{"manager may not sweep unpaid orders", manager, "POST", "/api/admin/maintenance/sweep-unpaid", 403},
+		{"manager may not drain the outbox", manager, "POST", "/api/admin/maintenance/drain-outbox", 403},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

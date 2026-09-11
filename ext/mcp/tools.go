@@ -13,12 +13,19 @@ import (
 // Each one calls a domain service — the same one the REST API calls — so an
 // agent cannot reach a state a person could not, and cannot skip a rule by
 // coming in through a different door.
+//
+// Each one also names the rights core names on the equivalent REST route, so
+// an agent driven by a session operator cannot reach through this door what
+// the front door refuses.
 func (m *Module) builtinTools() []Tool {
 	return []Tool{
 		{
 			Name: "store_info",
 			Description: "Describe this store: its currency, languages and the " +
 				"payment and fulfillment methods installed.",
+			// No rights: it is the store's own shape, and every role keeps
+			// catalog.read however it is re-cut, so there is nobody this
+			// could be kept from who is signed in at all.
 			Call: func(ctx context.Context, _ json.RawMessage) (any, error) {
 				cfg := m.app.Config()
 				return map[string]any{
@@ -37,6 +44,11 @@ func (m *Module) builtinTools() []Tool {
 				"access, the event outbox, stock reservations, carts, catalog and " +
 				"the API contract. Each check reports ok, warn or fail with a hint. " +
 				"Call this first when something is behaving oddly.",
+			// Diagnostics is what store.operate names, and the mount already
+			// requires it — stated here anyway so the tool carries its own
+			// answer rather than inheriting one from where it happens to be
+			// mounted. ServeStdio has no mount at all.
+			Rights: []gocommerce.Right{gocommerce.RightStoreOperate},
 			Call: func(ctx context.Context, _ json.RawMessage) (any, error) {
 				// The same report `gocommerce doctor` renders. An agent asked to
 				// diagnose a store should not have to infer health from a dozen
@@ -47,6 +59,7 @@ func (m *Module) builtinTools() []Tool {
 		{
 			Name:        "list_products",
 			Description: "List products in the catalog, optionally filtered by a search term.",
+			Rights:      []gocommerce.Right{gocommerce.RightCatalogRead},
 			InputSchema: object(props{
 				"query":  str("Match against title and description."),
 				"status": enumStr("Filter by status.", "draft", "active", "archived"),
@@ -74,6 +87,7 @@ func (m *Module) builtinTools() []Tool {
 		{
 			Name:        "get_product",
 			Description: "Get one product with all of its variants and stock levels.",
+			Rights:      []gocommerce.Right{gocommerce.RightCatalogRead},
 			InputSchema: object(props{"id": integer("The product id.")}, "id"),
 			Call: func(ctx context.Context, raw json.RawMessage) (any, error) {
 				var args struct {
@@ -92,6 +106,7 @@ func (m *Module) builtinTools() []Tool {
 				"across every location: a variant with one unit in each of five shops " +
 				"is not low by this reading, even though every shelf looks it. Pass " +
 				"location_id to threshold against one place instead.",
+			Rights: []gocommerce.Right{gocommerce.RightInventoryRead},
 			InputSchema: object(props{
 				"threshold":   integer("Available units at or below this count (default 5)."),
 				"location_id": integer("Threshold against this location alone, rather than the store's total."),
@@ -131,6 +146,7 @@ func (m *Module) builtinTools() []Tool {
 		{
 			Name:        "list_orders",
 			Description: "List orders, most recent first, optionally filtered.",
+			Rights:      []gocommerce.Right{gocommerce.RightOrdersRead},
 			InputSchema: object(props{
 				"status":         enumStr("Order status.", "pending", "confirmed", "partial", "shipped", "delivered", "cancelled"),
 				"payment_status": enumStr("Payment status.", "pending", "paid", "failed", "refunded"),
@@ -160,6 +176,7 @@ func (m *Module) builtinTools() []Tool {
 		{
 			Name:        "get_order",
 			Description: "Get one order in full, including its lines and shipments.",
+			Rights:      []gocommerce.Right{gocommerce.RightOrdersRead},
 			InputSchema: object(props{"id": integer("The order id.")}, "id"),
 			Call: func(ctx context.Context, raw json.RawMessage) (any, error) {
 				var args struct {
@@ -183,6 +200,7 @@ func (m *Module) builtinTools() []Tool {
 			Description: "Change a variant's stock. Use adjust to move it by a delta " +
 				"(receiving stock) or set to replace it (a stock take). Stock cannot " +
 				"go below what is already reserved for open orders.",
+			Rights: []gocommerce.Right{gocommerce.RightInventoryWrite},
 			InputSchema: object(props{
 				"variant_id": integer("The variant id."),
 				"adjust":     integer("Move the on-hand count by this much."),
@@ -224,6 +242,7 @@ func (m *Module) builtinTools() []Tool {
 			Name: "mark_order_paid",
 			Description: "Record that an order has been paid — how cash on delivery is " +
 				"settled. This also confirms the order so it can be shipped.",
+			Rights: []gocommerce.Right{gocommerce.RightOrdersWrite},
 			InputSchema: object(props{
 				"order_id":  integer("The order id."),
 				"reference": str("The payment reference, if there is one."),
@@ -244,6 +263,7 @@ func (m *Module) builtinTools() []Tool {
 			Name: "cancel_order",
 			Description: "Cancel an order and return its stock. An order that has already " +
 				"shipped cannot be cancelled — that is a return.",
+			Rights: []gocommerce.Right{gocommerce.RightOrdersWrite},
 			InputSchema: object(props{
 				"order_id": integer("The order id."),
 				"reason":   str("Why it is being cancelled."),
@@ -263,6 +283,7 @@ func (m *Module) builtinTools() []Tool {
 		{
 			Name:        "create_fulfillment",
 			Description: "Ship a confirmed order, in whole or in part, recording a tracking number.",
+			Rights:      []gocommerce.Right{gocommerce.RightOrdersFulfill},
 			InputSchema: object(props{
 				"order_id": integer("The order id."),
 				"provider": str("Fulfillment provider code; defaults to manual."),
@@ -289,6 +310,11 @@ func (m *Module) builtinTools() []Tool {
 		{
 			Name:        "mark_order_delivered",
 			Description: "Record that a shipped order reached the customer.",
+			// orders.write, not orders.fulfill: core puts delivery on
+			// POST /api/admin/orders/{id}/deliver behind orders.write, and a
+			// tool that disagreed with its own REST route would be a second
+			// answer to one question.
+			Rights:      []gocommerce.Right{gocommerce.RightOrdersWrite},
 			InputSchema: object(props{"order_id": integer("The order id.")}, "order_id"),
 			Mutates:     true,
 			Call: func(ctx context.Context, raw json.RawMessage) (any, error) {

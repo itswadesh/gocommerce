@@ -11,8 +11,10 @@
     import "../app.css";
     import { base } from "$app/paths";
     import { page } from "$app/state";
-    import { auth, getToken, can, session } from "$lib/api.js";
+    import { auth, events, getToken, can, session } from "$lib/api.js";
     import { clearSettings, loadSettings } from "$lib/settings.svelte.js";
+    import { forgetModules, hasModule, loadModules } from "$lib/modules.svelte.js";
+    import { health } from "$lib/health.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
     import Toasts from "$lib/components/Toasts.svelte";
     import Login from "$lib/components/Login.svelte";
@@ -53,6 +55,10 @@
      * The engine is still the one enforcing this; the nav is only telling the
      * truth about what is behind each link.
      *
+     * An item may also name the module that serves it. A screen for a module
+     * this binary was not built with is hidden for the same reason an item
+     * leading to a 403 is: the link would lead somewhere that does not exist.
+     *
      * `accent` is the item own colour, as the B2B Leads sidebar does it: the
      * icon is always tinted and the active row takes the matching soft ground.
      * The values live in gocommerce.css, so light and dark can differ; here
@@ -65,21 +71,44 @@
         { href: "/reports", label: "Reports", icon: "ri-line-chart-line", right: "orders.read", accent: "rose" },
         { href: "/products", label: "Products", icon: "ri-price-tag-3-line", right: "catalog.read" , accent: "sky" },
         { href: "/categories", label: "Categories", icon: "ri-node-tree", right: "catalog.read" , accent: "blue" },
+        // A page is catalog copy that happens not to carry a price, which is
+        // why it takes catalog.read and sits beside the rest of the catalog.
+        { href: "/cms", label: "Pages", icon: "ri-pages-line", right: "catalog.read", module: "cms" , accent: "blue" },
         { href: "/orders", label: "Orders", icon: "ri-shopping-bag-3-line", right: "orders.read" , accent: "amber" },
+        // Amber, with Orders: an invoice is an order document, and a second
+        // accent would say the two are unrelated things.
+        { href: "/invoices", label: "Invoices", icon: "ri-file-list-3-line", right: "orders.read", module: "invoices" , accent: "amber" },
         { href: "/carts", label: "Carts", icon: "ri-shopping-cart-2-line", right: "orders.read" , accent: "fuchsia" },
         { href: "/discounts", label: "Discounts", icon: "ri-price-tag-2-line", right: "discounts.read" , accent: "rose" },
         { href: "/taxes", label: "Tax", icon: "ri-percent-line", right: "taxes.read" , accent: "violet" },
         { href: "/customers", label: "Customers", icon: "ri-user-3-line", right: "customers.read" , accent: "teal" },
+        // Teal, with Customers: both are people. The two lists overlap without
+        // being the same list, and both screens say so themselves.
+        { href: "/accounts", label: "Accounts", icon: "ri-account-circle-line", right: "customers.read", module: "identity" , accent: "teal" },
         { href: "/inventory", label: "Inventory", icon: "ri-archive-2-line", right: "inventory.read" , accent: "emerald" },
         { href: "/locations", label: "Locations", icon: "ri-map-pin-line", right: "locations.read" , accent: "cyan" },
         // Settings has no right of its own: the section is a shell, and every
         // screen inside it carries its own gate. Hiding the whole section from
         // an operator who may reach one of them is a worse lie than showing a
         // section with one item in it.
-        { href: "/settings", label: "Settings", icon: "ri-settings-3-line", accent: "orange" },
+        // `health` is a field rather than an href comparison in the template,
+        // so the badge's owner is declared beside the link it rides on.
+        { href: "/settings", label: "Settings", icon: "ri-settings-3-line", accent: "orange", health: true },
     ];
 
-    const visibleNav = $derived(nav.filter((item) => !item.right || can(item.right)));
+    /*
+     * The module clause first, and that ordering is load-bearing rather than
+     * stylistic. hasModule() reads a `$state` object, and reading it is what
+     * makes this derived re-run when the answer arrives. With the right clause
+     * first, an operator lacking catalog.read, orders.read and customers.read
+     * would short-circuit before hasModule was ever read, no dependency would
+     * be registered, and the answer arriving would change nothing.
+     */
+    const visibleNav = $derived(
+        nav.filter(
+            (item) => (!item.module || hasModule(item.module)) && (!item.right || can(item.right)),
+        ),
+    );
 
 /*
      * The drawer, for widths where the sidebar cannot stay open. It closes on
@@ -142,24 +171,105 @@
         // is asked here, once, rather than by each screen that needs it.
         // Nothing in the shell waits on the answer.
         loadSettings();
-        auth.refresh().catch((err) => {
-            if (err.isAuth) {
-                // api.js has already ended the session; the cached settings
-                // would be the previous operator's answer.
-                clearSettings();
-                return;
-            }
-            // A store that cannot be reached is not a credential that has gone
-            // bad. Clearing the session here signed out an operator whose token
-            // was still perfectly good.
-            toast.error("Could not reach the store — you are still signed in.");
-        });
+        auth.refresh()
+            .then(() => {
+                // After the refresh rather than beside it: a stored token is a
+                // claim, and probing four module routes with one the store has
+                // just rejected is four 401s on the commonest path there is —
+                // come back the next morning, session expired, sign in again.
+                loadModules();
+            })
+            .catch((err) => {
+                if (err.isAuth) {
+                    // api.js has already ended the session; the cached settings
+                    // would be the previous operator's answer.
+                    clearSettings();
+                    return;
+                }
+                // A store that cannot be reached is not a credential that has
+                // gone bad. Clearing the session here signed out an operator
+                // whose token was still perfectly good.
+                toast.error("Could not reach the store — you are still signed in.");
+            });
     });
+
+    /*
+     * The health report, for the badge. Svelte runs the returned teardown when
+     * `authenticated` goes false, which both stops the poll and clears the
+     * verdict with the session — the report is module-scope state and would
+     * otherwise greet the next person to use this browser.
+     *
+     * It is silent by design: watch() never toasts, because this runs on every
+     * page and a store whose database has gone away must not say so every five
+     * minutes. The Diagnostics screen is where failures are read.
+     */
+    $effect(() => {
+        if (!authenticated) return;
+        return health.watch();
+    });
+
+    /*
+     * The dead-letter count, for the same badge.
+     *
+     * It is on the same indicator rather than beside it, and that is the whole
+     * point: the health dot renders on `health.failing`, which is FAIL only, and
+     * a dead-lettered event is a WARN — so the report never lights it, and the
+     * one thing on these screens an operator can actually repair would be the
+     * one thing nothing tells them about. Two alarms on a 13px row is worse than
+     * one that knows which it means, so a failing check outranks a parked event
+     * and the title says which: a store that cannot reach its database has a
+     * bigger problem than one notification that did not go out.
+     *
+     * Read on navigation, not polled. The outbox is minutes-scale, a poll from
+     * every open tab is a cost with no reader, and the count is one indexed
+     * read of `meta.total` against outbox_dead_idx.
+     */
+    let deadLetters = $state(0);
+
+    $effect(() => {
+        // Reading the path is what subscribes this to navigation.
+        page.url.pathname;
+        if (!authenticated || !can("store.operate")) {
+            deadLetters = 0;
+            return;
+        }
+        let live = true;
+        events
+            .list({ state: "dead", limit: 1 })
+            .then((result) => {
+                if (live) deadLetters = result.meta?.total ?? 0;
+            })
+            .catch(() => {
+                // Silent, for health.watch()'s reason: this runs on every page,
+                // and a store that has gone away already announces itself by
+                // every other screen failing.
+                if (live) deadLetters = 0;
+            });
+        return () => {
+            live = false;
+        };
+    });
+
+    const navAlert = $derived(
+        health.visible
+            ? { show: true, href: "/settings/diagnostics", label: "A health check is failing" }
+            : deadLetters > 0
+              ? {
+                    show: true,
+                    href: "/settings/events",
+                    label: `${deadLetters} event${deadLetters === 1 ? "" : "s"} could not be delivered`,
+                }
+              : { show: false, href: "/settings", label: "" },
+    );
 
     function onAuthenticated() {
         // auth.login has already written the session; the shell only reacts to
         // it. Forced, because the boot attempt ran with no token — or failed.
         loadSettings({ force: true });
+        // A new sign-in may be a different operator against a different store,
+        // so the previous answer is dropped before a new one is asked for.
+        forgetModules();
+        loadModules();
         toast.success("Signed in");
     }
 
@@ -169,6 +279,7 @@
         // the next operator on a shared browser may be looking at another store.
         await auth.logout();
         clearSettings();
+        forgetModules();
         toast.info("Signed out");
     }
 
@@ -208,6 +319,11 @@
             >
                 <i class={item.icon} aria-hidden="true"></i>
                 <span class="txt">{item.label}</span>
+                <!-- The dot rides the item, so it appears in the sidebar and in
+                     the drawer, which render this same snippet. -->
+                {#if item.health && navAlert.show}
+                    <span class="app-nav-dot" title={navAlert.label}></span>
+                {/if}
             </a>
         {/each}
     </nav>
@@ -302,6 +418,18 @@
                     <i class={menuOpen ? "ri-close-line" : "ri-menu-line"} aria-hidden="true"></i>
                 </button>
                 {@render brand()}
+                <!-- On a phone the Settings item lives in a closed drawer, and a
+                     badge nobody can see is the failure the badge exists to
+                     prevent. -->
+                {#if navAlert.show}
+                    <a
+                        href="{base}{navAlert.href}"
+                        class="app-topbar-alert"
+                        aria-label={navAlert.label}
+                    >
+                        <i class="ri-error-warning-line" aria-hidden="true"></i>
+                    </a>
+                {/if}
             </div>
 
             {#if menuOpen}

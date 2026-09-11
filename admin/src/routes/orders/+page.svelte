@@ -9,6 +9,7 @@
         orderStatusClass,
         orderStatusLabel,
         paymentLabel,
+        summarizeEdit,
     } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import { settings } from "$lib/settings.svelte.js";
@@ -20,7 +21,11 @@
     import ShipDialog from "$lib/components/ShipDialog.svelte";
     import RefundDialog from "$lib/components/RefundDialog.svelte";
     import OrderRefundList from "$lib/components/OrderRefundList.svelte";
+    import { hasModule } from "$lib/modules.svelte.js";
+    import { openDocument, safeFilename } from "$lib/download.js";
     import OrderReturnsCard from "$lib/components/OrderReturnsCard.svelte";
+    import OrderNoteCard from "$lib/components/OrderNoteCard.svelte";
+    import OrderTimeline from "$lib/components/OrderTimeline.svelte";
     import ReturnDialog from "$lib/components/ReturnDialog.svelte";
     import OrderPlaced from "$lib/components/OrderPlaced.svelte";
     import { COUNTRIES } from "$lib/countries.js";
@@ -30,10 +35,19 @@
 
     /* Every filter, the ordering and the page live in the address bar. This
        screen always needed that — Customers links here with `?email=` already
-       set — and the rest follow the same road now rather than a second one. */
+       set — and the rest follow the same road now rather than a second one.
+
+       Two search parameters, deliberately. `q` is what the box writes: a number
+       by prefix, an email or a name by contains. `email` is the exact-match
+       filter Customers links with, where the whole address is on screen and
+       means that one person — and where `_`, a LIKE wildcard, is common enough
+       in real addresses that widening it would quietly turn a value into a
+       pattern. Touching the box drops the exact filter, because that is the
+       moment the intent stops being "that person". */
     const list = listState({
         status: "",
         payment_status: "",
+        q: "",
         email: "",
         sort: "",
         order: "",
@@ -48,8 +62,11 @@
     const status = $derived(list.params.status);
     const paymentStatus = $derived(list.params.payment_status);
     const email = $derived(list.params.email);
+    const search = $derived(list.params.q);
     const sort = $derived(readSort(list.params, SORT_FIELDS));
-    let draftEmail = $state(list.params.email);
+    /* Seeded from whichever of the two is on the URL, so a link from Customers
+       shows the address it filtered by in the box the operator would clear. */
+    let draftSearch = $state(list.params.q || list.params.email);
 
     /* A fast second header click leaves two requests in flight; without this
        the table settles on the reply that lost rather than on the header that
@@ -100,12 +117,12 @@
 
     function submitSearch(e) {
         e.preventDefault();
-        list.set({ email: draftEmail });
+        list.set({ q: draftSearch, email: "" });
     }
 
     function clearSearch() {
-        draftEmail = "";
-        list.set({ email: "" });
+        draftSearch = "";
+        list.set({ q: "", email: "" });
     }
 
     async function openOrder(row) {
@@ -113,10 +130,32 @@
         // address, fulfillments — is on its way.
         detailOpen = true;
         order = row;
+        timeline = [];
+        loadTimeline(row.id);
         try {
             order = await api.get(`/api/admin/orders/${row.id}`);
         } catch (err) {
             toast.error(err);
+        }
+    }
+
+    /** The order's own history: what happened, who did it, and in what order. */
+    let timeline = $state([]);
+    let timelineLoading = $state(false);
+
+    async function loadTimeline(id) {
+        timelineLoading = true;
+        try {
+            // 200 is the engine's MaxLimit, so this is the largest single page
+            // it will serve — and more history than any order has.
+            const res = await api.get(`/api/admin/orders/${id}/timeline` + query({ limit: 200 }));
+            timeline = res.data ?? [];
+        } catch {
+            // A history that failed to load must not toast over an order that
+            // opened perfectly well. The card says it has nothing.
+            timeline = [];
+        } finally {
+            timelineLoading = false;
         }
     }
 
@@ -127,6 +166,10 @@
             // Every action changes a status the list shows, so the list is read
             // again rather than left describing the state before it.
             await load();
+            // And every action writes a line of history — including a note,
+            // which announces nothing to the customer but is still recorded as
+            // something somebody did.
+            if (order?.id) loadTimeline(order.id);
             toast.success(label);
         } catch (err) {
             toast.error(err);
@@ -303,6 +346,10 @@
         };
     }
 
+    function startEditNotes() {
+        editingCard = "notes";
+    }
+
     function startEditPayment() {
         editingCard = "payment";
         form = {
@@ -322,24 +369,46 @@
      */
     const methods = $derived(settings.paymentMethods);
 
-    const saveCard = () =>
-        act("Order updated", async () => {
-            const patch =
-                editingCard === "customer"
-                    ? {
-                          name: form.name.trim(),
-                          email: form.email.trim(),
-                          phone: form.phone.trim(),
-                          address: form.address,
-                      }
-                    : {
-                          payment_provider: form.payment_provider,
-                          payment_reference: form.payment_reference.trim(),
-                      };
+    /**
+     * Saving whichever card is open. `noteText` comes from the note card, which
+     * owns its own draft; the other two read `form`.
+     *
+     * Which card it is has to be captured before the request, because the
+     * callback nulls `editingCard` and the toast label is chosen from it.
+     */
+    function saveCard(noteText) {
+        const card = editingCard;
+        return act(card === "notes" ? "Note saved" : "Order updated", async () => {
+            let patch;
+            if (card === "customer") {
+                patch = {
+                    name: form.name.trim(),
+                    email: form.email.trim(),
+                    phone: form.phone.trim(),
+                    address: form.address,
+                };
+            } else if (card === "payment") {
+                patch = {
+                    payment_provider: form.payment_provider,
+                    payment_reference: form.payment_reference.trim(),
+                };
+            } else {
+                /* The engine replaces metadata whole, so the read-modify-write
+                   is the caller's — the same merge the products and categories
+                   screens do. An emptied box removes the key rather than
+                   storing "", so "no note yet" and "a note that says nothing"
+                   stay one state. */
+                const meta = { ...(order.metadata ?? {}) };
+                const text = (noteText ?? "").trim();
+                if (text) meta.notes = text;
+                else delete meta.notes;
+                patch = { metadata: meta };
+            }
             const updated = await api.patch(`/api/admin/orders/${order.id}`, patch);
             editingCard = null;
             return updated;
         });
+    }
 
     /**
      * Removing a shipment recorded in error.
@@ -664,25 +733,12 @@
                     })),
                 },
             });
-            for (const line of summarizeEdit(result.changed)) toast.success(line);
+            for (const line of summarizeEdit(result.changed, order?.currency ?? settings.currency)) {
+                toast.success(line);
+            }
             draftLines = null;
             return result.order;
         });
-
-    /** What the edit came to, in sentences rather than three lists. */
-    function summarizeEdit(change) {
-        if (!change) return [];
-        const out = [];
-        if (change.lines_added?.length) out.push(`Added ${change.lines_added.join(", ")}`);
-        if (change.lines_removed?.length) out.push(`Removed ${change.lines_removed.join(", ")}`);
-        if (change.lines_changed?.length) out.push(change.lines_changed.join(", "));
-        if (change.balance_minor > 0) {
-            out.push(`${formatMinor(change.balance_minor)} to collect`);
-        } else if (change.balance_minor < 0) {
-            out.push(`${formatMinor(-change.balance_minor)} to refund`);
-        }
-        return out;
-    }
 
     /** A bare amount in the order's own currency, for the balance sentences. */
     function formatMinor(minor) {
@@ -830,13 +886,13 @@
                     <input
                         type="text"
                         class="p-l-20"
-                        placeholder="Search orders by customer email"
-                        bind:value={draftEmail}
+                        placeholder="Search orders by number, email or name"
+                        bind:value={draftSearch}
                     />
                 </div>
-                {#if draftEmail || email}
+                {#if draftSearch || search || email}
                     <div class="field addon p-r-5">
-                        {#if draftEmail !== email}
+                        {#if draftSearch !== (search || email)}
                             <button type="submit" class="btn sm pill warning">Search</button>
                         {/if}
                         <button
@@ -1004,7 +1060,7 @@
                                         aria-hidden="true"
                                     ></i>
                                 </div>
-                                {#if status || paymentStatus || email}
+                                {#if status || paymentStatus || search || email}
                                     Nothing matches that. Try clearing a filter.
                                 {:else}
                                     No orders yet. Orders appear here the moment somebody checks
@@ -1027,14 +1083,14 @@
 
 <!-- The same pair under every card that edits in place, so Save is always in
      the same spot regardless of which card is open. -->
-{#snippet cardActions(formID)}
+{#snippet cardActions(formID, label = "Order updated")}
     <div class="order-card-actions">
         <button
             type="submit"
             form={formID}
             class="btn sm"
-            class:loading={busy === "Order updated"}
-            disabled={busy === "Order updated"}
+            class:loading={busy === label}
+            disabled={busy === label}
         >
             <span class="txt">Save</span>
         </button>
@@ -1331,6 +1387,21 @@
         {/if}
 
         <OrderReturnsCard {order} onwithdraw={askWithdrawReturn} />
+
+        <!-- The coercion is belt-and-braces even with the engine's own
+             validation: orders.metadata is jsonb, rows written before the
+             reserved key existed are unconstrained, and a module can still put
+             an object there through a service. Without it the first click
+             throws on .trim(). -->
+        <OrderNoteCard
+            note={typeof order.metadata?.notes === "string" ? order.metadata.notes : ""}
+            editing={editingCard === "notes"}
+            onedit={startEditNotes}
+            onsave={saveCard}
+            {cardActions}
+        />
+
+        <OrderTimeline entries={timeline} loading={timelineLoading} currency={order.currency} />
         </div>
 
         <!--
@@ -1480,6 +1551,26 @@
                         <div class="order-reference txt-code">{order.payment_reference}</div>
                     {/if}
                     <OrderRefundList {order} />
+                    <!-- In the Payment card rather than the drawer header
+                         because an invoice is the document for money already
+                         taken, and this is where the drawer already answers
+                         "was this paid". Gated on paid because ext/invoices
+                         issues on order.paid: on an unpaid order the button
+                         could only ever produce the engine own 404. -->
+                    {#if hasModule("invoices") && order.payment_status === "paid"}
+                        <button
+                            type="button"
+                            class="btn sm secondary m-t-sm"
+                            onclick={() =>
+                                openDocument(
+                                    `/api/admin/x/invoices/${order.id}`,
+                                    safeFilename(`invoice-${order.number}`, "html"),
+                                )}
+                        >
+                            <i class="ri-printer-line" aria-hidden="true"></i>
+                            <span class="txt">Invoice</span>
+                        </button>
+                    {/if}
                 {/if}
             </section>
 

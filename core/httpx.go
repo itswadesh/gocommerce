@@ -457,6 +457,9 @@ func (a *App) mountCoreRoutes() {
 	a.mountTeamRoutes()
 	a.mountRoleRoutes()
 	a.mountAuditRoutes()
+	// Beside the audit trail, because both answer "what happened" — one about
+	// the operators, one about what the store told the outside world.
+	a.mountEventRoutes()
 	a.mountSettingsRoutes()
 	a.mountCartRoutes()
 	a.mountCheckoutRoutes()
@@ -464,6 +467,10 @@ func (a *App) mountCoreRoutes() {
 	// Beside the orders, because a report is a reading of them.
 	a.mountReportRoutes()
 	a.mountTransferRoutes()
+	// The store's own operations after the commerce surfaces, before the
+	// panel's file server: everything above is the shop, this is the machine
+	// the shop runs on.
+	a.mountOpsRoutes()
 	a.mountAdminPanel()
 }
 

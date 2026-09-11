@@ -112,12 +112,34 @@ A module may mount only under `/x/<name>/` (public) and `/api/admin/x/<name>/`
 name. Choosing `HandleAdmin` *is* the authentication — there is no way to
 forget it.
 
+Naming the rights is the **authorisation**, and that one is not automatic: the
+argument is variadic, so a route that names none is served to any authenticated
+operator whatever their role. Every module admin route names at least one right
+from `core/rights.go`, and a module never invents a right — the catalogue is
+core's, so a role's stored rights stay decodable in a binary built without that
+module. `gctest.AssertAdminRoutesDeclareRights` is how a module's own suite
+proves it; `gocommerce doctor`'s `admin rights` check finds it in a binary
+where nobody wrote that test.
+
+One route cannot always say it all. `POST /api/admin/x/mcp` dispatches twelve
+tools spanning `catalog.read` to `orders.fulfill`, and `requireRights` runs
+once before the body is parsed — so each tool carries its own `Rights` and
+`callTool` checks them against the operator on the context. A nil superuser
+there is the static admin token or `ServeStdio`, exempt exactly as it is on
+every core route.
+
 ### 10. Every response is JSON, including the ones you did not write
 
 The envelope is `{"data": ...}` or `{"error": {...}}`, from the taxonomy in
 `httpx.go` (`ErrNotFound`, `ErrValidation`, `ErrConflict`, `ErrUnauthorized`).
 404s and 405s from the router are converted too — a client decoding JSON must
 never receive Go's plain-text default.
+
+`POST /api/admin/x/mcp` is the one standing exception: it speaks JSON-RPC 2.0,
+which defines its own envelope, and an MCP client cannot be asked to unwrap a
+second one. So a tool error is HTTP 200 with a top-level `error` member, and a
+notification is 202 with no body. 401 and 403 still arrive in this envelope,
+from the middleware, before the body is read.
 
 ### 11. Every served route appears in `core/openapi.json`
 

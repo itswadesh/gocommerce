@@ -196,6 +196,11 @@ func (a *App) mountOrderRoutes() {
 	a.HandleAdminFunc("GET /api/admin/customers", a.handleListCustomers, RightCustomersRead)
 	a.HandleAdminFunc("POST /api/admin/orders", a.handleCreateOrder, RightOrdersWrite)
 	a.HandleAdminFunc("GET /api/admin/orders/{id}", a.handleGetOrder, RightOrdersRead)
+	// orders.read, because it is what the drawer already needs. Gating the
+	// whole history on store.operate would 403 it for every non-owner, which is
+	// the opposite of the point; the one field in it that is genuinely
+	// operator-only is gated inside the handler instead.
+	a.HandleAdminFunc("GET /api/admin/orders/{id}/timeline", a.handleOrderTimeline, RightOrdersRead)
 	a.HandleAdminFunc("POST /api/admin/orders/{id}/cancel", a.handleCancelOrder, RightOrdersWrite)
 	a.HandleAdminFunc("POST /api/admin/orders/{id}/mark-paid", a.handleMarkPaid, RightOrdersWrite)
 	a.HandleAdminFunc("POST /api/admin/orders/{id}/mark-unpaid", a.handleMarkUnpaid, RightOrdersWrite)
@@ -250,6 +255,7 @@ func (a *App) handleListOrders(w http.ResponseWriter, r *http.Request) {
 		Status:        q.Get("status"),
 		PaymentStatus: q.Get("payment_status"),
 		Email:         q.Get("email"),
+		Search:        q.Get("q"),
 		Limit:         limit,
 		Offset:        offset,
 	}
@@ -285,6 +291,39 @@ func (a *App) handleGetOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	Respond(w, http.StatusOK, order)
+}
+
+// handleOrderTimeline serves one order's history, merged from the outbox and
+// the audit trail. Every transition already writes into both in the transaction
+// that caused it; this is the read that puts them back together.
+//
+// last_error is a handler's raw words — an upstream message, a URL, maybe a
+// fragment of a key — and orders.read is a right a warehouse or support account
+// holds. store.operate is the right that owns failures. A nil superuser is the
+// static admin token, which carries every right by the same rule requireRights
+// states.
+func (a *App) handleOrderTimeline(w http.ResponseWriter, r *http.Request) {
+	id, err := pathInt64(r, "id")
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	limit, offset, err := Page(r)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	entries, total, err := a.orders.Timeline(r.Context(), id, limit, offset)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	if su := SuperuserFrom(r.Context()); su != nil && !su.Has(RightStoreOperate) {
+		for i := range entries {
+			entries[i].LastError = ""
+		}
+	}
+	RespondList(w, entries, ListMeta{Total: total, Limit: limit, Offset: offset})
 }
 
 func (a *App) handleCancelOrder(w http.ResponseWriter, r *http.Request) {

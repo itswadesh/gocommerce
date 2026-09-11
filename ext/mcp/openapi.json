@@ -4,7 +4,7 @@
       "post": {
         "tags": ["admin:mcp"],
         "summary": "The MCP endpoint: JSON-RPC 2.0 over HTTP",
-        "description": "Requires store.operate. Four things a client has to know. (1) The body is JSON-RPC 2.0 and the reply is NOT the {data}/{error} envelope every other route uses — an MCP client cannot be asked to unwrap a second envelope, so this route is a deliberate, standing exception. (2) A JSON-RPC error comes back with HTTP 200 and a top-level error member; the HTTP status describes the transport, not the call. (3) A request with no id is a notification: it is answered 202 with an empty body. (4) 401 and 403 still arrive as the engine's own error envelope, from the middleware, before the body is read.",
+        "description": "Requires store.operate, and each tool additionally requires the rights core names on the equivalent REST route — list_orders needs orders.read, mark_order_paid needs orders.write, update_variant_inventory needs inventory.write, and so on. A refusal for want of a right comes back as a JSON-RPC error with code -32600 naming the missing right; a static admin token holds every right and is never refused. Four things a client has to know. (1) The body is JSON-RPC 2.0 and the reply is NOT the {data}/{error} envelope every other route uses — an MCP client cannot be asked to unwrap a second envelope, so this route is a deliberate, standing exception. (2) A JSON-RPC error comes back with HTTP 200 and a top-level error member; the HTTP status describes the transport, not the call. (3) A request with no id is a notification: it is answered 202 with an empty body. (4) 401 and 403 still arrive as the engine's own error envelope, from the middleware, before the body is read.",
         "security": [{"adminToken": []}],
         "requestBody": {
           "required": true,
@@ -22,7 +22,7 @@
       "get": {
         "tags": ["admin:mcp"],
         "summary": "Every mutating tool call an agent has made",
-        "description": "Requires store.operate. Reads are not recorded — only tools that declare they change state. No filters: newest id first, with limit and offset.",
+        "description": "Requires store.operate. Reads are not recorded — only tools that declare they change state, plus a mutating call refused for want of a right, which is recorded with outcome error. No filters: newest id first, with limit and offset.",
         "security": [{"adminToken": []}],
         "parameters": [
           {"$ref": "#/components/parameters/Limit"},

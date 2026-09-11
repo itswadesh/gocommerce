@@ -208,6 +208,85 @@ grid of thumbnails with no column headers, and it lives in a drawer: a drawer
 that writes to the address bar leaves a stale `?sort=` behind when it closes and
 fights the host screen's own parameters.
 
+## Module screens
+
+Four screens belong to optional modules rather than to the engine, and a store
+that was not built with the module does not get them: **Pages** (`ext/cms`),
+**Invoices** (`ext/invoices`) and **Accounts** (`ext/identity`) in the main
+nav, and **Settings → Agent activity** (`ext/mcp`) in the Platform group. The
+nav sorts by who uses a screen and how often, not by which Go package serves
+it: pages, invoices and accounts are daily work, while an agent audit trail is
+an operator's diagnostic.
+
+How the panel knows, in `$lib/modules.svelte.js`, read once per sign-in: the
+`modules` key on `GET /api/admin/settings` when the engine serves it — the name
+is reserved on that response today and carries nothing — and otherwise one
+probe per module of a GET-mounted admin route. A JSON 404 means the route was
+never mounted; 200, 401 and 403 all mean it is there, because "installed, and
+you may not" must not read as absent. A probe whose right the operator does not
+hold is skipped rather than made and refused, since every screen checks its
+right before its module and would answer with the rights explanation anyway.
+
+A screen whose module is absent is hidden from the nav and, if its URL is typed
+or bookmarked, says so instead of firing four requests that 404.
+
+Two things worth knowing about the screens themselves. **Accounts is not
+Customers.** Accounts are shoppers who registered with this store, from
+`identity_customers`; Customers is every order grouped by the address that
+placed it, derived and read-only. The populations overlap, the keys are
+different — an int64 against an email address — and the two screens never
+cross-link, because an order joins an account by its own access token and never
+by the address on it. The drawer's one link is labelled as what it is: orders
+placed with the same email. **An invoice is fetched, not linked to.** The
+document is behind admin authentication and a link cannot carry a header, so
+`$lib/download.js` fetches it with the token and opens a blob in a new tab. The
+window is opened synchronously inside the click, because by the time the fetch
+resolves the browser no longer counts it as a user gesture. An iframe preview is
+not available and that is a CSP fact: the panel sends `frame-ancestors 'none'`
+and declares no `frame-src`, so a `blob:` frame falls back to `default-src
+'self'` and is refused.
+
+## Diagnostics, and the buttons beside the rows
+
+**Settings → Diagnostics** draws `GET /api/admin/diagnostics` — the same
+report `gocommerce doctor` prints and the MCP `store_health` tool returns,
+in the engine's own order. The screen is deliberately a renderer: nothing in
+the panel decides what healthy means, because `core/doctor.go` does, and a
+second opinion is a second thing to keep true.
+
+Three of the doctor's hints end in "check that background work is running",
+which is a diagnosis an operator can read and be unable to act on. So the pass
+that answers a hint sits on the row that reports it — *Deliver now* on
+`outbox`, *Release now* on `stock reservations`, *Sweep now* on `carts` —
+and each runs the same service method the engine's five-minute ticker calls.
+Pressing one does nothing the store would not have done on its own; it makes it
+happen now. The row re-reads itself afterwards, which is what makes a partial
+pass honest rather than a toast the operator has to believe.
+
+The buttons are keyed to those three literal check names, and that coupling is
+the one thing Go cannot see. `TestDiagnosticsNamesTheChecksThePanelActsOn`
+pins the names for that reason.
+
+A red dot rides the shell's Settings item and the sidebar's Diagnostics link
+whenever a check has **failed** — not on warnings, because `Report.OK` is
+already defined as "no check failed" and a busy healthy store routinely carries
+warnings; a dot that is always lit is a dot nobody looks at. On a phone the
+Settings item is inside a closed drawer, so the same alarm appears in the
+topbar. One shared rune module (`lib/health.svelte.js`) feeds all three, so
+they cannot disagree, and it is gated on `store.operate` and cleared on
+sign-out — module state outlives a session, and a red dot inherited from the
+previous operator is worse than none.
+
+The shell's dot is shared with the outbox: a failing check claims it first and
+points at Diagnostics, and dead-lettered events light it otherwise and point at
+Events. One dot rather than two because the question a person asks when they
+see it is "what is wrong", and two lights in one row make them count instead of
+click. The sidebar dot stays health's alone, since by then the two screens are
+side by side.
+
+The whole screen is behind `store.operate`, which **owner alone carries by
+default**. A store that wants a manager on call grants it in Settings → Roles.
+
 ## Reports, and a chart with no charting library
 
 The Reports screen asks the engine two questions —
@@ -549,6 +628,28 @@ payment cannot be completed from the panel, rather than implying it can.
 
 Honest gaps, rather than a roadmap:
 
+- **An invoice row cannot link to its order.** An order still has no address of
+  its own in the panel — it opens in a drawer over the list — so the Order
+  column is the order's id as plain text rather than a link that would go
+  nowhere useful.
+- **The invoices list cannot be searched.** The endpoint takes `limit` and
+  `offset` and nothing else, so a search box would search the twenty-five rows
+  on screen and lie about the rest. An invoice is found from its order.
+- **The agent audit has no tool or outcome filter**, for the same reason: the
+  route pages by id and takes no other parameter.
+- **The Accounts drawer shows six fields**, because six is what the route
+  returns. There is no address count, no order count and no last-seen in
+  `ext/identity`'s admin surface; adding them is new routes in the module
+  rather than a fuller screen over the same ones.
+- **The health badge is up to five minutes stale.** The report is read on
+  sign-in and every five minutes after — the sweepers' own interval, because a
+  fresher answer would report on work that has not happened yet. A check that
+  starts failing between polls does not light the dot until the next one; the
+  refresh button on the Diagnostics screen is the way to ask now.
+- **A failing check's underlying database error is not shown.** The engine
+  records it separately from the finding and the API strips it deliberately: a
+  pgx message names a host, a port and a user, and this panel is a browser
+  session. It is in the store's log, and `gocommerce doctor` prints it.
 - **Reports do not net off refunds.** The engine records how much came back
   and the screen shows it — `Collected` is what the store still holds — but
   `Net sales` is what was sold, refunds included. Reading it as money kept is
@@ -590,6 +691,21 @@ Honest gaps, rather than a roadmap:
   the header row below 900px and labels each cell instead, so a sort has to
   arrive in the URL. Ordering a list is a desk task, and the alternative is a
   sort control that exists only at one width.
+- **An order's History does not go back further than the trail does.** It is one
+  reading of two tables — the events the order announced and the operator acts
+  recorded against it — so everything that happened before migration 0020 ran
+  appears with no actor, correctly. An entry with nobody's name on it means the
+  engine did not record one, never that nobody did it.
+- **A search box finds an order number only from the left.** `GC-000412` is
+  found by `GC-0004`; `412` finds nothing. A contains match on the number would
+  make `1` find half the table, so the number is anchored while the email and
+  the name are not.
+- **The reason a notification failed is shown only to `store.operate`.** The
+  History card tells every reader that a delivery is queued or was given up on;
+  what the failing handler actually said is an operator's field, because it is a
+  raw error string and can carry an upstream URL or a fragment of a key.
+- **A note is not versioned.** Saving replaces it, and the previous text lives
+  only in the audit row underneath the History card's `Note written` line.
 
 - **An option axis cannot be removed or renamed** once it exists, and a
   variant's option combination cannot be changed — the API has no route for
@@ -626,5 +742,7 @@ Honest gaps, rather than a roadmap:
   today they are reachable by curl and MCP only. The product list's
   `?collection_id=` filter is in the same position: the endpoint takes it, the
   control belongs to the product-list filters work.
-- **No log viewer or SQL console.**
+- **No log viewer or SQL console.** The one thing operators reached for a SQL
+  console for — reading a dead-lettered outbox row and requeueing it — is a
+  screen now, at Settings → Platform → Events.
 - **No bulk actions** on the list screens.

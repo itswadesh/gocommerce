@@ -17,8 +17,9 @@ import (
 // which queries to run. Diagnose knows them.
 //
 // It is a core service rather than a CLI feature so that everything can reach
-// it: `gocommerce doctor` renders it, an MCP tool can call it, and a future
-// panel screen can show it. The CLI is a client, like everything else.
+// it: `gocommerce doctor` renders it, an MCP tool can call it, and the panel's
+// Settings → Diagnostics screen draws it over GET /api/admin/diagnostics. The
+// CLI is a client, like everything else.
 
 // Status is a diagnostic's verdict.
 const (
@@ -39,6 +40,19 @@ type Diagnostic struct {
 	// diagnostic that reports a problem without naming a next step just moves
 	// the puzzle.
 	Hint string `json:"hint,omitempty"`
+	// Cause is the underlying error text, when a check reports a problem
+	// because it could not run at all.
+	//
+	// It is its own field rather than the tail of Detail because the two have
+	// different audiences. A local operator at a terminal wants it, and so does
+	// an agent reading `gocommerce doctor -json`. A browser session must not
+	// have it: a pgx error names a host, a port and a user, and httpx.go
+	// refuses to send those to a client on every other path — RespondError
+	// scrubs every 500 for exactly this reason, and a 200 must not become the
+	// way round it. Splitting the finding from its cause lets one HTTP handler
+	// blank one field and keep the rest, so a check added later cannot leak by
+	// forgetting a rule it was never told about.
+	Cause string `json:"cause,omitempty"`
 }
 
 // Report is the whole health picture.
@@ -101,7 +115,7 @@ func (a *App) checkDatabase(ctx context.Context) Diagnostic {
 	d := Diagnostic{Name: "database"}
 	var version string
 	if err := a.db.QueryRowContext(ctx, `SHOW server_version`).Scan(&version); err != nil {
-		d.Status, d.Detail = StatusFail, "cannot reach PostgreSQL: "+err.Error()
+		d.Status, d.Detail, d.Cause = StatusFail, "cannot reach PostgreSQL", err.Error()
 		d.Hint = "check the connection string and that the server is accepting connections"
 		return d
 	}
@@ -123,7 +137,7 @@ func (a *App) checkMigrations(ctx context.Context) Diagnostic {
 	applied := map[string]bool{}
 	rows, err := a.db.QueryContext(ctx, `SELECT owner, id FROM `+migrationsTable)
 	if err != nil {
-		d.Status, d.Detail = StatusFail, "cannot read the migration ledger: "+err.Error()
+		d.Status, d.Detail, d.Cause = StatusFail, "cannot read the migration ledger", err.Error()
 		d.Hint = "run `gocommerce migrate`"
 		return d
 	}
@@ -164,7 +178,7 @@ func (a *App) checkAdminAccess(ctx context.Context) Diagnostic {
 	tokens := len(a.cfg.AdminTokens)
 	supers, err := a.superusers.Count(ctx)
 	if err != nil {
-		d.Status, d.Detail = StatusWarn, "cannot count superusers: "+err.Error()
+		d.Status, d.Detail, d.Cause = StatusWarn, "cannot count superusers", err.Error()
 		return d
 	}
 
@@ -212,7 +226,7 @@ func (a *App) checkOutbox(ctx context.Context) Diagnostic {
 
 	pending, dead, err := a.PendingEvents(ctx)
 	if err != nil {
-		d.Status, d.Detail = StatusFail, "cannot read the outbox: "+err.Error()
+		d.Status, d.Detail, d.Cause = StatusFail, "cannot read the outbox", err.Error()
 		return d
 	}
 
@@ -239,7 +253,7 @@ func (a *App) checkOutbox(ctx context.Context) Diagnostic {
 	}
 	if dead > 0 && d.Status == StatusOK {
 		d.Status = StatusWarn
-		d.Hint = "dead-lettered events exhausted their retries and will never be delivered; inspect outbox_events.last_error"
+		d.Hint = "dead-lettered events exhausted their retries and will never be delivered; read them at GET /api/admin/events?state=dead, or Settings > Platform > Events, and retry when the cause is fixed"
 	}
 	d.Detail = strings.Join(parts, ", ")
 	return d
@@ -265,7 +279,7 @@ func (a *App) checkReservations(ctx context.Context) Diagnostic {
 		  AND o.reservation_expires_at IS NOT NULL
 		  AND o.reservation_expires_at < now()`).Scan(&stale, &units)
 	if err != nil {
-		d.Status, d.Detail = StatusWarn, "cannot inspect reservations: "+err.Error()
+		d.Status, d.Detail, d.Cause = StatusWarn, "cannot inspect reservations", err.Error()
 		return d
 	}
 
@@ -291,7 +305,7 @@ func (a *App) checkCarts(ctx context.Context) Diagnostic {
 		                          AND abandoned_at < now() - make_interval(secs => $1))
 		FROM carts`, a.cfg.CartRetention.Seconds()).Scan(&live, &pending, &abandoned, &overdue)
 	if err != nil {
-		d.Status, d.Detail = StatusWarn, "cannot inspect carts: "+err.Error()
+		d.Status, d.Detail, d.Cause = StatusWarn, "cannot inspect carts", err.Error()
 		return d
 	}
 
@@ -343,7 +357,7 @@ func (a *App) checkCatalog(ctx context.Context) Diagnostic {
 			  WHERE NOT v.continue_selling AND vs.reserved > vs.on_hand)
 	`).Scan(&products, &active, &orphans, &oversold)
 	if err != nil {
-		d.Status, d.Detail = StatusWarn, "cannot inspect the catalog: "+err.Error()
+		d.Status, d.Detail, d.Cause = StatusWarn, "cannot inspect the catalog", err.Error()
 		return d
 	}
 
@@ -400,7 +414,7 @@ func (a *App) checkContract() Diagnostic {
 
 	documented, err := a.SpecPaths()
 	if err != nil {
-		d.Status, d.Detail = StatusWarn, "cannot read the OpenAPI document: "+err.Error()
+		d.Status, d.Detail, d.Cause = StatusWarn, "cannot read the OpenAPI document", err.Error()
 		return d
 	}
 	have := make(map[string]bool, len(documented))
@@ -501,7 +515,7 @@ func (a *App) checkFulfillment(ctx context.Context) Diagnostic {
 		   OR (shipped > 0 AND shipped < ordered AND status <> 'partial')
 		   OR (shipped >= ordered AND status <> 'shipped')`).Scan(&drifted)
 	if err != nil {
-		d.Status, d.Detail = StatusWarn, "cannot read fulfillment lines: "+err.Error()
+		d.Status, d.Detail, d.Cause = StatusWarn, "cannot read fulfillment lines", err.Error()
 		d.Hint = "check that the migrations are applied"
 		return d
 	}
@@ -546,7 +560,7 @@ func (a *App) checkRefunds(ctx context.Context) Diagnostic {
 		    (SELECT count(*) FROM order_refunds WHERE status = 'succeeded')`,
 		intervalSeconds(refundStaleAfter)).Scan(&drifted, &inFlight, &settled)
 	if err != nil {
-		d.Status, d.Detail = StatusWarn, "cannot read the refund ledger: "+err.Error()
+		d.Status, d.Detail, d.Cause = StatusWarn, "cannot read the refund ledger", err.Error()
 		d.Hint = "check that the migrations are applied"
 		return d
 	}
@@ -597,7 +611,7 @@ func (a *App) checkReturns(ctx context.Context) Diagnostic {
 		    (SELECT count(*) FROM order_returns WHERE status = 'received')`).
 		Scan(&overReturned, &received)
 	if err != nil {
-		d.Status, d.Detail = StatusWarn, "cannot read the returns: "+err.Error()
+		d.Status, d.Detail, d.Cause = StatusWarn, "cannot read the returns", err.Error()
 		d.Hint = "check that the migrations are applied"
 		return d
 	}
@@ -649,7 +663,7 @@ func (a *App) checkLedger(ctx context.Context) Diagnostic {
 		                                        AND m.location_id = vs.location_id), 0)),
 		    (SELECT count(*) FROM stock_movements)`).Scan(&drifted, &total)
 	if err != nil {
-		d.Status, d.Detail = StatusWarn, "cannot read the stock ledger: "+err.Error()
+		d.Status, d.Detail, d.Cause = StatusWarn, "cannot read the stock ledger", err.Error()
 		d.Hint = "check that the migrations are applied"
 		return d
 	}
@@ -703,7 +717,7 @@ func (a *App) checkDiscounts(ctx context.Context) Diagnostic {
 		    (SELECT count(*) FROM discounts WHERE kind = 'free_shipping' AND scope <> 'order')
 	`).Scan(&scoped, &untargeted, &mismatched, &dangling, &freeShipping)
 	if err != nil {
-		d.Status, d.Detail = StatusWarn, "cannot inspect discounts: "+err.Error()
+		d.Status, d.Detail, d.Cause = StatusWarn, "cannot inspect discounts", err.Error()
 		d.Hint = "check that the migrations are applied"
 		return d
 	}

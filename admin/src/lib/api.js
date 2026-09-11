@@ -297,3 +297,42 @@ export const roles = {
     save: (role, rights) => request("PUT", `/api/admin/roles/${role}`, { body: { rights } }),
     reset: (role) => api.delete(`/api/admin/roles/${role}`),
 };
+
+/**
+ * The transactional outbox, as an operator sees it.
+ *
+ * `retry` repairs one event: it un-parks a dead letter with a fresh attempt
+ * budget, or brings a pending one forward without touching its budget. The
+ * engine refuses it on an event that was already delivered — redelivering one
+ * is a replay, and this engine has no verb for that yet.
+ *
+ * `retryDead` is capped at 500 rows a call and answers { requeued, remaining },
+ * so a backlog larger than the cap can say so rather than reporting a bare 500.
+ */
+export const events = {
+    list: (params) => api.get("/api/admin/events" + query(params)),
+    get: (id) => api.get(`/api/admin/events/${id}`),
+    // `{}` rather than no body, matching revokeSessions above: nothing decodes
+    // it, and a POST with no body confuses more proxies than it ought.
+    retry: (id) => api.post(`/api/admin/events/${id}/retry`, {}),
+    retryDead: (name) => api.post("/api/admin/events/retry-dead" + query({ name }), {}),
+};
+
+/**
+ * ops is the store as a running system rather than as a shop.
+ *
+ * Every one of these is the same code the CLI and the engine's own five-minute
+ * ticker run — `gocommerce doctor` renders the same report, and each sweep is
+ * the service method the ticker calls. There is no panel-only maintenance path,
+ * which is why this is four calls and not a job queue.
+ *
+ * All four are behind `store.operate`, which owner alone carries by default.
+ */
+export const ops = {
+    diagnostics: () => api.get("/api/admin/diagnostics"),
+    // `{}` rather than no body, matching me.revokeSessions above: nothing
+    // decodes it, and a POST with no body confuses more proxies than it ought.
+    sweepCarts: () => api.post("/api/admin/maintenance/sweep-carts", {}),
+    sweepUnpaid: () => api.post("/api/admin/maintenance/sweep-unpaid", {}),
+    drainOutbox: () => api.post("/api/admin/maintenance/drain-outbox", {}),
+};

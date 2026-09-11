@@ -67,7 +67,7 @@ export const RIGHT_LABELS = {
     "roles.write": "Change what each role may do",
     "data.export": "Export the catalog and orders",
     "data.import": "Import the catalog and orders",
-    "store.operate": "Run health checks and maintenance",
+    "store.operate": "Run health checks, maintenance and the outbox",
 };
 
 /*
@@ -96,7 +96,7 @@ export const RIGHT_SCOPES = {
     "roles.write": "This screen — what each role may do",
     "data.export": "The catalog or every order, as a file",
     "data.import": "Changing prices and stock in bulk, from a file",
-    "store.operate": "The health report, the maintenance passes and their record",
+    "store.operate": "Health, maintenance, and the outbox — which carries buyers' data",
 };
 
 /*

@@ -11,6 +11,8 @@
     import { base } from "$app/paths";
     import { page } from "$app/state";
     import { can } from "$lib/api.js";
+    import { hasModule } from "$lib/modules.svelte.js";
+    import { health } from "$lib/health.svelte.js";
 
     /*
      * `right` gates the link, exactly as the main nav does. Two of them have
@@ -24,6 +26,10 @@
      * on the screen rather than on this link: it must gate each half on its own
      * right, because an account holding only data.export reaches it and must
      * not be offered an import it cannot perform.
+     *
+     * One of them also names a module. A screen served by a module this binary
+     * was not built with is not a permission problem and not a 403 — the route
+     * is simply not there — so the link is hidden the same way.
      */
     const groups = {
         System: [
@@ -33,6 +39,25 @@
             { href: "/settings/roles", label: "Roles", icon: "ri-shield-user-line",
               right: "roles.write" },
             { href: "/settings/account", label: "Your account", icon: "ri-user-settings-line" },
+        ],
+        // The store as a running system rather than as a shop, which is what
+        // store.operate names. An agent audit trail is an operator's
+        // diagnostic and not daily commerce, so it lives here rather than in
+        // the main nav beside Orders.
+        Platform: [
+            // Gated, unlike Store directly above it, and the difference is the
+            // reason the two are not in one group: Store reads the public
+            // endpoints every screen needs to format money, while this one
+            // reads the database and can act on it.
+            { href: "/settings/diagnostics", label: "Diagnostics", icon: "ri-pulse-line",
+              right: "store.operate", health: true },
+            // What the store told the outside world, and what it could not.
+            // The report above says a consumer is failing; this is where the
+            // rows it is failing on are read and made to go again.
+            { href: "/settings/events", label: "Events", icon: "ri-broadcast-line",
+              right: "store.operate" },
+            { href: "/settings/agent", label: "Agent activity", icon: "ri-robot-2-line",
+              right: "store.operate", module: "mcp" },
         ],
         // The attribute dictionary sits under Settings rather than beside
         // Categories in the main nav: it is vocabulary configured once and then
@@ -45,7 +70,12 @@
 
     /** A group with nothing left in it should not render its heading either. */
     const allowed = (l) =>
-        (!l.right || can(l.right)) && (!l.anyOf || l.anyOf.some((r) => can(r)));
+        // The module clause first: hasModule() reads a `$state` object, and
+        // reading it on every pass is what makes this list re-render when the
+        // answer arrives.
+        (!l.module || hasModule(l.module)) &&
+        (!l.right || can(l.right)) &&
+        (!l.anyOf || l.anyOf.some((r) => can(r)));
 
     const visible = $derived(
         Object.entries(groups)
@@ -73,6 +103,13 @@
                     >
                         <i class={link.icon} aria-hidden="true"></i>
                         <span class="txt">{link.label}</span>
+                        <!-- The flag is named for what drives the dot, not for
+                             what the dot looks like. health.visible and not
+                             health.failing, so it cannot appear for somebody
+                             who does not hold the right. -->
+                        {#if link.health && health.visible}
+                            <span class="app-nav-dot" title="A health check is failing"></span>
+                        {/if}
                     </a>
                 {/each}
             </details>

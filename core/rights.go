@@ -137,9 +137,17 @@ const (
 	// rights is precisely how settings.write happened.
 	//
 	// It is not settings.write returning under another name either: it changes
-	// no configuration and touches no product, price, order or person. What it
-	// grants is the ability to ask the engine how it is, and to make it reclaim
-	// now what it would otherwise reclaim within five minutes.
+	// no configuration, no product and no price. What it grants is the ability
+	// to ask the engine how it is, and to make it reclaim now what it would
+	// otherwise reclaim within five minutes — the sweeps do cancel orders, but
+	// only the ones the ticker was going to cancel anyway, through the same
+	// service methods.
+	//
+	// What it deliberately does NOT carry is database-level error text. A check
+	// that fails because it could not run records its cause separately from its
+	// finding, and the admin route strips it (ops_http.go), so the reach of
+	// this right stops at the same line httpx.go draws for every other
+	// response.
 	RightStoreOperate Right = "store.operate"
 )
 
@@ -196,10 +204,27 @@ var Roles = []string{RoleOwner, RoleManager, RoleStaff}
 // them; the difference is that a store can now say otherwise, and the defaults
 // do not assume it wants to.
 //
-// store.operate is the one right neither set below carries. An owner holds it
-// because an owner holds everything, and a store that wants somebody else
-// operating it says so in the matrix — an upgrade that widens a role by itself
-// is a decision taken on the store's behalf while nobody was looking.
+// store.operate is the one right neither set below carries, and it stayed that
+// way when it stopped being theoretical: it now gates the health report and the
+// three maintenance passes, the store-wide audit feed, the outbox and its dead
+// letters, ext/mcp's dispatch endpoint, and — paired with customers.read —
+// account erasure in ext/identity.
+//
+// Manager was the obvious candidate and was declined on that list. Manager is
+// the role that runs the shop, and "release stock pinned by orders nobody will
+// pay for" is a shop-running problem — but the right those buttons live behind
+// also reads every colleague's actions by name, pages through outbox payloads
+// (which are the events as a consumer received them, so buyers' addresses,
+// phone numbers and every line they bought), hands an agent the whole
+// domain-tool surface, and completes the pair that deletes a customer's
+// account. A default is granted to every store that has never opened the
+// matrix, so granting this one would widen all of that on upgrade for stores
+// that asked for none of it.
+//
+// An owner holds it because an owner holds everything, and a store that wants a
+// manager on call says so in the matrix, which is exactly what configurable
+// sets are for. That leaves the promise above intact: growing the list has
+// still changed nobody's access.
 var roleRights = map[string][]Right{
 	RoleOwner: AllRights,
 	RoleManager: {

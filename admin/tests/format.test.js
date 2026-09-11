@@ -16,8 +16,10 @@ import {
     toMinor,
     fromMinor,
     minorDigits,
+    eventStateClass,
     orderStatusClass,
     orderStatusLabel,
+    summarizeEdit,
     paymentLabel,
     paymentStatusClass,
 } from "../src/lib/format.js";
@@ -152,4 +154,57 @@ test("a partly shipped order says so in words", () => {
     // the customer something, and confirmed and shipped already share info.
     assert.equal(orderStatusClass("partial"), "warning");
     assert.notEqual(orderStatusClass("partial"), orderStatusClass("shipped"));
+});
+
+test("an order edit is summarised in sentences, in the order's own currency", () => {
+    // It moved here from the orders screen because two callers need it now: the
+    // toast after a line edit, and the history card's subtitle. The currency is
+    // a parameter for the same reason — there is no order to read one off here,
+    // and a yen amount rendered with two decimals is the bug that made every
+    // money helper take one.
+    const lines = summarizeEdit(
+        {
+            lines_added: ["MUG-1"],
+            lines_removed: ["CUP-2"],
+            lines_changed: ["TEE-3 1 → 2"],
+            balance_minor: 500,
+        },
+        "USD",
+    );
+    assert.deepEqual(lines.slice(0, 3), ["Added MUG-1", "Removed CUP-2", "TEE-3 1 → 2"]);
+    assert.match(lines[3], /to collect$/);
+
+    // Negative is money going back, and it is said as an amount owed rather
+    // than as a minus sign in front of one.
+    const refund = summarizeEdit({ balance_minor: -500 }, "USD");
+    assert.equal(refund.length, 1);
+    assert.match(refund[0], /to refund$/);
+    assert.doesNotMatch(refund[0], /-/);
+
+    // A balance that did not move says nothing, and neither does no change at
+    // all — an order.edited from a contact correction carries no block.
+    assert.deepEqual(summarizeEdit({ balance_minor: 0 }, "USD"), []);
+    assert.deepEqual(summarizeEdit(null, "USD"), []);
+    assert.deepEqual(summarizeEdit(undefined, "USD"), []);
+});
+
+test("a pending event is neutral until it is genuinely stuck", () => {
+    // The bug this pins is a full page of amber on a healthy store: pending is
+    // the normal state of every event between the write and the delivery a
+    // second later, so colouring it warning would make the working case look
+    // like the broken one.
+    const now = new Date().toISOString();
+    assert.equal(eventStateClass({ state: "pending", created_at: now }), "");
+
+    const stuck = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    assert.equal(eventStateClass({ state: "pending", created_at: stuck }), "warning");
+
+    assert.equal(eventStateClass({ state: "dead" }), "danger");
+    assert.equal(eventStateClass({ state: "published" }), "success");
+
+    // Five values and no sixth: PocketBase's .label has exactly four colour
+    // variants plus the neutral default, and an unknown state must fall into
+    // the default rather than paint a class that does not exist.
+    assert.equal(eventStateClass({ state: "nonsense" }), "");
+    assert.equal(eventStateClass(null), "");
 });

@@ -33,12 +33,28 @@ team.write        inviting, removing, changing a role — so, granting anything
 roles.write       the matrix itself: what holding a role means
 data.export       the catalog or every order, as a file
 data.import       changing prices and stock in bulk, from a file
+store.operate     the store as a running system rather than as a shop
 ```
+
+`store.operate` is the twenty-first and the odd one out, so it is worth spelling
+out what it reaches: the health report (`GET /api/admin/diagnostics`) and the
+three maintenance passes that act on it (`POST /api/admin/maintenance/sweep-carts`,
+`/sweep-unpaid`, `/drain-outbox`), the store-wide audit feed, the outbox and its
+dead letters (`GET /api/admin/events`, and the retries that go with it),
+`ext/mcp`'s dispatch endpoint, the `last_error` on an order's timeline, and —
+paired with `customers.read` — deleting an account in `ext/identity`.
+
+One of those is a personal-data surface and is the reason the right is
+owner-only by default rather than merely tidy: an outbox payload is the event
+as a consumer received it, so a page of them is a page of buyers' email
+addresses, phone numbers, names and every line they bought. `customers.read`
+does not gate that surface. A store that wants a manager on call grants it in
+the matrix, deliberately, which is what configurable sets are for.
 
 | Role | Carries |
 |---|---|
-| `owner` | everything, including deciding who else can |
-| `manager` | the catalog, discounts, orders, refunds, stock, customers — not tax or location writes, not the team, not import/export |
+| `owner` | everything, including deciding who else can — and, alone by default, `store.operate` |
+| `manager` | the catalog, discounts, orders, refunds, stock, customers — not tax or location writes, not the team, not import/export, not `store.operate` |
 | `staff` | sees the shop and moves orders along; no money out, no prices, no access |
 
 The rights are coarse on purpose — one per area a person could plausibly be
@@ -56,6 +72,17 @@ Growing the list changed nobody's access — the defaults above are the eight-ri
 sets spelled out against the finer list. Staff can still see tax rates and
 discount codes because staff always could; what is new is that a store can say
 otherwise.
+
+That still holds with `store.operate`, and it was a decision rather than an
+oversight. Manager is the role that runs the shop, so the operator who would be
+told to press "release the stock nobody is paying for" is a manager — but the
+right those buttons live behind also reads every colleague's actions by name,
+hands an agent the whole domain-tool surface, and completes the pair that erases
+a customer's account. A default reaches every store that has never opened the
+matrix, so granting it to manager would widen those four surfaces on upgrade for
+stores that asked for none of them. Owner carries it because owner carries
+everything; a store that wants a manager on call grants it in the matrix, which
+is what configurable sets are for.
 
 The table above is the **default**. `roleRights` being a map rather than a set
 of conditionals is what let M19 make the sets configurable by changing one
@@ -126,6 +153,28 @@ grant.
 **A static admin token carries every right.** It is the bootstrap credential and
 the one scripts use; narrowing what a script may do is a decision about who holds
 the token, not about the route.
+
+## Adding a right
+
+Three edits and no migration — `role_rights` has no foreign key to the rights,
+because the rights live in Go. Declare the constant in `rights.go`, **append** it
+to `AllRights` (that slice is the order the roles matrix draws its rows in, so
+inserting one silently moves every row an operator has learned the position of),
+and decide which default sets carry it.
+
+Two tests keep it honest in opposite directions, and they are the reason the
+right and the route have to land in one commit:
+
+- `TestEveryRightGatesSomething` fails on a right in `AllRights` that gates no
+  route — nothing can be denied by it, so it is a checkbox that does nothing.
+- `TestRouteRightsExist` fails on a route asking for a right the engine does not
+  have, which would otherwise deny everybody quietly.
+
+The panel glosses a right in one place, `admin/src/lib/rights.js`
+(`RIGHT_ORDER`, `RIGHT_LABELS`, `RIGHT_SCOPES`), and a Go test parses that file
+and fails if it drifts from `AllRights`. A right the panel has not caught up with
+still renders — the matrix falls through to an "Other" group and both lookups
+fall back to the identifier — but as a dotted name nobody can act on.
 
 ## How somebody joins
 

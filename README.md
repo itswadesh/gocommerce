@@ -95,6 +95,10 @@ graph):
 | `identity` | Shopper accounts: sessions, saved addresses, order history, password reset |
 | `mcp` | The store as tools for an AI agent, with an audit trail |
 
+A module that ships an admin surface also ships its panel screen: install
+`cms`, `invoices`, `identity` or `mcp` and the screen appears in the
+navigation; leave it out and it does not.
+
 Cash on delivery and manual fulfillment are built in, because they need no
 third party — a store can sell and ship before it has integrated anything.
 
@@ -175,8 +179,9 @@ curl -X POST localhost:8080/api/checkout/cod \
 
 One executable serves both the API and a full admin panel. Run the binary,
 open `http://localhost:8080/`, and you have a dashboard, product and order
-management, inventory, CSV import/export and settings — with no separate
-process, no Node.js on the server and no configuration beyond a database URL.
+management, inventory, CSV import/export, settings and an events screen for
+what the outbox could not deliver — with no separate process, no Node.js on
+the server and no configuration beyond a database URL.
 
 The panel owns the root, because the API is namespaced under `/api` (plus
 `/health`, `/doc`, and a module's `/x/`) and nothing else wants that URL. The
@@ -281,14 +286,20 @@ gocommerce doctor           # human-readable, exits non-zero if anything failed
 gocommerce -json doctor     # the same report, for scripts and agents
 ```
 
-Nine checks: the database and its pool, pending migrations, whether anyone can
-still administer the store, outbox backlog and dead letters, stock held by
-orders nobody will pay for, cart sweeping, catalog entries that cannot be
-bought, provider registration, and whether the served routes match `/doc`.
-Every failure names what to do about it.
+The database and its pool, pending migrations, whether anyone can still
+administer the store, outbox backlog and dead letters, stock held by orders
+nobody will pay for, cart sweeping, catalog entries that cannot be bought,
+provider registration, whether the served routes match `/doc`, admin routes
+that name no right, orders whose status disagrees with their parcels, the
+refund ledger, over-returned lines, the stock ledger and discounts that can
+never apply. Every failure names what to do about it.
 
 It is a core service (`App.Diagnose`), so the CLI, the MCP `store_health` tool
-and anything else render the same report.
+and anything else render the same report — including the panel, at
+**Settings → Diagnostics**, over `GET /api/admin/diagnostics`. That screen adds
+the other half: Run-now buttons for the two sweeps and the outbox drain, which
+call the same passes the engine's own five-minute ticker calls. All four routes
+are behind the `store.operate` right, which owner alone carries by default.
 
 ## AI-native by design
 

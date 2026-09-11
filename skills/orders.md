@@ -69,11 +69,17 @@ they agree.
 
 ## Invariants
 
-**A transition that changes nothing announces nothing.** The callback returns an
-empty event name to stay quiet. Confirming an already-confirmed order, marking a
-paid order paid, cancelling a cancelled order — all no-ops, all silent, because
-gateways replay webhooks and an event per replay would be a lie about how many
-times the world changed.
+**A transition announces a state change.** The callback returns an empty event
+name to stay quiet, and it does so for two kinds of write. A no-op: confirming an
+already-confirmed order, marking a paid order paid, cancelling a cancelled one —
+because gateways replay webhooks and an event per replay would be a lie about how
+many times the world changed. And the one write that changes a row without
+changing what was agreed: an operator's note, which lives in `orders.metadata`,
+reaches nobody downstream, and would otherwise mail the customer "your order has
+been updated" once per line somebody wrote to themselves. The reason is in D48.
+
+Quiet in the outbox is not quiet in the trail. A note still writes an
+`order.note` audit row, because nothing else records that it happened.
 
 There is deliberately no `order.confirmed`. Confirmation always coincides with
 `order.created` (cash on delivery) or `order.paid` (everything else), so a
@@ -193,10 +199,32 @@ GET /api/admin/orders?status=confirmed&payment_status=paid&sort=total&order=desc
 GET /api/admin/orders/42
 ```
 
+```http
+GET /api/admin/orders?q=GC-000042            # the operator's search box
+```
+
 `OrderQuery` filters on `Status`, `PaymentStatus`, `Email` (case-insensitive),
-`From`/`To` over `created_at`, plus `Sort` and `Limit`/`Offset`; `List` returns
-the page and the total. `access_token` is `omitempty` and never populated by a
-listing.
+`Search`, `From`/`To` over `created_at`, plus `Sort` and `Limit`/`Offset`; `List`
+returns the page and the total. `access_token` is `omitempty` and never populated
+by a listing.
+
+`Search` is the search box, `?q=` on the wire, and it is three predicates ORed:
+the number matched from the left, the email and the name matched anywhere
+inside. An order number comes off a receipt from the left, while an address or a
+surname is remembered from the middle. `Email` is untouched beside it and stays
+exact equality — the Customers screen links with a whole address and means that
+one person, and `_` is a LIKE single-character wildcard that is common in real
+addresses. The two AND, never OR.
+
+`Transfer.ExportOrders` honours `Search` from the same clause builder, so an
+export taken off a filtered screen is the rows on that screen. Two things do
+**not** honour it yet, and both build the struct by named fields so they compile
+and quietly ignore it: the MCP `list_orders` tool, and the export HTTP handler
+(`GET /api/admin/export/admin-orders`), which reads neither `q` nor `email`.
+
+A bare `412` finds nothing — numbers are `GC-000412`, and only a left-anchored
+needle matches. That is deliberate: a contains match on the number would make
+`1` find half the table.
 
 `Sort` is an allow-listed key and a direction, parsed by `ParseSort(r,
 orderSorts)` the way `Page(r)` parses a window — see
@@ -211,6 +239,91 @@ currently the top.
 The CSV export ignores the sort. `ExportOrders` builds its own statement and
 never calls `List`, deliberately: a file people diff should not reorder because
 a screen was sorted.
+
+## How to read an order's history
+
+```go
+entries, total, err := app.Order().Timeline(ctx, 42, 50, 0)
+```
+
+```http
+GET /api/admin/orders/42/timeline            # orders.read
+```
+
+One list from two tables. `outbox_events` says what the order announced and
+whether anybody heard it; `admin_audit` says who did it and which fields moved.
+A transition an operator caused writes into both in the same transaction, so the
+engine joins them — on `changes.event` plus the identical `created_at` both rows
+take from `now()` — and renders that moment once. It is the only correlation
+there is: neither table carries the other's id.
+
+An entry carries `at`, `kind` (`action` where somebody was recorded doing it,
+`event` where all that survives is the announcement), the event `name` and the
+audit `action` where each exists, the actor, `before`/`after`, and the projected
+payload — `status`, `payment_status`, `tracking`, `reason` and `change`.
+
+`published_at` answers "did the customer's confirmation actually go out".
+`attempts` and `dead` say a consumer is failing and `last_error` says why —
+that one field is returned only to a caller holding `store.operate`, because it
+is a handler's raw words and can carry an upstream URL or a fragment of a key,
+and `orders.read` is a right a warehouse account holds.
+
+Two absences are honest rather than missing. An act that announced nothing — a
+note, a shipment corrected, a refund settled by hand — has no delivery state at
+all, so the card shows none. And an entry with no actor is one the trail did not
+record: everything that happened before migration 0020 ran, and the engine's own
+sweeps.
+
+## How to correct an order
+
+```go
+order, err := app.Order().Update(ctx, 42, gocommerce.OrderPatch{
+    Email:   &email,
+    Address: &addr,
+})
+```
+
+```http
+PATCH /api/admin/orders/42                   # orders.write
+```
+
+`OrderPatch` reaches the fields somebody typed: `Email`, `Phone`, `Name`,
+`Address`, `PaymentProvider`, `PaymentReference` — pointers throughout, because
+`""` is a real value and clearing a phone number nobody can reach is a
+correction. It deliberately cannot reach status, payment status, totals or
+lines: each of those is a state change with consequences, and each already has an
+operation that performs it properly. An empty patch is a 400, a cancelled order
+is a 409, and the provider cannot be changed once any money has been refunded
+through it.
+
+`Metadata` is the seventh field and behaves differently. It replaces the whole
+object, like every other patch that carries one, so the read-modify-write is the
+caller's job:
+
+```http
+PATCH /api/admin/orders/42
+{"metadata": {"notes": "Customer rang, leave it with the neighbour"}}
+```
+
+`notes` is the one key core reserves on an order — the shop's own note.
+
+- It must be a string. The panel edits it in a textarea and trims it; jsonb
+  would take an object quite happily and the operator would meet it as a crash.
+- It is refused at checkout, on both the unauthenticated `POST
+  /api/checkout/{code}` and the operator's `POST /api/admin/orders`. Without
+  that, a storefront could write the shop's own internal note on an order.
+- It is not shown to the shopper. `(*Order).Redact()` removes it, with the
+  access token, the returns, and every refund that did not succeed.
+- A patch carrying nothing but metadata is accepted on a cancelled order —
+  "refunded manually by bank transfer, ref 88213" is written precisely on the
+  order that went wrong.
+- It announces nothing when it leaves every other key as it found it. A save
+  that also rewrote or dropped a module's key is an ordinary edit again and
+  emits `order.edited` like one.
+
+**A module serving an order to the person who placed it calls `Redact()`.** Not
+the checkout response, which is the one reply that must carry the access token —
+that token is the shopper's only handle on their own order (D22).
 
 ## How to move an order forward
 

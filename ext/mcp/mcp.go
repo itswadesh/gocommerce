@@ -61,6 +61,15 @@ type Tool struct {
 	// Mutates marks a tool that changes state, so ReadOnly can withhold it
 	// and the audit log can record it.
 	Mutates bool
+	// Rights the caller must hold to run this tool. Empty means the route's
+	// own gate is the whole check.
+	//
+	// The route cannot express this. requireRights is an all-of check run once
+	// before the body is parsed, and this one route dispatches every tool — so
+	// any single mount-time right either locks a read-only agent out or hands
+	// a catalog-only role mark_order_paid. The tool is the only place the
+	// question can be asked, so it is asked here.
+	Rights []gocommerce.Right
 	// Call runs the tool and returns whatever should be shown to the agent.
 	Call func(ctx context.Context, args json.RawMessage) (any, error)
 }
@@ -133,9 +142,11 @@ func (m *Module) Register(app *gocommerce.App) error {
 	//
 	// The mount-time right is not the whole check, and is not meant to be. One
 	// route dispatches every tool, from catalog.read to orders.fulfill, and
-	// requireRights runs once before the body is parsed — so the per-tool half
-	// belongs inside callTool, against the operator on the context. Until it
-	// lands, store.operate at the mount is the whole of the authorisation here.
+	// requireRights runs once before the body is parsed — so each tool names
+	// the rights it needs and callTool checks them against the operator on the
+	// context. Without that second half store.operate would be no weaker than
+	// orders.write ∪ orders.fulfill ∪ inventory.write ∪ orders.read for
+	// everybody who holds it, which is why D24 gives it to the owner alone.
 	app.HandleAdminFunc("POST /api/admin/x/mcp", m.handleHTTP, gocommerce.RightStoreOperate)
 	app.HandleAdminFunc("GET /api/admin/x/mcp/audit", m.handleAudit, gocommerce.RightStoreOperate)
 	return nil
@@ -277,16 +288,38 @@ func (m *Module) describeTools() []map[string]any {
 	return out
 }
 
-// callTool runs a tool and records what happened.
+// callTool checks the caller's rights, runs the tool and records what
+// happened.
 //
 // A failure is reported as tool content with isError set, not as a JSON-RPC
 // error: the agent asked a reasonable question and got a real answer — "that
 // order is already shipped" is information it can act on, whereas a transport
-// error is not.
+// error is not. A refusal for want of a right is the exception, and goes back
+// as a JSON-RPC error: no arguments the agent could have sent would have
+// worked, so it is the transport saying no rather than an answer.
 func (m *Module) callTool(ctx context.Context, name string, args json.RawMessage) (any, error) {
 	tool, ok := m.tools[name]
 	if !ok {
 		return nil, &rpcError{codeMethodNotFound, "unknown tool " + name}
+	}
+
+	// A nil superuser is the static admin token or ServeStdio — the credential
+	// requireRights already exempts on every core route, because it is the
+	// bootstrap credential and has no role whose rights could be read.
+	if su := gocommerce.SuperuserFrom(ctx); su != nil {
+		for _, right := range tool.Rights {
+			if su.Has(right) {
+				continue
+			}
+			refused := fmt.Errorf("your role (%s) does not carry %s, which %s needs",
+				su.Role, right, name)
+			// Audited although nothing changed: an attempted privileged call
+			// is exactly what the trail is read for.
+			if tool.Mutates {
+				m.audit(ctx, name, args, refused)
+			}
+			return nil, &rpcError{codeInvalidRequest, refused.Error()}
+		}
 	}
 
 	result, err := tool.Call(ctx, args)

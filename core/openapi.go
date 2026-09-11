@@ -54,6 +54,17 @@ func (a *App) buildSpec() error {
 		return fmt.Errorf("encode merged openapi: %w", err)
 	}
 	a.spec = out
+
+	// Derived here rather than per call: the merged document does not change
+	// after this point, so SpecPaths has a fact to read instead of a document
+	// to re-parse.
+	documented, _ := spec["paths"].(map[string]any)
+	paths := make([]string, 0, len(documented))
+	for p := range documented {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	a.specPaths = paths
 	return nil
 }
 
@@ -114,19 +125,19 @@ func (a *App) Spec() []byte {
 // SpecPaths returns the path templates the served contract documents. The
 // coverage test compares it against [App.Routes] so the spec cannot silently
 // drift from the code.
+//
+// It reads the list buildSpec already derived rather than parsing the document
+// again. The document is ~8000 lines and never changes after startup, and the
+// doctor's contract check calls this every time somebody asks for the health
+// report — which used to be a person at a terminal and is now every signed-in
+// operator's panel, every five minutes.
+//
+// The error is kept in the signature although there is no longer a path that
+// produces one: buildSpec already failed startup if the document could not be
+// parsed, and dropping the return value would be a breaking change to the
+// exported API for no gain at the only two call sites.
 func (a *App) SpecPaths() ([]string, error) {
-	var doc struct {
-		Paths map[string]json.RawMessage `json:"paths"`
-	}
-	if err := json.Unmarshal(a.spec, &doc); err != nil {
-		return nil, err
-	}
-	paths := make([]string, 0, len(doc.Paths))
-	for p := range doc.Paths {
-		paths = append(paths, p)
-	}
-	sort.Strings(paths)
-	return paths, nil
+	return append([]string(nil), a.specPaths...), nil
 }
 
 func (a *App) handleOpenAPI(w http.ResponseWriter, r *http.Request) {

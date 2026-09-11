@@ -57,14 +57,16 @@ prefer schema changes as a separate deployment step. Either way it is safe to
 run several instances at once: migrations take a PostgreSQL advisory lock, so
 the first instance applies them and the others wait rather than racing.
 
-**One migration is worth planning for on a large store.** M29 creates five
+**Two migrations are worth planning for on a large store.** M29 creates five
 indexes on `products`, `orders`, `media` and `variants` so the admin listings
-can be ordered by title, price, stock, size and total. Every migration runs
-inside a transaction, so `CREATE INDEX CONCURRENTLY` is not available to it and
-a plain `CREATE INDEX` holds a SHARE lock while it builds — on a large `orders`
-table that is blocked checkouts for the length of the boot.
+can be ordered by title, price, stock, size and total, and M30 creates two on
+`outbox_events` for the Events screen. Every migration runs inside a
+transaction, so `CREATE INDEX CONCURRENTLY` is not available to it and a plain
+`CREATE INDEX` holds a SHARE lock while it builds — on a large `orders` table
+that is blocked checkouts for the length of the boot, and `outbox_events` is
+written by every checkout too.
 
-Every statement in it is `IF NOT EXISTS`, which is what lets a store that big
+Every statement in both is `IF NOT EXISTS`, which is what lets a store that big
 build them out of band first:
 
 ```sql
@@ -73,6 +75,10 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS products_updated_sort_idx ON products (u
 CREATE INDEX CONCURRENTLY IF NOT EXISTS orders_total_sort_idx     ON orders   (total_minor, id);
 CREATE INDEX CONCURRENTLY IF NOT EXISTS media_size_sort_idx       ON media    (size_bytes, id);
 CREATE INDEX CONCURRENTLY IF NOT EXISTS variants_product_price_idx ON variants (product_id, price_minor);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS outbox_dead_idx ON outbox_events (id)
+    WHERE dead AND published_at IS NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS outbox_name_idx ON outbox_events (event_name, id);
 ```
 
 Run those against the live database before deploying, then the migration finds
@@ -125,9 +131,18 @@ idempotent. There is no leader election to configure because there is no leader.
 |---|---|---|
 | `GET /health` | The process is up. Touches nothing. | Liveness |
 | `GET /health/ready` | The database answers. | Readiness |
+| `GET /api/admin/diagnostics` | Every check `gocommerce doctor` runs, as JSON. | An operator, or an agent |
 
 Point liveness at `/health`, not `/health/ready`. A database hiccup should take
 a process out of the load balancer, not restart it.
+
+The third is not a probe. It needs the `store.operate` right, where the first
+two are public and unauthenticated, and it answers **200 even when the report
+says the store is unwell** — the report is the answer rather than the error, and
+`ok: false` is where the verdict lives. It is also the panel's Settings →
+Diagnostics screen. When a check fails because it could not run, the underlying
+driver error is written to the store's log rather than into that response: it
+names a host, a port and a user. `gocommerce doctor` prints it.
 
 ## Backups
 
@@ -160,11 +175,19 @@ Pending should hover near zero. A rising number means a consumer is failing or
 a vendor is down. Anything `dead` is an event nobody could deliver after twelve
 attempts — read `last_error`, fix the cause, and requeue:
 
-```sql
-UPDATE outbox_events
-SET dead = false, attempts = 0, available_at = now()
-WHERE dead AND event_name = 'order.paid';
 ```
+POST /api/admin/events/retry-dead?name=order.paid
+```
+
+That route runs exactly the statement an operator used to type —
+`UPDATE outbox_events SET dead = false, attempts = 0, available_at = now()
+WHERE dead AND published_at IS NULL AND event_name = 'order.paid'` — and there
+are two reasons to prefer it: it is logged with the operator's name, and it
+cannot be typed without its `WHERE`. It answers `{"requeued": n, "remaining":
+m}`, capped at 500 rows a call, so a non-zero `remaining` means call it again.
+The panel draws the same thing at **Settings → Platform → Events**, where
+`last_error` and the payload are readable a row at a time and a single event
+can be retried on its own.
 
 `GET /health/ready` covers the database. Beyond that, watch what you would for
 any Go service: latency, error rate, connection-pool saturation.
@@ -201,6 +224,24 @@ The engine sweeps carts and unsettled orders — payment pending or recorded as
 failed — every five minutes on its own. Carts are no longer a table that only
 grows: an expired basket holding nothing is deleted, and one holding something
 is marked `abandoned` and then deleted once `CartRetention` has passed.
+
+Each pass is also reachable on demand, behind `store.operate`, from
+Settings → Diagnostics or with curl:
+
+```http
+POST /api/admin/maintenance/sweep-carts
+POST /api/admin/maintenance/sweep-unpaid
+POST /api/admin/maintenance/drain-outbox
+```
+
+They run the same service methods the ticker runs, so pressing one does nothing
+the store would not have done within five minutes. Every pass is bounded and
+says so: a `capped: true` in the response means it filled its batch and there is
+more, so press again. The outbox drain refuses with `409` while one is already
+running in that process. **It will not touch a dead-lettered row** — the claim
+filters `NOT dead`, so `POST /api/admin/events/retry-dead` above, or a per-event
+retry, remains the only remedy for those.
+
 *Converted* carts have never been swept and still are not, so they are a fourth
 candidate for the manual DELETEs below — decide deliberately rather than by
 habit, because a converted cart is order evidence. Three tables grow forever and

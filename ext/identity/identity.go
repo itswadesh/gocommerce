@@ -1003,7 +1003,9 @@ func (m *Module) ClaimOrder(ctx context.Context, customerID int64, number, acces
 		return nil, false, gocommerce.Internalf(err, "link order")
 	}
 	n, _ := res.RowsAffected()
-	o.AccessToken = ""
+	// GetForGuest has already redacted; said again here so all three of this
+	// module's customer-facing reads say the same thing.
+	o.Redact()
 	return o, n > 0, nil
 }
 
@@ -1052,7 +1054,6 @@ func (m *Module) Orders(ctx context.Context, customerID int64, limit, offset int
 		// A signed-in shopper reads their own order, not the store's copy of
 		// it: Redact is the same stripping the guest token route performs.
 		o.Redact()
-		o.AccessToken = ""
 		out = append(out, o)
 	}
 	return out, total, nil
@@ -1075,7 +1076,6 @@ func (m *Module) Order(ctx context.Context, customerID int64, number string) (*g
 		return nil, err
 	}
 	o.Redact()
-	o.AccessToken = ""
 	return o, nil
 }
 

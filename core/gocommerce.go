@@ -28,6 +28,7 @@ import (
 	"net/url"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -275,6 +276,15 @@ type App struct {
 	outbox   *outbox
 	notifier *notifierSet
 
+	// drainInFlight refuses a second on-demand delivery pass while one is
+	// running. Concurrent drains are safe — FOR UPDATE SKIP LOCKED keeps their
+	// claims disjoint — but every delivery is a handler doing network I/O, and
+	// N tabs pressing the button is N-way amplification against the vendor that
+	// is already slow, which is the state somebody presses it in. Per process,
+	// not per store: the dispatcher and other instances are unaffected, so the
+	// amplification this bounds is by instance count rather than by tab count.
+	drainInFlight atomic.Bool
+
 	translator      Translator
 	translatorOwner string
 
@@ -292,8 +302,14 @@ type App struct {
 	// silently not being served.
 	regErr error
 
-	// spec is the merged OpenAPI document, built once at startup.
-	spec []byte
+	// spec is the merged OpenAPI document, built once at startup, and
+	// specPaths the path templates in it. The list is kept beside the bytes
+	// because the document never changes after buildSpec, so re-deriving it
+	// per call was paying repeatedly for a fact that cannot move — and the
+	// doctor's contract check now runs on every panel poll, not once at a
+	// terminal.
+	spec      []byte
+	specPaths []string
 
 	srv *http.Server
 }

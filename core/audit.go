@@ -84,10 +84,16 @@ var AuditEntityTypes = []string{
 // "who changed the shipping address" the same row; and order.refund and
 // order.shipment_update are operator acts with no event behind them at all.
 const (
-	AuditOrderCreate     = "order.create"
-	AuditOrderCancel     = "order.cancel"
-	AuditOrderEditLines  = "order.edit_lines"
-	AuditOrderUpdate     = "order.update"
+	AuditOrderCreate    = "order.create"
+	AuditOrderCancel    = "order.cancel"
+	AuditOrderEditLines = "order.edit_lines"
+	AuditOrderUpdate    = "order.update"
+	// Writing the shop's own note on an order. Its own verb rather than
+	// order.update, for the same reason edit_lines is not update: a note is not
+	// a correction to what was recorded about the sale, and it is the one write
+	// on an order that reaches nobody outside the store — it publishes no event
+	// at all, so this row is the only record that it happened.
+	AuditOrderNote       = "order.note"
 	AuditOrderMarkPaid   = "order.mark_paid"
 	AuditOrderMarkUnpaid = "order.mark_unpaid"
 	AuditOrderMarkFailed = "order.mark_failed"
@@ -177,6 +183,7 @@ const (
 // vocabulary; a test walks it and fails on a constant nothing emits.
 var AllAuditActions = []string{
 	AuditOrderCreate, AuditOrderCancel, AuditOrderEditLines, AuditOrderUpdate,
+	AuditOrderNote,
 	AuditOrderMarkPaid, AuditOrderMarkUnpaid, AuditOrderMarkFailed,
 	AuditOrderRefund, AuditOrderRefundSettle,
 	AuditOrderDeliver, AuditOrderUndeliver,

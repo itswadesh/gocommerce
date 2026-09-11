@@ -80,12 +80,20 @@
       "description": "What each role may do in this store."
     },
     {
+      "name": "admin:ops",
+      "description": "The store as a running system rather than as a shop: the health report, and the maintenance passes that act on what it finds."
+    },
+    {
       "name": "admin:audit",
       "description": "Who did what: the store's record of every operator action."
     },
     {
       "name": "admin:settings",
       "description": "The store's own configuration, as the panel reads it."
+    },
+    {
+      "name": "admin:platform",
+      "description": "The store's plumbing: the event outbox, and what could not be delivered."
     }
   ],
   "security": [],
@@ -3393,6 +3401,14 @@
             }
           },
           {
+            "name": "q",
+            "in": "query",
+            "description": "The operator's search box. Matches an order number from the start, or an email or a name containing it, case-insensitively. `email` is the exact-match filter and still works beside it; the two are ANDed, never ORed.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "email",
             "in": "query",
             "schema": {
@@ -3525,7 +3541,8 @@
                     }
                   },
                   "metadata": {
-                    "type": "object"
+                    "type": "object",
+                    "description": "A `notes` key is refused with a 400: it is reserved for the shop's own note on the order, which is set through PATCH /api/admin/orders/{id}."
                   },
                   "discount_code": {
                     "type": "string",
@@ -3892,6 +3909,66 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/admin/orders/{id}/timeline": {
+      "get": {
+        "tags": [
+          "admin:orders"
+        ],
+        "summary": "An order's history",
+        "description": "Every state change writes its event and its audit record in the same transaction that caused it, so this is the order's history rather than a log kept beside it: what happened, in what order, who did it, and whether the notification it triggered actually went out. An act that announced something renders once, carrying both halves.\n\n`published_at` is set only once every subscribed handler accepted the event; `attempts` above one and `dead` say a consumer is failing, and `last_error` says why — that field is returned only to an operator carrying `store.operate`, and is absent otherwise. Entries with no actor are ones the trail did not record: everything that happened before it existed, and the engine's own sweeps before they were attributed.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The order's history, oldest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OrderTimelineEntry"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       }
@@ -4380,38 +4457,7 @@
                           "$ref": "#/components/schemas/Order"
                         },
                         "changed": {
-                          "type": "object",
-                          "properties": {
-                            "lines_added": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "lines_removed": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "lines_changed": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "total_before": {
-                              "$ref": "#/components/schemas/Money"
-                            },
-                            "total_after": {
-                              "$ref": "#/components/schemas/Money"
-                            },
-                            "balance_minor": {
-                              "type": "integer",
-                              "format": "int64",
-                              "description": "What the edit moved the total by: positive is owed by the customer, negative is owed to them."
-                            }
-                          }
+                          "$ref": "#/components/schemas/OrderChange"
                         }
                       }
                     }
@@ -7715,6 +7761,195 @@
         }
       }
     },
+    "/api/admin/diagnostics": {
+      "get": {
+        "tags": [
+          "admin:ops"
+        ],
+        "summary": "The store's health report",
+        "description": "The same checks `gocommerce doctor` runs and the MCP `store_health` tool returns — the database, the migration ledger, admin access, the outbox, stock reservations, carts, the catalog, the registered providers, this contract, admin route gating, fulfillment, refunds, returns, the stock ledger and discounts.\n\nIt answers 200 even when `ok` is false, because the report is the answer rather than the error: a non-2xx would send a client down its error path at the one moment the detail matters most. `/health/ready` keeps its 503 because an orchestrator needs a status code; a person needs the detail.\n\nA check that failed because it could not run records the underlying driver text separately from its finding, and this response never carries it — a pgx error names a host, a port and a user, and the rest of this API refuses to send those to a client. It is written to the store's log instead. `gocommerce doctor` and `doctor -json` still print it.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The report, whether or not the store is well.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DiagnosticReport"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/maintenance/sweep-carts": {
+      "post": {
+        "tags": [
+          "admin:ops"
+        ],
+        "summary": "Sweep the carts now",
+        "description": "Runs the three cart phases in one pass: an expired basket holding something is marked abandoned and announced as `cart.abandoned`, an expired basket holding nothing is deleted, and an abandoned one is deleted once `Config.CartRetention` has run out. The route runs the same service method the engine's own five-minute ticker runs — there is no second state machine and no panel-only maintenance path.\n\nEach phase is bounded, so a store carrying a backlog clears it over successive presses rather than in one statement; `capped` says a phase filled its batch and there is more to do.\n\nThe body is ignored — send `{}`.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What the pass moved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "abandoned": {
+                          "type": "integer",
+                          "description": "Expired baskets with lines in them, marked abandoned and announced."
+                        },
+                        "removed": {
+                          "type": "integer",
+                          "description": "Expired baskets holding nothing, deleted."
+                        },
+                        "purged": {
+                          "type": "integer",
+                          "description": "Abandoned baskets deleted because they are past Config.CartRetention."
+                        },
+                        "capped": {
+                          "type": "boolean",
+                          "description": "A phase filled its batch; press again for the rest."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/maintenance/sweep-unpaid": {
+      "post": {
+        "tags": [
+          "admin:ops"
+        ],
+        "summary": "Release stock held by unpaid orders",
+        "description": "Cancels pending orders whose payment never settled — pending or failed — past their reservation window, returning their stock to the shelf. Each cancellation is its own transaction and emits the ordinary `order.cancelled` event with the reason \"payment not completed in time\". The route runs the same service method the engine's own five-minute ticker runs — there is no second state machine and no panel-only maintenance path.\n\nOne pass, never a loop, and safe to press twice: cancelling an already-cancelled order does nothing. An order the service could not cancel is logged and skipped, which lowers `cancelled` without lowering what the pass found — which is why `capped` is derived from what was found.\n\nThe body is ignored — send `{}`.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What the pass moved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "cancelled": {
+                          "type": "integer",
+                          "description": "Expired unsettled orders this pass actually cancelled."
+                        },
+                        "capped": {
+                          "type": "boolean",
+                          "description": "The pass examined a full batch of 200 expired orders, so there may be more. Derived from what it found, not from what it cancelled: a backlog where some cancellations failed still says \"press again\" rather than \"queue clear\"."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/maintenance/drain-outbox": {
+      "post": {
+        "tags": [
+          "admin:ops"
+        ],
+        "summary": "Force a delivery pass on the outbox",
+        "description": "Delivers every event that is due, synchronously, instead of waiting for the dispatcher's poll. It is the same delivery path the background dispatcher runs, and the two can run at once: `FOR UPDATE SKIP LOCKED` keeps their claims disjoint.\n\n`delivered` counts rows claimed, not rows a handler accepted. A handler that errors leaves its row for the dispatcher's backoff, which is what at-least-once means. And a drain does not resurrect dead-lettered rows — those are excluded from the claim by design, and requeueing one is a separate act.\n\nThe pass has a 30-second budget, checked between batches and never inside one: a batch is claimed whole before any of it is dispatched, so cutting one short would burn a retry on every event it had claimed and not yet reached. `capped: true` therefore means a partial pass, not a failure. One pass at a time per process; a second request while one is running is refused rather than queued.\n\nThe body is ignored — send `{}`.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What the pass delivered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "delivered": {
+                          "type": "integer",
+                          "description": "Outbox rows claimed across every batch in this pass."
+                        },
+                        "capped": {
+                          "type": "boolean",
+                          "description": "The 30-second budget ran out with work still due. A partial pass, not a failure."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
     "/api/admin/settings": {
       "get": {
         "tags": [
@@ -8538,6 +8773,249 @@
           }
         }
       }
+    },
+    "/api/admin/events": {
+      "get": {
+        "tags": [
+          "admin:platform"
+        ],
+        "summary": "What the outbox has tried to deliver",
+        "description": "A page of `outbox_events`, newest first, behind `store.operate`. The three states partition the table: `published` is `published_at IS NOT NULL`, `dead` is `dead AND published_at IS NULL`, `pending` is the rest — so a row that raced into both flags is counted once, as published. Rows omit `payload`, because a page of order payloads is megabytes and the list is for finding the row rather than reading it; `last_error` is included, because it is what an operator scans the list for. An empty page is `\"data\": []` and never null.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "description": "One of the three derived states. Anything else is a 400.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "dead",
+                "published"
+              ]
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "description": "An exact event name, such as order.paid.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "aggregate_type",
+            "in": "query",
+            "description": "The kind of thing the event is about, such as order or cart.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "aggregate_id",
+            "in": "query",
+            "description": "One record's events. Requires aggregate_type: the index is on the pair, and the second column alone is a sequential scan of every event ever delivered.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the outbox, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OutboxEvent"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/events/{id}": {
+      "get": {
+        "tags": [
+          "admin:platform"
+        ],
+        "summary": "One event, with its payload",
+        "description": "The row the list found, plus the `payload` the handlers were given. The payload is the event verbatim, so for an order it carries the buyer's email, phone and name and every line they bought — which is why `store.operate` is owner-only by default.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/EventID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The event.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/OutboxEvent"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/events/{id}/retry": {
+      "post": {
+        "tags": [
+          "admin:platform"
+        ],
+        "summary": "Make one event deliverable again",
+        "description": "Two repairs behind one verb, chosen by the row's state under the lock. A **dead** row is un-parked — `dead = false, attempts = 0, available_at = now()` — with a fresh twelve-attempt budget; nothing else can recover it, because the dispatcher's claim filters `NOT dead`. A **pending** row is only brought forward: `available_at = now()`, attempts untouched, because backoff reaches fifteen minutes but the twelve-attempt bound is the whole dead-letter policy and an operator must not be able to hold a broken event in retry forever. A **published** row is refused 409: redelivering a delivered event is a replay, and this engine has no verb for that. Neither act clears `last_error`. No request body is read. The dispatcher is nudged after the commit, so delivery normally follows within milliseconds.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/EventID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The row after the repair.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/OutboxEvent"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/admin/events/retry-dead": {
+      "post": {
+        "tags": [
+          "admin:platform"
+        ],
+        "summary": "Un-park the dead letters",
+        "description": "Requeues up to 500 dead letters per call, optionally narrowed to one event name — the same `UPDATE … SET dead = false, attempts = 0` an operator used to run in psql, run by the engine and logged with their name. `remaining` is counted inside the same transaction, so the pair cannot disagree and the panel can say \"Retried 500 of 3,214\" rather than a bare 500; a non-zero `remaining` means call it again. The claim takes `FOR UPDATE SKIP LOCKED`, so two operators clearing a backlog take disjoint sets and neither can stall the dispatcher. No request body is read.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "description": "Only dead letters of this event name.",
+            "schema": {
+              "type": "string",
+              "example": "order.paid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "How many moved, and how many are still parked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RequeueResult"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -8712,6 +9190,16 @@
           "type": "string",
           "default": "UTC",
           "example": "Asia/Kolkata"
+        }
+      },
+      "EventID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "The event's uuid — the stable identity a handler dedupes on and a log line prints, not the table's row number.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
         }
       }
     },
@@ -10010,7 +10498,8 @@
             "description": "Where a redirect-flow gateway sends the shopper back to."
           },
           "metadata": {
-            "type": "object"
+            "type": "object",
+            "description": "A `notes` key is refused with a 400: it is reserved for the shop's own note on the order, which is set through PATCH /api/admin/orders/{id}."
           }
         }
       },
@@ -10147,7 +10636,8 @@
             }
           },
           "metadata": {
-            "type": "object"
+            "type": "object",
+            "description": "Where a module attaches its own data, under its own key. The reserved key `notes` is the shop's own note on the order and is absent from GET /api/orders/{number}."
           },
           "access_token": {
             "type": "string",
@@ -10836,6 +11326,157 @@
           "payment_reference": {
             "type": "string",
             "description": "The transaction or receipt number the money is reconciled against."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Replaced whole, not merged: send the keys you want the order to end up with. The reserved key `notes` is the operator's note on this order — it must be a string, it is absent from the shopper's own read of the order, and it cannot be set at checkout. A patch that carries only `metadata` and changes nothing but `notes` emits no event and is accepted on a cancelled order, because a note is not a state change; a metadata patch that also alters another key is an ordinary edit and announces itself."
+          }
+        }
+      },
+      "OrderChange": {
+        "type": "object",
+        "properties": {
+          "lines_added": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lines_removed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lines_changed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "total_before": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "total_after": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "balance_minor": {
+            "type": "integer",
+            "format": "int64",
+            "description": "What the edit moved the total by: positive is owed by the customer, negative is owed to them."
+          }
+        },
+        "description": "What an edit did to an order's lines, and the totals either side of it. Also carried by an `order.edited` event and by the `change` on that event's timeline entry."
+      },
+      "OrderTimelineEntry": {
+        "type": "object",
+        "description": "One thing that happened to an order, merged from the outbox and the audit trail. A transition caused by an operator writes into both in one transaction and renders here once, carrying the actor from the trail and the delivery state from the outbox.",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "action",
+              "event"
+            ],
+            "description": "`action` where somebody was recorded doing this, `event` where all that survives is the announcement — a transition from before the trail existed, or one whose record names no event."
+          },
+          "name": {
+            "type": "string",
+            "description": "The event this announced, absent where it announced nothing. Writing a note is the one order write that is deliberately quiet.",
+            "enum": [
+              "order.created",
+              "order.paid",
+              "order.shipped",
+              "order.delivered",
+              "order.cancelled",
+              "order.refunded",
+              "order.edited",
+              "order.returned",
+              "order.unpaid",
+              "order.undelivered",
+              "order.unshipped",
+              "order.unreturned"
+            ]
+          },
+          "action": {
+            "type": "string",
+            "description": "The operator's verb, absent on an entry with no audit row behind it. Deliberately not the event name: `order.edit_lines` and `order.update` both announce `order.edited`."
+          },
+          "summary": {
+            "type": "string",
+            "description": "What the act was, in a sentence."
+          },
+          "actor_kind": {
+            "type": "string",
+            "enum": [
+              "operator",
+              "token",
+              "system"
+            ],
+            "description": "A person, a script holding a static admin token, or the engine's own background work."
+          },
+          "actor_email": {
+            "type": "string",
+            "description": "The operator's email as it was then. Absent for a token and for the system — a credential is not a person."
+          },
+          "actor_role": {
+            "type": "string",
+            "description": "The role they held at the time, which may not be the one they hold now."
+          },
+          "actor_label": {
+            "type": "string",
+            "description": "A name for a caller that is not a person: a sweeper, a cron job, a module."
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event's own id, stable across redeliveries."
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When every subscribed handler accepted it. Absent means it is still queued — or, with `dead`, that nobody could be told at all."
+          },
+          "attempts": {
+            "type": "integer",
+            "description": "Delivery attempts so far. Absent means none."
+          },
+          "dead": {
+            "type": "boolean",
+            "description": "The engine has given up delivering it."
+          },
+          "last_error": {
+            "type": "string",
+            "description": "What the failing handler said. Returned only to a caller holding `store.operate`, and absent otherwise: it is a raw error string and can carry an upstream URL or a fragment of a key."
+          },
+          "status": {
+            "type": "string",
+            "description": "The order's status as the event left it."
+          },
+          "payment_status": {
+            "type": "string"
+          },
+          "tracking": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "change": {
+            "$ref": "#/components/schemas/OrderChange"
+          },
+          "before": {
+            "type": "object",
+            "description": "The fields this act moved, as they were. Money keys are the same `*_minor` integers the API uses. Absent means the previous value was not recorded, never that it was empty."
+          },
+          "after": {
+            "type": "object",
+            "description": "The same fields, as they became."
           }
         }
       },
@@ -12333,6 +12974,138 @@
               }
             ],
             "description": "Tax on those lines."
+          }
+        }
+      },
+      "OutboxEvent": {
+        "type": "object",
+        "description": "One row of the transactional outbox: the delivery facts around an event, not the event as a handler received it — hence `payload` rather than `data`.",
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The table's row number. Ordering only — the list sorts on it because it is the dispatcher's own ordering key. An event's identity is `id`."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event uuid, which is what every route here takes and every log line prints."
+          },
+          "name": {
+            "type": "string",
+            "example": "order.paid"
+          },
+          "v": {
+            "type": "integer",
+            "description": "The payload's schema version."
+          },
+          "aggregate_type": {
+            "type": "string",
+            "example": "order"
+          },
+          "aggregate_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "dead",
+              "published"
+            ],
+            "description": "Derived. `published` wins over `dead`: a row can hold both flags when a slow batch outlives its visibility window, and the delivery is the fact that matters."
+          },
+          "attempts": {
+            "type": "integer",
+            "description": "Incremented on claim. At 12 the row is parked dead. A retry resets it only on a dead row."
+          },
+          "last_error": {
+            "type": "string",
+            "description": "Why the last attempt failed. A retry does not clear it — the diagnosis outlives the repair."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "available_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the dispatcher may next take it. In the future means either backed off or claimed by a worker; nothing in the row tells those apart."
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "payload": {
+            "type": "object",
+            "description": "Omitted from list responses; returned by the detail route.",
+            "additionalProperties": true
+          }
+        }
+      },
+      "RequeueResult": {
+        "type": "object",
+        "properties": {
+          "requeued": {
+            "type": "integer",
+            "description": "How many dead letters this call moved back to pending. Capped at 500."
+          },
+          "remaining": {
+            "type": "integer",
+            "description": "Dead letters still parked after this call, counted in the same transaction. Non-zero means click again."
+          }
+        }
+      },
+      "DiagnosticReport": {
+        "type": "object",
+        "description": "One run of every check, in the engine's own order. `ok` is false when any check failed, which is the same condition `gocommerce doctor` exits non-zero on — warnings do not flip it, because a busy healthy store routinely carries some.",
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "The engine version that produced the report."
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ok": {
+            "type": "boolean",
+            "description": "False when any check failed."
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Diagnostic"
+            }
+          }
+        }
+      },
+      "Diagnostic": {
+        "type": "object",
+        "description": "One check's verdict. The underlying database error behind a check that could not run is deliberately absent: the engine records it separately and the API withholds it, so it is in the store's log rather than in this response.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Stable, and part of the contract: clients key behaviour to these names.",
+            "example": "outbox"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "warn",
+              "fail"
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "description": "What the check found, in a sentence."
+          },
+          "hint": {
+            "type": "string",
+            "description": "What to do about it. Every failing check carries one; a passing check does not."
           }
         }
       }

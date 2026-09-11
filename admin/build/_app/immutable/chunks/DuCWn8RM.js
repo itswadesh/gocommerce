@@ -1,0 +1,1 @@
+import{k as o,A as c,z as d,al as i,am as m}from"./Czleqko6.js";function u(t,n,a){o(()=>{var r=c(()=>n(t,a==null?void 0:a())||{});if(a&&(r!=null&&r.update)){var e=!1,f={};d(()=>{var s=a();i(s),e&&m(f,s)&&(f=s,r.update(s))}),e=!0}if(r!=null&&r.destroy)return()=>r.destroy()})}function k(t){return document.body.appendChild(t),{destroy(){t.remove()}}}export{u as a,k as p};
