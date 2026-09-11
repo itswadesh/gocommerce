@@ -116,7 +116,7 @@ func (m *Module) builtinTools() []Tool {
 			Name:        "list_orders",
 			Description: "List orders, most recent first, optionally filtered.",
 			InputSchema: object(props{
-				"status":         enumStr("Order status.", "pending", "confirmed", "shipped", "delivered", "cancelled"),
+				"status":         enumStr("Order status.", "pending", "confirmed", "partial", "shipped", "delivered", "cancelled"),
 				"payment_status": enumStr("Payment status.", "pending", "paid", "failed", "refunded"),
 				"email":          str("Filter by customer email."),
 				"limit":          integer("How many to return (default 20, max 200)."),
@@ -240,24 +240,28 @@ func (m *Module) builtinTools() []Tool {
 		},
 		{
 			Name:        "create_fulfillment",
-			Description: "Ship a confirmed order, recording a tracking number.",
+			Description: "Ship a confirmed order, in whole or in part, recording a tracking number.",
 			InputSchema: object(props{
 				"order_id": integer("The order id."),
 				"provider": str("Fulfillment provider code; defaults to manual."),
 				"tracking": str("The tracking number, for manual fulfillment."),
+				"carrier":  str("Who is carrying it, as a carrier code. Worked out from the tracking number when left out."),
+				"lines":    shipLines("What goes in this parcel. Omit it to ship everything the order still owes."),
 			}, "order_id"),
 			Mutates: true,
 			Call: func(ctx context.Context, raw json.RawMessage) (any, error) {
 				var args struct {
-					OrderID  int64  `json:"order_id"`
-					Provider string `json:"provider"`
-					Tracking string `json:"tracking"`
+					OrderID  int64                 `json:"order_id"`
+					Provider string                `json:"provider"`
+					Tracking string                `json:"tracking"`
+					Carrier  string                `json:"carrier"`
+					Lines    []gocommerce.ShipLine `json:"lines"`
 				}
 				if err := decode(raw, &args); err != nil {
 					return nil, err
 				}
 				return m.app.Ship().Create(ctx, args.OrderID, args.Provider,
-					gocommerce.ShipRequest{Tracking: args.Tracking})
+					gocommerce.ShipRequest{Tracking: args.Tracking, Carrier: args.Carrier, Lines: args.Lines})
 			},
 		},
 		{
@@ -319,8 +323,12 @@ func summarizeOrders(orders []*gocommerce.Order) []map[string]any {
 		out = append(out, map[string]any{
 			"id": o.ID, "number": o.Number, "status": o.Status,
 			"payment_status": o.PaymentStatus, "payment_method": o.PaymentProvider,
-			"total_minor": o.Total.AmountMinor, "currency": o.Currency,
-			"email": o.Email, "items": len(o.Lines),
+			"total_minor": o.Total.AmountMinor,
+			// Without this an agent sees a full total with no sign that part of
+			// it went back: payment_status stays "paid" until all of it has (D36).
+			"refunded_minor": o.Refunded.AmountMinor,
+			"currency":       o.Currency,
+			"email":          o.Email, "items": len(o.Lines),
 			"created_at": o.CreatedAt,
 		})
 	}
@@ -349,6 +357,24 @@ func integer(description string) map[string]any {
 
 func enumStr(description string, values ...string) map[string]any {
 	return map[string]any{"type": "string", "description": description, "enum": values}
+}
+
+// shipLines is the one array-of-object argument in the tool set, and it is
+// spelled out here rather than given a general array helper nothing else would
+// use.
+func shipLines(description string) map[string]any {
+	return map[string]any{
+		"type":        "array",
+		"description": description,
+		"items": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"order_line_id": integer("A line the order already has, as returned in line_items[].id."),
+				"quantity":      integer("How many of that line go in this parcel."),
+			},
+			"required": []string{"order_line_id", "quantity"},
+		},
+	}
 }
 
 func decode(raw json.RawMessage, v any) error {

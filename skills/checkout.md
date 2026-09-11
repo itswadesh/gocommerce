@@ -48,7 +48,8 @@ it does, nothing is rolled back: the order stands at `status=pending`,
 the outbox, and the caller gets a 500. That is the correct outcome — the
 alternative is un-reserving stock a shopper is about to pay for. The order's
 `reservation_expires_at` (`Config.OrderTTL`, 24h by default) means an abandoned
-attempt eventually returns its stock via `Orders.SweepUnpaid`.
+attempt eventually returns its stock via `Orders.SweepUnpaid` — whether it was
+abandoned or recorded as failed.
 
 **An `Idempotency-Key` retry resumes; it never re-orders.** The key is stored
 in `idempotency_keys` under `scope = "checkout:" + code` with a `request_hash`
@@ -90,7 +91,16 @@ without a second round trip.
 **Money is `*_minor` integers plus a currency.** `subtotal_minor`,
 `shipping_minor`, `discount_minor`, `total_minor`, and the API returns
 `{"amount_minor": 2500, "currency": "USD"}`. The total is
-`subtotal + Config.FlatShippingMinor`; discount is always 0 at checkout.
+`subtotal + Config.FlatShippingMinor − discount`, and tax is charged on the
+discounted amount. The discount is whatever the cart's `discount_code` was worth
+when `applyTx` judged it under the checkout lock — nothing is trusted from a
+previous preview. An operator placing an order by hand supplies that code as
+`discount_code` on `POST /api/admin/orders`; it is validated by the checkout and
+not on the way in, so an expired, exhausted or ineligible code refuses the whole
+request with a 422 and leaves no order and no reservation behind. The two public
+verbs that put a code on a cart — `PUT` and `DELETE /api/carts/{token}/discount`
+— now answer 409 on a cart that has already been checked out, where they used to
+write a row nothing would read.
 
 ## How to check out over HTTP
 

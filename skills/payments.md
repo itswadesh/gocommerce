@@ -20,7 +20,17 @@ type WebhookProvider interface{ Webhook() http.Handler }              // optiona
 type Refunder interface {                                             // optional
     Refund(ctx context.Context, order *Order, amountMinor int64) error
 }
+type Named interface{ DisplayName() string }                          // optional
 ```
+
+Implement `Named` when the code is an abbreviation: `razorpay` already reads as
+Razorpay, `cod` does not, and the fallback is the code itself rather than a
+guess at what it stands for. The engine has no other source for the name — a
+store composes its own providers in `main()` (D5), so a label table in the panel
+could never name a method this build does not ship. `GET /api/checkout` answers
+with both `payment_methods` (the array of codes every storefront already reads)
+and `methods` (the same set as `{code, name}`); `GET /api/admin/settings`
+answers with `{code, name, module}` for the same providers.
 
 `Code()` is the URL segment: `POST /api/checkout/{code}` and
 `POST /api/checkout/{code}/webhook`. Both routes are **core-owned** — a payment
@@ -65,11 +75,23 @@ resurrect a reservation nobody is holding.
 [checkout](checkout.md) for what happens when it fails (the order stands unpaid;
 an `Idempotency-Key` retry resumes payment on it).
 
-**Refunds go out before the state changes.** `Payments.Refund` calls the
-provider outside any transaction, then transitions `payment_status` to
-`refunded`. A provider that cannot refund does not implement `Refunder`, and the
-engine says so plainly instead of pretending — which is why refunding is not a
-required method on every provider.
+**A refund is three steps, and the middle one holds nothing.** Rule 5 forbids a
+transaction across the gateway call, and the amount still has to be reserved
+against a second refund — so `Payments.Refund` commits a `pending` row in
+`order_refunds` (that committed row *is* the reservation), calls the provider
+with nothing held, then moves `refunded_minor`, `payment_status` and the
+`order.refunded` event together in one transition. A provider that declines
+leaves a `failed` row carrying what it said; a provider that never answers
+leaves the `pending` row, which the doctor warns about and
+`POST /api/admin/orders/{id}/refunds/{refund_id}/settle` closes.
+
+**A partial refund leaves the order `paid`.** `payment_status` becomes
+`refunded` only when the refunds add up to the total, so `refunded`/
+`refunded_minor` is the figure to read and the status is not (D36). A provider
+that cannot refund does not implement `Refunder`, and the engine says so plainly
+instead of pretending — which is why refunding is not a required method on every
+provider. `Refunder` itself is unchanged by M24, so an existing provider module
+needs no edit.
 
 **An `ext/` payment module adds zero third-party dependencies** (AGENTS.md rule
 2). Stripe is one form POST and one HMAC; an SDK would buy little and put its
@@ -214,7 +236,18 @@ func (m *Module) handle(w http.ResponseWriter, r *http.Request) {
 
 `MarkFailed` leaves the order `pending` on purpose, so the shopper can try
 again; if nobody does, `SweepUnpaid` eventually cancels it and returns the
-stock. It writes no event.
+stock — which it can only do because the sweep and the doctor both count a
+failed payment as unsettled (M23). It writes no event.
+
+An operator does the same thing from
+`POST /api/admin/orders/{id}/mark-payment-failed` (`orders.write`). The `reason`
+goes to the store's log and is never stored on the order or returned, so there
+is nothing to hunt for afterwards. It is a silent 200 no-op on an order that is
+cancelled (checked first, so a late webhook for an order the sweeper already
+cancelled is not a 409 retried forever) or already failed, and a 409 on one that
+is paid or refunded. `POST /api/admin/orders/{id}/mark-unpaid` clears a recorded
+failure, moving the payment back to `pending` and dropping the reference,
+without an event.
 
 **Add `Refunder` only if the gateway can refund.**
 
@@ -227,6 +260,22 @@ func (m *Module) Refund(ctx context.Context, o *gocommerce.Order, amountMinor in
     form.Set("intent", o.PaymentReference)
     form.Set("amount", strconv.FormatInt(amountMinor, 10))
     return m.post(ctx, "/v1/refunds", form, nil)
+}
+```
+
+If the gateway answers with an id for the refund, implement
+`ReferencedRefunder` as well and keep `Refund` as a two-line wrapper over it.
+That id is what somebody reconciles against a bank statement, and the engine
+records it on the refund row:
+
+```go
+func (m *Module) Refund(ctx context.Context, o *gocommerce.Order, amountMinor int64) error {
+    _, err := m.RefundWithReference(ctx, o, amountMinor)
+    return err
+}
+
+func (m *Module) RefundWithReference(ctx context.Context, o *gocommerce.Order, amountMinor int64) (string, error) {
+    // ... as above, returning the gateway's refund id
 }
 ```
 
@@ -252,12 +301,14 @@ POST /api/admin/orders/42/mark-paid
 {"reference":"cash-2026-08-27"}
 
 POST /api/admin/orders/42/refund
-{"amount_minor":2500}
+{"amount_minor":2500,"reason":"one item returned"}
 ```
 
-Both bodies are optional; an omitted `amount_minor` refunds the full total.
-These are the same `MarkPaid` and `Refund` a gateway module calls. `Refund`
-refuses an unpaid order with 409 and an over-refund with 400.
+Both bodies are optional; an omitted `amount_minor` refunds everything that has
+not been refunded yet, counting a refund still in flight. These are the same
+`MarkPaid` and `Refund` a gateway module calls. `Refund` refuses an unpaid order
+with 409, an over-refund with 400 whose message names what is still refundable,
+and a 409 when nothing is left to refund.
 
 ## Common mistakes
 

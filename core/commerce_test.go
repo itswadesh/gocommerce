@@ -874,18 +874,24 @@ func TestRefundRequiresACapableProvider(t *testing.T) {
 	addToCart(t, app, cart.Token, product.DefaultVariant().ID, 1)
 	result, _ := app.Order().Checkout(ctx, CodeCOD, checkoutInput(cart.Token), "")
 
-	if _, err := app.Pay().Refund(ctx, result.Order.ID, 0); err == nil {
+	if _, err := app.Pay().Refund(ctx, result.Order.ID, RefundRequest{}, nil); err == nil {
 		t.Error("refunding an unpaid order should be refused")
 	}
 	if _, err := app.Pay().MarkPaid(ctx, result.Order.ID, ""); err != nil {
 		t.Fatalf("mark paid: %v", err)
 	}
-	_, err := app.Pay().Refund(ctx, result.Order.ID, 0)
+	_, err := app.Pay().Refund(ctx, result.Order.ID, RefundRequest{}, nil)
 	if err == nil {
 		t.Fatal("cash on delivery cannot refund; that should be reported")
 	}
 	if !strings.Contains(err.Error(), "does not support refunds") {
 		t.Errorf("error = %v, want it to say the method cannot refund", err)
+	}
+	// And nothing was written on the way to saying so. The refusal happens in
+	// the pre-flight, before the row that would reserve the amount — which is
+	// what keeps a method that can never refund from leaving a ledger behind.
+	if n := countRefundRows(t, app, result.Order.ID); n != 0 {
+		t.Errorf("refund rows after a refusal = %d, want 0", n)
 	}
 }
 
@@ -1360,7 +1366,7 @@ func TestMarkUnpaidRefusesARefund(t *testing.T) {
 	if _, err := app.Pay().MarkPaid(ctx, id, "ref"); err != nil {
 		t.Fatalf("mark paid: %v", err)
 	}
-	if _, err := app.Pay().Refund(ctx, id, 0); err != nil {
+	if _, err := app.Pay().Refund(ctx, id, RefundRequest{}, nil); err != nil {
 		t.Fatalf("refund: %v", err)
 	}
 	if _, err := app.Pay().MarkUnpaid(ctx, id); err == nil {

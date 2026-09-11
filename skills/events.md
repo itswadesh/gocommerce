@@ -45,7 +45,7 @@ type Event struct {
 
 ## The names
 
-Five, all of them in `events.go`, all `AggregateOrder`:
+All of them live in `events.go`, all `AggregateOrder`. The transitions:
 
 | Constant | Name | Emitted by |
 |---|---|---|
@@ -53,12 +53,23 @@ Five, all of them in `events.go`, all `AggregateOrder`:
 | `EventOrderPaid` | `order.paid` | `Payments.MarkPaid` |
 | `EventOrderShipped` | `order.shipped` | `Fulfillments.Create` |
 | `EventOrderDelivered` | `order.delivered` | `Orders.MarkDelivered` |
-| `EventOrderCancelled` | `order.cancelled` | `Orders.Cancel`, including the unpaid sweeper |
+| `EventOrderRefunded` | `order.refunded` | `Payments.Refund`, once per refund — from the settling transaction, so the ledger row and the announcement commit together. Also from `Payments.SettleRefund` when an operator records that a stranded refund did go out |
+| `EventOrderReturned` | `order.returned` | `Orders.Return` — goods came back off a shipped, partly shipped or delivered order. It moves no money, so it is not a refund and does not pretend to be one |
+| `EventOrderUnreturned` | `order.unreturned` | `Orders.WithdrawReturn`, when a return recorded in error is taken back and its units come off the shelf again |
+| `EventOrderCancelled` | `order.cancelled` | `Orders.Cancel`, including the unpaid sweeper — whose population widened in M23 to orders whose payment was recorded as failed, so notifiers now deliver for declined-gateway orders that previously sat stranded and silent |
 
-Three transitions deliberately emit **nothing**: `Orders.Confirm` (the story is
-already told by `order.created` or `order.paid`), `Payments.MarkFailed` (the
-order stays `pending` and the shopper may still succeed), and `Payments.Refund`
-(there is no `order.refunded`; add one only when something consumes it). A
+Two transitions deliberately emit **nothing**: `Orders.Confirm` (the story is
+already told by `order.created` or `order.paid`) and `Payments.MarkFailed` (the
+order stays `pending` and the shopper may still succeed). A refund used to be
+the third and is not any more — M24 gave it `order.refunded`, which core's own
+notifier consumes. The two silent halves of a refund are the `pending` row that
+reserves the amount while the provider is being asked and a `failed` one the
+provider declined: nothing about the order changed in either case.
+`MarkFailed` is reachable from the panel now, and the absence of an event is
+exactly why the panel does not prompt for a reason: there is nowhere to put one.
+Taking a recorded failure back through `MarkUnpaid` is silent for the same
+reason — `order.unpaid` means a payment that *was* recorded has been reversed,
+and the failure was never announced. A
 no-op transition is silent too — marking a paid order paid announces nothing,
 because nothing changed.
 
@@ -76,12 +87,18 @@ without reading the database:
  "tracking":"","reason":""}
 ```
 
-Two fields are populated only where they mean something:
+Some fields are populated only where they mean something:
 
 - `reason` — on `order.cancelled`, the cancellation reason (the sweeper's is
-  `"payment not completed in time"`).
+  `"payment not completed in time"`); also on `order.refunded` and
+  `order.returned`, where it is what the operator typed.
 - `tracking` — on `order.shipped`, plus `extra` carrying `provider` and, when
   the carrier returned one, `label_url`.
+- `return` — on `order.returned` and `order.unreturned`: what came back,
+  whether each line went back on the shelf, and what the goods were worth
+  (`refundable_minor`, which is a valuation and not a refund — no money moved).
+  `status` and `payment_status` are deliberately unchanged by a return, so this
+  block is the only part of the payload that says one happened.
 
 Amounts are minor units and `language` is the language the shopper checked out
 in, so a notifier can reply in it. `lines` is the order's snapshot at the time

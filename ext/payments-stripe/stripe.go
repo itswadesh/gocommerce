@@ -164,8 +164,19 @@ func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts goc
 
 // Refund implements gocommerce.Refunder.
 func (m *Module) Refund(ctx context.Context, order *gocommerce.Order, amountMinor int64) error {
+	_, err := m.RefundWithReference(ctx, order, amountMinor)
+	return err
+}
+
+// RefundWithReference implements gocommerce.ReferencedRefunder: the same call,
+// returning the refund id Stripe gives it.
+//
+// That id was already being parsed here and thrown away, and it is what somebody
+// reconciles against a bank statement — the job the payment reference does for
+// the charge. The engine records it on the refund row.
+func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Order, amountMinor int64) (string, error) {
 	if order.PaymentReference == "" {
-		return errors.New("stripe: this order has no payment reference to refund")
+		return "", errors.New("stripe: this order has no payment reference to refund")
 	}
 	form := url.Values{}
 	form.Set("payment_intent", order.PaymentReference)
@@ -176,12 +187,14 @@ func (m *Module) Refund(ctx context.Context, order *gocommerce.Order, amountMino
 		Status string `json:"status"`
 	}
 	if err := m.post(ctx, "/v1/refunds", form, &refund); err != nil {
-		return err
+		return "", err
 	}
 	if refund.Status == "failed" {
-		return fmt.Errorf("stripe: refund %s failed", refund.ID)
+		// The id goes back with the error too: a refund Stripe refused still
+		// exists on their side, and it is what somebody would quote asking why.
+		return refund.ID, fmt.Errorf("stripe: refund %s failed", refund.ID)
 	}
-	return nil
+	return refund.ID, nil
 }
 
 // Webhook implements gocommerce.WebhookProvider.

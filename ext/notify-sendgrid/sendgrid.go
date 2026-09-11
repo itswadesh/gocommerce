@@ -131,6 +131,8 @@ var defaultSubjects = map[string]string{
 	gocommerce.EventOrderShipped:   "Order {{.order_number}} is on its way",
 	gocommerce.EventOrderDelivered: "Order {{.order_number}} was delivered",
 	gocommerce.EventOrderCancelled: "Order {{.order_number}} was cancelled",
+	gocommerce.EventOrderRefunded:  "Refund issued for order {{.order_number}}",
+	gocommerce.EventOrderReturned:  "We have your return from order {{.order_number}}",
 
 	// Sent by the identity module. The event name is spelled out rather than
 	// imported so a store without accounts does not link the module.
@@ -152,12 +154,16 @@ We've received your payment for order {{.order_number}}.
 
 {{.items_summary}}`,
 
+	// The parcel's own contents when the event carries them, and the whole
+	// order otherwise — which is what an event written before shipments named
+	// their contents, and redelivered since, still says.
 	gocommerce.EventOrderShipped: `Hello {{.customer_name}},
 
 Order {{.order_number}} has shipped.
 {{if .tracking}}Tracking number: {{.tracking}}{{end}}
 
-{{.items_summary}}`,
+{{if .shipment_items_summary}}{{.shipment_items_summary}}{{else}}{{.items_summary}}{{end}}
+{{if .shipment_is_partial}}The rest of your order will follow separately.{{end}}`,
 
 	gocommerce.EventOrderDelivered: `Hello {{.customer_name}},
 
@@ -167,6 +173,32 @@ Order {{.order_number}} has been delivered. We hope you like it.`,
 
 Order {{.order_number}} has been cancelled.
 {{if .reason}}Reason: {{.reason}}{{end}}`,
+
+	// Required rather than optional: Notify below skips an event with no
+	// template without erroring, so shipping order.refunded with no body here
+	// would leave the customer told nothing — which is the gap this event
+	// exists to close. The amounts are minor units, which is what the engine
+	// hands every notifier; a store that wants them formatted overrides the
+	// template, because how a currency is written is the reader's business.
+	gocommerce.EventOrderRefunded: `Hello {{.customer_name}},
+
+We have refunded {{.refund_amount_minor}} ({{.currency}}) on order {{.order_number}}.
+{{if .reason}}Reason: {{.reason}}{{end}}
+{{if ne .refund_remaining_minor "0"}}The rest of the order stands.{{end}}`,
+
+	// Required for the reason order.refunded's body is: a notifier with no
+	// template sends nothing, and a customer who posts a parcel back and hears
+	// silence rings the shop. There is deliberately no order.unreturned body —
+	// withdrawing a return is the store correcting its own record, and telling
+	// the customer their return has been un-received would be news about
+	// somebody else's paperwork. The money is a separate message, because it is
+	// a separate decision.
+	gocommerce.EventOrderReturned: `Hello {{.customer_name}},
+
+We have received your return of {{.return_units}} item(s) from order {{.order_number}}.
+{{if .reason}}Reason: {{.reason}}{{end}}
+
+We will be in touch about anything owed to you.`,
 
 	"identity.password_reset": `Hello {{.customer_name}},
 

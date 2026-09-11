@@ -2894,6 +2894,18 @@ tr.variant-child > td:first-child {
     padding-left: 0;
     padding-right: 0;
     gap: 10px;
+    /* So a shipment row can carry a second line under the first. list.css
+       gives .list-item a nowrap flex row, and without this the contents
+       squeeze in between the carrier chip and the buttons. */
+    flex-wrap: wrap;
+}
+
+/* What went in the parcel, under the tracking number rather than beside it.
+   The row above answers who has it; this answers what is in it, and a store
+   that ships an order in two parcels is asked the second question by the
+   customer on the phone. */
+.order-card .ship-row .ship-contents {
+    flex-basis: 100%;
 }
 .order-card .list-item:first-child {
     padding-top: 0;
@@ -3754,6 +3766,40 @@ tr.handle:focus-visible {
     margin: var(--spacing) auto;
     padding: var(--spacing);
     background: var(--surfaceColor);
+}
+
+/* ------------------------------------------------------ a partial refund */
+
+/* Amber and not red, because some of the money came back and the rest has not:
+   that is a thing to finish rather than a thing that went wrong. It matches the
+   warning colour paymentStatusClass already gives a refund chip, so the state
+   word in the card and the chip above it say the same thing in the same hue. */
+.order-paid.is-part-refunded {
+    color: var(--warningColor);
+}
+
+/* ------------------------------------------------------------ returns */
+
+/* Why it came back, under what came back — the same two-line shape a shipment
+   row uses for its contents, and for the same reason: the rail leaves this card
+   about 460px, and the labels, the value, the date and the withdraw button fill
+   it. Without this the reason pushes the button past the wrap point and it
+   lands on a line of its own, reading as a stray control rather than as part of
+   the row it belongs to. */
+.order-card .return-row .return-note {
+    flex-basis: 100%;
+    min-width: 0;
+}
+
+/* Four columns in a popup on a 390px phone. Three of them are short — a number,
+   a word and a price — and breaking any of those mid-word ("Resto ck", "$0.0
+   0") reads as a rendering fault rather than as a narrow screen. The item name
+   is prose and is the column that can take the squeeze, so it is the only one
+   left to wrap. */
+.return-table td:last-child,
+.return-table th:last-child,
+.return-table .field label {
+    white-space: nowrap;
 }
 
 /* --------- @media print — KEEP LAST ---------

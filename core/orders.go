@@ -15,6 +15,12 @@ import (
 const (
 	OrderPending   = "pending"
 	OrderConfirmed = "confirmed"
+	// OrderPartial means some of it has gone out and some has not. `shipped`
+	// still means all of it, which is what every client, filter and report
+	// written before parcels existed already assumes. It is derived from the
+	// fulfillment lines by settleOrderShipping and never assigned by a caller,
+	// so the status and the parcels cannot disagree.
+	OrderPartial   = "partial"
 	OrderShipped   = "shipped"
 	OrderDelivered = "delivered"
 	OrderCancelled = "cancelled"
@@ -26,6 +32,16 @@ const (
 	PaymentPaid     = "paid"
 	PaymentFailed   = "failed"
 	PaymentRefunded = "refunded"
+)
+
+// Refund statuses. `pending` exists because the provider call cannot happen
+// inside a transaction (AGENTS rule 5): the row is committed before the gateway
+// is asked, and while it sits there it reserves that amount against a second
+// refund spending the same money. Only `succeeded` is money that moved.
+const (
+	RefundPending   = "pending"
+	RefundSucceeded = "succeeded"
+	RefundFailed    = "failed"
 )
 
 // Order is an immutable record of a sale in progress. Its lines and its
@@ -48,6 +64,11 @@ type Order struct {
 	Tax          Money `json:"tax"`
 	TaxInclusive bool  `json:"tax_inclusive"`
 	Total        Money `json:"total"`
+	// Refunded is what has gone back to the customer, running total. It stays
+	// under Total for a partial refund and reaches it for a full one, at which
+	// point PaymentStatus becomes refunded — so `paid` no longer implies the
+	// store still holds all of it, and this is the field that says how much.
+	Refunded Money `json:"refunded"`
 
 	Email   string  `json:"email"`
 	Phone   string  `json:"phone,omitempty"`
@@ -60,7 +81,14 @@ type Order struct {
 	Discounts    []AppliedDiscount `json:"discounts,omitempty"`
 	Lines        []OrderLine       `json:"line_items"`
 	Fulfillments []Fulfillment     `json:"fulfillments"`
-	Metadata     Metadata          `json:"metadata"`
+	// Refunds is the ledger behind Refunded, oldest first. A guest's copy holds
+	// only the refunds that actually moved money — see Redact.
+	Refunds []OrderRefund `json:"refunds"`
+	// Returns is what came back off this order. It changes nothing about what
+	// the order was — the sale still happened and the parcel still went out —
+	// which is why there is no returned status and no flag on the order itself.
+	Returns  []OrderReturn `json:"returns"`
+	Metadata Metadata      `json:"metadata"`
 
 	// AccessToken is how a guest reads their own order back. It is returned
 	// once, at checkout, and never included in an admin listing.
@@ -87,10 +115,25 @@ type OrderLine struct {
 	// Tax is what this line was charged, snapshotted like its price. An invoice
 	// has to print the same figures next year as it does today, and a rate that
 	// has since changed must not be able to rewrite them.
-	Tax       LineTax `json:"tax"`
-	Quantity  int     `json:"quantity"`
-	UnitPrice Money   `json:"unit_price"`
-	Total     Money   `json:"total"`
+	Tax      LineTax `json:"tax"`
+	Quantity int     `json:"quantity"`
+	// ShippedQuantity is how many of this line have actually gone out, summed
+	// on the way out from the shipments in the same response and never stored:
+	// two parcels carrying the same line have to add up, and a column would be
+	// a second place for that sum to be wrong.
+	//
+	// Filled only by loadChildren. A transition reading its lines through
+	// loadOrderLinesTx sees zero here, which is why the shipping path asks
+	// shippedByLine under the row lock instead.
+	ShippedQuantity int `json:"shipped_quantity"`
+	// ReturnedQuantity is how many of this line have come back and not been
+	// withdrawn, summed on the way out from the returns in the same response
+	// and never stored — ShippedQuantity's reason, for the same sum. Filled
+	// only by loadChildren; a transition asks the returns table under the row
+	// lock instead.
+	ReturnedQuantity int   `json:"returned_quantity,omitempty"`
+	UnitPrice        Money `json:"unit_price"`
+	Total            Money `json:"total"`
 	// LocationID is the place these units were taken from. Recorded at
 	// checkout so that cancelling puts them back where they were, and nil for
 	// a line placed before M17 or one whose location has since been closed —
@@ -118,6 +161,22 @@ type Fulfillment struct {
 	Status      string    `json:"status"`
 	Metadata    Metadata  `json:"metadata"`
 	CreatedAt   time.Time `json:"created_at"`
+	// Lines is what went in this parcel. Empty on a shipment recorded before
+	// M22 that the backfill could not credit.
+	Lines []FulfillmentLine `json:"lines"`
+}
+
+// FulfillmentLine is how much of one order line went in one parcel.
+//
+// The sku, title and label are joined in on the way out for the same reason
+// CarrierName and ImageURL are: the row stores an id and a count, and an
+// operator on the phone needs to know which parcel holds the mug.
+type FulfillmentLine struct {
+	OrderLineID  int64  `json:"order_line_id"`
+	SKU          string `json:"sku"`
+	Title        string `json:"title"`
+	VariantLabel string `json:"variant_label,omitempty"`
+	Quantity     int    `json:"quantity"`
 }
 
 // decorate fills in the carrier's name and the link to follow the parcel.
@@ -130,12 +189,76 @@ func (f *Fulfillment) decorate() {
 	}
 }
 
+// OrderRefund is one movement of money back to the customer.
+//
+// Amount is a Money rather than a bare amount_minor because a refund is read in
+// a list where the order's currency is not to hand; it is filled from the
+// owning order on the way out and never stored (D14).
+type OrderRefund struct {
+	ID     int64  `json:"id"`
+	Amount Money  `json:"amount"`
+	Reason string `json:"reason,omitempty"`
+	Status string `json:"status"`
+	// Provider is the method the money went out through, snapshotted at the
+	// time: an order's payment_provider can still be corrected while nothing
+	// has been refunded, and this row must keep saying which gateway saw it.
+	Provider string `json:"provider"`
+	// ProviderReference is the gateway's own id for the refund — what somebody
+	// reconciles against a bank statement. Empty when the provider does not
+	// implement [ReferencedRefunder].
+	ProviderReference string `json:"provider_reference,omitempty"`
+	// Error is what the provider said when it refused. Kept because an operator
+	// looking at a refund that did not happen needs to know it was tried.
+	Error string `json:"error,omitempty"`
+	// By is the operator's email as it was then, empty when a script holding the
+	// static admin token did it — a credential is not a person.
+	By        string    `json:"by,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Redact drops what belongs to the operator, leaving a copy safe to hand the
+// person who placed the order.
+//
+// It is exported and it is one method on purpose: [Orders.GetForGuest] is not
+// the only customer-facing read — the identity module serves a signed-in
+// shopper their own order history straight off [Orders.Get] — so a redaction
+// living inside the guest path would be a rule only one of the two obeyed.
+// Anything later added to an order that an operator writes for themselves
+// belongs in here, rather than in a second stripping beside it.
+//
+// Today that is the refunds. How much came back and the gateway's reference are
+// the customer's business — they are what reconciles their own statement. Who
+// inside the store authorised it, the note they typed to justify it, and an
+// attempt that failed are not, and AGENTS rule 8 keeps operator identities out
+// of the commerce path.
+func (o *Order) Redact() {
+	// A return is the store's record of goods it took back and what it judged
+	// them to be worth: which shelf they went on, and whether it decided a line
+	// was unsellable. The shopper's view of their order is what they bought,
+	// and they are told a return was received by the order.returned
+	// notification, which is the channel for it.
+	o.Returns = []OrderReturn{}
+
+	kept := make([]OrderRefund, 0, len(o.Refunds))
+	for _, r := range o.Refunds {
+		if r.Status != RefundSucceeded {
+			continue
+		}
+		r.Reason, r.By, r.Error = "", "", ""
+		kept = append(kept, r)
+	}
+	o.Refunds = kept
+}
+
 // stockCommitted reports whether the order's inventory has left the shelf, as
 // opposed to merely being reserved. It is derived from status rather than
 // stored, so the two can never disagree.
 func stockCommitted(status string) bool {
 	switch status {
-	case OrderConfirmed, OrderShipped, OrderDelivered:
+	// A partly shipped order reached that state from confirmed, so its units
+	// are off the shelf — every one of them, including the ones still in the
+	// stockroom waiting for the second parcel.
+	case OrderConfirmed, OrderPartial, OrderShipped, OrderDelivered:
 		return true
 	}
 	return false
@@ -163,17 +286,17 @@ func (a *App) Order() *Orders { return a.orders }
 
 const orderColumns = `o.id, o.number, o.status, o.payment_status, o.payment_provider,
 	coalesce(o.payment_reference, ''), o.currency, o.subtotal_minor, o.shipping_minor,
-	o.discount_minor, o.tax_minor, o.tax_inclusive, o.total_minor,
+	o.discount_minor, o.tax_minor, o.tax_inclusive, o.total_minor, o.refunded_minor,
 	o.email, coalesce(o.phone, ''), coalesce(o.name, ''),
 	o.address, o.lang, o.metadata, o.created_at, o.updated_at`
 
 func (s *Orders) scanOrder(row interface{ Scan(...any) error }) (*Order, error) {
 	o := &Order{}
 	var addr, meta []byte
-	var subtotal, shipping, discount, tax, total int64
+	var subtotal, shipping, discount, tax, total, refunded int64
 	if err := row.Scan(&o.ID, &o.Number, &o.Status, &o.PaymentStatus, &o.PaymentProvider,
 		&o.PaymentReference, &o.Currency, &subtotal, &shipping, &discount,
-		&tax, &o.TaxInclusive, &total,
+		&tax, &o.TaxInclusive, &total, &refunded,
 		&o.Email, &o.Phone, &o.Name, &addr, &o.Language, &meta,
 		&o.CreatedAt, &o.UpdatedAt); err != nil {
 		return nil, err
@@ -183,6 +306,7 @@ func (s *Orders) scanOrder(row interface{ Scan(...any) error }) (*Order, error) 
 	o.Discount = money(discount, o.Currency)
 	o.Tax = money(tax, o.Currency)
 	o.Total = money(total, o.Currency)
+	o.Refunded = money(refunded, o.Currency)
 	if len(addr) > 0 {
 		if err := json.Unmarshal(addr, &o.Address); err != nil {
 			return nil, err
@@ -193,6 +317,8 @@ func (s *Orders) scanOrder(row interface{ Scan(...any) error }) (*Order, error) 
 	}
 	o.Lines = []OrderLine{}
 	o.Fulfillments = []Fulfillment{}
+	o.Refunds = []OrderRefund{}
+	o.Returns = []OrderReturn{}
 	return o, nil
 }
 
@@ -222,7 +348,12 @@ func (s *Orders) GetForGuest(ctx context.Context, number, accessToken string) (*
 	if !constantTimeEqual(stored, accessToken) {
 		return nil, NotFoundf("order not found")
 	}
-	return s.GetByNumber(ctx, number)
+	o, err := s.GetByNumber(ctx, number)
+	if err != nil {
+		return nil, err
+	}
+	o.Redact()
+	return o, nil
 }
 
 func (s *Orders) getWhere(ctx context.Context, where string, arg any) (*Order, error) {
@@ -358,6 +489,12 @@ func (s *Orders) loadChildren(ctx context.Context, orders []*Order) error {
 	if err := s.loadOrderDiscounts(ctx, byID, ids); err != nil {
 		return err
 	}
+	if err := s.loadOrderRefunds(ctx, byID, ids); err != nil {
+		return err
+	}
+	if err := s.loadOrderReturns(ctx, byID, ids); err != nil {
+		return err
+	}
 
 	fRows, err := s.app.db.QueryContext(ctx, `
 		SELECT id, order_id, provider, tracking, carrier, label_url, status, metadata, created_at
@@ -366,6 +503,10 @@ func (s *Orders) loadChildren(ctx context.Context, orders []*Order) error {
 		return err
 	}
 	defer fRows.Close()
+	// Where each parcel landed, so its contents can be attached by one more
+	// query for the whole page rather than one per parcel.
+	fOwner, fAt := map[int64]*Order{}, map[int64]int{}
+	var fIDs []int64
 	for fRows.Next() {
 		var f Fulfillment
 		var orderID int64
@@ -377,12 +518,75 @@ func (s *Orders) loadChildren(ctx context.Context, orders []*Order) error {
 		if err := scanMetadata(meta, &f.Metadata); err != nil {
 			return err
 		}
+		f.Lines = []FulfillmentLine{}
 		f.decorate()
 		if o := byID[orderID]; o != nil {
+			fOwner[f.ID], fAt[f.ID] = o, len(o.Fulfillments)
+			fIDs = append(fIDs, f.ID)
 			o.Fulfillments = append(o.Fulfillments, f)
 		}
 	}
-	return fRows.Err()
+	if err := fRows.Err(); err != nil {
+		return err
+	}
+	return s.loadFulfillmentLines(ctx, orders, fOwner, fAt, fIDs)
+}
+
+// loadFulfillmentLines fills in what each parcel held, and sums it back onto
+// the order lines as ShippedQuantity.
+//
+// One query for a whole page, the same trade loadLineImages makes. The per-line
+// figure is added up here rather than asked of the database a second time, so
+// "2 of 3 shipped" on a line and the parcels listed beside it are the same rows
+// counted once and cannot contradict each other.
+func (s *Orders) loadFulfillmentLines(ctx context.Context, orders []*Order,
+	owner map[int64]*Order, at map[int64]int, ids []int64) error {
+
+	if len(ids) == 0 {
+		return nil
+	}
+	// An order line id is unique across orders, so one map serves the page.
+	lineByID := map[int64]*OrderLine{}
+	for _, o := range orders {
+		for i := range o.Lines {
+			lineByID[o.Lines[i].ID] = &o.Lines[i]
+		}
+	}
+
+	rows, err := s.app.db.QueryContext(ctx, `
+		SELECT fl.fulfillment_id, fl.order_line_id, fl.quantity, ol.sku, ol.title, ol.variant_label
+		FROM fulfillment_lines fl
+		JOIN order_lines ol ON ol.id = fl.order_line_id
+		WHERE fl.fulfillment_id = ANY($1::bigint[])
+		ORDER BY fl.fulfillment_id, fl.order_line_id`, int64Array(ids))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var fulfillmentID int64
+		var fl FulfillmentLine
+		if err := rows.Scan(&fulfillmentID, &fl.OrderLineID, &fl.Quantity,
+			&fl.SKU, &fl.Title, &fl.VariantLabel); err != nil {
+			return err
+		}
+		o := owner[fulfillmentID]
+		if o == nil {
+			continue
+		}
+		f := &o.Fulfillments[at[fulfillmentID]]
+		f.Lines = append(f.Lines, fl)
+		// A cancelled parcel still shows what it held — it is a record of what
+		// was in the box — but its units are owed again, which is the rule the
+		// whole derivation counts by.
+		if f.Status == "cancelled" {
+			continue
+		}
+		if l := lineByID[fl.OrderLineID]; l != nil {
+			l.ShippedQuantity += fl.Quantity
+		}
+	}
+	return rows.Err()
 }
 
 // -------------------------------------------------------------- transitions
@@ -393,7 +597,10 @@ func (s *Orders) loadChildren(ctx context.Context, orders []*Order) error {
 func (s *Orders) Confirm(ctx context.Context, id int64) (*Order, error) {
 	return s.transition(ctx, id, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
 		switch o.Status {
-		case OrderConfirmed, OrderShipped, OrderDelivered:
+		// Partial belongs here for the same reason shipped does, and its absence
+		// would be silent: the fall-through commits the shelf a second time and
+		// then rewinds a partly shipped order to confirmed.
+		case OrderConfirmed, OrderPartial, OrderShipped, OrderDelivered:
 			return transitionResult{}, nil // already done
 		case OrderCancelled:
 			return transitionResult{}, Conflictf("order %s has been cancelled", o.Number)
@@ -422,6 +629,24 @@ func (s *Orders) Cancel(ctx context.Context, id int64, reason string) (*Order, e
 			return transitionResult{}, nil
 		case OrderShipped, OrderDelivered:
 			return transitionResult{}, Conflictf("order %s has already shipped; cancelling it is a return, not a cancellation", o.Number)
+		case OrderPartial:
+			// stockCommitted is true here, so an unguarded cancel would restock
+			// every line — inventing inventory for the units already in a van.
+			return transitionResult{}, Conflictf(
+				"order %s has already shipped in part; cancelling it is a return, not a cancellation. "+
+					"Remove the shipment first if nothing actually went out.", o.Number)
+		}
+		// Reachable in three clicks: undeliver a returned order, delete its last
+		// shipment — which sets it back to confirmed — and restockOrder below
+		// then walks every line at its FULL quantity, so an order of five with
+		// two already returned ends up seven units richer. Inside the callback,
+		// under the same FOR UPDATE, so it cannot race a concurrent return.
+		if returned, err := hasActiveReturn(ctx, tx, o.ID); err != nil {
+			return transitionResult{}, err
+		} else if returned {
+			return transitionResult{}, Conflictf(
+				"order %s has goods recorded as returned; cancelling now would put them back "+
+					"on the shelf a second time — withdraw the return first", o.Number)
 		}
 		if stockCommitted(o.Status) {
 			if err := restockOrder(ctx, tx, o); err != nil {
@@ -454,6 +679,12 @@ func (s *Orders) MarkDelivered(ctx context.Context, id int64) (*Order, error) {
 	return s.transition(ctx, id, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
 		if o.Status == OrderDelivered {
 			return transitionResult{}, nil
+		}
+		// Said before the general refusal, which would otherwise render as
+		// "(it is partial)" — true, and no help at all.
+		if o.Status == OrderPartial {
+			return transitionResult{}, Conflictf(
+				"order %s is only partly shipped; the rest has to go out before it can be delivered", o.Number)
 		}
 		if o.Status != OrderShipped {
 			return transitionResult{}, Conflictf("order %s must be shipped before it can be delivered (it is %s)", o.Number, o.Status)
@@ -592,12 +823,18 @@ func (s *Orders) transition(ctx context.Context, id int64,
 // lockOrder reads an order FOR UPDATE so concurrent transitions serialize.
 func lockOrder(ctx context.Context, tx *sql.Tx, id int64) (*Order, error) {
 	o := &Order{}
+	// refunded_minor comes off the row this statement is already holding, which
+	// is the whole point of storing it: every guard below sees a figure that
+	// cannot be one commit behind, where a scalar sub-select in this target list
+	// would be evaluated against the statement's pre-block snapshot under READ
+	// COMMITTED — exactly how a second serialised refund misses the first.
+	var refunded int64
 	err := tx.QueryRowContext(ctx, `
 		SELECT id, number, status, payment_status, payment_provider, currency,
-		       total_minor, email, coalesce(phone,''), coalesce(name,''), lang
+		       total_minor, refunded_minor, email, coalesce(phone,''), coalesce(name,''), lang
 		FROM orders WHERE id = $1 FOR UPDATE`, id,
 	).Scan(&o.ID, &o.Number, &o.Status, &o.PaymentStatus, &o.PaymentProvider, &o.Currency,
-		&o.Total.AmountMinor, &o.Email, &o.Phone, &o.Name, &o.Language)
+		&o.Total.AmountMinor, &refunded, &o.Email, &o.Phone, &o.Name, &o.Language)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, NotFoundf("order %d does not exist", id)
 	}
@@ -605,6 +842,7 @@ func lockOrder(ctx context.Context, tx *sql.Tx, id int64) (*Order, error) {
 		return nil, err
 	}
 	o.Total.Currency = o.Currency
+	o.Refunded = money(refunded, o.Currency)
 	return o, nil
 }
 
@@ -679,6 +917,9 @@ func releaseOrderStock(ctx context.Context, tx *sql.Tx, o *Order) error {
 	return nil
 }
 
+// restockOrder puts a whole order back on the shelf, every line at its full
+// quantity. It is the cancellation movement and nothing else: goods coming back
+// off a sale that stands are per line and per quantity, which is Orders.Return.
 func restockOrder(ctx context.Context, tx *sql.Tx, o *Order) error {
 	for _, l := range o.Lines {
 		if l.VariantID == nil {
@@ -701,7 +942,8 @@ func (s *Orders) eventPayload(o *Order) *OrderEvent {
 		OrderID: o.ID, Number: o.Number, Status: o.Status,
 		PaymentStatus: o.PaymentStatus, Provider: o.PaymentProvider,
 		Currency: o.Currency, TotalMinor: o.Total.AmountMinor,
-		Email: o.Email, Phone: o.Phone, Name: o.Name, Language: o.Language,
+		RefundedMinor: o.Refunded.AmountMinor,
+		Email:         o.Email, Phone: o.Phone, Name: o.Name, Language: o.Language,
 	}
 	for _, l := range o.Lines {
 		ev.Lines = append(ev.Lines, OrderEventLine{
@@ -713,20 +955,34 @@ func (s *Orders) eventPayload(o *Order) *OrderEvent {
 	return ev
 }
 
-// SweepUnpaid cancels pending orders whose payment never arrived, returning
+// SweepUnpaid cancels pending orders whose payment never settled, returning
 // their stock to the shelf. Without it an abandoned redirect holds inventory
 // out of sale forever, which is invisible until the day it sells out a product
 // that is actually in stock.
+//
+// Unsettled is wider than unpaid: a declined card holds exactly the same stock
+// as an abandoned one, and a payment recorded as failed is the one nobody is
+// coming back for. Before M23 this scanned payment_status = 'pending' alone, so
+// [Payments.MarkFailed] removed an order from the sweep permanently — a stock
+// leak with no cleanup path, which mattered little while two webhooks were the
+// only callers and matters a great deal now there is a button.
 func (s *Orders) SweepUnpaid(ctx context.Context) (int, error) {
 	// Named once, before the loop, so two hundred cancellations at 3am read as
 	// the store doing maintenance rather than as somebody's night's work.
 	ctx = WithActorLabel(ctx, "unpaid sweeper")
 
+	// The constants are inline rather than bound, which is the one thing about
+	// this query worth a comment. orders_unsettled_idx (M23) is a partial index,
+	// and the planner uses one only when it can prove the query's WHERE implies
+	// the index predicate. This runs every five minutes through a cached
+	// statement, so a generic plan over $1/$2 proves nothing about 'pending' —
+	// the index would be ignored and every pass would seq-scan orders. They are
+	// compile-time constants and never caller input, so nothing is lost.
 	rows, err := s.app.db.QueryContext(ctx, `
 		SELECT id FROM orders
-		WHERE status = $1 AND payment_status = $2
+		WHERE status = 'pending' AND payment_status IN ('pending', 'failed')
 		  AND reservation_expires_at IS NOT NULL AND reservation_expires_at < now()
-		LIMIT 200`, OrderPending, PaymentPending)
+		LIMIT 200`)
 	if err != nil {
 		return 0, err
 	}
@@ -824,9 +1080,33 @@ func (s *Orders) EditLines(ctx context.Context, id int64, in OrderEdit) (*Order,
 		case OrderShipped, OrderDelivered:
 			return transitionResult{}, Conflictf(
 				"order %s has already shipped; changing what is in it is a return, not an edit", o.Number)
+		case OrderPartial:
+			// Also what keeps the order_lines rows alive underneath
+			// fulfillment_lines: a parcel names lines, and half an order cannot
+			// have its lines deleted from under it.
+			return transitionResult{}, Conflictf(
+				"order %s has already shipped in part; changing what is in it is a return, not an edit", o.Number)
 		}
-		if o.PaymentStatus == PaymentRefunded {
-			return transitionResult{}, Conflictf("order %s has been refunded", o.Number)
+		// Any refund at all, not only a full one. This is the only path that
+		// lowers total_minor, so it is the only thing that could push the total
+		// under refunded_minor and reach orders_refunded_within_total — and
+		// under D36 a partly refunded order still reads `paid`, so the status
+		// form of this guard would let it through.
+		if o.Refunded.AmountMinor > 0 {
+			return transitionResult{}, Conflictf(
+				"order %s has had %d %s refunded; changing what is in it would move a total money has already come off",
+				o.Number, o.Refunded.AmountMinor, o.Currency)
+		}
+		// Guarding Cancel alone would not be enough. A returned order walked
+		// back to confirmed is editable again, and moveOrderStock's committed
+		// branch restocks a reduced line — taking off the shelf what the return
+		// just put on it, by a second route to the same double movement.
+		if returned, err := hasActiveReturn(ctx, tx, o.ID); err != nil {
+			return transitionResult{}, err
+		} else if returned {
+			return transitionResult{}, Conflictf(
+				"order %s has goods recorded as returned; its lines no longer describe what left "+
+					"the store — withdraw the return first", o.Number)
 		}
 
 		existing := map[int64]*OrderLine{}
@@ -1120,9 +1400,10 @@ type OrderPatch struct {
 //
 // The one that needs care is the provider, because Refund books through it. It
 // may be changed while nothing has been refunded — an order taken as cash on
-// delivery and actually settled by transfer should say so — but not after,
-// where the money went out through the provider that is on the order now, and
-// rewriting it would leave the refund pointing at a gateway that never saw it.
+// delivery and actually settled by transfer should say so — but not after any
+// refund, full or partial, where the money went out through the provider that
+// is on the order now, and rewriting it would leave the record pointing at a
+// gateway that never saw it.
 func (s *Orders) Update(ctx context.Context, id int64, patch OrderPatch) (*Order, error) {
 	if patch.Email != nil {
 		if strings.TrimSpace(*patch.Email) == "" {
@@ -1145,9 +1426,9 @@ func (s *Orders) Update(ctx context.Context, id int64, patch OrderPatch) (*Order
 			return transitionResult{}, Conflictf("order %s has been cancelled", o.Number)
 		}
 		if patch.PaymentProvider != nil && *patch.PaymentProvider != o.PaymentProvider &&
-			o.PaymentStatus == PaymentRefunded {
+			o.Refunded.AmountMinor > 0 {
 			return transitionResult{}, Conflictf(
-				"order %s was refunded through %s; the method it was settled by is part of that record",
+				"order %s has had money refunded through %s; the method it was settled by is part of that record",
 				o.Number, o.PaymentProvider)
 		}
 

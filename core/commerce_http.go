@@ -112,9 +112,16 @@ func (a *App) mountCheckoutRoutes() {
 	a.HandleFunc("POST /api/checkout/{code}/webhook", a.handlePaymentWebhook)
 }
 
+// handlePaymentMethods answers with the same list in two shapes, on purpose.
+// payment_methods is the array of codes every storefront already reads, and
+// scripts/smoke.ps1 and ext/mcp's store_info tool with them; methods is the
+// same set in the same order, carrying the name each provider gives itself, so
+// a picker stops labelling a method with a database value. Collapsing them
+// would break all three in one commit.
 func (a *App) handlePaymentMethods(w http.ResponseWriter, r *http.Request) {
 	Respond(w, http.StatusOK, map[string]any{
 		"payment_methods": a.payments.Methods(),
+		"methods":         a.payments.Installed(),
 		"currency":        a.cfg.Currency,
 	})
 }
@@ -166,11 +173,23 @@ func (a *App) mountOrderRoutes() {
 	a.HandleAdminFunc("POST /api/admin/orders/{id}/cancel", a.handleCancelOrder, RightOrdersWrite)
 	a.HandleAdminFunc("POST /api/admin/orders/{id}/mark-paid", a.handleMarkPaid, RightOrdersWrite)
 	a.HandleAdminFunc("POST /api/admin/orders/{id}/mark-unpaid", a.handleMarkUnpaid, RightOrdersWrite)
+	a.HandleAdminFunc("POST /api/admin/orders/{id}/mark-payment-failed", a.handleMarkPaymentFailed, RightOrdersWrite)
 	a.HandleAdminFunc("POST /api/admin/orders/{id}/refund", a.handleRefund, RightOrdersRefund)
+	// The same right: moving a refund record on an order is what orders.refund
+	// governs. Deliberately not store.operate, which is diagnostics and
+	// maintenance and has nothing to do with an order's money.
+	a.HandleAdminFunc("POST /api/admin/orders/{id}/refunds/{refund_id}/settle", a.handleSettleRefund, RightOrdersRefund)
 	a.HandleAdminFunc("POST /api/admin/orders/{id}/deliver", a.handleDeliver, RightOrdersWrite)
 	a.HandleAdminFunc("POST /api/admin/orders/{id}/undeliver", a.handleUndeliver, RightOrdersWrite)
 	a.HandleAdminFunc("PATCH /api/admin/orders/{id}", a.handleUpdateOrder, RightOrdersWrite)
 	a.HandleAdminFunc("PUT /api/admin/orders/{id}/lines", a.handleEditOrderLines, RightOrdersWrite)
+	// The same right /cancel carries, because cancelling is the other operation
+	// that puts committed units back on the shelf. Staff hold orders.write and
+	// not orders.refund by default, which puts the counter and the till on
+	// opposite sides of the line: the person taking the goods back is not
+	// necessarily the person sending the money.
+	a.HandleAdminFunc("POST /api/admin/orders/{id}/returns", a.handleRecordReturn, RightOrdersWrite)
+	a.HandleAdminFunc("DELETE /api/admin/orders/{id}/returns/{returnId}", a.handleWithdrawReturn, RightOrdersWrite)
 	a.HandleAdminFunc("POST /api/admin/create-fulfillment", a.handleCreateFulfillment, RightOrdersFulfill)
 	a.HandleAdminFunc("PATCH /api/admin/fulfillments/{id}", a.handleUpdateFulfillment, RightOrdersFulfill)
 	a.HandleAdminFunc("DELETE /api/admin/fulfillments/{id}", a.handleDeleteFulfillment, RightOrdersFulfill)
@@ -300,6 +319,35 @@ func (a *App) handleMarkUnpaid(w http.ResponseWriter, r *http.Request) {
 	Respond(w, http.StatusOK, order)
 }
 
+// handleMarkPaymentFailed records an attempt that did not succeed. The order
+// stays where it is so the shopper can try again, and its reservation stays in
+// the sweeper's reach (M23), so an attempt nobody retries still gives the stock
+// back. The reason goes to the store's log and nowhere else — there is no order
+// history to write it to, and the spec says so rather than leaving an operator
+// to hunt for it later. mark-unpaid takes the failure back.
+func (a *App) handleMarkPaymentFailed(w http.ResponseWriter, r *http.Request) {
+	id, err := pathInt64(r, "id")
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	var in struct {
+		Reason string `json:"reason"`
+	}
+	if r.ContentLength > 0 {
+		if err := DecodeJSON(w, r, &in); err != nil {
+			RespondError(w, r, err)
+			return
+		}
+	}
+	order, err := a.payments.MarkFailed(r.Context(), id, in.Reason)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, order)
+}
+
 func (a *App) handleUndeliver(w http.ResponseWriter, r *http.Request) {
 	id, err := pathInt64(r, "id")
 	if err != nil {
@@ -391,16 +439,46 @@ func (a *App) handleRefund(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	var in struct {
-		AmountMinor int64 `json:"amount_minor"`
-	}
+	var in RefundRequest
+	// A bodyless POST still means "send back whatever is left", which is what
+	// this route has always accepted.
 	if r.ContentLength > 0 {
 		if err := DecodeJSON(w, r, &in); err != nil {
 			RespondError(w, r, err)
 			return
 		}
 	}
-	order, err := a.payments.Refund(r.Context(), id, in.AmountMinor)
+	// The acting operator comes from the session and never from the body — the
+	// same pairing RoleRights.Set uses, with the same meaning when it is nil: a
+	// script authenticated with the static token, and nobody to attribute it to.
+	order, err := a.payments.Refund(r.Context(), id, in, SuperuserFrom(r.Context()))
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, order)
+}
+
+// handleSettleRefund is the recovery path for a refund the engine asked for and
+// never heard back about. The body is required here, unlike the refund itself:
+// saying what actually happened is the whole of the call.
+func (a *App) handleSettleRefund(w http.ResponseWriter, r *http.Request) {
+	id, err := pathInt64(r, "id")
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	refundID, err := pathInt64(r, "refund_id")
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	var in RefundSettlement
+	if err := DecodeJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	order, err := a.payments.SettleRefund(r.Context(), id, refundID, in, SuperuserFrom(r.Context()))
 	if err != nil {
 		RespondError(w, r, err)
 		return
@@ -424,11 +502,15 @@ func (a *App) handleDeliver(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleCreateFulfillment(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		OrderID  int64             `json:"order_id"`
-		Provider string            `json:"provider"`
-		Tracking string            `json:"tracking"`
-		Carrier  string            `json:"carrier"`
-		Meta     map[string]string `json:"meta"`
+		OrderID  int64  `json:"order_id"`
+		Provider string `json:"provider"`
+		Tracking string `json:"tracking"`
+		Carrier  string `json:"carrier"`
+		// Omitted or empty ships everything the order still owes, which on a
+		// first shipment is the whole order — so the body every client sent
+		// before parcels existed still means what it always meant.
+		Lines []ShipLine        `json:"lines"`
+		Meta  map[string]string `json:"meta"`
 	}
 	if err := DecodeJSON(w, r, &in); err != nil {
 		RespondError(w, r, err)
@@ -439,7 +521,7 @@ func (a *App) handleCreateFulfillment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	order, err := a.fulfillment.Create(r.Context(), in.OrderID, in.Provider,
-		ShipRequest{Tracking: in.Tracking, Carrier: in.Carrier, Meta: in.Meta})
+		ShipRequest{Tracking: in.Tracking, Carrier: in.Carrier, Lines: in.Lines, Meta: in.Meta})
 	if err != nil {
 		RespondError(w, r, err)
 		return
@@ -574,6 +656,53 @@ func (a *App) handleEditOrderLines(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	Respond(w, http.StatusOK, map[string]any{"order": order, "changed": change})
+}
+
+// handleRecordReturn records goods coming back. The response carries the return
+// beside the order for handleEditOrderLines' reason — the panel needs both the
+// fresh order and what just happened — and 201 because a record was created.
+//
+// The body is required, unlike the refund route's: a return with no lines is not
+// a return, and there is no sensible default for what came back in the parcel.
+func (a *App) handleRecordReturn(w http.ResponseWriter, r *http.Request) {
+	id, err := pathInt64(r, "id")
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	var in ReturnInput
+	if err := DecodeJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	order, rec, err := a.orders.Return(r.Context(), id, in)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusCreated, map[string]any{"order": order, "return": rec})
+}
+
+// handleWithdrawReturn takes back a return recorded in error. It answers with
+// the order, as deleting a shipment does, because both its stock and its returns
+// have moved.
+func (a *App) handleWithdrawReturn(w http.ResponseWriter, r *http.Request) {
+	id, err := pathInt64(r, "id")
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	returnID, err := pathInt64(r, "returnId")
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	order, err := a.orders.WithdrawReturn(r.Context(), id, returnID)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, order)
 }
 
 // handleCreateOrder places an order on a customer's behalf. It answers with the

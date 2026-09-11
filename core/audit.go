@@ -79,19 +79,29 @@ var AuditEntityTypes = []string{
 // "who changed the shipping address" the same row; and order.refund and
 // order.shipment_update are operator acts with no event behind them at all.
 const (
-	AuditOrderCreate         = "order.create"
-	AuditOrderCancel         = "order.cancel"
-	AuditOrderEditLines      = "order.edit_lines"
-	AuditOrderUpdate         = "order.update"
-	AuditOrderMarkPaid       = "order.mark_paid"
-	AuditOrderMarkUnpaid     = "order.mark_unpaid"
-	AuditOrderMarkFailed     = "order.mark_failed"
-	AuditOrderRefund         = "order.refund"
+	AuditOrderCreate     = "order.create"
+	AuditOrderCancel     = "order.cancel"
+	AuditOrderEditLines  = "order.edit_lines"
+	AuditOrderUpdate     = "order.update"
+	AuditOrderMarkPaid   = "order.mark_paid"
+	AuditOrderMarkUnpaid = "order.mark_unpaid"
+	AuditOrderMarkFailed = "order.mark_failed"
+	AuditOrderRefund     = "order.refund"
+	// Settling a refund the engine asked for and never heard back about. Its
+	// own verb rather than a second order.refund, because a person deciding
+	// what happened to money the gateway may or may not have moved is a
+	// different act from asking for the refund in the first place.
+	AuditOrderRefundSettle   = "order.refund_settle"
 	AuditOrderDeliver        = "order.deliver"
 	AuditOrderUndeliver      = "order.undeliver"
 	AuditOrderShip           = "order.ship"
 	AuditOrderShipmentUpdate = "order.shipment_update"
 	AuditOrderShipmentDelete = "order.shipment_delete"
+	// Goods coming back, and that record taken back. Their own verbs rather
+	// than order.edit_lines, because a return changes nothing about what was
+	// agreed — it says what happened to the goods afterwards.
+	AuditOrderReturn         = "order.return"
+	AuditOrderReturnWithdraw = "order.return_withdraw"
 
 	AuditProductCreate         = "product.create"
 	AuditProductUpdate         = "product.update"
@@ -154,9 +164,11 @@ const (
 // vocabulary; a test walks it and fails on a constant nothing emits.
 var AllAuditActions = []string{
 	AuditOrderCreate, AuditOrderCancel, AuditOrderEditLines, AuditOrderUpdate,
-	AuditOrderMarkPaid, AuditOrderMarkUnpaid, AuditOrderMarkFailed, AuditOrderRefund,
+	AuditOrderMarkPaid, AuditOrderMarkUnpaid, AuditOrderMarkFailed,
+	AuditOrderRefund, AuditOrderRefundSettle,
 	AuditOrderDeliver, AuditOrderUndeliver,
 	AuditOrderShip, AuditOrderShipmentUpdate, AuditOrderShipmentDelete,
+	AuditOrderReturn, AuditOrderReturnWithdraw,
 
 	AuditProductCreate, AuditProductUpdate, AuditProductDelete,
 	AuditProductOptionAdd, AuditProductOptionsSet, AuditProductMediaSet,

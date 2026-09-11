@@ -48,6 +48,7 @@ Everything in `ports.go`. Nothing else in the engine is abstracted.
 | `PaymentProvider` | `Code`, `Initiate` | `RegisterPayment` | built-in `cod`; `ext/payments-stripe`, `ext/payments-razorpay` |
 | `WebhookProvider` | `Webhook` | *optional, detected* | stripe, razorpay |
 | `Refunder` | `Refund` | *optional, detected* | stripe, razorpay — **not** `cod` |
+| `ReferencedRefunder` | `RefundWithReference` | *optional, detected; a `Refunder` as well* | stripe, razorpay — it returns the gateway's own refund id, which is recorded on the refund |
 | `FulfillmentProvider` | `Code`, `Ship` | `RegisterFulfillment` | built-in `manual`; `ext/fulfill-shiprocket` |
 | `Notifier` | `Notify` | `RegisterNotifier(channel, n)` | built-in log notifier; `ext/notify-sendgrid` (email), `ext/notify-msg91` (SMS) |
 | `Translator` | `Translate` | `RegisterTranslator` | nothing in this repo yet — the seam is built, not speculated (D21) |

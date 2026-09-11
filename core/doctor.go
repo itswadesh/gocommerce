@@ -82,6 +82,9 @@ func (a *App) Diagnose(ctx context.Context) Report {
 	add(a.checkProviders())
 	add(a.checkContract())
 	add(a.checkAdminRights())
+	add(a.checkFulfillment(ctx))
+	add(a.checkRefunds(ctx))
+	add(a.checkReturns(ctx))
 
 	rep.OK = true
 	for _, c := range rep.Checks {
@@ -253,7 +256,10 @@ func (a *App) checkReservations(ctx context.Context) Diagnostic {
 		FROM orders o
 		JOIN order_lines ol ON ol.order_id = o.id
 		WHERE o.status = 'pending'
-		  AND o.payment_status = 'pending'
+		  -- The same population SweepUnpaid collects, or the diagnostic goes
+		  -- blind on exactly the orders an operator can now create: a payment
+		  -- recorded as failed holds its stock like any other unsettled one.
+		  AND o.payment_status IN ('pending', 'failed')
 		  AND o.reservation_expires_at IS NOT NULL
 		  AND o.reservation_expires_at < now()`).Scan(&stale, &units)
 	if err != nil {
@@ -266,7 +272,7 @@ func (a *App) checkReservations(ctx context.Context) Diagnostic {
 		return d
 	}
 	d.Status = StatusWarn
-	d.Detail = fmt.Sprintf("%d unpaid order(s) past their reservation window holding %d unit(s)", stale, units.Int64)
+	d.Detail = fmt.Sprintf("%d unsettled order(s) past their reservation window holding %d unit(s)", stale, units.Int64)
 	d.Hint = "the sweeper releases these on its next pass; if the count keeps growing, check that background work is running"
 	return d
 }
@@ -439,5 +445,160 @@ func (a *App) checkAdminRights() Diagnostic {
 	}
 	d.Status = StatusOK
 	d.Detail = "every admin route names the rights it needs"
+	return d
+}
+
+// checkFulfillment finds orders whose status disagrees with their parcels.
+//
+// settleOrderShipping is the only thing that writes the shipping axis of
+// orders.status, and it derives it from fulfillment_lines every time, so inside
+// the engine the two cannot drift. A hit therefore means one of two things:
+// somebody wrote orders.status with SQL, which is what AGENTS.md rule 3 exists
+// to prevent, or an order arrived through the CSV importer, which passes an
+// imported status straight through and brings no fulfillments with it.
+//
+// This is the compensating control for the composite foreign key that was
+// declined — a detector rather than a constraint. Delivered orders are excluded:
+// delivered implies fully shipped, and an imported one has no parcels at all.
+func (a *App) checkFulfillment(ctx context.Context) Diagnostic {
+	d := Diagnostic{Name: "fulfillment"}
+
+	var drifted int
+	err := a.db.QueryRowContext(ctx, `
+		SELECT count(*)
+		FROM (
+		    SELECT o.id, o.status,
+		           coalesce(sum(ol.quantity), 0) AS ordered,
+		           coalesce(sum(s.shipped), 0)   AS shipped
+		    FROM orders o
+		    JOIN order_lines ol ON ol.order_id = o.id
+		    LEFT JOIN (
+		        SELECT fl.order_line_id, sum(fl.quantity) AS shipped
+		        FROM fulfillment_lines fl
+		        JOIN fulfillments f ON f.id = fl.fulfillment_id
+		        WHERE f.status <> 'cancelled'
+		        GROUP BY fl.order_line_id
+		    ) s ON s.order_line_id = ol.id
+		    WHERE o.status IN ('confirmed', 'partial', 'shipped')
+		    GROUP BY o.id, o.status
+		) t
+		WHERE (shipped = 0 AND status <> 'confirmed')
+		   OR (shipped > 0 AND shipped < ordered AND status <> 'partial')
+		   OR (shipped >= ordered AND status <> 'shipped')`).Scan(&drifted)
+	if err != nil {
+		d.Status, d.Detail = StatusWarn, "cannot read fulfillment lines: "+err.Error()
+		d.Hint = "check that the migrations are applied"
+		return d
+	}
+	if drifted > 0 {
+		d.Status = StatusWarn
+		d.Detail = fmt.Sprintf("%d order(s) say something different from what their parcels do", drifted)
+		d.Hint = "the shipping status is derived from fulfillment_lines; a mismatch means orders.status " +
+			"was written by hand or the order was imported without its shipments"
+		return d
+	}
+	d.Status = StatusOK
+	d.Detail = "every order's status matches what its parcels say"
+	return d
+}
+
+// checkRefunds reconciles the money that went back with the ledger that says it
+// did, and looks for refunds nobody ever heard the end of.
+//
+// This check is the price of storing orders.refunded_minor at all. M24 keeps a
+// running total on the order — against M17's own reasoning about stored sums —
+// because it is what makes orders_refunded_within_total a real row CHECK and
+// what lets lockOrder read the figure off the row it is already holding. The
+// service only ever moves the column and the ledger inside one transaction, so
+// a disagreement is not drift: it is somebody having written orders by hand.
+//
+// The stale-pending half is a different question with the same query. A refund
+// is committed as `pending` before the gateway is called, so a process that
+// died in between leaves a row that may or may not have moved money — and that
+// amount stays reserved against every later refund until a person settles it.
+func (a *App) checkRefunds(ctx context.Context) Diagnostic {
+	d := Diagnostic{Name: "refunds"}
+
+	var drifted, inFlight, settled int
+	err := a.db.QueryRowContext(ctx, `
+		SELECT
+		    (SELECT count(*) FROM orders o
+		      WHERE o.refunded_minor <> coalesce(
+		            (SELECT sum(r.amount_minor) FROM order_refunds r
+		              WHERE r.order_id = o.id AND r.status = 'succeeded'), 0)),
+		    (SELECT count(*) FROM order_refunds
+		      WHERE status = 'pending' AND created_at < now() - $1::interval),
+		    (SELECT count(*) FROM order_refunds WHERE status = 'succeeded')`,
+		intervalSeconds(refundStaleAfter)).Scan(&drifted, &inFlight, &settled)
+	if err != nil {
+		d.Status, d.Detail = StatusWarn, "cannot read the refund ledger: "+err.Error()
+		d.Hint = "check that the migrations are applied"
+		return d
+	}
+
+	if drifted > 0 {
+		d.Status = StatusFail
+		d.Detail = fmt.Sprintf("%d order(s) disagree with their refund records", drifted)
+		d.Hint = "orders.refunded_minor and the order_refunds ledger disagree; the service only ever " +
+			"moves the two together, so somebody wrote orders by hand"
+		return d
+	}
+	if inFlight > 0 {
+		d.Status = StatusWarn
+		d.Detail = fmt.Sprintf("%d refund(s) started more than %s ago and never settled", inFlight, refundStaleAfter)
+		d.Hint = "the provider may or may not have moved the money: check the gateway, then " +
+			"POST /api/admin/orders/{id}/refunds/{refund_id}/settle to record what happened"
+		return d
+	}
+	d.Status = StatusOK
+	if settled == 0 {
+		d.Detail = "no refunds recorded"
+		return d
+	}
+	d.Detail = fmt.Sprintf("%d refund(s), all reconciled", settled)
+	return d
+}
+
+// checkReturns looks for an order line with more units returned than were sold.
+//
+// It is here because that cap is the one invariant in returns that no CHECK
+// constraint can express — it is a sum across rows — so it is enforced in the
+// service, under the order's row lock, and this is where a bypass would show:
+// a module or a script writing order_return_lines directly, against rule 3.
+// The oversold half of checkCatalog exists for exactly the same reason.
+func (a *App) checkReturns(ctx context.Context) Diagnostic {
+	d := Diagnostic{Name: "returns"}
+
+	var overReturned, received int
+	err := a.db.QueryRowContext(ctx, `
+		SELECT
+		    (SELECT count(*) FROM (
+		        SELECT ol.id
+		        FROM order_lines ol
+		        JOIN order_return_lines rl ON rl.order_line_id = ol.id
+		        JOIN order_returns r ON r.id = rl.return_id AND r.status = 'received'
+		        GROUP BY ol.id, ol.quantity
+		        HAVING sum(rl.quantity) > ol.quantity) x),
+		    (SELECT count(*) FROM order_returns WHERE status = 'received')`).
+		Scan(&overReturned, &received)
+	if err != nil {
+		d.Status, d.Detail = StatusWarn, "cannot read the returns: "+err.Error()
+		d.Hint = "check that the migrations are applied"
+		return d
+	}
+
+	if overReturned > 0 {
+		d.Status = StatusFail
+		d.Detail = fmt.Sprintf("%d order line(s) have had more units back than went out", overReturned)
+		d.Hint = "this should be impossible: returns are capped in the service under the order's " +
+			"row lock, so a row here means something wrote order_return_lines directly"
+		return d
+	}
+	d.Status = StatusOK
+	if received == 0 {
+		d.Detail = "no returns recorded"
+		return d
+	}
+	d.Detail = fmt.Sprintf("%d return(s) received, none over what was sold", received)
 	return d
 }

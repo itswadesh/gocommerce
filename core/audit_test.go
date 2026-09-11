@@ -270,8 +270,9 @@ func TestEditingLinesAndEditingTheAddressAreDifferentActions(t *testing.T) {
 	}
 }
 
-// The single act that produces no event at all, and the loudest question the
-// trail exists to answer.
+// The loudest question the trail exists to answer. Until M24 a refund also
+// produced no event at all; it publishes order.refunded now, and the audit row
+// names it, which is the join a merged order timeline renders each fact once by.
 func TestARefundIsRecordedWithItsAmount(t *testing.T) {
 	app := newTestApp(t, refundableModule{})
 	ctx := context.Background()
@@ -295,9 +296,9 @@ func TestARefundIsRecordedWithItsAmount(t *testing.T) {
 	}
 
 	row := onlyRow(t, auditRows(t, app, "action = $1", AuditOrderRefund))
-	if row.Changes.Event != "" {
-		t.Errorf("changes.event = %q; a refund publishes nothing and the row must not claim it does",
-			row.Changes.Event)
+	if row.Changes.Event != EventOrderRefunded {
+		t.Errorf("changes.event = %q, want %q: the row and the event it published are correlated by this",
+			row.Changes.Event, EventOrderRefunded)
 	}
 	if got := jsonNumber(t, row.Changes.After, "amount_minor"); got != 2000 {
 		t.Errorf("amount_minor = %v, want 2000", got)
@@ -1103,6 +1104,25 @@ func TestTheVocabularyIsReachable(t *testing.T) {
 	if _, err := app.Order().MarkDelivered(ctx, order.ID); err != nil {
 		t.Fatalf("deliver: %v", err)
 	}
+	// Goods back and that record taken back, while the order is delivered —
+	// which is also the only state Return accepts. Withdrawing it again is what
+	// leaves the order cancellable at the end of this walk.
+	// Re-read: the edit above replaced the order's lines, so the id the
+	// checkout returned no longer names anything.
+	edited, err := app.Order().Get(ctx, order.ID)
+	if err != nil {
+		t.Fatalf("re-read the order: %v", err)
+	}
+	_, returned, err := app.Order().Return(ctx, order.ID, ReturnInput{
+		Reason: "did not fit",
+		Lines:  []ReturnLineInput{{LineID: edited.Lines[0].ID, Quantity: 1, Restock: true}},
+	})
+	if err != nil {
+		t.Fatalf("return: %v", err)
+	}
+	if _, err := app.Order().WithdrawReturn(ctx, order.ID, returned.ID); err != nil {
+		t.Fatalf("withdraw the return: %v", err)
+	}
 	if _, err := app.Order().MarkUndelivered(ctx, order.ID); err != nil {
 		t.Fatalf("undeliver: %v", err)
 	}
@@ -1114,8 +1134,26 @@ func TestTheVocabularyIsReachable(t *testing.T) {
 	if _, err := app.Ship().Delete(ctx, shipmentID); err != nil {
 		t.Fatalf("delete the shipment: %v", err)
 	}
-	if _, err := app.Pay().Refund(ctx, order.ID, 700); err != nil {
+	if _, err := app.Pay().Refund(ctx, order.ID, RefundRequest{AmountMinor: 700}, nil); err != nil {
 		t.Fatalf("refund: %v", err)
+	}
+	// And a refund the gateway never answered about, settled by hand — the only
+	// path that moves an order_refunds row without a provider saying anything,
+	// and the only thing that emits order.refund_settle.
+	stranded, _, err := app.Pay().reserveRefund(ctx, order.ID, 100, "stranded", nil)
+	if err != nil {
+		t.Fatalf("reserve a refund: %v", err)
+	}
+	// Backdated past refundStaleAfter, which is what the settle route refuses
+	// before: a refund younger than that may still be in flight.
+	if _, err := app.DB().ExecContext(ctx,
+		`UPDATE order_refunds SET created_at = now() - interval '1 hour' WHERE id = $1`,
+		stranded); err != nil {
+		t.Fatalf("age the pending refund: %v", err)
+	}
+	if _, err := app.Pay().SettleRefund(ctx, order.ID, stranded,
+		RefundSettlement{Outcome: RefundFailed, Note: "the gateway has no such refund"}, nil); err != nil {
+		t.Fatalf("settle the stranded refund: %v", err)
 	}
 	if _, err := app.Order().Cancel(ctx, order.ID, "done"); err != nil {
 		t.Fatalf("cancel: %v", err)

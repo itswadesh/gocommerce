@@ -293,9 +293,34 @@ Vite's dev server gives hot reload and proxies `/api`, `/health` and `/doc` to
 the running store, so the panel talks to real data. In production both are the
 same binary and no proxy exists.
 
+## Where the access token is shown
+
+Once, on the New order drawer's success state, and nowhere else in the panel or
+the API. `POST /api/admin/orders` returns `data.order.access_token`; every other
+admin read omits it, and `ext/identity` and `ext/mcp` blank it on their own
+reads. So the drawer holds open after placing an order rather than closing over
+the response — a toast would be dismissible, unselectable and gone, and this
+string has exactly one appearance. An operator who closes it cannot get the
+token back; nothing in the product can reissue one.
+
+The same state reads out the `PaymentIntent`, for an order placed against a
+gateway. It is a readout and not a link: `PaymentIntent` carries no redirect URL
+(`kind`, `provider`, `reference`, `client_data`), and there is no storefront base
+URL anywhere in the engine to build one from. The alert says plainly that the
+payment cannot be completed from the panel, rather than implying it can.
+
 ## What it does not do yet
 
 Honest gaps, rather than a roadmap:
+
+- **An operator cannot collect a gateway payment from the panel.** The New order
+  success state shows what the gateway said to do next; acting on it needs a
+  `return_url` on the create request and a way to re-start a payment, which is
+  an API change rather than a screen.
+- **The New order drawer cannot preview a discount.** A code is typed and judged
+  when the order is placed, so an ineligible one refuses the whole submit. The
+  line above the Place order button is therefore labelled *Items subtotal*: it
+  sums the lines, while the checkout adds shipping, any discount and then tax.
 
 - **An option axis cannot be removed or renamed** once it exists, and a
   variant's option combination cannot be changed — the API has no route for

@@ -243,12 +243,22 @@ func TestRefund(t *testing.T) {
 	if _, err := app.Pay().MarkPaid(ctx, result.Order.ID, "pi_test_123"); err != nil {
 		t.Fatalf("mark paid: %v", err)
 	}
-	order, err := app.Pay().Refund(ctx, result.Order.ID, 0)
+	order, err := app.Pay().Refund(ctx, result.Order.ID, gocommerce.RefundRequest{}, nil)
 	if err != nil {
 		t.Fatalf("refund: %v", err)
 	}
 	if order.PaymentStatus != gocommerce.PaymentRefunded {
 		t.Errorf("payment status = %q, want refunded", order.PaymentStatus)
+	}
+	// And the id Stripe gave the refund is recorded, which is the whole of what
+	// ReferencedRefunder buys: it is what somebody quotes reconciling a bank
+	// statement, and this module was already parsing it and throwing it away.
+	if len(order.Refunds) != 1 {
+		t.Fatalf("refund records = %d, want 1", len(order.Refunds))
+	}
+	if order.Refunds[0].ProviderReference != "re_test_1" {
+		t.Errorf("provider_reference = %q, want the id Stripe answered with",
+			order.Refunds[0].ProviderReference)
 	}
 }
 

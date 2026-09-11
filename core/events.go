@@ -21,9 +21,21 @@ const (
 	EventOrderShipped   = "order.shipped"
 	EventOrderDelivered = "order.delivered"
 	EventOrderCancelled = "order.cancelled"
-	EventOrderEdited    = "order.edited"
+	// Money that went out and came back. It belongs with the real transitions
+	// rather than with the corrections below: a refund is a fact about the
+	// world, not a note saying somebody clicked the wrong row. Fired once per
+	// refund, so two partial refunds are two events, and `payment_status` in
+	// the payload tells a partial (`paid`) from the one that finished the job
+	// (`refunded`).
+	EventOrderRefunded = "order.refunded"
+	EventOrderEdited   = "order.edited"
+	// Goods came back off a shipped or delivered order. It belongs with the
+	// real transitions rather than with the corrections below: the delivery
+	// really happened, and a return is the next thing that happened after it,
+	// not a note saying the delivery was recorded on the wrong row.
+	EventOrderReturned = "order.returned"
 
-	// The two corrections. Each says a fact recorded earlier was not true —
+	// The corrections. Each says a fact recorded earlier was not true —
 	// somebody marked the wrong row — so they are their own names rather than
 	// an `order.edited`, which means the order itself changed and carries the
 	// amendment. A consumer that congratulated the customer on a payment is
@@ -31,6 +43,7 @@ const (
 	EventOrderUnpaid      = "order.unpaid"
 	EventOrderUndelivered = "order.undelivered"
 	EventOrderUnshipped   = "order.unshipped"
+	EventOrderUnreturned  = "order.unreturned"
 )
 
 // Aggregate types name what an event is about.
@@ -68,13 +81,17 @@ type EventHandler func(ctx context.Context, e Event) error
 // OrderEvent is the payload of every order.* event: enough for a consumer to
 // act without reading the database, and stable enough to be a contract.
 type OrderEvent struct {
-	OrderID       int64            `json:"order_id"`
-	Number        string           `json:"number"`
-	Status        string           `json:"status"`
-	PaymentStatus string           `json:"payment_status"`
-	Provider      string           `json:"payment_provider"`
-	Currency      string           `json:"currency"`
-	TotalMinor    int64            `json:"total_minor"`
+	OrderID       int64  `json:"order_id"`
+	Number        string `json:"number"`
+	Status        string `json:"status"`
+	PaymentStatus string `json:"payment_status"`
+	Provider      string `json:"payment_provider"`
+	Currency      string `json:"currency"`
+	TotalMinor    int64  `json:"total_minor"`
+	// RefundedMinor is the order's running refunded total, set on every order.*
+	// event — so a consumer of order.cancelled or order.edited sees what had
+	// already gone back, which `payment_status` alone stopped saying under D36.
+	RefundedMinor int64            `json:"refunded_minor,omitempty"`
 	Email         string           `json:"email"`
 	Phone         string           `json:"phone,omitempty"`
 	Name          string           `json:"name,omitempty"`
@@ -85,7 +102,25 @@ type OrderEvent struct {
 	// Change is set on order.edited: what the amendment did, and the totals
 	// either side of it. It is the part of an edited order that the order
 	// itself no longer says, because the order says what is agreed now.
-	Change   *OrderChange      `json:"change,omitempty"`
+	Change *OrderChange `json:"change,omitempty"`
+	// Shipment is set on order.shipped and order.unshipped: which parcel the
+	// event is about, what went in it, and what the order still owes. It is
+	// what a consumer can no longer read off the order's own lines once an
+	// order can ship in pieces. Deliberately does not repeat `tracking` (above)
+	// or `provider` (in Extra): a payload that states one fact twice is how the
+	// two come to disagree.
+	Shipment *ShipmentEvent `json:"shipment,omitempty"`
+	// Refund is set on order.refunded alone: which refund this is, and what it
+	// leaves. Same pointer-and-omitempty shape as Change and Shipment, for the
+	// same reason — it is the part of the story the order itself no longer
+	// says, because the order carries only the running total.
+	Refund *OrderRefundEvent `json:"refund,omitempty"`
+	// Return is set on order.returned and order.unreturned: what came back,
+	// whether each line went to the shelf, and what the goods were worth. It is
+	// the part of the story the order itself does not tell, because the order
+	// says what was sold — and its status and payment_status are deliberately
+	// unchanged by a return, so nothing else in this payload says it happened.
+	Return   *ReturnEvent      `json:"return,omitempty"`
 	Metadata map[string]any    `json:"metadata,omitempty"`
 	Extra    map[string]string `json:"extra,omitempty"`
 }
@@ -98,6 +133,74 @@ type OrderEventLine struct {
 	Quantity       int    `json:"quantity"`
 	UnitPriceMinor int64  `json:"unit_price_minor"`
 	TotalMinor     int64  `json:"total_minor"`
+}
+
+// OrderRefundEvent is the refund an order.refunded is about: this one, the
+// running total, and what is still refundable.
+//
+// All three, because a consumer deciding between "here is your money" and "here
+// is part of your money" needs them — the order itself carries only the running
+// figure, and the difference between a partial refund and a final one is the
+// whole reason this event exists.
+type OrderRefundEvent struct {
+	AmountMinor    int64  `json:"amount_minor"`
+	RefundedMinor  int64  `json:"refunded_minor"`
+	RemainingMinor int64  `json:"remaining_minor"`
+	Reason         string `json:"reason,omitempty"`
+	// Reference is the gateway's own id for the refund, empty when the provider
+	// does not implement [ReferencedRefunder].
+	Reference string `json:"provider_reference,omitempty"`
+}
+
+// ReturnEvent is the return an order.returned or order.unreturned is about.
+//
+// RefundableMinor is what the goods were worth — unit price x quantity, less
+// the line share of the order discount, plus tax where prices are exclusive —
+// and is explicitly not a refund: the return moved no money. A consumer that
+// pays it back is deciding to, which is a decision the store makes elsewhere.
+type ReturnEvent struct {
+	ReturnID int64  `json:"return_id"`
+	Status   string `json:"status"`
+	Reason   string `json:"reason,omitempty"`
+	// Units and RestockedUnits differ whenever something came back damaged,
+	// which is the ordinary case this feature exists for.
+	Units           int               `json:"units"`
+	RestockedUnits  int               `json:"restocked_units"`
+	RefundableMinor int64             `json:"refundable_minor"`
+	Lines           []ReturnEventLine `json:"lines"`
+}
+
+// ReturnEventLine is one line of a return. Minor units; the currency is the
+// event's own currency field, as everywhere else in this payload.
+type ReturnEventLine struct {
+	SKU             string `json:"sku"`
+	Title           string `json:"title"`
+	Quantity        int    `json:"quantity"`
+	Restocked       bool   `json:"restocked"`
+	RefundableMinor int64  `json:"refundable_minor"`
+}
+
+// ShipmentEvent is the parcel an order.shipped or order.unshipped is about.
+type ShipmentEvent struct {
+	FulfillmentID int64  `json:"fulfillment_id"`
+	Carrier       string `json:"carrier,omitempty"`
+	// RemainingUnits rather than a `complete` flag: zero says the same thing,
+	// and the number also says how much is still owed, which `status` does not.
+	RemainingUnits int                 `json:"remaining_units"`
+	Lines          []ShipmentEventLine `json:"lines"`
+}
+
+// ShipmentEventLine is one line of a parcel.
+//
+// Not OrderEventLine: that type carries unit_price_minor and total_minor, and
+// part of a line has no agreed total — inventing one, or leaving the field
+// zero, would overload a documented contract. Four fields are the whole
+// shipment line.
+type ShipmentEventLine struct {
+	SKU          string `json:"sku"`
+	Title        string `json:"title"`
+	VariantLabel string `json:"variant_label,omitempty"`
+	Quantity     int    `json:"quantity"`
 }
 
 // ------------------------------------------------------------------ the bus

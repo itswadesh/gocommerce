@@ -35,13 +35,33 @@ type Customer struct {
 	Phone   string  `json:"phone,omitempty"`
 	Address Address `json:"address"`
 	// Orders counts everything they placed that was not cancelled; Spent totals
-	// only what was actually paid. An order awaiting cash on delivery is a real
-	// order and not yet money.
+	// only what was actually paid, less anything that has gone back. An order
+	// awaiting cash on delivery is a real order and not yet money, and a
+	// partial refund is money the customer no longer spent.
 	Orders       int       `json:"orders"`
 	Spent        Money     `json:"spent"`
 	FirstOrderAt time.Time `json:"first_order_at"`
 	LastOrderAt  time.Time `json:"last_order_at"`
 }
+
+// The aggregates, named once. They are consts rather than inline SQL because a
+// listing and a sort spec have to agree about what "spent" means: two copies of
+// the expression is how the column somebody reads and the column they sorted by
+// come to be different numbers.
+//
+// customerSpent subtracts refunded_minor, and has to. A fully refunded order is
+// already excluded by the payment_status filter; a partially refunded one stays
+// `paid` (D36) and would otherwise be counted at full value, which is the one
+// place keeping the four statuses could quietly make lifetime spend wrong. It
+// is a clause inside the existing GROUP BY and not a correlated subquery — a
+// subquery would ignore the outer WHERE and sum refunds from orders that are
+// not in the group.
+const (
+	customerOrderCount = `count(*) FILTER (WHERE o.status <> 'cancelled')`
+	customerSpent      = `coalesce(sum(o.total_minor - o.refunded_minor) FILTER (WHERE o.payment_status = 'paid'), 0)`
+	customerFirstOrder = `min(o.created_at)`
+	customerLastOrder  = `max(o.created_at)`
+)
 
 // CustomerQuery filters the reading. Search matches an email or a name.
 type CustomerQuery struct {
@@ -82,9 +102,9 @@ func (s *Orders) Customers(ctx context.Context, q CustomerQuery) ([]*Customer, i
 	// who moved house should show the address the parcel is going to now.
 	rows, err := s.app.db.QueryContext(ctx, `
 		SELECT lower(o.email),
-		       count(*) FILTER (WHERE o.status <> 'cancelled'),
-		       coalesce(sum(o.total_minor) FILTER (WHERE o.payment_status = 'paid'), 0),
-		       min(o.created_at), max(o.created_at),
+		       `+customerOrderCount+`,
+		       `+customerSpent+`,
+		       `+customerFirstOrder+`, `+customerLastOrder+`,
 		       (array_agg(coalesce(o.name, '')  ORDER BY o.id DESC))[1],
 		       (array_agg(coalesce(o.phone, '') ORDER BY o.id DESC))[1],
 		       (array_agg(o.address             ORDER BY o.id DESC))[1]

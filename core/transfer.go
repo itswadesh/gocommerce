@@ -763,6 +763,19 @@ func (t *Transfer) ImportOrders(ctx context.Context, in io.Reader, dryRun, fireE
 	return result, nil
 }
 
+// importedRefunded is what an imported order has already sent back. The CSV
+// carries no refund column, so `refunded` is the only thing it can say and it
+// says all of it — which is what the word meant before refunds were recorded
+// one at a time. Without this an imported refunded order would read "fully
+// refunded" and "nothing came back" at once, and the doctor would rightly fail
+// on it.
+func importedRefunded(paymentStatus string, total int64) int64 {
+	if paymentStatus == PaymentRefunded {
+		return total
+	}
+	return 0
+}
+
 func (t *Transfer) importOrderGroup(ctx context.Context, rows []csvRow, dryRun, fireEvents bool, result *ImportResult) {
 	first := rows[0]
 	number := first.get("number")
@@ -843,12 +856,13 @@ func (t *Transfer) importOrderGroup(ctx context.Context, rows []csvRow, dryRun, 
 		if err := tx.QueryRowContext(ctx, `
 			INSERT INTO orders (number, access_token, status, payment_status, payment_provider,
 			                    currency, subtotal_minor, shipping_minor, discount_minor,
-			                    total_minor, email, phone, name, address, lang, created_at, updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16)
+			                    total_minor, refunded_minor, email, phone, name, address, lang,
+			                    created_at, updated_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17)
 			RETURNING id`,
 			number, accessToken, status, payStatus, provider,
 			firstNonEmpty(first.get("currency"), t.app.cfg.Currency),
-			subtotal, shipping, discount, total,
+			subtotal, shipping, discount, total, importedRefunded(payStatus, total),
 			strings.ToLower(first.get("email")), nullString(first.get("phone")),
 			nullString(first.get("name")), addr, lang, createdAt).Scan(&orderID); err != nil {
 			return err

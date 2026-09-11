@@ -1,0 +1,1 @@
+import{j as o,E as c,D as d,aj as i,ak as p}from"./LhHs7TDD.js";function m(t,n,a){o(()=>{var r=c(()=>n(t,a==null?void 0:a())||{});if(a&&(r!=null&&r.update)){var e=!1,f={};d(()=>{var s=a();i(s),e&&p(f,s)&&(f=s,r.update(s))}),e=!0}if(r!=null&&r.destroy)return()=>r.destroy()})}function j(t){return document.body.appendChild(t),{destroy(){t.remove()}}}export{m as a,j as p};

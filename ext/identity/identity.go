@@ -1049,6 +1049,9 @@ func (m *Module) Orders(ctx context.Context, customerID int64, limit, offset int
 		if err != nil {
 			return nil, 0, err
 		}
+		// A signed-in shopper reads their own order, not the store's copy of
+		// it: Redact is the same stripping the guest token route performs.
+		o.Redact()
 		o.AccessToken = ""
 		out = append(out, o)
 	}
@@ -1071,6 +1074,7 @@ func (m *Module) Order(ctx context.Context, customerID int64, number string) (*g
 	if err != nil {
 		return nil, err
 	}
+	o.Redact()
 	o.AccessToken = ""
 	return o, nil
 }

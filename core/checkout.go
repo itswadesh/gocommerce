@@ -553,13 +553,19 @@ type NewOrderInput struct {
 	// PaymentMethod is the code of a registered method, "cod" by default. The
 	// operator is standing in for the shopper, so they choose the same way the
 	// shopper would.
-	PaymentMethod string         `json:"payment_method"`
-	Email         string         `json:"email"`
-	Phone         string         `json:"phone"`
-	Name          string         `json:"name"`
-	Address       Address        `json:"address"`
-	Lines         []NewOrderLine `json:"lines"`
-	Metadata      Metadata       `json:"metadata"`
+	PaymentMethod string `json:"payment_method"`
+	// DiscountCode is a promotion the operator is honouring: the code the
+	// customer quoted on the telephone. It goes onto the cart this builds and
+	// is judged by the checkout under its own lock, exactly as a shopper's is,
+	// so a code that expired or ran out refuses the whole order rather than
+	// quietly placing it at full price.
+	DiscountCode string         `json:"discount_code"`
+	Email        string         `json:"email"`
+	Phone        string         `json:"phone"`
+	Name         string         `json:"name"`
+	Address      Address        `json:"address"`
+	Lines        []NewOrderLine `json:"lines"`
+	Metadata     Metadata       `json:"metadata"`
 }
 
 // NewOrderLine is one variant and how many of it.
@@ -609,6 +615,18 @@ func (s *Orders) Create(ctx context.Context, in NewOrderInput) (*CheckoutResult,
 		// shelf cannot cover is refused here in the same words the storefront
 		// would use — before any order exists to be half-made.
 		if _, err := s.app.carts.AddLine(ctx, cart.Token, l.VariantID, l.Quantity); err != nil {
+			return nil, err
+		}
+	}
+
+	// The code goes on the cart rather than into the CheckoutInput, because
+	// lockCartForCheckout reads the cart row and that row is the only source
+	// applyTx is given. A second channel would be a second answer to which code
+	// applies. Nothing is validated here: an expired, exhausted or ineligible
+	// code fails the Checkout below in phase A, before any order exists and
+	// before any stock is reserved.
+	if dc := strings.TrimSpace(in.DiscountCode); dc != "" {
+		if err := s.app.carts.SetDiscountCode(ctx, cart.Token, dc); err != nil {
 			return nil, err
 		}
 	}

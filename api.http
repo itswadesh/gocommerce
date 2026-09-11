@@ -263,6 +263,45 @@ Content-Type: application/json
 
 { "reference": "collected in cash" }
 
+### Record an attempt that did not succeed. The order stays pending so the
+# shopper can try again, and its reservation stays in the sweeper's reach, so an
+# attempt nobody retries still gives the stock back. The reason goes to the
+# store's log and is stored nowhere. mark-unpaid takes it back.
+POST {{host}}/api/admin/orders/{{orderId}}/mark-payment-failed
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "reason": "card declined" }
+
+### Take a payment status back — a payment recorded on the wrong row, or a
+# failure recorded on it. No body.
+POST {{host}}/api/admin/orders/{{orderId}}/mark-unpaid
+Authorization: Bearer {{token}}
+
+### Place an order on a customer's behalf: the phone order, the trade counter.
+# It takes the shopper's own path, so it reserves stock, snapshots prices and
+# answers with the access token the customer reads the order back with — once,
+# here, and on no other route. discount_code is judged by the checkout under its
+# own lock, so an expired or exhausted code refuses the whole request.
+POST {{host}}/api/admin/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "email": "caller@example.com",
+  "name": "A Caller",
+  "phone": "+441234567890",
+  "payment_method": "cod",
+  "discount_code": "SPRING20",
+  "address": {
+    "line1": "1 Test Street",
+    "city": "Testville",
+    "postal_code": "12345",
+    "country": "US"
+  },
+  "lines": [{ "variant_id": 1, "quantity": 2 }]
+}
+
 ### Ship it. With the built-in manual provider an operator types the tracking
 # number; a carrier module reads "meta" for its own options.
 POST {{host}}/api/admin/create-fulfillment
@@ -270,6 +309,16 @@ Authorization: Bearer {{token}}
 Content-Type: application/json
 
 { "order_id": {{orderId}}, "provider": "manual", "tracking": "TRACK-0001" }
+
+### Ship part of it. "lines" names what goes in this parcel; leaving it out
+# ships everything the order still owes, so the request above sent a second
+# time sends the rest. The order reads "partial" until nothing is left.
+POST {{host}}/api/admin/create-fulfillment
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "order_id": {{orderId}}, "provider": "manual", "tracking": "TRACK-0002",
+  "lines": [{ "order_line_id": 1, "quantity": 1 }] }
 
 ###
 POST {{host}}/api/admin/orders/{{orderId}}/deliver
@@ -290,7 +339,40 @@ POST {{host}}/api/admin/orders/{{orderId}}/refund
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
-{ "amount_minor": 2500 }
+{ "amount_minor": 2500, "reason": "one item returned" }
+
+### A second call sends back whatever is left. Omit the amount entirely and the
+# whole remainder goes; payment_status stays `paid` until the parts add up.
+POST {{host}}/api/admin/orders/{{orderId}}/refund
+Authorization: Bearer {{token}}
+
+### Settle a refund the store asked for and never heard back about — a process
+# that died between the gateway accepting and the record being written. Refused
+# while the refund is under fifteen minutes old, because it may still be running.
+POST {{host}}/api/admin/orders/{{orderId}}/refunds/1/settle
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "outcome": "succeeded", "provider_reference": "re_3Q" }
+
+### Record a return — goods came back. It moves no money: refunding is the
+# request above, and the two are recorded separately on purpose. "restock" is
+# per line and absent means false, so a damaged item is recorded without being
+# put back on sale; "location_id" defaults to the shelf the line was picked from.
+POST {{host}}/api/admin/orders/{{orderId}}/returns
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "reason": "arrived damaged", "lines": [
+  { "line_id": 1, "quantity": 1, "restock": false },
+  { "line_id": 2, "quantity": 2, "restock": true }
+] }
+
+### Withdraw a return recorded in error. The row survives as "withdrawn" and
+# the units it put back come off the shelf again — refused if they have since
+# gone out, which is a stock adjustment rather than a record to unpick.
+DELETE {{host}}/api/admin/orders/{{orderId}}/returns/1
+Authorization: Bearer {{token}}
 
 ### ───────────────────────────────────────────── admin: data
 

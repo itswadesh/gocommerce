@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -348,6 +349,29 @@ func (c *Carts) SetEmail(ctx context.Context, tok, email string) (*Cart, error) 
 		return nil, err
 	}
 	return c.GetByToken(ctx, tok)
+}
+
+// SetDiscountCode puts a promotion code on a cart, or clears it when the code
+// is empty. It is the only writer of carts.discount_code — the two public
+// handlers and the operator-placed order path all come through here, so the
+// open-cart check and the trimming happen once rather than three times.
+//
+// It returns an error rather than the cart because neither caller reads one
+// back, and GetByToken would re-read every line and its live price to answer a
+// question nobody asked. Nothing is validated here: applyTx judges and claims
+// the code under the checkout's own lock, which is the only place the answer
+// can still be true when the order is written.
+func (c *Carts) SetDiscountCode(ctx context.Context, tok, code string) error {
+	return InTx(ctx, c.app.db, func(tx *sql.Tx) error {
+		cartID, err := c.openCartID(ctx, tx, tok)
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx,
+			`UPDATE carts SET discount_code = $2, updated_at = now() WHERE id = $1`,
+			cartID, strings.TrimSpace(code))
+		return err
+	})
 }
 
 // openCartID resolves a token to a cart that can still be modified.

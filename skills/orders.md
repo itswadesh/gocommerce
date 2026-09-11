@@ -14,7 +14,7 @@ cancelling (AGENTS.md rule 3).
 Two independent statuses, both `CHECK`-constrained in `schema.go`:
 
 ```
-status:         pending → confirmed → shipped → delivered
+status:         pending → confirmed → partial → shipped → delivered
                    ↓          ↓
                      cancelled
 payment_status: pending → paid → refunded
@@ -22,15 +22,39 @@ payment_status: pending → paid → refunded
                  failed
 ```
 
+`paid` is also where an order sits while part of its money has gone back:
+`refunded` means *all* of it has. The number to read is `refunded` on the order
+(`orders.refunded_minor`), never the status — see **Refunds** below.
+
+`partial` is what the shipped sum landing between nothing and everything is
+called. It is skipped entirely when one shipment covers everything owed, which
+is what most orders do, and it is derived from `fulfillment_lines` rather than
+set by a caller.
+
 | Transition | Call | HTTP | Event |
 |---|---|---|---|
 | pending → confirmed | `Order().Confirm(ctx, id)` | *(no route — it happens via payment or COD checkout)* | none |
 | payment → paid, and pending → confirmed | `Pay().MarkPaid(ctx, id, ref)` | `POST /api/admin/orders/{id}/mark-paid` | `order.paid` |
-| payment → failed | `Pay().MarkFailed(ctx, id, reason)` | *(module-driven)* | none |
-| confirmed → shipped | `Ship().Create(ctx, id, code, req)` | `POST /api/admin/create-fulfillment` | `order.shipped` |
+| payment → failed | `Pay().MarkFailed(ctx, id, reason)` | `POST /api/admin/orders/{id}/mark-payment-failed` | none |
+| payment failed → pending | `Pay().MarkUnpaid(ctx, id)` | `POST /api/admin/orders/{id}/mark-unpaid` | none |
+| confirmed → partial | `Ship().Create(ctx, id, code, req)` with `req.Lines` | `POST /api/admin/create-fulfillment` | `order.shipped` |
+| confirmed\|partial → shipped | `Ship().Create(ctx, id, code, req)` | `POST /api/admin/create-fulfillment` | `order.shipped` |
 | shipped → delivered | `Order().MarkDelivered(ctx, id)` | `POST /api/admin/orders/{id}/deliver` | `order.delivered` |
 | pending\|confirmed → cancelled | `Order().Cancel(ctx, id, reason)` | `POST /api/admin/orders/{id}/cancel` | `order.cancelled` |
-| paid → refunded | `Pay().Refund(ctx, id, amountMinor)` | `POST /api/admin/orders/{id}/refund` | none |
+| paid → paid \| refunded | `Pay().Refund(ctx, id, RefundRequest{...}, by)` | `POST /api/admin/orders/{id}/refund` | `order.refunded` |
+| a stranded refund → settled | `Pay().SettleRefund(ctx, id, refundID, RefundSettlement{...}, by)` | `POST /api/admin/orders/{id}/refunds/{refund_id}/settle` | `order.refunded`, or none when it never went out |
+| partial\|shipped\|delivered, goods back | `Order().Return(ctx, id, in)` | `POST /api/admin/orders/{id}/returns` | `order.returned` |
+| a return withdrawn | `Order().WithdrawReturn(ctx, id, returnID)` | `DELETE /api/admin/orders/{id}/returns/{returnId}` | `order.unreturned` |
+
+Recording a failed payment leaves the order `pending` — the sale is not over,
+and the shopper may try again — and leaves its reservation in the sweeper's
+reach, so an attempt nobody retries still gives the stock back on its own. The
+`reason` goes to the store's log and is stored nowhere, which is why the panel
+sends a fixed string rather than prompting for prose it would discard.
+`mark-unpaid` takes the failure back, silently: the failure was never announced,
+so its reversal has nothing to correct. On a cancelled order `MarkFailed`
+records nothing and says so with a 200, checked before the paid guard — a 409
+there would be a gateway webhook retried forever.
 
 Every one of them runs through `Orders.transition`, which opens `InTx`, reads
 the order `FOR UPDATE`, loads its lines, runs the callback, and writes the
@@ -56,7 +80,16 @@ things depending on how far the order got: a `pending` order only ever
 took the units off the shelf, so `restockStock` puts them back — onto the shelf
 the line records, not onto the default. Getting this
 backwards silently invents or destroys inventory. An order that has shipped
-cannot be cancelled at all — that is a return, and 409 says so.
+cannot be cancelled at all — that is a return, and 409 says so; **Returns**
+below is where that sentence now leads.
+
+**What has shipped is derived the same way, from `fulfillment_lines`.**
+`settleOrderShipping` is the only writer of the shipping axis of `status`, so
+`partial` cannot be set directly and cannot disagree with the parcels behind it.
+A `partial` order is stock-committed exactly like `confirmed` and `shipped` —
+its units left the shelf at confirmation, including the ones still in the
+stockroom — which is why `Cancel` and `EditLines` refuse on it rather than doing
+arithmetic over half an order. Shipping itself moves no stock at all.
 
 **`order_lines` are snapshots with nullable foreign keys.** `product_id` and
 `variant_id` are `REFERENCES … ON DELETE SET NULL`, while `sku`, `title`,
@@ -79,6 +112,66 @@ exist.
 serializes as `{"amount_minor": 2500, "currency": "USD"}` — never a formatted
 string, because decimal places belong to the currency and symbols to the
 reader's locale.
+
+### Refunds
+
+**A refund is a row, and `refunded_minor` is the number.** `order_refunds`
+records each one — amount, reason, provider, the gateway's own refund id, the
+operator, a status — and `orders.refunded_minor` carries the running total, out
+on the Order as `refunded` and `refunds[]`. `payment_status` stays `paid` while
+the store holds any of the money and reaches `refunded` only when the parts add
+up to the total (D36), so code asking "has money gone back" reads
+`Refunded.AmountMinor > 0` and never the status. Five guards already do —
+`MarkPaid`, `MarkUnpaid`, `MarkFailed`, `EditLines` and `Update`'s provider
+clause — and `lockOrder` loads the figure for every transition, so the right
+field is always already to hand.
+
+**Refunding is three steps** because rule 5 forbids a transaction across the
+gateway call: a `pending` row is committed first and *is* the reservation
+against a concurrent second refund; the provider is asked with nothing held;
+then one transition moves `refunded_minor`, `payment_status` and
+`order.refunded` together. A declined refund leaves a `failed` row carrying what
+the provider said. A refund the engine never heard back about stays `pending`,
+blocking that amount — the doctor warns past fifteen minutes and
+`POST /api/admin/orders/{id}/refunds/{refund_id}/settle` is how an operator says
+what happened, so clearing it is never SQL against a core table.
+
+### Returns
+
+**Goods coming back are their own record, and they move no money.**
+`order_returns` and `order_return_lines` (M25) hold what came back off a
+**partly shipped, shipped or delivered** order: per line, a quantity, a restock
+decision, the shelf the units went to, and what they were worth. `Orders.Return`
+runs inside `Orders.transition`, so the rows, the `restockStock` movement and
+`order.returned` commit together and there is no network call anywhere in the
+path. Refunding stays `Pay().Refund` — separate right, separate record,
+separate event — which is why the refund row above still says nothing about
+stock, and why the refund route's own description now points here.
+
+The quantity is **per line and cumulative across returns**: the cap is what went
+out (on a partly shipped order, what actually shipped) less what has already
+come back on returns that still stand. No CHECK can express a sum across rows,
+so the cap lives in the statement that inserts the line, under the order's row
+lock — and `gocommerce doctor`'s `returns` check exists to notice a row that
+got in some other way.
+
+The restock decision is per line too, and defaults to **false** on the API: a
+client that forgets the field under-counts stock, which is the safe direction to
+be wrong in. A damaged item is still returned; it simply moves no stock. The
+units go back to the shelf the line was picked from unless the request names
+another, which must be active.
+
+The order's `status` and `payment_status` are untouched — `delivered` stays
+true, because the parcel really did arrive. Whether anything came back is
+`returns` on the order, and `returned_quantity` on each line.
+
+**`Cancel` and `EditLines` refuse an order with an active return**, because its
+lines no longer describe what left the store. That state is reachable in three
+clicks: undeliver a returned order and delete its last shipment, and
+`restockOrder` would put every line back at its full quantity on top of what has
+already come back. A return recorded in error is **withdrawn**, not deleted —
+the units come off the shelf again through `sellStock`, the row survives saying
+`withdrawn`, and the order becomes cancellable and editable again.
 
 ## How to read an order
 
@@ -109,6 +202,13 @@ order, err := app.Pay().MarkPaid(ctx, 42, "pi_3Ox…")
 order, err := app.Ship().Create(ctx, 42, gocommerce.ProviderManual,
     gocommerce.ShipRequest{Tracking: "1Z999AA1"})
 
+// Part of it. Empty Lines means everything the order still owes, so the call
+// above ships the whole order the first time and the remainder the second.
+order, err := app.Ship().Create(ctx, 42, gocommerce.ProviderManual,
+    gocommerce.ShipRequest{Tracking: "1Z999AA1", Lines: []gocommerce.ShipLine{
+        {OrderLineID: order.Lines[0].ID, Quantity: 1},
+    }})
+
 order, err := app.Order().MarkDelivered(ctx, 42)
 order, err := app.Order().Cancel(ctx, 42, "customer changed their mind")
 ```
@@ -117,18 +217,26 @@ order, err := app.Order().Cancel(ctx, 42, "customer changed their mind")
 POST /api/admin/create-fulfillment
 {"order_id":42,"provider":"manual","tracking":"1Z999AA1"}
 
+# One line of it. The order lands on `partial`; the same request without
+# `lines`, sent again, ships whatever is left and lands it on `shipped`.
+POST /api/admin/create-fulfillment
+{"order_id":42,"tracking":"1Z999AA1","lines":[{"order_line_id":101,"quantity":1}]}
+
 POST /api/admin/orders/42/cancel
 {"reason":"customer changed their mind"}
 ```
 
 Out-of-order calls are refused with 409, not tolerated: delivering an order that
-never shipped, shipping one that is still `pending`, cancelling one that has
-shipped.
+never shipped or has only partly shipped, shipping one that is still `pending`,
+cancelling or editing one that has shipped in whole or in part.
 
 ## How to reclaim abandoned inventory
 
-`Orders.SweepUnpaid` cancels `pending`/`pending` orders whose
-`reservation_expires_at` has passed, 200 at a time, and returns their stock. It
+`Orders.SweepUnpaid` cancels `pending` orders whose payment is `pending` or
+`failed` and whose `reservation_expires_at` has passed, 200 at a time, and
+returns their stock. A recorded failure is included because it is the one
+nobody is coming back for; before M23 it was excluded, so marking a payment
+failed held its stock out of sale forever. It
 runs every five minutes from `App.runSweepers` alongside the cart sweeper, so
 you rarely call it directly — but call it in a test that asserts a reservation
 is released. Without it an abandoned redirect holds inventory out of sale
@@ -144,11 +252,18 @@ actually in stock.
 - **Emitting an event from an idempotent no-op.** Return `""`.
 - **Reading `payment_status` to decide shippability.** `shippableOrder` reads
   `status`; a COD order ships while `payment_status` is still `pending`.
+- **Reading `status == "shipped"` to mean anything has gone out.** `partial` is
+  the one that has left the building without emptying the order. Use
+  `shipped_quantity` on the lines, or `status IN ('partial','shipped')`.
 - **Assuming `cancelled` means unpaid.** `MarkPaid` on a cancelled order is a
   409 telling you it needs a refund, not a confirmation — reviving the order
   would resurrect a reservation nobody is holding.
 - **Building a customer record on `email`.** Identity is a module's job through
   `Config.AdminAuth`; core stays guest-only.
+- **Walking a delivered order backwards to put goods back.** Undeliver, delete
+  the shipment, cancel: that restocks every line at its full quantity and
+  rewrites a completed sale as a cancellation. `Order().Return` is the
+  operation, and the walk-back is refused once a return exists.
 
 Related: [checkout](checkout.md), [payments](payments.md), [events](events.md),
 [inventory](inventory.md).

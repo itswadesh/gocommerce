@@ -694,7 +694,7 @@
         "summary": "List the payment methods this store accepts",
         "responses": {
           "200": {
-            "description": "Installed payment codes.",
+            "description": "Installed payment codes, and the same list with display names.",
             "content": {
               "application/json": {
                 "schema": {
@@ -716,6 +716,35 @@
                         "currency": {
                           "type": "string",
                           "example": "USD"
+                        },
+                        "methods": {
+                          "type": "array",
+                          "description": "The same set as `payment_methods`, in the same order, with the name each provider gives itself — the string to put beside a radio button. Both shapes exist on purpose and neither replaces the other: `payment_methods` is the array of codes every storefront already reads, and a future tidy-up that collapses them breaks those readers to save a key.",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "code": {
+                                "type": "string",
+                                "description": "What the API speaks: the code in the checkout URL.",
+                                "example": "cod"
+                              },
+                              "name": {
+                                "type": "string",
+                                "description": "The label to show a person. Falls back to the code when the provider offers no name, which is the same answer GET /api/admin/settings gives for the same provider.",
+                                "example": "Cash on delivery"
+                              }
+                            }
+                          },
+                          "example": [
+                            {
+                              "code": "cod",
+                              "name": "Cash on delivery"
+                            },
+                            {
+                              "code": "stripe",
+                              "name": "stripe"
+                            }
+                          ]
                         }
                       }
                     }
@@ -3050,6 +3079,7 @@
               "enum": [
                 "pending",
                 "confirmed",
+                "partial",
                 "shipped",
                 "delivered",
                 "cancelled"
@@ -3182,6 +3212,11 @@
                   },
                   "metadata": {
                     "type": "object"
+                  },
+                  "discount_code": {
+                    "type": "string",
+                    "description": "Optional. A promotion code the operator is honouring — the one the customer quoted on the telephone. It is judged by the checkout under its own lock, exactly as a shopper's is, so an expired, exhausted or ineligible code refuses the whole request with 422 and no order is created and no stock is reserved.",
+                    "example": "SPRING20"
                   }
                 }
               }
@@ -3190,7 +3225,7 @@
         },
         "responses": {
           "201": {
-            "description": "The order and what must happen to pay for it.",
+            "description": "The order and what must happen to pay for it. `data.order.access_token` is returned here and in no other admin response, ever: it is the guest's only credential for their own order, so it is shown once and cannot be recovered afterwards.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3203,7 +3238,7 @@
                           "$ref": "#/components/schemas/Order"
                         },
                         "payment": {
-                          "type": "object"
+                          "$ref": "#/components/schemas/PaymentIntent"
                         }
                       }
                     }
@@ -3494,7 +3529,7 @@
             "adminToken": []
           }
         ],
-        "description": "Goes back through the provider that took the money. A method that cannot refund — cash on delivery, for one — reports that plainly rather than pretending. Omit the amount to refund the full total.",
+        "description": "Goes back through the provider that took the money. A method that cannot refund — cash on delivery, for one — reports that plainly rather than pretending. Omit the amount to send back everything that has not been refunded yet. An order may be refunded in parts; payment_status stays paid until they add up to the total, and refunded carries the running figure. This moves money only: goods coming back are recorded as a return, which is what puts them on the shelf.",
         "parameters": [
           {
             "$ref": "#/components/parameters/PathID"
@@ -3509,7 +3544,13 @@
                 "properties": {
                   "amount_minor": {
                     "type": "integer",
-                    "format": "int64"
+                    "format": "int64",
+                    "description": "Omitted, zero or negative means everything still refundable, counting a refund already in flight."
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "description": "Why the money went back. Recorded on the refund and carried on the event, so whatever tells the customer can say it."
                   }
                 }
               }
@@ -3519,6 +3560,237 @@
         "responses": {
           "200": {
             "$ref": "#/components/responses/OrderResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/admin/orders/{id}/returns": {
+      "post": {
+        "tags": [
+          "admin:orders"
+        ],
+        "summary": "Record a return",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Records goods coming back off a shipped, partly shipped or delivered order, and puts back on the shelf the lines marked to restock. It moves no money: refunding is POST /api/admin/orders/{id}/refund, a separate operation with its own right and its own record, and the two are recorded separately on purpose. Quantities are per line and cumulative across returns — more than is still owed is refused — and on a partly shipped order only what has actually gone out can come back. The order's status and payment_status are untouched, because the delivery still happened.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "lines"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "description": "Why it came back. Customer-visible: it rides the order.returned event out to the notifiers, as a cancellation reason does."
+                  },
+                  "metadata": {
+                    "type": "object"
+                  },
+                  "lines": {
+                    "type": "array",
+                    "description": "What came back. At least one, each naming a line of this order at most once.",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "line_id",
+                        "quantity"
+                      ],
+                      "properties": {
+                        "line_id": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "A line of this order, as returned in line_items[].id."
+                        },
+                        "quantity": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "description": "How many units came back. No more than what is still returnable: what went out, less what has already come back on returns that still stand."
+                        },
+                        "restock": {
+                          "type": "boolean",
+                          "default": false,
+                          "description": "Whether these units go back on sale. Absent means false, so nothing moves unless somebody says it should — a damaged item is still returned, it simply moves no stock."
+                        },
+                        "location_id": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "Which shelf they go back on. Absent or 0 means the one the line was picked from. A named location must be active."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The order as it now stands, and the return that was recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "order": {
+                          "$ref": "#/components/schemas/Order"
+                        },
+                        "return": {
+                          "$ref": "#/components/schemas/OrderReturn"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/admin/orders/{id}/returns/{returnId}": {
+      "delete": {
+        "tags": [
+          "admin:orders"
+        ],
+        "summary": "Withdraw a return recorded in error",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Takes back a return that should not have been recorded. The row survives with status withdrawn — how much is still returnable is counted from these rows, and a return whose row is gone is a stock movement nobody can account for — and the units it put back come off the shelf again. Withdrawing an already-withdrawn return is a silent no-op. It is refused when those units have since gone out again, because taking them off would push the count below what other orders have reserved.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          },
+          {
+            "$ref": "#/components/parameters/ReturnID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/OrderResponse"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/admin/orders/{id}/refunds/{refund_id}/settle": {
+      "post": {
+        "tags": [
+          "admin:orders"
+        ],
+        "summary": "Settle a refund that was never heard back about",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "The recovery path for a process that died between the gateway accepting a refund and the store recording it. The engine cannot know whether the money left; a person looking at the gateway can, and this is how they say so — rather than by writing SQL against the ledger. A refund younger than fifteen minutes may still be in flight and is refused.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          },
+          {
+            "name": "refund_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "outcome"
+                ],
+                "properties": {
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "succeeded",
+                      "failed"
+                    ]
+                  },
+                  "provider_reference": {
+                    "type": "string",
+                    "description": "The gateway's id for the refund, when it did go out."
+                  },
+                  "note": {
+                    "type": "string",
+                    "description": "What the gateway said, when it did not."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/OrderResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -3699,7 +3971,7 @@
             "adminToken": []
           }
         ],
-        "description": "Books a shipment and moves the order to shipped. With the built-in `manual` provider an operator packs the box and types the tracking number; a carrier module reads `meta` for its own options, such as courier choice or pickup slot.",
+        "description": "Books a shipment against some or all of an order, and lets the order's status follow what has gone out: `shipped` when nothing is left, `partial` while units are still owed. Omitting `lines` ships everything the order still owes, so the same request sent twice ships the whole order and then the remainder. With the built-in `manual` provider an operator packs the box and types the tracking number; a carrier module reads `meta` for its own options, such as courier choice or pickup slot.",
         "requestBody": {
           "required": true,
           "content": {
@@ -3720,6 +3992,32 @@
                   },
                   "tracking": {
                     "type": "string"
+                  },
+                  "carrier": {
+                    "type": "string",
+                    "description": "Who is carrying it, as a carrier code. Worked out from the tracking number when left out."
+                  },
+                  "lines": {
+                    "type": "array",
+                    "description": "What goes in this parcel. Omit it to ship everything the order still owes, which on a first shipment is the whole order.",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "order_line_id",
+                        "quantity"
+                      ],
+                      "properties": {
+                        "order_line_id": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "A line the order already has, as returned in line_items[].id."
+                        },
+                        "quantity": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      }
+                    }
                   },
                   "meta": {
                     "type": "object",
@@ -4369,8 +4667,8 @@
         "tags": [
           "admin:orders"
         ],
-        "summary": "Take back a payment recorded in error",
-        "description": "A correction, not a refund: it says the money never arrived and somebody marked the wrong order, so it leaves no refund behind. It moves the payment status and nothing else — a confirmed order awaiting payment is not a broken state, it is what every cash-on-delivery order already is, and un-confirming would put stock back on the shelf while the order is still live. An operator who wants the stock back cancels the order instead.\n\nRefused on a refunded order, where money really did move, and on a cancelled one.",
+        "summary": "Take back a payment status recorded in error",
+        "description": "A correction, not a refund: it says the money never arrived and somebody marked the wrong order, so it leaves no refund behind. It moves the payment status and nothing else — a confirmed order awaiting payment is not a broken state, it is what every cash-on-delivery order already is, and un-confirming would put stock back on the shelf while the order is still live. An operator who wants the stock back cancels the order instead.\n\nRefused on a refunded order, where money really did move, and on a cancelled one.\n\nIt clears a recorded failure as well: an order whose payment is `failed` goes back to `pending` and loses its payment reference, silently — the failure was never announced, so its reversal announces nothing. On an already-pending order it does nothing.",
         "security": [
           {
             "adminToken": []
@@ -4381,6 +4679,56 @@
             "$ref": "#/components/parameters/PathID"
           }
         ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/OrderResponse"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/admin/orders/{id}/mark-payment-failed": {
+      "post": {
+        "tags": [
+          "admin:orders"
+        ],
+        "summary": "Record a payment attempt that did not succeed",
+        "description": "The order stays where it is — it is not cancelled and its stock is not released — so the shopper can try again. Its reservation stays in the sweeper's reach, so an attempt nobody retries eventually cancels the order and returns the stock on its own.\n\nTwo deliberate no-ops answer 200 and change nothing: an order whose payment is already failed, and an order that has been cancelled. The cancelled case is checked first, so a late gateway callback for an order the sweeper already cancelled is recorded as nothing rather than refused — a 409 there is a webhook retried forever.\n\nRefused with 409 on an order that is already paid, and on one that was refunded, where money really did move.\n\n`POST /api/admin/orders/{id}/mark-unpaid` takes a recorded failure back.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "description": "Optional. Written to the store's log and nowhere else: it is not stored on the order and never returned. The panel sends a fixed string rather than prompting for prose it would discard.",
+                    "example": "card declined"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "$ref": "#/components/responses/OrderResponse"
@@ -4572,7 +4920,7 @@
           "cart"
         ],
         "summary": "Put a discount code on a cart",
-        "description": "Answers with what the code is worth for this basket. That amount is a preview, not a promise: nothing is consumed here, and checkout decides again under its own lock. A code that is valid now and exhausted in ten minutes is refused then, which is the only honest place to refuse it.",
+        "description": "Answers with what the code is worth for this basket. That amount is a preview, not a promise: nothing is consumed here, and checkout decides again under its own lock. A code that is valid now and exhausted in ten minutes is refused then, which is the only honest place to refuse it. A cart that has already been checked out refuses this: there is nothing left to discount, and the row would be one nothing reads.",
         "parameters": [
           {
             "name": "token",
@@ -4626,6 +4974,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       },
@@ -4650,8 +5001,12 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
-        }
+        },
+        "description": "Clearing the code is the same write as setting one, with an empty code. A cart that has already been checked out refuses this for the same reason PUT does."
       }
     },
     "/api/admin/discounts": {
@@ -5855,14 +6210,14 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
-          },
-          "400": {
-            "$ref": "#/components/responses/Validation"
           }
         }
       },
@@ -5908,14 +6263,14 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
-          },
-          "400": {
-            "$ref": "#/components/responses/Validation"
           }
         }
       }
@@ -6684,6 +7039,16 @@
         "name": "lineId",
         "in": "path",
         "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "ReturnID": {
+        "name": "returnId",
+        "in": "path",
+        "required": true,
+        "description": "A return of the order named by id. One belonging to another order is reported as not found.",
         "schema": {
           "type": "integer",
           "format": "int64"
@@ -8011,9 +8376,11 @@
           },
           "status": {
             "type": "string",
+            "description": "partial means some of what was ordered has gone out and some has not; shipped still means all of it. It is derived from the shipments and never set directly.",
             "enum": [
               "pending",
               "confirmed",
+              "partial",
               "shipped",
               "delivered",
               "cancelled"
@@ -8049,6 +8416,14 @@
           "total": {
             "$ref": "#/components/schemas/Money"
           },
+          "refunded": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "What has gone back to the customer. payment_status stays paid while any of the money is still the store's, and becomes refunded only once this reaches the total."
+          },
           "email": {
             "type": "string"
           },
@@ -8074,6 +8449,20 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Fulfillment"
+            }
+          },
+          "refunds": {
+            "type": "array",
+            "description": "Every refund on this order, oldest first.",
+            "items": {
+              "$ref": "#/components/schemas/Refund"
+            }
+          },
+          "returns": {
+            "type": "array",
+            "description": "What has come back off this order, oldest first, including returns that were later withdrawn. Empty on a guest's copy: it is the store's operational record rather than a fact about what the shopper bought.",
+            "items": {
+              "$ref": "#/components/schemas/OrderReturn"
             }
           },
           "metadata": {
@@ -8122,6 +8511,14 @@
           "quantity": {
             "type": "integer"
           },
+          "shipped_quantity": {
+            "type": "integer",
+            "description": "How many of this line have gone out, summed across the order's shipments. Derived on the way out, never stored."
+          },
+          "returned_quantity": {
+            "type": "integer",
+            "description": "How many of this line have come back on returns that still stand. Summed on the way out, never stored, and absent when nothing has."
+          },
           "unit_price": {
             "$ref": "#/components/schemas/Money"
           },
@@ -8151,6 +8548,18 @@
           "tracking": {
             "type": "string"
           },
+          "carrier": {
+            "type": "string",
+            "description": "Who is carrying the parcel, as a carrier code. A different fact from the provider that booked it."
+          },
+          "carrier_name": {
+            "type": "string",
+            "description": "The carrier's display name, derived from its code on the way out."
+          },
+          "tracking_url": {
+            "type": "string",
+            "description": "Where to follow the parcel, derived from the carrier and the number on the way out and never stored."
+          },
           "label_url": {
             "type": "string"
           },
@@ -8162,12 +8571,187 @@
               "cancelled"
             ]
           },
+          "lines": {
+            "type": "array",
+            "description": "What went in this parcel. Empty on a shipment recorded before shipments named their contents.",
+            "items": {
+              "$ref": "#/components/schemas/FulfillmentLine"
+            }
+          },
           "metadata": {
             "type": "object"
           },
           "created_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "Refund": {
+        "type": "object",
+        "description": "One movement of money back to the customer. A guest reading their own order with its access token sees only refunds that actually moved money, and without reason, by or error — those belong to the operator.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "pending only while the provider is being asked: the row is committed before that call, and is what stops a second refund spending the same money.",
+            "enum": [
+              "pending",
+              "succeeded",
+              "failed"
+            ]
+          },
+          "provider": {
+            "type": "string",
+            "description": "The method the money went out through, as it was at the time."
+          },
+          "provider_reference": {
+            "type": "string",
+            "description": "The gateway's own id for the refund — what a bank statement is reconciled against. Empty when the provider does not report one."
+          },
+          "error": {
+            "type": "string",
+            "description": "What the provider said when it refused."
+          },
+          "by": {
+            "type": "string",
+            "description": "The operator's email as it was then. Empty when a script holding the static admin token did it."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "OrderReturn": {
+        "type": "object",
+        "description": "Goods that came back off an order. It moves no money: refundable is what the goods were worth — unit price times quantity, less the line's share of the order discount, plus its share of the tax where prices exclude it — and is a suggestion for whoever decides about a refund, never a settlement.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "order_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string",
+            "description": "withdrawn means the record was taken back and the units it put on the shelf came off again. Only a received return counts against what may still come back.",
+            "enum": [
+              "received",
+              "withdrawn"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderReturnLine"
+            }
+          },
+          "units": {
+            "type": "integer",
+            "description": "How many units came back, summed from the lines on the way out."
+          },
+          "restocked_units": {
+            "type": "integer",
+            "description": "How many of them went back on sale. Less than units whenever something came back damaged."
+          },
+          "refundable": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "What the goods were worth. NOT a refund amount: no money moved on this record."
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "OrderReturnLine": {
+        "type": "object",
+        "description": "How much of one order line came back. The sku, title and label are joined in on the way out, because the row itself stores an id and a count.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "order_line_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "variant_label": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer"
+          },
+          "restocked": {
+            "type": "boolean",
+            "description": "Whether these units went back on sale. It records what happened rather than what was asked: a line whose variant has since been deleted stores false, because there is no shelf left to put it back on."
+          },
+          "location_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The shelf they went back on. Absent when nothing moved."
+          },
+          "refundable": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "What these units were worth, snapshotted when the return was recorded."
+          }
+        }
+      },
+      "FulfillmentLine": {
+        "type": "object",
+        "description": "How much of one order line went in one parcel. The sku, title and label are joined in on the way out, because the row itself stores an id and a count.",
+        "properties": {
+          "order_line_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "variant_label": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer"
           }
         }
       },

@@ -123,11 +123,29 @@ $delivered = Invoke-GC POST "/api/admin/orders/$($order.id)/deliver" -Admin
 Confirm-GC 'final status'  'delivered' $delivered.status
 Confirm-GC 'final payment' 'paid'      $delivered.payment_status
 
-Write-GCStep '11. Cash on delivery cannot refund, and says so'
+Write-GCStep '11. Cash on delivery cannot refund, and says so — but the goods still come back'
 $refundRefused = $false
 try { Invoke-GC POST "/api/admin/orders/$($order.id)/refund" -Admin | Out-Null }
 catch { $refundRefused = "$_" -match 'does not support refunds' }
 Confirm-GCTrue 'refund refused with a reason' $refundRefused
+
+# Which is the whole argument for returns being their own record: the one
+# payment method the engine ships cannot refund at all, so a restock flag on the
+# refund route could not have put a single unit back on a shelf.
+$returned = Invoke-GC POST "/api/admin/orders/$($order.id)/returns" @{
+    reason = 'one did not fit'
+    lines  = @(@{ line_id = $delivered.line_items[0].id; quantity = 1; restock = $true })
+} -Admin
+Confirm-GC 'the return is recorded'   1           $returned.return.units
+Confirm-GC 'and it went back on sale' 1           $returned.return.restocked_units
+Confirm-GC 'status is unchanged'      'delivered' $returned.order.status
+Confirm-GC 'payment is unchanged'     'paid'      $returned.order.payment_status
+Confirm-GC 'the unit is on the shelf again' 2 (Invoke-GC GET "/api/variants/$($medium.id)").stock_on_hand
+
+# A return recorded in error is withdrawn rather than deleted, and the units it
+# put back come off again.
+Invoke-GC DELETE "/api/admin/orders/$($order.id)/returns/$($returned.return.id)" -Admin | Out-Null
+Confirm-GC 'withdrawing takes them off again' 1 (Invoke-GC GET "/api/variants/$($medium.id)").stock_on_hand
 
 # --------------------------------------------------------------- admin bits
 

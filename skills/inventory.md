@@ -30,7 +30,7 @@ A store with one location never has to think about any of this. Every store gets
 a `default` location when its schema is created, opening stock lands there, and
 every stock call takes `0` to mean it.
 
-Four movements, all in `inventory.go`, all single UPDATE statements so the check
+Five movements, all in `inventory.go`, all single UPDATE statements so the check
 and the write happen under the same row lock, and all against one location:
 
 | movement | effect | when |
@@ -38,7 +38,8 @@ and the write happen under the same row lock, and all against one location:
 | `reserveStock` | `reserved += qty` | [checkout](checkout.md) creates the order |
 | `commitStock` | `reserved -= qty`, `on_hand -= qty` | payment confirms the order |
 | `releaseStock` | `reserved -= qty` | a pending order is cancelled or swept |
-| `restockStock` | `on_hand += qty` | a *confirmed* order is cancelled |
+| `restockStock` | `on_hand += qty` | a *confirmed* order is cancelled, or goods come back on a return |
+| `sellStock` | `on_hand -= qty` | a committed order is edited upward, or a return is withdrawn |
 
 Which of the last two is correct depends on how far the order got: a pending
 order only ever reserved stock, while a confirmed one has already taken it off
@@ -49,11 +50,13 @@ Which *place* they act on is not a fresh decision. `pickLocation` chooses once,
 at checkout, and the answer is written to `order_lines.location_id`; everything
 afterwards reads it back through `lineLocation`. That is what makes a
 cancellation put the units back on the shelf they left rather than on whichever
-shelf is default that week.
+shelf is default that week. A return goes back the same way unless the operator
+names another location — a returns desk, say — which must be active, because
+stock parked on a shelf nobody counts is stock the store has lost track of.
 
 The public service is `app.Stock()`, returning `*Inventory`, with `Adjust`,
 `SetOnHand`, `Move`, `ByLocation` and `LowStock`. Places are `app.Places()`,
-returning `*Locations`. The four movement functions above are unexported: they
+returning `*Locations`. The five movement functions above are unexported: they
 only ever run inside the order transaction that justifies them.
 
 ## Invariants
@@ -95,7 +98,8 @@ only ever run inside the order transaction that justifies them.
   last read.
 - **A reservation has a deadline.** Checkout stamps
   `orders.reservation_expires_at` at `now() + Config.OrderTTL` (24h default);
-  `Orders.SweepUnpaid` cancels what is past it and releases the stock. Without
+  `Orders.SweepUnpaid` cancels what is past it — whether the payment is still
+  pending or was recorded as failed — and releases the stock. Without
   it an abandoned payment takes units out of sale forever — invisible until the
   day it sells out something that is actually on the shelf. `gocommerce doctor`
   reports stale reservations for exactly this reason.
@@ -244,7 +248,11 @@ signal for "not tracked" — a storefront must not render it as a quantity.
 - **Restocking a cancelled *pending* order.** It never left the shelf; only the
   reservation needs releasing. `Orders.Cancel` already picks correctly — do not
   "help" it with a manual adjustment afterwards.
+- **Putting returned goods back with `Stock().Adjust`.** It leaves no reason, no
+  order and no record of what came back, so nothing can tell it from a stock
+  count — and nothing stops the same units being counted again.
+  `Order().Return` is the operation that does, per line and per quantity.
 - **Assuming a failed checkout leaves stock reserved.** The reservation is made
   inside the order transaction; a conflict rolls the whole thing back. Only a
-  *created but unpaid* order holds stock, and the sweeper is what eventually
-  frees it.
+  *created but unsettled* order holds stock — payment pending, or recorded as
+  failed — and the sweeper is what eventually frees it.

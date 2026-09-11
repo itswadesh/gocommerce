@@ -155,9 +155,12 @@ Three things a webhook handler must do:
    already taken.
 3. **Call `app.Pay().MarkPaid(...)`**, never `UPDATE orders`.
 
-Implement `Refund(ctx, order, amountMinor) error` if the gateway can refund.
-Not implementing it is a valid answer — cash on delivery does not, and the
-engine reports that plainly rather than pretending.
+Implement `Refund(ctx, order, amountMinor) error` if the gateway can refund, and
+`RefundWithReference(ctx, order, amountMinor) (string, error)` as well if it
+returns an id for the refund: that id is what somebody reconciles against a bank
+statement, and it is recorded on the refund. Not implementing either is a valid
+answer — cash on delivery does not, and the engine reports that plainly rather
+than pretending.
 
 ## Adding a notifier
 

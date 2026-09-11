@@ -146,20 +146,44 @@ func (m *Module) createOrder(ctx context.Context, order *gocommerce.Order, req g
 	}
 	first, last := splitName(name)
 
-	items := make([]map[string]any, 0, len(order.Lines))
-	var units int
+	// What is declared is what is in this box, not what is on the order. The
+	// engine has already resolved req.Lines to explicit quantities — on a
+	// whole-order shipment that is every line at its full count — so a parcel
+	// holding one of three lines does not tell the carrier it holds three, and
+	// the declared value is not the whole order's.
+	byLine := make(map[int64]gocommerce.OrderLine, len(order.Lines))
 	for _, line := range order.Lines {
+		byLine[line.ID] = line
+	}
+	items := make([]map[string]any, 0, len(req.Lines))
+	var units int
+	var subtotalMinor int64
+	for _, ship := range req.Lines {
+		line, ok := byLine[ship.OrderLineID]
+		if !ok {
+			continue
+		}
 		items = append(items, map[string]any{
 			"name":          line.Title,
 			"sku":           line.SKU,
-			"units":         line.Quantity,
+			"units":         ship.Quantity,
 			"selling_price": float64(line.UnitPrice.AmountMinor) / 100,
 		})
-		units += line.Quantity
+		units += ship.Quantity
+		subtotalMinor += line.UnitPrice.AmountMinor * int64(ship.Quantity)
+	}
+
+	// Shiprocket rejects a duplicate external order id, and a second parcel
+	// against the same order would be exactly that. len is 0 on the first call —
+	// the order was read before this shipment's row exists — so the first
+	// payload is byte-identical to the one this module always sent.
+	externalID := order.Number
+	if n := len(order.Fulfillments); n > 0 {
+		externalID = fmt.Sprintf("%s-%d", order.Number, n+1)
 	}
 
 	payload := map[string]any{
-		"order_id":              order.Number,
+		"order_id":              externalID,
 		"order_date":            order.CreatedAt.UTC().Format("2006-01-02 15:04"),
 		"pickup_location":       m.cfg.PickupLocation,
 		"billing_customer_name": first,
@@ -175,7 +199,7 @@ func (m *Module) createOrder(ctx context.Context, order *gocommerce.Order, req g
 		"shipping_is_billing":   true,
 		"order_items":           items,
 		"payment_method":        paymentMethodFor(order),
-		"sub_total":             float64(order.Subtotal.AmountMinor) / 100,
+		"sub_total":             float64(subtotalMinor) / 100,
 		"length":                m.dimension(req.Meta, "length_cm", m.cfg.DefaultLengthCm),
 		"breadth":               m.dimension(req.Meta, "breadth_cm", m.cfg.DefaultBreadthCm),
 		"height":                m.dimension(req.Meta, "height_cm", m.cfg.DefaultHeightCm),

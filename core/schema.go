@@ -30,6 +30,10 @@ func coreMigrations() []Migration {
 		{ID: "0019_role_rights", SQL: migration0019RoleRights},
 		{ID: "0020_admin_audit", SQL: migration0020AdminAudit},
 		{ID: "0021_password_resets", SQL: migration0021PasswordResets},
+		{ID: "0022_partial_fulfillment", SQL: migration0022PartialFulfillment},
+		{ID: "0023_unsettled_sweep", SQL: migration0023UnsettledSweep},
+		{ID: "0024_order_refunds", SQL: migration0024OrderRefunds},
+		{ID: "0025_returns", SQL: migration0025Returns},
 	}
 }
 
@@ -996,4 +1000,292 @@ CREATE INDEX superuser_password_resets_user_idx
 -- ConfirmReset, so a store that never sweeps stays correct and merely untidy.
 CREATE INDEX superuser_password_resets_expiry_idx
     ON superuser_password_resets (expires_at);
+`
+
+// M22 — half an order can go out, and the order can say so.
+//
+// `fulfillments` has recorded a parcel since M4 but never what was in it,
+// because there was only one answer it could have: Create shipped the whole
+// order and shippableOrder refused a second one. A line table is what makes a
+// second parcel expressible, and `partial` is what makes the order readable
+// while it is true — an operator holding a back-ordered line had to sit on the
+// whole order or mark all of it shipped, and the second is a lie the customer
+// finds out about before the shop does. PLAN §10.1 drew a state in this slot
+// and left it unnamed; this is the concrete answer to what it was for.
+//
+// The quantities are a table rather than a note in `fulfillments.metadata`
+// because the remainder is recomputed under the order's row lock on every
+// shipment, and an aggregate over rows is the only form of that question the
+// database can answer. Same reasoning M14 used for the carrier column.
+const migration0022PartialFulfillment = `
+CREATE TABLE fulfillment_lines (
+    fulfillment_id bigint  NOT NULL REFERENCES fulfillments (id) ON DELETE CASCADE,
+    -- CASCADE on both, and deliberately not RESTRICT: an order line can only
+    -- disappear with its order, because EditLines refuses on a partly shipped
+    -- one. RESTRICT is checked immediately, and orders cascades into
+    -- order_lines and into fulfillments down two independent chains, so it
+    -- would make deleting an order fail on the ordering of its own cascade.
+    order_line_id  bigint  NOT NULL REFERENCES order_lines (id) ON DELETE CASCADE,
+    quantity       integer NOT NULL CHECK (quantity > 0),
+    -- One row per line per parcel. Shipping the same line twice is two
+    -- fulfillments, which is the whole point; twice in one parcel is a client
+    -- that built its request wrong.
+    PRIMARY KEY (fulfillment_id, order_line_id)
+);
+-- The aggregate that decides the order's status starts from the order line,
+-- which the primary key's leading column does not serve.
+CREATE INDEX fulfillment_lines_order_line_idx ON fulfillment_lines (order_line_id);
+
+-- Every shipment recorded before now covered the whole order, so writing that
+-- down costs nothing and keeps "what has shipped" a single sum.
+--
+-- DISTINCT ON because one live shipment per order was all the old
+-- shippableOrder allowed. A second non-cancelled row on the same order was not
+-- reachable through the engine; crediting it with the whole order as well would
+-- make the sum say twice what was ordered, so it gets no lines and reads as an
+-- empty parcel — the safe direction to be wrong in. A cancelled fulfillment
+-- gets none either: its units are owed again, which is exactly what the
+-- derivation already excludes it for.
+INSERT INTO fulfillment_lines (fulfillment_id, order_line_id, quantity)
+SELECT f.id, ol.id, ol.quantity
+FROM (
+    SELECT DISTINCT ON (order_id) id, order_id
+    FROM fulfillments
+    WHERE status <> 'cancelled'
+    ORDER BY order_id, id
+) f
+JOIN order_lines ol ON ol.order_id = f.order_id;
+
+-- partial is dropped in beside the others rather than replacing anything:
+-- shipped still means all of it has gone, which is what every existing client,
+-- filter and report already assumes.
+--
+-- Dropped by the name PostgreSQL generated for M3's inline column CHECK, and
+-- without IF EXISTS. A database whose constraint is called something else must
+-- fail here, loudly, rather than silently keep the old one and reject the first
+-- partial shipment months later. This is the move M12 already made on the two
+-- stock CHECKs.
+ALTER TABLE orders
+    DROP CONSTRAINT orders_status_check,
+    ADD CONSTRAINT orders_status_check
+        CHECK (status IN ('pending', 'confirmed', 'partial', 'shipped',
+                          'delivered', 'cancelled'));
+`
+
+// M23 — the sweeper's index follows the sweeper.
+//
+// orders_unpaid_idx (M3) was partial on (status = 'pending' AND payment_status
+// = 'pending'), which was exactly the set SweepUnpaid scanned. An operator can
+// now record a failed payment from the panel, and a payment recorded as failed
+// is the one nobody is coming back for, so the sweep and the doctor's
+// stale-reservation check both widen to payment_status IN ('pending','failed').
+// That predicate does not imply the old one, so the old index cannot serve the
+// new query.
+//
+// Both widened queries spell their constants inline rather than binding them. A
+// partial index is used only when the planner can prove the query's WHERE
+// implies the index predicate, and the sweep runs every five minutes through a
+// cached statement, so a generic plan over $1/$2 would prove nothing about
+// 'pending' and this index would be ignored — a seq-scan of orders on every
+// pass, which is the outcome the index exists to prevent.
+//
+// The old index is dropped rather than kept beside it: the new predicate is a
+// strict superset and answers every query the old one did, so keeping both
+// would cost a write on every order insert to answer nothing. Dropping an
+// object in a LATER migration is not a breach of append-only — shipped SQL is
+// frozen and this edits none of it — and it is precedented here, in M12 and
+// M22.
+const migration0023UnsettledSweep = `
+CREATE INDEX orders_unsettled_idx ON orders (reservation_expires_at)
+    WHERE status = 'pending' AND payment_status IN ('pending', 'failed');
+
+DROP INDEX IF EXISTS orders_unpaid_idx;
+`
+
+// M24 — what a refund actually was.
+//
+// Until now a refund wrote one word: payment_status = 'refunded', whatever the
+// amount. A store that sent back 200 of a 1000 order recorded that it had sent
+// back all of it, could not send the rest — the not-paid guard then refused
+// everything — and told the customer nothing, because the transition returned
+// no event at all. Three things fix it: a ledger of what went back, a running
+// total on the order, and a CHECK that keeps the two inside the order.
+//
+// A table rather than only a column, because a refund is an event with its own
+// facts — how much, why, through which gateway, whose decision, when — and a
+// column holds none of them. A column as well as the table, which is where this
+// departs from M17 (the migration that dropped variants.stock_on_hand precisely
+// so a stored sum could not be wrong) and says so: the stored total is what
+// makes orders_refunded_within_total a real row CHECK, and what lets lockOrder
+// read the figure off the row it already holds FOR UPDATE instead of off a
+// snapshot that can be one commit behind under READ COMMITTED. `doctor`
+// reconciles the two on every run, which is the price of the departure.
+//
+// The status column exists because the provider call cannot happen inside a
+// transaction (AGENTS rule 5). A 'pending' row is committed first and is what
+// reserves the amount against a second refund while the first is in flight;
+// only 'succeeded' is money that moved.
+//
+// payment_status keeps its four values (D36): 'paid' while the store still
+// holds any of the money, 'refunded' once the running total reaches
+// orders.total_minor. A fifth value would be two money bugs rather than eight
+// cosmetic edits — ext/fulfill-shiprocket books Prepaid only on exactly 'paid'
+// and would have the courier collect the whole total again, and ext/invoices
+// selects WHERE payment_status = 'paid' and would silently stop invoicing.
+const migration0024OrderRefunds = `
+CREATE TABLE order_refunds (
+    id           bigserial   PRIMARY KEY,
+    order_id     bigint      NOT NULL REFERENCES orders (id) ON DELETE CASCADE,
+    -- Strictly positive. A refund of nothing is not a fact about money, it is a
+    -- mistyped one, and Refund reads a non-positive amount as "the rest". The
+    -- upper bound spans rows and cannot be a row CHECK; it is held by the
+    -- reservation in Payments.reserveRefund and backstopped by
+    -- orders_refunded_within_total below.
+    amount_minor bigint      NOT NULL CHECK (amount_minor > 0),
+    reason       text        NOT NULL DEFAULT '',
+    -- Snapshotted rather than read off the order, for order_lines' reason: the
+    -- money went out through the method that was on the order at the time, and
+    -- this row must still say which one next year. Orders.Update can still
+    -- correct payment_provider while nothing has been refunded.
+    provider     text        NOT NULL,
+    -- The gateway's own id for the refund: what somebody reconciles against a
+    -- bank statement, which is the job orders.payment_reference does for the
+    -- charge. Empty when the provider does not implement ReferencedRefunder.
+    provider_reference text  NOT NULL DEFAULT '',
+    -- pending only while the provider is being asked. The row is committed
+    -- before that call and is what stops a second refund spending the same
+    -- money while the first is in flight.
+    status       text        NOT NULL DEFAULT 'pending'
+                             CHECK (status IN ('pending', 'succeeded', 'failed')),
+    -- What the provider said when it refused. Kept because an operator looking
+    -- at a refund that did not happen needs to know it was tried, and why.
+    error        text        NOT NULL DEFAULT '',
+    -- SET NULL rather than CASCADE, like superuser_invitations.invited_by: who
+    -- authorised a refund is a fact about the past and outlives their account,
+    -- so the id may go and the actor column — their email as it was then — stays. Both
+    -- empty for the static admin token, which is a credential and not a person.
+    superuser_id bigint      REFERENCES superusers (id) ON DELETE SET NULL,
+    actor        text        NOT NULL DEFAULT '',
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    updated_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX order_refunds_order_idx ON order_refunds (order_id, id);
+-- The doctor's in-flight query and nothing else, so it stays tiny.
+CREATE INDEX order_refunds_pending_idx ON order_refunds (created_at)
+    WHERE status = 'pending';
+
+ALTER TABLE orders
+    ADD COLUMN refunded_minor bigint NOT NULL DEFAULT 0;
+
+-- Every order that already says 'refunded' had its whole total sent back,
+-- because that is the only thing the old code could record. Writing those as
+-- rows makes the ledger the single answer to "how much came back" for history
+-- as well, which is what lets the doctor check be unconditional rather than
+-- conditional-and-correct-by-accident. The amount, the provider and the
+-- timestamp are real; the reason says where the figure came from, so a wrong
+-- one can be found later. total_minor > 0 because a 100%-discount order would
+-- otherwise violate amount_minor > 0.
+INSERT INTO order_refunds (order_id, amount_minor, reason, provider, status, created_at, updated_at)
+SELECT id, total_minor, 'refunded before this store recorded refunds one at a time',
+       payment_provider, 'succeeded', updated_at, updated_at
+FROM orders
+WHERE payment_status = 'refunded' AND total_minor > 0;
+
+UPDATE orders SET refunded_minor = total_minor WHERE payment_status = 'refunded';
+
+-- The constraint goes last, so the backfill above runs under no constraint and
+-- the validation pass sees rows that already satisfy it.
+ALTER TABLE orders
+    ADD CONSTRAINT orders_refunded_within_total
+        CHECK (refunded_minor >= 0 AND refunded_minor <= total_minor);
+`
+
+// No currency column on order_refunds: one settlement currency per store (D14),
+// the order already snapshots it, and a second copy could only ever disagree.
+
+// M25 — goods coming back.
+//
+// The engine has twice named this operation in refusal messages without having
+// it: Cancel says "cancelling it is a return, not a cancellation" and EditLines
+// says "changing what is in it is a return, not an edit". Until now the only
+// way to put returned goods back was to walk a delivered order backwards —
+// undeliver, delete the shipment, cancel — which restocks every line at its
+// full quantity and rewrites a completed sale as a cancellation.
+//
+// Two tables rather than a `restock` flag on the refund route, for three
+// reasons. Refund requires payment_status = 'paid' and a provider implementing
+// Refunder, and cash on delivery — the only method core ships — is neither, so
+// a flag there could not restock a single return in the engine's own default
+// store. What makes a return safe is memory: without a record of what has
+// already come back, a second request for the same line restocks the same units
+// again. And refunding is a network call that cannot happen inside the
+// transaction that decides whether the return is even legal (rule 5).
+//
+// The quantity and the restock decision are per line because a parcel comes
+// back with three items and one of them is broken: that is the ordinary case,
+// and an order-level flag forces a manual adjustment for the remainder — the
+// anonymous stock correction this whole feature exists to abolish.
+//
+// No money column here beyond the per-line snapshot below: what was refunded is
+// a separate fact, with a separate operation and its own record (M24).
+const migration0025Returns = `
+CREATE TABLE order_returns (
+    id       bigserial PRIMARY KEY,
+    order_id bigint    NOT NULL REFERENCES orders (id) ON DELETE CASCADE,
+    -- Why it came back, in the store's own words. Deliberately not a CHECK
+    -- list: a constraint here would mean a migration every time a store
+    -- thought of a new reason.
+    reason   text      NOT NULL DEFAULT '',
+    -- Two states, not a workflow. 'received' is the fact this table exists to
+    -- record; 'withdrawn' is that fact taken back. Withdrawing has to be a
+    -- state rather than a delete because how much is still returnable is
+    -- counted from these rows, and a return whose row is gone is a stock
+    -- movement nobody can account for.
+    status   text      NOT NULL DEFAULT 'received'
+                       CHECK (status IN ('received', 'withdrawn')),
+    metadata jsonb     NOT NULL DEFAULT '{}',
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX order_returns_order_idx ON order_returns (order_id, id);
+
+CREATE TABLE order_return_lines (
+    id            bigserial PRIMARY KEY,
+    return_id     bigint    NOT NULL REFERENCES order_returns (id) ON DELETE CASCADE,
+    -- NOT NULL, and CASCADE like every other child of an order. Nothing can
+    -- reach a line an active return points at: EditLines refuses on a shipped
+    -- order and now on any order with an active return, and no route deletes
+    -- an order. So this fires only when the whole order goes.
+    order_line_id bigint    NOT NULL REFERENCES order_lines (id) ON DELETE CASCADE,
+    quantity      integer   NOT NULL CHECK (quantity > 0),
+    -- Whether these units went back on sale. False is a real answer: a damaged
+    -- item comes back and is still returned, it simply moves no stock. It
+    -- records what happened rather than what was asked, so a line whose variant
+    -- has since been deleted stores false — the snapshot is still readable
+    -- history, there is just no shelf left to put it back on.
+    restocked     boolean   NOT NULL,
+    -- Which shelf they went on: the line's own by default, so a return lands
+    -- where the sale came from. NULL when nothing moved. SET NULL, with no
+    -- CHECK tying it to ` + "`restocked`" + `: locations can be deleted once empty, that
+    -- deletion fires this SET NULL as an UPDATE, and a CHECK would reject it
+    -- and leave an undeletable location behind a raw constraint error.
+    location_id   bigint    REFERENCES locations (id) ON DELETE SET NULL,
+    -- What the customer paid for these units: unit price x quantity, less this
+    -- line's share of the order-level discount, plus its share of the line's
+    -- tax when prices are exclusive — the same arithmetic checkout used to
+    -- reach the order total. Snapshotted rather than derived on read because
+    -- the discount behind it is editable, and a figure recomputed next year
+    -- against today's rules would not be what happened. Both shares are
+    -- apportioned by quantity and round down, so they are exact when a whole
+    -- line comes back. It is what the goods were worth, not a refund: the
+    -- money is a separate operation.
+    refundable_minor bigint NOT NULL CHECK (refundable_minor >= 0),
+    -- One entry per line per return. Naming a line twice in one request has
+    -- two possible meanings; the service refuses it, and this is the same rule
+    -- where it cannot be bypassed.
+    UNIQUE (return_id, order_line_id)
+);
+-- The cap reads every return line for one order line, on every return. It
+-- rides an index rather than the table.
+CREATE INDEX order_return_lines_line_idx ON order_return_lines (order_line_id, return_id);
 `

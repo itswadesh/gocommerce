@@ -6,6 +6,7 @@
         formatMoney,
         relativeTime,
         orderStatusClass,
+        orderStatusLabel,
         paymentStatusClass,
         stockClass,
     } from "$lib/format.js";
@@ -164,7 +165,9 @@
                             <span class="txt-ellipsis">{order.name || order.email}</span>
                         </td>
                         <td class="col-field-type-select" data-name="Status">
-                            <span class="label {orderStatusClass(order.status)}">{order.status}</span>
+                            <span class="label {orderStatusClass(order.status)}">
+                                {orderStatusLabel(order.status)}
+                            </span>
                         </td>
                         <td class="col-field-type-select" data-name="Payment">
                             <span class="label {paymentStatusClass(order.payment_status)}">

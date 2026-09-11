@@ -122,8 +122,10 @@ and once immediately at boot. It reclaims what abandoned traffic leaves behind:
 - `carts.SweepExpired` — carts past `Config.CartTTL` (default 720h). `POST
   /api/carts` is unauthenticated, so unswept carts are an unbounded-growth
   vector, not merely untidy.
-- `orders.SweepUnpaid` — unpaid orders past `Config.OrderTTL` (default 24h) are
-  cancelled and their stock reservation released. A reservation outliving its
+- `orders.SweepUnpaid` — orders still `pending` whose payment is `pending` or
+  `failed`, past `Config.OrderTTL` (default 24h), are cancelled and their stock
+  reservation released. A recorded failure is included because it is the one
+  nobody is coming back for. A reservation outliving its
   order is how a store silently goes out of stock while the shelves are full.
 
 Both are idempotent, so running several instances needs no coordination. If
@@ -147,18 +149,37 @@ The checks, in order:
 | `migrations` | — | something is unapplied; run `gocommerce migrate` |
 | `admin access` | no superusers but tokens configured (the panel needs one), or `Dev` is on | no superusers **and** no admin tokens — nobody can administer the store |
 | `outbox` | oldest unpublished > 30s, or any dead-lettered rows | oldest unpublished > 5m, or the table is unreadable |
-| `stock reservations` | unpaid orders past their reservation window still holding units | — |
+| `stock reservations` | unpaid or failed orders past their reservation window still holding units | — |
 | `carts` | more than 1000 expired-but-open carts — the sweeper is not running | — |
 | `catalog` | active products with no sellable variant (invisible to shoppers, fine in the admin list) | a `variant_stock` row with `reserved > on_hand` on a variant that does not sell past zero |
 | `providers` | — | no payment providers at all — checkout is impossible |
 | `api contract` | served routes missing from `/doc` | — |
+| `admin rights` | admin routes that name no right, so any role reaches them | — |
+| `fulfillment` | an order's status disagrees with what its parcels say | — |
+| `refunds` | a refund left pending past fifteen minutes: the provider was asked and never answered, and that money is blocked until somebody says what happened to it | `orders.refunded_minor` and the `order_refunds` ledger disagree |
+| `returns` | — | an order line with more units returned than were sold |
 
-Two deserve reading twice. **`catalog` failing on oversold stock should be
-impossible** — the CHECK constraint `variants_reserved_within_on_hand` forbids
+These deserve reading twice — a count here rots the way the doctor's own
+did. **`returns` failing should be impossible** for the
+same kind of reason as the next one: the cap on how much of a line can come back
+is a sum across rows, which no CHECK can express, so it is enforced in the
+service inside the inserting statement under the order's row lock. A row here
+means something wrote `order_return_lines` directly, against rule 3.
+**`catalog` failing on oversold stock should be impossible** — the CHECK constraint `variants_reserved_within_on_hand` forbids
 it, so a hit means the constraint is gone (a hand-edited schema, or a restore
 from a dump that dropped it); verify the constraint before touching the data.
 **`providers` failing** means core wiring did not run at all: `cod` and
-`manual` are registered by the engine itself.
+`manual` are registered by the engine itself. **`fulfillment` warning** means
+something wrote `orders.status` outside the engine: the shipping half of that
+column is derived from `fulfillment_lines` by one function, so inside the engine
+it cannot drift — a hit is SQL by hand (rule 3) or an order imported from CSV,
+which brings no shipments with it. **`refunds` failing** means the same class of
+thing about money: the service only ever moves `orders.refunded_minor` and the
+ledger inside one transaction, so a disagreement is somebody having written
+`orders` by hand. Its warning half is different — a refund left pending past
+fifteen minutes was asked of the provider and never answered, and that amount
+stays reserved until a person checks the gateway and settles the row through
+`POST /api/admin/orders/{id}/refunds/{refund_id}/settle` rather than with SQL.
 
 ## Building
 

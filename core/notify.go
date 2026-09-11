@@ -142,6 +142,23 @@ func orderNotificationData(ev *OrderEvent) map[string]string {
 	if ev.Reason != "" {
 		data["reason"] = ev.Reason
 	}
+	// Only on order.refunded, exactly as tracking and reason are conditional.
+	// Without them a notifier hearing the event can say no more than "a refund
+	// happened", which is the wrong message for a partial one.
+	if ev.Refund != nil {
+		data["refund_amount_minor"] = strconv.FormatInt(ev.Refund.AmountMinor, 10)
+		data["refunded_minor"] = strconv.FormatInt(ev.Refund.RefundedMinor, 10)
+		data["refund_remaining_minor"] = strconv.FormatInt(ev.Refund.RemainingMinor, 10)
+	}
+	// Only on order.returned and order.unreturned. A notifier hearing the event
+	// with none of these could say no more than "something came back", which is
+	// the wrong message for one item out of three.
+	if ev.Return != nil {
+		data["return_id"] = strconv.FormatInt(ev.Return.ReturnID, 10)
+		data["return_status"] = ev.Return.Status
+		data["return_units"] = strconv.Itoa(ev.Return.Units)
+		data["return_refundable_minor"] = strconv.FormatInt(ev.Return.RefundableMinor, 10)
+	}
 	// A one-line summary covers the common template without forcing every
 	// notifier to walk the line array.
 	summary := ""
@@ -155,5 +172,31 @@ func orderNotificationData(ev *OrderEvent) map[string]string {
 		}
 	}
 	data["items_summary"] = summary
+
+	// What was in this parcel, beside what is in the whole order. item_count and
+	// items_summary keep describing the order, which is an existing contract —
+	// these are additional keys rather than a redefinition of those.
+	if ev.Shipment != nil {
+		parcel := ""
+		for i, l := range ev.Shipment.Lines {
+			if i > 0 {
+				parcel += ", "
+			}
+			parcel += strconv.Itoa(l.Quantity) + " x " + l.Title
+			if l.VariantLabel != "" {
+				parcel += " (" + l.VariantLabel + ")"
+			}
+		}
+		data["shipment_items_summary"] = parcel
+		data["shipment_item_count"] = strconv.Itoa(len(ev.Shipment.Lines))
+		data["shipment_remaining_units"] = strconv.Itoa(ev.Shipment.RemainingUnits)
+		// Present only when units are actually still owed. This map is
+		// map[string]string and text/template treats every non-empty string as
+		// true, so a key holding "0" would tell a customer the rest follows
+		// separately on the parcel that completed their order.
+		if ev.Shipment.RemainingUnits > 0 {
+			data["shipment_is_partial"] = "true"
+		}
+	}
 	return data
 }

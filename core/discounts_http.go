@@ -55,28 +55,22 @@ func (a *App) handleSetCartDiscount(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	if _, err := a.db.ExecContext(r.Context(),
-		`UPDATE carts SET discount_code = $2, updated_at = now() WHERE token = $1`,
-		r.PathValue("token"), code); err != nil {
+	// Through the cart service rather than a raw UPDATE here: one writer of
+	// carts.discount_code, and it is the writer that refuses a cart which has
+	// already been checked out. This route used to answer 200 for such a cart
+	// after writing a row nothing would ever read.
+	if err := a.carts.SetDiscountCode(r.Context(), r.PathValue("token"), code); err != nil {
 		RespondError(w, r, err)
 		return
 	}
 	Respond(w, http.StatusOK, applied)
 }
 
+// handleClearCartDiscount takes the code back off. An empty code is how the
+// one setter clears, so both verbs are the same write.
 func (a *App) handleClearCartDiscount(w http.ResponseWriter, r *http.Request) {
-	res, err := a.db.ExecContext(r.Context(),
-		`UPDATE carts SET discount_code = '', updated_at = now() WHERE token = $1`,
-		r.PathValue("token"))
-	if err != nil {
+	if err := a.carts.SetDiscountCode(r.Context(), r.PathValue("token"), ""); err != nil {
 		RespondError(w, r, err)
-		return
-	}
-	if n, err := res.RowsAffected(); err != nil {
-		RespondError(w, r, err)
-		return
-	} else if n == 0 {
-		RespondError(w, r, NotFoundf("cart not found"))
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

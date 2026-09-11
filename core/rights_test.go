@@ -133,6 +133,10 @@ func TestRightsAreEnforcedOnAdminRoutes(t *testing.T) {
 		{"manager may not write locations", manager, "POST", "/api/admin/locations", 403},
 		{"staff may fulfil", staff, "POST", "/api/admin/create-fulfillment", 400},
 		{"staff may not refund", staff, "POST", "/api/admin/orders/1/refund", 403},
+		// The counter and the till on opposite sides of one line: staff take the
+		// goods back, a manager sends the money.
+		{"staff may record a return", staff, "POST", "/api/admin/orders/1/returns", 400},
+		{"staff may withdraw a return", staff, "DELETE", "/api/admin/orders/1/returns/1", 404},
 		{"manager may not read the roles matrix", manager, "GET", "/api/admin/roles", 403},
 		{"owner may read the roles matrix", owner, "GET", "/api/admin/roles", 200},
 		{"manager may not export the catalog", manager, "GET", "/api/admin/export/admin-products", 403},

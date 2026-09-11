@@ -150,8 +150,8 @@ nobody ever settled.
 
 ## Housekeeping
 
-The engine sweeps expired carts and unpaid orders every five minutes on its
-own. Two tables grow forever and are yours to prune:
+The engine sweeps expired carts and unsettled orders — payment pending or
+recorded as failed — every five minutes on its own. Two tables grow forever and are yours to prune:
 
 ```sql
 -- Delivered events, once you no longer need the audit trail.

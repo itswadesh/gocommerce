@@ -176,3 +176,29 @@ func TestFailedPutsFailuresFirst(t *testing.T) {
 		t.Errorf("first failure is %q, want the hard failure %q", got[0].Name, "c")
 	}
 }
+
+// TestDoctorReportsFulfillmentDrift: the derived status has exactly one writer,
+// so a mismatch means somebody wrote orders.status with SQL or imported an
+// order without the shipments behind it. That is the hole this check exists to
+// surface, and the only way to reach it is to make it by hand.
+func TestDoctorReportsFulfillmentDrift(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+
+	order := confirmedOrder(t, app, orderSpec{"DRIFT-1", 2})
+	if got := diagnostic(t, app.Diagnose(ctx), "fulfillment"); got.Status != StatusOK {
+		t.Fatalf("a store whose orders have not shipped is already drifting: %+v", got)
+	}
+
+	if _, err := app.DB().ExecContext(ctx,
+		`UPDATE orders SET status = 'shipped' WHERE id = $1`, order.ID); err != nil {
+		t.Fatalf("write the status by hand: %v", err)
+	}
+	got := diagnostic(t, app.Diagnose(ctx), "fulfillment")
+	if got.Status != StatusWarn {
+		t.Errorf("check = %+v, want a warning about the order with no parcels", got)
+	}
+	if !strings.Contains(got.Detail, "1 order") {
+		t.Errorf("detail = %q, want it to name the count", got.Detail)
+	}
+}

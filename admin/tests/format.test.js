@@ -16,6 +16,10 @@ import {
     toMinor,
     fromMinor,
     minorDigits,
+    orderStatusClass,
+    orderStatusLabel,
+    paymentLabel,
+    paymentStatusClass,
 } from "../src/lib/format.js";
 
 test("toMinor refuses a value the old guards accepted", () => {
@@ -111,4 +115,41 @@ test("a negative and a zero are read, not refused", () => {
     assert.equal(parseMoney("0", "en-US"), 0);
     assert.equal(parseMoney("-24.99", "en-US"), -24.99);
     assert.equal(toMinor("-24,99", "USD", "de-DE"), -2499);
+});
+
+test("a partly refunded order is paid, and does not read as paid", () => {
+    // The engine keeps payment_status at `paid` while the store still holds any
+    // of the money, on purpose: the money did arrive. So the chip has to read
+    // the refunded figure, or an order with 600 of 2000 sent back looks exactly
+    // like one nobody has refunded.
+    const order = { payment_status: "paid", refunded: { amount_minor: 600 }, total: { amount_minor: 2000 } };
+    assert.deepEqual(paymentLabel(order), { text: "part refunded", cls: "warning" });
+
+    // All of it back is the status, not the number.
+    assert.equal(
+        paymentLabel({ payment_status: "refunded", refunded: { amount_minor: 2000 }, total: { amount_minor: 2000 } }).text,
+        "refunded",
+    );
+    // Nothing back reads exactly as it always did.
+    assert.deepEqual(paymentLabel({ payment_status: "paid", total: { amount_minor: 2000 } }), {
+        text: "paid",
+        cls: paymentStatusClass("paid"),
+    });
+    // And an order that has not loaded yet says nothing rather than throwing.
+    assert.equal(paymentLabel(null).text, undefined);
+});
+
+test("a partly shipped order says so in words", () => {
+    // On the wire a status is one lowercase word, because it is also a URL
+    // filter. "partial" next to a payment chip reads as a partial payment, so
+    // the panel says the thing a person would say — and says nothing different
+    // about the five statuses that were already plain.
+    assert.equal(orderStatusLabel("partial"), "partly shipped");
+    for (const s of ["pending", "confirmed", "shipped", "delivered", "cancelled"]) {
+        assert.equal(orderStatusLabel(s), s);
+    }
+    // Its own colour: partial is the one status meaning the shop still owes
+    // the customer something, and confirmed and shipped already share info.
+    assert.equal(orderStatusClass("partial"), "warning");
+    assert.notEqual(orderStatusClass("partial"), orderStatusClass("shipped"));
 });

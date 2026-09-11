@@ -229,6 +229,11 @@ export function orderStatusClass(status) {
     switch (status) {
         case "delivered":
             return "success";
+        /* Warning rather than a third info chip: partial is the one status that
+           means the shop still owes the customer something, and confirmed and
+           shipped already share info. */
+        case "partial":
+            return "warning";
         case "shipped":
         case "confirmed":
             return "info";
@@ -237,6 +242,17 @@ export function orderStatusClass(status) {
         default:
             return "";
     }
+}
+
+/**
+ * The status as a person would say it.
+ *
+ * Only `partial` needs saying differently: a status is one lowercase word in
+ * the database and in the URL filter, and "partial" sitting beside a payment
+ * chip reads as a partial payment.
+ */
+export function orderStatusLabel(status) {
+    return status === "partial" ? "partly shipped" : status;
 }
 
 export function paymentStatusClass(status) {
@@ -250,6 +266,28 @@ export function paymentStatusClass(status) {
         default:
             return "";
     }
+}
+
+/**
+ * paymentLabel is the payment chip for an order, as opposed to for a status.
+ *
+ * It exists because money already back is not the same fact as paid, and the
+ * status alone can no longer describe it: a partly refunded order stays `paid`
+ * on purpose — the money did arrive — so the chip has to read the running
+ * refunded figure to tell "paid" from "paid, with some of it returned".
+ *
+ * One function for both the list and the drawer, because the two must never
+ * disagree about the same order. `paymentStatusClass` is left exactly as it is,
+ * so everything that colours a bare status keeps working untouched.
+ */
+export function paymentLabel(order) {
+    const status = order?.payment_status;
+    const refunded = order?.refunded?.amount_minor ?? 0;
+    const total = order?.total?.amount_minor ?? 0;
+    if (status === "paid" && refunded > 0 && refunded < total) {
+        return { text: "part refunded", cls: "warning" };
+    }
+    return { text: status, cls: paymentStatusClass(status) };
 }
 
 export function productStatusClass(status) {

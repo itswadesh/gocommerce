@@ -157,12 +157,27 @@ func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts goc
 
 // Refund implements gocommerce.Refunder.
 func (m *Module) Refund(ctx context.Context, order *gocommerce.Order, amountMinor int64) error {
+	_, err := m.RefundWithReference(ctx, order, amountMinor)
+	return err
+}
+
+// RefundWithReference implements gocommerce.ReferencedRefunder: the same call,
+// keeping the refund id Razorpay answers with instead of discarding the body.
+// It is what somebody reconciles against a bank statement, and the engine
+// records it on the refund row.
+func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Order, amountMinor int64) (string, error) {
 	paymentID, err := m.paymentIDFor(ctx, order.ID)
 	if err != nil {
-		return err
+		return "", err
 	}
-	return m.post(ctx, "/v1/payments/"+paymentID+"/refund",
-		map[string]any{"amount": amountMinor}, nil)
+	var refund struct {
+		ID string `json:"id"`
+	}
+	if err := m.post(ctx, "/v1/payments/"+paymentID+"/refund",
+		map[string]any{"amount": amountMinor}, &refund); err != nil {
+		return "", err
+	}
+	return refund.ID, nil
 }
 
 // paymentIDFor finds the captured payment behind an order. Razorpay refunds

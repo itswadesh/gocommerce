@@ -40,6 +40,23 @@ type Refunder interface {
 	Refund(ctx context.Context, order *Order, amountMinor int64) error
 }
 
+// ReferencedRefunder is a [Refunder] that can say what the gateway called the
+// refund. Optional, and detected by the same runtime assertion Refunder itself
+// is, so an existing module keeps working untouched; one that adopts it gives
+// the operator the id to quote when the customer rings, which is the job
+// orders.payment_reference does for the charge.
+//
+// A second interface rather than a wider Refunder on purpose. A provider is
+// registered as a PaymentProvider and its refund capability is found by a type
+// assertion with no compile-time `var _ Refunder` anywhere in the repo, so
+// changing Refunder's signature would not break an out-of-repo gateway loudly —
+// it would keep compiling, silently stop satisfying the interface, and report
+// "does not support refunds" for every refund. A silent runtime downgrade on
+// the money path is the worst break available for a duck-typed port.
+type ReferencedRefunder interface {
+	RefundWithReference(ctx context.Context, order *Order, amountMinor int64) (reference string, err error)
+}
+
 // Named is an optional capability on a provider: the label an operator should
 // see where the code would otherwise leak into the UI — "cod" reads as a
 // database column in a sentence, "Cash on delivery" does not. A provider that
@@ -80,8 +97,13 @@ const (
 // ------------------------------------------------------------- fulfillment
 
 // FulfillmentProvider books a shipment. The engine persists the result, moves
-// the order to shipped and writes the event; the provider only talks to the
-// carrier.
+// the order to shipped — or to partial, when what went in the parcel is less
+// than the order still owed — and writes the event; the provider only talks to
+// the carrier.
+//
+// ShipRequest.Lines is resolved to explicit quantities before Ship is called,
+// so a provider is always told what it is booking and never has to work out
+// what an empty list covered.
 type FulfillmentProvider interface {
 	Code() string
 	Ship(ctx context.Context, order *Order, req ShipRequest) (Shipment, error)
@@ -96,8 +118,25 @@ type ShipRequest struct {
 	// operator who can see the label knows; leaving it empty makes the engine
 	// work it out from the tracking number, which is right when the number
 	// says so and is all it can do when it does not.
-	Carrier string            `json:"carrier,omitempty"`
-	Meta    map[string]string `json:"meta,omitempty"`
+	Carrier string `json:"carrier,omitempty"`
+	// Lines is what goes in this parcel. Empty means everything the order still
+	// owes — which on a first shipment is the whole order, so a client written
+	// before partial shipments existed keeps shipping whole orders by sending
+	// exactly what it always sent. The engine resolves it to explicit
+	// quantities before calling the provider, so a carrier module is never left
+	// to work out what "empty" covered.
+	Lines []ShipLine        `json:"lines,omitempty"`
+	Meta  map[string]string `json:"meta,omitempty"`
+}
+
+// ShipLine is how much of one order line goes in this parcel.
+type ShipLine struct {
+	// OrderLineID names a line the order already has, as returned in
+	// line_items[].id — a shipment is against what was ordered, not against a
+	// variant. Named order_line_id rather than id because the body it arrives
+	// in already has an order_id.
+	OrderLineID int64 `json:"order_line_id"`
+	Quantity    int   `json:"quantity"`
 }
 
 // Shipment is what the carrier returned.

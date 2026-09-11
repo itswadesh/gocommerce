@@ -5,7 +5,8 @@
         formatDate,
         relativeTime,
         orderStatusClass,
-        paymentStatusClass,
+        orderStatusLabel,
+        paymentLabel,
         pluralize,
     } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
@@ -13,6 +14,12 @@
     import Drawer from "$lib/components/Drawer.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
     import Select from "$lib/components/Select.svelte";
+    import ShipDialog from "$lib/components/ShipDialog.svelte";
+    import RefundDialog from "$lib/components/RefundDialog.svelte";
+    import OrderRefundList from "$lib/components/OrderRefundList.svelte";
+    import OrderReturnsCard from "$lib/components/OrderReturnsCard.svelte";
+    import ReturnDialog from "$lib/components/ReturnDialog.svelte";
+    import OrderPlaced from "$lib/components/OrderPlaced.svelte";
     import { COUNTRIES } from "$lib/countries.js";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
     import { page as page_ } from "$app/state";
@@ -42,6 +49,9 @@
     let trackingOpen = $state(false);
     let tracking = $state("");
     let shipCarrier = $state("");
+
+    let refundOpen = $state(false);
+    let returnOpen = $state(false);
 
     $effect(() => {
         // Re-runs whenever a filter changes. Page 1 replaces the list; a later
@@ -129,6 +139,34 @@
      */
     const markUnpaid = () =>
         act("Marked unpaid", () => api.post(`/api/admin/orders/${order.id}/mark-unpaid`));
+
+    /**
+     * Clearing a failure is the same route as taking back a payment, because it
+     * is the same question: put this order's money back where it was. It is
+     * under Undo for the reason the two above it are — the operator looking for
+     * it has already made the mistake.
+     */
+    const clearFailure = () =>
+        act("Failure cleared", () => api.post(`/api/admin/orders/${order.id}/mark-unpaid`));
+
+    /**
+     * Recording what the gateway said, which is not an undo: it is the other
+     * half of the one question the operator is answering at that moment — did
+     * the money arrive? So it sits beside Mark paid rather than under Undo.
+     *
+     * The reason is fixed rather than prompted for. The engine writes it to the
+     * store's log and stores it nowhere, so asking an operator to type one
+     * would promise a record that does not exist.
+     */
+    const markPaymentFailed = () =>
+        // "Failure recorded", not "Payment failed": act() uses this string for the
+        // success toast as well as the spinner, and a green tick beside the
+        // words "Payment failed" reads as the wrong news about the wrong thing.
+        act("Failure recorded", () =>
+            api.post(`/api/admin/orders/${order.id}/mark-payment-failed`, {
+                reason: "recorded from the admin panel",
+            }),
+        );
 
     const undeliver = () =>
         act("Delivery undone", () => api.post(`/api/admin/orders/${order.id}/undeliver`));
@@ -293,16 +331,18 @@
      * Removing a shipment recorded in error.
      *
      * Confirmed rather than immediate: it is the one thing in this drawer that
-     * throws a record away, and deleting the last shipment walks the order back
-     * to confirmed — a bigger consequence than the button implies on its own.
+     * throws a record away, and what it held goes back on the order to be
+     * shipped again — which walks the order back to confirmed if nothing else
+     * has gone out, and to partly shipped if something has. A bigger
+     * consequence than the button implies on its own.
      */
     function askDeleteShipment(f) {
         confirmConfig = {
             title: "Remove this shipment?",
             message:
                 (f.tracking ? `Tracking ${f.tracking} ` : "This shipment ") +
-                "will be removed from the order. If it is the only one, the order goes back to " +
-                "confirmed and can be shipped again.",
+                "will be removed from the order, and what it carried goes back to being owed. " +
+                "The order returns to confirmed only if nothing else has gone out.",
             confirmLabel: "Remove",
             danger: true,
             run: () =>
@@ -339,6 +379,20 @@
     let createErrors = $state({});
     let draft = $state(blankOrder());
     let addLineVariant = $state("");
+    /**
+     * The whole create response, once there is one: {order, payment}.
+     *
+     * The drawer holds open on it rather than closing, because this response
+     * carries the order's access token — the guest's only credential for their
+     * own order, returned here and by no other route. A toast would be
+     * dismissible, unselectable and gone.
+     *
+     * The whole order object, not a stub: the Open order button hands it to
+     * openOrder, which paints the drawer from it while the detail fetch is in
+     * flight, and a four-field stub would render undefined status chips and
+     * empty cards on the most common path.
+     */
+    let placed = $state(null);
 
     function blankOrder() {
         return {
@@ -346,6 +400,7 @@
             name: "",
             phone: "",
             payment_method: "",
+            discount_code: "",
             address: { line1: "", line2: "", city: "", state: "", postal_code: "", country: "" },
             lines: [],
         };
@@ -354,6 +409,7 @@
         draft = blankOrder();
         createErrors = {};
         addLineVariant = "";
+        placed = null;
         createOpen = true;
         if (!catalog.length) {
             try {
@@ -420,16 +476,18 @@
                 name: draft.name.trim(),
                 phone: draft.phone.trim(),
                 payment_method: draft.payment_method || undefined,
+                discount_code: draft.discount_code.trim() || undefined,
                 address: draft.address,
                 lines: draft.lines.map((l) => ({ variant_id: l.variant_id, quantity: l.quantity })),
             });
-            createOpen = false;
+            // The drawer stays open on the success state rather than dropping
+            // the operator into the order: the access token is in this response
+            // and in no other, so closing over it loses it for good. Open order
+            // is one click away and hands over the same object this used to.
+            placed = { order: result.order, payment: result.payment };
             toast.success(`Order ${result.order.number} placed`);
             page = 1;
             await load();
-            // Straight into the order that was just placed: the next thing an
-            // operator does is take the money or print the label.
-            await openOrder(result.order);
         } catch (err) {
             toast.error(err);
         } finally {
@@ -450,6 +508,18 @@
      *  editor makes for its vendor and tag suggestions. */
     let catalog = $state([]);
 
+    /* What has gone back, and what the store still holds. Both come off the
+       order itself: `refunded` is on every list row too, so nothing here costs
+       an extra request. */
+    const refundedMinor = $derived(order?.refunded?.amount_minor ?? 0);
+    const remainingMinor = $derived((order?.total?.amount_minor ?? 0) - refundedMinor);
+    /* A partly refunded order stays `paid`, so it keeps the button and the
+       operator can finish the refund; it vanishes on the last one. */
+    const refundable = $derived(order?.payment_status === "paid" && remainingMinor > 0);
+    /* The same chip the list row wears, from the same function, so the two can
+       never disagree about one order. */
+    const payChip = $derived(paymentLabel(order));
+
     /**
      * Whether this order can still be changed. It mirrors the engine's own
      * guard — a shipped order is a return, a cancelled or refunded one is
@@ -460,11 +530,13 @@
      * in a sentence reads as a leak from the database.
      */
     const paidClass = $derived(
-        order?.payment_status === "paid"
-            ? "is-paid"
-            : order?.payment_status === "refunded"
-              ? "is-refunded"
-              : "",
+        order?.payment_status === "refunded"
+            ? "is-refunded"
+            : refundedMinor > 0
+              ? "is-part-refunded"
+              : order?.payment_status === "paid"
+                ? "is-paid"
+                : "",
     );
 
     /* The label the module that installed the provider gave it. An order can
@@ -476,10 +548,30 @@
             "—",
     );
 
+    /* Goods can only come back from an order that has sent some out. It mirrors
+       returnableOrder, so the button is absent rather than there and refused —
+       the rule `editable` already states. */
+    const returnable = $derived(
+        !!order &&
+            (order.status === "shipped" ||
+                order.status === "delivered" ||
+                order.status === "partial"),
+    );
+
+    /* Only a return that still stands: a withdrawn one has given its units back
+       and freezes nothing. */
+    const activeReturns = $derived((order?.returns ?? []).filter((r) => r.status === "received"));
+
     const editable = $derived(
         !!order &&
             (order.status === "pending" || order.status === "confirmed") &&
-            order.payment_status !== "refunded",
+            /* Any refund at all, mirroring the engine's own guard: changing what
+               is in the order would move a total money has already come off. */
+            refundedMinor === 0 &&
+            /* And the engine's other one: a returned order's lines no longer
+               describe what left the store. Only reachable on an order walked
+               back from shipped, which is exactly when the button would 409. */
+            activeReturns.length === 0,
     );
 
     const variantOptions = $derived(
@@ -602,29 +694,98 @@
         confirmOpen = true;
     }
 
-    function askRefund() {
+    function askPaymentFailed() {
         confirmConfig = {
-            title: "Refund this order?",
+            title: "Record a failed payment?",
             message:
-                "The money goes back through the provider that took it. Cash on delivery cannot refund and will say so.",
-            confirmLabel: "Refund",
-            danger: true,
-            run: () =>
-                act("Refunded", () => api.post(`/api/admin/orders/${order.id}/refund`, {})),
+                (order.status === "pending"
+                    ? "The order stays open so the customer can try again, and the stock it is holding stays held. If nobody retries, the reservation expires and the order is cancelled automatically, returning the stock. "
+                    : "The order stays as it is — nothing moves, and its stock stays committed to the sale. Use Mark paid when the money does arrive. ") +
+                "You can take this back from Undo.",
+            confirmLabel: "Record failure",
+            danger: false,
+            run: markPaymentFailed,
         };
         confirmOpen = true;
     }
 
-    async function ship(event) {
-        event?.preventDefault();
+    /**
+     * Refunding needs a figure, so it is a form rather than a confirmation.
+     *
+     * The amount is decided in the dialog, against the order's own currency, and
+     * the engine checks it again under the row lock — so a screen that is a
+     * minute old cannot spend money the order no longer has.
+     */
+    async function refund({ amount_minor, reason }) {
+        await act("Refunded", () =>
+            api.post(`/api/admin/orders/${order.id}/refund`, { amount_minor, reason }),
+        );
+        refundOpen = false;
+    }
+
+    /**
+     * Recording goods that have come back.
+     *
+     * `request` rather than `api.post` because the response carries two
+     * members — the fresh order and the return just recorded — which is the
+     * shape saveEdit already reads. Nothing here touches the money: refunding is
+     * its own button, and chaining the two would hide a partial failure.
+     */
+    async function recordReturn({ reason, lines }) {
+        await act("Return recorded", async () => {
+            const result = await request("POST", `/api/admin/orders/${order.id}/returns`, {
+                body: { reason, lines },
+            });
+            return result.order;
+        });
+        returnOpen = false;
+    }
+
+    /**
+     * Withdrawing a return recorded in error.
+     *
+     * Confirmed rather than immediate, like removing a shipment: what it undoes
+     * is a stock movement, and the message says which one — an operator who
+     * meant "the customer changed their mind again" would otherwise take units
+     * off a shelf that has them.
+     */
+    function askWithdrawReturn(ret) {
+        confirmConfig = {
+            title: "Withdraw this return?",
+            message:
+                (ret.restocked_units > 0
+                    ? `The ${ret.restocked_units} unit(s) this put back on the shelf come off it again. `
+                    : "The record is withdrawn. No stock moves — none of it went back on the shelf. ") +
+                "Use this for a return recorded in error, not for one that was later refused.",
+            confirmLabel: "Withdraw",
+            danger: true,
+            run: () =>
+                act("Return withdrawn", () =>
+                    api.delete(`/api/admin/orders/${order.id}/returns/${ret.id}`),
+                ),
+        };
+        confirmOpen = true;
+    }
+
+    /**
+     * Recording the parcel the ship dialog just described.
+     *
+     * `lines` is null when the whole of what is left is going out, which is the
+     * usual case and the default the dialog opens on. The request is then the
+     * body this panel has always sent, and the engine works out what is left
+     * under the order's row lock rather than trusting a screen that may be a
+     * minute old.
+     */
+    async function ship({ tracking: number, carrier, lines }) {
         await act("Shipped", () =>
             api.post("/api/admin/create-fulfillment", {
                 order_id: order.id,
                 provider: "manual",
-                tracking: tracking.trim(),
+                tracking: number,
                 // An empty carrier still leaves the engine to read it off the
                 // number, which is what it did before this field existed.
-                carrier: shipCarrier,
+                carrier,
+                ...(lines ? { lines } : {}),
             }),
         );
         trackingOpen = false;
@@ -686,6 +847,7 @@
                             { value: "", label: "Any status" },
                             { value: "pending", label: "Pending" },
                             { value: "confirmed", label: "Confirmed" },
+                            { value: "partial", label: "Partly shipped" },
                             { value: "shipped", label: "Shipped" },
                             { value: "delivered", label: "Delivered" },
                             { value: "cancelled", label: "Cancelled" },
@@ -731,6 +893,10 @@
                 </thead>
                 <tbody>
                     {#each orders as row (row.id)}
+                        <!-- Not the bare payment status: a partly refunded order
+                             is still `paid`, which is true and is not the whole
+                             of what happened to the money. -->
+                        {@const pay = paymentLabel(row)}
                         <tr class="handle" onclick={() => openOrder(row)}>
                             <td class="col-field-name-id" data-name="Order">
                                 <span class="txt-bold txt-code">{row.number}</span>
@@ -740,13 +906,11 @@
                             </td>
                             <td class="col-field-type-select" data-name="Status">
                                 <span class="label {orderStatusClass(row.status)}">
-                                    {row.status}
+                                    {orderStatusLabel(row.status)}
                                 </span>
                             </td>
                             <td class="col-field-type-select" data-name="Payment">
-                                <span class="label {paymentStatusClass(row.payment_status)}">
-                                    {row.payment_status}
-                                </span>
+                                <span class="label {pay.cls}">{pay.text}</span>
                             </td>
                             <td class="col-field-type-number min-width" data-name="Items">
                                 {row.line_items?.length ?? 0}
@@ -862,10 +1026,10 @@
             wearing the same chip as one.
         -->
         <div class="order-status">
-            <span class="label {orderStatusClass(order.status)}">{order.status}</span>
-            <span class="label {paymentStatusClass(order.payment_status)}">
-                {order.payment_status}
+            <span class="label {orderStatusClass(order.status)}">
+                {orderStatusLabel(order.status)}
             </span>
+            <span class="label {payChip.cls}">{payChip.text}</span>
             <span class="txt-hint txt-sm">via {methodName}</span>
             <div class="flex-fill"></div>
             <span class="txt-hint txt-sm">{formatDate(order.created_at)}</span>
@@ -892,6 +1056,12 @@
                     <th class="txt-right">Qty</th>
                     <th class="txt-right">Unit</th>
                     <th class="txt-right">Total</th>
+                    <!-- Head and cell share one predicate, so the table cannot
+                         go ragged, and the column appears only once a parcel
+                         exists to report. -->
+                    {#if !draftLines && order.fulfillments?.length}
+                        <th class="txt-right">Shipped</th>
+                    {/if}
                     {#if draftLines}<th class="min-width"></th>{/if}
                 </tr>
             </thead>
@@ -963,6 +1133,16 @@
                             <td class="txt-right">{line.quantity}</td>
                             <td class="txt-right">{formatMoney(line.unit_price)}</td>
                             <td class="txt-right">{formatMoney(line.total)}</td>
+                            <!-- Settled lines step back to hint, so the dark
+                                 figures are the ones still owing something. -->
+                            {#if !draftLines && order.fulfillments?.length}
+                                <td
+                                    class="txt-right"
+                                    class:txt-hint={(line.shipped_quantity ?? 0) >= line.quantity}
+                                >
+                                    {line.shipped_quantity ?? 0} of {line.quantity}
+                                </td>
+                            {/if}
                         </tr>
                     {/each}
                 {/if}
@@ -1055,7 +1235,7 @@
             <h6 class="order-card-title m-b-10">Shipments</h6>
             <div class="list">
                 {#each order.fulfillments as f (f.id)}
-                    <div class="list-item">
+                    <div class="list-item ship-row">
                         <!-- The chip is for a carrier. `manual` is how the
                              shipment was booked, which is not who has the
                              parcel, and giving it the same chip made it look
@@ -1101,11 +1281,20 @@
                         >
                             <i class="ri-delete-bin-7-line" aria-hidden="true"></i>
                         </button>
+                        <!-- Two parcels on one order is exactly when a customer
+                             rings to ask which one has the mug. -->
+                        {#if f.lines?.length}
+                            <div class="ship-contents txt-hint txt-sm">
+                                {f.lines.map((l) => `${l.quantity} × ${l.title}`).join(", ")}
+                            </div>
+                        {/if}
                     </div>
                 {/each}
             </div>
             </section>
         {/if}
+
+        <OrderReturnsCard {order} onwithdraw={askWithdrawReturn} />
         </div>
 
         <!--
@@ -1169,6 +1358,24 @@
                                 : "Free"}
                         </span>
                     </div>
+                    <!-- Under the total rather than changing it: the total is
+                         what was agreed, and the refund is what came back off
+                         it. Two facts, not one. -->
+                    {#if refundedMinor}
+                        <div class="order-line">
+                            <span class="txt-hint">Refunded</span>
+                            <span class="txt-money">−{formatMoney(order.refunded)}</span>
+                        </div>
+                        <div class="order-line">
+                            <span class="txt-hint">Net</span>
+                            <span class="txt-money">
+                                {formatMoney({
+                                    amount_minor: remainingMinor,
+                                    currency: order.currency,
+                                })}
+                            </span>
+                        </div>
+                    {/if}
                 </div>
             </section>
 
@@ -1218,10 +1425,14 @@
                     </form>
                 {:else}
                     <div class="order-paid {paidClass}">
-                        {#if order.payment_status === "paid"}
-                            Paid
-                        {:else if order.payment_status === "refunded"}
+                        {#if order.payment_status === "refunded"}
                             Refunded
+                        {:else if refundedMinor > 0}
+                            Partly refunded · {formatMoney(order.refunded)} of {formatMoney(
+                                order.total,
+                            )}
+                        {:else if order.payment_status === "paid"}
+                            Paid
                         {:else if order.payment_status === "failed"}
                             Payment failed
                         {:else}
@@ -1232,6 +1443,7 @@
                     {#if order.payment_reference}
                         <div class="order-reference txt-code">{order.payment_reference}</div>
                     {/if}
+                    <OrderRefundList {order} />
                 {/if}
             </section>
 
@@ -1301,7 +1513,13 @@
                                 />
                             </div>
                         </div>
-                        {#if order.status === "shipped" || order.status === "delivered"}
+                        {#if order.status === "partial"}
+                            <div class="field-help">
+                                Part of this order has already gone out. Correcting the address
+                                fixes the record and the parcels still to come; it does not move
+                                the one that left.
+                            </div>
+                        {:else if order.status === "shipped" || order.status === "delivered"}
                             <div class="field-help">
                                 This order has already gone out. Correcting the address fixes the
                                 record; it does not move the parcel.
@@ -1340,7 +1558,11 @@
 
     {#snippet footer()}
         {#if order}
-            {#if order.payment_status === "pending"}
+            <!-- Not `payment_status === "pending"`: a declined card is payable on
+                 a second attempt and had no forward affordance at all, while a
+                 cancelled order keeps its payment pending and the engine
+                 answers 409 — a button that is there and refused. -->
+            {#if order.payment_status !== "paid" && order.payment_status !== "refunded" && order.status !== "cancelled"}
                 <button
                     type="button"
                     class="btn success"
@@ -1352,10 +1574,29 @@
                     <span class="txt">Mark paid</span>
                 </button>
             {/if}
-            {#if order.status === "confirmed"}
+            <!-- The same shape as the Cancel gate below, for the same reasons: a
+                 cancelled order records nothing (the engine no-ops, and the
+                 toast would report a change that did not happen), and a shipped
+                 or delivered order is unpaid because the money is collected at
+                 the door, not because an attempt failed — the sweeper never
+                 reaches it, so the sentence about the reservation would be
+                 false. -->
+            {#if order.payment_status === "pending" && order.status !== "cancelled" && order.status !== "shipped" && order.status !== "delivered"}
+                <button
+                    type="button"
+                    class="btn transparent"
+                    class:loading={busy === "Failure recorded"}
+                    disabled={busy === "Failure recorded"}
+                    onclick={askPaymentFailed}
+                >
+                    <i class="ri-close-circle-line" aria-hidden="true"></i>
+                    <span class="txt">Payment failed</span>
+                </button>
+            {/if}
+            {#if order.status === "confirmed" || order.status === "partial"}
                 <button type="button" class="btn" onclick={startShipping}>
                     <i class="ri-truck-line" aria-hidden="true"></i>
-                    <span class="txt">Ship</span>
+                    <span class="txt">{order.status === "partial" ? "Ship the rest" : "Ship"}</span>
                 </button>
             {/if}
             {#if order.status === "shipped"}
@@ -1377,7 +1618,7 @@
                 and the fix should be here rather than in the database — but it
                 must not sit where the next step goes, or it becomes one.
             -->
-            {#if order.payment_status === "paid" || order.status === "delivered"}
+            {#if order.payment_status === "paid" || order.payment_status === "failed" || order.status === "delivered"}
                 <button
                     type="button"
                     class="btn transparent"
@@ -1409,6 +1650,22 @@
                             <span class="txt">Mark unpaid</span>
                         </button>
                     {/if}
+                    {#if order.payment_status === "failed"}
+                        <button
+                            type="button"
+                            role="menuitem"
+                            class="dropdown-item"
+                            class:loading={busy === "Failure cleared"}
+                            disabled={busy === "Failure cleared"}
+                            onclick={() => {
+                                document.getElementById("order-corrections")?.hidePopover();
+                                clearFailure();
+                            }}
+                        >
+                            <i class="ri-arrow-go-back-line" aria-hidden="true"></i>
+                            <span class="txt">Clear failure</span>
+                        </button>
+                    {/if}
                     {#if order.status === "delivered"}
                         <button
                             type="button"
@@ -1427,12 +1684,26 @@
                     {/if}
                 </div>
             {/if}
-            {#if order.payment_status === "paid"}
-                <button type="button" class="btn transparent" onclick={askRefund}>
+            <!-- Beside Refund rather than among the workflow buttons on the
+                 left: a return is not the next step of a sale. `transparent`
+                 for the same reason it is neither expected nor destructive. -->
+            {#if returnable}
+                <button type="button" class="btn transparent" onclick={() => (returnOpen = true)}>
+                    <i class="ri-inbox-unarchive-line" aria-hidden="true"></i>
+                    <span class="txt">Record a return</span>
+                </button>
+            {/if}
+            <!-- Still there on a partly refunded order, which is the fix: it
+                 stays `paid` while the store holds any of the money, so the
+                 operator can finish what they started. -->
+            {#if refundable}
+                <button type="button" class="btn transparent" onclick={() => (refundOpen = true)}>
                     <span class="txt">Refund</span>
                 </button>
             {/if}
-            {#if order.status !== "cancelled" && order.status !== "shipped" && order.status !== "delivered"}
+            <!-- Absent rather than there and refused, the rule `editable`
+                 already states: a partly shipped order is a return. -->
+            {#if order.status !== "cancelled" && order.status !== "partial" && order.status !== "shipped" && order.status !== "delivered"}
                 <button type="button" class="btn danger" onclick={askCancel}>
                     <span class="txt">Cancel</span>
                 </button>
@@ -1441,75 +1712,36 @@
     {/snippet}
 </Drawer>
 
-<!-- A popup rather than a drawer: it belongs to the Ship button just pressed,
-     not to the page behind it. -->
-<Drawer
+<ShipDialog
     open={trackingOpen}
-    size="popup sm"
-    title="Ship this order"
+    {order}
+    busy={busy === "Shipped"}
+    {carrierChoices}
+    {carrierOptions}
+    bind:tracking
+    bind:carrier={shipCarrier}
+    onlookup={(number) => lookupCarriers(number, { target: "ship" })}
+    onpick={() => (carrierPicked = true)}
     onclose={() => (trackingOpen = false)}
->
-    <form id="ship-form" onsubmit={ship}>
-        <div class="field-help m-b-sm">
-            The manual provider records what you type. A carrier module would book the shipment and
-            fill this in itself.
-        </div>
-        <div class="field">
-            <label for="tracking">Tracking number</label>
-            <input
-                id="tracking"
-                type="text"
-                bind:value={tracking}
-                oninput={() => lookupCarriers(tracking, { target: "ship" })}
-                placeholder="Optional"
-            />
-        </div>
+    onship={ship}
+/>
 
-        <!-- The same question the correction dialog asks, asked the same way.
-             This is where a shipment is first recorded, so leaving the carrier
-             out here meant the only way to name one was to fix it afterwards. -->
-        <div class="field m-t-sm">
-            <label for="ship-carrier">Carrier</label>
-            <Select
-                id="ship-carrier"
-                bind:value={shipCarrier}
-                onchange={() => (carrierPicked = true)}
-                options={carrierChoices}
-            />
-        </div>
-        <div class="field-help">
-            {#if carrierOptions.length === 1}
-                That number is {carrierOptions[0].name}'s.
-            {:else if carrierOptions.length > 1}
-                Several carriers issue numbers of that shape. Pick the right one if the first
-                guess is wrong.
-            {:else if tracking.trim()}
-                No carrier uses numbers of that shape. Pick one if you know who has it.
-            {:else}
-                The carrier is worked out from the number.
-            {/if}
-        </div>
-    </form>
+<RefundDialog
+    open={refundOpen}
+    {order}
+    {methodName}
+    busy={busy === "Refunded"}
+    onclose={() => (refundOpen = false)}
+    onrefund={refund}
+/>
 
-    {#snippet footer()}
-        <button
-            type="button"
-            class="btn transparent m-r-auto"
-            onclick={() => (trackingOpen = false)}
-        >
-            <span class="txt">Cancel</span>
-        </button>
-        <button
-            type="submit"
-            form="ship-form"
-            class="btn expanded"
-            class:loading={busy === "Shipped"}
-            disabled={busy === "Shipped"}
-        >
-            <span class="txt">Mark shipped</span>
-        </button>
-    {/snippet}
-</Drawer>
+<ReturnDialog
+    open={returnOpen}
+    {order}
+    busy={busy === "Return recorded"}
+    onclose={() => (returnOpen = false)}
+    onsave={recordReturn}
+/>
 
 <!--
     Correcting a tracking number after the fact. The parcel left either way, so
@@ -1576,10 +1808,21 @@
 
 <Drawer
     open={createOpen}
-    title="New order"
+    title={placed ? `Order ${placed.order.number} placed` : "New order"}
     size="sm"
-    onclose={() => (createOpen = false)}
+    onclose={() => {
+        createOpen = false;
+        placed = null;
+    }}
 >
+    {#if placed}
+        <OrderPlaced
+            order={placed.order}
+            payment={placed.payment}
+            methodName={methods.find((m) => m.code === placed.order.payment_provider)?.name ??
+                placed.order.payment_provider}
+        />
+    {:else}
     <!--
         The same fields a shopper fills in, because this order takes the same
         path a shopper's does — it reserves stock, snapshots prices and gets an
@@ -1721,6 +1964,22 @@
         </div>
 
         <div class="field m-t-sm">
+            <label for="no-discount">Discount code</label>
+            <input
+                id="no-discount"
+                type="text"
+                autocomplete="off"
+                placeholder="Optional"
+                bind:value={draft.discount_code}
+            />
+        </div>
+        <div class="field-help">
+            Applied the way a shopper's is — checked and claimed under the checkout's own lock,
+            so an expired or fully used code refuses the whole order rather than quietly
+            placing it at full price.
+        </div>
+
+        <div class="field m-t-sm">
             <label for="no-payment">Payment method</label>
             <Select
                 id="no-payment"
@@ -1732,12 +1991,17 @@
         <div class="field-help">
             The order is placed the way a shopper places one: it reserves stock now, and the
             customer can read it back with the access token this creates. Cash on delivery leaves
-            it awaiting payment, which is what "Mark paid" is for.
+            it awaiting payment, which is what "Mark paid" is for. Shipping, tax and any discount
+            are added by the checkout and appear on the order once it is placed.
         </div>
 
         {#if draft.lines.length}
+            <!-- Items subtotal, not Total: this sums the lines, while the
+                 checkout adds flat shipping and then tax on the discounted
+                 amount. It was never the total, and a label that named only the
+                 discount would be the same lie in a smaller font. -->
             <div class="flex m-t-sm">
-                <strong>Total</strong>
+                <strong>Items subtotal</strong>
                 <div class="flex-fill"></div>
                 <strong class="txt-money">
                     {formatMoney({
@@ -1748,20 +2012,51 @@
             </div>
         {/if}
     </form>
+    {/if}
 
     {#snippet footer()}
-        <button type="button" class="btn transparent m-r-auto" onclick={() => (createOpen = false)}>
-            <span class="txt">Cancel</span>
-        </button>
-        <button
-            type="submit"
-            form="new-order-form"
-            class="btn"
-            class:loading={creating}
-            disabled={creating}
-        >
-            <span class="txt">Place order</span>
-        </button>
+        {#if placed}
+            <button
+                type="button"
+                class="btn transparent m-r-auto"
+                onclick={() => {
+                    createOpen = false;
+                    placed = null;
+                }}
+            >
+                <span class="txt">Done</span>
+            </button>
+            <button
+                type="button"
+                class="btn"
+                onclick={() => {
+                    const row = placed.order;
+                    createOpen = false;
+                    placed = null;
+                    openOrder(row);
+                }}
+            >
+                <i class="ri-external-link-line" aria-hidden="true"></i>
+                <span class="txt">Open order</span>
+            </button>
+        {:else}
+            <button
+                type="button"
+                class="btn transparent m-r-auto"
+                onclick={() => (createOpen = false)}
+            >
+                <span class="txt">Cancel</span>
+            </button>
+            <button
+                type="submit"
+                form="new-order-form"
+                class="btn"
+                class:loading={creating}
+                disabled={creating}
+            >
+                <span class="txt">Place order</span>
+            </button>
+        {/if}
     {/snippet}
 </Drawer>
 
