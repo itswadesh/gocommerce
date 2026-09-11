@@ -15,6 +15,13 @@ func (a *App) mountCartRoutes() {
 	a.HandleFunc("POST /api/carts/{cartId}/line-items", a.handleAddLineItem)
 	a.HandleFunc("PATCH /api/carts/{cartId}/line-items/{lineId}", a.handleUpdateLineItem)
 	a.HandleFunc("DELETE /api/carts/{cartId}/line-items/{lineId}", a.handleDeleteLineItem)
+	// The email a shopper types into the checkout form before they finish,
+	// which is the only thing an abandoned-cart flow has to reach them on.
+	// SetEmail has existed since M2 with no route and no caller anywhere in the
+	// repository; this is it. Shaped after PUT /api/carts/{token}/discount.
+	a.HandleFunc("PUT /api/carts/{cartId}/email", a.handleSetCartEmail)
+
+	a.mountAdminCartRoutes()
 }
 
 func (a *App) handleCreateCart(w http.ResponseWriter, r *http.Request) {
@@ -39,6 +46,25 @@ func (a *App) handleCreateCart(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleGetCart(w http.ResponseWriter, r *http.Request) {
 	cart, err := a.carts.GetByToken(r.Context(), r.PathValue("cartId"))
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, cart)
+}
+
+// handleSetCartEmail records where to reach the shopper. An empty string clears
+// the address, which is the shopper's own withdrawal path and the reason there
+// is no DELETE companion.
+func (a *App) handleSetCartEmail(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Email string `json:"email"`
+	}
+	if err := DecodeJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	cart, err := a.carts.SetEmail(r.Context(), r.PathValue("cartId"), in.Email)
 	if err != nil {
 		RespondError(w, r, err)
 		return
@@ -232,6 +258,10 @@ func (a *App) handleListOrders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if query.To, err = parseDate(q.Get("to")); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	if query.Sort, err = ParseSort(r, orderSorts); err != nil {
 		RespondError(w, r, err)
 		return
 	}
@@ -590,10 +620,38 @@ func (a *App) handleLowStock(w http.ResponseWriter, r *http.Request) {
 		}
 		threshold = n
 	}
-	variants, total, err := a.inventory.LowStock(r.Context(), threshold, limit, offset)
+	var locationID int64
+	if s := r.URL.Query().Get("location_id"); s != "" {
+		n, err := parseInt(s)
+		if err != nil || n <= 0 {
+			RespondError(w, r, Validationf("location_id must be a positive integer"))
+			return
+		}
+		locationID = int64(n)
+	}
+
+	var variants []*Variant
+	var total int
+	if locationID != 0 {
+		variants, total, err = a.inventory.AtLocation(r.Context(), locationID, LocationStockQuery{
+			Threshold: &threshold, Order: StockOrderAvailable, Limit: limit, Offset: offset,
+		})
+	} else {
+		// Without a location the threshold is against the store's total, which is
+		// the question a single-location store means and the one a multi-location
+		// store usually does not: a variant with one unit in each of five shops is
+		// not low by that reading, even though every shelf looks it.
+		variants, total, err = a.inventory.LowStock(r.Context(), threshold, limit, offset)
+	}
 	if err != nil {
 		RespondError(w, r, err)
 		return
+	}
+	// selectVariants returns a nil slice for an empty page, which marshals as
+	// "data": null and breaks the list envelope every other core listing upholds.
+	// One line here fixes both branches of this route.
+	if variants == nil {
+		variants = []*Variant{}
 	}
 	RespondList(w, variants, ListMeta{Total: total, Limit: limit, Offset: offset})
 }
@@ -742,8 +800,14 @@ func (a *App) handleListCustomers(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	sortBy, err := ParseSort(r, customerSorts)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
 	customers, total, err := a.orders.Customers(r.Context(), CustomerQuery{
 		Search: r.URL.Query().Get("q"),
+		Sort:   sortBy,
 		Limit:  limit,
 		Offset: offset,
 	})

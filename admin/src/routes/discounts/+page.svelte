@@ -7,23 +7,51 @@
      * with the code and how far through its limit it is, and everything else is
      * the editor's problem.
      */
+    import { base } from "$app/paths";
     import { api, query } from "$lib/api.js";
-    import { fromMinor, toMinor, isValidMoney, pluralize } from "$lib/format.js";
+    import { listState } from "$lib/liststate.svelte.js";
+    import { readSort, cycleSort, sortQuery } from "$lib/listsort.js";
+    import { can } from "$lib/session.svelte.js";
+    import {
+        formatDate,
+        formatMoney,
+        fromMinor,
+        toMinor,
+        isValidMoney,
+        orderStatusClass,
+        pluralize,
+    } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import { settings } from "$lib/settings.svelte.js";
     import Drawer from "$lib/components/Drawer.svelte";
+    import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
+    import SortHeader from "$lib/components/SortHeader.svelte";
     import TargetPicker from "$lib/components/TargetPicker.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     const PER_PAGE = 50;
 
+    /* The search, the ordering and the page live in the URL, and the window
+       replaces the rows. Until now the screen fetched one page of fifty and
+       showed whatever came back; with a sort it also chooses WHICH fifty, which
+       is how an operator reaches the most-used discount in a store that has
+       more than that. */
+    const list = listState({ q: "", sort: "", order: "", page: 1 });
+    const SORT_FIELDS = ["code", "title", "used_count", "created_at"];
+
     let loading = $state(true);
     let discounts = $state([]);
     let meta = $state(null);
-    let search = $state("");
-    let draftSearch = $state("");
+
+    const search = $derived(list.params.q);
+    const sort = $derived(readSort(list.params, SORT_FIELDS));
+    let draftSearch = $state(list.params.q);
+
+    /* Two header clicks leave two replies in flight, and the table would
+       otherwise settle on whichever arrived last. */
+    let reqId = 0;
 
     let open = $state(false);
     let editing = $state(null);
@@ -39,27 +67,55 @@
     let targetNames = $state(new Map());
     let targetsMissing = $state(new Set());
 
+    /* What the rule has cost, from the detail route. The listing carries the
+       rule alone — an aggregate per row would be a join per row — so the drawer
+       fetches it on open. */
+    let detail = $state(null);
+
+    /* The dry run. Nothing is locked, nothing is claimed, and a rule that would
+       not apply comes back as an answer rather than an error (D43). */
+    let testBasket = $state("");
+    let testEmail = $state("");
+    let testing = $state(false);
+    let result = $state(null);
+
+    /* Where it has been used. Paged inside the drawer and deliberately not in
+       the URL: a drawer that writes to the address bar leaves a stale page
+       behind when it closes and fights the screen's own parameters. */
+    let usedRows = $state([]);
+    let usedMeta = $state(null);
+    let usedPage = $state(1);
+    let usedLoading = $state(false);
+
     /** The store's currency, for the amount field's prefix and for reading an
      *  amount back: a discount is written in the store's settlement currency,
      *  and how many decimals that has is exactly what fromMinor needs told. */
     const currency = $derived(settings.currency);
 
     $effect(() => {
-        search;
+        list.params;
         load();
     });
 
     async function load() {
+        const mine = ++reqId;
         loading = true;
         try {
-            const result = await api.get("/api/admin/discounts" + query({ q: search, limit: PER_PAGE }));
+            const result = await api.get(
+                "/api/admin/discounts" + list.query({ limit: PER_PAGE, ...sortQuery(sort) }),
+            );
+            if (mine !== reqId) return;
             discounts = result.data ?? [];
             meta = result.meta;
         } catch (err) {
             toast.error(err);
         } finally {
-            loading = false;
+            if (mine === reqId) loading = false;
         }
+    }
+
+    function sortBy(field, firstDesc) {
+        list.set(cycleSort(sort, field, firstDesc));
     }
 
     function blank() {
@@ -116,21 +172,81 @@
         };
         targetNames = new Map();
         targetsMissing = new Set();
+        detail = null;
+        result = null;
+        testBasket = "";
+        testEmail = "";
+        usedRows = [];
+        usedMeta = null;
+        usedPage = 1;
         open = true;
-        // Names and red flags only. It may land after a save, and that is
-        // harmless for exactly the reason above.
-        if (d.target_ids?.length) loadTargetNames(d.id);
+        // Names, red flags and the money figures. It may land after a save, and
+        // that is harmless for exactly the reason above.
+        loadDetail(d.id);
+        if (can("orders.read")) loadUsed(d.id);
     }
 
-    async function loadTargetNames(id) {
+    async function loadDetail(id) {
         try {
             const full = await api.get("/api/admin/discounts/" + id);
+            detail = full.data ?? null;
             targetNames = new Map((full.data?.targets ?? []).map((t) => [t.id, t.title]));
             targetsMissing = new Set(
                 (full.data?.targets ?? []).filter((t) => t.missing).map((t) => t.id),
             );
         } catch {
-            // A chip falling back to its id is a worse label, not a broken form.
+            // A chip falling back to its id is a worse label, not a broken form,
+            // and the money line below simply does not render.
+        }
+    }
+
+    /* Gated on the right rather than on the response: the route needs both
+       discounts.read and orders.read, so a re-cut role that lost the second must
+       not be shown a section that will 403. */
+    async function loadUsed(id) {
+        usedLoading = true;
+        try {
+            const res = await api.get(
+                `/api/admin/discounts/${id}/orders` + query({ page: usedPage, limit: 25 }),
+            );
+            usedRows = res.data ?? [];
+            usedMeta = res.meta ?? null;
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            usedLoading = false;
+        }
+    }
+
+    function goUsedPage(n) {
+        usedPage = n;
+        loadUsed(editing.id);
+    }
+
+    /**
+     * Try the rule against a basket.
+     *
+     * A refusal is the answer, not a failure: it renders as a warning with the
+     * engine's own sentence. Only a broken request — an unreadable amount — is
+     * stopped here.
+     */
+    async function preview() {
+        if (!isValidMoney(testBasket)) {
+            toast.error("Enter a basket amount to try it against.");
+            return;
+        }
+        testing = true;
+        result = null;
+        try {
+            const res = await api.post(`/api/admin/discounts/${editing.id}/preview`, {
+                subtotal_minor: toMinor(testBasket, currency),
+                email: testEmail.trim(),
+            });
+            result = res.data ?? null;
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            testing = false;
         }
     }
 
@@ -289,7 +405,7 @@
 
     function submitSearch(e) {
         e.preventDefault();
-        search = draftSearch;
+        list.set({ q: draftSearch });
     }
 </script>
 
@@ -315,7 +431,7 @@
                         <button
                             type="button"
                             class="btn sm pill secondary transparent"
-                            onclick={() => ((draftSearch = ""), (search = ""))}
+                            onclick={() => ((draftSearch = ""), list.set({ q: "" }))}
                         >
                             Clear
                         </button>
@@ -335,12 +451,38 @@
             <table class="table">
                 <thead class="sticky">
                     <tr>
-                        <th class="col-field-name-id">Code</th>
-                        <th class="col-field-type-text">Title</th>
+                        <SortHeader
+                            field="code"
+                            label="Code"
+                            class="col-field-name-id"
+                            {sort}
+                            onsort={sortBy}
+                        />
+                        <SortHeader
+                            field="title"
+                            label="Title"
+                            class="col-field-type-text"
+                            {sort}
+                            onsort={sortBy}
+                        />
+                        <!-- Three headers that deliberately do not sort. Applies
+                             to is a set of targets; State renders phase(d), a
+                             derivation over active, starts_at, ends_at,
+                             usage_limit and used_count that no single column
+                             orders; and Takes off is basis points on one row and
+                             minor units on the next, so one ordering would put
+                             10% next to $10 as if they were the same number. -->
                         <th class="col-field-type-text">Applies to</th>
                         <th class="col-field-type-select">State</th>
                         <th class="col-field-type-number min-width">Takes off</th>
-                        <th class="col-field-type-number min-width">Uses</th>
+                        <SortHeader
+                            field="used_count"
+                            label="Uses"
+                            class="col-field-type-number min-width"
+                            firstDesc
+                            {sort}
+                            onsort={sortBy}
+                        />
                         <th class="col-meta min-width"></th>
                     </tr>
                 </thead>
@@ -409,7 +551,7 @@
                                     Nothing matches that. <a
                                         href="#clear"
                                         onclick={(e) => (
-                                            e.preventDefault(), (draftSearch = ""), (search = "")
+                                            e.preventDefault(), (draftSearch = ""), list.set({ q: "" })
                                         )}>Clear the search</a
                                     >.
                                 {:else}
@@ -423,14 +565,8 @@
         </div>
 
         <footer class="page-footer">
-            <span class="txt">
-                {#if meta}
-                    {meta.total}
-                    {pluralize(meta.total, "discount")}
-                {:else}
-                    …
-                {/if}
-            </span>
+            <Pager {meta} {loading} noun="discount" onpage={(n) => list.setPage(n)} />
+            <div class="flex-fill"></div>
             <ThemeToggle />
         </footer>
     </div>
@@ -601,6 +737,163 @@
             <label for="d-active">Active</label>
         </div>
     </form>
+
+    <!--
+        Both sections sit after </form> and inside the drawer, so the submit
+        footer still targets the form by id and no form is nested in another.
+    -->
+    {#if editing}
+        <h6 class="section-title m-t-base">Try it</h6>
+        <div class="fields">
+            <div class="field">
+                <label for="d-test-basket">Basket ({currency})</label>
+                <input
+                    id="d-test-basket"
+                    type="text"
+                    inputmode="decimal"
+                    bind:value={testBasket}
+                    placeholder="100.00"
+                />
+            </div>
+            <div class="delimiter"></div>
+            <div class="field">
+                <label for="d-test-email">Email</label>
+                <input
+                    id="d-test-email"
+                    type="email"
+                    bind:value={testEmail}
+                    placeholder="Optional"
+                />
+            </div>
+        </div>
+        <div class="inline-flex m-t-5">
+            <button
+                type="button"
+                class="btn secondary"
+                class:loading={testing}
+                disabled={testing}
+                onclick={preview}
+            >
+                <i class="ri-play-line" aria-hidden="true"></i>
+                <span class="txt">Preview</span>
+            </button>
+        </div>
+
+        {#if result}
+            <!-- Branched on the shape rather than on one number: a free-shipping
+                 rule applies with an amount of zero, and "takes off 0.00" is the
+                 wrong sentence for a rule that is working. -->
+            {#if result.applies && result.applied?.free_shipping}
+                <div class="alert success m-t-sm"><p>Shipping is free.</p></div>
+            {:else if result.applies}
+                <div class="alert success m-t-sm">
+                    <p>Takes off {currency} {fromMinor(result.applied?.amount_minor, currency)}.</p>
+                </div>
+            {:else}
+                <div class="alert warning m-t-sm"><p>{result.reason}</p></div>
+            {/if}
+        {/if}
+
+        {#if editing.min_subtotal_minor}
+            <!-- A fact about the rule on screen, not a reading of the result —
+                 which is what keeps it right. The engine's own refusal prints
+                 raw minor units, so the formatted minimum beside the form is
+                 what makes that sentence self-explanatory. -->
+            <div class="field-help">
+                Needs a basket of at least {currency}
+                {fromMinor(editing.min_subtotal_minor, currency)}.
+            </div>
+        {/if}
+        <div class="field-help">
+            Nothing is used up by trying it — the count only moves at checkout.
+        </div>
+
+        {#if can("orders.read")}
+            <h6 class="section-title m-t-base">Where it has been used</h6>
+            {#if detail}
+                <div>
+                    <strong>{formatMoney(detail.redeemed_total)}</strong>
+                    given away across {detail.redeemed_orders}
+                    live {pluralize(detail.redeemed_orders, "order")}{#if detail.redeemed_other_currency_orders}, and
+                        {detail.redeemed_other_currency_orders} more on orders in another currency,
+                        which the total cannot add to this one{/if}.
+                </div>
+                <div class="field-help">
+                    This list shows all {usedMeta?.total ?? detail.redeemed_orders}, cancelled ones
+                    included and greyed; the total above leaves them out. “Used {editing.used_count}
+                    {pluralize(editing.used_count, "time")}” counts every checkout that claimed the
+                    code, cancellations and all — the three numbers answer three different questions.
+                </div>
+            {/if}
+
+            <div class="page-table-wrapper m-t-sm">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Order</th>
+                            <th>When</th>
+                            <th>Email</th>
+                            <th>Status</th>
+                            <th class="txt-right">Took off</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each usedRows as r (r.order_id)}
+                            <tr class:txt-hint={r.status === "cancelled"}>
+                                <!-- By email, because that is the only filter
+                                     the orders screen takes from its address
+                                     bar. Linking by number would advertise a
+                                     jump the list cannot make, and land the
+                                     operator on an unfiltered page. -->
+                                <td>
+                                    <a
+                                        href="{base}/orders?email={encodeURIComponent(r.email)}"
+                                        class="txt-bold"
+                                        title="Open this buyer's orders"
+                                    >
+                                        {r.number}
+                                    </a>
+                                </td>
+                                <td class="txt-hint txt-sm">{formatDate(r.created_at)}</td>
+                                <td class="txt-sm">{r.email}</td>
+                                <td>
+                                    <span class="label {orderStatusClass(r.status)}">
+                                        {r.status}
+                                    </span>
+                                </td>
+                                <td class="txt-right txt-bold">{formatMoney(r.amount)}</td>
+                            </tr>
+                        {/each}
+
+                        {#if usedLoading && !usedRows.length}
+                            {#each Array(2) as _, i (i)}
+                                <tr><td colspan="5"><span class="skeleton-loader"></span></td></tr>
+                            {/each}
+                        {/if}
+
+                        {#if !usedLoading && !usedRows.length}
+                            <tr>
+                                <td colspan="5" class="txt-center txt-hint p-base">
+                                    Nobody has used this yet.
+                                </td>
+                            </tr>
+                        {/if}
+                    </tbody>
+                </table>
+            </div>
+
+            {#if usedMeta && usedMeta.total_pages > 1}
+                <div class="inline-flex m-t-5">
+                    <Pager
+                        meta={usedMeta}
+                        loading={usedLoading}
+                        noun="order"
+                        onpage={goUsedPage}
+                    />
+                </div>
+            {/if}
+        {/if}
+    {/if}
 
     {#snippet footer()}
         <button type="button" class="btn transparent m-r-auto" onclick={() => (open = false)}>

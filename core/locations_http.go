@@ -33,6 +33,42 @@ func (a *App) mountLocationRoutes() {
 	a.HandleAdminFunc("POST /api/admin/variants/{id}/stock/transfer", a.handleTransferStock, RightInventoryWrite)
 	a.HandleAdminFunc("GET /api/admin/variants/{id}/movements", a.handleVariantMovements, RightInventoryRead)
 	a.HandleAdminFunc("GET /api/admin/locations/{id}/movements", a.handleLocationMovements, RightInventoryRead)
+
+	// What one place is holding, for the same reason the two above are
+	// inventory.read rather than locations.read: this is counts, not places.
+	a.HandleAdminFunc("GET /api/admin/locations/{id}/stock", a.handleLocationStock, RightInventoryRead)
+}
+
+// handleLocationStock is the inverse of handleVariantStock: what one place is
+// holding, rather than where one variant is. The non-zero default is what makes
+// it answer the question an operator arrives with — "this location still holds
+// 43 unit(s) across 7 SKU(s)" — instead of listing the catalog back at them,
+// which is what an unfiltered listing of the default location is.
+func (a *App) handleLocationStock(w http.ResponseWriter, r *http.Request) {
+	id, err := pathInt64(r, "id")
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	limit, offset, err := Page(r)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	// Absent means the default, which is true. Only an explicit 0/false widens
+	// it — the same two spellings handleListDiscounts accepts for `active`.
+	nonZero := true
+	if v := r.URL.Query().Get("nonzero"); v != "" {
+		nonZero = !(v == "0" || strings.EqualFold(v, "false"))
+	}
+	rows, total, err := a.inventory.AtLocation(r.Context(), id, LocationStockQuery{
+		NonZero: nonZero, Order: StockOrderHolding, Limit: limit, Offset: offset,
+	})
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	RespondList(w, rows, ListMeta{Total: total, Limit: limit, Offset: offset})
 }
 
 func (a *App) handleListLocations(w http.ResponseWriter, r *http.Request) {

@@ -8,52 +8,75 @@
      * does not exist.
      */
     import { base } from "$app/paths";
-    import { api, query } from "$lib/api.js";
+    import { api } from "$lib/api.js";
+    import { listState } from "$lib/liststate.svelte.js";
+    import { readSort, cycleSort, sortQuery } from "$lib/listsort.js";
     import { formatMoney, formatDate, pluralize } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
+    import Pager from "$lib/components/Pager.svelte";
+    import SortHeader from "$lib/components/SortHeader.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
-    let customers = $state([]);
-    let total = $state(0);
-    let loading = $state(true);
-    let page = $state(1);
-    let search = $state("");
-    let draftSearch = $state("");
+    const PER_PAGE = 25;
 
-    const limit = 25;
+    /* The search, the ordering and the page live in the URL, and the window
+       replaces the rows rather than accumulating them: an accumulator holding
+       four pages cannot honestly write page=4 in the address bar, and it is
+       what interleaves two orderings into one table when the sort changes. */
+    const list = listState({ q: "", sort: "", order: "", page: 1 });
+
+    /* first_order_at is accepted by the engine and has no column here to click.
+       That is deliberate and recorded in docs/admin-panel.md: the API is
+       complete, the screen shows the four things an operator asked for. */
+    const SORT_FIELDS = ["email", "orders", "spent", "first_order_at", "last_order_at"];
+
+    let customers = $state([]);
+    let meta = $state(null);
+    let loading = $state(true);
+
+    const search = $derived(list.params.q);
+    const sort = $derived(readSort(list.params, SORT_FIELDS));
+    let draftSearch = $state(list.params.q);
+
+    /* Two header clicks leave two requests in flight, and the table would
+       otherwise settle on whichever reply arrived last rather than on the
+       header that is lit. */
+    let reqId = 0;
 
     $effect(() => {
-        search;
-        page;
+        list.params;
         load();
     });
 
     async function load() {
+        const mine = ++reqId;
         loading = true;
         try {
             const res = await api.get(
-                "/api/admin/customers" + query({ q: search, limit, offset: (page - 1) * limit }),
+                "/api/admin/customers" + list.query({ limit: PER_PAGE, ...sortQuery(sort) }),
             );
-            const rows = res.data ?? [];
-            customers = page === 1 ? rows : [...customers, ...rows];
-            total = res.meta?.total ?? rows.length;
+            if (mine !== reqId) return;
+            customers = res.data ?? [];
+            meta = res.meta ?? null;
         } catch (err) {
             toast.error(err);
         } finally {
-            loading = false;
+            if (mine === reqId) loading = false;
         }
+    }
+
+    function sortBy(field, firstDesc) {
+        list.set(cycleSort(sort, field, firstDesc));
     }
 
     function submitSearch(event) {
         event.preventDefault();
-        page = 1;
-        search = draftSearch.trim();
+        list.set({ q: draftSearch.trim() });
     }
 
     function clearSearch() {
         draftSearch = "";
-        page = 1;
-        search = "";
+        list.set({ q: "" });
     }
 </script>
 
@@ -70,7 +93,7 @@
                     class="btn circle transparent secondary"
                     title="Refresh"
                     aria-label="Refresh"
-                    onclick={() => ((page = 1), load())}
+                    onclick={load}
                 >
                     <i class="ri-refresh-line" aria-hidden="true"></i>
                 </button>
@@ -106,11 +129,41 @@
             <table class="table responsive-table">
                 <thead class="sticky">
                     <tr>
-                        <th class="col-field-name-id">Customer</th>
+                        <SortHeader
+                            field="email"
+                            label="Customer"
+                            class="col-field-name-id"
+                            {sort}
+                            onsort={sortBy}
+                        />
+                        <!-- Location is one line of the address snapshot the
+                             most recent order carries, not a column: there is
+                             nothing to order it by. -->
                         <th class="col-field-type-text">Location</th>
-                        <th class="col-field-type-number min-width">Orders</th>
-                        <th class="col-field-type-number min-width">Spent</th>
-                        <th class="col-field-type-date min-width">Last order</th>
+                        <SortHeader
+                            field="orders"
+                            label="Orders"
+                            class="col-field-type-number min-width"
+                            firstDesc
+                            {sort}
+                            onsort={sortBy}
+                        />
+                        <SortHeader
+                            field="spent"
+                            label="Spent"
+                            class="col-field-type-number min-width"
+                            firstDesc
+                            {sort}
+                            onsort={sortBy}
+                        />
+                        <SortHeader
+                            field="last_order_at"
+                            label="Last order"
+                            class="col-field-type-date min-width"
+                            firstDesc
+                            {sort}
+                            onsort={sortBy}
+                        />
                         <th class="col-meta min-width"></th>
                     </tr>
                 </thead>
@@ -171,25 +224,11 @@
                     {/if}
                 </tbody>
             </table>
-
-            {#if customers.length < total}
-                <button
-                    type="button"
-                    class="btn expanded block load-more-btn"
-                    class:loading
-                    disabled={loading}
-                    onclick={() => (page += 1)}
-                >
-                    <span class="txt">Load more</span>
-                </button>
-            {/if}
         </div>
 
         <footer class="page-footer">
-            <span class="txt">
-                {total}
-                {pluralize(total, "customer")}
-            </span>
+            <Pager {meta} {loading} noun="customer" onpage={(n) => list.setPage(n)} />
+            <div class="flex-fill"></div>
             <ThemeToggle />
         </footer>
     </div>

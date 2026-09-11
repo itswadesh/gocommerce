@@ -120,6 +120,13 @@ type Config struct {
 	HandlerTimeout time.Duration
 	// CartTTL is how long an untouched cart survives. Defaults to 720h.
 	CartTTL time.Duration
+	// CartRetention is how long an abandoned cart is kept before it is deleted,
+	// measured from abandoned_at. Defaults to 720h.
+	//
+	// It is the bound that replaces deleting on expiry: a cart with something in
+	// it now lives at most CartTTL + CartRetention, and the shopper's email on
+	// it lives that long too.
+	CartRetention time.Duration
 	// OrderTTL is how long an unpaid order holds its inventory reservation
 	// before it is cancelled and the stock released. Defaults to 24h.
 	OrderTTL time.Duration
@@ -176,6 +183,11 @@ func (c *Config) applyDefaults() error {
 	}
 	if c.CartTTL <= 0 {
 		c.CartTTL = 30 * 24 * time.Hour
+	}
+	// No floor against CartTTL: the clock is abandoned_at, not creation, so a
+	// short retention purges soon after abandonment rather than before it.
+	if c.CartRetention <= 0 {
+		c.CartRetention = 30 * 24 * time.Hour
 	}
 	if c.OrderTTL <= 0 {
 		c.OrderTTL = 24 * time.Hour
@@ -249,6 +261,9 @@ type App struct {
 	locations   *Locations
 	invitations *Invitations
 	taxes       *Taxes
+	// reports is a reading of the orders: it owns no table and writes nothing,
+	// so it has no ordering constraint against anything built here.
+	reports *Reports
 	// audit reads the operator trail. The writer is a package-level function
 	// taking a *sql.Tx, so nothing needs a handle to record a change.
 	audit *Audits
@@ -408,6 +423,7 @@ func (a *App) buildServices() {
 	a.locations = &Locations{app: a}
 	a.invitations = &Invitations{app: a}
 	a.taxes = &Taxes{app: a}
+	a.reports = &Reports{app: a}
 
 	// An explicit store wins; otherwise a directory gets the built-in one; with
 	// neither, uploads are simply unavailable and the library is URL-only.
@@ -442,18 +458,33 @@ func (a *App) startBackgroundWork() {
 	})
 }
 
-// runSweepers reclaims what abandoned traffic leaves behind: carts nobody came
-// back to, and inventory held by orders whose payment never arrived.
+// runSweepers deals with what abandoned traffic leaves behind: the baskets
+// nobody came back to — recorded if somebody had filled them, deleted if not,
+// and deleted again once retention runs out — and inventory held by orders
+// whose payment never arrived.
 func (a *App) runSweepers(ctx context.Context) {
 	const interval = 5 * time.Minute
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	sweep := func() {
+		// Abandonment first, so the log reads in the order things happen.
+		// Correctness does not depend on it: the three predicates are mutually
+		// exclusive, so no two phases can claim the same row.
+		if n, err := a.carts.Abandon(ctx); err != nil {
+			a.log.Error("cart abandonment sweep failed", "error", err)
+		} else if n > 0 {
+			a.log.Info("carts marked abandoned", "carts", n)
+		}
 		if n, err := a.carts.SweepExpired(ctx); err != nil {
 			a.log.Error("cart sweep failed", "error", err)
 		} else if n > 0 {
-			a.log.Info("expired carts removed", "carts", n)
+			a.log.Info("expired empty carts removed", "carts", n)
+		}
+		if n, err := a.carts.PurgeAbandoned(ctx); err != nil {
+			a.log.Error("abandoned cart purge failed", "error", err)
+		} else if n > 0 {
+			a.log.Info("abandoned carts purged", "carts", n, "retention", a.cfg.CartRetention)
 		}
 		if _, err := a.orders.SweepUnpaid(ctx); err != nil {
 			a.log.Error("unpaid order sweep failed", "error", err)

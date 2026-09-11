@@ -52,6 +52,13 @@
     let libraryUsage = $state("");
     let librarySize = $state("");
     let libraryScope = $state("");
+    /* The picker is a grid of thumbnails, not a table, so there is no column
+       header to click and the ordering is a filter beside the others.
+       Deliberately NOT in the address bar, unlike every list screen: a drawer
+       that writes to the URL leaves a stale ?sort= behind when it closes and
+       fights the host screen's own parameters. "field:direction" in one value
+       because it is one control. */
+    let librarySort = $state("");
     let libraryView = $state("grid");
     let picked = $state([]);
 
@@ -331,6 +338,7 @@
         libraryUsage = "";
         librarySize = "";
         libraryScope = "";
+        librarySort = "";
         linkUrl = "";
         libraryOpen = true;
         loadLibrary();
@@ -384,6 +392,7 @@
     async function loadLibrary() {
         libraryLoading = true;
         const bucket = SIZE_BUCKETS[librarySize];
+        const [sortField, sortOrder] = librarySort.split(":");
         try {
             const result = await api.get(
                 "/api/admin/media" +
@@ -391,6 +400,8 @@
                         q: librarySearch.trim(),
                         kind: libraryKind,
                         usage: libraryUsage,
+                        sort: sortField ?? "",
+                        order: sortField ? sortOrder : "",
                         // "On this product" is the same filter the engine takes
                         // by id; the picker just knows which product it is.
                         product_id: libraryScope === "product" ? productId : "",
@@ -694,6 +705,19 @@
             options={[
                 { value: "", label: "Product: any" },
                 { value: "product", label: "On this product" },
+            ]}
+        />
+        <!-- The empty value sends nothing at all, which is what keeps newest
+             first: the thing you just uploaded is usually the thing you
+             want, and no sort/order pair can ask for that. -->
+        <Select
+            class="sm"
+            bind:value={librarySort}
+            onchange={reloadLibrary}
+            options={[
+                { value: "", label: "Sort: newest" },
+                { value: "filename:asc", label: "Sort: name A–Z" },
+                { value: "size_bytes:desc", label: "Sort: largest first" },
             ]}
         />
     </div>

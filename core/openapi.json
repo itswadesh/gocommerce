@@ -57,7 +57,11 @@
     },
     {
       "name": "admin:orders",
-      "description": "Managing orders, payments and shipments."
+      "description": "Managing orders, payments, shipments and the carts behind them."
+    },
+    {
+      "name": "admin:reports",
+      "description": "What the store sold, aggregated over a window."
     },
     {
       "name": "admin:data",
@@ -686,6 +690,53 @@
         }
       }
     },
+    "/api/carts/{cartId}/email": {
+      "put": {
+        "tags": [
+          "cart"
+        ],
+        "summary": "Set the shopper's email on a cart",
+        "description": "The address an abandoned-cart flow reaches the shopper on. A shopper types it into the checkout form mid-session, before checkout exists to capture it, and this is where it is recorded. An empty string clears it, which is the shopper's own way to withdraw the address. Like every cart mutation it extends the cart's TTL, and it revives a cart the sweeper has already marked `abandoned`.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CartID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "description": "An empty string clears the address."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/CartResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
     "/api/checkout": {
       "get": {
         "tags": [
@@ -1015,11 +1066,29 @@
           },
           {
             "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Order the page by one of these fields; omit for the listing's own order. Anything else is a 400 naming the ones that exist. Text keys are folded by PostgreSQL, and every ordering breaks ties on a key unique in the result set, so two pages of one listing never repeat or skip a row. Media recorded by URL has an empty filename and sorts last under `filename` in both directions.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "created_at",
+                "filename",
+                "id",
+                "kind",
+                "size_bytes"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/SortOrder"
           }
         ],
         "responses": {
           "200": {
-            "description": "A page of the library.",
+            "description": "A page of the library, newest first unless `sort` says otherwise.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1805,7 +1874,7 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Superuser"
+                        "$ref": "#/components/schemas/SuperuserRow"
                       }
                     },
                     "meta": {
@@ -2101,7 +2170,27 @@
               "type": "integer",
               "format": "int64"
             },
-            "description": "Restrict to one collection's members, and order them the way that collection was curated rather than newest-first. An unparseable value is an error rather than a silently ignored filter. A collection nobody has is an empty page, not a 404. If a sort parameter is ever added to this listing, sending it together with collection_id must be a validation error rather than a silent override: a collection's order is the curation (D40)."
+            "description": "Restrict to one collection's members, and order them the way that collection was curated rather than newest-first. An unparseable value is an error rather than a silently ignored filter. A collection nobody has is an empty page, not a 404. Sending `sort` together with it is a validation error rather than a silent override: a collection's order is the curation (D40)."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Order the page by one of these fields; omit for the listing's own order. Anything else is a 400 naming the ones that exist. Text keys are folded by PostgreSQL, and every ordering breaks ties on a key unique in the result set, so two pages of one listing never repeat or skip a row. `price` is the cheapest variant and `available` the summed availability of tracked variants; a product with no tracked variants sorts last under either, in both directions. `status` orders alphabetically (active, archived, draft), which is not the lifecycle order. Sending `sort` together with `collection_id` is a 400: a collection is shown in the order it was curated.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "available",
+                "created_at",
+                "id",
+                "price",
+                "status",
+                "title",
+                "updated_at"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/SortOrder"
           }
         ],
         "responses": {
@@ -3124,7 +3213,7 @@
             "adminToken": []
           }
         ],
-        "description": "Send `adjust` to move the count by a delta (receiving stock), or `set` to replace it (a stock take). Neither may leave on-hand below the quantity already reserved at that location for orders in flight.\n\n`location_id` says which shelf; omit it for the default one, which is what a single-location store always means.",
+        "description": "Send `adjust` to move the count by a delta (receiving stock), or `set` to replace it (a stock take). Neither may leave on-hand below the quantity already reserved at that location for orders in flight.\n\n`location_id` says which shelf; omit it for the default one, which is what a single-location store always means.\n\nRefused with 409 when the receiving location is closed: stock moves out of a closed location, never into it. Every decrease is still allowed, including at a closed one, because emptying a closed shelf is the only way it is ever cleared.",
         "parameters": [
           {
             "$ref": "#/components/parameters/PathID"
@@ -3210,6 +3299,16 @@
             }
           },
           {
+            "name": "location_id",
+            "in": "query",
+            "description": "Without it the threshold is against the store's total, which is what a single-location store means: a variant with one unit in each of five shops is not low by that reading, even though every shelf looks it. With it, the threshold is against that location alone and each row carries `at_location`. Only variants the location already has a stock row for are considered.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
             "$ref": "#/components/parameters/Limit"
           },
           {
@@ -3241,8 +3340,14 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       }
@@ -3308,6 +3413,27 @@
           },
           {
             "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Order the page by one of these fields; omit for the listing's own order. Anything else is a 400 naming the ones that exist. Text keys are folded by PostgreSQL, and every ordering breaks ties on a key unique in the result set, so two pages of one listing never repeat or skip a row. `number` orders by the id the number is built from, which stays true past six digits where a text sort does not; `total` orders by `total_minor`. Orders with no customer name sort last in both directions.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "created_at",
+                "email",
+                "id",
+                "name",
+                "number",
+                "payment_status",
+                "status",
+                "total"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/SortOrder"
           }
         ],
         "responses": {
@@ -3450,6 +3576,146 @@
         }
       }
     },
+    "/api/admin/carts": {
+      "get": {
+        "tags": [
+          "admin:orders"
+        ],
+        "summary": "List carts",
+        "description": "Baskets that have not become orders yet: what is in them, what they are worth, and the address to reach the shopper on. Read-only and tokenless - a cart's token is a live credential, so it is never returned here and a cart is addressed by its numeric row id. `state` is derived from the status column AND `expires_at`, so a cart the five-minute sweeper has not reached yet still reports as abandoned.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "description": "Derived from status and expires_at, not the status column alone.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "live",
+                "abandoned",
+                "converted"
+              ]
+            }
+          },
+          {
+            "name": "has_email",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "has_lines",
+            "in": "query",
+            "description": "Counts lines rather than value, so a basket of free samples is never silently dropped.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "min_value_minor",
+            "in": "query",
+            "description": "Minimum basket value, in the currency's minor units - quantity x the snapshotted unit price.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "$ref": "#/components/parameters/From"
+          },
+          {
+            "$ref": "#/components/parameters/To"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of carts, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CartSummary"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/carts/{id}": {
+      "get": {
+        "tags": [
+          "admin:orders"
+        ],
+        "summary": "Get a cart",
+        "description": "One basket and what is in it, addressed by the numeric id the listing reports. Each line carries both coordinates - the price as snapshotted and the price now - so an operator can see whether the basket is still worth chasing. Still no token.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The cart.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CartDetail"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/admin/customers": {
       "get": {
         "tags": [
@@ -3476,6 +3742,27 @@
           },
           {
             "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Order the page by one of these fields; omit for the listing's own order. Anything else is a 400 naming the ones that exist. Text keys are folded by PostgreSQL, and every ordering breaks ties on a key unique in the result set, so two pages of one listing never repeat or skip a row. Every key is the grouping key or an aggregate over it, so the ordering is on the same number the row shows. There is no `id` key: the listing has no id.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "email",
+                "first_order_at",
+                "last_order_at",
+                "orders",
+                "spent"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/SortOrder"
           }
         ],
         "responses": {
@@ -4345,7 +4632,7 @@
             "adminToken": []
           }
         ],
-        "description": "Upserts by SKU. Rows for one product must be contiguous — which is what export produces — so a large file streams instead of being held in memory. A bad row is reported with its line number and never aborts the file.",
+        "description": "Upserts by SKU. Rows for one product must be contiguous — which is what export produces — so a large file streams instead of being held in memory. A bad row is reported with its line number and never aborts the file.\n\nA `stock_on_hand:<code>` cell that raises the count at a closed location fails that row, naming the code: stock moves out of a closed location, never into it. A cell at or below the current count is accepted, so an unedited export of a closed location's zeros still imports.",
         "parameters": [
           {
             "$ref": "#/components/parameters/DryRun"
@@ -4575,6 +4862,22 @@
         "description": "Nested by default, because a storefront menu is nested. `?flat=1` returns the same rows depth-first, which is what an indented picker wants: every row carries `depth` and `child_count`, so a client can indent and expand without rebuilding the tree.",
         "parameters": [
           {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Search titles and paths, case-insensitively."
+          },
+          {
+            "name": "parent",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "`root`, or a category id: return that node's direct children only."
+          },
+          {
             "name": "flat",
             "in": "query",
             "schema": {
@@ -4584,6 +4887,32 @@
               ]
             },
             "description": "Return a depth-first flat list instead of nested children."
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Order the page by one of these fields; omit for the listing's own order. Anything else is a 400 naming the ones that exist. Text keys are folded by PostgreSQL, and every ordering breaks ties on a key unique in the result set, so two pages of one listing never repeat or skip a row. Honoured only on the `?q=` search branch; sent with `?parent=`, `?flat=1` or a whole-tree listing it is a 400, because a tree's order is the position an operator gave it. The sort is applied before the limit, so `sort=title` returns the alphabetically first matches rather than the shallowest ones alphabetised. `full_name` orders by the rendered path, which is what the row shows.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "created_at",
+                "full_name",
+                "id",
+                "title"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/SortOrder"
           }
         ],
         "responses": {
@@ -4704,11 +5033,34 @@
           },
           {
             "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Order the page by one of these fields; omit for the listing's own order. Anything else is a 400 naming the ones that exist. Text keys are folded by PostgreSQL, and every ordering breaks ties on a key unique in the result set, so two pages of one listing never repeat or skip a row. Honoured only on the `?q=` search branch; sent with `?parent=`, `?flat=1` or a whole-tree listing it is a 400, because a tree's order is the position an operator gave it. The sort is applied before the limit, so `sort=title` returns the alphabetically first matches rather than the shallowest ones alphabetised. `full_name` orders by the rendered path, which is what the row shows.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "created_at",
+                "full_name",
+                "id",
+                "title"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/SortOrder"
           }
         ],
         "responses": {
           "200": {
-            "description": "Categories. `meta.total` is the real size of the tree, which can exceed what was sent.",
+            "description": "Categories. `meta.total` is the real size of the tree, which can exceed what was sent; on a search it stays the true number of matches even when the requested window is past the end of them.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5664,11 +6016,32 @@
           },
           {
             "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Order the page by one of these fields; omit for the listing's own order. Anything else is a 400 naming the ones that exist. Text keys are folded by PostgreSQL, and every ordering breaks ties on a key unique in the result set, so two pages of one listing never repeat or skip a row. Automatic discounts have no code and sort last in both directions. There is no key for the state chip or for what the rule takes off: the first is derived from five columns at once, and the second mixes basis points with minor units.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "code",
+                "created_at",
+                "id",
+                "title",
+                "used_count"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/SortOrder"
           }
         ],
         "responses": {
           "200": {
-            "description": "Discounts, newest first.",
+            "description": "Discounts, newest first unless `sort` says otherwise.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5759,14 +6132,14 @@
         ],
         "responses": {
           "200": {
-            "description": "The discount.",
+            "description": "The discount, plus what it has actually cost.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/Discount"
+                      "$ref": "#/components/schemas/DiscountDetail"
                     }
                   }
                 }
@@ -5859,6 +6232,157 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/discounts/{id}/orders": {
+      "get": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Orders that used this discount",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "What a promotion has actually been spent on, newest first. The rows are the snapshots taken at checkout, so a rule that has since been renamed still reads as what it was.\n\nCancelled orders are listed here, marked by their status, and excluded from the detail's `redeemed_total` — so `meta.total` counts more orders than `redeemed_orders` whenever any were cancelled.\n\nNeeds both `discounts.read` and `orders.read`: the row carries an order number, an email address and a total.\n\nA deleted rule's redemptions are unreachable here, because `order_discounts.discount_id` is `ON DELETE SET NULL` and the snapshots stay with their orders.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Redemptions, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DiscountRedemption"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/discounts/{id}/preview": {
+      "post": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Try a discount against a basket",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "A dry run, so a new promotion's first test is not a real customer. Nothing is locked, nothing is written and no usage is claimed, so a preview can never exhaust a code.\n\nA rule that would not apply comes back as `applies: false` with the reason, not as an error — the question was whether it works, and \"no, it expired on Friday\" is a successful answer to it. Reasons include an expired or unstarted window, an inactive rule, a usage limit reached, a basket below the minimum, a code already used by that email address, a scope holding nothing in this basket, and a codeless automatic rule, which nothing evaluates at checkout yet.\n\nSend `subtotal_minor` for an order-wide rule, or `lines` for a scoped one — a scoped rule comes off the lines its targets reach, which a bare total cannot say. Sending both is a 400.\n\nThe request being wrong is still an error: an unknown id is 404 and a negative amount is 400.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "subtotal_minor": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 0,
+                    "description": "The basket to try it against, in minor units. Use this or `lines`, not both."
+                  },
+                  "email": {
+                    "type": "string",
+                    "description": "Optional. `once_per_email` cannot be previewed without it."
+                  },
+                  "lines": {
+                    "type": "array",
+                    "description": "The basket line by line, for a scoped rule. A scoped rule previewed with a bare subtotal answers `applies: false` saying the lines are missing, rather than reporting an amount it cannot know.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "product_id": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "total_minor": {
+                          "type": "integer",
+                          "format": "int64",
+                          "minimum": 0
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the rule would do, or why it would not.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DiscountPreview"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
@@ -6448,6 +6972,78 @@
         }
       }
     },
+    "/api/admin/locations/{id}/stock": {
+      "get": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "What one location holds",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "The inverse of `GET /api/admin/variants/{id}/stock`: what one place is holding, rather than where one variant is. Each row carries `at_location` beside the variant's store-wide figures, so \"the store has 40, this shelf has none\" is one row rather than two requests. Only variants this location already has a stock row for appear — one it has never carried is not a shelf it can restock.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          },
+          {
+            "name": "nonzero",
+            "in": "query",
+            "description": "Defaults to true. A row is held when `on_hand` or `reserved` is non-zero, the same test that refuses a close, so this listing and that refusal always agree about what is there. `nonzero=0` adds the rows sitting at zero.",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Variants held here, most units first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Variant"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/admin/variants/{id}/stock": {
       "get": {
         "tags": [
@@ -6615,7 +7211,7 @@
             "adminToken": []
           }
         ],
-        "description": "One statement out and one in, in a single transaction, so the store's total never changes even for an instant. Reserved units do not travel: they are promised to orders that will be picked from where they are, and moving them would send a picker to the wrong shelf.",
+        "description": "One statement out and one in, in a single transaction, so the store's total never changes even for an instant. Reserved units do not travel: they are promised to orders that will be picked from where they are, and moving them would send a picker to the wrong shelf.\n\nRefused with 409 when `to_location_id` is closed: stock moves out of a closed location, never into it. The **source** may be closed, and always could be — that is the recovery path for a store that already has units stranded at one.",
         "parameters": [
           {
             "$ref": "#/components/parameters/PathID"
@@ -7790,6 +8386,158 @@
           }
         }
       }
+    },
+    "/api/admin/reports/sales": {
+      "get": {
+        "tags": [
+          "admin:reports"
+        ],
+        "summary": "Sales totals per day, week or month",
+        "description": "A reading of the orders, added up in the database rather than in the client. A sale is an order whose stock has left the shelf — confirmed, partly shipped, shipped or delivered — so a cash-on-delivery order counts from the moment checkout confirms it, a partly shipped one counts in full, and an in-flight pending checkout that the unpaid sweeper may cancel does not. Pending and cancelled orders are reported beside the totals in `excluded`, never inside them. Payment does not decide whether a sale happened: it splits the same money into `paid`, `outstanding` (pending or failed) and `refunded`, which sum to `total` exactly. Money that has actually gone back is reported rather than netted off — `paid.refunded` for partial refunds, with `paid.net_collected` beside it. `net` is items less discount, and less tax when the prices contained it, so `total = net + tax + shipping` holds under either tax mode. Buckets are calendar day, ISO week (Monday) or month cut in `tz`, and the window's own edges are resolved in that same zone; the first and last bucket carry `partial` when the window clips them. Figures are grouped by the order's own currency and never summed across currencies.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ReportFrom"
+          },
+          {
+            "$ref": "#/components/parameters/ReportTo"
+          },
+          {
+            "$ref": "#/components/parameters/ReportGroupBy"
+          },
+          {
+            "$ref": "#/components/parameters/ReportTimeZone"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One block per currency, each with its window totals and its zero-filled buckets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SalesReport"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/reports/top-products": {
+      "get": {
+        "tags": [
+          "admin:reports"
+        ],
+        "summary": "Best sellers over a window",
+        "description": "The order lines of sales — confirmed, partly shipped, shipped or delivered orders — grouped by product or by variant, within one currency. Title, SKU and variant label are the newest snapshot the lines carry, so a renamed or deleted product still reports under a name somebody recognises; `product_id` is null once the product is gone, and two deleted products stay two rows. `revenue` is line value excluding tax under either tax mode, and BEFORE any order-level discount: a discount is recorded once per order and never allocated to lines, so summing these rows exceeds the sales report's `net` by exactly the discounts in the window.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ReportFrom"
+          },
+          {
+            "$ref": "#/components/parameters/ReportTo"
+          },
+          {
+            "$ref": "#/components/parameters/ReportTimeZone"
+          },
+          {
+            "name": "currency",
+            "in": "query",
+            "description": "One ISO code; defaults to the store's configured currency. Ranking across currencies would compare numbers that are not comparable.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "by",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "product",
+                "variant"
+              ],
+              "default": "product"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "revenue",
+                "units"
+              ],
+              "default": "revenue"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ranked rows, highest first, with a total tiebreak on the group key so paging never repeats or drops a row.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProductSales"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7870,6 +8618,19 @@
           "minimum": 1
         }
       },
+      "SortOrder": {
+        "name": "order",
+        "in": "query",
+        "description": "Which way to sort. Only meaningful beside `sort`: sending it alone is refused rather than guessed at, because the default orderings are fixed clauses with their own direction and there is nothing coherent to flip. `desc` is the exact reverse of `asc`, including among rows that tie on the sort field.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "default": "asc"
+        }
+      },
       "From": {
         "name": "from",
         "in": "query",
@@ -7911,6 +8672,46 @@
         "schema": {
           "type": "string",
           "example": "en"
+        }
+      },
+      "ReportFrom": {
+        "name": "from",
+        "in": "query",
+        "description": "Inclusive lower bound, YYYY-MM-DD or RFC 3339. A bare date is midnight in `tz`, not in UTC. Defaults to 30 days before `to`, computed in `tz`.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "ReportTo": {
+        "name": "to",
+        "in": "query",
+        "description": "Exclusive upper bound, YYYY-MM-DD or RFC 3339, resolved in `tz`. Defaults to now. Exclusive is the rule GET /api/admin/orders uses, so a range ending on the 30th asks for to=the 1st.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "ReportGroupBy": {
+        "name": "group_by",
+        "in": "query",
+        "description": "The interval each bucket covers. Weeks are ISO, starting Monday. A window of more than 400 buckets at the requested grain is refused, naming a coarser one.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "day",
+            "week",
+            "month"
+          ],
+          "default": "day"
+        }
+      },
+      "ReportTimeZone": {
+        "name": "tz",
+        "in": "query",
+        "description": "An IANA zone name whose midnights the buckets and the window bounds are both cut on. Matched case-insensitively against the database's own zone catalogue and echoed back canonicalised.",
+        "schema": {
+          "type": "string",
+          "default": "UTC",
+          "example": "Asia/Kolkata"
         }
       }
     },
@@ -8643,6 +9444,14 @@
             "type": "integer",
             "description": "on hand minus reserved."
           },
+          "at_location": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/VariantStock"
+              }
+            ],
+            "description": "This variant's holding at one place. Present only on the reads that are about a place — a location's stock listing, and the low-stock report for one location. `stock_on_hand` above stays the store-wide sum in the same row; both are true and they answer different questions."
+          },
           "track_inventory": {
             "type": "boolean"
           },
@@ -8994,7 +9803,8 @@
               "open",
               "converted",
               "abandoned"
-            ]
+            ],
+            "description": "An expired cart that holds something is now marked `abandoned` rather than deleted, so GET on it answers 200 with this status where it used to 404 - and the next mutation revives it to `open` with a fresh TTL. An expired cart holding nothing is still deleted outright."
           },
           "currency": {
             "type": "string"
@@ -9079,6 +9889,90 @@
             "type": "boolean"
           }
         }
+      },
+      "CartSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The cart's row id. The cart token is deliberately absent: it is the shopper's credential, and possessing it authorises every mutation on the basket."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "live",
+              "abandoned",
+              "converted"
+            ],
+            "description": "What the cart is, derived from status AND expires_at. An `open` cart past its TTL reports `abandoned` before the sweeper reaches it."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "converted",
+              "abandoned"
+            ]
+          },
+          "currency": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "discount_code": {
+            "type": "string"
+          },
+          "line_count": {
+            "type": "integer"
+          },
+          "item_count": {
+            "type": "integer"
+          },
+          "subtotal": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the shopper last changed the cart. The abandonment sweep deliberately does not touch it."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "abandoned_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the sweeper marked it. Also the retention clock."
+          }
+        }
+      },
+      "CartDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CartSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "line_items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CartLine"
+                }
+              }
+            }
+          }
+        ]
       },
       "CheckoutInput": {
         "type": "object",
@@ -10927,6 +11821,518 @@
             "type": "string",
             "description": "Which module installed it. \"core\" is a built-in.",
             "example": "core"
+          }
+        }
+      },
+      "DiscountDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Discount"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "redeemed_total": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/Money"
+                  }
+                ],
+                "description": "What this promotion has given away, cancelled orders excluded, in the store's settlement currency. Not `used_count`: that is the claim made at checkout and is never given back, so the two are allowed to disagree."
+              },
+              "redeemed_orders": {
+                "type": "integer",
+                "description": "Live orders carrying a redemption of this rule in the store's currency."
+              },
+              "redeemed_other_currency_orders": {
+                "type": "integer",
+                "description": "Live redemptions on orders in some other currency, which `redeemed_total` therefore leaves out. Zero in a store that has never changed currency."
+              }
+            }
+          }
+        ],
+        "description": "The rule plus what it has cost. Returned by the detail route only."
+      },
+      "DiscountRedemption": {
+        "type": "object",
+        "description": "One order that used a rule. The code and title are the snapshot taken at checkout, not the rule's current ones, so a promotion that has since been renamed still reads as what it was.",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "number": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "payment_status": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "percentage",
+              "fixed",
+              "free_shipping"
+            ]
+          },
+          "amount": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "What this order was given, in the order's own currency."
+          },
+          "order_total": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "The order's total, in its own currency."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DiscountPreview": {
+        "type": "object",
+        "description": "The answer to \"would this work\". A refusal is data here and an error on the public cart route; the difference is the question, not the rule.",
+        "properties": {
+          "applies": {
+            "type": "boolean"
+          },
+          "applied": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AppliedDiscount"
+              }
+            ],
+            "description": "Present when `applies` is true. A free-shipping rule carries `free_shipping: true` and `amount_minor: 0`."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Present when `applies` is false — the engine's own sentence, e.g. \"that discount has expired\", \"that discount has been fully used\", \"automatic discounts are not applied at checkout yet\"."
+          }
+        }
+      },
+      "SuperuserRow": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Superuser"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "sessions": {
+                "type": "integer",
+                "description": "Live sessions this operator holds right now."
+              },
+              "newest_session": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true,
+                "description": "When the newest live session started — not a last sign-in. Expired sessions are deleted, so null means nobody is signed in now, never that they have never signed in."
+              }
+            }
+          }
+        ],
+        "description": "One operator as the team listing needs them: the record, plus what only a listing asks."
+      },
+      "SalesSubset": {
+        "type": "object",
+        "description": "One slice of the sale set, cut by payment status.",
+        "required": [
+          "orders",
+          "total"
+        ],
+        "properties": {
+          "orders": {
+            "type": "integer"
+          },
+          "total": {
+            "$ref": "#/components/schemas/Money"
+          }
+        }
+      },
+      "PaidSales": {
+        "type": "object",
+        "description": "The settled slice. Partiality is a number and not a status (D36), so an order that has had some of its money sent back is still `paid` and its whole total is here — `refunded` and `net_collected` are what say how much of it the store still holds.",
+        "required": [
+          "orders",
+          "total",
+          "refunded",
+          "net_collected"
+        ],
+        "properties": {
+          "orders": {
+            "type": "integer"
+          },
+          "total": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "refunded": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "refunded_minor summed over exactly these orders: money that has gone back out of orders still recorded as paid."
+          },
+          "net_collected": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "total less refunded — what the store actually still holds."
+          }
+        }
+      },
+      "ExcludedSales": {
+        "type": "object",
+        "description": "Placed in the window and not a sale: still in checkout, or cancelled. Reported beside the totals and never inside them, so a figure that disagrees with the Orders list can be explained.",
+        "required": [
+          "pending",
+          "cancelled"
+        ],
+        "properties": {
+          "pending": {
+            "$ref": "#/components/schemas/SalesSubset"
+          },
+          "cancelled": {
+            "$ref": "#/components/schemas/SalesSubset"
+          }
+        }
+      },
+      "SalesBucket": {
+        "type": "object",
+        "description": "One calendar day, ISO week or month of the window, cut in `time_zone`.",
+        "required": [
+          "start",
+          "end",
+          "orders",
+          "units",
+          "items",
+          "discount",
+          "shipping",
+          "tax",
+          "net",
+          "total"
+        ],
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Exclusive, and exactly the next bucket's start."
+          },
+          "partial": {
+            "type": "boolean",
+            "description": "The window clips this bucket, so its figures cover less than a whole day, week or month. What stops \"sales are down today\" being read off three hours of trading."
+          },
+          "orders": {
+            "type": "integer"
+          },
+          "units": {
+            "type": "integer",
+            "description": "Line quantities summed over the same orders."
+          },
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "subtotal_minor summed: what the goods were priced at, before any discount."
+          },
+          "discount": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "Order-level discount. One per order (D28)."
+          },
+          "shipping": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "What was charged for delivery."
+          },
+          "tax": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "Tax on the order, whether the prices contained it or not."
+          },
+          "net": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "items less discount, and less tax when the order's prices contained it — so `total = net + tax + shipping` holds under either tax mode. Refunds are never netted off it."
+          },
+          "total": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "total_minor summed: what the customer was charged."
+          },
+          "paid": {
+            "$ref": "#/components/schemas/PaidSales"
+          },
+          "outstanding": {
+            "$ref": "#/components/schemas/SalesSubset"
+          },
+          "refunded": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SalesSubset"
+              }
+            ],
+            "description": "Orders whose every minor unit has come back, so `payment_status` reads refunded. Counted and reported, never netted off `net` — and the money behind a partial refund is in `paid.refunded` instead."
+          },
+          "excluded": {
+            "$ref": "#/components/schemas/ExcludedSales"
+          }
+        }
+      },
+      "SalesTotals": {
+        "type": "object",
+        "description": "The window, added up from its own buckets — never queried a second time, so a stat card and the chart beneath it cannot disagree.",
+        "required": [
+          "orders",
+          "units",
+          "items",
+          "discount",
+          "shipping",
+          "tax",
+          "net",
+          "total",
+          "average_order"
+        ],
+        "properties": {
+          "orders": {
+            "type": "integer"
+          },
+          "units": {
+            "type": "integer"
+          },
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "subtotal_minor summed: what the goods were priced at, before any discount."
+          },
+          "discount": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "Order-level discount. One per order (D28)."
+          },
+          "shipping": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "What was charged for delivery."
+          },
+          "tax": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "Tax on the order, whether the prices contained it or not."
+          },
+          "net": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "items less discount, and less tax when the order's prices contained it — so `total = net + tax + shipping` holds under either tax mode. Refunds are never netted off it."
+          },
+          "total": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "total_minor summed: what the customer was charged."
+          },
+          "average_order": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "total / orders, rounded half up: an average in minor units has no fractional part the ledger could show. Zero when nothing sold."
+          },
+          "paid": {
+            "$ref": "#/components/schemas/PaidSales"
+          },
+          "outstanding": {
+            "$ref": "#/components/schemas/SalesSubset"
+          },
+          "refunded": {
+            "$ref": "#/components/schemas/SalesSubset"
+          },
+          "excluded": {
+            "$ref": "#/components/schemas/ExcludedSales"
+          }
+        }
+      },
+      "CurrencySales": {
+        "type": "object",
+        "description": "One currency's figures. Orders snapshot their currency (D14), so a store that changed it has more than one block — and minor units of two currencies are never added together.",
+        "required": [
+          "currency",
+          "totals",
+          "buckets"
+        ],
+        "properties": {
+          "currency": {
+            "type": "string",
+            "example": "USD"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/SalesTotals"
+          },
+          "buckets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesBucket"
+            }
+          }
+        }
+      },
+      "SalesReport": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "group_by",
+          "time_zone",
+          "currencies"
+        ],
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The resolved inclusive lower bound."
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The resolved exclusive upper bound."
+          },
+          "group_by": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ]
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "The zone the buckets and the window edges were both cut in, canonicalised."
+          },
+          "currencies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CurrencySales"
+            },
+            "description": "One block per currency the window contains, plus the store's configured currency even when it sold nothing. The store's own currency is first; the rest follow alphabetically. Nothing is ever summed across blocks."
+          }
+        }
+      },
+      "ProductSales": {
+        "type": "object",
+        "description": "One product or variant over the window. Title, SKU and label are the newest snapshot the order lines carry, so a renamed or deleted product still reports under a name somebody recognises.",
+        "required": [
+          "sku",
+          "title",
+          "units",
+          "orders",
+          "revenue",
+          "tax"
+        ],
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Null once the product has been deleted; the row stays, and two deleted products stay two rows."
+          },
+          "variant_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Only for by=variant."
+          },
+          "sku": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "variant_label": {
+            "type": "string"
+          },
+          "units": {
+            "type": "integer"
+          },
+          "orders": {
+            "type": "integer",
+            "description": "Distinct orders this appeared in."
+          },
+          "revenue": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "Line value excluding tax under either tax mode, and BEFORE any order-level discount: a discount is recorded once per order and never allocated to lines, so these rows exceed the sales report's `net` by exactly the discounts in the window."
+          },
+          "tax": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "Tax on those lines."
           }
         }
       }

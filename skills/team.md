@@ -174,6 +174,21 @@ POST /api/admin/superusers/{id}/revoke-sessions   # team.write — before removi
 POST /api/admin/me/revoke-sessions                # your own, including this browser
 ```
 
+Both report how many sessions ended, because 0 and 4 mean quite different things
+to somebody who has lost a laptop. `GET /api/admin/superusers` carries the same
+two numbers per operator — `sessions` and `newest_session` — so that question is
+answerable **before** the button rather than in the toast afterwards. They ride
+on the listing row and not on `Superuser` itself: that record is returned
+directly by login, refresh, create, update and set-role, and a `"sessions": 0` on
+a successful sign-in response would be a fact that is both false and unfixable
+from those paths.
+
+`newest_session` is when the newest **live** session started, and must never be
+shown as a last sign-in. Expired rows are hard-deleted on every issue, and a
+revoke or a password change deletes them outright, so `null` means *nobody is
+signed in now* and never *has never signed in*. This store keeps no sign-in
+history and these fields do not invent one.
+
 Deleting an operator cascades their sessions away with them.
 
 ## Changing your own password

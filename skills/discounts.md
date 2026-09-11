@@ -132,6 +132,72 @@ than a subtotal, because a scoped rule cannot be answered from one number — an
 the promise it makes is that the figure a shopper is shown is the figure they are
 charged.
 
+## Trying a rule before a customer does
+
+```http
+POST /api/admin/discounts/12/preview    {"subtotal_minor": 250000, "email": "a@b.com"}
+POST /api/admin/discounts/12/preview    {"lines": [{"product_id": 4, "total_minor": 250000}]}
+```
+
+A dry run, keyed by id rather than by code so it can reach a codeless automatic
+rule. Nothing is locked, nothing is written and no usage is claimed, so a
+preview can never exhaust a code.
+
+**A rule that would not apply is a 200, not a 400** (D43):
+
+```json
+{"data": {"applies": false, "reason": "that discount has expired"}}
+```
+
+The public cart route answers 400 for the identical sentence, and that is
+deliberate rather than an inconsistency to be tidied away: a storefront is
+*using* a code and a refusal is a failed attempt, while an operator is *asking
+about* one, and "no, it expired on Friday" is a successful answer to that
+question. The taxonomy still owns the request being wrong — an unknown id is 404,
+a negative subtotal is 400, and sending both a subtotal and lines is 400.
+
+Send `subtotal_minor` for an order-wide rule and `lines` for a scoped one. A
+scoped rule asked with a bare subtotal answers `applies: false` saying the lines
+are missing, rather than reporting an amount it cannot know.
+
+A **codeless automatic rule** answers `applies: false` with "automatic discounts
+are not applied at checkout yet". `applyTx` short-circuits on an empty code
+before the row is ever looked up (D29), so the rule is stored and never
+evaluated; id-keying is the first caller that can hold one, and without that
+refusal a preview would hand an operator a real amount for a promotion that can
+never fire.
+
+## What a promotion has cost
+
+```http
+GET /api/admin/discounts/12          # the rule, plus redeemed_total
+GET /api/admin/discounts/12/orders   # discounts.read AND orders.read
+```
+
+Three numbers, answering three different questions, and they are allowed to
+disagree:
+
+| Number | What it counts |
+|---|---|
+| `used_count` | Every checkout that claimed the code, cancellations and all. It is the claim made under the checkout lock and is never given back — a code limited to 100 uses was claimed 100 times whatever happened next. |
+| `redeemed_orders` / `redeemed_total` | The live orders that carry a redemption, and the money that actually left the store. Cancelled orders are excluded, the same exclusion `emailHasUsed` makes. |
+| the drilldown's `meta.total` | Every `order_discounts` row, cancelled orders included — they are listed, marked by their status, because hiding them would leave nothing to explain why the other two differ. |
+
+`redeemed_total` is Money (`{amount_minor, currency}`) and not a bare
+`redeemed_total_minor`, constrained to the store's settlement currency.
+`order_discounts` has no currency column and the order does (D14), so summing
+across a store that has changed currency would produce one integer that is the
+sum of two kinds of money. What the constraint left out is *counted* rather than
+hidden, in `redeemed_other_currency_orders`.
+
+The drilldown needs **two** rights, and is the first core route that does: the
+row carries an order number, an email address and an order total, which
+`discounts.read` alone has never been able to see. Each row is the snapshot's own
+code and title, so a promotion that has since been renamed still reads as what it
+was, and each amount is in the order's own currency. A deleted rule's redemptions
+are unreachable — `discount_id` is `ON DELETE SET NULL` — so the route 404s while
+the orders keep their snapshots.
+
 ## Tax is masked
 
 `allocateDiscount` is told which lines the discount came off. A discount taken

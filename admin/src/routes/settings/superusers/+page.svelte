@@ -9,7 +9,7 @@
      * discovered afterwards.
      */
     import { auth, getRecord } from "$lib/api.js";
-    import { formatDate } from "$lib/format.js";
+    import { formatDate, relativeTime } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import Drawer from "$lib/components/Drawer.svelte";
     import Select from "$lib/components/Select.svelte";
@@ -74,6 +74,11 @@
     /** Outstanding ones only: accepted invitations are history, and the person
      *  they let in is already in the table above. */
     const outstanding = $derived(invitations.filter((i) => i.status !== "accepted"));
+
+    /* Summed over the rows rather than asked for: the listing already carries
+       every count, and a second request for a total nobody can act on
+       separately would only be another thing to get out of step. */
+    const signedIn = $derived(superusers.reduce((n, su) => n + (su.sessions ?? 0), 0));
 
     function openInvite() {
         invite = { email: "", role: "staff" };
@@ -289,6 +294,7 @@
                     <tr>
                         <th class="col-field-name-id">Email</th>
                         <th class="col-field-type-select">Role</th>
+                        <th class="col-field-type-number min-width">Sessions</th>
                         <th class="col-field-type-date">Created</th>
                         <th class="col-field-type-date">Updated</th>
                         <th class="col-meta min-width"></th>
@@ -323,6 +329,16 @@
                                     />
                                 </div>
                             </td>
+                            <td class="col-field-type-number min-width" data-name="Sessions">
+                                {#if su.sessions}
+                                    <span class="label success">{su.sessions}</span>
+                                    <span class="txt-hint txt-sm">
+                                        {relativeTime(su.newest_session)}
+                                    </span>
+                                {:else}
+                                    <span class="txt-hint">—</span>
+                                {/if}
+                            </td>
                             <td class="col-field-type-date txt-hint txt-sm" data-name="Created">
                                 {formatDate(su.created_at)}
                             </td>
@@ -330,11 +346,16 @@
                                 {formatDate(su.updated_at)}
                             </td>
                             <td class="col-meta min-width">
+                                <!-- Enabled whatever the count says: a number
+                                     read a few minutes ago must never disable a
+                                     security control. The title is what changes. -->
                                 <button
                                     type="button"
                                     class="btn circle sm transparent secondary"
                                     aria-label="Sign {su.email} out everywhere"
-                                    title="Sign out everywhere"
+                                    title={su.sessions
+                                        ? "Sign out everywhere"
+                                        : "Not signed in anywhere"}
                                     onclick={(e) => signOutEverywhere(su, e)}
                                 >
                                     <i class="ri-logout-circle-line" aria-hidden="true"></i>
@@ -357,11 +378,20 @@
 
                     {#if loading && !superusers.length}
                         {#each Array(3) as _, i (i)}
-                            <tr><td colspan="4"><span class="skeleton-loader"></span></td></tr>
+                            <tr><td colspan="6"><span class="skeleton-loader"></span></td></tr>
                         {/each}
                     {/if}
                 </tbody>
             </table>
+        </div>
+
+        <!-- The column must not be read as a last sign-in, because the data
+             cannot support that: expired sessions are deleted, so a dash means
+             nobody is signed in at the moment. -->
+        <div class="field-help">
+            Sessions are the ones open right now. They end on sign-out, on a password change, and
+            on their own after 14 days — so a dash means nobody is signed in at the moment, not
+            that nobody ever has been.
         </div>
 
         {#if outstanding.length}
@@ -403,7 +433,7 @@
             <span class="txt">
                 {superusers.length}
                 {superusers.length === 1 ? "superuser" : "superusers"}{#if outstanding.length},
-                    {outstanding.length} invited{/if}
+                    {outstanding.length} invited{/if}{#if signedIn} · {signedIn} signed in{/if}
             </span>
             <ThemeToggle />
         </footer>

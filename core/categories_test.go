@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -676,7 +677,7 @@ func TestCategorySearch(t *testing.T) {
 		{"SHIRTS", []string{"Shirts"}},
 		{"nothing here", []string{}},
 	} {
-		got, _, err := svc.Search(ctx, tc.term, 0)
+		got, _, err := svc.Search(ctx, CategoryQuery{Search: tc.term})
 		if err != nil {
 			t.Fatalf("Search(%q): %v", tc.term, err)
 		}
@@ -686,7 +687,7 @@ func TestCategorySearch(t *testing.T) {
 	}
 
 	// A match carries its path, because a bare "Shirts" does not say which.
-	got, total, err := svc.Search(ctx, "shirt", 0)
+	got, total, err := svc.Search(ctx, CategoryQuery{Search: "shirt"})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -699,7 +700,7 @@ func TestCategorySearch(t *testing.T) {
 
 	// The limit bounds the rows but not the count, which is what tells a client
 	// there is more than it was sent.
-	page, total, err := svc.Search(ctx, "", 2)
+	page, total, err := svc.Search(ctx, CategoryQuery{Limit: 2})
 	if err != nil {
 		t.Fatalf("Search(all): %v", err)
 	}
@@ -934,5 +935,181 @@ gid://shopify/TaxonomyCategory/hb-1-1 : scent
 	}
 	if _, ok := after.Metadata["attributes"]; ok {
 		t.Error("a hand-built category was given a field list it never asked for")
+	}
+}
+
+// ------------------------------------------------------------------ sorting
+
+// TestCategorySearchSortsBeforeItLimits is what justifies sorting in SQL rather
+// than sorting the returned slice in Go: "the two alphabetically first matches"
+// and "the two shallowest matches, alphabetised" are different answers.
+func TestCategorySearchSortsBeforeItLimits(t *testing.T) {
+	app := categoriesApp(t)
+	ctx := context.Background()
+	svc := app.Categories()
+
+	// Four matches at three depths. Alphabetically the first two are "Alpha
+	// shirt" and "Beta shirt"; by depth they are the two roots.
+	zulu := newCategory(t, app, CategoryInput{Title: "Zulu shirt"})
+	yankee := newCategory(t, app, CategoryInput{Title: "Yankee shirt"})
+	newCategory(t, app, CategoryInput{Title: "Beta shirt", ParentID: &zulu.ID})
+	newCategory(t, app, CategoryInput{Title: "Alpha shirt", ParentID: &yankee.ID})
+
+	byDepth, total, err := svc.Search(ctx, CategoryQuery{Search: "shirt", Limit: 2})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if total != 4 {
+		t.Fatalf("total = %d, want 4", total)
+	}
+	if got := titles(byDepth); !equalStrings(got, []string{"Yankee shirt", "Zulu shirt"}) {
+		t.Errorf("default order = %v, want the two shallowest", got)
+	}
+
+	byTitle, total, err := svc.Search(ctx,
+		CategoryQuery{Search: "shirt", Sort: Sort{Field: "title"}, Limit: 2})
+	if err != nil {
+		t.Fatalf("Search sorted: %v", err)
+	}
+	if total != 4 {
+		t.Errorf("sorted total = %d, want 4 — the limit bounds the rows, not the count", total)
+	}
+	if got := titles(byTitle); !equalStrings(got, []string{"Alpha shirt", "Beta shirt"}) {
+		t.Errorf("sort=title = %v, want the two alphabetically first matches", got)
+	}
+}
+
+// TestCategorySearchSortsByRenderedPath proves title and full_name are honestly
+// different keys rather than one lying about the other.
+func TestCategorySearchSortsByRenderedPath(t *testing.T) {
+	app := categoriesApp(t)
+	ctx := context.Background()
+	svc := app.Categories()
+
+	// "Apple / Zebra" sorts after "Zulu / Alpha" by title and before it by path.
+	apple := newCategory(t, app, CategoryInput{Title: "Apple"})
+	zulu := newCategory(t, app, CategoryInput{Title: "Zulu"})
+	newCategory(t, app, CategoryInput{Title: "Zebra leaf", ParentID: &apple.ID})
+	newCategory(t, app, CategoryInput{Title: "Alpha leaf", ParentID: &zulu.ID})
+
+	byTitle, _, err := svc.Search(ctx, CategoryQuery{Search: "leaf", Sort: Sort{Field: "title"}})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if got := titles(byTitle); !equalStrings(got, []string{"Alpha leaf", "Zebra leaf"}) {
+		t.Errorf("sort=title = %v", got)
+	}
+
+	byPath, _, err := svc.Search(ctx, CategoryQuery{Search: "leaf", Sort: Sort{Field: "full_name"}})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if got := titles(byPath); !equalStrings(got, []string{"Zebra leaf", "Alpha leaf"}) {
+		t.Errorf("sort=full_name = %v, want Apple / Zebra leaf before Zulu / Alpha leaf", got)
+	}
+}
+
+// TestCategorySearchPagesAndCountsPastTheEnd exercises the conditional count
+// branch, which is unreachable in development and wrong without it: the window
+// function returns no row at all once the offset is past the end, so page 4 of
+// a three-page result would report a total of 0 and contradict page 1.
+func TestCategorySearchPagesAndCountsPastTheEnd(t *testing.T) {
+	app := categoriesApp(t)
+	ctx := context.Background()
+	svc := app.Categories()
+
+	const total = 30
+	for i := 0; i < total; i++ {
+		newCategory(t, app, CategoryInput{Title: fmt.Sprintf("Match %02d", i)})
+	}
+
+	seen := map[string]int{}
+	for p := 0; p < 4; p++ {
+		page, got, err := svc.Search(ctx, CategoryQuery{
+			Search: "Match", Limit: 10, Offset: p * 10,
+		})
+		if err != nil {
+			t.Fatalf("page %d: %v", p+1, err)
+		}
+		if got != total {
+			t.Errorf("page %d reports total %d, want %d", p+1, got, total)
+		}
+		if p == 3 && len(page) != 0 {
+			t.Errorf("page 4 returned %d rows, want none", len(page))
+		}
+		for _, c := range page {
+			seen[c.Title]++
+		}
+	}
+	if len(seen) != total {
+		t.Errorf("the pages saw %d distinct categories, want %d", len(seen), total)
+	}
+	for title, n := range seen {
+		if n != 1 {
+			t.Errorf("%s appeared %d times across the pages", title, n)
+		}
+	}
+}
+
+// TestCategorySortNeedsASearch: a tree's order is the position an operator gave
+// it, so a sort on a tree branch is refused rather than ignored — on both the
+// public and the admin route, because one function serves them.
+func TestCategorySortNeedsASearch(t *testing.T) {
+	app := categoriesApp(t)
+	tree(t, app)
+
+	for _, base := range []string{"/api/categories", "/api/admin/categories"} {
+		opts := []func(*http.Request){}
+		if strings.Contains(base, "admin") {
+			opts = append(opts, withAdmin)
+		}
+		for _, q := range []string{"?sort=title", "?parent=root&sort=title", "?flat=1&sort=title"} {
+			rec := do(t, app, http.MethodGet, base+q, opts...)
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("GET %s%s = %d, want 400: %s", base, q, rec.Code, rec.Body)
+				continue
+			}
+			if !strings.Contains(rec.Body.String(), "sort applies to a search") {
+				t.Errorf("GET %s%s said %s", base, q, rec.Body)
+			}
+		}
+		// The same shapes without a sort are unchanged.
+		for _, q := range []string{"", "?parent=root", "?flat=1"} {
+			rec := do(t, app, http.MethodGet, base+q, opts...)
+			if rec.Code != http.StatusOK {
+				t.Errorf("GET %s%s = %d, want 200: %s", base, q, rec.Code, rec.Body)
+			}
+		}
+		// And a sort on the search branch works on both.
+		rec := do(t, app, http.MethodGet, base+"?q=shirt&sort=title&order=desc", opts...)
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET %s?q=shirt&sort=title = %d: %s", base, rec.Code, rec.Body)
+		}
+		rec = do(t, app, http.MethodGet, base+"?q=shirt&sort=nonsense", opts...)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("GET %s?q=shirt&sort=nonsense = %d, want 400", base, rec.Code)
+		}
+	}
+}
+
+// TestCategorySearchMetaReportsTheRealOffset — the offset was parsed and thrown
+// away before sorting arrived, and meta.offset was hard-coded to 0.
+func TestCategorySearchMetaReportsTheRealOffset(t *testing.T) {
+	app := categoriesApp(t)
+	tree(t, app)
+
+	rec := do(t, app, http.MethodGet, "/api/admin/categories?q=a&limit=2&offset=1", withAdmin)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("= %d: %s", rec.Code, rec.Body)
+	}
+	var page struct {
+		Data []*Category `json:"data"`
+		Meta ListMeta    `json:"meta"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if page.Meta.Offset != 1 {
+		t.Errorf("meta.offset = %d, want the offset that was asked for", page.Meta.Offset)
 	}
 }

@@ -27,6 +27,7 @@ Only `DBURL` and one admin token are required.
 | `AdminTokens` | — | At least one, unless `Dev`. Several allow rotation. |
 | `AdminAuth` | bearer tokens | Replace to add sessions, OIDC or RBAC. |
 | `CartTTL` | 720h | How long an untouched cart survives. |
+| `CartRetention` | 720h | How long an abandoned cart is kept before deletion, measured from `abandoned_at`. |
 | `OrderTTL` | 24h | How long an unpaid order holds its stock. |
 | `HandlerTimeout` | 10s | Bounds one event handler. |
 | `OutboxBatchSize` / `OutboxPoll` | 100 / 1s | Dispatcher tuning. |
@@ -55,6 +56,31 @@ go build -o gocommerce ./cmd/gocommerce        # or your own main()
 prefer schema changes as a separate deployment step. Either way it is safe to
 run several instances at once: migrations take a PostgreSQL advisory lock, so
 the first instance applies them and the others wait rather than racing.
+
+**One migration is worth planning for on a large store.** M29 creates five
+indexes on `products`, `orders`, `media` and `variants` so the admin listings
+can be ordered by title, price, stock, size and total. Every migration runs
+inside a transaction, so `CREATE INDEX CONCURRENTLY` is not available to it and
+a plain `CREATE INDEX` holds a SHARE lock while it builds — on a large `orders`
+table that is blocked checkouts for the length of the boot.
+
+Every statement in it is `IF NOT EXISTS`, which is what lets a store that big
+build them out of band first:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS products_title_sort_idx   ON products (lower(title), id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS products_updated_sort_idx ON products (updated_at, id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS orders_total_sort_idx     ON orders   (total_minor, id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS media_size_sort_idx       ON media    (size_bytes, id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS variants_product_price_idx ON variants (product_id, price_minor);
+```
+
+Run those against the live database before deploying, then the migration finds
+them and does nothing. Copy the definitions exactly: `IF NOT EXISTS` matches on
+the **name** only, so an index created under one of these names with a different
+definition is accepted silently and then never used by the query it was meant
+for. A store of a few thousand rows can ignore all of this — the indexes build
+in milliseconds.
 
 Shutdown is graceful. On SIGINT or SIGTERM the server stops accepting
 connections, in-flight requests finish (up to 20 seconds), `OnStop` hooks run
@@ -159,10 +185,26 @@ pending orders past `OrderTTL` and returns their inventory. If reserved
 quantities climb anyway, look for orders stuck `pending` with a payment status
 nobody ever settled.
 
+**Carts.** The `carts` check reads `N live, M awaiting the sweeper, K
+abandoned`. "Awaiting the sweeper" is expired and not yet dealt with, and it
+warns past a thousand: either `Abandon` (which records the baskets with lines)
+or `SweepExpired` (which deletes the empty ones) has stopped, and the number
+climbs either way. Expect it once immediately after upgrading to M28, while the
+backlog already in the table drains at 500 a pass. The second warning is
+separate — abandoned carts past `CartRetention` that `PurgeAbandoned` has not
+collected — because that is the bound which replaced deleting on expiry, and
+the two fail independently.
+
 ## Housekeeping
 
-The engine sweeps expired carts and unsettled orders — payment pending or
-recorded as failed — every five minutes on its own. Three tables grow forever and are yours to prune:
+The engine sweeps carts and unsettled orders — payment pending or recorded as
+failed — every five minutes on its own. Carts are no longer a table that only
+grows: an expired basket holding nothing is deleted, and one holding something
+is marked `abandoned` and then deleted once `CartRetention` has passed.
+*Converted* carts have never been swept and still are not, so they are a fourth
+candidate for the manual DELETEs below — decide deliberately rather than by
+habit, because a converted cart is order evidence. Three tables grow forever and
+are yours to prune:
 
 ```sql
 -- Delivered events, once you no longer need the audit trail.
@@ -180,6 +222,15 @@ Keep them longer than you think you need. They are how you answer "did we
 actually send that?" and "why does the count say 4?" three weeks later — and
 pruning the ledger is the one thing that makes the `stock ledger` check warn on
 purpose, so prune whole periods rather than individual rows, and expect it.
+
+**How long a shopper’s address is held.** A cart now lives at most
+`CartTTL + CartRetention` — sixty days on the defaults, against thirty before
+M28 — and the email on it lives exactly that long. It is a number an operator
+has to be able to answer for. There is deliberately no admin write route on a
+cart, so the only erasure levers are time and the shopper’s own
+`PUT /api/carts/<token>/email` with an empty string; a store facing a deletion
+request for a basket that has not become an order has no supported lever beyond
+those two, which is a known gap rather than an oversight.
 
 ## Data in and out
 

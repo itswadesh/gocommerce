@@ -157,7 +157,7 @@ lines. Do not narrate.
 ```powershell
 gofmt -l .                      # must print nothing
 go vet ./...
-go test ./... -count=1          # needs GOCOMMERCE_TEST_DB
+go test ./... -count=1 -timeout 40m   # needs GOCOMMERCE_TEST_DB
 go build -tags no_admin ./...
 go test -tags no_admin ./core -count=1
 .\scripts\check-docs.ps1        # links resolve; skills still match the code

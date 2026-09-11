@@ -123,6 +123,57 @@ offset instead would quietly serve a different window than the one asked for.
 `meta` reports `total`, `limit`, `offset`, `page` and `total_pages`, the page
 fields derived from the offset so the two can never disagree.
 
+### Ordering
+
+```http
+GET /api/admin/products?sort=title&order=asc
+GET /api/admin/products?status=active&sort=available&order=asc&page=2
+```
+
+`sort` takes one of `title`, `status`, `price`, `available`, `created_at`,
+`updated_at` or `id`; `order` is `asc` (the default) or `desc`. Omit `sort` and
+the listing keeps its own order, newest first.
+
+`ParseSort(r, spec)` is the sibling of `Page(r)` and works the same way on
+orders, discounts, media, customers and the category search, each with its own
+allow-list. **A key that is not on the list is a 400 naming the ones that are**,
+never a silent fall-back — a sort that quietly did nothing is indistinguishable
+from one that worked, and the rows look plausible either way. A direction with
+no field is refused for the same reason: the default orderings are fixed clauses
+with their own direction, so there is nothing coherent to flip.
+
+A request supplies a key and nothing else. The SQL it stands for is a literal in
+`core/sorting.go`, so nothing from the wire is ever concatenated into a
+statement. To add a sortable field, add a row to that listing's
+`SortSpec.Columns` with **both** directions written out; never widen the
+resolver.
+
+Text keys are folded by PostgreSQL's `lower()` rather than Go's, for the reason
+the category search already gives: this cluster leaves `É` alone while Go's
+`ToLower` folds it, so folding on one side and not the other finds nothing. It
+is still accent-*sensitive*: "eclair" does not sort next to "Éclairs".
+
+Two keys are computed rather than stored, and both cost something worth knowing.
+`price` is the **cheapest** variant — the left edge of the range the panel shows
+— and `available` is the sum over tracked variants, which is NULL rather than 0
+when a product tracks none, so "not tracked" sorts last in both directions
+instead of reading as empty. Each is a correlated subquery evaluated for every
+matching row before the page is cut, so `?sort=price` over five thousand
+products is five thousand lookups, not thirty. `variants_product_price_idx`
+makes the price one index-only lookup per product; nothing helps `available`.
+Filter first on a very large catalogue, or stay on the default order.
+
+Every ordering breaks ties on a key that is unique in the result set, so two
+pages of one listing never repeat a row or skip one. That is not tidiness:
+without it PostgreSQL may order tied rows differently in two executions of the
+same statement, and `meta.total` would say nothing was missing.
+
+One interaction exists only through the Go API: a `Sort` on a collection-scoped
+`ProductQuery` overrides the collection's curated `member_position` order. No
+HTTP route reaches it — `GET /api/admin/products?collection_id=…&sort=…` is a
+400, because a collection's order is the curation (D40), and the route that
+lists a collection's members reads no `sort` at all.
+
 Direct lookups are `GetProduct(ctx, id)` and `GetProductBySlug(ctx, slug)`, or
 `GET /api/products/{id}`, `/api/products/slug/{slug}` and
 `/api/products/sku/{sku}` — the SKU route resolves a variant's SKU back to its

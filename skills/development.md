@@ -46,14 +46,21 @@ without PostgreSQL can still run the pure-logic suite; CI always sets it, so
 the database path is never untested where it counts.
 
 ```powershell
-go test ./... -count=1                     # the whole suite
+go test ./... -count=1 -timeout 40m        # the whole suite
 go test ./core -run TestCheckout -count=1  # one pattern
 go build -tags no_admin ./...              # the API-only build
 go test -tags no_admin ./core -count=1     # ...and its tests
 ```
 
 `-count=1` because a cached pass on a schema that no longer exists is not a
-pass. The `no_admin` tag swaps `admin/embed.go` for `admin/embed_no_admin.go`:
+pass. `-timeout` because Go's default is ten minutes and the core package is
+most of the way there: every database-backed test gets its own schema and runs
+every migration into it, so the suite grows with the migration count, and CI's
+`-race` makes each test slower still. Left on the default, a slow run reports a
+panic rather than a failure, which sends the reader hunting a deadlock that is
+not there.
+
+The `no_admin` tag swaps `admin/embed.go` for `admin/embed_no_admin.go`:
 no `go:embed`, no panel routes, panel tests skipping themselves. Run both — it
 is the build that breaks when core accidentally starts depending on the panel
 being mounted.
@@ -183,7 +190,7 @@ more than once.
 ```powershell
 gofmt -l .                      # must print nothing
 go vet ./...
-go test ./... -count=1          # needs GOCOMMERCE_TEST_DB
+go test ./... -count=1 -timeout 40m   # needs GOCOMMERCE_TEST_DB
 go build -tags no_admin ./...
 go test -tags no_admin ./core -count=1
 .\scripts\build.ps1             # required after any admin/src change
@@ -195,6 +202,40 @@ And the two that are easy to skip and expensive to miss: a new route needs its
 path in `openapi.json` (a test and `doctor` both check), and a new decision that
 breaks a rule in [`AGENTS.md`](../AGENTS.md) needs recording in
 [`PLAN.md`](../PLAN.md) rather than landing quietly.
+
+## Building an ORDER BY
+
+Nothing from a request is ever concatenated into SQL. A listing that can be
+ordered declares a `SortSpec` in `core/sorting.go`'s vocabulary beside the query
+it serves; the wire carries a key, the map turns that key into a literal, and
+`ParseSort(r, spec)` refuses anything else with a 400 before the first query
+runs. To add a sortable field, add a row to that spec's `Columns` — never widen
+the resolver, and never accept a column name.
+
+Two rules about the SQL in those rows, both of which fail silently when broken:
+
+- **Both directions are written out in full**, and NULLS placement is pinned per
+  field rather than inherited. An expression that can be NULL says `NULLS LAST`
+  in *both* directions, so the rows with no value stay at the bottom instead of
+  jumping to the top on the operator's second click. An expression that cannot
+  be NULL says nothing at all — and must not, because an ascending `(expr, id)`
+  btree read backwards yields `DESC NULLS FIRST`, which an explicit
+  `DESC NULLS LAST` does not match, so adding one as tidying quietly stops the
+  index serving that direction. Only the second kind can be backed by a plain
+  ascending index.
+- **Any new ORDER BY on a paged query ends with a key unique in the result set**
+  — a primary key, or the grouping key of an aggregate listing. `SortSpec.Clause`
+  appends it for every sorted request, and a hand-written default clause has to
+  carry one itself. Without it PostgreSQL may order tied rows differently in two
+  executions of the same statement, so `LIMIT`/`OFFSET` stops being a partition:
+  one row arrives on page 1 and again on page 2 while another arrives on
+  neither, with a `meta.total` that says nothing is missing.
+
+A sort may not introduce a join. Every listing counts from the same FROM its
+page query uses, so a join in the ORDER BY would multiply rows and make
+`meta.total` disagree with what it describes; a correlated scalar subquery
+cannot, which is why the product listing's `price` and `available` are written
+that way.
 
 ## Common mistakes
 
@@ -214,3 +255,7 @@ breaks a rule in [`AGENTS.md`](../AGENTS.md) needs recording in
 - **Asserting on a notifier or subscriber without draining the outbox.**
   Nothing has been delivered yet.
 - **Expecting `-race` locally.** No cgo toolchain on this host; CI runs it.
+- **Adding a sortable field and only writing one direction of it**, or adding
+  `NULLS LAST` to an expression that cannot be NULL. Neither fails a query; the
+  first moves the empty rows on the second click, the second quietly stops using
+  the index.

@@ -13,6 +13,10 @@
     import { toast } from "$lib/toast.svelte.js";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
+    // The reader's own zone, so "the last 30 days" ends at their midnight
+    // rather than UTC's.
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
     let loading = $state(true);
     let recent = $state([]);
     let lowStock = $state([]);
@@ -26,16 +30,22 @@
     async function load() {
         loading = true;
         try {
-            // Five small reads rather than one bespoke dashboard endpoint: the
+            // Six small reads rather than one bespoke dashboard endpoint: the
             // panel uses the same API everything else does, and an endpoint
             // that exists only for this screen would be one more thing to keep
             // in step with it.
-            const [orders, products, pending, unpaid, stock] = await Promise.all([
+            const [orders, products, pending, unpaid, stock, sales] = await Promise.all([
                 api.get("/api/admin/orders" + query({ limit: 8 })),
                 api.get("/api/admin/products" + query({ limit: 1 })),
                 api.get("/api/admin/orders" + query({ status: "confirmed", limit: 1 })),
                 api.get("/api/admin/orders" + query({ payment_status: "pending", limit: 1 })),
                 api.get("/api/admin/inventory/low-stock" + query({ threshold: 5, limit: 6 })),
+                // Revenue is the engine's own arithmetic over a whole window,
+                // not a sum over the eight rows above it. The figure beside
+                // "Recent orders" used to describe those eight and was read as
+                // the store's revenue — on a store with nine orders it was
+                // simply wrong, and it counted a refunded order at full value.
+                api.get("/api/admin/reports/sales" + query({ group_by: "month", tz })),
             ]);
 
             recent = orders.data;
@@ -47,15 +57,10 @@
             };
             lowStock = stock.data;
 
-            // Revenue over what came back, clearly labelled as such rather than
-            // presented as an all-time figure it is not.
-            const paid = orders.data.filter((o) => o.payment_status === "paid");
-            revenue = paid.length
-                ? {
-                      amount_minor: paid.reduce((sum, o) => sum + o.total.amount_minor, 0),
-                      currency: paid[0].total.currency,
-                  }
-                : null;
+            // The first currency block, which is the store's own: the report
+            // never sums across currencies, and a store holding two gets the
+            // whole picture on /reports rather than a wrong single number here.
+            revenue = sales.currencies[0]?.totals.net ?? null;
         } catch (err) {
             toast.error(err);
         } finally {
@@ -130,8 +135,11 @@
             <i class="ri-history-line" aria-hidden="true"></i>
             Recent orders
             {#if revenue}
-                <span class="txt-hint txt-sm">· {formatMoney(revenue)} paid across these</span>
+                <span class="txt-hint txt-sm">· {formatMoney(revenue)} net in the last 30 days</span>
             {/if}
+            <a href="{base}/reports" class="btn sm transparent secondary">
+                <span class="txt">Reports</span>
+            </a>
             <a href="{base}/orders" class="btn sm transparent secondary">
                 <span class="txt">All orders</span>
                 <i class="ri-arrow-right-line" aria-hidden="true"></i>
@@ -246,7 +254,8 @@
                     <tr>
                         <td colspan="5" class="txt-center txt-hint p-base">
                             Nothing is running out — every tracked variant has more than five
-                            available.
+                            available across the whole store. This card is deliberately the
+                            store's view; the inventory screen can ask one location.
                         </td>
                     </tr>
                 {/if}

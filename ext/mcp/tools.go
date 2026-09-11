@@ -88,15 +88,20 @@ func (m *Module) builtinTools() []Tool {
 		{
 			Name: "list_low_stock_variants",
 			Description: "List sellable variants at or below a stock threshold — " +
-				"what needs reordering.",
+				"what needs reordering. The threshold is against the store's total " +
+				"across every location: a variant with one unit in each of five shops " +
+				"is not low by this reading, even though every shelf looks it. Pass " +
+				"location_id to threshold against one place instead.",
 			InputSchema: object(props{
-				"threshold": integer("Available units at or below this count (default 5)."),
-				"limit":     integer("How many to return (default 50)."),
+				"threshold":   integer("Available units at or below this count (default 5)."),
+				"location_id": integer("Threshold against this location alone, rather than the store's total."),
+				"limit":       integer("How many to return (default 50)."),
 			}),
 			Call: func(ctx context.Context, raw json.RawMessage) (any, error) {
 				var args struct {
-					Threshold *int `json:"threshold"`
-					Limit     int  `json:"limit"`
+					Threshold  *int  `json:"threshold"`
+					LocationID int64 `json:"location_id"`
+					Limit      int   `json:"limit"`
 				}
 				if err := decode(raw, &args); err != nil {
 					return nil, err
@@ -105,7 +110,18 @@ func (m *Module) builtinTools() []Tool {
 				if args.Threshold != nil {
 					threshold = *args.Threshold
 				}
-				variants, total, err := m.app.Stock().LowStock(ctx, threshold, limitOr(args.Limit, 50), 0)
+				var variants []*gocommerce.Variant
+				var total int
+				var err error
+				if args.LocationID != 0 {
+					variants, total, err = m.app.Stock().AtLocation(ctx, args.LocationID,
+						gocommerce.LocationStockQuery{
+							Threshold: &threshold, Order: gocommerce.StockOrderAvailable,
+							Limit: limitOr(args.Limit, 50),
+						})
+				} else {
+					variants, total, err = m.app.Stock().LowStock(ctx, threshold, limitOr(args.Limit, 50), 0)
+				}
 				if err != nil {
 					return nil, err
 				}
@@ -315,10 +331,21 @@ func summarizeProducts(products []*gocommerce.Product) []map[string]any {
 func summarizeVariants(variants []*gocommerce.Variant) []map[string]any {
 	out := make([]map[string]any, 0, len(variants))
 	for _, v := range variants {
-		out = append(out, map[string]any{
+		row := map[string]any{
 			"id": v.ID, "product_id": v.ProductID, "sku": v.SKU, "label": v.Label,
 			"on_hand": v.StockOnHand, "reserved": v.StockReserved, "available": v.Available,
-		})
+		}
+		// Both numbers when a read is about one place, both labelled: the three
+		// above stay the store-wide sums, because that is what they are on every
+		// other read and an agent comparing two answers must not find the same
+		// key meaning two things.
+		if at := v.AtLocation; at != nil {
+			row["at_location"] = map[string]any{
+				"location_id": at.LocationID, "location_code": at.LocationCode,
+				"on_hand": at.OnHand, "reserved": at.Reserved, "available": at.Available,
+			}
+		}
+		out = append(out, row)
 	}
 	return out
 }

@@ -461,6 +461,8 @@ func (a *App) mountCoreRoutes() {
 	a.mountCartRoutes()
 	a.mountCheckoutRoutes()
 	a.mountOrderRoutes()
+	// Beside the orders, because a report is a reading of them.
+	a.mountReportRoutes()
 	a.mountTransferRoutes()
 	a.mountAdminPanel()
 }

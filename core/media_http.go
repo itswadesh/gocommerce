@@ -105,6 +105,12 @@ func (a *App) handleListMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sortBy, err := ParseSort(r, mediaSorts)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+
 	items, total, err := a.media.List(r.Context(), MediaQuery{
 		Search:    q.Get("q"),
 		Kind:      kind,
@@ -112,6 +118,7 @@ func (a *App) handleListMedia(w http.ResponseWriter, r *http.Request) {
 		ProductID: productID,
 		MinBytes:  minBytes,
 		MaxBytes:  maxBytes,
+		Sort:      sortBy,
 		Limit:     limit,
 		Offset:    offset,
 	})

@@ -14,25 +14,52 @@
      */
     import { base } from "$app/paths";
     import { goto } from "$app/navigation";
-    import { api, query } from "$lib/api.js";
-    import { formatMoney, toMinor, isValidMoney, stockClass, pluralize } from "$lib/format.js";
+    import { api } from "$lib/api.js";
+    import { listState } from "$lib/liststate.svelte.js";
+    import { readSort, cycleSort, sortQuery } from "$lib/listsort.js";
+    import {
+        formatMoney,
+        formatDate,
+        relativeTime,
+        toMinor,
+        isValidMoney,
+        stockClass,
+        pluralize,
+    } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import { settings } from "$lib/settings.svelte.js";
     import Drawer from "$lib/components/Drawer.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
+    import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
+    import SortHeader from "$lib/components/SortHeader.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     const PER_PAGE = 30;
+
+    /* Search, status, ordering and page all live in the URL, and the window
+       replaces the rows rather than accumulating them — a sorted list an
+       operator can send to somebody is the whole point, and page 4 of a new
+       ordering appended onto three pages of the old one is two orderings
+       interleaved in one table. */
+    const list = listState({ q: "", status: "", sort: "", order: "", page: 1 });
+    const SORT_FIELDS = ["title", "status", "price", "available", "created_at", "updated_at"];
 
     let loading = $state(true);
     let saving = $state(false);
     let products = $state([]);
     let meta = $state(null);
-    let search = $state("");
-    let draftSearch = $state("");
-    let status = $state("");
-    let page = $state(1);
+
+    const search = $derived(list.params.q);
+    const status = $derived(list.params.status);
+    const sort = $derived(readSort(list.params, SORT_FIELDS));
+    let draftSearch = $state(list.params.q);
+
+    /* A fast second header click leaves two requests in flight; without this
+       the table settles on the reply that lost rather than on the header that
+       is lit. */
+    let reqId = 0;
+
     // The store answers this once, at sign-in; before it does, the getter
     // returns the same USD this screen used to assume outright.
     const currency = $derived(settings.currency);
@@ -49,41 +76,41 @@
     }
 
     $effect(() => {
-        // Re-runs whenever a filter changes. Page 1 replaces the list; a later
-        // page appends, because the table loads more rather than paginating.
-        search;
-        status;
-        page;
+        // Re-runs whenever any parameter changes: the search, the status, the
+        // ordering, the page.
+        list.params;
         load();
     });
 
     async function load() {
+        const mine = ++reqId;
         loading = true;
         try {
             const result = await api.get(
-                "/api/admin/products" + query({ q: search, status, page, limit: PER_PAGE }),
+                "/api/admin/products" + list.query({ limit: PER_PAGE, ...sortQuery(sort) }),
             );
-            products = page === 1 ? result.data : [...products, ...result.data];
+            if (mine !== reqId) return;
+            products = result.data ?? [];
             meta = result.meta;
         } catch (err) {
             toast.error(err);
         } finally {
-            loading = false;
+            if (mine === reqId) loading = false;
         }
     }
 
-    const hasMore = $derived(!!meta && products.length < meta.total);
+    function sortBy(field, firstDesc) {
+        list.set(cycleSort(sort, field, firstDesc));
+    }
 
     function submitSearch(e) {
         e.preventDefault();
-        page = 1;
-        search = draftSearch;
+        list.set({ q: draftSearch });
     }
 
     function clearSearch() {
         draftSearch = "";
-        page = 1;
-        search = "";
+        list.set({ q: "" });
     }
 
     function openCreate() {
@@ -144,7 +171,6 @@
         try {
             await api.delete(`/api/admin/products/${pendingDelete.id}`);
             toast.success(`Deleted ${pendingDelete.title}`);
-            page = 1;
             await load();
         } catch (err) {
             toast.error(err);
@@ -187,7 +213,7 @@
                     class="btn circle transparent secondary"
                     title="Refresh"
                     aria-label="Refresh"
-                    onclick={() => ((page = 1), load())}
+                    onclick={load}
                 >
                     <i class="ri-refresh-line" aria-hidden="true"></i>
                 </button>
@@ -223,8 +249,8 @@
                     <Select
                         id="status-filter"
                         placeholder="Any status"
-                        bind:value={status}
-                        onchange={() => (page = 1)}
+                        value={status}
+                        onchange={(v) => list.set({ status: v })}
                         options={[
                             { value: "", label: "Any status" },
                             { value: "active", label: "Active" },
@@ -245,11 +271,48 @@
             <table class="table responsive-table" class:optimize={products.length > 60}>
                 <thead class="sticky">
                     <tr>
-                        <th class="col-field-name-id">Product</th>
-                        <th class="col-field-type-select">Status</th>
+                        <SortHeader
+                            field="title"
+                            label="Product"
+                            class="col-field-name-id"
+                            {sort}
+                            onsort={sortBy}
+                        />
+                        <SortHeader
+                            field="status"
+                            label="Status"
+                            class="col-field-type-select"
+                            {sort}
+                            onsort={sortBy}
+                        />
+                        <!-- Variants counts an embedded array, not a column. A
+                             header with no arrow and no hover reads as a fact
+                             rather than as a broken control. -->
                         <th class="col-field-type-number min-width">Variants</th>
-                        <th class="col-field-type-number min-width">Price</th>
-                        <th class="col-field-type-number min-width">Available</th>
+                        <SortHeader
+                            field="price"
+                            label="Price"
+                            class="col-field-type-number min-width"
+                            firstDesc
+                            {sort}
+                            onsort={sortBy}
+                        />
+                        <SortHeader
+                            field="available"
+                            label="Available"
+                            class="col-field-type-number min-width"
+                            firstDesc
+                            {sort}
+                            onsort={sortBy}
+                        />
+                        <SortHeader
+                            field="updated_at"
+                            label="Updated"
+                            class="col-field-type-date min-width"
+                            firstDesc
+                            {sort}
+                            onsort={sortBy}
+                        />
                         <th class="col-meta min-width"></th>
                     </tr>
                 </thead>
@@ -304,6 +367,17 @@
                             >
                                 {available === null ? "not tracked" : available}
                             </td>
+                            <!-- updated_at already rides on every row, so this
+                                 column costs the engine nothing — it is data
+                                 the screen was throwing away, and it is what
+                                 gives the Updated sort a header to live on. -->
+                            <td
+                                class="col-field-type-date min-width txt-hint"
+                                data-name="Updated"
+                                title={formatDate(product.updated_at)}
+                            >
+                                {relativeTime(product.updated_at)}
+                            </td>
                             <td class="col-meta min-width">
                                 <button
                                     type="button"
@@ -322,14 +396,14 @@
                     {#if loading && !products.length}
                         {#each Array(6) as _, i (i)}
                             <tr>
-                                <td colspan="6"><span class="skeleton-loader"></span></td>
+                                <td colspan="7"><span class="skeleton-loader"></span></td>
                             </tr>
                         {/each}
                     {/if}
 
                     {#if !loading && !products.length}
                         <tr>
-                            <td colspan="6" class="txt-center txt-hint p-base">
+                            <td colspan="7" class="txt-center txt-hint p-base">
                                 <div class="m-b-10">
                                     <i class="ri-price-tag-3-line" style="font-size: 32px" aria-hidden="true"></i>
                                 </div>
@@ -344,30 +418,11 @@
                     {/if}
                 </tbody>
             </table>
-
-            {#if hasMore}
-                <button
-                    type="button"
-                    class="btn expanded block load-more-btn"
-                    class:loading
-                    disabled={loading}
-                    onclick={() => (page += 1)}
-                >
-                    <i class="ri-arrow-down-s-line" aria-hidden="true"></i>
-                    <span class="txt">Load more</span>
-                </button>
-            {/if}
         </div>
 
         <footer class="page-footer">
-            <span class="txt">
-                {#if meta}
-                    Showing {products.length} of {meta.total}
-                    {pluralize(meta.total, "product")}
-                {:else}
-                    …
-                {/if}
-            </span>
+            <Pager {meta} {loading} noun="product" onpage={(n) => list.setPage(n)} />
+            <div class="flex-fill"></div>
             <ThemeToggle />
         </footer>
     </div>

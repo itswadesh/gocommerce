@@ -182,6 +182,35 @@ $badPageRejected = $false
 try { Invoke-GC GET '/api/products?page=0' | Out-Null } catch { $badPageRejected = "$_" -match 'pages start at 1' }
 Confirm-GCTrue 'page=0 is refused with a reason' $badPageRejected
 
+# A sort is an allow-listed key, never a column name. This runs against a real
+# store, so the exact query string the panel sends is what gets exercised.
+#
+# Asserted on `id` rather than on `title`: the engine folds text with
+# PostgreSQL's own collation, and re-sorting the titles here in .NET's would be
+# comparing two different orderings and calling a difference a bug.
+$unsorted = Invoke-GC GET '/api/admin/products?limit=50' -Admin -Raw | ConvertFrom-Json
+$sorted   = Invoke-GC GET '/api/admin/products?sort=id&order=asc&limit=50' -Admin -Raw | ConvertFrom-Json
+$ids = @($sorted.data | ForEach-Object { [int64]$_.id })
+$rising = $true
+for ($i = 1; $i -lt $ids.Count; $i++) { if ($ids[$i] -lt $ids[$i - 1]) { $rising = $false } }
+Confirm-GCTrue 'a sorted page comes back in the order it asked for' $rising
+Confirm-GC 'and describes the same set as the unsorted one' $unsorted.meta.total $sorted.meta.total
+
+# Title ordering is exercised for a 200 and a full page rather than for an
+# order this script can recompute.
+$byTitle = Invoke-GC GET '/api/admin/products?sort=title&order=desc&limit=50' -Admin -Raw | ConvertFrom-Json
+Confirm-GC 'sorting by title returns the same page' $unsorted.data.Count $byTitle.data.Count
+
+$badSortRejected = $false
+try { Invoke-GC GET '/api/admin/products?sort=p.id' -Admin | Out-Null }
+catch { $badSortRejected = "$_" -match 'sort must be one of' }
+Confirm-GCTrue 'a column name is refused, and the answer names the fields that exist' $badSortRejected
+
+$loneOrderRejected = $false
+try { Invoke-GC GET '/api/admin/products?order=desc' -Admin | Out-Null }
+catch { $loneOrderRejected = "$_" -match 'order needs a sort field' }
+Confirm-GCTrue 'a direction with no field is refused rather than guessed at' $loneOrderRejected
+
 Write-GCStep '15. Superuser sign-in works, and gives the same access a token does'
 # The panel signs in with an email and a password; scripts use a token. Both
 # end up as a bearer credential on the same routes, and this proves it rather

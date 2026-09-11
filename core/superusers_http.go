@@ -160,8 +160,12 @@ func (a *App) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleListSuperusers carries the live session count per operator: an owner
+// can end somebody's sessions, so they have to be able to see whether there are
+// any. team.read is still the right — a session count is who is signed in, which
+// is what team.read is for.
 func (a *App) handleListSuperusers(w http.ResponseWriter, r *http.Request) {
-	list, err := a.superusers.List(r.Context())
+	list, err := a.superusers.ListRows(r.Context())
 	if err != nil {
 		RespondError(w, r, err)
 		return

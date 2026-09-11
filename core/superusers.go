@@ -306,6 +306,80 @@ func (s *Superusers) Create(ctx context.Context, email, password, role string) (
 	return su, nil
 }
 
+// SuperuserRow is one operator as a listing needs them: the record, plus what
+// only a listing asks.
+//
+// Beside the record rather than inside it. Superuser is returned directly by
+// login, refresh, create, update and set-role, and a "sessions": 0 on a
+// successful sign-in response would be a fact that is both false and unfixable
+// from those paths — the same reasoning that keeps the password hash off the
+// struct.
+type SuperuserRow struct {
+	*Superuser
+	Sessions int `json:"sessions"`
+	// NewestSession is when the most recent *live* session started. It is not a
+	// last sign-in and must not be shown as one: expired rows are deleted on
+	// every issue, and a password change or a revoke deletes them outright, so
+	// null means "nobody is signed in now" and never "has never signed in". This
+	// store keeps no sign-in history, and this does not invent one.
+	NewestSession *time.Time `json:"newest_session"`
+}
+
+// ListRows is List plus the live session count per operator — the one thing the
+// team screen asks that the record cannot answer, and the number an owner wants
+// *before* pressing "sign out everywhere" rather than in the toast afterwards.
+//
+// A second query rather than a join: scanSuperuser reads a fixed six-value shape
+// shared with Create, Update, Resolve and Authenticate, and widening the
+// listing's column list is exactly how that shape drifts — see the note above
+// Resolve's query.
+func (s *Superusers) ListRows(ctx context.Context) ([]*SuperuserRow, error) {
+	list, err := s.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	type live struct {
+		n      int
+		newest sql.NullTime
+	}
+	// The same `expires_at > now()` filter Sessions uses, so the count on the row
+	// and the count on /api/admin/me can never mean different things.
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT superuser_id, count(*), max(created_at)
+		FROM superuser_sessions WHERE expires_at > now()
+		GROUP BY superuser_id`)
+	if err != nil {
+		return nil, Internalf(err, "count sessions")
+	}
+	defer rows.Close()
+	byID := map[int64]live{}
+	for rows.Next() {
+		var id int64
+		var l live
+		if err := rows.Scan(&id, &l.n, &l.newest); err != nil {
+			return nil, Internalf(err, "count sessions")
+		}
+		byID[id] = l
+	}
+	if err := rows.Err(); err != nil {
+		return nil, Internalf(err, "count sessions")
+	}
+
+	out := make([]*SuperuserRow, len(list))
+	for i, su := range list {
+		row := &SuperuserRow{Superuser: su}
+		if l, ok := byID[su.ID]; ok {
+			row.Sessions = l.n
+			if l.newest.Valid {
+				t := l.newest.Time
+				row.NewestSession = &t
+			}
+		}
+		out[i] = row
+	}
+	return out, nil
+}
+
 // List returns every superuser, oldest first.
 func (s *Superusers) List(ctx context.Context) ([]*Superuser, error) {
 	// Every role resolved once rather than per row: the team screen would

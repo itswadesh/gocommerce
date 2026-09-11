@@ -170,6 +170,56 @@ type AppliedDiscount struct {
 	FreeShipping bool `json:"free_shipping,omitempty"`
 }
 
+// DiscountDetail is the rule plus what it has actually cost. The cost is a join
+// and so is not part of the rule: the listing would need one aggregate per row,
+// and the checkout read takes this row under a lock and has no use for it.
+type DiscountDetail struct {
+	*Discount
+	// RedeemedTotal is the money this promotion has given away, cancelled orders
+	// excluded — the same exclusion emailHasUsed makes — and in the store's
+	// settlement currency. order_discounts has no currency column; the order does
+	// (D14), so a store that has changed currency would otherwise get one integer
+	// that is the sum of two different kinds of money.
+	//
+	// It is not used_count, and the two are allowed to disagree: used_count is
+	// the claim made under the checkout lock and is never given back, because a
+	// code limited to 100 uses was claimed 100 times whatever happened next.
+	RedeemedTotal  Money `json:"redeemed_total"`
+	RedeemedOrders int   `json:"redeemed_orders"`
+	// RedeemedOtherCurrencyOrders counts what the currency constraint left out,
+	// so the number above is narrow rather than quietly wrong.
+	RedeemedOtherCurrencyOrders int `json:"redeemed_other_currency_orders"`
+}
+
+// DiscountRedemption is one order that used a rule: the snapshot row joined to
+// the order it sits on. The code and title are the snapshot's, not the rule's —
+// a promotion that has since been renamed must still read as what it was.
+type DiscountRedemption struct {
+	OrderID       int64  `json:"order_id"`
+	Number        string `json:"number"`
+	Status        string `json:"status"`
+	PaymentStatus string `json:"payment_status"`
+	Email         string `json:"email"`
+	Code          string `json:"code,omitempty"`
+	Title         string `json:"title"`
+	Kind          string `json:"kind"`
+	// Amount and OrderTotal carry the order's own snapshotted currency, never
+	// Config.Currency: an order placed before the store changed currency still
+	// has to read correctly (D14).
+	Amount     Money     `json:"amount"`
+	OrderTotal Money     `json:"order_total"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// DiscountPreview is a dry run against a basket. A rule that would not apply is
+// an answer here rather than an error: the operator asked whether it works, and
+// "no, it expired on Friday" is the answer. See D43.
+type DiscountPreview struct {
+	Applies bool             `json:"applies"`
+	Applied *AppliedDiscount `json:"applied,omitempty"`
+	Reason  string           `json:"reason,omitempty"`
+}
+
 // DiscountInput creates one.
 type DiscountInput struct {
 	Code       string `json:"code"`
@@ -219,6 +269,9 @@ type DiscountPatch struct {
 type DiscountQuery struct {
 	Search string
 	Active *bool
+	// Sort is an operator-chosen ordering; zero keeps the listing's own,
+	// newest first.
+	Sort   Sort
 	Limit  int
 	Offset int
 }
@@ -615,7 +668,30 @@ func (s *Discounts) GetByCode(ctx context.Context, code string) (*Discount, erro
 	return d, err
 }
 
-// List returns a page, newest first.
+// discountSorts is the discount listing's allow-list.
+//
+// `active` and `ends_at` are deliberately absent. The screen's State column
+// renders a phase derived from active, starts_at, ends_at, usage_limit and
+// used_count together, so ordering by `active` would group the off rows and
+// leave scheduled, live, expired and used-up unordered among themselves — a
+// header that half-lies. Nor is there a key for what a discount takes off:
+// coalesce(value_bp, value_minor) orders 10% next to $10 as if 1000 and 1000
+// meant the same thing.
+var discountSorts = SortSpec{
+	Tiebreak: "id",
+	Columns: map[string]sortField{
+		// code is NULL for an automatic discount and can never be '' (a CHECK
+		// forbids it), so an automatic discount sorts last in both directions:
+		// no code is not a code that sorts first.
+		"code":       {"lower(code) ASC NULLS LAST", "lower(code) DESC NULLS LAST"},
+		"title":      {"lower(title) ASC", "lower(title) DESC"},
+		"used_count": {"used_count ASC", "used_count DESC"},
+		"created_at": {"created_at ASC", "created_at DESC"},
+		"id":         {"id ASC", "id DESC"},
+	},
+}
+
+// List returns a page, newest first unless a sort says otherwise.
 func (s *Discounts) List(ctx context.Context, q DiscountQuery) ([]*Discount, int, error) {
 	where, args := []string{"true"}, []any{}
 	if term := strings.TrimSpace(q.Search); term != "" {
@@ -628,6 +704,11 @@ func (s *Discounts) List(ctx context.Context, q DiscountQuery) ([]*Discount, int
 		where = append(where, fmt.Sprintf("active = $%d", len(args)))
 	}
 	clause := strings.Join(where, " AND ")
+
+	order, err := discountSorts.Clause(q.Sort, "id DESC")
+	if err != nil {
+		return nil, 0, err
+	}
 
 	var total int
 	if err := s.app.db.QueryRowContext(ctx,
@@ -642,7 +723,7 @@ func (s *Discounts) List(ctx context.Context, q DiscountQuery) ([]*Discount, int
 	args = append(args, limit, offset)
 	rows, err := s.app.db.QueryContext(ctx,
 		`SELECT `+discountColumns+` FROM discounts WHERE `+clause+
-			fmt.Sprintf(" ORDER BY id DESC LIMIT $%d OFFSET $%d", len(args)-1, len(args)), args...)
+			fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", order, len(args)-1, len(args)), args...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -925,13 +1006,141 @@ func (s *Discounts) Preview(ctx context.Context, code, email string, cart *Cart)
 	if err != nil {
 		return nil, err
 	}
-	_, base, err := s.eligible(ctx, s.app.db, d, discountRequest{
-		Email: email, Lines: cartDiscountLines(cart),
-	})
+	return s.preview(ctx, d, email, cartDiscountLines(cart))
+}
+
+// preview is the shared half of both dry runs: eligibility, then arithmetic. No
+// lock, no usage claimed — applyTx is the consuming path and this must never
+// become it.
+func (s *Discounts) preview(ctx context.Context, d *Discount, email string, lines []discountLine) (*AppliedDiscount, error) {
+	_, base, err := s.eligible(ctx, s.app.db, d, discountRequest{Email: email, Lines: lines})
 	if err != nil {
 		return nil, err
 	}
 	return applyDiscount(d, base), nil
+}
+
+// PreviewID is Preview for a rule somebody already has open: the admin dry run.
+//
+// Keyed by id rather than by code because an automatic discount has no code for
+// GetByCode to find, and because the panel is testing a row it is looking at
+// rather than a string a shopper typed.
+//
+// A refusal comes back as data — applies false and the engine's own sentence —
+// where the public cart route answers 400 for the identical sentence. Two
+// surfaces, two questions: a storefront is using a code and a refusal is a
+// failed attempt; an operator is asking about one, and "no, it expired on
+// Friday" is a successful answer. See D43. The request being wrong is still an
+// error: an unknown id is 404 and a malformed basket is 400.
+func (s *Discounts) PreviewID(ctx context.Context, id int64, email string, lines []discountLine) (*DiscountPreview, error) {
+	d, err := s.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	// A scoped rule comes off the lines its targets reach, so a bare subtotal
+	// cannot answer for one — and letting it through would report "does not apply
+	// to anything in this basket" about a basket the caller never sent. Say what
+	// is missing instead.
+	if targetKindFor(d.Scope) != "" && !hasProductLines(lines) {
+		return &DiscountPreview{Reason: fmt.Sprintf(
+			"this discount applies to chosen %s; send the lines to try it", d.Scope)}, nil
+	}
+	applied, err := s.preview(ctx, d, email, lines)
+	if err != nil {
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && apiErr.Code == ErrValidation.Code {
+			return &DiscountPreview{Reason: apiErr.Message}, nil
+		}
+		// A database failure is still a failure: only the engine's own refusals
+		// are findings.
+		return nil, err
+	}
+	return &DiscountPreview{Applies: true, Applied: applied}, nil
+}
+
+// hasProductLines reports whether the basket says which products are in it. A
+// bare subtotal arrives as one line with no product id, which is enough for an
+// order-wide rule and not for any other kind.
+func hasProductLines(lines []discountLine) bool {
+	for _, l := range lines {
+		if l.ProductID != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// Redemptions lists the orders this rule was spent on, newest first.
+//
+// Cancelled ones are listed and carry their status: hiding them would leave the
+// operator unable to see why this list and redeemed_total differ. The rule is
+// read first so an unknown or deleted one is a 404 rather than an empty page —
+// and a deleted rule's redemptions are unreachable by design, because
+// order_discounts.discount_id is ON DELETE SET NULL and the snapshots stay with
+// their orders.
+func (s *Discounts) Redemptions(ctx context.Context, discountID int64, limit, offset int) ([]DiscountRedemption, int, error) {
+	if _, err := s.Get(ctx, discountID); err != nil {
+		return nil, 0, err
+	}
+	var total int
+	if err := s.app.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM order_discounts od WHERE od.discount_id = $1`,
+		discountID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	if limit <= 0 {
+		limit = DefaultLimit
+	}
+	rows, err := s.app.db.QueryContext(ctx, `
+		SELECT o.id, o.number, o.status, o.payment_status, o.email, o.currency,
+		       od.code, od.title, od.kind, od.amount_minor, o.total_minor, o.created_at
+		FROM order_discounts od
+		JOIN orders o ON o.id = od.order_id
+		WHERE od.discount_id = $1
+		ORDER BY o.id DESC
+		LIMIT $2 OFFSET $3`, discountID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	out := []DiscountRedemption{}
+	for rows.Next() {
+		var r DiscountRedemption
+		var currency string
+		var amount, orderTotal int64
+		if err := rows.Scan(&r.OrderID, &r.Number, &r.Status, &r.PaymentStatus,
+			&r.Email, &currency, &r.Code, &r.Title, &r.Kind,
+			&amount, &orderTotal, &r.CreatedAt); err != nil {
+			return nil, 0, err
+		}
+		r.Amount = money(amount, currency)
+		r.OrderTotal = money(orderTotal, currency)
+		out = append(out, r)
+	}
+	return out, total, rows.Err()
+}
+
+// Redeemed is what the rule has cost: the money given away in the store's
+// settlement currency, how many live orders carry a redemption, and how many
+// were left out for being in another currency.
+//
+// Cancelled orders are excluded, following emailHasUsed's precedent, because
+// nothing left the store on an order that was cancelled.
+func (s *Discounts) Redeemed(ctx context.Context, discountID int64) (Money, int, int, error) {
+	var sum int64
+	var orders, other int
+	err := s.app.db.QueryRowContext(ctx, `
+		SELECT coalesce(sum(od.amount_minor) FILTER (WHERE o.currency = $2), 0),
+		       count(*) FILTER (WHERE o.currency = $2),
+		       count(*) FILTER (WHERE o.currency <> $2)
+		FROM order_discounts od
+		JOIN orders o ON o.id = od.order_id
+		WHERE od.discount_id = $1 AND o.status <> 'cancelled'`,
+		discountID, s.app.cfg.Currency).Scan(&sum, &orders, &other)
+	if err != nil {
+		return Money{}, 0, 0, err
+	}
+	return money(sum, s.app.cfg.Currency), orders, other, nil
 }
 
 // matchedProducts answers which of these products a scoped rule reaches.
@@ -1077,6 +1286,15 @@ func (s *Discounts) eligible(ctx context.Context, q rowQuerier, d *Discount, req
 	// the price of entry to a promotion, not the thing being discounted.
 	if d.MinSubtotalMinor != nil && totalOf(req.Lines) < *d.MinSubtotalMinor {
 		return nil, 0, Validationf("that discount needs a basket of at least %d", *d.MinSubtotalMinor)
+	}
+	// The other rule that is stored and not evaluated yet (D29). applyTx never
+	// reaches this — it short-circuits on an empty code before the row is looked
+	// up — and neither does Preview, whose GetByCode rejects one. It exists for
+	// PreviewID, which is the first caller that can hold a codeless rule, and
+	// which would otherwise report a real amount for a promotion that can never
+	// fire. The day automatic discounts do fire, this is the line to delete.
+	if strings.TrimSpace(d.Code) == "" {
+		return nil, 0, Validationf("automatic discounts are not applied at checkout yet")
 	}
 	if d.Kind == DiscountFreeShipping && d.Scope != "" && d.Scope != DiscountScopeOrder {
 		// Shipping is not a line, so no scope can select it. validateDiscount

@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 )
 
 // Inventory owns stock movements. Every change goes through here rather than
@@ -226,6 +228,29 @@ func defaultLocationID(ctx context.Context, tx *sql.Tx) (int64, error) {
 
 var errInsufficientStock = errors.New("insufficient stock")
 
+// How a location's shelves are cut. Two questions, two orderings: "what do I
+// have to move before I can close this" wants the biggest holdings first, and
+// "what is this shop short of" wants the emptiest shelf first.
+const (
+	StockOrderHolding   = "holding"
+	StockOrderAvailable = "available"
+)
+
+// LocationStockQuery cuts one location's shelves.
+type LocationStockQuery struct {
+	// NonZero keeps only rows the place is actually holding — on hand or
+	// reserved. It is the same test Locations refuses a close on, so a listing
+	// and a refusal can never disagree about what is there.
+	NonZero bool
+	// Threshold, when set, keeps only what is at or below it *here*. That is
+	// the low-stock report for one shop, and unlike the store-wide one it is
+	// answerable: a variant with one unit in each of five shops is low in all
+	// five.
+	Threshold     *int
+	Order         string
+	Limit, Offset int
+}
+
 // resolveLocation turns the caller's location — or 0, meaning "wherever the
 // store puts things" — into a real id, and refuses one that does not exist
 // rather than moving stock into a row the operator did not mean.
@@ -240,6 +265,55 @@ func resolveLocation(ctx context.Context, tx *sql.Tx, locationID int64) (int64, 
 		return 0, NotFoundf("location %d does not exist", locationID)
 	}
 	return locationID, err
+}
+
+// shelf is a resolved location with the two facts an arrival has to check.
+type shelf struct {
+	id     int64
+	active bool
+	name   string
+}
+
+// resolveShelf is resolveLocation plus those two facts.
+//
+// The row is read FOR SHARE, and read BEFORE any variant_stock row is touched.
+// Both halves matter. Locations.Update takes this row FOR UPDATE and then reads
+// variant_stock; a movement that touched variant_stock first and locked this
+// row afterwards would take the same two tables in the opposite order, which is
+// a deadlock. And without the lock, a deactivation committing between the check
+// and the UPDATE that follows strands stock at a location that is closed a
+// millisecond later — the exact state both guards exist to prevent.
+func resolveShelf(ctx context.Context, tx *sql.Tx, locationID int64) (shelf, error) {
+	if locationID == 0 {
+		id, err := defaultLocationID(ctx, tx)
+		if err != nil {
+			return shelf{}, err
+		}
+		locationID = id
+	}
+	var s shelf
+	err := tx.QueryRowContext(ctx,
+		`SELECT id, active, name FROM locations WHERE id = $1 FOR SHARE`,
+		locationID).Scan(&s.id, &s.active, &s.name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return shelf{}, NotFoundf("location %d does not exist", locationID)
+	}
+	return s, err
+}
+
+// refuseIfClosed blocks units arriving at a location that is not open (D44).
+//
+// Stock may always leave a closed place — that is the only way one is ever
+// emptied, and a store that already has stranded units needs that path. It may
+// never be *received* at one: an inactive location's units are counted by the
+// variant's totals and skipped by pickLocation, so they would be for sale and
+// unsellable at once, and Locations.Update and Delete would then refuse to
+// finish closing the place that is holding them.
+func refuseIfClosed(s shelf) error {
+	if s.active {
+		return nil
+	}
+	return Conflictf("%s is closed; stock moves out of a closed location, never into it", s.name)
 }
 
 // Adjust moves a variant's on-hand quantity at one location by delta — a
@@ -260,6 +334,13 @@ func (i *Inventory) Adjust(ctx context.Context, variantID, locationID int64, del
 		if err != nil {
 			return err
 		}
+		// Receiving is arrival; writing off is departure, and a closed shelf has
+		// to keep the second or it can never be emptied (D44).
+		if delta > 0 {
+			if err := refuseIfClosed(loc); err != nil {
+				return err
+			}
+		}
 		// The conditional UPDATE is still the guard: the RETURNING reports what
 		// it did and never decides anything, and its not-matched signal is
 		// sql.ErrNoRows where it used to be RowsAffected() == 0 — the same
@@ -274,14 +355,14 @@ func (i *Inventory) Adjust(ctx context.Context, variantID, locationID int64, del
 			SET on_hand = on_hand + $3, updated_at = now()
 			WHERE variant_id = $1 AND location_id = $2 AND on_hand + $3 >= reserved
 			RETURNING on_hand, reserved`,
-			variantID, loc, delta).Scan(&after.OnHand, &after.Reserved)
+			variantID, loc.id, delta).Scan(&after.OnHand, &after.Reserved)
 		if errors.Is(err, sql.ErrNoRows) {
-			return i.explainStockFailure(ctx, tx, variantID, loc)
+			return i.explainStockFailure(ctx, tx, variantID, loc.id)
 		}
 		if err != nil {
 			return translateCatalogErr(err)
 		}
-		_, err = recordMovement(ctx, tx, variantID, loc, MovementAdjust,
+		_, err = recordMovement(ctx, tx, variantID, loc.id, MovementAdjust,
 			stockBalance{OnHand: delta}, after, stockRef{Reason: reason})
 		return err
 	})
@@ -312,11 +393,20 @@ func (i *Inventory) SetOnHand(ctx context.Context, variantID, locationID int64, 
 		var was int
 		if err := tx.QueryRowContext(ctx,
 			`SELECT on_hand FROM variant_stock WHERE variant_id = $1 AND location_id = $2 FOR UPDATE`,
-			variantID, loc).Scan(&was); err != nil {
+			variantID, loc.id).Scan(&was); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return i.explainStockFailure(ctx, tx, variantID, loc)
+				return i.explainStockFailure(ctx, tx, variantID, loc.id)
 			}
 			return err
+		}
+		// A stock take that counts down is how a closed shelf is cleared, so only
+		// a count above what is already there is an arrival (D44). The comparison
+		// is against the figure read under the FOR UPDATE above, so a concurrent
+		// lowering cannot turn a decrease into an increase between the two.
+		if qty > was {
+			if err := refuseIfClosed(loc); err != nil {
+				return err
+			}
 		}
 		// Still the guard: see Adjust.
 		var after stockBalance
@@ -324,9 +414,9 @@ func (i *Inventory) SetOnHand(ctx context.Context, variantID, locationID int64, 
 			UPDATE variant_stock SET on_hand = $3, updated_at = now()
 			WHERE variant_id = $1 AND location_id = $2 AND $3 >= reserved
 			RETURNING on_hand, reserved`,
-			variantID, loc, qty).Scan(&after.OnHand, &after.Reserved)
+			variantID, loc.id, qty).Scan(&after.OnHand, &after.Reserved)
 		if errors.Is(err, sql.ErrNoRows) {
-			return i.explainStockFailure(ctx, tx, variantID, loc)
+			return i.explainStockFailure(ctx, tx, variantID, loc.id)
 		}
 		if err != nil {
 			return translateCatalogErr(err)
@@ -335,7 +425,7 @@ func (i *Inventory) SetOnHand(ctx context.Context, variantID, locationID int64, 
 		// take is the one kind the ledger's CHECK lets say nothing moved: an
 		// operator who walked to the shelf and found the number already there
 		// has produced the evidence a stock-take dispute turns on.
-		_, err = recordMovement(ctx, tx, variantID, loc, MovementStockTake,
+		_, err = recordMovement(ctx, tx, variantID, loc.id, MovementStockTake,
 			stockBalance{OnHand: qty - was}, after, stockRef{Reason: reason})
 		return err
 	})
@@ -355,6 +445,10 @@ func (i *Inventory) Move(ctx context.Context, variantID, fromID, toID int64, qty
 		return nil, Validationf("quantity must be positive")
 	}
 	err := InTx(ctx, i.app.db, func(tx *sql.Tx) error {
+		// The source stays on resolveLocation, which asks nothing about `active`:
+		// moving units off a closed shelf is the whole of the recovery path for a
+		// store that already has some stranded there, and a check here would make
+		// exactly those units permanently unmovable (D44).
 		from, err := resolveLocation(ctx, tx, fromID)
 		if err != nil {
 			return err
@@ -363,7 +457,10 @@ func (i *Inventory) Move(ctx context.Context, variantID, fromID, toID int64, qty
 		if err != nil {
 			return err
 		}
-		if from == to {
+		if err := refuseIfClosed(to); err != nil {
+			return err
+		}
+		if from == to.id {
 			return Validationf("a transfer needs two different locations")
 		}
 		// Both row locks in ascending location order before either UPDATE, for
@@ -375,7 +472,7 @@ func (i *Inventory) Move(ctx context.Context, variantID, fromID, toID int64, qty
 		lock, err := tx.QueryContext(ctx, `
 			SELECT location_id FROM variant_stock
 			WHERE variant_id = $1 AND location_id IN ($2, $3)
-			ORDER BY location_id FOR UPDATE`, variantID, from, to)
+			ORDER BY location_id FOR UPDATE`, variantID, from, to.id)
 		if err != nil {
 			return err
 		}
@@ -411,7 +508,7 @@ func (i *Inventory) Move(ctx context.Context, variantID, fromID, toID int64, qty
 			UPDATE variant_stock SET on_hand = on_hand + $3, updated_at = now()
 			WHERE variant_id = $1 AND location_id = $2
 			RETURNING on_hand, reserved`,
-			variantID, to, qty).Scan(&in.OnHand, &in.Reserved); err != nil {
+			variantID, to.id, qty).Scan(&in.OnHand, &in.Reserved); err != nil {
 			return translateCatalogErr(err)
 		}
 		// Two rows, each naming the other end. "3 units left here" is half an
@@ -419,10 +516,10 @@ func (i *Inventory) Move(ctx context.Context, variantID, fromID, toID int64, qty
 		// unchanged because the two deltas cancel.
 		if _, err := recordMovement(ctx, tx, variantID, from, MovementTransferOut,
 			stockBalance{OnHand: -qty}, out,
-			stockRef{Reason: reason, Counterpart: to}); err != nil {
+			stockRef{Reason: reason, Counterpart: to.id}); err != nil {
 			return err
 		}
-		_, err = recordMovement(ctx, tx, variantID, to, MovementTransferIn,
+		_, err = recordMovement(ctx, tx, variantID, to.id, MovementTransferIn,
 			stockBalance{OnHand: qty}, in,
 			stockRef{Reason: reason, Counterpart: from})
 		return err
@@ -466,24 +563,145 @@ func (i *Inventory) ByLocation(ctx context.Context, variantID int64) ([]VariantS
 	return out, rows.Err()
 }
 
+// AtLocation is every variant at one place, where ByLocation is one variant
+// across every place. It is the read a shop does before it restocks, and the one
+// an operator arrives at from a refusal that named units they now have to find.
+//
+// A location's report is its own variant_stock rows, joined rather than left
+// joined: a row exists from the moment anything moves there and survives going
+// to zero, so a shop that has sold out of something it carries still appears —
+// which is the restocking case — while the catalog a newly opened shop has never
+// carried does not bury it.
+func (i *Inventory) AtLocation(ctx context.Context, locationID int64, q LocationStockQuery) ([]*Variant, int, error) {
+	// The location first, so a mistyped id is a 404 rather than an empty page
+	// that reads as a fully stocked shop. ByLocation makes the same probe.
+	loc, err := i.app.locations.Get(ctx, locationID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if q.Threshold != nil && *q.Threshold < 0 {
+		return nil, 0, Validationf("threshold must not be negative")
+	}
+
+	where := []string{"vs.location_id = $1"}
+	args := []any{locationID}
+	if q.NonZero {
+		// refuseIfHolding counts a SKU as held when either number is non-zero,
+		// and untracked variants are counted there too — so this cut does not
+		// ask about track_inventory either, or a listing would not add up to the
+		// refusal that sent the operator here.
+		where = append(where, "(vs.on_hand <> 0 OR vs.reserved <> 0)")
+	}
+	if q.Threshold != nil {
+		// The threshold cut, unlike the holdings cut, does exclude untracked
+		// variants: an unlimited variant is never low. That is LowStock's rule,
+		// kept here so the two reports mean the same thing.
+		args = append(args, *q.Threshold)
+		where = append(where, fmt.Sprintf("v.track_inventory AND vs.on_hand - vs.reserved <= $%d", len(args)))
+	}
+	clause := strings.Join(where, " AND ")
+
+	var total int
+	if err := i.app.db.QueryRowContext(ctx, `
+		SELECT count(*) FROM variant_stock vs
+		JOIN variants v ON v.id = vs.variant_id
+		WHERE `+clause, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	order := `(vs.on_hand + vs.reserved) DESC, vs.variant_id`
+	if q.Order == StockOrderAvailable {
+		order = `(vs.on_hand - vs.reserved) ASC, vs.variant_id`
+	}
+	if q.Limit <= 0 {
+		q.Limit = DefaultLimit
+	}
+	args = append(args, q.Limit, q.Offset)
+	rows, err := i.app.db.QueryContext(ctx, `
+		SELECT vs.variant_id, vs.on_hand, vs.reserved
+		FROM variant_stock vs
+		JOIN variants v ON v.id = vs.variant_id
+		WHERE `+clause+`
+		ORDER BY `+order+fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)-1, len(args)), args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	type held struct{ onHand, reserved int }
+	ids := []int64{}
+	at := map[int64]held{}
+	for rows.Next() {
+		var id int64
+		var h held
+		if err := rows.Scan(&id, &h.onHand, &h.reserved); err != nil {
+			return nil, 0, err
+		}
+		ids = append(ids, id)
+		at[id] = h
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	// Never nil: selectVariants returns a nil slice for an empty page, which
+	// marshals as "data": null and breaks the envelope every other listing keeps.
+	out := []*Variant{}
+	if len(ids) == 0 {
+		return out, total, nil
+	}
+
+	// Hydrated through the shared scanner rather than a widened column list, so
+	// a row here is the same Variant every other catalog read returns and the
+	// per-location figures ride beside it rather than overwriting it.
+	variants, err := i.app.catalog.queryVariants(ctx, `v.id = ANY($1::bigint[])`, int64Array(ids))
+	if err != nil {
+		return nil, 0, err
+	}
+	byID := make(map[int64]*Variant, len(variants))
+	for _, v := range variants {
+		byID[v.ID] = v
+	}
+	// Walked in page order: queryVariants orders by v.position, v.id, which is
+	// not the ordering this page was selected in.
+	for _, id := range ids {
+		v := byID[id]
+		if v == nil {
+			continue
+		}
+		h := at[id]
+		v.AtLocation = &VariantStock{
+			VariantID: v.ID, LocationID: loc.ID, LocationCode: loc.Code,
+			LocationName: loc.Name, Active: loc.Active,
+			OnHand: h.onHand, Reserved: h.reserved, Available: h.onHand - h.reserved,
+		}
+		out = append(out, v)
+	}
+	return out, total, nil
+}
+
 // prepare resolves the location and makes sure the variant has a row there, so
 // that receiving stock at a location opened after the variant existed works
 // without the operator having to create anything.
-func (i *Inventory) prepare(ctx context.Context, tx *sql.Tx, variantID, locationID int64) (int64, error) {
-	loc, err := resolveLocation(ctx, tx, locationID)
+//
+// The shelf comes back pinned rather than just its id, so the caller can decide
+// whether this particular movement is an arrival and refuse it at a closed
+// place. Resolving through resolveShelf also takes the locations lock before
+// ensureStockRow touches variant_stock, which is the order Locations.Update
+// takes the same two tables in.
+func (i *Inventory) prepare(ctx context.Context, tx *sql.Tx, variantID, locationID int64) (shelf, error) {
+	loc, err := resolveShelf(ctx, tx, locationID)
 	if err != nil {
-		return 0, err
+		return shelf{}, err
 	}
 	var exists bool
 	err = tx.QueryRowContext(ctx,
 		`SELECT true FROM variants WHERE id = $1`, variantID).Scan(&exists)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, NotFoundf("variant %d does not exist", variantID)
+		return shelf{}, NotFoundf("variant %d does not exist", variantID)
 	}
 	if err != nil {
-		return 0, err
+		return shelf{}, err
 	}
-	return loc, ensureStockRow(ctx, tx, variantID, loc)
+	return loc, ensureStockRow(ctx, tx, variantID, loc.id)
 }
 
 // explainStockFailure turns "the update matched no rows" into a sentence naming

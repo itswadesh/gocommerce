@@ -18,6 +18,18 @@ func (a *App) mountDiscountRoutes() {
 	a.HandleAdminFunc("GET /api/admin/discounts/{id}", a.handleGetDiscount, RightDiscountsRead)
 	a.HandleAdminFunc("PATCH /api/admin/discounts/{id}", a.handleUpdateDiscount, RightDiscountsWrite)
 	a.HandleAdminFunc("DELETE /api/admin/discounts/{id}", a.handleDeleteDiscount, RightDiscountsWrite)
+
+	// The orders a promotion was spent on is order data reached through a
+	// discount, so it names both keys: the row carries an order number, an email
+	// address and a total, which discounts.read alone has never been able to see.
+	// requireRights already loops over every right a route names, so the second
+	// one costs nothing to enforce.
+	a.HandleAdminFunc("GET /api/admin/discounts/{id}/orders", a.handleDiscountOrders,
+		RightDiscountsRead, RightOrdersRead)
+	// A POST because it carries a basket, not because it changes anything:
+	// nothing is written, nothing is locked and no usage is claimed.
+	a.HandleAdminFunc("POST /api/admin/discounts/{id}/preview", a.handlePreviewDiscount,
+		RightDiscountsRead)
 }
 
 // -------------------------------------------------------------------- public
@@ -91,6 +103,10 @@ func (a *App) handleListDiscounts(w http.ResponseWriter, r *http.Request) {
 		active := v == "1" || strings.EqualFold(v, "true")
 		q.Active = &active
 	}
+	if q.Sort, err = ParseSort(r, discountSorts); err != nil {
+		RespondError(w, r, err)
+		return
+	}
 	list, total, err := a.discounts.List(r.Context(), q)
 	if err != nil {
 		RespondError(w, r, err)
@@ -110,7 +126,90 @@ func (a *App) handleGetDiscount(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	Respond(w, http.StatusOK, d)
+	// The rule plus what it has cost. Additive: every existing key keeps its
+	// place and its meaning, used_count included.
+	total, orders, other, err := a.discounts.Redeemed(r.Context(), id)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, DiscountDetail{
+		Discount: d, RedeemedTotal: total,
+		RedeemedOrders: orders, RedeemedOtherCurrencyOrders: other,
+	})
+}
+
+// handleDiscountOrders is the drilldown: which orders spent this promotion.
+//
+// meta.total counts every redemption, cancelled orders included, so it can
+// exceed the detail's redeemed_orders. That disagreement is the point — three
+// numbers answering three questions — and the panel names all three together.
+func (a *App) handleDiscountOrders(w http.ResponseWriter, r *http.Request) {
+	id, err := pathInt64(r, "id")
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	limit, offset, err := Page(r)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	rows, total, err := a.discounts.Redemptions(r.Context(), id, limit, offset)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	RespondList(w, rows, ListMeta{Total: total, Limit: limit, Offset: offset})
+}
+
+// handlePreviewDiscount is the dry run: a new promotion's first test, rather
+// than a real customer's basket. See D43 for why a refusal is a 200.
+func (a *App) handlePreviewDiscount(w http.ResponseWriter, r *http.Request) {
+	id, err := pathInt64(r, "id")
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	var in struct {
+		SubtotalMinor int64 `json:"subtotal_minor"`
+		// Optional: once_per_email cannot be previewed without it, the same way
+		// the cart route says.
+		Email string `json:"email"`
+		// Lines are what a scoped rule needs and a bare subtotal cannot give:
+		// the value comes off the lines its targets reach. Sending both would
+		// make a request whose stated total disagrees with its own lines
+		// representable, so exactly one of the two is accepted.
+		Lines []struct {
+			ProductID  int64 `json:"product_id"`
+			TotalMinor int64 `json:"total_minor"`
+		} `json:"lines"`
+	}
+	if derr := DecodeJSON(w, r, &in); derr != nil {
+		RespondError(w, r, derr)
+		return
+	}
+	if in.SubtotalMinor < 0 {
+		RespondError(w, r, Validationf("subtotal_minor must not be negative"))
+		return
+	}
+	if len(in.Lines) > 0 && in.SubtotalMinor != 0 {
+		RespondError(w, r, Validationf("send either subtotal_minor or lines, not both"))
+		return
+	}
+	lines := []discountLine{{Total: in.SubtotalMinor}}
+	if len(in.Lines) > 0 {
+		lines = make([]discountLine, len(in.Lines))
+		for i, l := range in.Lines {
+			if l.TotalMinor < 0 {
+				RespondError(w, r, Validationf("a line total must not be negative"))
+				return
+			}
+			lines[i] = discountLine{ProductID: l.ProductID, Total: l.TotalMinor}
+		}
+	}
+	p, err := a.discounts.PreviewID(r.Context(), id, in.Email, lines)
+	respondOr(w, r, p, err)
 }
 
 func (a *App) handleCreateDiscount(w http.ResponseWriter, r *http.Request) {

@@ -1,20 +1,37 @@
 <script>
-    import { api, query } from "$lib/api.js";
+    import { api } from "$lib/api.js";
+    import { listState } from "$lib/liststate.svelte.js";
     import { stockClass, pluralize } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import Drawer from "$lib/components/Drawer.svelte";
+    import Pager from "$lib/components/Pager.svelte";
+    import Select from "$lib/components/Select.svelte";
     import StockHistory from "$lib/components/StockHistory.svelte";
 
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
     const PER_PAGE = 25;
     const DEFAULT_THRESHOLD = 5;
 
+    /* The threshold, the location and the page live in the URL: a filtered list
+       with no filter in its address cannot be sent to anybody, and the window
+       replaces the rows rather than accumulating them, so `page=3` in the URL is
+       page 3 of the same list when it is opened again. */
+    const list = listState({ threshold: DEFAULT_THRESHOLD, location_id: 0, page: 1 });
+
     let loading = $state(true);
     let variants = $state([]);
     let meta = $state(null);
-    let threshold = $state(DEFAULT_THRESHOLD);
-    let draftThreshold = $state(DEFAULT_THRESHOLD);
-    let page = $state(1);
+    let draftThreshold = $state(list.params.threshold);
+
+    const threshold = $derived(list.params.threshold);
+    /* Deliberately not `locationID`, which is the drawer's selected source
+       shelf: one name for two things would make picking a shelf inside the
+       drawer silently re-query the list behind it. */
+    const filterLocationID = $derived(list.params.location_id);
+    let filterLocations = $state([]);
+    const chosenLocation = $derived(
+        filterLocations.find((l) => l.id === filterLocationID) ?? null,
+    );
 
     let adjustOpen = $state(false);
     let target = $state(null);
@@ -50,21 +67,22 @@
     const elsewhere = $derived(rows.filter((r) => r.location_id !== locationID));
 
     $effect(() => {
-        // Re-runs whenever the threshold changes. Page 1 replaces the list; a
-        // later page appends, because the table loads more rather than paginating.
-        threshold;
-        page;
+        // Any parameter changing reloads: the threshold, the location, the page.
+        list.params;
         load();
+    });
+
+    $effect(() => {
+        loadLocations();
     });
 
     async function load() {
         loading = true;
         try {
             const result = await api.get(
-                "/api/admin/inventory/low-stock" +
-                    query({ threshold, page, limit: PER_PAGE }),
+                "/api/admin/inventory/low-stock" + list.query({ limit: PER_PAGE }),
             );
-            variants = page === 1 ? result.data : [...variants, ...result.data];
+            variants = result.data ?? [];
             meta = result.meta;
         } catch (err) {
             toast.error(err);
@@ -73,21 +91,29 @@
         }
     }
 
-    const hasMore = $derived(!!meta && variants.length < meta.total);
+    /* Loaded once, and the picker is hidden entirely below two — a
+       single-location store should never have to learn the word, which is the
+       stance the engine itself takes. */
+    async function loadLocations() {
+        try {
+            const result = await api.get("/api/admin/locations");
+            filterLocations = result.data ?? [];
+        } catch {
+            // The filter is an extra; the list below it still works without it.
+        }
+    }
 
     function applyThreshold(e) {
         e.preventDefault();
         // An emptied or negative box is not a threshold; leave the applied one
         // alone rather than asking the server about a count that cannot exist.
         if (draftThreshold === undefined || draftThreshold === null || draftThreshold < 0) return;
-        page = 1;
-        threshold = draftThreshold;
+        list.set({ threshold: draftThreshold });
     }
 
     function resetThreshold() {
         draftThreshold = DEFAULT_THRESHOLD;
-        page = 1;
-        threshold = DEFAULT_THRESHOLD;
+        list.set({ threshold: DEFAULT_THRESHOLD });
     }
 
     function openAdjust(variant, initialMode, event) {
@@ -113,9 +139,17 @@
             // the shelf an order would come off — the same reading the locations
             // page states in its footer. Falling back to the first row keeps a
             // variant that is nowhere yet pointed at somewhere real.
-            const start = rows.find((r) => r.on_hand !== 0) ?? rows[0];
+            //
+            // An open shelf first, though, and that is not cosmetic: stock may
+            // not arrive at a closed location, so pre-selecting one whose only
+            // units are stranded would make the drawer's default action a 409.
+            const start =
+                rows.find((r) => r.active && r.on_hand !== 0) ??
+                rows.find((r) => r.active) ??
+                rows[0];
             locationID = start?.location_id ?? 0;
-            toID = rows.find((r) => r.location_id !== locationID)?.location_id ?? 0;
+            toID =
+                rows.find((r) => r.location_id !== locationID && r.active)?.location_id ?? 0;
             if (initialMode === "set") amount = String(start?.on_hand ?? 0);
         } catch (err) {
             error = err.message;
@@ -127,9 +161,14 @@
     function pickLocation(id) {
         locationID = id;
         if (mode === "set") amount = String(rows.find((r) => r.location_id === id)?.on_hand ?? 0);
-        if (toID === id) toID = elsewhere[0]?.location_id ?? 0;
+        if (toID === id) toID = elsewhere.find((r) => r.active)?.location_id ?? 0;
         error = "";
     }
+
+    /* The engine's own sentence, so the two surfaces do not paraphrase each
+       other. It is a pre-check rather than a replacement for the 409: the
+       location could close between the page loading and the button. */
+    const CLOSED = "That location is closed. Stock moves out of a closed location, never into it.";
 
     async function save(event) {
         event?.preventDefault();
@@ -148,6 +187,17 @@
         }
         if (mode === "move" && !toID) {
             error = "Choose where the units are going.";
+            return;
+        }
+        // All three movements, not just the transfer: receiving and counting up
+        // are arrivals too, and each of them is refused at a closed shelf.
+        const destination = mode === "move" ? rows.find((r) => r.location_id === toID) : here;
+        const arriving =
+            mode === "move" ||
+            (mode === "adjust" && value > 0) ||
+            (mode === "set" && value > (here?.on_hand ?? 0));
+        if (arriving && destination && !destination.active) {
+            error = CLOSED;
             return;
         }
         // The panel's rule, not the API's: the engine accepts a blank reason
@@ -179,7 +229,9 @@
                 toast.success(`Updated ${target.sku}`);
             }
             adjustOpen = false;
-            page = 1;
+            // Back to the first page: the row that was just fixed usually leaves the
+            // list, and page 4 of a shorter list is a screen nobody asked for.
+            list.setPage(1);
             await load();
         } catch (err) {
             // The engine refuses to drop stock below what is reserved for open
@@ -202,11 +254,28 @@
                     class="btn circle transparent secondary"
                     title="Refresh"
                     aria-label="Refresh"
-                    onclick={() => ((page = 1), load())}
+                    onclick={() => load()}
                 >
                     <i class="ri-refresh-line" aria-hidden="true"></i>
                 </button>
             </div>
+
+            {#if filterLocations.length > 1}
+                <div class="field m-r-sm">
+                    <Select
+                        id="location-filter"
+                        value={filterLocationID}
+                        options={[
+                            { value: 0, label: "Whole store" },
+                            ...filterLocations.map((l) => ({
+                                value: l.id,
+                                label: l.name + (l.active ? "" : " — closed"),
+                            })),
+                        ]}
+                        onchange={(v) => list.set({ location_id: Number(v) || 0 })}
+                    />
+                </div>
+            {/if}
 
             <form class="fields searchbar" onsubmit={applyThreshold}>
                 <div class="field addon">
@@ -238,6 +307,11 @@
                 <strong>Available</strong> is on hand minus what is reserved for orders in flight.
                 Stock moves as a delta or an absolute count, never as a blind overwrite — so a sale
                 that lands mid-edit cannot be lost.
+                {#if filterLocations.length > 1}
+                    Without a location chosen, the threshold is against the store's total — a
+                    variant with one unit in each of five shops is not low by that reading, even
+                    though every shelf looks it.
+                {/if}
             </p>
         </div>
 
@@ -247,14 +321,28 @@
                     <tr>
                         <th class="col-field-name-id">SKU</th>
                         <th class="col-field-type-text">Variant</th>
-                        <th class="col-field-type-number min-width">On hand</th>
-                        <th class="col-field-type-number min-width">Reserved</th>
-                        <th class="col-field-type-number min-width">Available</th>
+                        <th class="col-field-type-number min-width">
+                            On hand{chosenLocation ? " here" : ""}
+                        </th>
+                        <th class="col-field-type-number min-width">
+                            Reserved{chosenLocation ? " here" : ""}
+                        </th>
+                        <th class="col-field-type-number min-width">
+                            Available{chosenLocation ? " here" : ""}
+                        </th>
                         <th class="col-meta min-width"></th>
                     </tr>
                 </thead>
                 <tbody>
                     {#each variants as variant (variant.id)}
+                        <!-- Derived per row rather than by swapping objects: the
+                             two shapes do not share key names, so
+                             `variant.at_location ?? variant` would render two
+                             blank columns in exactly the mode this exists for. -->
+                        {@const al = variant.at_location}
+                        {@const onHand = al ? al.on_hand : variant.stock_on_hand}
+                        {@const reserved = al ? al.reserved : variant.stock_reserved}
+                        {@const available = al ? al.available : variant.available}
                         <tr class="handle" onclick={() => openAdjust(variant, "adjust")}>
                             <td class="col-field-name-id" data-name="SKU">
                                 <span class="txt-bold txt-code">{variant.sku}</span>
@@ -263,21 +351,26 @@
                                 {variant.label || "—"}
                             </td>
                             <td class="col-field-type-number min-width" data-name="On hand">
-                                {variant.stock_on_hand}
+                                {onHand}
                             </td>
                             <td
                                 class="col-field-type-number min-width txt-hint"
                                 data-name="Reserved"
                             >
-                                {variant.stock_reserved}
+                                {reserved}
                             </td>
                             <td
                                 class="col-field-type-number min-width txt-bold {stockClass(
-                                    variant.available,
+                                    available,
                                 )}"
                                 data-name="Available"
                             >
-                                {variant.available}
+                                {available}
+                                {#if al}
+                                    <div class="txt-hint txt-sm txt-nowrap">
+                                        {variant.available} in the store
+                                    </div>
+                                {/if}
                             </td>
                             <td class="col-meta min-width">
                                 <button
@@ -312,37 +405,26 @@
                                         aria-hidden="true"
                                     ></i>
                                 </div>
-                                Nothing is running low. Every tracked variant has more than
-                                {threshold} available.
+                                Nothing is running low{chosenLocation
+                                    ? ` at ${chosenLocation.name}`
+                                    : ""}. Every tracked variant has more than
+                                {threshold} available{chosenLocation ? " there" : ""}.
                             </td>
                         </tr>
                     {/if}
                 </tbody>
             </table>
 
-            {#if hasMore}
-                <button
-                    type="button"
-                    class="btn expanded block load-more-btn"
-                    class:loading
-                    disabled={loading}
-                    onclick={() => (page += 1)}
-                >
-                    <i class="ri-arrow-down-s-line" aria-hidden="true"></i>
-                    <span class="txt">Load more</span>
-                </button>
-            {/if}
         </div>
 
         <footer class="page-footer">
-            <span class="txt">
-                {#if meta}
-                    Showing {variants.length} of {meta.total}
-                    {pluralize(meta.total, "variant")} at or below {threshold}
-                {:else}
-                    …
-                {/if}
+            <Pager {meta} {loading} noun="variant" onpage={(n) => list.setPage(n)} />
+            <span class="txt txt-hint">
+                at or below {threshold}{chosenLocation
+                    ? ` — ${pluralize(meta?.total ?? 0, "variant")} this location carries`
+                    : ""}
             </span>
+            <div class="flex-fill"></div>
             <ThemeToggle />
         </footer>
     </div>
@@ -429,9 +511,15 @@
                 {#if mode === "move"}
                     <div class="field required">
                         <label for="move-to">Move to</label>
+                        <!-- Closed destinations are disabled with the reason
+                             rather than hidden: the table two rows above still
+                             lists them, and a silently shorter list explains
+                             nothing. -->
                         <select id="move-to" bind:value={toID}>
                             {#each elsewhere as r (r.location_id)}
-                                <option value={r.location_id}>{r.location_name}</option>
+                                <option value={r.location_id} disabled={!r.active}>
+                                    {r.location_name}{r.active ? "" : " — closed"}
+                                </option>
                             {/each}
                         </select>
                     </div>

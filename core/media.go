@@ -390,12 +390,32 @@ type MediaQuery struct {
 	// bound, which is what makes "over 5 MB" expressible without a sentinel.
 	MinBytes int64
 	MaxBytes int64
-	Limit    int
-	Offset   int
+	// Sort is an operator-chosen ordering; zero keeps the listing's own,
+	// newest first.
+	Sort   Sort
+	Limit  int
+	Offset int
 }
 
-// List returns the library, newest first — which is what "select existing"
-// wants, because the thing you just uploaded is usually the thing you want.
+// mediaSorts is the media listing's allow-list. The FROM here is a bare
+// `media`, unlike products and orders, so no expression is table-qualified.
+var mediaSorts = SortSpec{
+	Tiebreak: "id",
+	Columns: map[string]sortField{
+		// media.filename is NOT NULL DEFAULT '' and empty for anything
+		// referenced by URL. nullif so those sort last in both directions rather
+		// than forming a block of blanks at one end.
+		"filename":   {"lower(nullif(filename, '')) ASC NULLS LAST", "lower(nullif(filename, '')) DESC NULLS LAST"},
+		"kind":       {"kind ASC", "kind DESC"},
+		"size_bytes": {"size_bytes ASC", "size_bytes DESC"},
+		"created_at": {"created_at ASC", "created_at DESC"},
+		"id":         {"id ASC", "id DESC"},
+	},
+}
+
+// List returns the library, newest first unless a sort says otherwise — which
+// is what "select existing" wants, because the thing you just uploaded is
+// usually the thing you want.
 func (m *Media) List(ctx context.Context, q MediaQuery) ([]*MediaItem, int, error) {
 	where, args := []string{"1 = 1"}, []any{}
 	add := func(clause string, v any) {
@@ -432,6 +452,13 @@ func (m *Media) List(ctx context.Context, q MediaQuery) ([]*MediaItem, int, erro
 	}
 	clause := " WHERE " + strings.Join(where, " AND ")
 
+	// Returned bare. Every other error in this function is wrapped in Internalf,
+	// and wrapping a Validationf would serve a 400 as a 500.
+	order, err := mediaSorts.Clause(q.Sort, "id DESC")
+	if err != nil {
+		return nil, 0, err
+	}
+
 	var total int
 	if err := m.app.db.QueryRowContext(ctx,
 		`SELECT count(*) FROM media`+clause, args...).Scan(&total); err != nil {
@@ -444,7 +471,7 @@ func (m *Media) List(ctx context.Context, q MediaQuery) ([]*MediaItem, int, erro
 	}
 	rows, err := m.app.db.QueryContext(ctx,
 		`SELECT `+mediaColumns+` FROM media`+clause+
-			fmt.Sprintf(" ORDER BY id DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2),
+			fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", order, len(args)+1, len(args)+2),
 		append(args, limit, q.Offset)...)
 	if err != nil {
 		return nil, 0, Internalf(err, "list media")

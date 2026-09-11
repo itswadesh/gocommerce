@@ -60,9 +60,13 @@
      */
     const nav = [
         { href: "/", label: "Dashboard", icon: "ri-dashboard-line", exact: true , accent: "indigo" },
+        // "How much did we sell" is the second thing an owner opens, and until
+        // now the panel could not answer it.
+        { href: "/reports", label: "Reports", icon: "ri-line-chart-line", right: "orders.read", accent: "rose" },
         { href: "/products", label: "Products", icon: "ri-price-tag-3-line", right: "catalog.read" , accent: "sky" },
         { href: "/categories", label: "Categories", icon: "ri-node-tree", right: "catalog.read" , accent: "blue" },
         { href: "/orders", label: "Orders", icon: "ri-shopping-bag-3-line", right: "orders.read" , accent: "amber" },
+        { href: "/carts", label: "Carts", icon: "ri-shopping-cart-2-line", right: "orders.read" , accent: "fuchsia" },
         { href: "/discounts", label: "Discounts", icon: "ri-price-tag-2-line", right: "discounts.read" , accent: "rose" },
         { href: "/taxes", label: "Tax", icon: "ri-percent-line", right: "taxes.read" , accent: "violet" },
         { href: "/customers", label: "Customers", icon: "ri-user-3-line", right: "customers.read" , accent: "teal" },

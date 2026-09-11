@@ -58,7 +58,7 @@ names another location — a returns desk, say — which must be active, because
 stock parked on a shelf nobody counts is stock the store has lost track of.
 
 The public service is `app.Stock()`, returning `*Inventory`, with `Adjust`,
-`SetOnHand`, `Move`, `ByLocation`, `LowStock` and `Movements`. Places are `app.Places()`,
+`SetOnHand`, `Move`, `ByLocation`, `AtLocation`, `LowStock` and `Movements`. Places are `app.Places()`,
 returning `*Locations`. The five movement functions above are unexported: they
 only ever run inside the order transaction that justifies them.
 
@@ -90,6 +90,17 @@ only ever run inside the order transaction that justifies them.
   in `stock_on_hand` while `pickLocation` skipped it, so the store would believe
   it could sell something it could not reach. `Locations.Update` and
   `Locations.Delete` both refuse, and the message names how many units to move.
+  Both take the location row `FOR UPDATE` before they count, so a transfer
+  cannot commit between the count and the write.
+- **An operator may not receive stock at a closed location.** `Move`'s
+  destination, a positive `Adjust`, a `SetOnHand` that raises a count and a CSV
+  `stock_on_hand:<code>` cell that raises one are refused with a 409. Every
+  *decrease* is allowed, including at a closed location, because emptying a
+  closed shelf is the only way one is ever cleared — and `Move`'s **source** is
+  never checked, which is what makes a store with already-stranded units able to
+  free them. Returning already-sold units is exempt: a cancelled or reduced order
+  line restocks to the shelf recorded on it, closed or not, because those units
+  have already left the shelf and refusing would lose them. See D44.
 - **`track_inventory = false` means unlimited, not zero.** Every movement is
   wrapped in `CASE WHEN track_inventory THEN $2 ELSE 0 END`, and `reserveStock`
   succeeds for such a variant while reserving nothing. That is how digital goods
@@ -181,7 +192,38 @@ would send a picker to the wrong shelf.
 
 `priority` orders the search — lower is tried first. `from_location_id` has no
 default, because emptying a shelf nobody named is not something anyone means to
-do.
+do. A closed `to_location_id` is a 409; a closed `from_location_id` is fine.
+
+## What one location holds
+
+```go
+rows, total, err := app.Stock().AtLocation(ctx, locationID,
+    gocommerce.LocationStockQuery{NonZero: true})
+```
+
+```http
+GET /api/admin/locations/3/stock
+GET /api/admin/locations/3/stock?nonzero=0
+```
+
+`ByLocation` is one variant across every place; this is every variant at one
+place — the read behind "this location still holds 43 unit(s) across 7 SKU(s);
+move them before it is closed". A shelf counts as *held* when `on_hand` or
+`reserved` is non-zero, which is the same test that refuses the close, so the
+listing and the refusal can never disagree about what is there. `?nonzero=0`
+adds the shelves sitting at zero.
+
+Only variants the location already has a `variant_stock` row for appear. A row
+exists from the moment anything moves there and survives going to zero, so a
+shop that has sold out of something it carries is listed — which is the
+restocking case — while the catalog it has never carried is not listed against
+it.
+
+Each row is the usual `Variant`, with the store-wide `stock_on_hand` /
+`stock_reserved` / `available` it always had, plus a new `at_location` block
+carrying this shelf's `on_hand`, `reserved` and `available`. Both are true and
+they answer different questions. Clearing a shelf is the transfer route above —
+there is no separate "empty this location" call.
 
 ## How to read what happened
 
@@ -257,6 +299,10 @@ Three rules make the format safe to hand-edit:
 - **A count cannot drop below what is reserved there.** The import writes
   `greatest(count, reserved)`, because a count taken on the shop floor does not
   know about the order that arrived while it was being taken.
+- **A cell may not raise a count at a closed location.** That row fails, naming
+  the code — stock moves out of a closed location, never into it (D44). A cell at
+  or below the current count is accepted, so an unedited export of a closed
+  location's zeros still imports.
 
 Mixing `stock_on_hand` and `stock_on_hand:<code>` in one file is refused: there
 is no way to tell which one a row means.
@@ -275,6 +321,21 @@ The threshold defaults to 5 and compares against *available*, not on-hand, so
 units already promised to open orders count as gone. Only variants with
 `track_inventory` are considered — an unlimited variant is never low. Results
 are ordered by availability ascending, so the most urgent row is first.
+
+Without `location_id` the threshold is against the **store's total across every
+location**. That is what a single-location store means and what a multi-location
+store often does not: a variant with one unit in each of five shops is not low by
+that reading, even though every shelf looks it — so a shop that is empty while
+the warehouse is full never appears.
+
+```http
+GET /api/admin/inventory/low-stock?threshold=3&location_id=2
+```
+
+With `location_id` the threshold is against that shelf alone, each row carries
+`at_location`, and an unknown location is a 404 rather than an empty page. Only
+variants the location already has a stock row for are considered, because a SKU
+it has never carried is not a shelf it can restock.
 
 Pagination is the engine's standard contract: `limit` with either `offset` or
 `page`, and **`page` wins when both are sent**. The `meta` block carries

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 // CheckoutInput is what a client posts to POST /api/checkout/{code}.
@@ -156,7 +157,7 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		// person, and both being populated is the honest reading.
 		ctx := withStockSource(ctx, sourceCheckout)
 
-		cartID, currency, cartCode, err := lockCartForCheckout(ctx, tx, in.CartID)
+		cartID, currency, cartCode, err := lockCartForCheckout(ctx, tx, in.CartID, s.app.cfg.CartTTL)
 		if err != nil {
 			return err
 		}
@@ -486,7 +487,7 @@ type checkoutLine struct {
 	LocationID int64
 }
 
-func lockCartForCheckout(ctx context.Context, tx *sql.Tx, tok string) (int64, string, string, error) {
+func lockCartForCheckout(ctx context.Context, tx *sql.Tx, tok string, ttl time.Duration) (int64, string, string, error) {
 	var id int64
 	var status, currency, discountCode string
 	err := tx.QueryRowContext(ctx,
@@ -498,7 +499,20 @@ func lockCartForCheckout(ctx context.Context, tx *sql.Tx, tok string) (int64, st
 	if err != nil {
 		return 0, "", "", err
 	}
-	if status != CartOpen {
+	switch status {
+	case CartOpen:
+	case CartAbandoned:
+		// A checkout on an abandoned cart IS the recovery succeeding, so it
+		// revives like every other mutation. Nothing new has to be validated:
+		// this transaction re-reads the live price and refuses with
+		// price_changed, re-reads stock under its own locks, and re-decides the
+		// discount code, whatever status the cart arrived in.
+		if err := revive(ctx, tx, id, ttl); err != nil {
+			return 0, "", "", err
+		}
+	default:
+		// An allowlist with a refusing default, as openCartID keeps: only
+		// 'converted' reaches here.
 		return 0, "", "", Conflictf("this cart has already been checked out")
 	}
 	return id, currency, discountCode, nil

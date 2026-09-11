@@ -102,13 +102,20 @@ type Variant struct {
 	// Taxable is whether tax applies to this variant. True for almost
 	// everything, and the safe default to be wrong about: tax charged in error
 	// is refundable, tax not charged is not.
-	Taxable        bool     `json:"taxable"`
-	Options        []string `json:"options"`
-	Label          string   `json:"label"`
-	StockOnHand    int      `json:"stock_on_hand"`
-	StockReserved  int      `json:"stock_reserved"`
-	Available      int      `json:"available"`
-	TrackInventory bool     `json:"track_inventory"`
+	Taxable       bool     `json:"taxable"`
+	Options       []string `json:"options"`
+	Label         string   `json:"label"`
+	StockOnHand   int      `json:"stock_on_hand"`
+	StockReserved int      `json:"stock_reserved"`
+	Available     int      `json:"available"`
+	// AtLocation is this variant's holding at one particular place. It is filled
+	// in only by the reads that are *about* a place — a location's stock listing
+	// and the low-stock report for one shop — and is absent everywhere else,
+	// because a variant is a store-wide thing and StockOnHand above is its
+	// store-wide sum. When both are present they are both true and they are
+	// answering different questions.
+	AtLocation     *VariantStock `json:"at_location,omitempty"`
+	TrackInventory bool          `json:"track_inventory"`
 	// ContinueSelling takes the order when the count has run out, instead of
 	// refusing it. Off by default: overselling is a promise the store has to
 	// keep by hand, so it is opted into per variant rather than inherited.
@@ -290,8 +297,12 @@ type ProductQuery struct {
 	// switches the ordering to the collection's own, which is the order an
 	// operator curated by hand.
 	CollectionID int64
-	Limit        int
-	Offset       int
+	// Sort is an operator-chosen ordering. Zero keeps the listing's own —
+	// newest first, or a collection's curated one — and an explicit sort beats
+	// both, because the operator who asked for one asked for this one.
+	Sort   Sort
+	Limit  int
+	Offset int
 }
 
 // -------------------------------------------------------------------- service
@@ -1139,6 +1150,21 @@ func productFilters(q ProductQuery, args []any) (join string, where []string, ou
 	return join, where, args
 }
 
+// productSorts is the product listing's allow-list. Every value is a literal
+// written here; a request supplies only a key.
+var productSorts = SortSpec{
+	Tiebreak: "p.id",
+	Columns: map[string]sortField{
+		"title":      {"lower(p.title) ASC", "lower(p.title) DESC"},
+		"status":     {"p.status ASC", "p.status DESC"},
+		"created_at": {"p.created_at ASC", "p.created_at DESC"},
+		"updated_at": {"p.updated_at ASC", "p.updated_at DESC"},
+		"price":      {productMinPrice + " ASC NULLS LAST", productMinPrice + " DESC NULLS LAST"},
+		"available":  {productAvailable + " ASC NULLS LAST", productAvailable + " DESC NULLS LAST"},
+		"id":         {"p.id ASC", "p.id DESC"},
+	},
+}
+
 // ListProducts returns a page of products and the total matching count.
 func (c *Catalog) ListProducts(ctx context.Context, q ProductQuery) ([]*Product, int, error) {
 	join, where, args := productFilters(q, nil)
@@ -1151,6 +1177,16 @@ func (c *Catalog) ListProducts(ctx context.Context, q ProductQuery) ([]*Product,
 		order = "pc.member_position, pc.product_id"
 	}
 	clause := strings.Join(where, " AND ")
+
+	// Resolved before any database work, so a rejected sort costs none — and
+	// after the collection branch above, so an explicit sort overrides the
+	// curated order. That combination is reachable only through this Go API:
+	// the HTTP handler refuses the two parameters together rather than choosing
+	// silently on the operator's behalf.
+	order, err := productSorts.Clause(q.Sort, order)
+	if err != nil {
+		return nil, 0, err
+	}
 
 	var total int
 	if err := c.app.db.QueryRowContext(ctx,
@@ -1304,6 +1340,28 @@ const (
 	// docs, the skills and the smoke test, and an expression that could disagree
 	// with it would make all three wrong at once.
 	variantAvailable = `(` + variantOnHand + ` - ` + variantReserved + `)`
+)
+
+// The two orderings a product listing offers that are not columns on
+// `products`, written as correlated scalar subqueries and never as joins.
+//
+// ListProducts counts from the same un-joined FROM the page query uses, so a
+// join to variants would multiply a product by its variants and make meta.total
+// disagree with the rows it describes — the one thing a sort must never do. A
+// scalar subquery cannot change the row count, which is the property that makes
+// it the only safe shape here.
+const (
+	// min, not max: the panel shows the range's left edge as the price, and
+	// ordering DESC by max would mean ascending and descending sorted by two
+	// different columns.
+	productMinPrice = `(SELECT min(v.price_minor) FROM variants v WHERE v.product_id = p.id)`
+	// NULL over zero tracked variants rather than 0, which is what the panel
+	// means by "not tracked" — and why an untracked product sorts last in both
+	// directions instead of at the bottom of the ascending page. It embeds
+	// variantAvailable so the ordering and the number on screen are the same
+	// arithmetic.
+	productAvailable = `(SELECT sum(` + variantAvailable + `) FROM variants v
+		WHERE v.product_id = p.id AND v.track_inventory)`
 )
 
 const variantColumns = `v.id, v.product_id, v.sku, coalesce(v.barcode, ''), v.price_minor,

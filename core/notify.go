@@ -86,6 +86,12 @@ func (l logNotifier) Notify(ctx context.Context, n Notification) error {
 // Notifications are downstream consumers of committed events, never part of
 // the checkout transaction: a vendor outage must not be able to fail a sale.
 func (a *App) subscribeNotifications() {
+	// Deliberately order.* only. Subscribing the cart family would mean that on
+	// the first sweep after M28 every stale basket in the table with an email on
+	// it sends mail — and when and how often to chase an abandoned cart is a
+	// marketing decision with opt-out obligations attached, not an engine
+	// default. A recovery module subscribes to cart.abandoned and owns the
+	// schedule.
 	a.bus.subscribe("order.*", coreMigrationOwner, func(ctx context.Context, e Event) error {
 		var ev OrderEvent
 		if err := e.Decode(&ev); err != nil {

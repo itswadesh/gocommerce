@@ -25,6 +25,7 @@ pages assume it.
 | [discounts](discounts.md) | Writing a promotion, scope and targets, or the arithmetic an order's discount went through |
 | [payments](payments.md) | Settlement, `MarkPaid`, or writing a new payment provider |
 | [events](events.md) | The transactional outbox, event names and payloads, subscribing |
+| [reports](reports.md) | Asking what the store sold: the definition of a sale, the aggregates, and what they deliberately do not measure |
 
 ## The platform
 

@@ -61,6 +61,12 @@ the order `FOR UPDATE`, loads its lines, runs the callback, and writes the
 callback's event to the outbox **in the same transaction**. That is what makes
 the change and the event inseparable (AGENTS.md rule 4).
 
+What these statuses mean for *revenue* is defined once, in
+[reports](reports.md): a sale is `stockCommitted` — confirmed, partial, shipped
+or delivered — and the report reuses that predicate rather than restating it.
+Change the state machine and read that page, because the two are only safe while
+they agree.
+
 ## Invariants
 
 **A transition that changes nothing announces nothing.** The callback returns an
@@ -183,13 +189,28 @@ o, err := app.Order().GetForGuest(ctx, "GC-000042", tok) // by access token
 
 ```http
 GET /api/orders/GC-000042?token=…            # the guest's own order
-GET /api/admin/orders?status=confirmed&payment_status=paid&limit=50
+GET /api/admin/orders?status=confirmed&payment_status=paid&sort=total&order=desc&limit=50
 GET /api/admin/orders/42
 ```
 
 `OrderQuery` filters on `Status`, `PaymentStatus`, `Email` (case-insensitive),
-`From`/`To` over `created_at`, plus `Limit`/`Offset`; `List` returns the page and
-the total. `access_token` is `omitempty` and never populated by a listing.
+`From`/`To` over `created_at`, plus `Sort` and `Limit`/`Offset`; `List` returns
+the page and the total. `access_token` is `omitempty` and never populated by a
+listing.
+
+`Sort` is an allow-listed key and a direction, parsed by `ParseSort(r,
+orderSorts)` the way `Page(r)` parses a window — see
+[products](products.md#ordering) for the rule. Three of its keys are worth a
+sentence each. `total` orders by `total_minor`, never by a formatted amount.
+`number` orders by the id the number is built from (`%s%06d`, checkout.go), which
+stays true past six digits where a text sort would put `GC-1000000` before
+`GC-999999`. `name` uses `nullif` so an order nobody named sits at the bottom in
+both directions rather than forming a block of blanks at whichever end is
+currently the top.
+
+The CSV export ignores the sort. `ExportOrders` builds its own statement and
+never calls `List`, deliberately: a file people diff should not reorder because
+a screen was sorted.
 
 ## How to move an order forward
 

@@ -119,18 +119,34 @@ count. Tests and CLI flows use it instead of waiting on the poll interval.
 One goroutine, started by the same `OnStart` hook, running every **5 minutes**
 and once immediately at boot. It reclaims what abandoned traffic leaves behind:
 
-- `carts.SweepExpired` — carts past `Config.CartTTL` (default 720h). `POST
-  /api/carts` is unauthenticated, so unswept carts are an unbounded-growth
-  vector, not merely untidy.
+- `carts.Abandon` — a cart past `Config.CartTTL` (default 720h) that still
+  holds at least one line is marked `abandoned`, stamped with `abandoned_at`
+  and announced as `cart.abandoned`, in one transaction. It is the only sweeper
+  that writes an outbox event, and it claims at most 500 rows a pass.
+- `carts.SweepExpired` — an expired cart that holds *nothing* is deleted
+  outright. `POST /api/carts` is unauthenticated, so unswept carts are an
+  unbounded-growth vector, not merely untidy — and an empty basket is the shape
+  that traffic takes, because minting one costs an anonymous POST with no body.
+- `carts.PurgeAbandoned` — an abandoned cart is deleted once
+  `Config.CartRetention` (default 720h) has passed, measured from
+  `abandoned_at`, never from `expires_at`: draining a backlog would otherwise
+  abandon and purge a row inside the same pass, announcing a recovery token for
+  a row that no longer exists. This is the second bound, and it is what makes
+  keeping a basket safe now that expiry no longer deletes it.
 - `orders.SweepUnpaid` — orders still `pending` whose payment is `pending` or
   `failed`, past `Config.OrderTTL` (default 24h), are cancelled and their stock
   reservation released. A recorded failure is included because it is the one
   nobody is coming back for. A reservation outliving its
   order is how a store silently goes out of stock while the shelves are full.
 
-Both are idempotent, so running several instances needs no coordination. If
-reserved quantities climb anyway, the sweeper is not running — check that the
-process actually called `ListenAndServe`.
+The three cart predicates are mutually exclusive, so their order in the pass
+cannot affect what happens — only what the log says. Running several instances
+needs no coordination: the deletes are idempotent, and the two claiming phases
+take their batch `FOR UPDATE SKIP LOCKED` and re-evaluate the status predicate
+under that lock, which is what makes an abandonment — and its event — happen
+exactly once however many replicas are running. If reserved quantities climb
+anyway, the sweeper is not running — check that the process actually called
+`ListenAndServe`.
 
 ## `gocommerce doctor`
 

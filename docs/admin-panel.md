@@ -25,8 +25,8 @@ from PocketBase's `ui/src/css`, imported in PocketBase's own order.
 Do not hand-edit those files. To take an upstream change, re-copy them from a
 PocketBase checkout, so the diff stays readable. Two stylesheets are ours —
 `gocommerce.css` and `fonts-inter.css` — and the first covers only what
-PocketBase has no counterpart to: dashboard stat cards, a section heading, and
-money columns. It is built from PocketBase's own tokens, so it introduces no
+PocketBase has no counterpart to: dashboard stat cards, a section heading,
+money columns, and the report chart. It is built from PocketBase's own tokens, so it introduces no
 new colour, radius or duration.
 
 **`gocommerce.css` is written by appending.** A screen adds one commented
@@ -154,6 +154,125 @@ PocketBase's stylesheets carry no `prefers-reduced-motion` handling, so
 fades, toasts and the drawer slide. The loading spinner is exempt, because a
 frozen spinner reads as a hung page.
 
+**Sortable column headers.** `th.sort-handle`, its `.asc` / `.desc` arrows and
+its hover, focus and active states are PocketBase's, and had been sitting in
+`table.css` unused since the panel was copied — so `SortHeader.svelte` adds
+behaviour and not one line of CSS. That is the class-vocabulary rule paying for
+itself: grep before inventing.
+
+Six things about it are decisions rather than details.
+
+The header cycles **ascending, descending, then off**. The third state is the
+engine's own order — newest orders first, newest products first — which no
+`sort`/`order` pair can express, and which an operator who sorted by title to
+find one row needs back. A two-state toggle leaves no way to it but editing the
+URL.
+
+The `<th>` itself carries the click, the `tabindex` and the `aria-sort`, with no
+button inside it. The stylesheet styles `:focus-visible` on the th, so a nested
+button would draw the focus ring in the wrong place; and `aria-sort` is only
+meaningful on a columnheader, so `role="button"` would cancel the attribute that
+carries the meaning. Enter and Space activate it.
+
+**PocketBase draws `.asc` as a down arrow and `.desc` as an up one** — the "A at
+the top, reading downwards" convention rather than the "values rising" one. The
+classes stay semantic, because relabelling them means editing a verbatim file;
+`aria-sort` and the header's tooltip say which way it is in words. This is a
+deliberate deviation, not drift.
+
+The state lives in the address bar, through the same `listState` that holds the
+screen's filters and page — not in a second mechanism of its own. That is what
+makes `set()` reset the page to 1 on every ordering change, which windowed
+paging needs: page 4 of a new ordering is not page 4 of the old one. Each list
+screen also carries a two-line request-generation guard (`const mine = ++reqId`
+… `if (mine !== reqId) return`), because a fast second header click leaves two
+replies in flight and the table must settle on the header that is lit rather
+than on whichever arrived last.
+
+Headers that do **not** sort stay plain `<th>`, with no hover, no cursor and no
+arrow, so the absence reads as a fact: Variants and Items count an embedded
+array rather than a column; Location is one line of an address snapshot; and a
+discount's State is a phase derived from five columns at once while Takes off is
+basis points on one row and minor units on the next.
+
+Products, Orders and Customers gave up their **Load more** buttons to get this.
+An accumulator holding pages 1 to 4 cannot honestly write `page=4` in the
+address bar, and appending page 4 of a new ordering onto three pages of the old
+one interleaves two orderings in one table — which reads as corrupted data
+rather than as a bug. They page through the shared `Pager` now, the way
+Inventory, Carts and Locations already did.
+
+The one exception to all of it is `MediaZone`'s library picker, which sorts
+through a dropdown beside its other filters and keeps that choice local. It is a
+grid of thumbnails with no column headers, and it lives in a drawer: a drawer
+that writes to the address bar leaves a stale `?sort=` behind when it closes and
+fights the host screen's own parameters.
+
+## Reports, and a chart with no charting library
+
+The Reports screen asks the engine two questions —
+`GET /api/admin/reports/sales` and `GET /api/admin/reports/top-products` — and
+draws what comes back. Every figure on it is added up by PostgreSQL over the
+whole window; nothing on the screen sums anything, which is the difference
+between this and the dashboard figure it replaces (a client-side sum over the
+eight most recent orders, presented as revenue).
+
+The chart is one stacked CSS bar per bucket: a flex row, a `--h` custom property
+for the column and a `--seg` for each segment. There is no charting library and
+there will not be one — the engine has a single production dependency, the panel
+has no build-time budget for a second, and what this draws is a row of stacked
+bars. An SVG viewBox was the alternative and it is worse on a phone: it scales
+its own axis text down with the drawing, where these bars reflow and the labels
+stay 13px.
+
+Each bar stacks collected, awaiting payment and refunded against that bucket's
+own total, so the three always fill the column exactly — the engine guarantees
+the split partitions the sale set. For a cash-on-delivery store that is the
+whole question answered inside the bar: how much of this month has actually
+arrived.
+
+The three segment colours are the panel's status tokens (success, info, danger)
+rather than two steps of the accent, because two steps of one hue is a
+sequential encoding and these are three categories; the trio was checked for
+colour-vision separation in both schemes. The `<figure>` is `aria-hidden` and
+the table beneath it is its accessible equivalent, carrying every number in the
+same order — which is also why no fact on the screen is ever colour-only.
+
+The window, the grain, the currency and the best-seller page live in the URL, so
+a report can be sent to somebody. `to` is exclusive everywhere in this API, so
+the presets send the day *after* the last day wanted and the footer restates the
+resolved window in words.
+
+## Carts, and why the screen cannot touch one
+
+The Carts screen lists the baskets that have not become orders yet —
+`GET /api/admin/carts`, with the drawer asking `GET /api/admin/carts/{id}` for
+what is in one. Both are gated on `orders.read`, the right Orders already
+carries, because a cart is an order that has not happened.
+
+It is read-only, and there is no admin write route to call even if a button
+wanted one. A cart’s token is the shopper’s credential — possessing it
+authorises adding to, emptying and checking out the basket — so the API
+withholds it exactly as an order’s access token is withheld, and a cart is
+addressed here by its numeric row id instead. An operator can therefore see a
+basket and cannot act on one; acting means placing the order. The drawer says
+so in as many words, and the only thing it offers is a `mailto:` link, which
+needs no route at all.
+
+The state column is derived from the status column AND `expires_at`, so a cart
+past its TTL that the five-minute sweeper has not reached yet reads
+`abandoned` with an “awaiting the sweeper” note under it rather than reading
+`live` and looking like a bug. Each line carries both price coordinates, so a
+`price changed` or `out of stock` chip is what tells an operator whether the
+basket is still worth chasing.
+
+It opens on abandoned baskets with something in them, because that is the
+question it exists to answer, and both filters are rendered in their active
+state rather than applied silently — the engine applies no default of its own,
+and a filter that quietly drops rows is worse than a noisy one. Filters and the
+page live in the URL through `listState`, and the footer is the shared
+`Pager`.
+
 ## Stock history
 
 `StockHistory.svelte` renders the stock ledger
@@ -164,14 +283,100 @@ the inventory drawer's fourth mode, reached by the History button; a compact
 three-row block under the form in the drawer's editing modes, because the
 person about to change a count is exactly the person who needs to see what
 happened last time; and a second drawer on the Locations row, opened by the
-clock icon, which is where "this location still holds 4 unit(s) across 2
-SKU(s)" finally names which SKU.
+clock icon, which says what has moved there.
 
 Nothing in that table is clickable, and `.stock-history` deliberately leaves
 out `.stock-locations`' picker rules for that reason. It pages in place with a
 `load-more-btn` rather than through the shared `Pager`: it lives inside a
 drawer, and a drawer that writes `?page=` into the address bar leaves a stale
 parameter behind when it closes.
+
+## What a location holds
+
+The three number columns on the Locations row — On hand, Reserved, SKUs — are
+buttons, and they open a drawer listing what that place is actually holding
+(`GET /api/admin/locations/{id}/stock`). So does the stack icon in the row's
+meta cell, for a row whose figures are all zero, and so does a link beside the
+save error, which is where "this location still holds 43 unit(s) across 7
+SKU(s)" finally names the seven. That refusal was the whole reason to come here
+and it led nowhere.
+
+Three choices in it are deliberate rather than drift:
+
+- **It filters to non-zero shelves by default**, with a visible checkbox that
+  widens it. Every variant ever created has a row at the default location, so an
+  unfiltered listing of the default location is the whole catalog — which is the
+  Inventory screen, not this one. The filter's definition is the engine's: a
+  shelf is held when `on_hand` **or** `reserved` is non-zero, the same test that
+  refuses a close, so the drawer and the refusal cannot disagree.
+- **The footer reads the location record, never the rows on screen.** It is
+  `refuseIfHolding`'s own arithmetic from one source, so a location with more
+  than one page of SKUs cannot show a footer that contradicts the sentence that
+  sent the operator here.
+- **`.drawer-table` exists beside `.stock-locations`** because one is a picker
+  and one is a report, and only one of them may claim a click. They share the
+  frame, padding, header and separators through an `:is()`; the cursor, hover,
+  `.selected` background and accent bar stay on the picker alone.
+
+The per-row **Move** button opens a small inline form in an expanded row rather
+than a third stacked drawer. Two `<Drawer>`s open at once is actively broken,
+not merely unspecified: each mounts its own window-level Escape handler, so
+Escape closes both, and a click inside the upper one is outside the lower one's
+node and dismisses it along with its unsaved form. Opening this drawer closes
+the edit drawer for the same reason.
+
+Closed locations appear in that form's destination select **disabled with a
+reason** ("— closed") rather than hidden, matching how the Locations and Taxes
+screens already state a fact instead of removing a row: the engine refuses stock
+arriving at a closed location, and a silently shorter list explains nothing. The
+inventory drawer's own move select, its destination auto-pick and its source
+seeding follow the same rule — a shelf whose only units are stranded at a closed
+location is not pre-selected, or the drawer's default action would be a 409 with
+no in-panel explanation.
+
+## Low stock is a store-wide question unless asked otherwise
+
+The Inventory screen's threshold is measured against the store's total across
+every location, which is what a single-location store means and what a
+multi-location store often does not. The screen now says so in its info alert,
+and carries a location picker — hidden entirely below two locations, so a
+single-location store never learns the word — that re-asks the question of one
+shelf. When one is chosen the column headers gain "here" and the Available cell
+carries "N in the store" underneath: both numbers, both labelled. The dashboard
+card and the product page's variant matrix stay store-wide by design, and both
+now say "across the whole store" / "across every location" rather than making
+the unqualified claim.
+
+## The team screen counts sessions
+
+The team listing carries a Sessions column, because an owner who can end
+somebody's sessions has to be able to see whether there are any — "0" and "4"
+mean quite different things to somebody who has lost a laptop, and that was
+only discoverable from the toast *after* pressing the button. "Sign out
+everywhere" stays enabled when the count is zero: a number read a few minutes
+ago must never disable a security control, so only its tooltip changes.
+
+A line under the table says what the column is not. Expired sessions are
+deleted, so a dash means nobody is signed in at the moment and never that nobody
+ever has been; the panel must not let the column be read as a last sign-in,
+because the data cannot support that.
+
+## Trying a discount, and what one cost
+
+The discount drawer gained two sections below the form. "Try it" posts a basket
+to `POST /api/admin/discounts/{id}/preview` and renders the answer — a
+refusal comes back as `applies: false` with the engine's own sentence and is
+drawn as a warning, not as an error, because the test ran correctly (D43). The
+free-shipping branch is separate from the amount branch on purpose: such a rule
+applies with an amount of zero, and "takes off 0.00" is the wrong sentence for a
+rule that is working.
+
+"Where it has been used" lists the orders, and names all three counts in one
+place — what was given away, how many live orders carry it, and how many rows
+the list holds including cancelled ones — because they legitimately disagree and
+a screen showing two of them invites a bug report. The whole section is behind
+`can("orders.read")`: the route needs both rights, so a re-cut role that lost the
+second must not be shown a section that will 403.
 
 **The reason field exists only on the inventory drawer.** The panel requires
 one for a stock take and for a negative adjustment — those are the two
@@ -344,6 +549,14 @@ payment cannot be completed from the panel, rather than implying it can.
 
 Honest gaps, rather than a roadmap:
 
+- **Reports do not net off refunds.** The engine records how much came back
+  and the screen shows it — `Collected` is what the store still holds — but
+  `Net sales` is what was sold, refunds included. Reading it as money kept is
+  wrong by exactly the refunds in the window.
+- **Report buckets are keyed on when an order was placed.** There is no
+  `confirmed_at`, so marking an old order paid, editing it or cancelling it
+  changes a past bucket. A report is a current reading of history, not a closed
+  period.
 - **An operator cannot collect a gateway payment from the panel.** The New order
   success state shows what the gateway said to do next; acting on it needs a
   `return_url` on the create request and a way to re-start a payment, which is
@@ -364,6 +577,19 @@ Honest gaps, rather than a roadmap:
 - **The discount target picker reaches the first 200 collections.** Products are
   searched at the store and categories arrive flat, so only collections are
   capped; the field help says so rather than pretending otherwise.
+- **The categories screen has no sortable header.** The API accepts `sort` on a
+  category *search*, and the screen browses the tree instead — there is no
+  search box on it to reach the branch that can be ordered. The tree's own order
+  is the `position` an operator curated, which is why sorting it is refused
+  rather than ignored.
+- **`first_order_at` on customers is an allow-listed key with no column to
+  click.** It works from the API and from a hand-typed URL; the screen shows the
+  four numbers an operator asked for, and a fifth date column would cost more
+  width than it earns.
+- **Sortable headers are out of reach on a phone.** `.responsive-table` hides
+  the header row below 900px and labels each cell instead, so a sort has to
+  arrive in the URL. Ordering a list is a desk task, and the alternative is a
+  sort control that exists only at one width.
 
 - **An option axis cannot be removed or renamed** once it exists, and a
   variant's option combination cannot be changed — the API has no route for

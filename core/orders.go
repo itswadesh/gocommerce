@@ -269,6 +269,9 @@ type OrderQuery struct {
 	Status        string
 	PaymentStatus string
 	Email         string
+	// Sort is an operator-chosen ordering; zero keeps the listing's own,
+	// newest first.
+	Sort          Sort
 	From, To      *time.Time
 	Limit, Offset int
 }
@@ -372,6 +375,29 @@ func (s *Orders) getWhere(ctx context.Context, where string, arg any) (*Order, e
 }
 
 // List returns a page of orders and the total matching count.
+// orderSorts is the order listing's allow-list.
+var orderSorts = SortSpec{
+	Tiebreak: "o.id",
+	Columns: map[string]sortField{
+		// The number is the id under a prefix and %06d, so ordering by the id IS
+		// ordering by the number — and stays true past six digits, where a text
+		// sort puts P1000000 before P999999.
+		"number":         {"o.id ASC", "o.id DESC"},
+		"status":         {"o.status ASC", "o.status DESC"},
+		"payment_status": {"o.payment_status ASC", "o.payment_status DESC"},
+		"email":          {"lower(o.email) ASC", "lower(o.email) DESC"},
+		// orders.name is nullable AND can be the empty string. An empty string
+		// is not a value, and sorting it as one puts a block of blank rows at
+		// the top of the ascending listing, which reads as the sort failing.
+		"name": {"lower(nullif(o.name, '')) ASC NULLS LAST", "lower(nullif(o.name, '')) DESC NULLS LAST"},
+		// The JSON field is `total`; the column it means is total_minor. The key
+		// follows the payload rather than the schema.
+		"total":      {"o.total_minor ASC", "o.total_minor DESC"},
+		"created_at": {"o.created_at ASC", "o.created_at DESC"},
+		"id":         {"o.id ASC", "o.id DESC"},
+	},
+}
+
 func (s *Orders) List(ctx context.Context, q OrderQuery) ([]*Order, int, error) {
 	where, args := []string{"1 = 1"}, []any{}
 	add := func(expr string, v any) {
@@ -395,6 +421,11 @@ func (s *Orders) List(ctx context.Context, q OrderQuery) ([]*Order, int, error) 
 	}
 	clause := strings.Join(where, " AND ")
 
+	order, err := orderSorts.Clause(q.Sort, "o.id DESC")
+	if err != nil {
+		return nil, 0, err
+	}
+
 	var total int
 	if err := s.app.db.QueryRowContext(ctx,
 		`SELECT count(*) FROM orders o WHERE `+clause, args...).Scan(&total); err != nil {
@@ -406,9 +437,11 @@ func (s *Orders) List(ctx context.Context, q OrderQuery) ([]*Order, int, error) 
 		limit = DefaultLimit
 	}
 	args = append(args, limit, q.Offset)
+	// The built clause is an argument and never the format string: it is SQL we
+	// wrote, and the only %s here is the one that says so.
 	rows, err := s.app.db.QueryContext(ctx,
 		`SELECT `+orderColumns+` FROM orders o WHERE `+clause+
-			fmt.Sprintf(" ORDER BY o.id DESC LIMIT $%d OFFSET $%d", len(args)-1, len(args)), args...)
+			fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", order, len(args)-1, len(args)), args...)
 	if err != nil {
 		return nil, 0, err
 	}

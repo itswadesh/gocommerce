@@ -361,3 +361,48 @@ func TestExportFiltersAfterStockColumns(t *testing.T) {
 		t.Errorf("shop column = %q, want 3", got)
 	}
 }
+
+func TestAClosedLocationCannotBeStockedFromACSV(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+
+	// The CSV is an operator typing a count at a named location, so it is
+	// guarded like the three service methods — but only when the cell *raises*
+	// the count, or an unedited export of a closed location's zeros would stop
+	// importing.
+	p := simpleProduct(t, app, "CSV-CLOSED", 1000, 1)
+	vid := p.DefaultVariant().ID
+	shop := newLocation(t, app, "shut", "The shut shop", 1)
+	off := false
+	if _, err := app.Places().Update(ctx, shop.ID, LocationPatch{Active: &off}); err != nil {
+		t.Fatalf("close the empty shop: %v", err)
+	}
+
+	raising := "product_slug,sku,price_minor,stock_on_hand:shut\n" +
+		"test-csv-closed,CSV-CLOSED,1000,40\n"
+	res, err := app.Data().ImportProducts(ctx, strings.NewReader(raising), false)
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if len(res.Errors) != 1 {
+		t.Fatalf("errors = %+v, want one row error", res.Errors)
+	}
+	if !strings.Contains(res.Errors[0].Message, "shut is closed") {
+		t.Errorf("row error = %q, want it to name the column's code", res.Errors[0].Message)
+	}
+
+	// The same file with a zero against a shelf already at zero is what an
+	// unedited export looks like, and it has to keep importing.
+	zeros := "product_slug,sku,price_minor,stock_on_hand:shut\n" +
+		"test-csv-closed,CSV-CLOSED,1000,0\n"
+	res, err = app.Data().ImportProducts(ctx, strings.NewReader(zeros), false)
+	if err != nil {
+		t.Fatalf("import zeros: %v", err)
+	}
+	if len(res.Errors) != 0 {
+		t.Errorf("errors = %+v, want none — an export of a closed shelf still imports", res.Errors)
+	}
+	if onHand, _ := stockAt(t, app, vid, shop.ID); onHand != 0 {
+		t.Errorf("the shut shop holds %d, want 0", onHand)
+	}
+}

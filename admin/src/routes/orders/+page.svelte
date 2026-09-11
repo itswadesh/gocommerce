@@ -1,5 +1,7 @@
 <script>
     import { api, query, request } from "$lib/api.js";
+    import { listState } from "$lib/liststate.svelte.js";
+    import { readSort, cycleSort, sortQuery } from "$lib/listsort.js";
     import {
         formatMoney,
         formatDate,
@@ -7,13 +9,14 @@
         orderStatusClass,
         orderStatusLabel,
         paymentLabel,
-        pluralize,
     } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import { settings } from "$lib/settings.svelte.js";
     import Drawer from "$lib/components/Drawer.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
+    import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
+    import SortHeader from "$lib/components/SortHeader.svelte";
     import ShipDialog from "$lib/components/ShipDialog.svelte";
     import RefundDialog from "$lib/components/RefundDialog.svelte";
     import OrderRefundList from "$lib/components/OrderRefundList.svelte";
@@ -22,22 +25,36 @@
     import OrderPlaced from "$lib/components/OrderPlaced.svelte";
     import { COUNTRIES } from "$lib/countries.js";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
-    import { page as page_ } from "$app/state";
 
     const PER_PAGE = 25;
+
+    /* Every filter, the ordering and the page live in the address bar. This
+       screen always needed that — Customers links here with `?email=` already
+       set — and the rest follow the same road now rather than a second one. */
+    const list = listState({
+        status: "",
+        payment_status: "",
+        email: "",
+        sort: "",
+        order: "",
+        page: 1,
+    });
+    const SORT_FIELDS = ["number", "name", "status", "payment_status", "total", "created_at"];
 
     let loading = $state(true);
     let orders = $state([]);
     let meta = $state(null);
-    let status = $state("");
-    let paymentStatus = $state("");
-    /* The list can be linked to: Customers sends the operator here with the
-       person already filled in, so the filter has to start from the address
-       bar rather than only from the box. */
-    const linked = page_.url.searchParams.get("email") ?? "";
-    let email = $state(linked);
-    let draftEmail = $state(linked);
-    let page = $state(1);
+
+    const status = $derived(list.params.status);
+    const paymentStatus = $derived(list.params.payment_status);
+    const email = $derived(list.params.email);
+    const sort = $derived(readSort(list.params, SORT_FIELDS));
+    let draftEmail = $state(list.params.email);
+
+    /* A fast second header click leaves two requests in flight; without this
+       the table settles on the reply that lost rather than on the header that
+       is lit. */
+    let reqId = 0;
 
     let detailOpen = $state(false);
     let order = $state(null);
@@ -54,43 +71,41 @@
     let returnOpen = $state(false);
 
     $effect(() => {
-        // Re-runs whenever a filter changes. Page 1 replaces the list; a later
-        // page appends, because the table loads more rather than paginating.
-        status;
-        paymentStatus;
-        email;
-        page;
+        // Re-runs whenever any parameter changes: a filter, the ordering, the
+        // page. The window replaces the rows rather than accumulating them.
+        list.params;
         load();
     });
 
     async function load() {
+        const mine = ++reqId;
         loading = true;
         try {
             const result = await api.get(
-                "/api/admin/orders" +
-                    query({ status, payment_status: paymentStatus, email, page, limit: PER_PAGE }),
+                "/api/admin/orders" + list.query({ limit: PER_PAGE, ...sortQuery(sort) }),
             );
-            orders = page === 1 ? result.data : [...orders, ...result.data];
+            if (mine !== reqId) return;
+            orders = result.data ?? [];
             meta = result.meta;
         } catch (err) {
             toast.error(err);
         } finally {
-            loading = false;
+            if (mine === reqId) loading = false;
         }
     }
 
-    const hasMore = $derived(!!meta && orders.length < meta.total);
+    function sortBy(field, firstDesc) {
+        list.set(cycleSort(sort, field, firstDesc));
+    }
 
     function submitSearch(e) {
         e.preventDefault();
-        page = 1;
-        email = draftEmail;
+        list.set({ email: draftEmail });
     }
 
     function clearSearch() {
         draftEmail = "";
-        page = 1;
-        email = "";
+        list.set({ email: "" });
     }
 
     async function openOrder(row) {
@@ -109,9 +124,8 @@
         busy = label;
         try {
             order = await fn();
-            // Every action changes a status the list shows, so the list starts
-            // over rather than keeping pages loaded against the old state.
-            page = 1;
+            // Every action changes a status the list shows, so the list is read
+            // again rather than left describing the state before it.
             await load();
             toast.success(label);
         } catch (err) {
@@ -486,7 +500,7 @@
             // is one click away and hands over the same object this used to.
             placed = { order: result.order, payment: result.payment };
             toast.success(`Order ${result.order.number} placed`);
-            page = 1;
+            list.setPage(1);
             await load();
         } catch (err) {
             toast.error(err);
@@ -805,7 +819,7 @@
                     class="btn circle transparent secondary"
                     title="Refresh"
                     aria-label="Refresh"
-                    onclick={() => ((page = 1), load())}
+                    onclick={load}
                 >
                     <i class="ri-refresh-line" aria-hidden="true"></i>
                 </button>
@@ -841,8 +855,8 @@
                     <Select
                         id="status-filter"
                         placeholder="Any status"
-                        bind:value={status}
-                        onchange={() => (page = 1)}
+                        value={status}
+                        onchange={(v) => list.set({ status: v })}
                         options={[
                             { value: "", label: "Any status" },
                             { value: "pending", label: "Pending" },
@@ -859,8 +873,8 @@
                     <Select
                         id="payment-filter"
                         placeholder="Any payment"
-                        bind:value={paymentStatus}
-                        onchange={() => (page = 1)}
+                        value={paymentStatus}
+                        onchange={(v) => list.set({ payment_status: v })}
                         options={[
                             { value: "", label: "Any payment" },
                             { value: "pending", label: "Awaiting payment" },
@@ -881,13 +895,54 @@
             <table class="table responsive-table" class:optimize={orders.length > 60}>
                 <thead class="sticky">
                     <tr>
-                        <th class="col-field-name-id">Order</th>
-                        <th class="col-field-type-text">Customer</th>
-                        <th class="col-field-type-select">Status</th>
-                        <th class="col-field-type-select">Payment</th>
+                        <SortHeader
+                            field="number"
+                            label="Order"
+                            class="col-field-name-id"
+                            {sort}
+                            onsort={sortBy}
+                        />
+                        <!-- The cell renders row.name, so the key is `name`
+                             rather than the column's own label. -->
+                        <SortHeader
+                            field="name"
+                            label="Customer"
+                            class="col-field-type-text"
+                            {sort}
+                            onsort={sortBy}
+                        />
+                        <SortHeader
+                            field="status"
+                            label="Status"
+                            class="col-field-type-select"
+                            {sort}
+                            onsort={sortBy}
+                        />
+                        <SortHeader
+                            field="payment_status"
+                            label="Payment"
+                            class="col-field-type-select"
+                            {sort}
+                            onsort={sortBy}
+                        />
+                        <!-- Items counts the line_items array, not a column. -->
                         <th class="col-field-type-number min-width">Items</th>
-                        <th class="col-field-type-number min-width">Total</th>
-                        <th class="col-field-type-date">Placed</th>
+                        <SortHeader
+                            field="total"
+                            label="Total"
+                            class="col-field-type-number min-width"
+                            firstDesc
+                            {sort}
+                            onsort={sortBy}
+                        />
+                        <SortHeader
+                            field="created_at"
+                            label="Placed"
+                            class="col-field-type-date"
+                            firstDesc
+                            {sort}
+                            onsort={sortBy}
+                        />
                         <th class="col-meta min-width"></th>
                     </tr>
                 </thead>
@@ -960,30 +1015,11 @@
                     {/if}
                 </tbody>
             </table>
-
-            {#if hasMore}
-                <button
-                    type="button"
-                    class="btn expanded block load-more-btn"
-                    class:loading
-                    disabled={loading}
-                    onclick={() => (page += 1)}
-                >
-                    <i class="ri-arrow-down-s-line" aria-hidden="true"></i>
-                    <span class="txt">Load more</span>
-                </button>
-            {/if}
         </div>
 
         <footer class="page-footer">
-            <span class="txt">
-                {#if meta}
-                    Showing {orders.length} of {meta.total}
-                    {pluralize(meta.total, "order")}
-                {:else}
-                    …
-                {/if}
-            </span>
+            <Pager {meta} {loading} noun="order" onpage={(n) => list.setPage(n)} />
+            <div class="flex-fill"></div>
             <ThemeToggle />
         </footer>
     </div>

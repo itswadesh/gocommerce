@@ -225,6 +225,35 @@ const DefaultCategoryPage = 50
 // store may have.
 const MaxWholeCategoryTree = 500
 
+// CategoryQuery narrows a category search.
+//
+// It replaces the (term, limit) pair Search used to take: two more knobs on a
+// positional call is worse than the query struct every other listing in the
+// engine already uses, and the offset is not optional — a listing that can be
+// re-ordered but not paged is a lie. "depth-first, first fifty" announces
+// itself as the top of a tree; "title ascending, first fifty" looks like the
+// complete answer with no Z in it.
+type CategoryQuery struct {
+	Search        string
+	Sort          Sort
+	Limit, Offset int
+}
+
+// categorySorts is the category search's allow-list. It applies to a search and
+// to nothing else: the other shapes this route serves are trees, and a tree's
+// order is the position an operator gave it.
+var categorySorts = SortSpec{
+	Tiebreak: "cat.id",
+	Columns: map[string]sortField{
+		"title": {"lower(cat.title) ASC", "lower(cat.title) DESC"},
+		// full_name is the rendered path — what the row shows, and what the
+		// search itself already matches against.
+		"full_name":  {"lower(down.path) ASC", "lower(down.path) DESC"},
+		"created_at": {"cat.created_at ASC", "cat.created_at DESC"},
+		"id":         {"cat.id ASC", "cat.id DESC"},
+	},
+}
+
 // Search finds categories by name or by any part of their ancestry, so typing
 // "apparel shirt" or just "shirt" both work.
 //
@@ -233,16 +262,28 @@ const MaxWholeCategoryTree = 500
 // them would move two megabytes of JSON to render one dropdown. List and Tree
 // stay for the small, hand-built case; anything that types into a box comes
 // here instead.
-func (s *Categories) Search(ctx context.Context, term string, limit int) ([]*Category, int, error) {
-	term = strings.TrimSpace(term)
+//
+// The sort is applied before the limit, so ?sort=title returns the
+// alphabetically first matches rather than the shallowest ones alphabetised.
+func (s *Categories) Search(ctx context.Context, q CategoryQuery) ([]*Category, int, error) {
+	term := strings.TrimSpace(q.Search)
 	// Clamped, not replaced. Folding an over-large limit back to the default
 	// silently turned a request for 500 into 50, which looked like a working
 	// search returning a short answer.
+	limit := q.Limit
 	if limit <= 0 {
 		limit = DefaultCategoryPage
 	}
 	if limit > MaxLimit {
 		limit = MaxLimit
+	}
+
+	// down.depth, down.path is not unique — nothing makes (parent_id, title)
+	// unique — so the default tiebreaks too, or the search tears pages the
+	// moment the offset below starts working.
+	order, err := categorySorts.Clause(q.Sort, "down.depth, down.path, cat.id")
+	if err != nil {
+		return nil, 0, err
 	}
 
 	where, args := "true", []any{}
@@ -263,7 +304,9 @@ func (s *Categories) Search(ctx context.Context, term string, limit int) ([]*Cat
 		where = `lower(path) LIKE lower($1)`
 	}
 
-	query := `
+	// The CTE and the WHERE are built once and shared by the page query and the
+	// count below, so the two cannot come to describe different sets.
+	cte := `
 		WITH RECURSIVE down AS (
 		    SELECT id, parent_id, title::text AS path, 0 AS depth
 		    FROM categories WHERE parent_id IS NULL
@@ -271,12 +314,19 @@ func (s *Categories) Search(ctx context.Context, term string, limit int) ([]*Cat
 		    SELECT c.id, c.parent_id, d.path || ' / ' || c.title, d.depth + 1
 		    FROM categories c JOIN down d ON d.id = c.parent_id
 		    WHERE d.depth < ` + fmt.Sprint(MaxCategoryDepth) + `
-		)
-		SELECT count(*) OVER (), ` + prefixColumns(categoryColumns, "cat") + `, down.path, down.depth
+		)`
+	from := `
 		FROM down JOIN categories cat ON cat.id = down.id
-		WHERE ` + where + `
-		ORDER BY down.depth, down.path
-		LIMIT ` + fmt.Sprint(limit)
+		WHERE ` + where
+
+	// Bound, not interpolated: this was the last fmt.Sprint-into-SQL on the
+	// category path, and it is what the offset now rides in on.
+	args = append(args, limit, q.Offset)
+	query := cte + `
+		SELECT count(*) OVER (), ` + prefixColumns(categoryColumns, "cat") + `, down.path, down.depth` +
+		from + `
+		ORDER BY ` + order +
+		fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)-1, len(args))
 
 	rows, err := s.app.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -298,7 +348,25 @@ func (s *Categories) Search(ctx context.Context, term string, limit int) ([]*Cat
 		}
 		out = append(out, &c)
 	}
-	return out, total, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	// count(*) OVER () is exact and free whenever the window has rows, and
+	// returns no row at all when the offset is past the end — which used to be
+	// unreachable, because the offset was parsed and thrown away. Now that it is
+	// honoured, page 3 of a two-page result would report a total of 0 and
+	// contradict page 1. The real count runs only in that case, rather than
+	// executing the recursive CTE twice on every search.
+	if len(out) == 0 {
+		if err := s.app.db.QueryRowContext(ctx,
+			cte+`
+		SELECT count(*)`+from, args[:len(args)-2]...,
+		).Scan(&total); err != nil {
+			return nil, 0, err
+		}
+	}
+	return out, total, nil
 }
 
 // Count returns how many categories exist, which is what tells a picker whether
@@ -968,6 +1036,15 @@ func (a *App) respondCategories(w http.ResponseWriter, r *http.Request) {
 	svc := a.Categories()
 	q := r.URL.Query()
 
+	// Parsed once, at the top, so a bad `order=` is refused identically on every
+	// branch below and on both the public and the admin route — one function
+	// serves both.
+	sortBy, err := ParseSort(r, categorySorts)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+
 	// A search is a different request from a listing: it is bounded, it may
 	// match anywhere in the tree, and its answer is a flat set of paths rather
 	// than a shape. Importing a full taxonomy makes this the normal path.
@@ -975,17 +1052,27 @@ func (a *App) respondCategories(w http.ResponseWriter, r *http.Request) {
 		if term == "" {
 			term = q.Get("search")
 		}
-		limit, _, err := Page(r)
+		limit, offset, err := Page(r)
 		if err != nil {
 			RespondError(w, r, err)
 			return
 		}
-		list, total, err := svc.Search(r.Context(), term, limit)
+		list, total, err := svc.Search(r.Context(),
+			CategoryQuery{Search: term, Sort: sortBy, Limit: limit, Offset: offset})
 		if err != nil {
 			RespondError(w, r, err)
 			return
 		}
-		RespondList(w, list, ListMeta{Total: total, Limit: limit, Offset: 0})
+		RespondList(w, list, ListMeta{Total: total, Limit: limit, Offset: offset})
+		return
+	}
+
+	// Sorting applies to a search. Everything else this route serves is a tree,
+	// and a tree's order is the position an operator gave it — not something a
+	// column header gets to overwrite. Refused rather than ignored, for the same
+	// reason queryInt64 refuses an unparseable filter.
+	if sortBy.Field != "" {
+		RespondError(w, r, Validationf("sort applies to a search; add q="))
 		return
 	}
 
@@ -1027,7 +1114,9 @@ func (a *App) respondCategories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if total > MaxWholeCategoryTree {
-		list, _, err := svc.Search(r.Context(), "", MaxLimit)
+		// A truncated dump of a tree rather than a search, so it keeps the
+		// depth-first shape the picker depends on.
+		list, _, err := svc.Search(r.Context(), CategoryQuery{Limit: MaxLimit})
 		if err != nil {
 			RespondError(w, r, err)
 			return

@@ -50,8 +50,12 @@ type Location struct {
 	// OnHand and Reserved are what this location is holding across every
 	// variant. Summed on the way out rather than stored, for the same reason
 	// the variant totals are.
-	OnHand    int       `json:"on_hand"`
-	Reserved  int       `json:"reserved"`
+	OnHand   int `json:"on_hand"`
+	Reserved int `json:"reserved"`
+	// SKUs counts the rows this place is holding, where holding means either
+	// number is non-zero. That is refuseIfHolding's definition and not a
+	// narrower one: a location holding nothing but reserved units used to report
+	// skus 0 while Update and Delete refused, naming a count nobody could see.
 	SKUs      int       `json:"skus"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -93,7 +97,8 @@ const locationColumns = `l.id, l.code, l.name, l.address, l.priority, l.active,
 	l.is_default, l.metadata, l.created_at, l.updated_at,
 	coalesce((SELECT sum(vs.on_hand)  FROM variant_stock vs WHERE vs.location_id = l.id), 0),
 	coalesce((SELECT sum(vs.reserved) FROM variant_stock vs WHERE vs.location_id = l.id), 0),
-	(SELECT count(*) FROM variant_stock vs WHERE vs.location_id = l.id AND vs.on_hand <> 0)`
+	(SELECT count(*) FROM variant_stock vs WHERE vs.location_id = l.id
+	   AND (vs.on_hand <> 0 OR vs.reserved <> 0))`
 
 // List returns every location in the order stock is drawn from them.
 func (s *Locations) List(ctx context.Context) ([]*Location, error) {
@@ -207,6 +212,11 @@ func (s *Locations) Create(ctx context.Context, in LocationInput) (*Location, er
 // still holds stock would report units as available that nothing can reserve —
 // the totals count them, the picker skips them — so the stock has to go
 // somewhere first. Refusing here is what keeps `available` meaning what it says.
+//
+// What holds that answer still is the row lock below, taken before the stock is
+// counted: the refusal and the engine's own "stock never arrives at a closed
+// location" guard (D44) meet on the locations row, so a transfer committing
+// between the count and the UPDATE is impossible rather than merely unlikely.
 func (s *Locations) Update(ctx context.Context, id int64, patch LocationPatch) (*Location, error) {
 	sets := []string{"updated_at = now()"}
 	args := []any{id}
@@ -251,11 +261,13 @@ func (s *Locations) Update(ctx context.Context, id int64, patch LocationPatch) (
 		// for the audit row, which is strictly better: it used to read outside
 		// the write it guards, so a reservation landing between the two slipped
 		// past it.
-		if patch.Active != nil && !*patch.Active {
-			if err := refuseIfHolding(ctx, tx, id, "deactivated"); err != nil {
-				return err
-			}
-		}
+		//
+		// The locations row is locked FIRST and the stock read second, in that
+		// order and not the other. resolveShelf takes the same two tables the
+		// same way round (locations FOR SHARE, then variant_stock), so a transfer
+		// arriving here and a deactivation closing the place cannot pass each
+		// other and cannot deadlock: one of them waits, and whichever wakes up
+		// second is refused.
 		before := map[string]any{}
 		var wasName string
 		var wasPriority int
@@ -268,6 +280,11 @@ func (s *Locations) Update(ctx context.Context, id int64, patch LocationPatch) (
 		}
 		if err != nil {
 			return err
+		}
+		if patch.Active != nil && !*patch.Active {
+			if err := refuseIfHolding(ctx, tx, id, "deactivated"); err != nil {
+				return err
+			}
 		}
 		for col, v := range map[string]any{
 			"name": wasName, "priority": wasPriority, "active": wasActive,
@@ -352,6 +369,10 @@ func (s *Locations) SetDefault(ctx context.Context, id int64) (*Location, error)
 // answer to "where does this land" — and neither can one that still holds
 // stock, which the foreign key would refuse anyway in a sentence about a
 // constraint rather than about the shelf.
+// The FOR UPDATE below is taken before refuseIfHolding counts, and is what makes
+// the DELETE FROM variant_stock further down safe: a transfer arriving between
+// the count and that statement would not merely be stranded, it would have its
+// units deleted. resolveShelf locks the same row the same way round (D44).
 // The wrap also closes a pre-existing window: the bookkeeping rows and the
 // location itself used to be two separate statements on the pool, so a crash
 // between them left the variant_stock rows gone and the location standing.

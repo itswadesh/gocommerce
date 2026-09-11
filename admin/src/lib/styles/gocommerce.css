@@ -3083,24 +3083,34 @@ tr.variant-child > td:first-child {
 }
 
 /*
- * The stock-by-location table inside the inventory drawer.
+ * Two compact tables in a drawer, sharing a box and nothing else.
  *
- * It is a picker, not a report: clicking a row is what decides which shelf the
- * form below acts on, so the selected row has to read as pressed rather than as
- * merely hovered. The left bar carries that — a background change alone is too
- * close to the hover state to tell them apart at a glance, and the accent is
- * the only token in this palette that is not a grey.
+ * `.stock-locations` is the stock-by-location table inside the inventory
+ * drawer, and it is a picker, not a report: clicking a row is what decides
+ * which shelf the form below acts on, so the selected row has to read as
+ * pressed rather than as merely hovered. The left bar carries that — a
+ * background change alone is too close to the hover state to tell them apart at
+ * a glance, and the accent is the only token in this palette that is not a
+ * grey.
+ *
+ * `.drawer-table` is the read-only one: what a location is holding, in the
+ * locations drawer. It takes the frame, the cell padding, the uppercase header
+ * and the row separator through the `:is()` below, and deliberately none of the
+ * picker rules — a row that reads as pressable and does nothing is worse than a
+ * plain row. That is the same split the ledger's `.stock-history` makes further
+ * down; the two are kept apart here rather than folded together, because only
+ * one of them may claim a click.
  */
-.stock-locations {
+:is(.stock-locations, .drawer-table) {
     border: 1px solid var(--surfaceAlt3Color);
     border-radius: var(--borderRadius);
     overflow: hidden;
 }
-.stock-locations :is(th, td) {
+:is(.stock-locations, .drawer-table) :is(th, td) {
     height: auto;
     padding: 6px 10px;
 }
-.stock-locations thead th {
+:is(.stock-locations, .drawer-table) thead th {
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.06em;
@@ -3133,7 +3143,7 @@ tr.variant-child > td:first-child {
 .stock-locations tbody tr.selected td:first-child {
     box-shadow: inset 3px 0 0 var(--accentColor);
 }
-.stock-locations tbody tr + tr :is(td, th) {
+:is(.stock-locations, .drawer-table) tbody tr + tr :is(td, th) {
     border-top: 1px solid var(--surfaceAlt2Color);
 }
 .stock-locations .label {
@@ -3264,6 +3274,7 @@ tr.variant-child > td:first-child {
 .nav-emerald { --navIcon: #059669; --navSoft: #ecfdf5; --navText: #047857; }
 .nav-cyan    { --navIcon: #0891b2; --navSoft: #ecfeff; --navText: #0e7490; }
 .nav-orange  { --navIcon: #ea580c; --navSoft: #fff7ed; --navText: #c2410c; }
+.nav-fuchsia { --navIcon: #c026d3; --navSoft: #fdf4ff; --navText: #a21caf; }
 
 [data-color-scheme="dark"] {
     .nav-indigo  { --navIcon: #818cf8; --navSoft: rgb(99 102 241 / 0.1);  --navText: #a5b4fc; }
@@ -3276,6 +3287,7 @@ tr.variant-child > td:first-child {
     .nav-emerald { --navIcon: #34d399; --navSoft: rgb(16 185 129 / 0.1);  --navText: #6ee7b7; }
     .nav-cyan    { --navIcon: #22d3ee; --navSoft: rgb(6 182 212 / 0.1);   --navText: #67e8f9; }
     .nav-orange  { --navIcon: #fb923c; --navSoft: rgb(249 115 22 / 0.1);  --navText: #fdba74; }
+    .nav-fuchsia { --navIcon: #e879f9; --navSoft: rgb(217 70 239 / 0.1);  --navText: #f0abfc; }
 }
 
 /* The account block, pinned to the foot by the margin above it. */
@@ -3838,6 +3850,120 @@ tr.handle:focus-visible {
 .stock-history td.delta {
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+}
+
+/* ------------------------------------------------------------ report chart */
+
+/* The sales chart is a row of stacked bars and nothing else, because a charting
+   library would be a second panel dependency bought for a row of stacked bars —
+   and the engine's one-production-dependency rule is the reason the panel does
+   not get to start a collection either. Every value below is an existing token.
+
+   The three segment colours are the panel's own status tokens rather than two
+   steps of the accent: two steps of one hue is a sequential encoding, and these
+   three are categories. Success / info / danger was checked for colour-vision
+   separation in BOTH schemes; the table under the chart carries every number, so
+   nothing here is ever colour-only.
+
+   Prefixed `report-` so a future re-copy of PocketBase's sheets cannot collide
+   with them. */
+.report-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 180px;
+    /* `.page-content` is a flex column, where a height is only a suggestion:
+       without this the chart is squeezed to a few pixels on a short page and
+       reads as a flat line. */
+    flex: 0 0 auto;
+    padding: var(--smSpacing);
+    margin: 0;
+    background: var(--surfaceAlt1Color);
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+    overflow-x: auto;
+}
+.report-bar {
+    flex: 1 1 0;
+    min-width: 4px;
+    height: var(--h, 0%);
+    /* A bucket that sold nothing is still a bucket: a hairline at the baseline
+       says "no sales here", where zero height says "no bucket here". */
+    min-height: 2px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    border-radius: 2px 2px 0 0;
+    overflow: hidden;
+    background: var(--surfaceAlt2Color);
+    transition: height var(--animationSpeed);
+}
+/* A clipped first or last period, faded rather than hidden: the bar is real,
+   it just covers less time than its neighbours. */
+.report-bar.partial {
+    opacity: 0.55;
+}
+.report-seg {
+    width: 100%;
+    height: var(--seg, 0%);
+}
+.report-seg.paid {
+    background: var(--successColor);
+}
+.report-seg.outstanding {
+    background: var(--infoColor);
+}
+.report-seg.refunded {
+    background: var(--dangerColor);
+}
+.report-axis,
+.report-legend {
+    display: flex;
+    font-size: var(--smFontSize);
+    color: var(--surfaceTxtHintColor);
+}
+.report-axis {
+    justify-content: space-between;
+    padding: 5px 2px 0;
+}
+.report-legend {
+    gap: var(--smSpacing);
+    flex-wrap: wrap;
+    align-items: center;
+    padding-bottom: 5px;
+}
+.report-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+.report-key {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    background: var(--surfaceAlt2Color);
+}
+.report-key.paid {
+    background: var(--successColor);
+}
+.report-key.outstanding {
+    background: var(--infoColor);
+}
+.report-key.refunded {
+    background: var(--dangerColor);
+}
+
+@media (max-width: 700px) {
+    .report-chart {
+        height: 140px;
+        gap: 1px;
+        padding: 10px;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .report-bar {
+        transition-duration: 1ms;
+    }
 }
 
 /* --------- @media print — KEEP LAST ---------

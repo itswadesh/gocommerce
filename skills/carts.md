@@ -51,17 +51,27 @@ the cart page instead of surprising them at the end of checkout.
   snapshot of a sale, carrying its own sku, title, label, quantity and price, and
   it must stay readable for accounting and support long after the catalog has
   moved on. So it loses the reference and keeps the record.
-- **Only an `open` cart can be modified.** `openCartID` selects
-  `FOR UPDATE` and rejects any other status with `409 — "this cart has already
-  been checked out"`. The lock is what stops two tabs adding the last unit at
-  once.
+- **Only an `open` cart can be modified — and an `abandoned` one revives.**
+  `openCartID` selects `FOR UPDATE`; an `open` cart proceeds, an `abandoned` one
+  is put back to `open` with a fresh TTL under that same lock, and anything else
+  is `409 — "this cart has already been checked out"`. Only `converted` reaches
+  that branch now, so the message is true for the first time. The lock is what
+  stops two tabs adding the last unit at once, and it is also what makes reviving
+  atomic with the mutation that triggered it.
 - **Money is minor units plus a currency code.** `subtotal`, `unit_price`,
   `total` and `current_price` are all `{"amount_minor": 2499, "currency":
   "USD"}`. The cart's currency comes from `Config.Currency`.
-- **A cart expires.** `expires_at` is pushed forward by `touchCart` on every
-  mutation (`Config.CartTTL`, 720h by default), and `SweepExpired` deletes open
-  carts past it. `POST /api/carts` is a public row-creating endpoint; without a
-  sweeper the table grows for exactly as long as the store is popular.
+- **A cart expires, and what happens then depends on whether anything is in
+  it.** `expires_at` is pushed forward by `touchCart` on every mutation
+  (`Config.CartTTL`, 720h by default). Past it, the five-minute sweeper runs
+  three phases with disjoint predicates: `Abandon` marks an expired cart that
+  holds at least one line `abandoned`, stamps `abandoned_at` and emits
+  `cart.abandoned`; `SweepExpired` deletes an expired cart that holds nothing;
+  `PurgeAbandoned` deletes an abandoned cart once `Config.CartRetention` (720h
+  by default, clocked off `abandoned_at`) has passed. `POST /api/carts` is a
+  public row-creating endpoint, so the table still needs a bound — it now has
+  two, and what survives between them is "baskets somebody actually filled, for
+  a fixed window".
 
 ## How to open a cart and add lines
 
@@ -118,25 +128,91 @@ for _, l := range cart.Lines {
 If checkout has already refused, the cart has been re-snapshotted for you:
 show the new totals, get confirmation, and post the same checkout again.
 
+## Abandonment and recovery
+
+A cart has four fates, and three of them are the sweeper's:
+
+```
+open ──checkout──────────────► converted          (terminal)
+open ──expired, has lines────► abandoned          (Abandon, + cart.abandoned)
+open ──expired, empty────────► deleted            (SweepExpired)
+abandoned ──any mutation─────► open, fresh TTL    (revive)
+abandoned ──CartRetention────► deleted            (PurgeAbandoned)
+```
+
+Abandonment is the store's observation about a shopper, not a decision by the
+shopper, so it never destroys the basket: the first mutation on an abandoned
+cart — a line added, a quantity changed, an email set, a discount code applied,
+a checkout — revives it to `open` under the lock that mutation already takes.
+Nothing new is validated on the way back, because checkout re-reads the live
+price and refuses with `price_changed`, re-reads stock, and re-decides the
+discount code whatever status the cart arrived in.
+
+`status` and `abandoned_at` cannot drift apart: `carts_abandoned_at_matches_status`
+is a biconditional CHECK, so a marked row always carries a timestamp and a
+revived one always loses it. A marked row with no timestamp would match no purge
+predicate and live forever with somebody's email in it; a stale timestamp
+surviving a revival would purge a basket out from under a live shopper.
+
+`cart.abandoned` carries a `CartEvent`: the cart id, the **token** (a
+credential — put it in a recovery link and nowhere else), currency, email,
+item count, subtotal in minor units, the discount code, the lines as
+`OrderEventLine`, and three times — `created_at`, `last_active_at` (the
+shopper's last touch, which the sweep deliberately does not overwrite) and
+`abandoned_at`. Core's notifier is **not** subscribed to it: when and how often
+to chase an abandoned basket is a marketing decision, not an engine default. A
+recovery module subscribes and owns the schedule.
+
+## What an operator can see
+
+Two read-only admin routes, both under `orders.read`:
+
+```http
+GET /api/admin/carts?state=abandoned&has_lines=true&has_email=true   → 200 {"data": [CartSummary], "meta": …}
+GET /api/admin/carts/42                                             → 200 {"data": CartDetail}
+```
+
+They address a cart by its numeric row id, never by token, and **neither
+returns the token** — exactly as an order's `access_token` never appears in an
+admin read. An operator can see a basket and cannot touch one; there is no
+admin write route, and acting on a basket means placing the order at
+`POST /api/admin/orders`.
+
+`state` is derived from `status` AND `expires_at` — `live`, `abandoned` or
+`converted` — so a cart past its TTL that the sweeper has not reached yet reads
+as `abandoned` while its `status` still says `open`. Both are reported, and the
+filter uses the derived predicate, so the screen cannot give a different answer
+depending on where the five-minute ticker happens to be. The other filters are
+`has_email`, `has_lines`, `min_value_minor` (minor units, filtering on the sum
+of quantity × snapshot price) and `from`/`to` over `updated_at`.
+
 ## Common mistakes
 
 - **Treating the cart's `id` as a row id.** It is the token — an opaque string,
   and the only credential. Do not log it, and do not put it in a URL a third
   party will see in a `Referer` header.
-- **Expecting an admin route for carts.** There is none. `mountCartRoutes`
-  serves five public routes, all keyed by the token; an operator has no way to
-  browse other people's baskets, which is the point.
-- **Looking for an endpoint that sets the email on an existing cart.**
-  `Carts.SetEmail` exists as a service method but is not mounted; over HTTP the
-  email is supplied at `POST /api/carts` or at checkout.
+- **Expecting an admin cart route to hand you the token, or to write.** Neither
+  admin route returns one and neither writes: `GET /api/admin/carts` and
+  `GET /api/admin/carts/{id}` are read-only, keyed by row id, and gated on
+  `orders.read`. Every mutation of a cart is still the shopper's, taken under
+  their token.
+- **Looking for a DELETE that clears the email.** There is none, because the
+  setter clears: `PUT /api/carts/<token>/email` with `{"email": ""}` is the
+  shopper's own withdrawal path. A non-empty value with no `@` in it is
+  `400 — "a valid email is required"`, and the route extends the cart's TTL like
+  every other mutation.
 - **Expecting `AddLine` to reprice the line.** It does not, deliberately: the
   `ON CONFLICT` clause adds to `quantity` and leaves `unit_price_minor` at the
   value the first add captured. It used to overwrite it, which quietly moved
   units already in the basket to today's price and erased the evidence
   [checkout](checkout.md) needs to notice a change at all. `UpdateLine` takes
   an absolute quantity and is the clearer call when you mean "make it three".
-- **Assuming `GetByToken` enforces expiry.** It does not; an expired cart still
-  reads until `SweepExpired` removes it. Check `expires_at` if that matters to
-  the surface you are building.
+- **Assuming `GetByToken` enforces expiry, or that an expired cart is gone.** It
+  enforces nothing, and the row survives: an expired cart with lines now reads
+  back with `status: "abandoned"` where the row used to have been deleted, and
+  the next mutation revives it. A storefront that branches on
+  `status === "open"` before rendering will show an empty basket where it used
+  to open a fresh cart — check `expires_at` and `status` deliberately, or simply
+  add the line, which recovers the basket on its own.
 - **Rendering `available: -1` as a quantity.** It means the variant does not
   track inventory — see [inventory](inventory.md).

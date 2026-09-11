@@ -36,6 +36,8 @@ func coreMigrations() []Migration {
 		{ID: "0025_returns", SQL: migration0025Returns},
 		{ID: "0026_stock_movements", SQL: migration0026StockMovements},
 		{ID: "0027_collection_curation", SQL: migration0027CollectionCuration},
+		{ID: "0028_cart_abandonment", SQL: migration0028CartAbandonment},
+		{ID: "0029_sort_indexes", SQL: migration0029SortIndexes},
 	}
 }
 
@@ -1476,4 +1478,118 @@ WHERE pc.product_id = ranked.product_id
 const migration0027Index = `
 CREATE INDEX product_collections_member_idx
     ON product_collections (collection_id, member_position, product_id);
+`
+
+// M28 — an abandoned cart becomes a record instead of a deletion.
+//
+// The 'abandoned' status has been in the M2 CHECK since the first migration and
+// nothing has ever written it: checkout writes 'converted' and the sweeper
+// DELETEd every open cart past its TTL. That destroyed the store's
+// second-most-valuable report — the baskets somebody filled and did not come
+// back to, their value, and the address to reach the shopper on — on a
+// five-minute ticker.
+//
+// Deleting was not laziness. POST /api/carts is unauthenticated, so unswept
+// carts are an unbounded-growth vector rather than merely untidy, and keeping
+// them needs its own bound. There are two, and they are what make this safe: a
+// cart holding no lines is still deleted outright (nothing to recover, and it
+// is the shape probe traffic takes — a cart may be created with no body at
+// all), and an abandoned cart is purged once Config.CartRetention has passed.
+// What survives is "baskets somebody actually filled, for a fixed window".
+//
+// abandoned_at rather than reusing updated_at, for two reasons. updated_at
+// means "when the shopper last changed this", and a report whose job is "this
+// sat for five days before it was given up on" cannot say that if the sweep
+// overwrote it — so the sweep deliberately leaves updated_at alone. And it is
+// the retention clock: running retention off expires_at would abandon and purge
+// a backlogged cart inside the same pass, announcing a live recovery token for
+// a row that no longer exists.
+//
+// The CHECK is a biconditional on purpose. A row marked abandoned with no
+// abandoned_at matches no purge predicate and never expires — an immortal row
+// with somebody's email in it. A row that kept its abandoned_at through a
+// revival gets purged out from under a live shopper. Both are silent, and both
+// are now unreachable rather than merely unlikely. It validates for free: every
+// existing row is open or converted with abandoned_at NULL, so both sides are
+// false.
+//
+// No backfill. Every expired cart already in the table stays 'open' and is
+// picked up by Abandon on its next pass, so every abandonment goes through the
+// service and therefore has an event. A migration that marked them directly
+// would produce a thousand abandoned carts nobody was told about, which is the
+// exact failure the outbox exists to prevent.
+const migration0028CartAbandonment = `
+ALTER TABLE carts ADD COLUMN abandoned_at timestamptz;
+
+ALTER TABLE carts
+    ADD CONSTRAINT carts_abandoned_at_matches_status
+    CHECK ((status = 'abandoned') = (abandoned_at IS NOT NULL));
+
+-- The purge sweep's claim. Partial, mirroring carts_expiry_idx (M2) for the
+-- other status: that one cannot see an abandoned row, and this one has no
+-- business carrying the live ones.
+CREATE INDEX carts_abandoned_idx ON carts (abandoned_at) WHERE status = 'abandoned';
+
+-- The admin list: filtered by status, newest first, paged. Leading on id rather
+-- than updated_at because touchCart bumps updated_at on every add-to-cart, and
+-- an admin screen must not re-key an index on the hottest public write path in
+-- the engine. Together with carts_expiry_idx this is also what serves the
+-- derived state='abandoned' filter, as a BitmapOr of the two.
+CREATE INDEX carts_admin_idx ON carts (status, id DESC);
+`
+
+// M29 — the orderings an operator can now ask for.
+//
+// Sorting adds no columns and no tables: it is a read, and every field the
+// panel offers already exists. What it adds is orderings the planner would
+// otherwise answer by reading and sorting the whole table — fine at fifty
+// products, not fine at fifty thousand, and LIMIT/OFFSET repeats that sort on
+// every page rather than once for the walk.
+//
+// Each index is (sort key, id) and ascending only, and every indexed key is a
+// NOT NULL expression carrying no NULLS clause in the ORDER BY. Both halves of
+// that sentence are load-bearing. The tiebreaker takes the same direction as
+// the sort (SortSpec.Clause), so the ORDER BY never asks for a mixed ASC/DESC
+// ordering, which is the shape a plain two-column btree cannot serve. And
+// because the expression is never NULL, the clause states no NULLS placement,
+// so the query's defaults — ASC NULLS LAST, DESC NULLS FIRST — are exactly what
+// a forward and a backward scan of this index produce. Add "NULLS LAST" to one
+// of these ORDER BYs and the descending direction silently stops using the
+// index; that is why the nullable keys (a discount with no code, an order with
+// no name, a product with no tracked variants, media referenced by URL) pin
+// NULLS LAST per field and are deliberately not indexed here.
+//
+// Only the tables that grow are here. Discounts, tax rates and locations are
+// tens of rows; an index there costs every write something to save a scan that
+// was never slow. Customers and the category search are unindexable by
+// construction — one sorts the output of a GROUP BY, the other the output of a
+// recursive CTE, and both compute every key before ordering can begin.
+//
+// IF NOT EXISTS because applyMigration runs this inside InTx, so CREATE INDEX
+// CONCURRENTLY is not available here and a bare CREATE INDEX holds a SHARE lock
+// while it builds — on a large orders table that is blocked checkouts at boot.
+// A store that big builds these CONCURRENTLY out of band with the identical
+// definitions before deploying; without IF NOT EXISTS that prudence would fail
+// the migration and the boot.
+//
+// Deliberately absent, recorded so the next reader knows they were considered:
+// products (created_at, id) is co-monotonic with id in practice, so ?sort=id is
+// the indexed proxy for "newest first"; orders_created_idx already leads with
+// created_at DESC; media's filename expression carries an explicit NULLS LAST,
+// which an ASC btree cannot serve in both directions; a discount table is tens
+// of rows; and every status or kind key would want products_status_idx
+// (status, id DESC) or media_kind_idx (kind, id DESC), mixed orderings matching
+// neither scan direction — and three to five distinct values make an index
+// useless for ordering anyway.
+const migration0029SortIndexes = `
+CREATE INDEX IF NOT EXISTS products_title_sort_idx   ON products (lower(title), id);
+CREATE INDEX IF NOT EXISTS products_updated_sort_idx ON products (updated_at, id);
+CREATE INDEX IF NOT EXISTS orders_total_sort_idx     ON orders   (total_minor, id);
+CREATE INDEX IF NOT EXISTS media_size_sort_idx       ON media    (size_bytes, id);
+
+-- Not for ordering variants — variants_product_idx (product_id, position, id)
+-- already does that — but for the per-product minimum the product list sorts
+-- by. That index does not carry price_minor, so min(v.price_minor) is a heap
+-- fetch per variant; this makes it one index-only lookup per product.
+CREATE INDEX IF NOT EXISTS variants_product_price_idx ON variants (product_id, price_minor);
 `

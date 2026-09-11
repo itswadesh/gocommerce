@@ -282,22 +282,35 @@ func (a *App) checkReservations(ctx context.Context) Diagnostic {
 func (a *App) checkCarts(ctx context.Context) Diagnostic {
 	d := Diagnostic{Name: "carts"}
 
-	var open, expired int
+	var live, pending, abandoned, overdue int
 	err := a.db.QueryRowContext(ctx, `
-		SELECT count(*) FILTER (WHERE status = 'open'),
-		       count(*) FILTER (WHERE status = 'open' AND expires_at < now())
-		FROM carts`).Scan(&open, &expired)
+		SELECT count(*) FILTER (WHERE status = 'open' AND expires_at >= now()),
+		       count(*) FILTER (WHERE status = 'open' AND expires_at < now()),
+		       count(*) FILTER (WHERE status = 'abandoned'),
+		       count(*) FILTER (WHERE status = 'abandoned'
+		                          AND abandoned_at < now() - make_interval(secs => $1))
+		FROM carts`, a.cfg.CartRetention.Seconds()).Scan(&live, &pending, &abandoned, &overdue)
 	if err != nil {
 		d.Status, d.Detail = StatusWarn, "cannot inspect carts: "+err.Error()
 		return d
 	}
 
-	d.Status, d.Detail = StatusOK, fmt.Sprintf("%d open, %d past TTL", open, expired)
+	d.Status = StatusOK
+	d.Detail = fmt.Sprintf("%d live, %d awaiting the sweeper, %d abandoned", live, pending, abandoned)
 	// POST /api/carts is unauthenticated, so unswept carts are an
-	// unbounded-growth vector rather than merely untidy.
-	if expired > 1000 {
+	// unbounded-growth vector rather than merely untidy. That is now the reason
+	// there are two bounds rather than one: the empty ones are deleted, and the
+	// filled ones are kept only as long as Config.CartRetention.
+	switch {
+	case pending > 1000:
 		d.Status = StatusWarn
-		d.Hint = "expired carts are not being swept; check that background work is running"
+		d.Hint = "expired carts are not being swept; check that background work is running — " +
+			"Abandon records the ones with lines and SweepExpired deletes the empty ones, " +
+			"and either failing leaves this number climbing"
+	case overdue > 1000:
+		d.Status = StatusWarn
+		d.Hint = "abandoned carts are past Config.CartRetention and not being purged; " +
+			"PurgeAbandoned is what bounds this table now that expiry no longer deletes"
 	}
 	return d
 }

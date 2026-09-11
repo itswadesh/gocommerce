@@ -1251,10 +1251,10 @@
     </div>
 
     <div class="field-help">
-        <!-- Shopify says "across all locations" here. This engine has exactly
-             one, so the plain total is the honest wording; inventing a location
-             count would imply a feature that does not exist. -->
-        <strong>Total inventory: {totalAvailable} available</strong>
+        <!-- Named, because since M17 there can be more than one: a plain total
+             beside a store with three shops reads as one shelf's count, and the
+             per-location figures live on the inventory screen. -->
+        <strong>Total inventory: {totalAvailable} available across every location</strong>
         {#if untracked}
             — {untracked}
             {pluralize(untracked, "variant")}

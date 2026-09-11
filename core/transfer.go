@@ -50,6 +50,10 @@ type stockColumn struct {
 	name       string
 	code       string
 	locationID int64
+	// active rides along because the import refuses a cell that raises a count
+	// at a closed location (D44). Resolved once against the header rather than
+	// once per row, for the reason the misspelt-code check above is.
+	active bool
 }
 
 // productStockColumns is the stock part of the export header.
@@ -60,7 +64,7 @@ type stockColumn struct {
 // would leave no cell to type into to receive stock somewhere empty.
 func (t *Transfer) productStockColumns(ctx context.Context) ([]stockColumn, error) {
 	rows, err := t.app.db.QueryContext(ctx,
-		`SELECT id, code, is_default FROM locations ORDER BY priority, id`)
+		`SELECT id, code, is_default, active FROM locations ORDER BY priority, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +75,7 @@ func (t *Transfer) productStockColumns(ctx context.Context) ([]stockColumn, erro
 	for rows.Next() {
 		var c stockColumn
 		var isDefault bool
-		if err := rows.Scan(&c.locationID, &c.code, &isDefault); err != nil {
+		if err := rows.Scan(&c.locationID, &c.code, &isDefault, &c.active); err != nil {
 			return nil, err
 		}
 		c.name = stockColumnPrefix + c.code
@@ -128,7 +132,7 @@ func (t *Transfer) resolveStockColumns(ctx context.Context, header []string) ([]
 	if plain {
 		var c stockColumn
 		err := t.app.db.QueryRowContext(ctx,
-			`SELECT id, code FROM locations WHERE is_default`).Scan(&c.locationID, &c.code)
+			`SELECT id, code, active FROM locations WHERE is_default`).Scan(&c.locationID, &c.code, &c.active)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, Conflictf("this store has no default location")
 		}
@@ -143,7 +147,7 @@ func (t *Transfer) resolveStockColumns(ctx context.Context, header []string) ([]
 	for _, code := range named {
 		var c stockColumn
 		err := t.app.db.QueryRowContext(ctx,
-			`SELECT id, code FROM locations WHERE code = $1`, code).Scan(&c.locationID, &c.code)
+			`SELECT id, code, active FROM locations WHERE code = $1`, code).Scan(&c.locationID, &c.code, &c.active)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, Validationf(
 				"the CSV column %q names a location that does not exist; "+
@@ -642,6 +646,16 @@ func (t *Transfer) importVariantRow(ctx context.Context, tx *sql.Tx, productID i
 			 WHERE variant_id = $1 AND location_id = $2 FOR UPDATE`,
 			variantID, c.locationID).Scan(&before.OnHand, &before.Reserved); err != nil {
 			return err
+		}
+		// A closed location may be counted down to zero — that is how one is
+		// cleared, and it is what keeps an unedited export->import round trip of a
+		// closed shelf's zeros passing — but never up (D44). Compared against the
+		// figure just read under FOR UPDATE, so the classification cannot change
+		// under the statement below. The code rather than the name, because the
+		// code is what the header cell says and what the operator has to edit.
+		if !c.active && qty > before.OnHand {
+			return fmt.Errorf("line %d: %s is closed; stock moves out of a closed location, never into it",
+				row.line, c.code)
 		}
 		// The floor is reserved, for the reason SetOnHand refuses outright: a
 		// count taken on the shop floor does not know about the order that came

@@ -44,10 +44,20 @@ const (
 	EventOrderUndelivered = "order.undelivered"
 	EventOrderUnshipped   = "order.unshipped"
 	EventOrderUnreturned  = "order.unreturned"
+
+	// The cart family. One name, because a recovered cart is already visible as
+	// the cart going back to open and, where it matters, as order.created, and
+	// a purged one is a retention action nothing downstream can act on.
+	EventCartAbandoned = "cart.abandoned"
 )
 
 // Aggregate types name what an event is about.
 const AggregateOrder = "order"
+
+// AggregateID for a cart event is the cart's row id, never its token — the
+// token is a credential and travels in the payload, because that is the only
+// handle a consumer or a shopper has on the basket itself.
+const AggregateCart = "cart"
 
 // Event is one thing that happened. It is created inside the transaction that
 // caused it and delivered afterwards, so an event exists if and only if the
@@ -133,6 +143,36 @@ type OrderEventLine struct {
 	Quantity       int    `json:"quantity"`
 	UnitPriceMinor int64  `json:"unit_price_minor"`
 	TotalMinor     int64  `json:"total_minor"`
+}
+
+// CartEvent is the payload of cart.abandoned: enough for a recovery flow to
+// write an email and build a link without reading the database.
+//
+// Token is a credential, not an identifier. It authorises every mutation on the
+// basket, so a consumer must not log it and must put it nowhere but a link
+// addressed to Email. It is here — and deliberately absent from the admin API —
+// because this payload reaches a consumer in-process, and an admin response
+// reaches a browser tab, a proxy log and a screenshot.
+type CartEvent struct {
+	CartID        int64  `json:"cart_id"`
+	Token         string `json:"cart_token"`
+	Currency      string `json:"currency"`
+	Email         string `json:"email,omitempty"`
+	ItemCount     int    `json:"item_count"`
+	SubtotalMinor int64  `json:"subtotal_minor"`
+	DiscountCode  string `json:"discount_code,omitempty"`
+	// OrderEventLine rather than a near-identical CartEventLine: the shape is
+	// the same down to the JSON names, so a consumer that can format an order
+	// email can format this one unchanged, and the type now has its second
+	// caller instead of a speculative twin.
+	Lines     []OrderEventLine `json:"lines"`
+	CreatedAt time.Time        `json:"created_at"`
+	// LastActiveAt is carts.updated_at, which the sweep deliberately does not
+	// overwrite: "sat five days, then was given up on" is the number a recovery
+	// flow schedules against, and the sweeper is not the shopper.
+	LastActiveAt time.Time      `json:"last_active_at"`
+	AbandonedAt  time.Time      `json:"abandoned_at"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
 }
 
 // OrderRefundEvent is the refund an order.refunded is about: this one, the

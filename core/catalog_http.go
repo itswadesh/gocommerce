@@ -172,6 +172,24 @@ func (a *App) handleAdminListProducts(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	// sortBy rather than sort: the stdlib `sort` is imported by sibling files in
+	// this package, and a local shadow of it is a trap for the next edit.
+	sortBy, err := ParseSort(r, productSorts)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	// A collection's order is the one an operator curated by hand, so the two
+	// parameters together are a contradiction rather than a precedence puzzle.
+	// Refused, not resolved: silently overriding the curation would make the
+	// same column header mean different things on two screens, and silently
+	// ignoring the sort would look like a sort that worked.
+	if pq.CollectionID > 0 && sortBy.Field != "" {
+		RespondError(w, r, Validationf(
+			"sort cannot be combined with collection_id: a collection is shown in its curated order"))
+		return
+	}
+	pq.Sort = sortBy
 	pq.Limit, pq.Offset = limit, offset
 	products, total, err := a.catalog.ListProducts(r.Context(), pq)
 	if err != nil {

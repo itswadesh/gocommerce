@@ -65,8 +65,28 @@ const (
 
 // CustomerQuery filters the reading. Search matches an email or a name.
 type CustomerQuery struct {
-	Search        string
+	Search string
+	// Sort is an operator-chosen ordering; zero keeps the listing's own, the
+	// people who bought most recently first.
+	Sort          Sort
 	Limit, Offset int
+}
+
+// customerSorts orders a grouping, so every expression is either the group key
+// or an aggregate over it — the same fragments the SELECT uses, so the number a
+// row shows and the number it was ranked by cannot be different.
+//
+// There is no o.id left once the rows are collapsed, which is why the tiebreaker
+// is the email: the one thing a group is guaranteed to have exactly one of.
+var customerSorts = SortSpec{
+	Tiebreak: "lower(o.email)",
+	Columns: map[string]sortField{
+		"email":          {"lower(o.email) ASC", "lower(o.email) DESC"},
+		"orders":         {customerOrderCount + " ASC", customerOrderCount + " DESC"},
+		"spent":          {customerSpent + " ASC", customerSpent + " DESC"},
+		"first_order_at": {customerFirstOrder + " ASC", customerFirstOrder + " DESC"},
+		"last_order_at":  {customerLastOrder + " ASC", customerLastOrder + " DESC"},
+	},
 }
 
 // Customers groups the orders by who placed them.
@@ -83,6 +103,16 @@ func (s *Orders) Customers(ctx context.Context, q CustomerQuery) ([]*Customer, i
 				len(args), len(args)))
 	}
 	clause := strings.Join(where, " AND ")
+
+	// The fallback carries the tiebreaker too, and has to: max(o.created_at)
+	// alone is not unique, so two shoppers whose newest orders share a timestamp
+	// could already arrive on two pages or on none. Returned bare — every other
+	// error in this function is wrapped in Internalf, and wrapping a Validationf
+	// would serve a 400 as a 500.
+	order, err := customerSorts.Clause(q.Sort, customerLastOrder+" DESC, lower(o.email) ASC")
+	if err != nil {
+		return nil, 0, err
+	}
 
 	var total int
 	if err := s.app.db.QueryRowContext(ctx,
@@ -111,7 +141,7 @@ func (s *Orders) Customers(ctx context.Context, q CustomerQuery) ([]*Customer, i
 		FROM orders o
 		WHERE `+clause+`
 		GROUP BY lower(o.email)
-		ORDER BY max(o.created_at) DESC
+		ORDER BY `+order+`
 		LIMIT $`+fmt.Sprint(len(args)-1)+` OFFSET $`+fmt.Sprint(len(args)), args...)
 	if err != nil {
 		return nil, 0, Internalf(err, "read customers")

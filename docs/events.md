@@ -68,6 +68,7 @@ produces it, and is never repurposed.
 | `order.refunded` | Money went back through the provider | Fires once per refund, so two partial refunds are two events. Payload carries a `refund` block and `reason`; `payment_status` says whether this one finished the job — `paid` while the store still holds part of it, `refunded` once the parts add up to the total |
 | `order.returned` | Goods came back off a shipped, partly shipped or delivered order | Stock is returned only for the lines marked to restock, and only to the shelf they were picked from unless another was named. The order's `status` and `payment_status` are unchanged — the delivery still happened — and the payload carries a `return` block. No money moves: a refund is its own operation and its own event |
 | `order.unreturned` | A return recorded in error was withdrawn | The units it put back have come off the shelf again. The row survives as `withdrawn`, so the quantity it held becomes returnable once more |
+| `cart.abandoned` | A cart past its TTL still held something | The only `cart.*` name, and the only one on aggregate type `cart`. Payload is a `CartEvent`, not an `OrderEvent`, and it carries the cart **token**, which is a credential. The first sweep after M28 drains whatever backlog the store is already carrying, 500 a pass |
 | `order.cancelled` | The order was voided | Stock has been returned; payload carries `reason`. The unpaid sweeper's population widened in M23 to orders whose payment was recorded as failed, so this now delivers for declined-gateway orders that previously sat stranded and silent |
 
 There is deliberately no `order.confirmed`. Confirmation always coincides with
@@ -76,6 +77,24 @@ a separate event would carry no information and would be one more name frozen
 forever.
 
 There is no `product.*` family either, until something consumes it.
+
+The cart family has exactly one name for the same reason. There is no
+`cart.created`: `POST /api/carts` is unauthenticated and high-volume, and an
+event per creation would make `outbox_events` the busiest table in the store to
+no consumer's benefit. There is no `cart.recovered`: a revival is already
+visible as the cart going back to `open` and, where it matters, as
+`order.created`, and emitting one would put an outbox write on `AddLine`, the
+hottest shopper-facing write path there is. And there is no `cart.purged`: a
+deletion after retention is a retention action, not a business transition, and
+an event announcing that the evidence has gone is evidence nobody can act on.
+
+**Core's notifier is deliberately not subscribed to `cart.*`.**
+`subscribeNotifications` stays on `order.*` alone. Subscribing the cart family
+would mean that on the first sweep after M28 every stale basket in the table
+with an email on it sends mail — and when and how often to chase an abandoned
+basket is a marketing decision with opt-out obligations attached, not an engine
+default shipped as a schema side effect. A recovery module subscribes to
+`cart.abandoned` and owns the schedule.
 
 **Stock movements are not events.** Every change to a stock balance is recorded
 in `stock_movements` (M26) — append-only, written inside the same transaction as
@@ -179,6 +198,56 @@ event moved any money.
 
 Amounts are integer minor units, as everywhere else. `language` is the
 language the shopper checked out in, so a notifier can reply in it.
+
+### The cart payload
+
+`cart.abandoned` carries a `CartEvent` instead, on aggregate type `cart` with
+the cart's row id as the aggregate id:
+
+```json
+{
+  "cart_id": 42,
+  "cart_token": "<the shopper's credential>",
+  "currency": "USD",
+  "email": "shopper@example.com",
+  "item_count": 3,
+  "subtotal_minor": 7500,
+  "discount_code": "WELCOME10",
+  "lines": [
+    {
+      "sku": "TEE-001",
+      "title": "Cotton tee",
+      "variant_label": "M / Black",
+      "quantity": 2,
+      "unit_price_minor": 2500,
+      "total_minor": 5000
+    }
+  ],
+  "created_at": "2026-01-02T10:00:00Z",
+  "last_active_at": "2026-01-02T10:04:12Z",
+  "abandoned_at": "2026-02-01T03:15:00Z",
+  "metadata": {}
+}
+```
+
+`lines` is the same `OrderEventLine` shape, down to the JSON names, so a
+consumer that can format an order email can format this one unchanged.
+
+`cart_token` is a **credential, not an identifier**: it authorises adding to,
+emptying and checking out that basket. Do not log it, and put it nowhere but a
+link addressed to `email`. It is in this payload — and deliberately absent from
+the admin API — because an event reaches a consumer in-process, while an admin
+response reaches a browser tab, a proxy log and a screenshot. It stops working
+when `PurgeAbandoned` deletes the row, so a store that lengthens
+`Config.CartRetention` also lengthens how long a token sitting in a delivered
+event stays usable.
+
+`last_active_at` is `carts.updated_at` — when the shopper last touched the cart,
+which the sweep deliberately does not overwrite — so a recovery flow can
+schedule against "sat five days, then was given up on" rather than against the
+moment the sweeper happened to run. A cart with no address still emits: the
+event is also the store's abandonment analytics, and a consumer that only wants
+recoverable baskets filters on `email` in its own handler.
 
 ### Changing a payload
 
