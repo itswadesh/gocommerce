@@ -14,7 +14,7 @@ import (
 // This exists because the questions an operator asks at 2am — "is the outbox
 // stuck?", "can anyone still sign in?", "is stock pinned by orders nobody is
 // going to pay for?" — are answerable from the database, but only if you know
-// which nine queries to run. Diagnose knows them.
+// which queries to run. Diagnose knows them.
 //
 // It is a core service rather than a CLI feature so that everything can reach
 // it: `gocommerce doctor` renders it, an MCP tool can call it, and a future

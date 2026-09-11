@@ -205,6 +205,8 @@ type manualFulfillment struct{}
 
 func (manualFulfillment) Code() string { return ProviderManual }
 
+func (manualFulfillment) DisplayName() string { return "Manual" }
+
 func (manualFulfillment) Ship(ctx context.Context, o *Order, req ShipRequest) (Shipment, error) {
 	// The carrier travels through: an operator holding the parcel is a better
 	// source than a pattern, and an empty one still leaves the engine to read

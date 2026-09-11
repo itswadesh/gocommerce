@@ -120,6 +120,26 @@ const (
 	// RightDataImport is the same door inwards: one bad file changes every
 	// price faster than any screen could.
 	RightDataImport Right = "data.import"
+
+	// ------------------------------------------------------------- the store
+
+	// RightStoreOperate is the store as a running system rather than as a
+	// shop: the health report, the maintenance passes that act on what it
+	// finds — sweeping carts nobody came back to, releasing stock held by
+	// orders nobody will pay for, forcing a delivery pass on the outbox — and
+	// the record of what that work did.
+	//
+	// It is its own right because none of the twenty above fit. team.read would
+	// file the store's health under who may see the staff list; orders.write
+	// would hand the unpaid sweep to every staff member and leave the outbox
+	// drain with no home at all. Splitting one area across three ill-fitting
+	// rights is precisely how settings.write happened.
+	//
+	// It is not settings.write returning under another name either: it changes
+	// no configuration and touches no product, price, order or person. What it
+	// grants is the ability to ask the engine how it is, and to make it reclaim
+	// now what it would otherwise reclaim within five minutes.
+	RightStoreOperate Right = "store.operate"
 )
 
 // AllRights is every right, in the order the panel renders them. Used by the
@@ -135,6 +155,10 @@ var AllRights = []Right{
 	RightCustomersRead,
 	RightTeamRead, RightTeamWrite, RightRolesWrite,
 	RightDataExport, RightDataImport,
+	// Appended, never inserted. AllRights is the order the panel draws the roles
+	// matrix in, so slotting a right into the middle silently moves every row an
+	// operator has already learned the position of.
+	RightStoreOperate,
 }
 
 // The roles. Fixed, and few: a store with three people does not need a
@@ -170,6 +194,11 @@ var Roles = []string{RoleOwner, RoleManager, RoleStaff}
 // see tax rates, locations and discount codes because staff could always see
 // them; the difference is that a store can now say otherwise, and the defaults
 // do not assume it wants to.
+//
+// store.operate is the one right neither set below carries. An owner holds it
+// because an owner holds everything, and a store that wants somebody else
+// operating it says so in the matrix — an upgrade that widens a role by itself
+// is a decision taken on the store's behalf while nobody was looking.
 var roleRights = map[string][]Right{
 	RoleOwner: AllRights,
 	RoleManager: {

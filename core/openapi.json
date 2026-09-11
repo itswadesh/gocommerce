@@ -74,6 +74,10 @@
     {
       "name": "admin:roles",
       "description": "What each role may do in this store."
+    },
+    {
+      "name": "admin:settings",
+      "description": "The store's own configuration, as the panel reads it."
     }
   ],
   "security": [],
@@ -5591,7 +5595,8 @@
                         "team.write",
                         "roles.write",
                         "data.export",
-                        "data.import"
+                        "data.import",
+                        "store.operate"
                       ]
                     }
                   }
@@ -5677,6 +5682,40 @@
           },
           "400": {
             "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/admin/settings": {
+      "get": {
+        "tags": [
+          "admin:settings"
+        ],
+        "summary": "What this store is configured as",
+        "description": "Read-only: everything here is a decision the binary was started with, and changing the settlement currency mid-flight would change what every order in flight means. No right is required — every screen has to format money before it can draw anything, so an operator who could not read this would read prices in the wrong currency and the wrong number of decimals. Nothing may be added to this payload that is not \"what this store is configured as\": diagnostics and secrets belong on a route with a right. `modules` and `notifier_channels` are reserved key names, added additively.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The store's configuration and the providers it was composed with.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/StoreSettings"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           }
         }
       }
@@ -6336,7 +6375,8 @@
                 "team.write",
                 "roles.write",
                 "data.export",
-                "data.import"
+                "data.import",
+                "store.operate"
               ]
             }
           },
@@ -8109,7 +8149,8 @@
                 "team.write",
                 "roles.write",
                 "data.export",
-                "data.import"
+                "data.import",
+                "store.operate"
               ]
             }
           },
@@ -8138,7 +8179,8 @@
                 "team.write",
                 "roles.write",
                 "data.export",
-                "data.import"
+                "data.import",
+                "store.operate"
               ]
             }
           },
@@ -8187,7 +8229,8 @@
                 "team.write",
                 "roles.write",
                 "data.export",
-                "data.import"
+                "data.import",
+                "store.operate"
               ]
             }
           },
@@ -8216,9 +8259,102 @@
                 "team.write",
                 "roles.write",
                 "data.export",
-                "data.import"
+                "data.import",
+                "store.operate"
               ]
             }
+          }
+        }
+      },
+      "StoreSettings": {
+        "type": "object",
+        "description": "What this store is configured as. A hand-written whitelist over the engine's configuration rather than a dump of it: the configuration also holds the database URL and the admin tokens, so a field appears here because somebody decided it should.",
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "The engine version this store is running.",
+            "example": "0.0.0-m0"
+          },
+          "currency": {
+            "type": "string",
+            "description": "The store's single settlement currency, as an ISO 4217 code.",
+            "example": "USD"
+          },
+          "default_language": {
+            "type": "string",
+            "description": "The BCP 47 tag used when a request expresses no preference.",
+            "example": "en"
+          },
+          "languages": {
+            "type": "array",
+            "description": "Every tag this store serves. The default language is always one of them. Empty is impossible, and it is an array rather than null so a client can iterate it without a guard.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "prices_include_tax": {
+            "type": "boolean",
+            "description": "True when every catalog price is gross — the tax is already inside the figure — rather than net with tax added at checkout. It is snapshotted onto each order as it is placed, so changing it never rewrites what last month's orders were saying."
+          },
+          "flat_shipping": {
+            "$ref": "#/components/schemas/Money",
+            "description": "Added to every order. It is the whole of the built-in shipping calculation; a rate engine is a module's job."
+          },
+          "order_prefix": {
+            "type": "string",
+            "description": "Prefixes human order numbers.",
+            "example": "GC-"
+          },
+          "cart_ttl_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How long an untouched cart survives before the sweeper deletes it, in seconds.",
+            "example": 2592000
+          },
+          "order_ttl_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How long an unpaid order holds its inventory reservation before it is cancelled and the stock released, in seconds.",
+            "example": 86400
+          },
+          "media_uploads_enabled": {
+            "type": "boolean",
+            "description": "False when this store has nowhere to put files. The media library still records files by URL, so a client should say why the upload button is missing rather than hide the library."
+          },
+          "payment_methods": {
+            "type": "array",
+            "description": "The payment methods this binary was composed with, sorted by code.",
+            "items": {
+              "$ref": "#/components/schemas/ProviderInfo"
+            }
+          },
+          "fulfillment_providers": {
+            "type": "array",
+            "description": "The shipping backends this binary was composed with, sorted by code.",
+            "items": {
+              "$ref": "#/components/schemas/ProviderInfo"
+            }
+          }
+        }
+      },
+      "ProviderInfo": {
+        "type": "object",
+        "description": "An installed provider, as an operator should see it.",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "What the API speaks: the code in the checkout URL and on the order.",
+            "example": "cod"
+          },
+          "name": {
+            "type": "string",
+            "description": "The label to show a person. Falls back to the code when the provider offers no name, because the module that installs a provider is the only thing that knows what it is called.",
+            "example": "Cash on delivery"
+          },
+          "module": {
+            "type": "string",
+            "description": "Which module installed it. \"core\" is a built-in.",
+            "example": "core"
           }
         }
       }

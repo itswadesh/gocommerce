@@ -139,7 +139,7 @@ asking "what is wrong" should not be answered with one problem when there are
 six. `-json` prints the full `Report`; either form **exits non-zero when any
 check fails**, so it gates CI or an agent without being parsed.
 
-Nine checks, in order:
+The checks, in order:
 
 | Check | Warn | Fail |
 |---|---|---|

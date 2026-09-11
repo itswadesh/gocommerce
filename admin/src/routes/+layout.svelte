@@ -11,7 +11,8 @@
     import "../app.css";
     import { base } from "$app/paths";
     import { page } from "$app/state";
-    import { auth, getToken, getRecord, can } from "$lib/api.js";
+    import { auth, getToken, can, session } from "$lib/api.js";
+    import { clearSettings, loadSettings } from "$lib/settings.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
     import Toasts from "$lib/components/Toasts.svelte";
     import Login from "$lib/components/Login.svelte";
@@ -19,8 +20,14 @@
     let { children } = $props();
 
     let ready = $state(false);
-    let record = $state(null);
-    let authenticated = $state(false);
+    /*
+     * Both read the session rune rather than a copy of it, so signing in,
+     * signing out and a re-cut role all reach the shell on their own. The
+     * copies were the reason two screens reloaded the document to update the
+     * nav: `can()` was answering from a value nothing was watching.
+     */
+    const record = $derived(session.record);
+    const authenticated = $derived(session.authenticated);
 
     /*
      * The one screen reachable without an account: an invitee has no
@@ -126,28 +133,38 @@
         // A stored token is a claim, not a fact. Refresh turns it back into an
         // identity — or tells us it has expired, before the operator hits a
         // 401 on something they actually meant to do.
-        record = getRecord();
-        authenticated = true;
         ready = true;
-        auth.refresh()
-            .then((r) => (record = r))
-            .catch(() => {
-                authenticated = false;
-                record = null;
-            });
+        // Every screen formats money before it can draw anything, so the store
+        // is asked here, once, rather than by each screen that needs it.
+        // Nothing in the shell waits on the answer.
+        loadSettings();
+        auth.refresh().catch((err) => {
+            if (err.isAuth) {
+                // api.js has already ended the session; the cached settings
+                // would be the previous operator's answer.
+                clearSettings();
+                return;
+            }
+            // A store that cannot be reached is not a credential that has gone
+            // bad. Clearing the session here signed out an operator whose token
+            // was still perfectly good.
+            toast.error("Could not reach the store — you are still signed in.");
+        });
     });
 
-    function onAuthenticated(r) {
-        record = r;
-        authenticated = true;
+    function onAuthenticated() {
+        // auth.login has already written the session; the shell only reacts to
+        // it. Forced, because the boot attempt ran with no token — or failed.
+        loadSettings({ force: true });
         toast.success("Signed in");
     }
 
     async function signOut() {
         document.getElementById("logged-user-dropdown")?.hidePopover();
+        // auth.logout is what clears the credential. The settings go with it:
+        // the next operator on a shared browser may be looking at another store.
         await auth.logout();
-        authenticated = false;
-        record = null;
+        clearSettings();
         toast.info("Signed out");
     }
 
@@ -251,52 +268,90 @@
 {/snippet}
 
 <main class="app">
-    {#if isPublic}
-        <!-- No header, no nav: there is nothing yet to navigate as. -->
-        {@render children?.()}
-    {:else if ready && authenticated}
-        <!-- Desktop: the sidebar itself. -->
-        <aside class="app-sidebar">
-            {@render brand()}
-            {@render navLinks()}
-            <div class="app-sidebar-foot">{@render account()}</div>
-        </aside>
+    <!-- One boundary around the whole shell, not just around the children: the
+         public branch below is the accept-invite screen, which is the first
+         thing a new operator ever sees and has no nav, no toast history and no
+         way back if it throws. +error.svelte cannot cover either half — there
+         is no `load` in this panel, so it only ever fires for a missing route. -->
+    <svelte:boundary>
+        {#if isPublic}
+            <!-- No header, no nav: there is nothing yet to navigate as. -->
+            {@render children?.()}
+        {:else if ready && authenticated}
+            <!-- Desktop: the sidebar itself. -->
+            <aside class="app-sidebar">
+                {@render brand()}
+                {@render navLinks()}
+                <div class="app-sidebar-foot">{@render account()}</div>
+            </aside>
 
-        <!-- Narrow: a bar with the toggle, and the sidebar as a drawer over the
-             page. Same markup either way — only where it sits changes. -->
-        <div class="app-topbar">
-            <button
-                type="button"
-                class="btn circle transparent secondary"
-                aria-label="Toggle navigation"
-                aria-expanded={menuOpen}
-                onclick={() => (menuOpen = !menuOpen)}
-            >
-                <i class={menuOpen ? "ri-close-line" : "ri-menu-line"} aria-hidden="true"></i>
-            </button>
-            {@render brand()}
-        </div>
+            <!-- Narrow: a bar with the toggle, and the sidebar as a drawer over the
+                 page. Same markup either way — only where it sits changes. -->
+            <div class="app-topbar">
+                <button
+                    type="button"
+                    class="btn circle transparent secondary"
+                    aria-label="Toggle navigation"
+                    aria-expanded={menuOpen}
+                    onclick={() => (menuOpen = !menuOpen)}
+                >
+                    <i class={menuOpen ? "ri-close-line" : "ri-menu-line"} aria-hidden="true"></i>
+                </button>
+                {@render brand()}
+            </div>
 
-        {#if menuOpen}
-            <button
-                type="button"
-                class="app-backdrop"
-                aria-label="Close navigation"
-                onclick={() => (menuOpen = false)}
-            ></button>
+            {#if menuOpen}
+                <button
+                    type="button"
+                    class="app-backdrop"
+                    aria-label="Close navigation"
+                    onclick={() => (menuOpen = false)}
+                ></button>
+            {/if}
+            <aside class="app-drawer" class:open={menuOpen} aria-hidden={!menuOpen}>
+                {@render brand()}
+                {@render navLinks()}
+                <div class="app-sidebar-foot">{@render account()}</div>
+            </aside>
+
+            {@render children?.()}
+        {:else if ready}
+            <div class="page">
+                <!-- Why the login form is back, when it is back because a
+                     credential stopped resolving mid-session rather than
+                     because nobody has signed in yet. -->
+                {#if session.expired}
+                    <div class="alert warning m-b-base">
+                        <p>Your session ended. Sign in to continue.</p>
+                    </div>
+                {/if}
+                <Login onauthenticated={onAuthenticated} />
+            </div>
+        {:else}
+            <div class="page"></div>
         {/if}
-        <aside class="app-drawer" class:open={menuOpen} aria-hidden={!menuOpen}>
-            {@render brand()}
-            {@render navLinks()}
-            <div class="app-sidebar-foot">{@render account()}</div>
-        </aside>
 
-        {@render children?.()}
-    {:else if ready}
-        <div class="page"><Login onauthenticated={onAuthenticated} /></div>
-    {:else}
-        <div class="page"></div>
-    {/if}
+        {#snippet failed(error, reset)}
+            <div class="page">
+                <div class="page-content">
+                    <div class="wrapper sm m-auto txt-center p-t-base">
+                        <i
+                            class="ri-error-warning-line txt-hint"
+                            style="font-size: 2.5rem;"
+                            aria-hidden="true"
+                        ></i>
+                        <h5 class="m-t-sm m-b-xs">This screen stopped</h5>
+                        <p class="txt-hint">
+                            {error?.message || "Something in the panel threw while drawing."}
+                        </p>
+                        <button type="button" class="btn secondary m-t-sm" onclick={reset}>
+                            <span class="txt">Try again</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        {/snippet}
+    </svelte:boundary>
 </main>
 
 <Toasts />

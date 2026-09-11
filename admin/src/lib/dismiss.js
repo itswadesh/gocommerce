@@ -10,6 +10,8 @@
  * comparison is the whole test.
  */
 
+import { isTopModal } from "$lib/focus.js";
+
 /**
  * dismissable closes the node when the backdrop is clicked or Escape pressed.
  *
@@ -43,6 +45,12 @@ export function dismissable(node, params = {}) {
         // closes the popover, and the same keystroke must not also close the
         // thing it was opened inside.
         if (document.querySelector("[popover]:popover-open")) return;
+        // And only the topmost modal answers. This listener is on the window and
+        // stopPropagation does not stop the other listeners bound to it, so a
+        // Confirm opened over a Drawer would otherwise close both on one press.
+        // isTopModal is true when nothing is trapped, so a lone modal and any
+        // non-trapped dismissable node behave exactly as they did.
+        if (!isTopModal(node)) return;
         event.stopPropagation();
         onclose?.();
     };

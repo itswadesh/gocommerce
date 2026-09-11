@@ -15,8 +15,9 @@
     import { base } from "$app/paths";
     import { goto } from "$app/navigation";
     import { api, query } from "$lib/api.js";
-    import { formatMoney, toMinor, stockClass, pluralize } from "$lib/format.js";
+    import { formatMoney, toMinor, isValidMoney, stockClass, pluralize } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
+    import { settings } from "$lib/settings.svelte.js";
     import Drawer from "$lib/components/Drawer.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
     import Select from "$lib/components/Select.svelte";
@@ -32,7 +33,9 @@
     let draftSearch = $state("");
     let status = $state("");
     let page = $state(1);
-    let currency = $state("USD");
+    // The store answers this once, at sign-in; before it does, the getter
+    // returns the same USD this screen used to assume outright.
+    const currency = $derived(settings.currency);
 
     let createOpen = $state(false);
     let form = $state(blankForm());
@@ -44,12 +47,6 @@
     function blankForm() {
         return { title: "", slug: "", status: "draft", sku: "", price: "", stock: 0 };
     }
-
-    $effect(() => {
-        api.get("/health/ready", { admin: false })
-            .then((info) => (currency = info.currency))
-            .catch(() => {});
-    });
 
     $effect(() => {
         // Re-runs whenever a filter changes. Page 1 replaces the list; a later
@@ -106,7 +103,10 @@
         errors = {};
         if (!form.title.trim()) errors.title = "A title is required.";
         if (!form.sku.trim()) errors.sku = "A SKU is required.";
-        if (form.price === "" || isNaN(parseFloat(form.price))) {
+        // isValidMoney rather than isNaN(parseFloat(...)): parseFloat reads
+        // "24,99" as 24, and this guard is what keeps toMinor from having to
+        // answer null on the way to the wire.
+        if (!isValidMoney(form.price)) {
             errors.price = "A price is required.";
         }
         if (Object.keys(errors).length) return;

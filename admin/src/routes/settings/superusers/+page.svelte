@@ -155,10 +155,11 @@
             await auth.setRole(su.id, role);
             toast.success(`${su.email} is now ${roleName(role).toLowerCase()}`);
             // Their own rights just changed: re-read the record so the nav and
-            // the buttons match what the engine will now allow.
+            // the buttons match what the engine will now allow. The record is a
+            // rune, so writing it is enough — this used to reload the document
+            // because can() read localStorage and nothing was watching it.
             if (me && su.id === me.id) {
                 await auth.refresh();
-                window.location.reload();
             }
         } catch (err) {
             su.role = was;

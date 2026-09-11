@@ -9,6 +9,7 @@
         pluralize,
     } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
+    import { settings } from "$lib/settings.svelte.js";
     import Drawer from "$lib/components/Drawer.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
     import Select from "$lib/components/Select.svelte";
@@ -261,24 +262,13 @@
     /**
      * The methods this build has installed, for the picker.
      *
-     * `GET /api/checkout` is the same list a storefront asks for before it
-     * shows payment options, so the panel cannot offer a method the engine
-     * would then refuse.
+     * The store's own settings, not the public checkout route: the engine
+     * composes one provider list and both answer from it, so the panel still
+     * cannot offer a method the engine would refuse — and each entry now
+     * carries the name the installing module gave it, instead of the panel
+     * keeping its own table of labels for codes it did not choose.
      */
-    let methods = $state([]);
-    async function loadMethods() {
-        if (methods.length) return;
-        try {
-            const res = await api.get("/api/checkout", { admin: false });
-            methods = res?.payment_methods ?? [];
-        } catch (err) {
-            // Without it the picker is empty and says nothing, which is worse
-            // than a message: the operator would think the store has no
-            // payment methods at all.
-            toast.error(err);
-            methods = [];
-        }
-    }
+    const methods = $derived(settings.paymentMethods);
 
     const saveCard = () =>
         act("Order updated", async () => {
@@ -372,20 +362,14 @@
                 toast.error(err);
             }
         }
-        // The same list the drawer's own picker uses — one loader, so the panel
-        // can never offer a method the engine would refuse.
-        await loadMethods();
         if (!draft.payment_method && methods.length) {
-            draft.payment_method = methods[0].code ?? methods[0];
+            draft.payment_method = methods[0].code;
         }
     }
 
     /* What the store can actually take, named as the shopper would see it. */
     const paymentOptions = $derived(
-        methods.map((m) => ({
-            value: m.code ?? m,
-            label: m.title || m.name || m.code || m,
-        })),
+        methods.map((m) => ({ value: m.code, label: m.name || m.code })),
     );
 
     const draftOrderTotal = $derived(
@@ -483,8 +467,13 @@
               : "",
     );
 
+    /* The label the module that installed the provider gave it. An order can
+       name a provider this build no longer has, so the code itself is the
+       fallback rather than a blank. */
     const methodName = $derived(
-        { cod: "cash on delivery" }[order?.payment_provider] ?? order?.payment_provider ?? "—",
+        methods.find((m) => m.code === order?.payment_provider)?.name ??
+            order?.payment_provider ??
+            "—",
     );
 
     const editable = $derived(
@@ -591,7 +580,7 @@
 
     /** A bare amount in the order's own currency, for the balance sentences. */
     function formatMinor(minor) {
-        return formatMoney({ amount_minor: minor, currency: order?.currency ?? "USD" });
+        return formatMoney({ amount_minor: minor, currency: order?.currency ?? settings.currency });
     }
 
     function askCancel() {
@@ -1195,10 +1184,7 @@
                         <button
                             type="button"
                             class="btn sm transparent secondary"
-                            onclick={() => {
-                                loadMethods();
-                                startEditPayment();
-                            }}
+                            onclick={startEditPayment}
                         >
                             <span class="txt">Edit</span>
                         </button>
@@ -1212,10 +1198,7 @@
                             <Select
                                 id="pay-method"
                                 bind:value={form.payment_provider}
-                                options={methods.map((m) => ({
-                                    value: m,
-                                    label: m === "cod" ? "Cash on delivery" : m,
-                                }))}
+                                options={paymentOptions}
                             />
                         </div>
                         <div class="field m-t-sm">

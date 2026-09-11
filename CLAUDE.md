@@ -25,16 +25,32 @@ Full reasoning is in AGENTS.md; these are the ones worth having in front of you:
 
 ## Environment on this machine
 
-Go is not on the system PATH:
+These are facts about this box, not about the repository — nothing here is
+portable to another machine.
+
+Go 1.27.1 is installed at `C:\tools\go\bin` and is not on the system PATH.
+The test database is a throwaway container (`gocommerce-pg`,
+`postgres:17-alpine`) published on **port 5460**:
 
 ```powershell
-$env:Path += ';C:\Users\LENOVO\go-sdk\go\bin'
-$env:GOCOMMERCE_TEST_DB = 'postgres://gocommerce@127.0.0.1:5433/gocommerce_test?sslmode=disable'
+$env:Path += ';C:\tools\go\bin'
+$env:GOCOMMERCE_TEST_DB = 'postgres://gocommerce@127.0.0.1:5460/gocommerce_test?sslmode=disable'
 ```
 
-PostgreSQL runs on **port 5433** (a trust-auth cluster created for this
-project; the default 5432 cluster uses scram and its password is not known
-here). Tests need it — there is no mock.
+Tests need it — there is no mock. Do not reach for 5433: on this box that
+port belongs to an unrelated project's database, so the wrong setting does
+not fail, it runs the suite against somebody else's cluster.
+
+**Port 8080 is taken here** by an unrelated process, so the two scripts that
+assume it have to be told otherwise:
+
+```powershell
+.\scripts\dev.ps1 -Port 8090 -PgPort 5460
+.\scripts\smoke.ps1 -BaseUrl http://127.0.0.1:8090
+```
+
+`-PgPort` for the same reason as the DSN above: the script still defaults to
+5433, and the dev store's own database belongs on this project's cluster.
 
 There is no cgo toolchain, so `-race` is unavailable locally; CI covers it.
 
@@ -49,30 +65,39 @@ go test -tags no_admin ./core -count=1
 .\scripts\check-docs.ps1                    # skills and links still match the code
 .\scripts\build.ps1                         # required after any admin/src change
 .\scripts\smoke.ps1                         # walks a whole sale; exits non-zero on any failure
-.\gocommerce.exe doctor                     # 9 operational checks
+.\gocommerce.exe doctor                     # the operational checks
 ```
 
-`scripts/dev.ps1 -Seed` starts a store on :8080 with demo data. It signs in as
-`admin@example.com` / `devpassword`; `dev-token` is the static admin token for
-scripts.
+`scripts/dev.ps1 -Seed` starts a store with demo data, on :8080 unless `-Port`
+says otherwise. It signs in as `admin@example.com` / `devpassword`; `dev-token`
+is the static admin token for scripts.
 
 ## Verifying the admin panel
 
 The panel cannot be checked by reading code — a page can return 200 for every
 asset and still render nothing (it did, once: a CSP header blocked SvelteKit's
-inline bootstrap). **Claude-in-Chrome is not on this host** and its requests
-never reach the local server.
+inline bootstrap). **Claude-in-Chrome is connected on this host** — two local
+browsers answer `list_connected_browsers` — but nobody has shown it reaching a
+store on `127.0.0.1` from here, and it takes an interactive browser choice
+before it will do anything.
 
 Use Playwright. A harness lives in the session scratchpad under `verify/`:
-`check3.mjs` signs in with a real password, walks every screen, captures
-console and page errors and failed requests, reads computed styles, and
-screenshots desktop, dark and mobile. Run it more than once — the worst bug
-found this way was intermittent.
+`check.mjs` signs in with a real password, walks every screen, captures
+console and page errors, failed requests and horizontal overflow, and
+screenshots desktop, dark and mobile:
+
+```powershell
+node check.mjs --base http://127.0.0.1:8090
+```
+
+It exits non-zero on any finding, and a screen a later wave has not built yet
+is marked optional so it reports absence rather than failing. Run it more than
+once — the worst bug found this way was intermittent.
 
 ## Working style
 
 - Read `PLAN.md` §5 before proposing anything structural. The decisions have
-  numbers (D1–D25) and reasons; disagree with the reason, not the conclusion.
+  numbers (D1–D31) and reasons; disagree with the reason, not the conclusion.
 - Comments explain **why**. The code already says what.
 - Match the surrounding prose voice in docs — plain, specific, no filler.
 - When something is genuinely ambiguous, say so and state the assumption you

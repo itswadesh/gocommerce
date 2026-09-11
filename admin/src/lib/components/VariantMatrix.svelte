@@ -23,7 +23,15 @@
      */
     import { api, request } from "$lib/api.js";
     import { toast } from "$lib/toast.svelte.js";
-    import { toMinor, fromMinor, stockClass, pluralize, currencySymbol } from "$lib/format.js";
+    import {
+        toMinor,
+        fromMinor,
+        isValidMoney,
+        stockClass,
+        pluralize,
+        currencySymbol,
+    } from "$lib/format.js";
+    import { settings } from "$lib/settings.svelte.js";
     import Select from "$lib/components/Select.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
@@ -89,7 +97,20 @@
 
     const axes = $derived(product?.options ?? []);
     const variants = $derived(product?.variants ?? []);
-    const currency = $derived(variants[0]?.price?.currency ?? product?.currency ?? "USD");
+    /*
+     * A variant's own price carries the currency it was written in, and that is
+     * the only authority for editing that row. The store's settlement currency
+     * is what a product with no variants yet gets priced in — it used to be a
+     * hardcoded "USD", which is how a ¥ store ended up entering prices in a
+     * currency with two more decimals than it has.
+     */
+    const currency = $derived(
+        variants[0]?.price?.currency ?? product?.currency ?? settings.currency,
+    );
+
+    // Undefined everywhere in the panel: the reader's own locale is what a
+    // person types in. It is named so the tests can pin one.
+    const locale = undefined;
 
     // --------------------------------------------------------------- options
 
@@ -311,7 +332,13 @@
         try {
             const body = { options: cleanedAxes(), generate_variants: generate };
             if (generate && generatePrice !== "") {
-                body.price_minor = toMinor(generatePrice, currency);
+                // Guarded, because "abc" here would have priced every generated
+                // variant: the field was checked for emptiness and nothing else.
+                if (!isValidMoney(generatePrice, locale)) {
+                    toast.error("Enter a valid price for the generated variants.");
+                    return;
+                }
+                body.price_minor = toMinor(generatePrice, currency, locale);
             }
             const result = await request("PUT", `/api/admin/products/${product.id}/options`, {
                 body,
@@ -528,11 +555,11 @@
 
     function applyGroupPrice(group) {
         const value = groupPrice[group.key];
-        if (value === undefined || value === "" || isNaN(parseFloat(value))) {
+        if (value === undefined || !isValidMoney(value, locale)) {
             toast.error("Enter a price first.");
             return;
         }
-        const price_minor = toMinor(value, currency);
+        const price_minor = toMinor(value, currency, locale);
         apply(
             group.items,
             (v) => api.patch(`/api/admin/variants/${v.id}`, { price_minor }),
@@ -574,8 +601,8 @@
     }
 
     function commitPrice(variant, raw) {
-        if (raw === "" || isNaN(parseFloat(raw))) return;
-        const price_minor = toMinor(raw, currency);
+        if (!isValidMoney(raw, locale)) return;
+        const price_minor = toMinor(raw, currency, locale);
         if (price_minor === variant.price.amount_minor) return;
         commit(variant, { price_minor });
     }
@@ -639,7 +666,7 @@
         addErrors = {};
         const sku = addForm.sku.trim();
         if (!sku) addErrors.sku = "A SKU is required.";
-        if (addForm.price === "" || isNaN(parseFloat(addForm.price))) {
+        if (!isValidMoney(addForm.price, locale)) {
             addErrors.price = "A price is required.";
         }
         if (axes.some((axis) => !addForm.options[axis.id])) {
@@ -651,7 +678,7 @@
         try {
             await api.post(`/api/admin/products/${product.id}/variants`, {
                 sku,
-                price_minor: toMinor(addForm.price, currency),
+                price_minor: toMinor(addForm.price, currency, locale),
                 active: addForm.active,
                 options: axes.map((axis) => addForm.options[axis.id]),
             });

@@ -23,8 +23,9 @@
     import { base } from "$app/paths";
     import { goto } from "$app/navigation";
     import { api, query, request } from "$lib/api.js";
-    import { toMinor, fromMinor, stockClass, pluralize } from "$lib/format.js";
+    import { toMinor, fromMinor, isValidMoney, stockClass, pluralize } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
+    import { settings } from "$lib/settings.svelte.js";
     import RichText from "$lib/components/RichText.svelte";
     import SaveBar from "$lib/components/SaveBar.svelte";
     import Select from "$lib/components/Select.svelte";
@@ -304,8 +305,11 @@
             toast.error(err);
         }
     }
+    // The variant's own code first: the engine stamps one on every amount it
+    // sends, and only a product with no variant yet falls through to what the
+    // store settles in.
     const currency = $derived(
-        defaultVariant?.price?.currency ?? product?.currency ?? "USD",
+        defaultVariant?.price?.currency ?? product?.currency ?? settings.currency,
     );
 
     /**
@@ -421,7 +425,10 @@
 
     function shapeOf(p) {
         const variant = p.variants?.[0] ?? null;
-        const code = variant?.price?.currency ?? p.currency ?? "USD";
+        // Captured, not derived: what this reads becomes the text in the price
+        // boxes and is what the operator re-submits. It runs after the product
+        // has loaded, so the variant's own code is nearly always the answer.
+        const code = variant?.price?.currency ?? p.currency ?? settings.currency;
         return {
             title: p.title ?? "",
             slug: p.slug ?? "",
@@ -784,7 +791,10 @@
         if (!form.title.trim()) errors.title = "A title is required.";
         if (!hasOptions) {
             if (!form.sku.trim()) errors.sku = "A SKU is required.";
-            if (form.price === "" || isNaN(parseFloat(form.price))) {
+            // isValidMoney rather than isNaN(parseFloat(...)): parseFloat reads
+            // "24,99" as 24, and this guard is what keeps toMinor from having to
+            // answer null on the way to the wire.
+            if (!isValidMoney(form.price)) {
                 errors.price = "A price is required.";
             }
         }
@@ -798,6 +808,21 @@
         if (Object.keys(errors).length) {
             toast.error("Some fields still need attention.");
             return;
+        }
+        // The other two money boxes, refused out loud rather than into `errors`:
+        // neither has an error slot in the form to hang a message on, and an
+        // amount toMinor cannot read reaches the wire as null — which on these
+        // pointer fields is an absent field, so the save would report success
+        // having changed nothing.
+        if (!hasOptions) {
+            const unreadable = [
+                ["compare_at", "Enter a compare-at price, or empty the box."],
+                ["cost", "Enter a cost, or empty the box."],
+            ].find(([field]) => form[field].trim() !== "" && !isValidMoney(form[field]));
+            if (unreadable) {
+                toast.error(unreadable[1]);
+                return;
+            }
         }
 
         saving = true;

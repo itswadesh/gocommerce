@@ -444,6 +444,7 @@ func (a *App) mountCoreRoutes() {
 	a.mountLocationRoutes()
 	a.mountTeamRoutes()
 	a.mountRoleRoutes()
+	a.mountSettingsRoutes()
 	a.mountCartRoutes()
 	a.mountCheckoutRoutes()
 	a.mountOrderRoutes()

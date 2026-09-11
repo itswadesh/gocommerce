@@ -8,8 +8,9 @@
      * the editor's problem.
      */
     import { api, query } from "$lib/api.js";
-    import { fromMinor, toMinor, pluralize } from "$lib/format.js";
+    import { fromMinor, toMinor, isValidMoney, pluralize } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
+    import { settings } from "$lib/settings.svelte.js";
     import Drawer from "$lib/components/Drawer.svelte";
     import Select from "$lib/components/Select.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
@@ -31,8 +32,10 @@
     let confirmOpen = $state(false);
     let confirmConfig = $state({});
 
-    /** The store's currency, for the amount field's prefix. */
-    let currency = $state("USD");
+    /** The store's currency, for the amount field's prefix and for reading an
+     *  amount back: a discount is written in the store's settlement currency,
+     *  and how many decimals that has is exactly what fromMinor needs told. */
+    const currency = $derived(settings.currency);
 
     $effect(() => {
         search;
@@ -51,14 +54,6 @@
             loading = false;
         }
     }
-
-    $effect(() => {
-        // The currency is the store's, and the checkout route is where a
-        // storefront asks for it too.
-        api.get("/api/checkout", { admin: false })
-            .then((res) => (currency = res?.currency ?? "USD"))
-            .catch(() => {});
-    });
 
     function blank() {
         return {
@@ -92,8 +87,10 @@
             title: d.title,
             kind: d.kind,
             percent: d.value_bp ? String(d.value_bp / 100) : "",
-            amount: d.value_minor ? fromMinor(d.value_minor) : "",
-            min_subtotal: d.min_subtotal_minor ? fromMinor(d.min_subtotal_minor) : "",
+            amount: d.value_minor ? fromMinor(d.value_minor, currency) : "",
+            min_subtotal: d.min_subtotal_minor
+                ? fromMinor(d.min_subtotal_minor, currency)
+                : "",
             starts_at: d.starts_at ? d.starts_at.slice(0, 16) : "",
             ends_at: d.ends_at ? d.ends_at.slice(0, 16) : "",
             usage_limit: d.usage_limit ? String(d.usage_limit) : "",
@@ -103,7 +100,7 @@
         open = true;
     }
 
-    /** The form as the engine wants it. */
+    /** The form as the engine wants it, or null when a money field cannot be read. */
     function payload() {
         const body = {
             code: form.code.trim(),
@@ -117,11 +114,26 @@
         if (form.kind === "percentage") {
             body.value_bp = Math.round((parseFloat(form.percent) || 0) * 100);
         } else if (form.kind === "fixed") {
-            body.value_minor = toMinor(form.amount);
+            // Refused here rather than sent. toMinor answers null on anything it
+            // cannot read, and a null value_minor is a discount that takes
+            // nothing off — which reads back as a saved rule that does nothing.
+            if (!isValidMoney(form.amount)) {
+                toast.error("Enter an amount to take off.");
+                return null;
+            }
+            body.value_minor = toMinor(form.amount, currency);
         }
-        body.min_subtotal_minor = form.min_subtotal.trim()
-            ? toMinor(form.min_subtotal)
-            : null;
+        // Empty legitimately means no minimum, so only a non-empty one is
+        // guarded.
+        if (form.min_subtotal.trim()) {
+            if (!isValidMoney(form.min_subtotal)) {
+                toast.error("Enter a minimum subtotal, or leave it empty.");
+                return null;
+            }
+            body.min_subtotal_minor = toMinor(form.min_subtotal, currency);
+        } else {
+            body.min_subtotal_minor = null;
+        }
         body.starts_at = form.starts_at ? new Date(form.starts_at).toISOString() : null;
         body.ends_at = form.ends_at ? new Date(form.ends_at).toISOString() : null;
         body.usage_limit = form.usage_limit.trim() ? parseInt(form.usage_limit, 10) : null;
@@ -130,13 +142,15 @@
 
     async function save(event) {
         event?.preventDefault();
+        const body = payload();
+        if (!body) return;
         saving = true;
         try {
             if (editing) {
-                await api.patch(`/api/admin/discounts/${editing.id}`, payload());
+                await api.patch(`/api/admin/discounts/${editing.id}`, body);
                 toast.success("Discount updated");
             } else {
-                await api.post("/api/admin/discounts", payload());
+                await api.post("/api/admin/discounts", body);
                 toast.success("Discount created");
             }
             open = false;
@@ -172,7 +186,7 @@
     /** What the rule takes off, in one phrase. */
     function value(d) {
         if (d.kind === "percentage") return `${d.value_bp / 100}%`;
-        if (d.kind === "fixed") return `${currency} ${fromMinor(d.value_minor)}`;
+        if (d.kind === "fixed") return `${currency} ${fromMinor(d.value_minor, currency)}`;
         return "Free shipping";
     }
 

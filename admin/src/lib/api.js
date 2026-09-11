@@ -4,10 +4,30 @@
  * with curl.
  */
 
-import { browser } from "$app/environment";
+import {
+    beginSession,
+    clearToken,
+    endSession,
+    getRecord,
+    getToken,
+} from "$lib/session.svelte.js";
 
-const TOKEN_KEY = "gocommerce_admin_token";
-const RECORD_KEY = "gocommerce_admin_record";
+/*
+ * The session itself lives in session.svelte.js, because Svelte compiles runes
+ * only in a `.svelte.js` module and `can()` has to be reactive. Every name it
+ * used to export from here is re-exported below, so no importer had to move.
+ */
+export {
+    getToken,
+    setToken,
+    clearToken,
+    getRecord,
+    can,
+    canAny,
+    canAll,
+    rights,
+    session,
+} from "$lib/session.svelte.js";
 
 /** ApiError carries the engine's own error envelope. */
 export class ApiError extends Error {
@@ -24,71 +44,32 @@ export class ApiError extends Error {
     }
 }
 
-export function getToken() {
-    if (!browser) return "";
-    try {
-        return localStorage.getItem(TOKEN_KEY) || "";
-    } catch {
-        return "";
-    }
-}
-
-export function setToken(token) {
-    if (!browser) return;
-    try {
-        if (token) localStorage.setItem(TOKEN_KEY, token);
-        else localStorage.removeItem(TOKEN_KEY);
-    } catch {
-        /* storage disabled; the session simply will not survive a reload */
-    }
-}
-
-export function clearToken() {
-    setToken("");
-    setRecord(null);
-}
-
-/** getRecord returns the signed-in operator, as last seen from the server. */
-export function getRecord() {
-    if (!browser) return null;
-    try {
-        return JSON.parse(localStorage.getItem(RECORD_KEY) || "null");
-    } catch {
-        return null;
-    }
-}
-
 /**
- * What the signed-in operator may do.
+ * refuse builds the error every failed call throws, and is the one place a
+ * session ends.
  *
- * The record carries `rights`, spelled out by the engine from their role, so
- * the panel never keeps its own copy of the permission table — see rights.go.
+ * Only a 401 ends it. Three things that look close by are deliberately left
+ * alone:
  *
- * A missing rights list means the credential is a static admin token, which
- * carries everything: scripts and the bootstrap operator have no role to read.
- * Erring that way keeps a token-authenticated panel fully usable, and the
- * engine refuses anything this is wrong about.
+ *   403 is a rights answer — the credential is fine and the operator is not
+ *       allowed. Signing somebody out because they opened a screen their role
+ *       does not carry would be absurd.
+ *   400 `not_a_session` is a static admin token meeting auth-refresh. It is a
+ *       valid credential that simply is not a person; auth.refresh keeps it.
+ *   status 0 is `network_error`. The store is unreachable; the token is fine
+ *       and will still be fine when the store comes back.
+ *
+ * `handled` tells toast.error to stay quiet: the shell has already swapped to
+ * the login form with an explanation, and sixty-six screens each re-toasting
+ * "authentication required" for their own in-flight call is noise on top of it.
  */
-export function can(right) {
-    const record = getRecord();
-    if (!record || !Array.isArray(record.rights)) return true;
-    return record.rights.includes(right);
-}
-
-/** The rights, so a screen can test several without re-reading storage. */
-export function rights() {
-    const record = getRecord();
-    return Array.isArray(record?.rights) ? record.rights : null;
-}
-
-function setRecord(record) {
-    if (!browser) return;
-    try {
-        if (record) localStorage.setItem(RECORD_KEY, JSON.stringify(record));
-        else localStorage.removeItem(RECORD_KEY);
-    } catch {
-        /* storage disabled */
+function refuse(status, code, message, details) {
+    const err = new ApiError(status, code, message, details);
+    if (status === 401) {
+        endSession();
+        err.handled = true;
     }
+    return err;
 }
 
 /**
@@ -124,11 +105,11 @@ export async function request(method, path, options = {}) {
     } catch (err) {
         // A network failure is not an API error; say so rather than showing a
         // status code that never arrived.
-        throw new ApiError(0, "network_error", "Could not reach the store. Is it still running?");
+        throw refuse(0, "network_error", "Could not reach the store. Is it still running?");
     }
 
     if (raw) {
-        if (!response.ok) throw await toApiError(response);
+        if (!response.ok) throw await apiErrorFrom(response);
         return await response.text();
     }
 
@@ -138,7 +119,7 @@ export async function request(method, path, options = {}) {
 
     if (!response.ok) {
         const err = payload?.error;
-        throw new ApiError(
+        throw refuse(
             response.status,
             err?.code || "error",
             err?.message || response.statusText,
@@ -153,7 +134,16 @@ export async function request(method, path, options = {}) {
     return payload?.data ?? payload;
 }
 
-async function toApiError(response) {
+/**
+ * apiErrorFrom turns a failed Response into the same ApiError request() throws,
+ * for the two call sites that talk to fetch directly — a file download and the
+ * media upload. Without it a 401 on either one loops forever while the rest of
+ * the panel has already recovered.
+ *
+ * It begins by reading the body, so the `!response.ok` check must come BEFORE
+ * any other read of it: a body can only be read once.
+ */
+export async function apiErrorFrom(response) {
     const text = await response.text().catch(() => "");
     let parsed = null;
     try {
@@ -161,7 +151,7 @@ async function toApiError(response) {
     } catch {
         /* not JSON */
     }
-    return new ApiError(
+    return refuse(
         response.status,
         parsed?.error?.code || "error",
         parsed?.error?.message || response.statusText,
@@ -204,9 +194,7 @@ export const auth = {
             { identity, password },
             { admin: false },
         );
-        setToken(result.token);
-        setRecord(result.record);
-        return result.record;
+        return beginSession(result);
     },
 
     /** invitation says who a link is for, before asking for a password. */
@@ -226,17 +214,13 @@ export const auth = {
             { password },
             { admin: false },
         );
-        setToken(result.token);
-        setRecord(result.record);
-        return result.record;
+        return beginSession(result);
     },
 
     /** install creates the first operator on a fresh database and signs in. */
     async install(email, password) {
         const result = await api.post("/api/admin/install", { email, password }, { admin: false });
-        setToken(result.token);
-        setRecord(result.record);
-        return result.record;
+        return beginSession(result);
     },
 
     /**
@@ -252,12 +236,11 @@ export const auth = {
         if (!token) return null;
         try {
             const result = await api.post("/api/admin/auth-refresh", null);
-            setToken(result.token);
-            setRecord(result.record);
-            return result.record;
+            return beginSession(result);
         } catch (err) {
             if (err.status === 400) return getRecord();
-            if (err.isAuth) clearToken();
+            // A 401 has already ended the session inside refuse(); rethrow so
+            // the caller knows the stored token was a claim and not a fact.
             throw err;
         }
     },

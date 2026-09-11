@@ -40,6 +40,17 @@ type Refunder interface {
 	Refund(ctx context.Context, order *Order, amountMinor int64) error
 }
 
+// Named is an optional capability on a provider: the label an operator should
+// see where the code would otherwise leak into the UI — "cod" reads as a
+// database column in a sentence, "Cash on delivery" does not. A provider that
+// does not implement it is shown by its code.
+//
+// Optional for the same reason Refunder is: a cosmetic field is not worth a
+// breaking change to every module's provider. It lives on the provider because
+// the module that installs one is the only thing that knows what it is called —
+// a label table anywhere else is a label table in the wrong repository.
+type Named interface{ DisplayName() string }
+
 // PayOptions carries client-supplied data through checkout to the provider,
 // so a gateway can receive what it needs without the engine's checkout body
 // growing a field per integration.

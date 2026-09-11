@@ -19,9 +19,11 @@
      * store's own currency, languages and providers from public endpoints —
      * there is nothing there to gate.
      *
-     * Import / export takes either half: the screen offers both and shows only
-     * the half you carry, so requiring both to reach it would hide it from the
-     * person who may do one of them.
+     * Import / export takes either half, so requiring both to reach it would
+     * hide it from the person who may do one of them. That puts a requirement
+     * on the screen rather than on this link: it must gate each half on its own
+     * right, because an account holding only data.export reaches it and must
+     * not be offered an import it cannot perform.
      */
     const groups = {
         System: [

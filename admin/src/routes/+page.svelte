@@ -150,7 +150,10 @@
             </thead>
             <tbody>
                 {#each recent as order (order.id)}
-                    <tr class="handle" onclick={() => goto(`${base}/orders?q=${order.number}`)}>
+                    <!-- `id`, not `q`: the orders screen filters on what OrderQuery
+                         carries, and `q` is not one of its fields — the row
+                         landed on an unfiltered list. -->
+                    <tr class="handle" onclick={() => goto(`${base}/orders?id=${order.id}`)}>
                         <td class="col-field-name-id txt-code txt-sm" data-name="Order">
                             {order.number}
                         </td>

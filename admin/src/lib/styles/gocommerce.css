@@ -3681,3 +3681,149 @@ tr.variant-child > td:first-child {
         display: none;
     }
 }
+
+/* ------------------------------------------------- shared infrastructure */
+
+/*
+ * The pieces every list screen now shares: the pager, the bulk bar's clearance
+ * over it, a focus ring for a row that can take the keyboard, and the warning
+ * toast variant.
+ *
+ * None of them can go where they naturally belong. The pager cannot extend
+ * `.load-more-btn` and the row ring cannot sit beside `tr.handle { outline: 0 }`,
+ * because table.css is PocketBase's and frozen; the warning toast cannot join
+ * `.success` and `.error` in toast.css for the same reason.
+ */
+
+.list-pager {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+/*
+ * Wide enough for four digits and no wider. A page box that grows with the
+ * footer is a text field pretending to be a control.
+ */
+.pager-page {
+    width: 3.5em;
+    text-align: center;
+}
+
+/*
+ * The bulk bar sits above the footer rather than on it. `.bulkbar-wrapper` is
+ * sticky against the scroll port while `.page-footer` is in flow after the
+ * table, so at the bottom of a list the two land in the same corner — and the
+ * pager is now what they land on.
+ */
+.page-content > .bulkbar-wrapper {
+    bottom: calc(var(--smSpacing) + var(--lgBtnHeight));
+}
+
+/*
+ * PocketBase suppresses the outline on a draggable row (`tr.handle`), which is
+ * right for a row you can only pick up with a mouse and wrong the moment the
+ * row takes focus from the keyboard: without this a keyboard operator has a
+ * cursor they cannot see. `:focus-visible`, so a click does not draw it.
+ */
+tr.handle:focus-visible {
+    outline: 2px solid var(--accentColor);
+    outline-offset: -2px;
+}
+
+/*
+ * The warning toast. toast.css defines success and error and nothing between
+ * them, so a partial outcome — "3 rows had problems" — was drawn as total
+ * failure. The tokens are vars.css's own, in both schemes.
+ */
+.toast.warning {
+    --toastSurfaceColor: var(--surfaceWarningColor);
+    --toastAccentColor: var(--warningColor);
+    .toast-icon::before {
+        content: "\EA21";
+    }
+}
+
+/*
+ * The printable sheet itself. On screen it is a sheet of paper on the panel’s
+ * own background, so what an operator sees before pressing print is what comes
+ * out; in print the margins are @page’s and this adds none of its own.
+ */
+.print-sheet {
+    max-width: 190mm;
+    margin: var(--spacing) auto;
+    padding: var(--spacing);
+    background: var(--surfaceColor);
+}
+
+/* --------- @media print — KEEP LAST ---------
+ *
+ * Append your section ABOVE this block. These rules carry no `!important`, so a
+ * later section's `.page-footer { display: flex }` of equal specificity wins the
+ * print cascade by source order alone and the shell reappears on the page.
+ */
+@media print {
+    /*
+     * The colour scheme is re-declared rather than inherited. A dark-theme
+     * operator otherwise prints a black rectangle with the ink to match, which
+     * is a real cost in a warehouse and an invisible one in devtools' print
+     * emulation — hence the two-scheme check in the Playwright pass.
+     */
+    :root,
+    [data-color-scheme="dark"] {
+        --baseColor: #fff;
+        --baseAlt1Color: #fff;
+        --baseAlt2Color: #fff;
+        --surfaceColor: #fff;
+        --bodyColor: #fff;
+        --txtPrimaryColor: #000;
+        --txtHintColor: #333;
+        --boxShadow: none;
+    }
+
+    /* The shell is navigation; a printed page has none. */
+    .app-sidebar,
+    .app-topbar,
+    .app-drawer,
+    .app-backdrop,
+    .page-sidebar,
+    .page-header,
+    .page-footer,
+    .bulkbar-wrapper,
+    .toasts-container,
+    .theme-toggle {
+        display: none;
+    }
+
+    /* Flattened: the rounded, shadowed, scrolling surfaces of a window are
+       decoration once the content is on paper, and a fixed height clips it. */
+    .app,
+    .page,
+    .page-content {
+        display: block;
+        height: auto;
+        max-height: none;
+        overflow: visible;
+        margin: 0;
+        padding: 0;
+        border-radius: 0;
+        box-shadow: none;
+        background: #fff;
+    }
+
+    @page {
+        margin: 14mm;
+    }
+
+    /*
+     * A label's meaning is its colour, which a mono printer throws away — so it
+     * becomes an outline instead. `!important` here and nowhere else in the
+     * block: the colour is set by a variant class of higher specificity than
+     * anything a position rule can outrank.
+     */
+    .label {
+        border: 1px solid #000;
+        background: none !important;
+        color: #000 !important;
+    }
+}

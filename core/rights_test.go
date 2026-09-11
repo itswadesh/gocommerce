@@ -64,6 +64,11 @@ func TestRolesDrawFromTheOneList(t *testing.T) {
 		{RoleStaff, RightOrdersRefund, false},
 		{RoleStaff, RightCatalogWrite, false},
 		{RoleStaff, RightInventoryWrite, false},
+		// The twenty-first right is in nobody's default set: an owner reaches
+		// it through AllRights, and a store that wants a manager operating it
+		// grants it in the matrix rather than receiving it from an upgrade.
+		{RoleManager, RightStoreOperate, false},
+		{RoleStaff, RightStoreOperate, false},
 		{"nonsense", RightCatalogRead, false},
 	}
 	for _, c := range cases {
@@ -232,12 +237,21 @@ func TestEveryAdminRouteDeclaresRights(t *testing.T) {
 	// asking an owner to choose one for them, which is the practice invitations
 	// exist to end. The handlers read the operator from the session, so there is
 	// no id to tamper with.
+	//
+	// The settings read is exempt because every screen formats money before it
+	// can draw anything: a role that could not read it would read prices in the
+	// wrong currency and the wrong number of decimals, which is a correctness
+	// failure wearing a permission failure's clothes. What keeps that safe is a
+	// rule on the payload rather than on the route — nothing may be added to it
+	// that is not "what this store is configured as", and a diagnostic or a
+	// secret belongs behind a right on a route of its own.
 	exempt := map[string]bool{
 		"POST /api/admin/auth-refresh":       true,
 		"POST /api/admin/auth-logout":        true,
 		"GET /api/admin/me":                  true,
 		"PATCH /api/admin/me":                true,
 		"POST /api/admin/me/revoke-sessions": true,
+		"GET /api/admin/settings":            true,
 	}
 
 	var ungated []string

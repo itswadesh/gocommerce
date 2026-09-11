@@ -10,7 +10,9 @@
      */
     import { page } from "$app/state";
     import { base } from "$app/paths";
+    import { goto } from "$app/navigation";
     import { auth } from "$lib/api.js";
+    import { rightLabel } from "$lib/rights.js";
     import { toast } from "$lib/toast.svelte.js";
 
     const token = $derived(page.params.token);
@@ -60,43 +62,16 @@
             // prove it immediately is how a first impression goes wrong.
             toast.success(`Welcome, ${record.email}`);
 
-            // A whole page load, not `goto`. The shell decides whether you are
-            // signed in from an effect that runs once on mount and reads
-            // localStorage — which is not reactive, so nothing re-runs it. A
-            // client-side navigation therefore lands on the login form holding
-            // a session that works, which is the worst of both. Re-mounting is
-            // what makes the shell look again.
-            window.location.assign(base + "/");
+            // `goto`, not a document load: the shell reads the session from a
+            // rune now, so signing in re-renders it. This was a full reload for
+            // as long as the shell decided once, on mount, from localStorage.
+            await goto(base + "/");
         } catch (err) {
             error = err.message;
         } finally {
             submitting = false;
         }
     }
-
-    /** A right reads better as a sentence than as a dotted identifier. */
-    const RIGHT_LABELS = {
-        "catalog.read": "See the catalog",
-        "catalog.write": "Edit products and categories",
-        "inventory.read": "See stock levels",
-        "inventory.write": "Adjust stock",
-        "discounts.read": "See discounts",
-        "discounts.write": "Create and edit discounts",
-        "taxes.read": "See tax rates",
-        "taxes.write": "Edit tax rates",
-        "locations.read": "See locations",
-        "locations.write": "Edit locations",
-        "orders.read": "See orders",
-        "orders.write": "Place, edit and cancel orders",
-        "orders.fulfill": "Fulfil and ship orders",
-        "orders.refund": "Refund money",
-        "customers.read": "See customers",
-        "team.read": "See the team",
-        "team.write": "Invite and manage the team",
-        "roles.write": "Change what each role may do",
-        "data.export": "Export the catalog and orders",
-        "data.import": "Import the catalog and orders",
-    };
 </script>
 
 <div class="page">
@@ -134,7 +109,7 @@
                 {#each invitation.rights as right (right)}
                     <div class="list-item">
                         <i class="ri-check-line" aria-hidden="true"></i>
-                        <span class="txt">{RIGHT_LABELS[right] ?? right}</span>
+                        <span class="txt">{rightLabel(right)}</span>
                     </div>
                 {/each}
             </div>

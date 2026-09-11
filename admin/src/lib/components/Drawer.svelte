@@ -1,3 +1,9 @@
+<script module>
+    // One title id per instance: several drawers are mounted at once on most
+    // screens, and aria-labelledby pointing at a shared id names the wrong one.
+    let seq = 0;
+</script>
+
 <script>
     /**
      * PocketBase's editor panel: a right-anchored, full-height `.modal` that
@@ -11,6 +17,7 @@
      */
     import { dismissable } from "$lib/dismiss.js";
     import { portal } from "$lib/portal.js";
+    import { trapFocus } from "$lib/focus.js";
 
     let {
         open = false,
@@ -21,20 +28,34 @@
         children,
         footer,
     } = $props();
+
+    /*
+     * A drawer needs an accessible name, and where it comes from depends on
+     * whether the caller supplied its own header: with one there is no
+     * `.modal-title` element to point at, so the name is the prop instead.
+     */
+    seq += 1;
+    const titleID = `modal-title-${seq}`;
 </script>
 
 <div
     class="modal {size}"
     data-modal-state={open ? "open" : "closed"}
     inert={!open}
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+    aria-labelledby={header ? undefined : titleID}
+    aria-label={header ? title || "Dialog" : undefined}
     use:portal
+    use:trapFocus={open}
     use:dismissable={{ onclose, enabled: open }}
 >
     <header class="modal-header">
         {#if header}
             {@render header()}
         {:else}
-            <h5 class="modal-title">{title}</h5>
+            <h5 class="modal-title" id={titleID}>{title}</h5>
         {/if}
         <button
             type="button"

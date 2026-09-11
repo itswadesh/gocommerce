@@ -204,6 +204,8 @@ const CodeCOD = "cod"
 
 func (codProvider) Code() string { return CodeCOD }
 
+func (codProvider) DisplayName() string { return "Cash on delivery" }
+
 func (codProvider) Initiate(ctx context.Context, o *Order, opts PayOptions) (PaymentIntent, error) {
 	return PaymentIntent{Kind: IntentNone, Provider: CodeCOD}, nil
 }

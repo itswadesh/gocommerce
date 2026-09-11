@@ -1,5 +1,5 @@
 <script>
-    import { getToken, request } from "$lib/api.js";
+    import { apiErrorFrom, getToken, request } from "$lib/api.js";
     import { toast } from "$lib/toast.svelte.js";
     import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
     import Select from "$lib/components/Select.svelte";
@@ -21,7 +21,10 @@
                 headers: { Authorization: "Bearer " + getToken() },
             });
             if (!response.ok) {
-                toast.danger(`Export failed: ${response.status}`);
+                // The engine says why — the rights middleware refuses by name —
+                // and a bare status code throws that away. Nothing has read the
+                // body yet, so apiErrorFrom is free to.
+                toast.error(await apiErrorFrom(response));
                 return;
             }
             const blob = await response.blob();

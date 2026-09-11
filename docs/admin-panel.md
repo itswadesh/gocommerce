@@ -23,11 +23,28 @@ dashboard — it **is** PocketBase's stylesheets. `admin/src/lib/styles/` holds
 from PocketBase's `ui/src/css`, imported in PocketBase's own order.
 
 Do not hand-edit those files. To take an upstream change, re-copy them from a
-PocketBase checkout, so the diff stays readable. Exactly one stylesheet in the
-panel is ours — `gocommerce.css` — and it covers only what PocketBase has no
-counterpart to: dashboard stat cards, a section heading, and money columns. It
-is built from PocketBase's own tokens, so it introduces no new colour, radius
-or duration.
+PocketBase checkout, so the diff stays readable. Two stylesheets are ours —
+`gocommerce.css` and `fonts-inter.css` — and the first covers only what
+PocketBase has no counterpart to: dashboard stat cards, a section heading, and
+money columns. It is built from PocketBase's own tokens, so it introduces no
+new colour, radius or duration.
+
+**`gocommerce.css` is written by appending.** A screen adds one commented
+section at the end of the file, immediately above the `@media print` block,
+which stays the last block in the file permanently. That is not tidiness: the
+print rules hide the shell without `!important`, so anything of equal
+specificity placed after them wins on source order and puts the navigation
+back on the printed page. Do not reach up into an existing rule to make a new
+screen look right either — a selector two screens share is a regression
+waiting for whichever of them changes first.
+
+Two places are edited in place, and only two. The nav-accent blocks — the
+`.nav-*` pairs carrying an icon, ground and text colour per navigation item,
+in their light and dark forms — gain a line whenever a screen gains a
+navigation entry, because they are a lookup table rather than a section. And
+the `@media print` sentinel itself is edited when something new has to be kept
+off a printed page; it is the one block a new section may not be appended
+after.
 
 The markup follows suit. Pages own their `.page` wrapper, the primary
 navigation is horizontal in the accent header (`.app-main-nav`), a page title

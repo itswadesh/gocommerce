@@ -19,7 +19,7 @@
      * mounts both, and the notice exists because a zone that silently showed an
      * empty grid would invite an operator to replace files they cannot see.
      */
-    import { api, request, getToken, query, ApiError } from "$lib/api.js";
+    import { api, request, getToken, query, ApiError, apiErrorFrom } from "$lib/api.js";
     import { toast } from "$lib/toast.svelte.js";
     import { pluralize } from "$lib/format.js";
     import Drawer from "$lib/components/Drawer.svelte";
@@ -186,16 +186,12 @@
             throw new ApiError(0, "network_error", "Could not reach the store. Is it still running?");
         }
 
+        // The ok-check comes first because apiErrorFrom reads the body, and a
+        // body can only be read once. This is one of exactly two places in the
+        // panel that bypasses request(); without it a 401 mid-upload keeps
+        // looping while everything else has already recovered.
+        if (!response.ok) throw await apiErrorFrom(response);
         const payload = await response.json().catch(() => null);
-        if (!response.ok) {
-            const err = payload?.error;
-            throw new ApiError(
-                response.status,
-                err?.code || "error",
-                err?.message || response.statusText,
-                err?.details,
-            );
-        }
         return payload?.data ?? payload;
     }
 

@@ -10,6 +10,7 @@
      */
     import { dismissable } from "$lib/dismiss.js";
     import { portal } from "$lib/portal.js";
+    import { trapFocus } from "$lib/focus.js";
 
     let {
         open = $bindable(false),
@@ -34,6 +35,16 @@
 
     // Dismissal is disabled while the action runs: closing a confirmation
     // mid-delete would hide the outcome of something already in flight.
+    //
+    // The focus trap is NOT gated the same way. `working` is true while the
+    // modal is still on screen, and dropping the trap there would hand the
+    // keyboard back to the drawer behind a dialog the operator can still see.
+    // Both buttons are already disabled, so there is nothing to dismiss by
+    // accident.
+    //
+    // This is the component that proves the stack: it is opened from inside a
+    // Drawer at three known sites, so opening it pushes over the drawer's trap
+    // and closing it hands the keyboard back.
 </script>
 
 <div
@@ -43,7 +54,9 @@
     role="alertdialog"
     aria-modal="true"
     aria-label={title}
+    tabindex="-1"
     use:portal
+    use:trapFocus={open}
     use:dismissable={{ onclose: () => (open = false), enabled: open && !working }}
 >
     <div class="modal-content">

@@ -26,9 +26,24 @@ $repo = Split-Path -Parent $PSScriptRoot
 Push-Location $repo
 
 try {
-    # Go lives outside the machine PATH on this box.
-    $goBin = "C:\Users\LENOVO\go-sdk\go\bin"
-    if ((Test-Path $goBin) -and ($env:Path -notlike "*$goBin*")) { $env:Path += ";$goBin" }
+    # Go lives outside the machine PATH on more than one box here, in a
+    # different place on each. Take the first candidate that exists, then
+    # insist: a missing toolchain used to sail straight past this line and
+    # surface as "go: not found" from the build, which reads like a repo fault.
+    $goCandidates = @(
+        "C:\Users\LENOVO\go-sdk\go\bin",
+        "C:\tools\go\bin",
+        "C:\Program Files\Go\bin"
+    )
+    $goBin = $goCandidates |
+        Where-Object { Test-Path (Join-Path $_ "go.exe") } |
+        Select-Object -First 1
+    if ($goBin -and ($env:Path -notlike "*$goBin*")) { $env:Path += ";$goBin" }
+
+    if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
+        $tried = $goCandidates -join ", "
+        throw "go is not on PATH and none of these exist: $tried. Install Go, or add its bin directory to PATH."
+    }
 
     # ---------------------------------------------------------------- panel
 

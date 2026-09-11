@@ -188,7 +188,7 @@ go build -tags no_admin ./...
 go test -tags no_admin ./core -count=1
 .\scripts\build.ps1             # required after any admin/src change
 .\scripts\smoke.ps1             # against a running store
-.\gocommerce.exe doctor         # nine operational checks
+.\gocommerce.exe doctor         # the operational checks
 ```
 
 And the two that are easy to skip and expensive to miss: a new route needs its

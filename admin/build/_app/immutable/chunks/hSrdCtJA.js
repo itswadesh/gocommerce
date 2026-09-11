@@ -1,0 +1,1 @@
+import{k as o,F as c,E as d,T as i,U as p}from"./B46mGQvK.js";function m(s,n,t){o(()=>{var r=c(()=>n(s,t==null?void 0:t())||{});if(t&&(r!=null&&r.update)){var e=!1,f={};d(()=>{var a=t();i(a),e&&p(f,a)&&(f=a,r.update(a))}),e=!0}if(r!=null&&r.destroy)return()=>r.destroy()})}function k(s){return document.body.appendChild(s),{destroy(){s.remove()}}}export{m as a,k as p};
