@@ -22,6 +22,7 @@ pages assume it.
 | [carts](carts.md) | Guest carts, line items, price snapshots, TTL |
 | [checkout](checkout.md) | The two-phase transaction, re-validation, idempotency keys |
 | [orders](orders.md) | The order state machine, cancellation, fulfillment, refunds |
+| [discounts](discounts.md) | Writing a promotion, scope and targets, or the arithmetic an order's discount went through |
 | [payments](payments.md) | Settlement, `MarkPaid`, or writing a new payment provider |
 | [events](events.md) | The transactional outbox, event names and payloads, subscribing |
 

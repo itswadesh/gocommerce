@@ -39,9 +39,10 @@ type Right string
 const (
 	// ------------------------------------------------------------- catalog
 
-	// RightCatalogRead covers products, variants, categories, collections and
-	// media. Reading the catalog is the floor: an operator who cannot see it
-	// cannot do anything else either.
+	// RightCatalogRead covers products, variants, categories, collections, the
+	// attribute dictionary those categories ask from, and media. Reading the
+	// catalog is the floor: an operator who cannot see it cannot do anything
+	// else either.
 	RightCatalogRead  Right = "catalog.read"
 	RightCatalogWrite Right = "catalog.write"
 

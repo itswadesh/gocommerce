@@ -716,7 +716,7 @@ func TestRollbackLeavesNoEvent(t *testing.T) {
 
 	// Make the checkout fail after it has already written its event, by
 	// selling the only unit out from under it.
-	if _, err := app.Stock().SetOnHand(ctx, product.DefaultVariant().ID, 0, 0); err != nil {
+	if _, err := app.Stock().SetOnHand(ctx, product.DefaultVariant().ID, 0, 0, ""); err != nil {
 		t.Fatalf("zero the stock: %v", err)
 	}
 	if _, err := app.Order().Checkout(ctx, CodeCOD, checkoutInput(cart.Token), ""); err == nil {
@@ -991,7 +991,7 @@ func TestContinueSellingOffAgainRefusesFromNegative(t *testing.T) {
 
 	// Restock to cover the hole and the switch goes off, as it must — the rule
 	// is "not while negative", not "never again".
-	if _, err := app.Stock().Adjust(ctx, variant.ID, 0, 2); err != nil {
+	if _, err := app.Stock().Adjust(ctx, variant.ID, 0, 2, ""); err != nil {
 		t.Fatalf("restock: %v", err)
 	}
 	if _, err := app.Products().UpdateVariant(ctx, variant.ID, VariantPatch{ContinueSelling: &off}); err != nil {

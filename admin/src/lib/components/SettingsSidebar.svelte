@@ -34,6 +34,11 @@
               right: "roles.write" },
             { href: "/settings/account", label: "Your account", icon: "ri-user-settings-line" },
         ],
+        // The attribute dictionary sits under Settings rather than beside
+        // Categories in the main nav: it is vocabulary configured once and then
+        // consumed from the categories drawer, not a screen worked in daily.
+        Catalog: [{ href: "/settings/attributes", label: "Attribute dictionary",
+                    icon: "ri-list-settings-line", right: "catalog.read" }],
         Data: [{ href: "/data", label: "Import / export", icon: "ri-file-transfer-line",
                  anyOf: ["data.export", "data.import"] }],
     };

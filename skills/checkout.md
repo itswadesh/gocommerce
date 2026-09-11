@@ -91,10 +91,12 @@ without a second round trip.
 **Money is `*_minor` integers plus a currency.** `subtotal_minor`,
 `shipping_minor`, `discount_minor`, `total_minor`, and the API returns
 `{"amount_minor": 2500, "currency": "USD"}`. The total is
-`subtotal + Config.FlatShippingMinor − discount`, and tax is charged on the
-discounted amount. The discount is whatever the cart's `discount_code` was worth
-when `applyTx` judged it under the checkout lock — nothing is trusted from a
-previous preview. An operator placing an order by hand supplies that code as
+`subtotal + Config.FlatShippingMinor − discount`, plus tax when prices are
+exclusive, and tax is charged on the discounted amount. The discount is whatever
+the cart's `discount_code` was worth when `applyTx` judged it under the checkout
+lock — nothing is trusted from a previous preview. A scoped rule comes off only
+the lines its targets reach, and only those lines have their tax base reduced;
+see [discounts](discounts.md). An operator placing an order by hand supplies that code as
 `discount_code` on `POST /api/admin/orders`; it is validated by the checkout and
 not on the way in, so an expired, exhausted or ineligible code refuses the whole
 request with a 422 and leaves no order and no reservation behind. The two public

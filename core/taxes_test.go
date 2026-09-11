@@ -252,7 +252,9 @@ func TestAllocateDiscountSumsExactly(t *testing.T) {
 			lines[i] = taxableLine{Total: total, Taxable: true}
 			gross += total
 		}
-		got := allocateDiscount(lines, c.discount)
+		// nil is the mask an order-scoped checkout passes, which is every
+		// checkout that does not name products.
+		got := allocateDiscount(lines, nil, c.discount)
 
 		want := c.discount
 		if want > gross {
@@ -372,5 +374,88 @@ func TestChangingARateLeavesOrdersAlone(t *testing.T) {
 	}
 	if after.Lines[0].Tax.Name != "GST 18%" {
 		t.Errorf("line tax name = %q, want the one it was charged under", after.Lines[0].Tax.Name)
+	}
+}
+
+// The mask is why allocateDiscount grew a parameter: an ineligible line is
+// charged in full, so it is taxed in full, and the eligible shares still sum to
+// the whole discount exactly.
+func TestAllocateDiscountRespectsTheMask(t *testing.T) {
+	lines := []taxableLine{
+		{Total: 1000, Taxable: true},
+		{Total: 500, Taxable: true},
+		{Total: 333, Taxable: true},
+	}
+	mask := []bool{true, false, true}
+
+	got := allocateDiscount(lines, mask, 200)
+	if got[1] != 0 {
+		t.Errorf("an ineligible line was allocated %d", got[1])
+	}
+	var sum int64
+	for i, v := range got {
+		if v < 0 {
+			t.Errorf("line %d got a negative share", i)
+		}
+		if v > lines[i].Total {
+			t.Errorf("line %d got %d off a line worth %d", i, v, lines[i].Total)
+		}
+		sum += v
+	}
+	if sum != 200 {
+		t.Errorf("allocations sum to %d, want 200", sum)
+	}
+
+	// A discount larger than the eligible part is clamped to the eligible part,
+	// not to the basket — otherwise the untargeted line would fund it.
+	all := allocateDiscount(lines, mask, 9999)
+	if all[0] != 1000 || all[1] != 0 || all[2] != 333 {
+		t.Errorf("over-large discount allocated %v, want the eligible lines and nothing else", all)
+	}
+}
+
+// The under-collection the mask exists to prevent: a discount taken off one line
+// must not lower the tax base of a line the customer paid for in full.
+func TestScopedDiscountTaxesOnlyTheLinesItCameOff(t *testing.T) {
+	app := newTestApp(t)
+
+	shoes := simpleProduct(t, app, "TAXSCOPE-SHOES", 1000, 10)
+	hats := simpleProduct(t, app, "TAXSCOPE-HATS", 1000, 10)
+	newTaxRate(t, app, TaxRateInput{Name: "VAT", RateBP: 2000, Country: "US"})
+	newDiscount(t, app, DiscountInput{
+		Code: "TAXSHOES", Title: "Ten off shoes", Kind: DiscountPercentage, ValueBP: 1000,
+		Scope: DiscountScopeProducts, TargetIDs: []int64{shoes.ID},
+	})
+
+	order, err := checkoutMixed(t, app, "TAXSHOES", []basketItem{
+		{shoes.DefaultVariant().ID, 1}, {hats.DefaultVariant().ID, 1},
+	}, "")
+	if err != nil {
+		t.Fatalf("checkout: %v", err)
+	}
+	if order.Discount.AmountMinor != 100 {
+		t.Fatalf("discount = %d, want 100", order.Discount.AmountMinor)
+	}
+
+	var shoeTax, hatTax int64
+	for _, l := range order.Lines {
+		switch {
+		case l.ProductID != nil && *l.ProductID == shoes.ID:
+			shoeTax = l.Tax.AmountMinor
+		case l.ProductID != nil && *l.ProductID == hats.ID:
+			hatTax = l.Tax.AmountMinor
+		}
+	}
+	// The hat was charged 1000 and is taxed on 1000, exactly as it would be with
+	// no discount in the basket at all.
+	if hatTax != 200 {
+		t.Errorf("untargeted line's tax = %d, want 200 — it was charged in full", hatTax)
+	}
+	// The shoe was charged 900 and is taxed on 900.
+	if shoeTax != 180 {
+		t.Errorf("targeted line's tax = %d, want 180 — taxed on what it was charged", shoeTax)
+	}
+	if order.Tax.AmountMinor != shoeTax+hatTax {
+		t.Errorf("order tax = %d, want the lines' %d", order.Tax.AmountMinor, shoeTax+hatTax)
 	}
 }

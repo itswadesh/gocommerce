@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -304,10 +305,12 @@ func TestProductsInCollectionAreCuratedOrder(t *testing.T) {
 	if total != 3 || len(products) != 3 {
 		t.Fatalf("got %d of %d products, want 3 of 3", len(products), total)
 	}
-	// Every product holds position 0 in this collection, so the tie-break is
-	// product_id — what matters is that it is deterministic and ascending.
-	if products[0].ID != first.ID || products[2].ID != third.ID {
-		t.Errorf("order = %v, want ascending by curation then id", collectionIDs(products))
+	// Arrival order, not product_id: each save appends to the tail of this
+	// collection's curation, so the products added third, second and first come
+	// back in that order. Before member_position existed they all held 0 here
+	// and the tie-break was the id — an order nobody had chosen.
+	if products[0].ID != third.ID || products[1].ID != second.ID || products[2].ID != first.ID {
+		t.Errorf("order = %v, want the order they were added in", collectionIDs(products))
 	}
 }
 
@@ -632,5 +635,412 @@ func assertTags(t *testing.T, got, want []string) {
 		if got[i] != want[i] {
 			t.Fatalf("tags = %v, want %v", got, want)
 		}
+	}
+}
+
+// --------------------------------------------------------------- curation
+
+// memberOrder reads a collection's membership straight out of the table, in
+// whichever of the two orderings the caller names. It goes around the service
+// deliberately: these tests are about which column carries which order.
+func memberOrder(t *testing.T, app *App, collectionID int64, orderBy string) []int64 {
+	t.Helper()
+	rows, err := app.DB().QueryContext(context.Background(),
+		`SELECT product_id FROM product_collections WHERE collection_id = $1 ORDER BY `+orderBy,
+		collectionID)
+	if err != nil {
+		t.Fatalf("read the membership: %v", err)
+	}
+	defer rows.Close()
+	out := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("read the membership: %v", err)
+	}
+	return out
+}
+
+func productIDs(products []*Product) []int64 {
+	out := make([]int64, 0, len(products))
+	for _, p := range products {
+		out = append(out, p.ID)
+	}
+	return out
+}
+
+func sameIDs(got, want []int64) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// The one thing in M27 that cannot be corrected after release: the backfill has
+// to freeze the order stores can see today, which is `ORDER BY position,
+// product_id` — the shipped expression, not product_id alone. A fixture whose
+// members all belong to one collection passes either way, which is why this one
+// puts them in different numbers of collections.
+func TestMigrationFreezesTheVisibleCurationOrder(t *testing.T) {
+	app := collectionsApp(t)
+	ctx := context.Background()
+	svc := app.Collections()
+
+	edit := newCollection(t, app, CollectionInput{Title: "Edit"})
+	other := newCollection(t, app, CollectionInput{Title: "Other"})
+	third := newCollection(t, app, CollectionInput{Title: "Third"})
+
+	// Ids ascend p1, p2, p3 while their `position` inside Edit descends 2, 1, 0,
+	// so the shipped order is the reverse of the product_id order and the two
+	// candidate backfills cannot both pass.
+	p1 := simpleProduct(t, app, "SKU-FREEZE-1", 100, 1)
+	p2 := simpleProduct(t, app, "SKU-FREEZE-2", 100, 1)
+	p3 := simpleProduct(t, app, "SKU-FREEZE-3", 100, 1)
+	for _, seed := range []struct {
+		id  int64
+		ids []int64
+	}{
+		{p1.ID, []int64{other.ID, third.ID, edit.ID}},
+		{p2.ID, []int64{other.ID, edit.ID}},
+		{p3.ID, []int64{edit.ID}},
+	} {
+		if err := svc.SetProductCollections(ctx, seed.id, seed.ids); err != nil {
+			t.Fatalf("seed membership: %v", err)
+		}
+	}
+
+	shipped := memberOrder(t, app, edit.ID, "position, product_id")
+	if !sameIDs(shipped, []int64{p3.ID, p2.ID, p1.ID}) {
+		t.Fatalf("the fixture is not what this test needs: shipped order = %v", shipped)
+	}
+
+	// Back to the pre-migration state — one column, every member tied at 0 —
+	// and then the migration's own statement, not a copy of it.
+	if _, err := app.DB().ExecContext(ctx, `UPDATE product_collections SET member_position = 0`); err != nil {
+		t.Fatalf("reset member_position: %v", err)
+	}
+	if _, err := app.DB().ExecContext(ctx, curationBackfill); err != nil {
+		t.Fatalf("run the backfill: %v", err)
+	}
+
+	if got := memberOrder(t, app, edit.ID, "member_position, product_id"); !sameIDs(got, shipped) {
+		t.Errorf("after the backfill the order is %v, want the order stores can see today, %v", got, shipped)
+	}
+}
+
+func TestSetCollectionProductsCurates(t *testing.T) {
+	app := collectionsApp(t)
+	ctx := context.Background()
+	svc := app.Collections()
+
+	first := simpleProduct(t, app, "SKU-CURATE-1", 100, 1)
+	second := simpleProduct(t, app, "SKU-CURATE-2", 200, 1)
+	third := simpleProduct(t, app, "SKU-CURATE-3", 300, 1)
+	c := newCollection(t, app, CollectionInput{Title: "Window"})
+
+	if err := svc.SetCollectionProducts(ctx, c.ID, []int64{third.ID, first.ID, second.ID}); err != nil {
+		t.Fatalf("curate: %v", err)
+	}
+	members, total, err := svc.ProductsInCollection(ctx, c.ID, ProductQuery{})
+	if err != nil {
+		t.Fatalf("ProductsInCollection: %v", err)
+	}
+	if total != 3 || !sameIDs(productIDs(members), []int64{third.ID, first.ID, second.ID}) {
+		t.Fatalf("order = %v, want the order that was sent", productIDs(members))
+	}
+
+	// A subset drops the memberships it leaves out, and nothing else.
+	if err := svc.SetCollectionProducts(ctx, c.ID, []int64{first.ID}); err != nil {
+		t.Fatalf("shrink: %v", err)
+	}
+	members, _, err = svc.ProductsInCollection(ctx, c.ID, ProductQuery{})
+	if err != nil {
+		t.Fatalf("ProductsInCollection: %v", err)
+	}
+	if !sameIDs(productIDs(members), []int64{first.ID}) {
+		t.Errorf("members = %v, want only the one that survived", productIDs(members))
+	}
+	if _, err := app.Products().GetProduct(ctx, third.ID); err != nil {
+		t.Errorf("the dropped product did not survive losing its membership: %v", err)
+	}
+
+	// An explicit empty list empties the collection and keeps it.
+	if err := svc.SetCollectionProducts(ctx, c.ID, []int64{}); err != nil {
+		t.Fatalf("empty: %v", err)
+	}
+	_, total, err = svc.ProductsInCollection(ctx, c.ID, ProductQuery{})
+	if err != nil {
+		t.Fatalf("ProductsInCollection: %v", err)
+	}
+	if total != 0 {
+		t.Errorf("total = %d, want the collection emptied", total)
+	}
+	if _, err := svc.Get(ctx, c.ID); err != nil {
+		t.Errorf("the collection did not survive being emptied: %v", err)
+	}
+
+	if err := svc.SetCollectionProducts(ctx, 999999, []int64{first.ID}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown collection = %v, want a not-found error", err)
+	}
+	if err := svc.SetCollectionProducts(ctx, c.ID, []int64{first.ID, 999999}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown product = %v, want a not-found error", err)
+	}
+	if _, total, _ = svc.ProductsInCollection(ctx, c.ID, ProductQuery{}); total != 0 {
+		t.Errorf("the rejected request stored %d memberships, want none", total)
+	}
+}
+
+// The D40 regression. One column cannot carry both orderings, so each writer
+// must leave the other's alone — in either order.
+func TestTheTwoCollectionOrderingsAreIndependent(t *testing.T) {
+	app := collectionsApp(t)
+	ctx := context.Background()
+	svc := app.Collections()
+
+	a := simpleProduct(t, app, "SKU-AXIS-A", 100, 1)
+	b := simpleProduct(t, app, "SKU-AXIS-B", 100, 1)
+	window := newCollection(t, app, CollectionInput{Title: "Window"})
+	sale := newCollection(t, app, CollectionInput{Title: "Sale"})
+
+	assertBoth := func(when string) {
+		t.Helper()
+		members, _, err := svc.ProductsInCollection(ctx, window.ID, ProductQuery{})
+		if err != nil {
+			t.Fatalf("%s: ProductsInCollection: %v", when, err)
+		}
+		if !sameIDs(productIDs(members), []int64{b.ID, a.ID}) {
+			t.Errorf("%s: the collection's order is %v, want [b a]", when, productIDs(members))
+		}
+		got, err := app.Products().GetProduct(ctx, a.ID)
+		if err != nil {
+			t.Fatalf("%s: GetProduct: %v", when, err)
+		}
+		if len(got.Collections) != 2 ||
+			got.Collections[0].ID != sale.ID || got.Collections[1].ID != window.ID {
+			t.Errorf("%s: a's chips are %+v, want Sale then Window", when, got.Collections)
+		}
+	}
+
+	if err := svc.SetProductCollections(ctx, b.ID, []int64{window.ID}); err != nil {
+		t.Fatalf("seed b: %v", err)
+	}
+	if err := svc.SetCollectionProducts(ctx, window.ID, []int64{b.ID, a.ID}); err != nil {
+		t.Fatalf("curate: %v", err)
+	}
+	if err := svc.SetProductCollections(ctx, a.ID, []int64{sale.ID, window.ID}); err != nil {
+		t.Fatalf("re-save a's collections: %v", err)
+	}
+	assertBoth("product-side save after a curation")
+
+	// And the other way round: curating again must not disturb the chips.
+	if err := svc.SetCollectionProducts(ctx, window.ID, []int64{b.ID, a.ID}); err != nil {
+		t.Fatalf("curate again: %v", err)
+	}
+	assertBoth("curation after a product-side save")
+}
+
+// The reconcile, not a delete and a re-insert: re-saving a product's collections
+// unchanged must not move it inside any of them.
+func TestSetProductCollectionsKeepsCuratedPlaces(t *testing.T) {
+	app := collectionsApp(t)
+	ctx := context.Background()
+	svc := app.Collections()
+
+	head := simpleProduct(t, app, "SKU-KEEP-HEAD", 100, 1)
+	middle := simpleProduct(t, app, "SKU-KEEP-MIDDLE", 100, 1)
+	tail := simpleProduct(t, app, "SKU-KEEP-TAIL", 100, 1)
+	one := newCollection(t, app, CollectionInput{Title: "One"})
+	two := newCollection(t, app, CollectionInput{Title: "Two"})
+
+	for _, c := range []*Collection{one, two} {
+		if err := svc.SetCollectionProducts(ctx, c.ID, []int64{head.ID, middle.ID, tail.ID}); err != nil {
+			t.Fatalf("curate %s: %v", c.Title, err)
+		}
+	}
+	if err := svc.SetProductCollections(ctx, middle.ID, []int64{one.ID, two.ID}); err != nil {
+		t.Fatalf("re-save the middle product: %v", err)
+	}
+	for _, c := range []*Collection{one, two} {
+		members, _, err := svc.ProductsInCollection(ctx, c.ID, ProductQuery{})
+		if err != nil {
+			t.Fatalf("ProductsInCollection: %v", err)
+		}
+		if !sameIDs(productIDs(members), []int64{head.ID, middle.ID, tail.ID}) {
+			t.Errorf("%s = %v, want the curated order untouched", c.Title, productIDs(members))
+		}
+	}
+
+	// A membership created from the product side lands at the tail of the
+	// collection's curation rather than at its head.
+	newcomer := simpleProduct(t, app, "SKU-KEEP-NEW", 100, 1)
+	if err := svc.SetProductCollections(ctx, newcomer.ID, []int64{one.ID}); err != nil {
+		t.Fatalf("add a newcomer: %v", err)
+	}
+	members, _, err := svc.ProductsInCollection(ctx, one.ID, ProductQuery{})
+	if err != nil {
+		t.Fatalf("ProductsInCollection: %v", err)
+	}
+	if !sameIDs(productIDs(members), []int64{head.ID, middle.ID, tail.ID, newcomer.ID}) {
+		t.Errorf("one = %v, want the newcomer at the end", productIDs(members))
+	}
+}
+
+func TestCollectionProductsHTTP(t *testing.T) {
+	app := collectionsApp(t)
+	ctx := context.Background()
+
+	active := simpleProduct(t, app, "SKU-HTTP-ACTIVE", 100, 1)
+	price := int64(100)
+	draft, err := app.Products().CreateProduct(ctx, ProductInput{
+		Title: "Staged", SKU: "SKU-HTTP-DRAFT", PriceMinor: &price,
+	})
+	if err != nil {
+		t.Fatalf("create the draft: %v", err)
+	}
+	c := newCollection(t, app, CollectionInput{Title: "Window"})
+	target := "/api/admin/collections/" + strconv.FormatInt(c.ID, 10) + "/products"
+
+	rec := do(t, app, http.MethodPut, target, withAdmin,
+		jsonBody(t, map[string]any{"product_ids": []int64{draft.ID, active.ID}}))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("PUT = %d: %s", rec.Code, rec.Body)
+	}
+	if rec.Body.Len() != 0 {
+		t.Errorf("PUT answered with a body: %s", rec.Body)
+	}
+
+	rec = do(t, app, http.MethodGet, target, withAdmin)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET = %d: %s", rec.Code, rec.Body)
+	}
+	var members []*Product
+	decodeData(t, rec, &members)
+	// Drafts included: staging them is what an operator is doing here.
+	if !sameIDs(productIDs(members), []int64{draft.ID, active.ID}) {
+		t.Errorf("members = %v, want the draft first, as curated", productIDs(members))
+	}
+
+	// A collection nobody has is a 404 rather than an empty page, which is what
+	// a curation screen has to know before it offers to reorder anything.
+	if rec := do(t, app, http.MethodGet, "/api/admin/collections/999999/products", withAdmin); rec.Code != http.StatusNotFound {
+		t.Errorf("GET an unknown collection = %d, want 404", rec.Code)
+	}
+	rec = do(t, app, http.MethodGet, target+"?collection_id=1", withAdmin)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("GET with ?collection_id= = %d, want 400", rec.Code)
+	}
+	if code := decodeError(t, rec).Code; code != "validation_failed" {
+		t.Errorf("error code = %q, want validation_failed", code)
+	}
+
+	rec = do(t, app, http.MethodPut, target, withAdmin,
+		jsonBody(t, map[string]any{"product_ids": []int64{active.ID, 999999}}))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("PUT with an unknown product = %d, want 404", rec.Code)
+	}
+	if code := decodeError(t, rec).Code; code != "not_found" {
+		t.Errorf("error code = %q, want not_found", code)
+	}
+	members, _, err = app.Collections().ProductsInCollection(ctx, c.ID, ProductQuery{})
+	if err != nil {
+		t.Fatalf("ProductsInCollection: %v", err)
+	}
+	if !sameIDs(productIDs(members), []int64{draft.ID, active.ID}) {
+		t.Errorf("the rejected PUT changed the membership to %v", productIDs(members))
+	}
+
+	for _, method := range []string{http.MethodGet, http.MethodPut} {
+		if rec := do(t, app, method, target); rec.Code != http.StatusUnauthorized {
+			t.Errorf("unauthenticated %s = %d, want 401", method, rec.Code)
+		}
+	}
+}
+
+// The pointer field, which is the difference between a deliberate clear and a
+// client bug wiping a thousand memberships.
+func TestSetCollectionProductsRequiresTheList(t *testing.T) {
+	app := collectionsApp(t)
+	ctx := context.Background()
+
+	p := simpleProduct(t, app, "SKU-REQUIRED", 100, 1)
+	c := newCollection(t, app, CollectionInput{Title: "Window"})
+	if err := app.Collections().SetCollectionProducts(ctx, c.ID, []int64{p.ID}); err != nil {
+		t.Fatalf("curate: %v", err)
+	}
+	target := "/api/admin/collections/" + strconv.FormatInt(c.ID, 10) + "/products"
+
+	rec := doBody(t, app, http.MethodPut, target, `{}`, withAdmin)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("PUT {} = %d, want 400", rec.Code)
+	}
+	if err := decodeError(t, rec); err.Code != "validation_failed" ||
+		!strings.Contains(err.Message, "product_ids") {
+		t.Errorf("error = %+v, want one naming product_ids", err)
+	}
+	if _, total, _ := app.Collections().ProductsInCollection(ctx, c.ID, ProductQuery{}); total != 1 {
+		t.Errorf("a body of {} changed the membership to %d rows", total)
+	}
+
+	rec = doBody(t, app, http.MethodPut, target, `{"product_ids":[]}`, withAdmin)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("PUT [] = %d: %s", rec.Code, rec.Body)
+	}
+	if _, total, _ := app.Collections().ProductsInCollection(ctx, c.ID, ProductQuery{}); total != 0 {
+		t.Errorf("an explicit empty array left %d rows, want the collection emptied", total)
+	}
+}
+
+func TestAdminProductsFilterByCollection(t *testing.T) {
+	app := collectionsApp(t)
+	ctx := context.Background()
+
+	member := simpleProduct(t, app, "SKU-FILTER-MEMBER", 100, 1)
+	price := int64(100)
+	draft, err := app.Products().CreateProduct(ctx, ProductInput{
+		Title: "Staged", SKU: "SKU-FILTER-DRAFT", PriceMinor: &price,
+	})
+	if err != nil {
+		t.Fatalf("create the draft: %v", err)
+	}
+	simpleProduct(t, app, "SKU-FILTER-OUTSIDER", 100, 1)
+	c := newCollection(t, app, CollectionInput{Title: "Window"})
+	if err := app.Collections().SetCollectionProducts(ctx, c.ID, []int64{draft.ID, member.ID}); err != nil {
+		t.Fatalf("curate: %v", err)
+	}
+
+	rec := do(t, app, http.MethodGet,
+		"/api/admin/products?collection_id="+strconv.FormatInt(c.ID, 10), withAdmin)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET = %d: %s", rec.Code, rec.Body)
+	}
+	var got []*Product
+	decodeData(t, rec, &got)
+	if !sameIDs(productIDs(got), []int64{draft.ID, member.ID}) {
+		t.Errorf("filtered listing = %v, want the members in curated order", productIDs(got))
+	}
+
+	if rec := do(t, app, http.MethodGet, "/api/admin/products?collection_id=abc", withAdmin); rec.Code != http.StatusBadRequest {
+		t.Errorf("?collection_id=abc = %d, want 400", rec.Code)
+	}
+	// A collection nobody has is an empty page rather than a 404: the listing
+	// is a filter, and the sub-route is the one that knows about existence.
+	rec = do(t, app, http.MethodGet, "/api/admin/products?collection_id=999999", withAdmin)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("?collection_id=999999 = %d, want 200", rec.Code)
+	}
+	var none []*Product
+	decodeData(t, rec, &none)
+	if len(none) != 0 {
+		t.Errorf("an unknown collection returned %d products, want none", len(none))
 	}
 }

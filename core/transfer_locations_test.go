@@ -15,7 +15,7 @@ import (
 func exportCSV(t *testing.T, app *App) string {
 	t.Helper()
 	var buf bytes.Buffer
-	if err := app.Data().ExportProducts(context.Background(), &buf); err != nil {
+	if err := app.Data().ExportProducts(context.Background(), &buf, ProductQuery{}); err != nil {
 		t.Fatalf("export: %v", err)
 	}
 	return buf.String()
@@ -79,7 +79,7 @@ func TestExportSplitsStockAcrossLocationColumns(t *testing.T) {
 	vid := p.DefaultVariant().ID
 	shop := newLocation(t, app, "shop", "The shop", 1)
 	def := defaultLocation(t, app)
-	if _, err := app.Stock().Move(ctx, vid, def.ID, shop.ID, 3); err != nil {
+	if _, err := app.Stock().Move(ctx, vid, def.ID, shop.ID, 3, ""); err != nil {
 		t.Fatalf("move: %v", err)
 	}
 
@@ -127,14 +127,14 @@ func TestASplitFileRoundTrips(t *testing.T) {
 	vid := p.DefaultVariant().ID
 	shop := newLocation(t, app, "shop", "The shop", 1)
 	def := defaultLocation(t, app)
-	if _, err := app.Stock().Move(ctx, vid, def.ID, shop.ID, 6); err != nil {
+	if _, err := app.Stock().Move(ctx, vid, def.ID, shop.ID, 6, ""); err != nil {
 		t.Fatalf("move: %v", err)
 	}
 	csv := exportCSV(t, app)
 
 	// Flatten it back into one place, then import the file: the split has to
 	// come back exactly, because that is the entire promise of the format.
-	if _, err := app.Stock().Move(ctx, vid, shop.ID, def.ID, 6); err != nil {
+	if _, err := app.Stock().Move(ctx, vid, shop.ID, def.ID, 6, ""); err != nil {
 		t.Fatalf("flatten: %v", err)
 	}
 	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(csv), false); err != nil {
@@ -162,7 +162,7 @@ func TestABareStockColumnStillMeansTheDefault(t *testing.T) {
 	p := simpleProduct(t, app, "CSV-OLD", 1000, 2)
 	vid := p.DefaultVariant().ID
 	shop := newLocation(t, app, "shop", "The shop", 1)
-	if _, err := app.Stock().Adjust(ctx, vid, shop.ID, 5); err != nil {
+	if _, err := app.Stock().Adjust(ctx, vid, shop.ID, 5, ""); err != nil {
 		t.Fatalf("stock the shop: %v", err)
 	}
 
@@ -188,7 +188,7 @@ func TestAnAbsentColumnSaysNothingAboutThatLocation(t *testing.T) {
 	p := simpleProduct(t, app, "CSV-PART", 1000, 3)
 	vid := p.DefaultVariant().ID
 	shop := newLocation(t, app, "shop", "The shop", 1)
-	if _, err := app.Stock().Adjust(ctx, vid, shop.ID, 8); err != nil {
+	if _, err := app.Stock().Adjust(ctx, vid, shop.ID, 8, ""); err != nil {
 		t.Fatalf("stock the shop: %v", err)
 	}
 
@@ -316,5 +316,48 @@ func TestARoundTripDoesNotWriteOffAnOversell(t *testing.T) {
 	if onHand, _ := variantStock(t, app, qid); onHand != 0 {
 		t.Errorf("on hand = %d, want 0 — a variant that does not sell past zero is floored",
 			onHand)
+	}
+}
+
+// The placeholder-numbering regression, and the only failure in this change
+// that would have been silent: the export binds one argument per stock location
+// before it filters anything, so a predicate builder that numbered from $1 would
+// compare the status against a location id — wrong rows, no error, and every
+// single-location test still green. Two locations is what makes it visible.
+func TestExportFiltersAfterStockColumns(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+
+	live := simpleProduct(t, app, "CSV-FILTER-LIVE", 1000, 7)
+	price := int64(500)
+	if _, err := app.Products().CreateProduct(ctx, ProductInput{
+		Title: "Staged", SKU: "CSV-FILTER-DRAFT", PriceMinor: &price,
+	}); err != nil {
+		t.Fatalf("create the draft: %v", err)
+	}
+	shop := newLocation(t, app, "shop", "The shop", 1)
+	def := defaultLocation(t, app)
+	if _, err := app.Stock().Move(ctx, live.DefaultVariant().ID, def.ID, shop.ID, 3, ""); err != nil {
+		t.Fatalf("move: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := app.Data().ExportProducts(ctx, &buf, ProductQuery{Status: ProductActive}); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	csv := buf.String()
+	if strings.Contains(csv, "CSV-FILTER-DRAFT") {
+		t.Errorf("the status filter did not hold once two locations were bound:\n%s", csv)
+	}
+	if !strings.Contains(csv, "CSV-FILTER-LIVE") {
+		t.Fatalf("the matching product is missing:\n%s", csv)
+	}
+	// And the per-location columns still carry their own numbers rather than
+	// whatever the filter's argument shifted them onto.
+	if got := column(t, csv, "CSV-FILTER-LIVE", "stock_on_hand:default"); got != "4" {
+		t.Errorf("default column = %q, want 4", got)
+	}
+	if got := column(t, csv, "CSV-FILTER-LIVE", "stock_on_hand:shop"); got != "3" {
+		t.Errorf("shop column = %q, want 3", got)
 	}
 }

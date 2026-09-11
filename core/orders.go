@@ -605,7 +605,7 @@ func (s *Orders) Confirm(ctx context.Context, id int64) (*Order, error) {
 		case OrderCancelled:
 			return transitionResult{}, Conflictf("order %s has been cancelled", o.Number)
 		}
-		if err := commitOrderStock(ctx, tx, o); err != nil {
+		if err := commitOrderStock(ctx, tx, o, ""); err != nil {
 			return transitionResult{}, err
 		}
 		if err := setOrderStatus(ctx, tx, o.ID, OrderConfirmed); err != nil {
@@ -649,10 +649,10 @@ func (s *Orders) Cancel(ctx context.Context, id int64, reason string) (*Order, e
 					"on the shelf a second time — withdraw the return first", o.Number)
 		}
 		if stockCommitted(o.Status) {
-			if err := restockOrder(ctx, tx, o); err != nil {
+			if err := restockOrder(ctx, tx, o, reason); err != nil {
 				return transitionResult{}, err
 			}
-		} else if err := releaseOrderStock(ctx, tx, o); err != nil {
+		} else if err := releaseOrderStock(ctx, tx, o, reason); err != nil {
 			return transitionResult{}, err
 		}
 		if _, err := tx.ExecContext(ctx, `
@@ -771,6 +771,12 @@ type transitionResult struct {
 func (s *Orders) transition(ctx context.Context, id int64,
 	fn func(context.Context, *sql.Tx, *Order) (transitionResult, error)) (*Order, error) {
 
+	// Every stock movement a transition causes is on the order path. One line
+	// covers Confirm, Cancel, EditLines, the delivery verbs and all four
+	// payment methods; because withStockSource is first-label-wins, it leaves
+	// SweepUnpaid's more specific label alone.
+	ctx = withStockSource(ctx, sourceOrder)
+
 	err := InTx(ctx, s.app.db, func(tx *sql.Tx) error {
 		o, err := lockOrder(ctx, tx, id)
 		if err != nil {
@@ -883,7 +889,7 @@ func setOrderStatus(ctx context.Context, tx *sql.Tx, id int64, status string) er
 	return err
 }
 
-func commitOrderStock(ctx context.Context, tx *sql.Tx, o *Order) error {
+func commitOrderStock(ctx context.Context, tx *sql.Tx, o *Order, reason string) error {
 	for _, l := range o.Lines {
 		if l.VariantID == nil {
 			continue
@@ -892,7 +898,8 @@ func commitOrderStock(ctx context.Context, tx *sql.Tx, o *Order) error {
 		if err != nil {
 			return err
 		}
-		if err := commitStock(ctx, tx, *l.VariantID, loc, l.Quantity); err != nil {
+		if err := commitStock(ctx, tx, *l.VariantID, loc, l.Quantity,
+			stockRef{Reason: reason, OrderID: o.ID, OrderNumber: o.Number}); err != nil {
 			return err
 		}
 	}
@@ -901,7 +908,7 @@ func commitOrderStock(ctx context.Context, tx *sql.Tx, o *Order) error {
 	return err
 }
 
-func releaseOrderStock(ctx context.Context, tx *sql.Tx, o *Order) error {
+func releaseOrderStock(ctx context.Context, tx *sql.Tx, o *Order, reason string) error {
 	for _, l := range o.Lines {
 		if l.VariantID == nil {
 			continue
@@ -910,7 +917,8 @@ func releaseOrderStock(ctx context.Context, tx *sql.Tx, o *Order) error {
 		if err != nil {
 			return err
 		}
-		if err := releaseStock(ctx, tx, *l.VariantID, loc, l.Quantity); err != nil {
+		if err := releaseStock(ctx, tx, *l.VariantID, loc, l.Quantity,
+			stockRef{Reason: reason, OrderID: o.ID, OrderNumber: o.Number}); err != nil {
 			return err
 		}
 	}
@@ -920,7 +928,7 @@ func releaseOrderStock(ctx context.Context, tx *sql.Tx, o *Order) error {
 // restockOrder puts a whole order back on the shelf, every line at its full
 // quantity. It is the cancellation movement and nothing else: goods coming back
 // off a sale that stands are per line and per quantity, which is Orders.Return.
-func restockOrder(ctx context.Context, tx *sql.Tx, o *Order) error {
+func restockOrder(ctx context.Context, tx *sql.Tx, o *Order, reason string) error {
 	for _, l := range o.Lines {
 		if l.VariantID == nil {
 			continue
@@ -929,7 +937,8 @@ func restockOrder(ctx context.Context, tx *sql.Tx, o *Order) error {
 		if err != nil {
 			return err
 		}
-		if err := restockStock(ctx, tx, *l.VariantID, loc, l.Quantity); err != nil {
+		if err := restockStock(ctx, tx, *l.VariantID, loc, l.Quantity,
+			stockRef{Reason: reason, OrderID: o.ID, OrderNumber: o.Number}); err != nil {
 			return err
 		}
 	}
@@ -1002,7 +1011,11 @@ func (s *Orders) SweepUnpaid(ctx context.Context) (int, error) {
 
 	var swept int
 	for _, id := range ids {
-		if _, err := s.Cancel(ctx, id, "payment not completed in time"); err != nil {
+		// Labelled before Cancel's own transition can label it 'order', which
+		// is what makes a night's sweep distinguishable in the ledger from an
+		// operator cancelling by hand.
+		if _, err := s.Cancel(withStockSource(ctx, sourceSweeper), id,
+			"payment not completed in time"); err != nil {
 			s.app.log.Warn("could not cancel expired order", "order_id", id, "error", err)
 			continue
 		}
@@ -1149,7 +1162,7 @@ func (s *Orders) EditLines(ctx context.Context, id int64, in OrderEdit) (*Order,
 			if want == line.Quantity {
 				continue
 			}
-			if err := moveOrderStock(ctx, tx, line, want-line.Quantity, committed); err != nil {
+			if err := moveOrderStock(ctx, tx, o, line, want-line.Quantity, committed); err != nil {
 				return transitionResult{}, err
 			}
 			if want == 0 {
@@ -1203,12 +1216,15 @@ func (s *Orders) EditLines(ctx context.Context, id int64, in OrderEdit) (*Order,
 			o.ID).Scan(&shipping, &discount); err != nil {
 			return transitionResult{}, err
 		}
-		// The discount follows the basket it came off (D24). A fixed amount is
-		// a fixed amount whatever is left; a percentage was a percentage of a
-		// basket that no longer exists, so it is taken again. An order that has
-		// dropped below the minimum its discount required is refused rather
-		// than quietly kept — the promotion it qualified for is one it no
-		// longer qualifies for, and only an operator can decide what to do.
+		// The discount follows the basket it came off (D27, amended by D39). A
+		// fixed amount is a fixed amount whatever is left; a percentage was a
+		// percentage of a basket that no longer exists, so it is taken again. A
+		// scoped rule is judged against the lines it still covers, which clamps
+		// even a fixed amount. An order that has dropped below the minimum its
+		// discount required, or that no longer holds anything its rule covers,
+		// is refused rather than quietly kept — the promotion it qualified for
+		// is one it no longer qualifies for, and only an operator can decide
+		// what to do.
 		discount, err := recomputeOrderDiscount(ctx, tx, o.ID, subtotal, discount)
 		if err != nil {
 			return transitionResult{}, err
@@ -1273,7 +1289,7 @@ func (s *Orders) EditLines(ctx context.Context, id int64, in OrderEdit) (*Order,
 // A line whose variant is gone — the product was deleted — moves nothing. The
 // snapshot is still readable history; there is simply no shelf to put it back
 // on.
-func moveOrderStock(ctx context.Context, tx *sql.Tx, line OrderLine, delta int, committed bool) error {
+func moveOrderStock(ctx context.Context, tx *sql.Tx, o *Order, line OrderLine, delta int, committed bool) error {
 	if line.VariantID == nil || delta == 0 {
 		return nil
 	}
@@ -1281,15 +1297,19 @@ func moveOrderStock(ctx context.Context, tx *sql.Tx, line OrderLine, delta int, 
 	if err != nil {
 		return err
 	}
+	// The ledger row says which order was edited, because "why did this shelf
+	// lose two units on Tuesday" has no answer in an order-line diff.
+	ref := stockRef{Reason: "order edited", OrderID: o.ID, OrderNumber: o.Number}
 	switch {
 	case delta > 0 && committed:
-		return sellStock(ctx, tx, *line.VariantID, loc, delta)
+		return sellStock(ctx, tx, *line.VariantID, loc, delta, ref)
 	case delta > 0:
-		return reserveStock(ctx, tx, *line.VariantID, loc, delta)
+		_, err := reserveStock(ctx, tx, *line.VariantID, loc, delta, ref)
+		return err
 	case committed:
-		return restockStock(ctx, tx, *line.VariantID, loc, -delta)
+		return restockStock(ctx, tx, *line.VariantID, loc, -delta, ref)
 	default:
-		return releaseStock(ctx, tx, *line.VariantID, loc, -delta)
+		return releaseStock(ctx, tx, *line.VariantID, loc, -delta, ref)
 	}
 }
 
@@ -1357,7 +1377,7 @@ func addOrderLine(ctx context.Context, tx *sql.Tx, o *Order, variantID int64, qt
 		return "", err
 	}
 	line := OrderLine{VariantID: &variantID, LocationID: &locationID}
-	if err := moveOrderStock(ctx, tx, line, qty, committed); err != nil {
+	if err := moveOrderStock(ctx, tx, o, line, qty, committed); err != nil {
 		return "", err
 	}
 	if _, err := tx.ExecContext(ctx, `

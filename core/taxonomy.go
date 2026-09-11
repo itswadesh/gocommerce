@@ -19,7 +19,11 @@ import (
 //
 // Nothing imports it automatically. Categories are the operator's own data, and
 // dropping 14,000 rows into a store that wanted six of its own is not a default
-// anybody would choose — so it is a command they run.
+// anybody would choose — so it is something an operator asks for:
+// `gocommerce taxonomy import`, or the button that posts to
+// /api/admin/import/taxonomy. Neither is a default and no migration runs
+// either; the HTTP door exists because a Docker deployment has a browser and
+// no shell (D41).
 
 //go:embed taxonomy/shopify-categories.txt
 var shopifyTaxonomy string
@@ -37,6 +41,18 @@ type TaxonomyImport struct {
 	Created int `json:"created"`
 	Matched int `json:"matched"`
 	Skipped int `json:"skipped"`
+}
+
+// TaxonomyImportResult is what one import request did: the tree, and the field
+// definitions when the same call imported them.
+//
+// Attributes is absent rather than zeroed for an uploaded file, because a
+// report of zeros reads like a failure and nothing was attempted — the fields
+// match on a taxonomy id only the embedded tree carries.
+type TaxonomyImportResult struct {
+	Source     string                   `json:"source"` // "embedded" or "upload"
+	Categories TaxonomyImport           `json:"categories"`
+	Attributes *TaxonomyAttributeImport `json:"attributes,omitempty"`
 }
 
 // pathSep joins a trail of names into the key both sides match on.

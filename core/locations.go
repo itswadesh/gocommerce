@@ -377,6 +377,12 @@ func (s *Locations) Delete(ctx context.Context, id int64) error {
 		}
 		// Rows at zero are bookkeeping, not stock, and holding up a deletion for
 		// them would make the refusal above unclearable.
+		//
+		// No ledger row either, for the same reason: refuseIfHolding has just
+		// proved every row here is 0/0, so nothing moves and nothing is a
+		// movement. The location's history survives the FK's ON DELETE SET NULL
+		// with location_code intact, and because the deleted rows netted to
+		// zero, every surviving pair still reconciles.
 		if _, err := tx.ExecContext(ctx,
 			`DELETE FROM variant_stock WHERE location_id = $1`, id); err != nil {
 			return err

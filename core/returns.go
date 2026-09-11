@@ -165,7 +165,10 @@ func (s *Orders) Return(ctx context.Context, id int64, in ReturnInput) (*Order, 
 			Scan(&discountMinor, &taxInclusive); err != nil {
 			return transitionResult{}, err
 		}
-		shares := orderDiscountShares(o, discountMinor)
+		shares, err := orderDiscountShares(ctx, tx, o, discountMinor)
+		if err != nil {
+			return transitionResult{}, err
+		}
 
 		meta, err := in.Metadata.value()
 		if err != nil {
@@ -233,7 +236,11 @@ func (s *Orders) Return(ctx context.Context, id int64, in ReturnInput) (*Order, 
 				return transitionResult{}, err
 			}
 			if restock {
-				if err := restockStock(ctx, tx, *line.VariantID, *shelf, want.Quantity); err != nil {
+				// "goods returned" rather than the return's own note: the
+				// ledger says what happened to the shelf, and why the customer
+				// sent it back is the return record's to carry.
+				if err := restockStock(ctx, tx, *line.VariantID, *shelf, want.Quantity,
+					stockRef{Reason: "goods returned", OrderID: o.ID, OrderNumber: o.Number}); err != nil {
 					return transitionResult{}, err
 				}
 			}
@@ -349,7 +356,8 @@ func (s *Orders) WithdrawReturn(ctx context.Context, orderID, returnID int64) (*
 		}
 
 		for _, b := range back {
-			if err := sellStock(ctx, tx, b.variantID, b.locationID, b.quantity); err != nil {
+			if err := sellStock(ctx, tx, b.variantID, b.locationID, b.quantity,
+				stockRef{Reason: "return withdrawn", OrderID: o.ID, OrderNumber: o.Number}); err != nil {
 				// The bare sentinel must not escape as a 500, and the operator
 				// needs a next step rather than a refusal.
 				if errors.Is(err, errInsufficientStock) {
@@ -461,12 +469,24 @@ func returnShelf(ctx context.Context, tx *sql.Tx, line OrderLine, locationID int
 // It reuses allocateDiscount — the same largest-remainder split checkout used to
 // reach the total, which is what makes the parts sum to the whole — and the
 // synthesised slice is enough because that function reads only Total.
-func orderDiscountShares(o *Order, discountMinor int64) []int64 {
+//
+// The mask is what stops a scoped discount being spread over lines it never
+// came off. Without it, returning a hat from an order whose discount was on the
+// shoes would refund less than the customer paid for the hat, and the shoes
+// more — the same error the tax allocation avoids, on a figure that is
+// snapshotted and never recomputed.
+func orderDiscountShares(ctx context.Context, tx *sql.Tx, o *Order, discountMinor int64) ([]int64, error) {
 	lines := make([]taxableLine, len(o.Lines))
+	lineIDs := make([]int64, len(o.Lines))
 	for i, l := range o.Lines {
 		lines[i] = taxableLine{Total: l.Total.AmountMinor}
+		lineIDs[i] = l.ID
 	}
-	return allocateDiscount(lines, discountMinor)
+	eligible, err := orderDiscountMask(ctx, tx, o.ID, lineIDs)
+	if err != nil {
+		return nil, err
+	}
+	return allocateDiscount(lines, eligible, discountMinor), nil
 }
 
 // lineRefundable is what these units were worth: what was charged for them, less

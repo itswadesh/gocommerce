@@ -35,14 +35,86 @@ const (
 	DiscountFreeShipping = "free_shipping"
 )
 
-// Discount scopes. Only DiscountScopeOrder is evaluated today; the others are
-// stored and refused at checkout rather than silently applying to everything.
+// Discount scopes. Every one of them is evaluated: a scope names the kind of
+// thing in discount_targets a rule points at, and the value comes off only the
+// lines those targets reach.
+//
+// The scope is plural and the target kind it selects is singular — `products`
+// picks out rows of kind `product` — because a scope describes a rule and a
+// kind describes one row. targetKindFor is the only place that mapping lives;
+// a scope added without a matching evaluator branch is refused at the first
+// call rather than quietly applying to the whole basket.
 const (
 	DiscountScopeOrder       = "order"
 	DiscountScopeProducts    = "products"
 	DiscountScopeCollections = "collections"
 	DiscountScopeCategories  = "categories"
 )
+
+// Target kinds, as stored in discount_targets.kind. Singular, because a
+// discount points at one kind of thing and its scope says which.
+const (
+	DiscountTargetProduct    = "product"
+	DiscountTargetCollection = "collection"
+	DiscountTargetCategory   = "category"
+)
+
+// targetKindFor maps a scope to the one kind of thing it may point at. Order
+// scope and an unknown scope both map to "", which every caller reads as
+// "cannot be targeted" and never as "targets everything". This is the single
+// place a new scope const has to be taught about, so one added without an
+// evaluator branch fails at the first call instead of falling through.
+func targetKindFor(scope string) string {
+	switch scope {
+	case DiscountScopeProducts:
+		return DiscountTargetProduct
+	case DiscountScopeCollections:
+		return DiscountTargetCollection
+	case DiscountScopeCategories:
+		return DiscountTargetCategory
+	}
+	return ""
+}
+
+// DiscountTarget is one thing a scoped rule points at, resolved for a reader.
+//
+// Title is filled on the way out and ignored on the way in — the ids are the
+// record. For a category it is the full ancestry ("Apparel / Shirts"), because
+// "Shirts" alone does not say which shirts. Missing is true when the catalog
+// row is gone: the target row is kept rather than cleaned up, so a promotion
+// that has narrowed is shown to an operator instead of narrowing in silence.
+type DiscountTarget struct {
+	Kind    string `json:"kind"`
+	ID      int64  `json:"id"`
+	Title   string `json:"title,omitempty"`
+	Missing bool   `json:"missing,omitempty"`
+}
+
+// rowQuerier is *sql.DB or *sql.Tx. A preview reads outside a transaction and
+// checkout reads inside the one creating the order; the questions are
+// identical, so the handle is the parameter and there is one implementation of
+// the matching rule.
+type rowQuerier interface {
+	QueryContext(ctx context.Context, q string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, q string, args ...any) *sql.Row
+}
+
+// discountLine is everything the eligibility question needs about one basket
+// line: which product it is, and what it is worth. The product and not the
+// variant, because a promotion targets merchandising and all three scopes
+// resolve through the product.
+type discountLine struct {
+	ProductID int64
+	Total     int64
+}
+
+func totalOf(lines []discountLine) int64 {
+	var sum int64
+	for _, l := range lines {
+		sum += l.Total
+	}
+	return sum
+}
 
 // Discount is a rule an operator maintains.
 type Discount struct {
@@ -58,8 +130,18 @@ type Discount struct {
 	ValueMinor int64 `json:"value_minor,omitempty"`
 
 	Scope string `json:"scope"`
+	// TargetIDs and Targets are what a scoped rule points at. Get and List fill
+	// TargetIDs; only Get fills Targets, because a rule aimed at two hundred
+	// products would otherwise put two hundred titles into a page of fifty
+	// rows. GetByCode and applyTx's FOR UPDATE scan leave both zero on purpose:
+	// the shopper path never needs them and the evaluator asks the database
+	// directly, so filling them there would be a query bought for nothing.
+	TargetIDs []int64          `json:"target_ids,omitempty"`
+	Targets   []DiscountTarget `json:"targets,omitempty"`
 	// MinSubtotalMinor is the basket a discount needs before it applies. Nil is
-	// no minimum, which is not the same as zero.
+	// no minimum, which is not the same as zero. It is measured against the
+	// whole basket even for a scoped rule: it is the price of entry to a
+	// promotion, not the thing being discounted.
 	MinSubtotalMinor *int64 `json:"min_subtotal_minor,omitempty"`
 
 	StartsAt *time.Time `json:"starts_at,omitempty"`
@@ -90,12 +172,16 @@ type AppliedDiscount struct {
 
 // DiscountInput creates one.
 type DiscountInput struct {
-	Code             string     `json:"code"`
-	Title            string     `json:"title"`
-	Kind             string     `json:"kind"`
-	ValueBP          int        `json:"value_bp"`
-	ValueMinor       int64      `json:"value_minor"`
-	Scope            string     `json:"scope"`
+	Code       string `json:"code"`
+	Title      string `json:"title"`
+	Kind       string `json:"kind"`
+	ValueBP    int    `json:"value_bp"`
+	ValueMinor int64  `json:"value_minor"`
+	Scope      string `json:"scope"`
+	// TargetIDs are products, collections or categories according to Scope. The
+	// kind is never sent: the scope decides it one-to-one, and letting a client
+	// send both would make a scope/kind disagreement representable.
+	TargetIDs        []int64    `json:"target_ids"`
 	MinSubtotalMinor *int64     `json:"min_subtotal_minor"`
 	StartsAt         *time.Time `json:"starts_at"`
 	EndsAt           *time.Time `json:"ends_at"`
@@ -111,12 +197,15 @@ type DiscountInput struct {
 // setting, and letting an operator type over it would let a limited promotion be
 // silently reopened.
 type DiscountPatch struct {
-	Code             *string       `json:"code"`
-	Title            *string       `json:"title"`
-	Kind             *string       `json:"kind"`
-	ValueBP          *int          `json:"value_bp"`
-	ValueMinor       *int64        `json:"value_minor"`
-	Scope            *string       `json:"scope"`
+	Code       *string `json:"code"`
+	Title      *string `json:"title"`
+	Kind       *string `json:"kind"`
+	ValueBP    *int    `json:"value_bp"`
+	ValueMinor *int64  `json:"value_minor"`
+	Scope      *string `json:"scope"`
+	// TargetIDs is a pointer for the reason ProductPatch.Tags is one: a patched
+	// list replaces the whole set, so absent has to differ from empty.
+	TargetIDs        *[]int64      `json:"target_ids"`
 	MinSubtotalMinor NullableInt64 `json:"min_subtotal_minor"`
 	StartsAt         *time.Time    `json:"starts_at"`
 	EndsAt           *time.Time    `json:"ends_at"`
@@ -159,7 +248,7 @@ func scanDiscount(row interface{ Scan(...any) error }) (*Discount, error) {
 // window has to be a window. The database enforces all of this too — these
 // messages exist so an operator is told what is wrong rather than shown a
 // constraint name.
-func validateDiscount(kind, scope string, valueBP int, valueMinor int64) error {
+func validateDiscount(kind, scope string, valueBP int, valueMinor int64, targets []int64) error {
 	switch kind {
 	case DiscountPercentage:
 		if valueBP <= 0 || valueBP > 10000 {
@@ -189,7 +278,208 @@ func validateDiscount(kind, scope string, valueBP int, valueMinor int64) error {
 	default:
 		return Validationf("scope must be order, products, collections or categories")
 	}
+
+	// The loud refusal at creation this table exists for. Until now the API
+	// accepted a scope, offered no way to say which products, and let the
+	// customer find out at the till.
+	if kind == DiscountFreeShipping && scope != "" && scope != DiscountScopeOrder {
+		return Validationf(
+			"free shipping comes off the shipping, not off any line, so it cannot be scoped to %s; use a minimum basket instead",
+			scope)
+	}
+	if scope == "" || scope == DiscountScopeOrder {
+		if len(targets) > 0 {
+			return Validationf("a discount that applies to the whole basket points at nothing in particular; choose a scope first, or leave target_ids out")
+		}
+	} else if len(targets) == 0 {
+		return Validationf("a discount scoped to %s has to name at least one %s — send target_ids",
+			scope, targetKindFor(scope))
+	}
 	return nil
+}
+
+// ------------------------------------------------------------------- targets
+
+// requireTargets rejects the whole request when any id is unknown, so a typo in
+// one of five does not silently store the other four.
+//
+// There is no foreign key to lean on — one polymorphic column cannot carry
+// three — so this is check-then-act, and a product deleted between the check
+// and the insert leaves a target that names nothing. That row is reported
+// (`missing` on the way out, a count in doctor) rather than prevented, which is
+// the trade the schema decision records.
+func requireTargets(ctx context.Context, tx *sql.Tx, scope string, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	var q, noun string
+	switch scope {
+	case DiscountScopeProducts:
+		q, noun = `SELECT id FROM products WHERE id = ANY($1::bigint[])`, "product"
+	case DiscountScopeCollections:
+		q, noun = `SELECT id FROM collections WHERE id = ANY($1::bigint[])`, "collection"
+	case DiscountScopeCategories:
+		q, noun = `SELECT id FROM categories WHERE id = ANY($1::bigint[])`, "category"
+	default:
+		return nil
+	}
+	rows, err := tx.QueryContext(ctx, q, int64Array(ids))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	found := make(map[int64]bool, len(ids))
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		found[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if !found[id] {
+			return NotFoundf("%s %d does not exist", noun, id)
+		}
+	}
+	return nil
+}
+
+// replaceTargets writes the whole list after clearing what was there.
+//
+// Replace rather than merge, for the reason SetProductCollections gives: the
+// caller holds the whole list, and an "add" endpoint quietly re-creates what
+// somebody removed in another tab. When the scope cannot be targeted this
+// deletes and inserts nothing, which is how moving a rule back to order scope
+// clears what it used to point at.
+func replaceTargets(ctx context.Context, tx *sql.Tx, discountID int64, scope string, ids []int64) error {
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM discount_targets WHERE discount_id = $1`, discountID); err != nil {
+		return err
+	}
+	kind := targetKindFor(scope)
+	if kind == "" || len(ids) == 0 {
+		return nil
+	}
+	// One statement rather than a loop: there is no position to preserve here,
+	// unlike product_collections.
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO discount_targets (discount_id, kind, target_id)
+		SELECT $1, $2, unnest($3::bigint[])`, discountID, kind, int64Array(ids))
+	return err
+}
+
+// discountTargetIDs reads one rule's target ids through whichever handle the
+// caller already holds — Update reads them inside the lock it is about to
+// write under, and nothing else needs them one rule at a time.
+func discountTargetIDs(ctx context.Context, q rowQuerier, discountID int64) ([]int64, error) {
+	rows, err := q.QueryContext(ctx,
+		`SELECT target_id FROM discount_targets WHERE discount_id = $1 ORDER BY target_id`,
+		discountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// loadDiscountTargetIDs attaches the bare ids for a page of discounts in one
+// query, the way loadOrderDiscounts does for a page of orders.
+//
+// Ids and not titles: a rule aimed at two hundred products would otherwise put
+// two hundred names into a page of fifty rows, and a listing only wants to know
+// *that* a rule is scoped and whether it points at anything. It is also what
+// lets the panel's drawer open with the targets already in hand, so a save
+// landing before a background fetch cannot clear a live promotion.
+func (s *Discounts) loadDiscountTargetIDs(ctx context.Context, byID map[int64]*Discount, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := s.app.db.QueryContext(ctx, `
+		SELECT discount_id, target_id FROM discount_targets
+		WHERE discount_id = ANY($1::bigint[]) ORDER BY discount_id, target_id`, int64Array(ids))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var discountID, targetID int64
+		if err := rows.Scan(&discountID, &targetID); err != nil {
+			return err
+		}
+		if d := byID[discountID]; d != nil {
+			d.TargetIDs = append(d.TargetIDs, targetID)
+		}
+	}
+	return rows.Err()
+}
+
+// loadDiscountTargets resolves one discount's targets for a reader. A row whose
+// catalog entry is gone comes back Missing with no title, because an operator
+// has to be told a promotion has narrowed rather than discovering it at the
+// till.
+func (s *Discounts) loadDiscountTargets(ctx context.Context, discountID int64) ([]DiscountTarget, error) {
+	rows, err := s.app.db.QueryContext(ctx, `
+		SELECT t.kind, t.target_id,
+		       coalesce(p.title, c.title, cat.title, ''),
+		       (p.id IS NULL AND c.id IS NULL AND cat.id IS NULL)
+		FROM discount_targets t
+		LEFT JOIN products    p   ON t.kind = 'product'    AND p.id   = t.target_id
+		LEFT JOIN collections c   ON t.kind = 'collection' AND c.id   = t.target_id
+		LEFT JOIN categories  cat ON t.kind = 'category'   AND cat.id = t.target_id
+		WHERE t.discount_id = $1
+		ORDER BY t.kind, t.target_id`, discountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []DiscountTarget{}
+	categoryIDs := []int64{}
+	for rows.Next() {
+		var t DiscountTarget
+		if err := rows.Scan(&t.Kind, &t.ID, &t.Title, &t.Missing); err != nil {
+			return nil, err
+		}
+		if t.Kind == DiscountTargetCategory && !t.Missing {
+			categoryIDs = append(categoryIDs, t.ID)
+		}
+		out = append(out, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// A category's own title does not say which category it is, so it is shown
+	// by its ancestry — the same answer the product form gives.
+	if len(categoryIDs) > 0 {
+		paths, err := categoryPaths(ctx, s.app.db, categoryIDs)
+		if err != nil {
+			return nil, err
+		}
+		for i := range out {
+			if out[i].Kind != DiscountTargetCategory {
+				continue
+			}
+			if p, ok := paths[out[i].ID]; ok {
+				out[i].Title = p.fullName
+			}
+		}
+	}
+	return out, nil
 }
 
 // ---------------------------------------------------------------------- CRUD
@@ -200,7 +490,8 @@ func (s *Discounts) Create(ctx context.Context, in DiscountInput) (*Discount, er
 	if in.Title == "" {
 		return nil, Validationf("title is required")
 	}
-	if err := validateDiscount(in.Kind, in.Scope, in.ValueBP, in.ValueMinor); err != nil {
+	targets := dedupeIDs(in.TargetIDs)
+	if err := validateDiscount(in.Kind, in.Scope, in.ValueBP, in.ValueMinor, targets); err != nil {
 		return nil, err
 	}
 	if in.Scope == "" {
@@ -225,6 +516,11 @@ func (s *Discounts) Create(ctx context.Context, in DiscountInput) (*Discount, er
 	// it commit together. "Who invented a hundred-percent-off code" is the
 	// reason discounts.write was split out of catalog.write in the first place,
 	// and until now the answer was nowhere.
+	//
+	// What the rule points at rides in the same transaction for a harder reason:
+	// a scoped discount that exists pointing at nothing IS the defect this
+	// feature closes, and it must not be constructible even for the width of a
+	// failed second statement.
 	var d *Discount
 	err = InTx(ctx, s.app.db, func(tx *sql.Tx) error {
 		var derr error
@@ -241,6 +537,12 @@ func (s *Discounts) Create(ctx context.Context, in DiscountInput) (*Discount, er
 		if derr != nil {
 			return translateDiscountErr(derr)
 		}
+		if err := requireTargets(ctx, tx, in.Scope, targets); err != nil {
+			return err
+		}
+		if err := replaceTargets(ctx, tx, d.ID, in.Scope, targets); err != nil {
+			return err
+		}
 		return writeAudit(ctx, tx, auditRecord{
 			Action: AuditDiscountCreate, Entity: AuditEntityDiscount,
 			ID: d.ID, Label: discountLabel(d), Summary: "Created the discount " + discountLabel(d),
@@ -249,13 +551,16 @@ func (s *Discounts) Create(ctx context.Context, in DiscountInput) (*Discount, er
 			After: map[string]any{
 				"code": d.Code, "kind": d.Kind, "value_bp": d.ValueBP,
 				"value_minor": d.ValueMinor, "scope": d.Scope, "active": d.Active,
+				"target_ids": targets,
 			},
 		})
 	})
 	if err != nil {
 		return nil, err
 	}
-	return d, nil
+	// Through Get so the response is byte-identical to a subsequent read of the
+	// same id, targets resolved and all.
+	return s.Get(ctx, d.ID)
 }
 
 // discountLabel is what to call a discount in a log a person reads: the code
@@ -274,7 +579,23 @@ func (s *Discounts) Get(ctx context.Context, id int64) (*Discount, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, NotFoundf("discount not found")
 	}
-	return d, err
+	if err != nil {
+		return nil, err
+	}
+	// Both shapes, so a client gets the same fields whichever route it used: the
+	// ids are the record, and the resolved targets are what a drawer draws.
+	targets, err := s.loadDiscountTargets(ctx, d.ID)
+	if err != nil {
+		return nil, err
+	}
+	if len(targets) > 0 {
+		d.Targets = targets
+		d.TargetIDs = make([]int64, len(targets))
+		for i, t := range targets {
+			d.TargetIDs[i] = t.ID
+		}
+	}
+	return d, nil
 }
 
 // GetByCode looks one up the way a shopper does: case-insensitively.
@@ -335,16 +656,56 @@ func (s *Discounts) List(ctx context.Context, q DiscountQuery) ([]*Discount, int
 		}
 		out = append(out, d)
 	}
-	return out, total, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	// One query for the whole page. This is what lets the panel tell a scoped
+	// rule that points at nothing from a working one.
+	byID := make(map[int64]*Discount, len(out))
+	ids := make([]int64, 0, len(out))
+	for _, d := range out {
+		byID[d.ID] = d
+		ids = append(ids, d.ID)
+	}
+	if err := s.loadDiscountTargetIDs(ctx, byID, ids); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
 }
 
 // Update changes a rule.
+//
+// The whole of it runs inside one transaction, opened with the same FOR UPDATE
+// on the discount row that applyTx takes. Scope and targets mean nothing apart
+// from each other, so they are serialised against a checkout reading them: a
+// checkout can never see the scope from one revision of a rule and the targets
+// from another.
 func (s *Discounts) Update(ctx context.Context, id int64, patch DiscountPatch) (*Discount, error) {
-	current, err := s.Get(ctx, id)
+	var d *Discount
+	err := InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		current, err := scanDiscount(tx.QueryRowContext(ctx,
+			`SELECT `+discountColumns+` FROM discounts WHERE id = $1 FOR UPDATE`, id))
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("discount not found")
+		}
+		if err != nil {
+			return err
+		}
+		return s.applyPatch(ctx, tx, current, patch, &d)
+	})
 	if err != nil {
 		return nil, err
 	}
+	// Through Get, so a drawer that just moved a rule to order scope redraws
+	// from the response and sees the cleared set rather than guessing.
+	return s.Get(ctx, d.ID)
+}
 
+// applyPatch is Update's body, kept separate only so the lock above it reads as
+// one thing. `out` receives the row the UPDATE returned.
+func (s *Discounts) applyPatch(ctx context.Context, tx *sql.Tx, current *Discount, patch DiscountPatch, out **Discount) error {
+	id := current.ID
 	kind, scope := current.Kind, current.Scope
 	valueBP, valueMinor := current.ValueBP, current.ValueMinor
 	if patch.Kind != nil {
@@ -352,6 +713,9 @@ func (s *Discounts) Update(ctx context.Context, id int64, patch DiscountPatch) (
 	}
 	if patch.Scope != nil {
 		scope = *patch.Scope
+		if scope == "" {
+			scope = DiscountScopeOrder
+		}
 	}
 	if patch.ValueBP != nil {
 		valueBP = *patch.ValueBP
@@ -359,11 +723,32 @@ func (s *Discounts) Update(ctx context.Context, id int64, patch DiscountPatch) (
 	if patch.ValueMinor != nil {
 		valueMinor = *patch.ValueMinor
 	}
+
+	// Resolve the (scope, targets) pair the write will produce, then validate
+	// that pair rather than either half of it.
+	var targets []int64
+	writeTargets := false
+	switch {
+	case patch.TargetIDs != nil:
+		targets, writeTargets = dedupeIDs(*patch.TargetIDs), true
+	case patch.Scope != nil && scope == DiscountScopeOrder:
+		// Moving a rule back to the whole basket clears what it pointed at, in
+		// the same transaction, so a target of the wrong kind cannot survive.
+		targets, writeTargets = nil, true
+	case patch.Scope != nil && scope != current.Scope:
+		return Validationf("changing the scope changes what the targets mean; send target_ids with it")
+	default:
+		var err error
+		if targets, err = discountTargetIDs(ctx, tx, id); err != nil {
+			return err
+		}
+	}
+
 	// Changing the kind without the value is the mistake this catches: a
 	// percentage rule given a fixed kind would otherwise take one basis point
 	// off the basket.
-	if err := validateDiscount(kind, scope, valueBP, valueMinor); err != nil {
-		return nil, err
+	if err := validateDiscount(kind, scope, valueBP, valueMinor, targets); err != nil {
+		return err
 	}
 
 	set, args := []string{}, []any{id}
@@ -379,7 +764,7 @@ func (s *Discounts) Update(ctx context.Context, id int64, patch DiscountPatch) (
 	if patch.Title != nil {
 		title := strings.TrimSpace(*patch.Title)
 		if title == "" {
-			return nil, Validationf("title is required")
+			return Validationf("title is required")
 		}
 		add("title", title)
 	}
@@ -402,7 +787,7 @@ func (s *Discounts) Update(ctx context.Context, id int64, patch DiscountPatch) (
 	}
 	if patch.UsageLimit != nil {
 		if *patch.UsageLimit <= 0 {
-			return nil, Validationf("a usage limit is a count above zero")
+			return Validationf("a usage limit is a count above zero")
 		}
 		add("usage_limit", *patch.UsageLimit)
 	}
@@ -415,15 +800,25 @@ func (s *Discounts) Update(ctx context.Context, id int64, patch DiscountPatch) (
 	if patch.Metadata != nil {
 		meta, err := patch.Metadata.value()
 		if err != nil {
-			return nil, Validationf("metadata is not valid JSON: %v", err)
+			return Validationf("metadata is not valid JSON: %v", err)
 		}
 		add("metadata", meta)
 	}
-	if len(set) == 0 {
-		return nil, Validationf("nothing to change")
+	// Re-aiming a promotion is a real edit, even when no column on the rule
+	// moves.
+	if len(set) == 0 && !writeTargets {
+		return Validationf("nothing to change")
+	}
+	if writeTargets {
+		after["target_ids"] = targets
+		beforeIDs, err := discountTargetIDs(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		current.TargetIDs = beforeIDs
 	}
 
-	// `before` is free: the method already read `current` at the top, before
+	// `before` is free: the method already read `current` under the lock, before
 	// touching anything.
 	before := map[string]any{}
 	for col, was := range map[string]any{
@@ -431,31 +826,36 @@ func (s *Discounts) Update(ctx context.Context, id int64, patch DiscountPatch) (
 		"value_bp": current.ValueBP, "value_minor": current.ValueMinor,
 		"scope": current.Scope, "active": current.Active,
 		"once_per_email": current.OncePerEmail,
+		"target_ids":     current.TargetIDs,
 	} {
 		if _, changed := after[col]; changed {
 			before[col] = was
 		}
 	}
 
-	var d *Discount
-	err = InTx(ctx, s.app.db, func(tx *sql.Tx) error {
-		var derr error
-		d, derr = scanDiscount(tx.QueryRowContext(ctx,
-			`UPDATE discounts SET `+strings.Join(set, ", ")+`, updated_at = now()
-			 WHERE id = $1 RETURNING `+discountColumns, args...))
-		if derr != nil {
-			return translateDiscountErr(derr)
-		}
-		return writeAudit(ctx, tx, auditRecord{
-			Action: AuditDiscountUpdate, Entity: AuditEntityDiscount,
-			ID: d.ID, Label: discountLabel(d), Summary: "Edited the discount " + discountLabel(d),
-			Before: before, After: after,
-		})
-	})
+	// updated_at carries the row write even for a targets-only patch: it is what
+	// holds the lock ordering, and it makes a re-aimed promotion read as changed.
+	d, err := scanDiscount(tx.QueryRowContext(ctx,
+		`UPDATE discounts SET `+strings.Join(append(append([]string{}, set...), "updated_at = now()"), ", ")+`
+		 WHERE id = $1 RETURNING `+discountColumns, args...))
 	if err != nil {
-		return nil, err
+		return translateDiscountErr(err)
 	}
-	return d, nil
+	*out = d
+
+	if writeTargets {
+		if err := requireTargets(ctx, tx, scope, targets); err != nil {
+			return err
+		}
+		if err := replaceTargets(ctx, tx, id, scope, targets); err != nil {
+			return err
+		}
+	}
+	return writeAudit(ctx, tx, auditRecord{
+		Action: AuditDiscountUpdate, Entity: AuditEntityDiscount,
+		ID: d.ID, Label: discountLabel(d), Summary: "Edited the discount " + discountLabel(d),
+		Before: before, After: after,
+	})
 }
 
 // Delete removes a discount. Orders that used it keep their snapshot.
@@ -486,10 +886,28 @@ func (s *Discounts) Delete(ctx context.Context, id int64) error {
 // ------------------------------------------------------------------ applying
 
 // discountRequest is what a basket knows about itself when it asks.
+//
+// The lines and not a subtotal: a rule scoped to chosen products cannot be
+// answered from one number, and carrying both would make a request whose stated
+// total disagrees with its own lines representable. The subtotal is totalOf the
+// lines, which is what a cart's own subtotal already is.
 type discountRequest struct {
-	Code     string
-	Email    string
-	Subtotal int64
+	Code  string
+	Email string
+	Lines []discountLine
+}
+
+// cartDiscountLines is the evaluator's view of a cart.
+//
+// Total, not CurrentPrice: it is the figure cart.Subtotal is the sum of, so the
+// preview answers about the basket the shopper is looking at. A price that has
+// moved since is checkout's to refuse, under its own lock.
+func cartDiscountLines(c *Cart) []discountLine {
+	out := make([]discountLine, len(c.Lines))
+	for i, l := range c.Lines {
+		out[i] = discountLine{ProductID: l.ProductID, Total: l.Total.AmountMinor}
+	}
+	return out
 }
 
 // Preview reports what a basket would get, without consuming anything.
@@ -498,100 +916,252 @@ type discountRequest struct {
 // deliberately not the same code path as checkout — this one takes no locks and
 // counts no usage — but it answers with the same arithmetic, so the number a
 // shopper is shown is the number they are charged.
-func (s *Discounts) Preview(ctx context.Context, code, email string, subtotal int64) (*AppliedDiscount, error) {
+//
+// It takes the cart rather than its subtotal because that promise now depends
+// on preview and checkout deriving the same lines: a scoped rule comes off the
+// lines its targets reach, and a bare total cannot say which those are.
+func (s *Discounts) Preview(ctx context.Context, code, email string, cart *Cart) (*AppliedDiscount, error) {
 	d, err := s.GetByCode(ctx, code)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.eligible(ctx, nil, d, discountRequest{Email: email, Subtotal: subtotal}); err != nil {
+	_, base, err := s.eligible(ctx, s.app.db, d, discountRequest{
+		Email: email, Lines: cartDiscountLines(cart),
+	})
+	if err != nil {
 		return nil, err
 	}
-	return applyDiscount(d, subtotal), nil
+	return applyDiscount(d, base), nil
+}
+
+// matchedProducts answers which of these products a scoped rule reaches.
+//
+// Three constant queries selected by scope rather than one query UNIONing them:
+// a single query would evaluate the recursive category walk even for a
+// product-scoped rule, because the third branch references it. Each branch
+// costs the same one round trip and keeps the walk off the common path.
+//
+// The `default` is the loud gate. A scope const added later without an
+// evaluator branch is refused at the first call instead of falling through to
+// "take it off everything" — which the schema CHECK cannot help with, since a
+// new const would be added to it in the same change.
+func matchedProducts(ctx context.Context, q rowQuerier, discountID int64, scope string, productIDs []int64) (map[int64]bool, error) {
+	arr := int64Array(productIDs)
+	var qs string
+	var args []any
+	switch scope {
+	case DiscountScopeProducts:
+		qs = `
+			SELECT target_id FROM discount_targets
+			WHERE discount_id = $1 AND kind = 'product' AND target_id = ANY($2::bigint[])`
+		args = []any{discountID, arr}
+	case DiscountScopeCollections:
+		qs = `
+			SELECT DISTINCT pc.product_id
+			FROM discount_targets t
+			JOIN product_collections pc ON pc.collection_id = t.target_id
+			WHERE t.discount_id = $1 AND t.kind = 'collection'
+			  AND pc.product_id = ANY($2::bigint[])`
+		args = []any{discountID, arr}
+	case DiscountScopeCategories:
+		qs = `
+			WITH RECURSIVE up AS (
+			    -- Every basket product's own category, then every ancestor above
+			    -- it. Lifted from ratesForProducts so a discount on "Apparel"
+			    -- reaches "Apparel / Shirts" by the same walk a tax rate does.
+			    SELECT p.id AS product_id, c.id AS category_id, c.parent_id, 0 AS depth
+			    FROM products p JOIN categories c ON c.id = p.category_id
+			    WHERE p.id = ANY($2::bigint[])
+			  UNION ALL
+			    SELECT up.product_id, c.id, c.parent_id, up.depth + 1
+			    FROM up JOIN categories c ON c.id = up.parent_id
+			    WHERE up.depth < $3
+			)
+			SELECT DISTINCT up.product_id
+			FROM up JOIN discount_targets t
+			  ON t.discount_id = $1 AND t.kind = 'category' AND t.target_id = up.category_id`
+		args = []any{discountID, arr, MaxCategoryDepth}
+	default:
+		return nil, Validationf("that discount has a scope this store does not understand: %q", scope)
+	}
+
+	out := map[int64]bool{}
+	if len(productIDs) == 0 {
+		return out, nil
+	}
+	rows, err := q.QueryContext(ctx, qs, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
+// eligibleFor reports which lines a rule covers and what they add up to.
+//
+// An order-wide rule covers everything and is answered with a nil mask, which
+// every reader takes as "every line" — so an ordinary checkout exercises the
+// same nil branch allocateDiscount relies on, and it cannot rot from disuse.
+//
+// A category target reaches its whole subtree, the rule tax already follows,
+// bounded by MaxCategoryDepth so a cycle that got into the table cannot spin. A
+// product with no category matches nothing, which narrows the rule rather than
+// widening it — the safe direction to be wrong in.
+func (s *Discounts) eligibleFor(ctx context.Context, q rowQuerier, d *Discount, lines []discountLine) ([]bool, int64, error) {
+	if d.Scope == "" || d.Scope == DiscountScopeOrder {
+		return nil, totalOf(lines), nil
+	}
+
+	ids := make([]int64, 0, len(lines))
+	seen := make(map[int64]bool, len(lines))
+	for _, l := range lines {
+		if l.ProductID == 0 || seen[l.ProductID] {
+			continue
+		}
+		seen[l.ProductID] = true
+		ids = append(ids, l.ProductID)
+	}
+	matched, err := matchedProducts(ctx, q, d.ID, d.Scope, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Only the product ids crossed the wire; the totals are summed here, so a
+	// product on two lines counts twice, correctly.
+	mask := make([]bool, len(lines))
+	var base int64
+	for i, l := range lines {
+		if matched[l.ProductID] {
+			mask[i] = true
+			base += l.Total
+		}
+	}
+	return mask, base, nil
+}
+
+// countDiscountTargets answers the failure path's one question: is this a rule
+// that points at nothing, or a basket holding none of what it points at?
+func (s *Discounts) countDiscountTargets(ctx context.Context, q rowQuerier, discountID int64) (int, error) {
+	var n int
+	err := q.QueryRowContext(ctx,
+		`SELECT count(*) FROM discount_targets WHERE discount_id = $1`, discountID).Scan(&n)
+	return n, err
 }
 
 // eligible reports whether a discount may be used for this basket, or says why
-// not. tx may be nil for a preview, which skips the once-per-email lookup's
-// need for the checkout's own view of the world.
-func (s *Discounts) eligible(ctx context.Context, tx *sql.Tx, d *Discount, req discountRequest) error {
+// not, and hands back the part of the basket it comes off: a per-line mask and
+// what those lines add up to. A nil mask means every line.
+func (s *Discounts) eligible(ctx context.Context, q rowQuerier, d *Discount, req discountRequest) ([]bool, int64, error) {
 	if !d.Active {
-		return Validationf("that discount is not active")
+		return nil, 0, Validationf("that discount is not active")
 	}
 	now := time.Now()
 	if d.StartsAt != nil && now.Before(*d.StartsAt) {
-		return Validationf("that discount has not started yet")
+		return nil, 0, Validationf("that discount has not started yet")
 	}
 	if d.EndsAt != nil && !now.Before(*d.EndsAt) {
-		return Validationf("that discount has expired")
+		return nil, 0, Validationf("that discount has expired")
 	}
 	if d.UsageLimit != nil && d.UsedCount >= *d.UsageLimit {
-		return Validationf("that discount has been fully used")
+		return nil, 0, Validationf("that discount has been fully used")
 	}
-	if d.MinSubtotalMinor != nil && req.Subtotal < *d.MinSubtotalMinor {
-		return Validationf("that discount needs a basket of at least %d", *d.MinSubtotalMinor)
+	// Measured against the whole basket even for a scoped rule: the minimum is
+	// the price of entry to a promotion, not the thing being discounted.
+	if d.MinSubtotalMinor != nil && totalOf(req.Lines) < *d.MinSubtotalMinor {
+		return nil, 0, Validationf("that discount needs a basket of at least %d", *d.MinSubtotalMinor)
 	}
-	// Only order-wide rules are evaluated. A scoped one is stored and refused
-	// rather than quietly applied to the whole basket, which is the failure
-	// that would cost a store money without anybody noticing.
-	if d.Scope != DiscountScopeOrder {
-		return Validationf("scoped discounts are not applied yet")
+	if d.Kind == DiscountFreeShipping && d.Scope != "" && d.Scope != DiscountScopeOrder {
+		// Shipping is not a line, so no scope can select it. validateDiscount
+		// refuses this from here on; a row that predates that is refused here,
+		// by name, rather than being treated as order-wide.
+		return nil, 0, Validationf("free shipping cannot be scoped; this rule needs its scope set back to the whole basket")
 	}
-	if d.OncePerEmail && strings.TrimSpace(req.Email) != "" {
-		used, err := s.emailHasUsed(ctx, tx, d.ID, req.Email)
+
+	mask, base, err := s.eligibleFor(ctx, q, d, req.Lines)
+	if err != nil {
+		return nil, 0, err
+	}
+	// Guarded by scope, and that guard is load-bearing: unguarded, a basket of
+	// all-free items would start being refused an order-wide code with a message
+	// about items it does not contain. The count runs only on the failure path,
+	// so the happy path pays nothing for a message that names the missing half.
+	if d.Scope != "" && d.Scope != DiscountScopeOrder && base == 0 {
+		n, err := s.countDiscountTargets(ctx, q, d.ID)
 		if err != nil {
-			return err
+			return nil, 0, err
+		}
+		if n == 0 {
+			return nil, 0, Validationf(
+				"that discount is not finished — it applies to chosen %s and none are chosen", d.Scope)
+		}
+		return nil, 0, Validationf("that discount does not apply to anything in this basket")
+	}
+
+	if d.OncePerEmail && strings.TrimSpace(req.Email) != "" {
+		used, err := s.emailHasUsed(ctx, q, d.ID, req.Email)
+		if err != nil {
+			return nil, 0, err
 		}
 		if used {
-			return Validationf("that discount has already been used with this email address")
+			return nil, 0, Validationf("that discount has already been used with this email address")
 		}
 	}
-	return nil
+	return mask, base, nil
 }
 
 // emailHasUsed reports whether this address already has an order carrying this
 // discount. It is a deterrent, not a control — a second address defeats it —
 // and D26 says so out loud rather than implying otherwise.
-func (s *Discounts) emailHasUsed(ctx context.Context, tx *sql.Tx, discountID int64, email string) (bool, error) {
-	const q = `
+func (s *Discounts) emailHasUsed(ctx context.Context, q rowQuerier, discountID int64, email string) (bool, error) {
+	var used bool
+	err := q.QueryRowContext(ctx, `
 		SELECT EXISTS (
 		    SELECT 1 FROM order_discounts od
 		    JOIN orders o ON o.id = od.order_id
 		    WHERE od.discount_id = $1 AND lower(o.email) = lower($2)
 		      AND o.status <> 'cancelled'
-		)`
-	var used bool
-	var err error
-	if tx != nil {
-		err = tx.QueryRowContext(ctx, q, discountID, email).Scan(&used)
-	} else {
-		err = s.app.db.QueryRowContext(ctx, q, discountID, email).Scan(&used)
-	}
+		)`, discountID, email).Scan(&used)
 	return used, err
 }
 
 // applyDiscount is the arithmetic, and all of it.
 //
-// One rounding for the whole basket rather than one per line: per-line rounding
+// `base` is the part of the basket the rule covers: the whole subtotal for an
+// order-wide rule, and the total of the lines its targets reach for a scoped
+// one. Handing it the smaller basket IS the scoped behaviour — one rounding
+// rule and one clamp rule in the engine rather than two that can drift apart.
+//
+// One rounding for the whole of it rather than one per line: per-line rounding
 // drifts by a minor unit per line and leaves a total nobody can reconcile
 // against the lines above it. Half up, because a shopper who is told "10% off"
 // should not lose a paisa to banker's rounding.
 //
-// The result can never exceed the subtotal. A fixed discount larger than the
-// basket takes the basket — the alternative is a negative total, which the
+// The result can never exceed the base, so a scoped fixed amount is capped at
+// its own lines rather than at the basket. A fixed discount larger than what it
+// covers takes all of it — the alternative is a negative total, which the
 // order's own CHECK would refuse anyway, at a point far from the cause.
-func applyDiscount(d *Discount, subtotal int64) *AppliedDiscount {
+func applyDiscount(d *Discount, base int64) *AppliedDiscount {
 	out := &AppliedDiscount{
 		DiscountID: d.ID, Code: d.Code, Title: d.Title, Kind: d.Kind,
 	}
 	switch d.Kind {
 	case DiscountPercentage:
-		out.AmountMinor = (subtotal*int64(d.ValueBP) + 5000) / 10000
+		out.AmountMinor = (base*int64(d.ValueBP) + 5000) / 10000
 	case DiscountFixed:
 		out.AmountMinor = d.ValueMinor
 	case DiscountFreeShipping:
 		out.FreeShipping = true
 	}
-	if out.AmountMinor > subtotal {
-		out.AmountMinor = subtotal
+	if out.AmountMinor > base {
+		out.AmountMinor = base
 	}
 	if out.AmountMinor < 0 {
 		out.AmountMinor = 0
@@ -606,37 +1176,40 @@ func applyDiscount(d *Discount, subtotal int64) *AppliedDiscount {
 // checkouts racing for the last use of a code is the one contention that
 // matters here, and it is the database's to resolve — zero rows affected means
 // somebody else took it.
-func (s *Discounts) applyTx(ctx context.Context, tx *sql.Tx, req discountRequest) (*AppliedDiscount, error) {
+func (s *Discounts) applyTx(ctx context.Context, tx *sql.Tx, req discountRequest) (*AppliedDiscount, []bool, error) {
 	code := strings.TrimSpace(req.Code)
 	if code == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	d, err := scanDiscount(tx.QueryRowContext(ctx,
 		`SELECT `+discountColumns+` FROM discounts WHERE lower(code) = lower($1) FOR UPDATE`, code))
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, Validationf("no discount with that code")
+		return nil, nil, Validationf("no discount with that code")
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if err := s.eligible(ctx, tx, d, req); err != nil {
-		return nil, err
+	// Strictly before the usage claim below: a rule that matches nothing in this
+	// basket must never burn a use.
+	mask, base, err := s.eligible(ctx, tx, d, req)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	res, err := tx.ExecContext(ctx, `
 		UPDATE discounts SET used_count = used_count + 1, updated_at = now()
 		WHERE id = $1 AND (usage_limit IS NULL OR used_count < usage_limit)`, d.ID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if n, err := res.RowsAffected(); err != nil {
-		return nil, err
+		return nil, nil, err
 	} else if n == 0 {
-		return nil, Validationf("that discount has been fully used")
+		return nil, nil, Validationf("that discount has been fully used")
 	}
 
-	return applyDiscount(d, req.Subtotal), nil
+	return applyDiscount(d, base), mask, nil
 }
 
 // recordOrderDiscount writes the snapshot beside the order that got it.
@@ -709,8 +1282,8 @@ func nullInt64(v int64) any {
 	return v
 }
 
-// recomputeOrderDiscount is D24: what happens to a discount when the basket it
-// came off changes.
+// recomputeOrderDiscount is D27: what happens to a discount when the basket it
+// came off changes, as amended by D39 for a scoped rule.
 //
 // A fixed amount survives — it was never a function of the basket. A percentage
 // is taken again, because the basket it was a percentage of no longer exists
@@ -720,17 +1293,31 @@ func nullInt64(v int64) any {
 // removing the discount and refusing the edit is an operator's call, not a
 // silent one.
 //
+// A scoped rule is re-judged against the lines it still covers, for a fixed
+// amount as well as a percentage: without that, a product-scoped 10% would
+// silently re-take 10% of the whole edited order. Scope is read in the outer
+// query on purpose — the inner lookup only runs for a percentage with a live
+// rule, so reading it there would leave a scoped fixed amount clamped to the
+// whole subtotal, which is money out of the store with nobody told.
+//
 // The stored snapshot moves with it, so the order and its discount rows never
 // disagree.
 func recomputeOrderDiscount(ctx context.Context, tx *sql.Tx, orderID, subtotal, current int64) (int64, error) {
 	var (
-		rowID    int64
-		kind     string
-		discount sql.NullInt64
+		rowID       int64
+		kind        string
+		discount    sql.NullInt64
+		scope       string
+		valueBP     int
+		minSubtotal sql.NullInt64
 	)
 	err := tx.QueryRowContext(ctx, `
-		SELECT id, kind, discount_id FROM order_discounts
-		WHERE order_id = $1 ORDER BY id LIMIT 1`, orderID).Scan(&rowID, &kind, &discount)
+		SELECT od.id, od.kind, od.discount_id,
+		       coalesce(d.scope, ''), coalesce(d.value_bp, 0), d.min_subtotal_minor
+		FROM order_discounts od
+		LEFT JOIN discounts d ON d.id = od.discount_id
+		WHERE od.order_id = $1 ORDER BY od.id LIMIT 1`, orderID).
+		Scan(&rowID, &kind, &discount, &scope, &valueBP, &minSubtotal)
 	if errors.Is(err, sql.ErrNoRows) {
 		// No snapshot: either the order predates discounts or it never had one.
 		// Whatever is on the order stays, clamped to what there is to discount.
@@ -744,28 +1331,47 @@ func recomputeOrderDiscount(ctx context.Context, tx *sql.Tx, orderID, subtotal, 
 	}
 
 	amount := current
-	if kind == DiscountPercentage {
-		if !discount.Valid {
-			// The rule was deleted. Its percentage is unknowable, so the amount
-			// stands as recorded rather than being guessed at.
-			if current > subtotal {
-				amount = subtotal
-			}
-		} else {
-			var valueBP int
-			var minSubtotal sql.NullInt64
-			if err := tx.QueryRowContext(ctx,
-				`SELECT coalesce(value_bp, 0), min_subtotal_minor FROM discounts WHERE id = $1`,
-				discount.Int64).Scan(&valueBP, &minSubtotal); err != nil {
-				return 0, err
-			}
-			if minSubtotal.Valid && subtotal < minSubtotal.Int64 {
-				return 0, Conflictf(
-					"this order would fall below the %d its discount needs; remove the discount first",
-					minSubtotal.Int64)
-			}
-			amount = (subtotal*int64(valueBP) + 5000) / 10000
+	switch {
+	case discount.Valid && scope != "" && scope != DiscountScopeOrder:
+		// The rule still exists and covers part of the order. Today's targets,
+		// not a copy taken when the order was placed — the same accepted drift
+		// D27 already takes on value_bp.
+		base, err := eligibleSubtotalForOrder(ctx, tx, orderID, discount.Int64, scope)
+		if err != nil {
+			return 0, err
 		}
+		if base == 0 {
+			return 0, Conflictf(
+				"this order's discount no longer applies to anything left on it; remove the discount first")
+		}
+		if minSubtotal.Valid && subtotal < minSubtotal.Int64 {
+			return 0, Conflictf(
+				"this order would fall below the %d its discount needs; remove the discount first",
+				minSubtotal.Int64)
+		}
+		if kind == DiscountPercentage {
+			amount = (base*int64(valueBP) + 5000) / 10000
+		} else if amount > base {
+			// Where D39 departs from D27: a scoped fixed amount is clamped to
+			// what is left of the lines it covered, not to the whole basket.
+			amount = base
+		}
+	case kind != DiscountPercentage:
+		// A fixed amount was never a function of the basket; only the floor
+		// below applies.
+	case !discount.Valid:
+		// The rule was deleted. Its percentage is unknowable, so the amount
+		// stands as recorded rather than being guessed at.
+		if current > subtotal {
+			amount = subtotal
+		}
+	default:
+		if minSubtotal.Valid && subtotal < minSubtotal.Int64 {
+			return 0, Conflictf(
+				"this order would fall below the %d its discount needs; remove the discount first",
+				minSubtotal.Int64)
+		}
+		amount = (subtotal*int64(valueBP) + 5000) / 10000
 	}
 	if amount > subtotal {
 		amount = subtotal
@@ -777,4 +1383,124 @@ func recomputeOrderDiscount(ctx context.Context, tx *sql.Tx, orderID, subtotal, 
 		}
 	}
 	return amount, nil
+}
+
+// orderDiscountMask says which of an order's lines its discount came off, given
+// those lines' ids in the order the caller holds them. nil means every line.
+//
+// An order does not store that set — it is derived state that would go stale on
+// the only occasions it is read — so it is answered from the rule's current
+// targets, the same live read recomputeOrderDiscount takes. A deleted rule
+// answers nil: what it covered is unknowable, and spreading the recorded amount
+// over everything is what the order was written with.
+//
+// The line ids and not the products, because loadOrderLinesTx does not select
+// product_id: a caller handing over what it loaded would hand over nothing, and
+// an all-false mask reads as "the discount came off no line" — which would
+// refund a customer more than they paid. Reading the column here costs one query
+// and only on the scoped branch.
+func orderDiscountMask(ctx context.Context, tx *sql.Tx, orderID int64, lineIDs []int64) ([]bool, error) {
+	var discountID sql.NullInt64
+	var scope string
+	err := tx.QueryRowContext(ctx, `
+		SELECT od.discount_id, coalesce(d.scope, '')
+		FROM order_discounts od
+		LEFT JOIN discounts d ON d.id = od.discount_id
+		WHERE od.order_id = $1 ORDER BY od.id LIMIT 1`, orderID).Scan(&discountID, &scope)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !discountID.Valid || scope == "" || scope == DiscountScopeOrder {
+		return nil, nil
+	}
+
+	rows, err := tx.QueryContext(ctx,
+		`SELECT id, coalesce(product_id, 0) FROM order_lines WHERE order_id = $1`, orderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	productByLine := map[int64]int64{}
+	ids := []int64{}
+	seen := map[int64]bool{}
+	for rows.Next() {
+		var lineID, productID int64
+		if err := rows.Scan(&lineID, &productID); err != nil {
+			return nil, err
+		}
+		productByLine[lineID] = productID
+		if productID != 0 && !seen[productID] {
+			seen[productID] = true
+			ids = append(ids, productID)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	matched, err := matchedProducts(ctx, tx, discountID.Int64, scope, ids)
+	if err != nil {
+		return nil, err
+	}
+	mask := make([]bool, len(lineIDs))
+	for i, lineID := range lineIDs {
+		mask[i] = matched[productByLine[lineID]]
+	}
+	return mask, nil
+}
+
+// eligibleSubtotalForOrder is eligibleFor for an order that already exists.
+//
+// order_lines.product_id is nulled when a product is deleted, and such a line
+// matches nothing — which is right: it is no longer the thing the promotion
+// pointed at, and narrowing is the safe direction to be wrong in.
+//
+// Storing the covered set on order_discounts was declined: it is derived state
+// that would go stale on the only occasion it is ever read, since an edit is
+// exactly what changes the lines.
+func eligibleSubtotalForOrder(ctx context.Context, tx *sql.Tx, orderID, discountID int64, scope string) (int64, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT product_id, total_minor FROM order_lines
+		WHERE order_id = $1 AND product_id IS NOT NULL`, orderID)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	lines := []discountLine{}
+	for rows.Next() {
+		var l discountLine
+		if err := rows.Scan(&l.ProductID, &l.Total); err != nil {
+			return 0, err
+		}
+		lines = append(lines, l)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	ids := make([]int64, 0, len(lines))
+	seen := make(map[int64]bool, len(lines))
+	for _, l := range lines {
+		if seen[l.ProductID] {
+			continue
+		}
+		seen[l.ProductID] = true
+		ids = append(ids, l.ProductID)
+	}
+	matched, err := matchedProducts(ctx, tx, discountID, scope, ids)
+	if err != nil {
+		return 0, err
+	}
+	var base int64
+	for _, l := range lines {
+		if matched[l.ProductID] {
+			base += l.Total
+		}
+	}
+	return base, nil
 }

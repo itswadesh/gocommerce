@@ -455,61 +455,6 @@ func TestAPriceChangeNamesTheOperatorAndBothPrices(t *testing.T) {
 	}
 }
 
-// A stock take without the previous count is half a record.
-func TestAStockTakeRecordsTheLocationAndBothCounts(t *testing.T) {
-	app := newTestApp(t)
-	ctx := context.Background()
-	product := simpleProduct(t, app, "AUD-COUNT", 800, 6)
-	variant := product.DefaultVariant()
-
-	if _, err := app.Stock().SetOnHand(ctx, variant.ID, 0, 11); err != nil {
-		t.Fatalf("SetOnHand: %v", err)
-	}
-
-	row := onlyRow(t, auditRows(t, app, "action = $1", AuditStockSet))
-	if row.EntityType != AuditEntityStock || row.EntityID != strconv.FormatInt(variant.ID, 10) {
-		t.Errorf("entity = %s/%s, want stock/%d", row.EntityType, row.EntityID, variant.ID)
-	}
-	if row.EntityLabel != variant.SKU {
-		t.Errorf("entity_label = %q, want the SKU %q", row.EntityLabel, variant.SKU)
-	}
-	if got := jsonNumber(t, row.Changes.Before, "on_hand"); got != 6 {
-		t.Errorf("before.on_hand = %v, want 6", got)
-	}
-	if got := jsonNumber(t, row.Changes.After, "on_hand"); got != 11 {
-		t.Errorf("after.on_hand = %v, want 11", got)
-	}
-	if _, ok := row.Changes.After["location_id"]; !ok {
-		t.Error("a stock movement that does not name its location is not a movement")
-	}
-}
-
-// The invariant M17's comment protects: the reads added for `before` must never
-// become the check that decides.
-func TestTheConditionalUpdateIsStillTheGuard(t *testing.T) {
-	app := newTestApp(t, &gatewayModule{})
-	ctx := context.Background()
-	product := simpleProduct(t, app, "AUD-GUARD", 1000, 5)
-	variant := product.DefaultVariant()
-
-	// A gateway sale stops at pending, so the units stay on the shelf and are
-	// reserved there. Then a stock take that would count the shelf down below
-	// what is promised.
-	hold(t, app, variant.ID, 3)
-	before := auditCount(t, app)
-
-	_, err := app.Stock().SetOnHand(ctx, variant.ID, 0, 1)
-	if err == nil {
-		t.Fatal("setting on-hand below what is reserved should be refused")
-	}
-	if !strings.Contains(err.Error(), "reserved") {
-		t.Errorf("error = %v, want it to name the reservation that blocked it", err)
-	}
-	if got := auditCount(t, app); got != before {
-		t.Errorf("a refused stock take wrote %d rows", got-before)
-	}
-}
-
 // What the missing foreign key buys, so it is the test that stops somebody
 // adding one back.
 func TestAnEntryOutlivesTheOperator(t *testing.T) {
@@ -619,7 +564,7 @@ func TestDeletingALocationIsOneTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create location: %v", err)
 	}
-	if _, err := app.Stock().Adjust(ctx, product.DefaultVariant().ID, loc.ID, 5); err != nil {
+	if _, err := app.Stock().Adjust(ctx, product.DefaultVariant().ID, loc.ID, 5, ""); err != nil {
 		t.Fatalf("stock the shed: %v", err)
 	}
 
@@ -717,31 +662,34 @@ func TestARecordsHistoryFollowsItsOwnRight(t *testing.T) {
 		t.Errorf("the manager reached the feed: %d", rec.Code)
 	}
 
-	// Staff can read a variant's stock history to begin with, because staff
-	// carries inventory.read.
-	variantHistory := "/api/admin/variants/" +
-		strconv.FormatInt(product.DefaultVariant().ID, 10) + "/history"
-	if rec := do(t, app, "GET", variantHistory, bearer(staff)); rec.Code != http.StatusOK {
-		t.Fatalf("staff cannot read a variant's stock history: %d %s", rec.Code, rec.Body.String())
+	// Staff can read a location's history to begin with, because staff carries
+	// locations.read; narrowed on the same session token, with no sign-out, the
+	// per-record read follows the record's own right and goes with it.
+	//
+	// This used to prove the same thing with a variant's history, which was
+	// admin_audit's until M26 moved a variant's history into the stock ledger.
+	// TestMovementRoutesNeedInventoryRead is where that case lives now.
+	locationHistory := "/api/admin/locations/" +
+		strconv.FormatInt(defaultLocation(t, app).ID, 10) + "/history"
+	if rec := do(t, app, "GET", locationHistory, bearer(staff)); rec.Code != http.StatusOK {
+		t.Fatalf("staff cannot read a location's history: %d %s", rec.Code, rec.Body.String())
 	}
 
-	// Narrowed on the same session token, with no sign-out: the per-record read
-	// follows the record's own right, so it goes with it.
 	narrowed := []Right{}
 	for _, r := range DefaultRightsOf(RoleStaff) {
-		if r != RightInventoryRead {
+		if r != RightLocationsRead {
 			narrowed = append(narrowed, r)
 		}
 	}
 	if _, err := app.Roles().Set(ctx, RoleStaff, narrowed, nil); err != nil {
 		t.Fatalf("narrow staff: %v", err)
 	}
-	rec := do(t, app, "GET", variantHistory, bearer(staff))
+	rec := do(t, app, "GET", locationHistory, bearer(staff))
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("narrowed staff = %d, want 403", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), string(RightInventoryRead)) {
-		t.Errorf("the refusal does not name inventory.read: %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), string(RightLocationsRead)) {
+		t.Errorf("the refusal does not name locations.read: %s", rec.Body.String())
 	}
 }
 
@@ -968,6 +916,10 @@ func TestTheVocabularyIsReachable(t *testing.T) {
 	if err := app.Collections().SetProductCollections(ctx, product.ID, []int64{col.ID}); err != nil {
 		t.Fatalf("set collections: %v", err)
 	}
+	// The other axis: what is in the collection, and in what order.
+	if err := app.Collections().SetCollectionProducts(ctx, col.ID, []int64{product.ID}); err != nil {
+		t.Fatalf("curate the collection: %v", err)
+	}
 	colTitle := "Summer sale"
 	if _, err := app.Collections().Update(ctx, col.ID, CollectionPatch{Title: &colTitle}); err != nil {
 		t.Fatalf("update collection: %v", err)
@@ -977,6 +929,20 @@ func TestTheVocabularyIsReachable(t *testing.T) {
 	}
 	if err := app.Collections().Delete(ctx, col.ID); err != nil {
 		t.Fatalf("delete collection: %v", err)
+	}
+
+	attr, err := app.Categories().CreateAttribute(ctx, TaxonomyAttributeInput{
+		Handle: "sleeve-length", Label: "Sleeve length", Choices: []string{"Short", "Long"}})
+	if err != nil {
+		t.Fatalf("create attribute: %v", err)
+	}
+	attrLabel := "Sleeve"
+	if _, err := app.Categories().UpdateAttribute(ctx, attr.Handle,
+		TaxonomyAttributePatch{Label: &attrLabel}); err != nil {
+		t.Fatalf("update attribute: %v", err)
+	}
+	if err := app.Categories().DeleteAttribute(ctx, attr.Handle); err != nil {
+		t.Fatalf("delete attribute: %v", err)
 	}
 
 	if err := app.MediaLibrary().SetProductMedia(ctx, product.ID, nil); err != nil {
@@ -1019,15 +985,15 @@ func TestTheVocabularyIsReachable(t *testing.T) {
 	if _, err := app.Places().Update(ctx, loc.ID, LocationPatch{Name: &locName}); err != nil {
 		t.Fatalf("update location: %v", err)
 	}
-	if _, err := app.Stock().Adjust(ctx, variant.ID, loc.ID, 4); err != nil {
+	if _, err := app.Stock().Adjust(ctx, variant.ID, loc.ID, 4, ""); err != nil {
 		t.Fatalf("adjust: %v", err)
 	}
-	if _, err := app.Stock().SetOnHand(ctx, variant.ID, loc.ID, 9); err != nil {
+	if _, err := app.Stock().SetOnHand(ctx, variant.ID, loc.ID, 9, ""); err != nil {
 		t.Fatalf("set on hand: %v", err)
 	}
 	// Moved before the default changes, or the two ids would resolve to the
 	// same shelf.
-	if _, err := app.Stock().Move(ctx, variant.ID, loc.ID, 0, 2); err != nil {
+	if _, err := app.Stock().Move(ctx, variant.ID, loc.ID, 0, 2, ""); err != nil {
 		t.Fatalf("move: %v", err)
 	}
 	if _, err := app.Places().SetDefault(ctx, loc.ID); err != nil {

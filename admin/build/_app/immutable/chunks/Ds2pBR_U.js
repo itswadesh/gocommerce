@@ -1,0 +1,1 @@
+import{j as o,E as c,D as d,as as i,at as p}from"./_Jh5P69L.js";function m(a,n,t){o(()=>{var r=c(()=>n(a,t==null?void 0:t())||{});if(t&&(r!=null&&r.update)){var e=!1,f={};d(()=>{var s=t();i(s),e&&p(f,s)&&(f=s,r.update(s))}),e=!0}if(r!=null&&r.destroy)return()=>r.destroy()})}function b(a){return document.body.appendChild(a),{destroy(){a.remove()}}}export{m as a,b as p};

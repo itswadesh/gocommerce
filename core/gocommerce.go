@@ -53,7 +53,14 @@ const (
 	httpReadTimeout  = 15 * time.Second
 	httpWriteTimeout = 60 * time.Second
 	httpIdleTimeout  = 120 * time.Second
-	shutdownGrace    = 20 * time.Second
+	// taxonomyImportDeadline is what the two taxonomy imports give themselves
+	// instead of the timeouts above: the embedded set is one transaction over
+	// ~14,000 rows, which outruns a 60-second write timeout on a remote
+	// database, and the uploaded variant is a multi-megabyte body a 15-second
+	// read timeout can kill before a row is parsed. Kept here so every
+	// timeout the server applies is readable in one place.
+	taxonomyImportDeadline = 10 * time.Minute
+	shutdownGrace          = 20 * time.Second
 )
 
 // Config is the complete configuration surface of the engine. Provider

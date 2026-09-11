@@ -106,7 +106,16 @@ The public listing is forced to `active`; the admin listing accepts `?status=`:
 ```http
 GET /api/products?q=mug&limit=20&page=2
 GET /api/admin/products?status=draft&limit=20&offset=20
+GET /api/admin/products?collection_id=7
 ```
+
+The admin listing also narrows by `vendor`, `product_type`, `tag`,
+`category_id` and `collection_id`. That vocabulary is read in one place
+(`productQueryFrom`) and rendered into SQL in one place (`productFilters`), so
+the CSV export at `GET /api/admin/export/admin-products` takes exactly the
+same filters — a reconciliation exports the rows a screen is showing rather
+than the whole catalogue. A bad filter on the export is a 400 in the envelope,
+because it is parsed before the first CSV header is written.
 
 Both pagination coordinates work everywhere `Page(r)` is used, and **`page` wins
 when a request sends both** — it is the more specific intent, and honouring the
@@ -160,6 +169,62 @@ GET /api/categories/{slug}      → the category with a page of the active produ
 Admin CRUD is `GET|POST /api/admin/categories` and
 `GET|PATCH|DELETE /api/admin/categories/{id}`.
 
+A collection has two routes of its own, which are the other axis of the same
+join table:
+
+```http
+GET /api/admin/collections/{id}/products     → the members, in curated order
+PUT /api/admin/collections/{id}/products     {"product_ids": [7, 3, 9]} → 204
+```
+
+The GET takes the product listing's whole filter vocabulary except
+`collection_id` (the path already named it, so sending one is a 400), includes
+drafts, and 404s for a collection that does not exist rather than answering an
+empty page. The PUT answers 204 and no body: the useful response would be the
+whole membership, and a page of it is a list a client could re-save from and
+lose the tail.
+
+`product_collections` carries **two** orderings in two columns, and which route
+writes which is the whole of D40. `position` is where a collection sits in one
+product's own list — what `PUT /api/admin/products/{id}/collections` writes,
+and what orders a product's chips. `member_position` is where a product sits
+inside one collection — what the PUT above writes, and what a collection-scoped
+listing orders by. Neither writer touches the other's column.
+
+### The attribute dictionary
+
+`taxonomy_attributes` (M13) is a store-wide table of `handle → label + choices`:
+what a field is called and which values it offers, written once rather than
+onto every category that asks for it. A category's `metadata.attributes` names
+handles; the choices come from here and **only** from here, so a `choices` list
+typed into a category's own metadata is dropped on read.
+
+```http
+GET|POST   /api/admin/taxonomy-attributes           (?q= matches handle or label)
+GET|PATCH|DELETE /api/admin/taxonomy-attributes/{handle}
+```
+
+The handle is the key, is folded to lower case, and is **not patchable** —
+renaming it would detach every category naming it, so moving a field is a
+create, an edit of those categories, and a delete. Deleting an entry is never
+refused: a category still asking for the field keeps it and simply offers no
+fixed list, which is a free-text field rather than a broken one.
+
+Both halves have an import, and the order matters — the tree first, the fields
+second, because the fields attach by the taxonomy id the tree import writes:
+
+```http
+POST /api/admin/import/taxonomy              (empty body = the embedded set)
+POST /api/admin/import/category-attributes   (empty body = the embedded dictionary)
+```
+
+An empty body means the ~14,000-category Shopify set embedded in the binary,
+and that one call brings the field definitions with it. A body is the
+operator's own file in the published format, and imports the tree alone. Both
+are idempotent and both are one transaction, so a request that times out is
+fixed by sending it again. `gocommerce taxonomy import` is the same thing from
+a shell.
+
 ### Invariants
 
 - **The tree stays a tree.** `Update` refuses a move that would put a category
@@ -184,6 +249,12 @@ Admin CRUD is `GET|POST /api/admin/categories` and
   field and an explicit `null` both decode to a nil pointer, so a plain pointer
   could file a product but never un-file it. `SetID(id)` files it, `ClearID()`
   uncategorises it, and the zero value leaves it alone.
+- **A collection's order is the only order it has.** Filtering a product
+  listing to a collection switches the ORDER BY to that collection's curation,
+  and the only way to set it is the collection-side PUT — saving a product's
+  collection list appends it at the end rather than reshuffling anything. **And
+  that PUT replaces the whole membership**, including rows the caller never
+  fetched, so a client pages the lot before it saves.
 
 ## How to change status or delete
 

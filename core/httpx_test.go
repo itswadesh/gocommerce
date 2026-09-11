@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAPIErrorIs(t *testing.T) {
@@ -242,5 +243,46 @@ func TestDecodeJSON(t *testing.T) {
 				t.Errorf("error = %v, want it to contain %q", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+// deadlineWriter is a recorder that can carry a deadline, which httptest's own
+// cannot: http.NewResponseController looks for these two methods, so a plain
+// ResponseRecorder answers ErrNotSupported with or without statusWriter's
+// Unwrap and would prove nothing either way.
+type deadlineWriter struct {
+	*httptest.ResponseRecorder
+	wrote, read bool
+}
+
+func (w *deadlineWriter) SetWriteDeadline(time.Time) error { w.wrote = true; return nil }
+func (w *deadlineWriter) SetReadDeadline(time.Time) error  { w.read = true; return nil }
+
+// A long import has to be able to outlive the server's own timeouts, and it can
+// only do that if the middleware chain can be unwrapped. Every request passes
+// through logMW, which wraps the writer in *statusWriter; without Unwrap there
+// the controller stops at it, both extensions are silent no-ops, and the
+// operator gets a dead connection over a transaction that commits anyway.
+//
+// It drives the full Handler() rather than the bare handler on purpose: a
+// middleware added later that wraps the writer without an Unwrap of its own
+// fails this test rather than an operator's 14,000-row import.
+func TestLongImportCanExtendItsOwnDeadlines(t *testing.T) {
+	app := newTestApp(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/import/taxonomy",
+		strings.NewReader("gid://shopify/TaxonomyCategory/dl-1 : Deadlines > Extended\n"))
+	withAdmin(req)
+	w := &deadlineWriter{ResponseRecorder: httptest.NewRecorder()}
+	app.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("import = %d: %s", w.Code, w.Body)
+	}
+	if !w.wrote {
+		t.Error("the write deadline was never extended: the chain cannot be unwrapped")
+	}
+	if !w.read {
+		t.Error("the read deadline was never extended: an uploaded file dies at 15 seconds")
 	}
 }

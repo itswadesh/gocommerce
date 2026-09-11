@@ -154,6 +154,37 @@ PocketBase's stylesheets carry no `prefers-reduced-motion` handling, so
 fades, toasts and the drawer slide. The loading spinner is exempt, because a
 frozen spinner reads as a hung page.
 
+## Stock history
+
+`StockHistory.svelte` renders the stock ledger
+(`GET /api/admin/variants/{id}/movements` and
+`GET /api/admin/locations/{id}/movements`), and it is one component because two
+screens ask the same question from opposite ends. It appears in three places:
+the inventory drawer's fourth mode, reached by the History button; a compact
+three-row block under the form in the drawer's editing modes, because the
+person about to change a count is exactly the person who needs to see what
+happened last time; and a second drawer on the Locations row, opened by the
+clock icon, which is where "this location still holds 4 unit(s) across 2
+SKU(s)" finally names which SKU.
+
+Nothing in that table is clickable, and `.stock-history` deliberately leaves
+out `.stock-locations`' picker rules for that reason. It pages in place with a
+`load-more-btn` rather than through the shared `Pager`: it lives inside a
+drawer, and a drawer that writes `?page=` into the address bar leaves a stale
+parameter behind when it closes.
+
+**The reason field exists only on the inventory drawer.** The panel requires
+one for a stock take and for a negative adjustment — those are the two
+movements somebody asks about later — and accepts a blank for a positive
+adjustment and a transfer, because stock arriving explains itself. That is the
+panel's rule and not the API's: the engine accepts a blank reason from any
+client, and a script or the MCP tool may well send one. The product form's
+save-time stock take and the variant matrix's setters deliberately send **no**
+reason at all rather than a canned string: a sentence in a human-labelled audit
+field that no human typed is worse than a blank, because a reader cannot tell
+the two apart. `kind`, `source`, the operator's email and the timestamp already
+say everything true about those rows.
+
 ## Authentication
 
 Two kinds of credential exist, because scripts and people want different
@@ -321,6 +352,18 @@ Honest gaps, rather than a roadmap:
   when the order is placed, so an ineligible one refuses the whole submit. The
   line above the Place order button is therefore labelled *Items subtotal*: it
   sums the lines, while the checkout adds shipping, any discount and then tax.
+- **The discount drawer offers percentage and fixed, not free shipping**, which
+  the engine has supported since M15. It is an adjacent gap rather than a
+  hazard: while it is out, the panel cannot produce the one combination the
+  engine refuses outright, a free-shipping rule carrying a scope.
+- **A scoped discount whose every target has been deleted still draws `live`.**
+  The listing carries target ids and not their `missing` flags — resolving two
+  hundred titles into a page of fifty rows is the trade that buys the drawer its
+  race-free open — so a rule pointing at nothing shows as `no targets`, but one
+  pointing only at deleted things does not. `gocommerce doctor` counts those.
+- **The discount target picker reaches the first 200 collections.** Products are
+  searched at the store and categories arrive flat, so only collections are
+  capped; the field help says so rather than pretending otherwise.
 
 - **An option axis cannot be removed or renamed** once it exists, and a
   variant's option combination cannot be changed — the API has no route for
@@ -334,9 +377,15 @@ Honest gaps, rather than a roadmap:
   variants renders all of them.
 - **A new variant starts at zero on hand** and is unsellable until someone
   visits Inventory. The form says so. Stock deliberately stays there, so every
-  movement is a transactional adjustment rather than an overwrite.
-- **Not exposed in the variant form:** barcode, compare-at price,
-  `track_inventory`, weight, position. All patchable through the API.
+  movement is a transactional adjustment rather than an overwrite — and every
+  one of them is recorded in the variant's stock history, with who made it.
+- **Not exposed in the variant form** — two surfaces, and they differ. The
+  single-variant Pricing and Inventory card exposes everything but `position`,
+  including barcode, `track_inventory` and the compare-at price, which can now
+  be *cleared* as well as set (send `null`; the panel sends it when the box is
+  emptied). The matrix drawer, for a product with options, still omits barcode,
+  the compare-at price and `position`, and shows `track_inventory` without
+  letting anyone change it. All of them are patchable through the API.
 - **Duplicate option values across axes** (a `Size: Small` and a
   `Cup: Small` on one product) are caught in the panel, not the engine:
   `insertOptions` compares values only within a single call, and the value
@@ -345,5 +394,11 @@ Honest gaps, rather than a roadmap:
 - **No collection browser.** PocketBase's dashboard is generic over
   user-defined collections; this one is specific to a commerce domain that
   already knows what a product and an order are.
+- **No screen curates a collection yet.** The engine has the read and the
+  ordered write — `GET` and `PUT /api/admin/collections/{id}/products` — and
+  there is no `admin/src/routes/collections` directory to drive them from, so
+  today they are reachable by curl and MCP only. The product list's
+  `?collection_id=` filter is in the same position: the endpoint takes it, the
+  control belongs to the product-list filters work.
 - **No log viewer or SQL console.**
 - **No bulk actions** on the list screens.

@@ -1,7 +1,9 @@
 <script>
-    import { apiErrorFrom, getToken, request } from "$lib/api.js";
+    import { api, apiErrorFrom, can, getToken, query, request } from "$lib/api.js";
     import { toast } from "$lib/toast.svelte.js";
     import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
+    import CategoryPicker from "$lib/components/CategoryPicker.svelte";
+    import Confirm from "$lib/components/Confirm.svelte";
     import Select from "$lib/components/Select.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
@@ -12,6 +14,91 @@
     let csv = $state("");
     let result = $state(null);
     let fileInput;
+
+    // The export filters, and the two vocabularies they need. The category
+    // control is a CategoryPicker rather than a Select on purpose: this is the
+    // screen with the taxonomy-import button on it, so the tree here can be
+    // fourteen thousand rows, and the listing answers with a bounded slice plus
+    // the real total — which a plain Select would silently render as a prefix.
+    let exportQ = $state("");
+    let exportStatus = $state("");
+    let exportCategory = $state(null);
+    let exportCollection = $state("");
+    let categories = $state([]);
+    let categoriesTruncated = $state(false);
+    let collections = $state([]);
+
+    // Taxonomy import, the other half of this screen.
+    let importingTaxonomy = $state(false);
+    let importingFields = $state(false);
+    let taxonomyResult = $state(null);
+    let fieldsResult = $state(null);
+    let confirmOpen = $state(false);
+
+    $effect(() => {
+        loadVocabulary();
+    });
+
+    async function loadVocabulary() {
+        if (!can("data.export")) return;
+        try {
+            const [cats, cols] = await Promise.all([
+                api.get("/api/admin/categories?flat=1"),
+                api.get("/api/admin/collections" + query({ limit: 200 })),
+            ]);
+            categories = cats.data ?? [];
+            categoriesTruncated = (cats.meta?.total ?? 0) > categories.length;
+            collections = cols.data ?? [];
+        } catch (err) {
+            toast.error(err);
+        }
+    }
+
+    function exportProducts() {
+        const suffix = query({
+            q: exportQ,
+            status: exportStatus,
+            category_id: exportCategory,
+            collection_id: exportCollection,
+        });
+        download("/api/admin/export/admin-products" + suffix, "products.csv");
+    }
+
+    async function importTaxonomy() {
+        if (importingTaxonomy) return;
+        importingTaxonomy = true;
+        taxonomyResult = null;
+        try {
+            // No body: an empty one means the embedded set, and that call also
+            // brings the field definitions with it.
+            taxonomyResult = await request("POST", "/api/admin/import/taxonomy");
+            toast.success(
+                `${taxonomyResult.categories.created} categories added, ` +
+                    `${taxonomyResult.categories.matched} already there`,
+            );
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            importingTaxonomy = false;
+        }
+    }
+
+    async function importFields() {
+        if (importingFields) return;
+        importingFields = true;
+        fieldsResult = null;
+        try {
+            fieldsResult = await request("POST", "/api/admin/import/category-attributes");
+            toast.success(
+                `${fieldsResult.attributes} fields defined, ` +
+                    `${fieldsResult.categories} categories given theirs`,
+            );
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            importingFields = false;
+        }
+    }
 
     async function download(path, filename) {
         try {
@@ -107,12 +194,74 @@
                 lossless.
             </div>
 
+            <div class="grid m-b-sm">
+                <div class="col-6">
+                    <div class="field">
+                        <label for="export-q">Search</label>
+                        <input
+                            id="export-q"
+                            type="text"
+                            placeholder="Title or description"
+                            bind:value={exportQ}
+                        />
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="field">
+                        <label for="export-status">Status</label>
+                        <Select
+                            id="export-status"
+                            bind:value={exportStatus}
+                            options={[
+                                { value: "", label: "Any status" },
+                                { value: "draft", label: "Draft" },
+                                { value: "active", label: "Active" },
+                                { value: "archived", label: "Archived" },
+                            ]}
+                        />
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="field">
+                        <label for="export-category">Category</label>
+                        <CategoryPicker
+                            id="export-category"
+                            bind:value={exportCategory}
+                            {categories}
+                            remote={categoriesTruncated}
+                            placeholder="Any category"
+                        />
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="field">
+                        <label for="export-collection">Collection</label>
+                        <Select
+                            id="export-collection"
+                            bind:value={exportCollection}
+                            options={[
+                                { value: "", label: "Any collection" },
+                                ...collections.map((c) => ({
+                                    value: String(c.id),
+                                    label: c.title,
+                                })),
+                            ]}
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <div class="field-help m-b-sm">
+                The filters apply to the products file only, and it exports every row that
+                matched rather than a page of them. A category takes everything nested
+                under it; the collection list is the first 200. Vendor, product type and
+                tag are honoured by the endpoint but have no control here, because the
+                panel has no vocabulary of them to offer — the product editor distils its
+                suggestions from a sample, which would quietly miss anything past it.
+            </div>
+
             <div class="flex gap-10">
-                <button
-                    type="button"
-                    class="btn secondary"
-                    onclick={() => download("/api/admin/export/admin-products", "products.csv")}
-                >
+                <button type="button" class="btn secondary" onclick={exportProducts}>
                     <i class="ri-price-tag-3-line" aria-hidden="true"></i>
                     <span class="txt">Products CSV</span>
                 </button>
@@ -125,6 +274,103 @@
                     <span class="txt">Orders CSV</span>
                 </button>
             </div>
+
+            {#if can("data.import")}
+                <h6 class="section-title">
+                    <i class="ri-node-tree" aria-hidden="true"></i>
+                    Category taxonomy
+                </h6>
+
+                <div class="field-help m-b-sm">
+                    Shopify's standard taxonomy ships inside this binary: about 14,000
+                    categories, plus the fields each one asks of a product. Nothing imports
+                    it for you, because a store that wanted six categories of its own
+                    should not find fourteen thousand of Shopify's in it after an upgrade.
+                    It is idempotent, so running it twice adds only what is missing — which
+                    is also the remedy if a run times out. It can take a minute.
+                </div>
+
+                <div class="flex gap-10">
+                    <button
+                        type="button"
+                        class="btn secondary"
+                        class:loading={importingTaxonomy}
+                        disabled={importingTaxonomy}
+                        onclick={() => (confirmOpen = true)}
+                    >
+                        <i class="ri-download-cloud-2-line" aria-hidden="true"></i>
+                        <span class="txt">Import the Shopify taxonomy</span>
+                    </button>
+                    <button
+                        type="button"
+                        class="btn secondary"
+                        class:loading={importingFields}
+                        disabled={importingFields}
+                        onclick={importFields}
+                    >
+                        <i class="ri-list-settings-line" aria-hidden="true"></i>
+                        <span class="txt">Field definitions only</span>
+                    </button>
+                </div>
+
+                <div class="field-help m-t-sm">
+                    The tree import brings the field definitions with it. The second button
+                    is for a tree that is already in place — and it only attaches fields to
+                    categories that came from this same source, since it matches them by
+                    the taxonomy id the tree import wrote.
+                </div>
+
+                {#if taxonomyResult}
+                    <div class="grid m-t-base">
+                        <div class="col-4">
+                            <div class="stat-card">
+                                <span class="stat-label">Created</span>
+                                <span class="stat-value txt-success"
+                                    >{taxonomyResult.categories.created}</span
+                                >
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="stat-card">
+                                <span class="stat-label">Already present</span>
+                                <span class="stat-value">{taxonomyResult.categories.matched}</span>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="stat-card">
+                                <span class="stat-label">Skipped</span>
+                                <span class="stat-value txt-hint"
+                                    >{taxonomyResult.categories.skipped}</span
+                                >
+                            </div>
+                        </div>
+                    </div>
+                {/if}
+
+                {#if taxonomyResult?.attributes || fieldsResult}
+                    {@const fields = fieldsResult ?? taxonomyResult.attributes}
+                    <div class="grid m-t-base">
+                        <div class="col-4">
+                            <div class="stat-card">
+                                <span class="stat-label">Fields defined</span>
+                                <span class="stat-value">{fields.attributes}</span>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="stat-card">
+                                <span class="stat-label">Categories</span>
+                                <span class="stat-value">{fields.categories}</span>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="stat-card">
+                                <span class="stat-label">Unmatched</span>
+                                <span class="stat-value txt-hint">{fields.unmatched}</span>
+                            </div>
+                        </div>
+                    </div>
+                {/if}
+            {/if}
 
             <h6 class="section-title">
                 <i class="ri-upload-2-line" aria-hidden="true"></i>
@@ -294,5 +540,13 @@
             <span class="txt">CSV in, CSV out — the same shape both ways</span>
             <ThemeToggle />
         </footer>
+
+        <Confirm
+            bind:open={confirmOpen}
+            title="Import the Shopify taxonomy?"
+            message="It writes about 14,000 categories into this store. Running it again later only adds what is missing, so it is safe to repeat — but there is no one-click way to take them out."
+            confirmLabel="Import"
+            onconfirm={importTaxonomy}
+        />
     </div>
 </div>

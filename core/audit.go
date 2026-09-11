@@ -39,12 +39,13 @@ const (
 // The entity vocabulary: one name per record an operator can actually point at
 // and ask "what happened to this".
 //
-// AuditEntityStock is keyed by variant id and AuditEntityRole by role name —
-// see entity_id's comment in M20 for why the column is text.
+// AuditEntityRole is keyed by role name rather than by an id — see
+// entity_id's comment in M20 for why the column is text. There is no stock
+// entity: since M26 a stock movement is a row in stock_movements, which records
+// the same act with more of it (see audit_http.go).
 const (
 	AuditEntityOrder      = "order"
 	AuditEntityProduct    = "product"
-	AuditEntityStock      = "stock"
 	AuditEntityCategory   = "category"
 	AuditEntityCollection = "collection"
 	AuditEntityDiscount   = "discount"
@@ -53,6 +54,10 @@ const (
 	AuditEntitySuperuser  = "superuser"
 	AuditEntityInvitation = "invitation"
 	AuditEntityRole       = "role"
+	// AuditEntityTaxonomyAttribute is keyed by handle rather than by an id,
+	// like a role: taxonomy_attributes has no id of its own, because the
+	// handle is what a category's metadata names.
+	AuditEntityTaxonomyAttribute = "taxonomy_attribute"
 )
 
 // AuditEntityTypes is the catalogue, in the panel's display order. The database
@@ -61,7 +66,6 @@ const (
 var AuditEntityTypes = []string{
 	AuditEntityOrder,
 	AuditEntityProduct,
-	AuditEntityStock,
 	AuditEntityCategory,
 	AuditEntityCollection,
 	AuditEntityDiscount,
@@ -70,6 +74,7 @@ var AuditEntityTypes = []string{
 	AuditEntitySuperuser,
 	AuditEntityInvitation,
 	AuditEntityRole,
+	AuditEntityTaxonomyAttribute,
 }
 
 // The action vocabulary, `<record>.<verb>`, declared here and nowhere else.
@@ -117,10 +122,6 @@ const (
 	AuditVariantDelete   = "variant.delete"
 	AuditVariantMediaSet = "variant.media_set"
 
-	AuditStockAdjust   = "stock.adjust"
-	AuditStockSet      = "stock.set"
-	AuditStockTransfer = "stock.transfer"
-
 	AuditCategoryCreate = "category.create"
 	AuditCategoryUpdate = "category.update"
 	AuditCategoryDelete = "category.delete"
@@ -128,6 +129,18 @@ const (
 	AuditCollectionCreate = "collection.create"
 	AuditCollectionUpdate = "collection.update"
 	AuditCollectionDelete = "collection.delete"
+	// Its own verb rather than product.collections_set: that one says a
+	// product changed which collections it is in, this one says a collection
+	// changed what is in it and in what order. They write different columns
+	// and answer different questions (D40).
+	AuditCollectionProductsSet = "collection.products_set"
+
+	// The shared field dictionary. A category asking for a field it no longer
+	// defines falls back to free text, so a delete here degrades screens
+	// quietly — which is exactly why it is recorded.
+	AuditTaxonomyAttributeCreate = "taxonomy_attribute.create"
+	AuditTaxonomyAttributeUpdate = "taxonomy_attribute.update"
+	AuditTaxonomyAttributeDelete = "taxonomy_attribute.delete"
 
 	AuditDiscountCreate = "discount.create"
 	AuditDiscountUpdate = "discount.update"
@@ -176,11 +189,13 @@ var AllAuditActions = []string{
 
 	AuditVariantCreate, AuditVariantUpdate, AuditVariantDelete, AuditVariantMediaSet,
 
-	AuditStockAdjust, AuditStockSet, AuditStockTransfer,
-
 	AuditCategoryCreate, AuditCategoryUpdate, AuditCategoryDelete,
 
 	AuditCollectionCreate, AuditCollectionUpdate, AuditCollectionDelete,
+	AuditCollectionProductsSet,
+
+	AuditTaxonomyAttributeCreate, AuditTaxonomyAttributeUpdate,
+	AuditTaxonomyAttributeDelete,
 
 	AuditDiscountCreate, AuditDiscountUpdate, AuditDiscountDelete,
 

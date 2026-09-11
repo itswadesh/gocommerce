@@ -892,18 +892,12 @@
                     body.price_minor = toMinor(form.price, currency);
                 }
                 if (form.compare_at !== snapshot.compare_at) {
-                    if (form.compare_at.trim() === "") {
-                        // The patch cannot express "unset". Its fields are
-                        // pointers, so a missing one means "leave it alone",
-                        // and 0 is stored as a real zero — a storefront would
-                        // then strike through $0.00. Saying so beats writing a
-                        // price nobody asked for.
-                        toast.warning(
-                            "A compare-at price cannot be cleared through the API, so it was left as it was.",
-                        );
-                    } else {
-                        body.compare_at_price_minor = toMinor(form.compare_at, currency);
-                    }
+                    // An emptied box is "this is not on sale any more", which the
+                    // patch now expresses as null — not as an absent field, which
+                    // would leave the struck-through price on the storefront for
+                    // ever, and not as 0, which would strike through $0.00.
+                    body.compare_at_price_minor =
+                        form.compare_at.trim() === "" ? null : toMinor(form.compare_at, currency);
                 }
                 if (form.cost !== snapshot.cost) {
                     // An emptied box is "no cost recorded", which the column
@@ -1403,7 +1397,9 @@
                             {#if form.track_inventory}
                                 Saving this sends a stock take to the inventory endpoint, not the
                                 variant patch — stock only ever moves as a transactional
-                                adjustment, so a sale that lands mid-edit cannot be overwritten.
+                                adjustment, so a sale that lands mid-edit cannot be overwritten,
+                                and every movement is recorded in the variant's stock history,
+                                with who made it.
                                 {#if defaultVariant}
                                     <strong>{defaultVariant.available}</strong> available right now
                                     ({defaultVariant.stock_reserved} reserved for open orders).

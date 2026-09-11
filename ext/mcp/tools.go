@@ -171,6 +171,8 @@ func (m *Module) builtinTools() []Tool {
 				"variant_id": integer("The variant id."),
 				"adjust":     integer("Move the on-hand count by this much."),
 				"set":        integer("Replace the on-hand count with this."),
+				"reason": str("Why the stock moved — a delivery, a damage write-off, " +
+					"a recount. Recorded in the stock ledger against this movement."),
 			}, "variant_id"),
 			Mutates: true,
 			Call: func(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -182,6 +184,10 @@ func (m *Module) builtinTools() []Tool {
 					// one most stores have and the one an agent that has not
 					// been told about locations should be moving.
 					LocationID int64 `json:"location_id"`
+					// An agent that has to say why it moved stock is exactly
+					// the actor whose reason an operator will most want to read
+					// back off the ledger.
+					Reason string `json:"reason"`
 				}
 				if err := decode(raw, &args); err != nil {
 					return nil, err
@@ -190,9 +196,9 @@ func (m *Module) builtinTools() []Tool {
 				case args.Adjust != nil && args.Set != nil:
 					return nil, fmt.Errorf("send either adjust or set, not both")
 				case args.Adjust != nil:
-					return m.app.Stock().Adjust(ctx, args.VariantID, args.LocationID, *args.Adjust)
+					return m.app.Stock().Adjust(ctx, args.VariantID, args.LocationID, *args.Adjust, args.Reason)
 				case args.Set != nil:
-					return m.app.Stock().SetOnHand(ctx, args.VariantID, args.LocationID, *args.Set)
+					return m.app.Stock().SetOnHand(ctx, args.VariantID, args.LocationID, *args.Set, args.Reason)
 				default:
 					return nil, fmt.Errorf("send either adjust or set")
 				}

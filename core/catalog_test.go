@@ -3,6 +3,8 @@ package gocommerce
 import (
 	"bytes"
 	"context"
+	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -190,7 +192,7 @@ func TestProductCSVCarriesCustomsAndOversell(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := app.Data().ExportProducts(ctx, &buf); err != nil {
+	if err := app.Data().ExportProducts(ctx, &buf, ProductQuery{}); err != nil {
 		t.Fatalf("export: %v", err)
 	}
 	csv := buf.String()
@@ -234,5 +236,149 @@ func TestProductCSVCarriesCustomsAndOversell(t *testing.T) {
 	if after.OriginCountry != "" {
 		t.Errorf("origin = %q after a file without the column; an absent column is a default, "+
 			"and the default is empty", after.OriginCountry)
+	}
+}
+
+// A compare-at price has three states on a patch and only a NullableAmount can
+// carry them: omitted leaves it alone, a number sets it, null takes the item off
+// sale. With a plain pointer the last two are the same wire value, so a
+// struck-through price could be set and never removed.
+func TestVariantCompareAtPriceClears(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+
+	price := int64(2000)
+	p, err := app.Products().CreateProduct(ctx, ProductInput{
+		Title: "Sale tee", SKU: "SALE-1", PriceMinor: &price,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	target := "/api/admin/variants/" + strconv.FormatInt(p.DefaultVariant().ID, 10)
+
+	patch := func(body string) *Variant {
+		t.Helper()
+		rec := doBody(t, app, http.MethodPatch, target, body, withAdmin)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("PATCH %s = %d: %s", body, rec.Code, rec.Body)
+		}
+		var v Variant
+		decodeData(t, rec, &v)
+		return &v
+	}
+
+	if v := patch(`{"compare_at_price_minor":3000}`); v.CompareAtPrice == nil ||
+		v.CompareAtPrice.AmountMinor != 3000 {
+		t.Fatalf("compare_at_price = %+v, want 3000", v.CompareAtPrice)
+	}
+	// An unrelated patch must not disturb it — that is what "omitted" means.
+	if v := patch(`{"sku":"SALE-1-B"}`); v.CompareAtPrice == nil ||
+		v.CompareAtPrice.AmountMinor != 3000 {
+		t.Errorf("compare_at_price = %+v after an unrelated patch, want it left alone", v.CompareAtPrice)
+	}
+	if v := patch(`{"compare_at_price_minor":null}`); v.CompareAtPrice != nil {
+		t.Errorf("compare_at_price = %+v after sending null, want it cleared", v.CompareAtPrice)
+	}
+
+	// Negative is a client mistake and comes back as one: before the guard it
+	// reached the column CHECK, which translateCatalogErr does not recognise, so
+	// the answer was a 500.
+	for _, body := range []string{`{"compare_at_price_minor":-1}`, `{"cost_minor":-1}`} {
+		rec := doBody(t, app, http.MethodPatch, target, body, withAdmin)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("PATCH %s = %d, want 400: %s", body, rec.Code, rec.Body)
+			continue
+		}
+		if code := decodeError(t, rec).Code; code != "validation_failed" {
+			t.Errorf("PATCH %s error code = %q, want validation_failed", body, code)
+		}
+	}
+}
+
+// The export takes the listing's whole filter vocabulary, through the same
+// builder, so a reconciliation does not have to download the catalogue.
+func TestExportProductsHonoursFilters(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+
+	price := int64(1000)
+	stock := 2
+	mk := func(sku, status, vendor string, tags []string) *Product {
+		t.Helper()
+		p, err := app.Products().CreateProduct(ctx, ProductInput{
+			Title: "Filtered " + sku, Status: status, Vendor: vendor, Tags: tags,
+			SKU: sku, PriceMinor: &price, Stock: &stock,
+		})
+		if err != nil {
+			t.Fatalf("create %s: %v", sku, err)
+		}
+		return p
+	}
+	live := mk("EXP-LIVE", ProductActive, "Acme", []string{"summer"})
+	mk("EXP-DRAFT", ProductDraft, "Other", nil)
+
+	parent, err := app.Categories().Create(ctx, CategoryInput{Title: "Outerwear"})
+	if err != nil {
+		t.Fatalf("create parent category: %v", err)
+	}
+	child, err := app.Categories().Create(ctx, CategoryInput{Title: "Parkas", ParentID: &parent.ID})
+	if err != nil {
+		t.Fatalf("create child category: %v", err)
+	}
+	if _, err := app.Products().UpdateProduct(ctx, live.ID,
+		ProductPatch{CategoryID: SetID(child.ID)}); err != nil {
+		t.Fatalf("file the product: %v", err)
+	}
+	col := newCollection(t, app, CollectionInput{Title: "Window"})
+	if err := app.Collections().SetCollectionProducts(ctx, col.ID, []int64{live.ID}); err != nil {
+		t.Fatalf("curate: %v", err)
+	}
+
+	// A second variant on the one that survives every filter: its rows have to
+	// stay contiguous, because that is what the importer reads.
+	if _, err := app.Products().AddOption(ctx, live.ID,
+		OptionInput{Name: "Size", Values: []string{"S", "M"}}); err != nil {
+		t.Fatalf("add option: %v", err)
+	}
+	if _, err := app.Products().CreateVariant(ctx, live.ID, VariantInput{
+		SKU: "EXP-LIVE-M", PriceMinor: 1000, Options: []string{"M"},
+	}); err != nil {
+		t.Fatalf("create the second variant: %v", err)
+	}
+
+	export := func(q ProductQuery) string {
+		t.Helper()
+		var buf bytes.Buffer
+		if err := app.Data().ExportProducts(ctx, &buf, q); err != nil {
+			t.Fatalf("export: %v", err)
+		}
+		return buf.String()
+	}
+
+	all := export(ProductQuery{})
+	if !strings.Contains(all, "EXP-LIVE") || !strings.Contains(all, "EXP-DRAFT") {
+		t.Fatalf("an unfiltered export is missing rows:\n%s", all)
+	}
+	for _, q := range []ProductQuery{
+		{Status: ProductActive},
+		{Vendor: "Acme"},
+		{Tag: "summer"},
+		{CategoryID: parent.ID}, // the ancestor, proving categoryFilter still expands
+		{CollectionID: col.ID},
+		{Search: "Filtered EXP-LIVE"},
+	} {
+		csv := export(q)
+		if strings.Contains(csv, "EXP-DRAFT") {
+			t.Errorf("%+v exported the row it should have filtered out:\n%s", q, csv)
+		}
+		if !strings.Contains(csv, "EXP-LIVE") {
+			t.Errorf("%+v exported nothing:\n%s", q, csv)
+		}
+		// Both of the surviving product's variants, one after the other.
+		lines := strings.Split(strings.TrimSpace(strings.ReplaceAll(csv, "\r\n", "\n")), "\n")
+		if len(lines) != 3 {
+			t.Errorf("%+v exported %d lines, want a header and two contiguous variant rows:\n%s",
+				q, len(lines), csv)
+		}
 	}
 }

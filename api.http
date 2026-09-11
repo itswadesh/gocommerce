@@ -220,6 +220,59 @@ Content-Type: application/json
 
 { "sku": "TOTE-NAT-L", "price_minor": 2200, "options": ["Natural", "Large"], "stock_on_hand": 5 }
 
+### Take an item off sale. compare_at_price_minor is three-state on a patch:
+# omitted leaves it alone, a number sets the struck-through price, null takes
+# it off. A negative number is a 400 rather than a 500 from the column CHECK.
+PATCH {{host}}/api/admin/variants/1
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "compare_at_price_minor": null }
+
+### A collection, curated. The order sent is the order a storefront shows, and
+# it is the only order the collection has. This replaces the WHOLE membership —
+# including rows this client never fetched — so read it back first.
+PUT {{host}}/api/admin/collections/1/products
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "product_ids": [{{productId}}] }
+
+### What is in it, in that order. Drafts included: staging them is what an
+# operator is doing here. A collection nobody has is a 404, not an empty page.
+GET {{host}}/api/admin/collections/1/products
+Authorization: Bearer {{token}}
+
+### The same members through the product listing, which takes collection_id as
+# one more filter — and orders by the curation when it is set.
+GET {{host}}/api/admin/products?collection_id=1
+Authorization: Bearer {{token}}
+
+### The attribute dictionary: what a category may ask of a product, and which
+# values it offers. The handle is the key a category names, folded to lower
+# case, and it is not patchable — renaming it would detach every category.
+POST {{host}}/api/admin/taxonomy-attributes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "handle": "sleeve-length", "label": "Sleeve length", "choices": ["Short", "Long"] }
+
+### Search it by handle or label.
+GET {{host}}/api/admin/taxonomy-attributes?q=sleeve
+Authorization: Bearer {{token}}
+
+### A sent choices array replaces the whole list.
+PATCH {{host}}/api/admin/taxonomy-attributes/sleeve-length
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "choices": ["Sleeveless", "Short", "Long"] }
+
+### Never refused. A category still asking for the field keeps it and simply
+# offers no fixed list, which is a free-text field rather than a broken one.
+DELETE {{host}}/api/admin/taxonomy-attributes/sleeve-length
+Authorization: Bearer {{token}}
+
 ### ──────────────────────────────────────── admin: inventory
 
 # Receive stock: move the count by a delta.
@@ -227,7 +280,7 @@ POST {{host}}/api/admin/variants/1/inventory
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
-{ "adjust": 25 }
+{ "adjust": 25, "reason": "delivery from Acme" }
 
 ### A stock take: replace the count. Neither form may leave on-hand below what
 # is already reserved for orders in flight.
@@ -235,10 +288,23 @@ POST {{host}}/api/admin/variants/1/inventory
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
-{ "set": 40 }
+{ "set": 40, "reason": "quarterly count" }
 
 ### What needs reordering
 GET {{host}}/api/admin/inventory/low-stock?threshold=5
+Authorization: Bearer {{token}}
+
+### How a variant's count got to be what it is: the append-only stock ledger.
+# Newest first. kind takes a comma-separated list; from and to take YYYY-MM-DD.
+GET {{host}}/api/admin/variants/1/movements?limit=25
+Authorization: Bearer {{token}}
+
+### Only what an operator did, rather than what orders did.
+GET {{host}}/api/admin/variants/1/movements?kind=adjust,stock_take,transfer_out,transfer_in
+Authorization: Bearer {{token}}
+
+### The same ledger from the other end: everything that moved at one location.
+GET {{host}}/api/admin/locations/1/movements?limit=25
 Authorization: Bearer {{token}}
 
 ### ─────────────────────────────────────────── admin: orders
@@ -382,6 +448,14 @@ Authorization: Bearer {{token}}
 GET {{host}}/api/admin/export/admin-products
 Authorization: Bearer {{token}}
 
+### The export takes the product listing's filters — q, status, vendor,
+# product_type, tag, category_id, collection_id — so a reconciliation takes the
+# rows a screen is showing rather than the catalogue. No paging: every row that
+# matched. A bad filter is a 400 in the envelope, because it is parsed before
+# the first CSV header is written.
+GET {{host}}/api/admin/export/admin-products?status=active&collection_id=1
+Authorization: Bearer {{token}}
+
 ### One row per order line, with the order's columns repeated — the shape a
 # pivot table wants.
 GET {{host}}/api/admin/export/admin-orders?from=2026-01-01
@@ -417,6 +491,27 @@ Content-Type: text/csv
 product_slug,product_title,product_status,sku,variant_options,price_minor,stock_on_hand:default,stock_on_hand:shop
 imported-hat,Wool hat,active,HAT-S,Size=S,3200,6,4
 imported-hat,Wool hat,active,HAT-M,Size=M,3200,8,4
+
+### The category tree an empty body means: Shopify's ~14,000 categories, from
+# inside the binary. Idempotent on (parent, title), so running it twice adds
+# only what is missing — which is also the remedy for a request that timed out.
+# One transaction, and it can take minutes. The same call brings the field
+# definitions with it, because they match on the taxonomy id it writes.
+POST {{host}}/api/admin/import/taxonomy
+Authorization: Bearer {{token}}
+
+### A tree of your own, in the published format. This one imports the tree
+# alone: the fields would have nothing to match against.
+POST {{host}}/api/admin/import/taxonomy
+Authorization: Bearer {{token}}
+Content-Type: text/plain
+
+gid://shopify/TaxonomyCategory/aa-1 : Apparel & Accessories > Clothing
+gid://shopify/TaxonomyCategory/aa-2 : Apparel & Accessories > Clothing > Shirts
+
+### The field definitions alone, for a tree already in place.
+POST {{host}}/api/admin/import/category-attributes
+Authorization: Bearer {{token}}
 
 ### ──────────────────────────────────── things that should fail
 

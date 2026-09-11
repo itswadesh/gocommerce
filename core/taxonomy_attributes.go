@@ -6,8 +6,11 @@ import (
 	"database/sql"
 	_ "embed"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"strings"
+	"time"
 )
 
 // The fields Shopify's taxonomy asks of a product, per category.
@@ -250,6 +253,307 @@ func (s *Categories) ImportCategoryAttributes(ctx context.Context, r io.Reader) 
 		return TaxonomyAttributeImport{}, err
 	}
 	return result, nil
+}
+
+// ------------------------------------------------------------- the dictionary
+
+// TaxonomyAttribute is one entry in the shared dictionary: what a field is
+// called, and which values it offers wherever a category asks for it.
+type TaxonomyAttribute struct {
+	Handle    string    `json:"handle"`
+	Label     string    `json:"label"`
+	Choices   []string  `json:"choices"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// TaxonomyAttributeInput creates one. The handle is supplied rather than
+// derived from the label: it is the key a category's metadata names (M13), so
+// deriving it would make renaming a label silently orphan every category using
+// the field.
+type TaxonomyAttributeInput struct {
+	Handle  string   `json:"handle"`
+	Label   string   `json:"label"`
+	Choices []string `json:"choices"`
+}
+
+// TaxonomyAttributePatch updates one. Handle is absent on purpose — see
+// UpdateAttribute.
+type TaxonomyAttributePatch struct {
+	Label   *string   `json:"label"`
+	Choices *[]string `json:"choices"`
+}
+
+// TaxonomyAttributeQuery filters the dictionary listing.
+type TaxonomyAttributeQuery struct {
+	Search string
+	Limit  int
+	Offset int
+}
+
+const taxonomyAttributeColumns = `handle, label, to_jsonb(choices), updated_at`
+
+func scanTaxonomyAttribute(row interface{ Scan(...any) error }) (*TaxonomyAttribute, error) {
+	var a TaxonomyAttribute
+	var choices []byte
+	if err := row.Scan(&a.Handle, &a.Label, &choices, &a.UpdatedAt); err != nil {
+		return nil, err
+	}
+	if err := scanTags(choices, &a.Choices); err != nil {
+		return nil, Internalf(err, "decode the attribute choices")
+	}
+	return &a, nil
+}
+
+// ListAttributes returns a page of the dictionary, ordered by handle — a
+// dictionary's order is its spelling.
+func (s *Categories) ListAttributes(ctx context.Context, q TaxonomyAttributeQuery) ([]*TaxonomyAttribute, int, error) {
+	where, args := []string{"true"}, []any{}
+	if term := strings.TrimSpace(q.Search); term != "" {
+		args = append(args, "%"+strings.ToLower(term)+"%")
+		where = append(where, fmt.Sprintf(
+			"(lower(handle) LIKE $%d OR lower(label) LIKE $%d)", len(args), len(args)))
+	}
+	clause := strings.Join(where, " AND ")
+
+	var total int
+	if err := s.app.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM taxonomy_attributes WHERE `+clause, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	limit := q.Limit
+	if limit <= 0 {
+		limit = DefaultLimit
+	}
+	args = append(args, limit, q.Offset)
+	rows, err := s.app.db.QueryContext(ctx,
+		`SELECT `+taxonomyAttributeColumns+` FROM taxonomy_attributes WHERE `+clause+
+			fmt.Sprintf(" ORDER BY handle LIMIT $%d OFFSET $%d", len(args)-1, len(args)), args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	out := []*TaxonomyAttribute{}
+	for rows.Next() {
+		a, err := scanTaxonomyAttribute(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		out = append(out, a)
+	}
+	return out, total, rows.Err()
+}
+
+// GetAttribute reads one entry by handle.
+func (s *Categories) GetAttribute(ctx context.Context, handle string) (*TaxonomyAttribute, error) {
+	handle, err := normalizeHandle(handle)
+	if err != nil {
+		return nil, err
+	}
+	a, err := scanTaxonomyAttribute(s.app.db.QueryRowContext(ctx,
+		`SELECT `+taxonomyAttributeColumns+` FROM taxonomy_attributes WHERE handle = $1`, handle))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, NotFoundf("attribute %q is not in the dictionary", handle)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+// CreateAttribute adds an entry to the dictionary.
+func (s *Categories) CreateAttribute(ctx context.Context, in TaxonomyAttributeInput) (*TaxonomyAttribute, error) {
+	handle, err := normalizeHandle(in.Handle)
+	if err != nil {
+		return nil, err
+	}
+	label := strings.TrimSpace(in.Label)
+	if label == "" {
+		return nil, Validationf("label is required")
+	}
+	choices, err := choicesValue(in.Choices)
+	if err != nil {
+		return nil, err
+	}
+
+	var out *TaxonomyAttribute
+	err = InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		var err error
+		out, err = scanTaxonomyAttribute(tx.QueryRowContext(ctx,
+			`INSERT INTO taxonomy_attributes (handle, label, choices)
+			 VALUES ($1, $2, `+tagsExpr(3)+`)
+			 RETURNING `+taxonomyAttributeColumns, handle, label, choices))
+		if err != nil {
+			return translateAttributeErr(err)
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditTaxonomyAttributeCreate, Entity: AuditEntityTaxonomyAttribute,
+			Key: out.Handle, Label: out.Label,
+			Summary: "Added the field " + out.Label + " to the dictionary",
+			After:   map[string]any{"handle": out.Handle, "label": out.Label, "choices": out.Choices},
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// UpdateAttribute applies a patch.
+//
+// The handle is not patchable: it is the key every category's metadata holds,
+// and renaming it here would detach them all without saying so. Moving a field
+// to a new handle is a create, an edit of the categories that name it, and a
+// delete (D42).
+func (s *Categories) UpdateAttribute(ctx context.Context, handle string, patch TaxonomyAttributePatch) (*TaxonomyAttribute, error) {
+	handle, err := normalizeHandle(handle)
+	if err != nil {
+		return nil, err
+	}
+	set, args := []string{}, []any{handle}
+	after := map[string]any{}
+	if patch.Label != nil {
+		label := strings.TrimSpace(*patch.Label)
+		if label == "" {
+			return nil, Validationf("label must not be empty")
+		}
+		args = append(args, label)
+		set = append(set, fmt.Sprintf("label = $%d", len(args)))
+		after["label"] = label
+	}
+	if patch.Choices != nil {
+		choices, err := choicesValue(*patch.Choices)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, choices)
+		set = append(set, "choices = "+tagsExpr(len(args)))
+		after["choices"] = *patch.Choices
+	}
+	if len(set) == 0 {
+		// An empty patch is a read rather than an error: the caller asked for
+		// nothing to change, and nothing did.
+		return s.GetAttribute(ctx, handle)
+	}
+
+	var out *TaxonomyAttribute
+	err = InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		was, err := scanTaxonomyAttribute(tx.QueryRowContext(ctx,
+			`SELECT `+taxonomyAttributeColumns+
+				` FROM taxonomy_attributes WHERE handle = $1 FOR UPDATE`, handle))
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("attribute %q is not in the dictionary", handle)
+		}
+		if err != nil {
+			return err
+		}
+		before := map[string]any{}
+		if _, changed := after["label"]; changed {
+			before["label"] = was.Label
+		}
+		if _, changed := after["choices"]; changed {
+			before["choices"] = was.Choices
+		}
+
+		out, err = scanTaxonomyAttribute(tx.QueryRowContext(ctx,
+			`UPDATE taxonomy_attributes SET `+strings.Join(set, ", ")+`, updated_at = now()
+			 WHERE handle = $1 RETURNING `+taxonomyAttributeColumns, args...))
+		if err != nil {
+			return err
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditTaxonomyAttributeUpdate, Entity: AuditEntityTaxonomyAttribute,
+			Key: out.Handle, Label: out.Label,
+			Summary: "Edited the field " + out.Label,
+			Before:  before, After: after,
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DeleteAttribute removes an entry.
+//
+// Categories that name the handle are left exactly as they are: with no row
+// here the field simply offers no fixed choices, which is a free-text field
+// rather than a broken one — the same rule attachAttributes already applies to
+// a handle nobody has defined. So this is never refused for being in use.
+func (s *Categories) DeleteAttribute(ctx context.Context, handle string) error {
+	handle, err := normalizeHandle(handle)
+	if err != nil {
+		return err
+	}
+	return InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		var label string
+		err := tx.QueryRowContext(ctx,
+			`DELETE FROM taxonomy_attributes WHERE handle = $1 RETURNING label`, handle).Scan(&label)
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("attribute %q is not in the dictionary", handle)
+		}
+		if err != nil {
+			return err
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditTaxonomyAttributeDelete, Entity: AuditEntityTaxonomyAttribute,
+			Key: handle, Label: label,
+			Summary: "Removed the field " + label + " from the dictionary",
+			Before:  map[string]any{"handle": handle, "label": label},
+		})
+	})
+}
+
+// normalizeHandle trims, lower-cases and checks what a handle has to be able to
+// do: name a field inside a category's metadata, and survive a URL path segment.
+//
+// Folded, because the match in attachAttributes is a literal `= ANY(...)` and
+// the column is `handle text PRIMARY KEY` (M13) — so "Color" and "color" are two
+// rows, only one of which any category will ever match, while the case-folded
+// list search shows them as the same thing. Every published handle is lowercase
+// ASCII, so nothing that exists moves. Whitespace and a slash are refused: a
+// handle carrying either can be stored and then never addressed again.
+func normalizeHandle(s string) (string, error) {
+	handle := strings.ToLower(strings.TrimSpace(s))
+	if handle == "" {
+		return "", Validationf("handle is required")
+	}
+	if strings.ContainsAny(handle, " \t\r\n/") {
+		return "", Validationf("a handle carries no spaces and no slashes")
+	}
+	return handle, nil
+}
+
+// choicesValue renders an attribute's values for tagsExpr.
+//
+// Unlike tags they are neither sorted nor case-folded: "XS, S, M, L, XL" is the
+// publisher's order and the only useful one. Blanks and exact repeats go,
+// because a picker showing one value twice is a bug nobody can fix from the
+// panel.
+func choicesValue(in []string) ([]byte, error) {
+	out := make([]string, 0, len(in))
+	seen := make(map[string]bool, len(in))
+	for _, v := range in {
+		v = strings.TrimSpace(v)
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	encoded, err := json.Marshal(out)
+	if err != nil {
+		return nil, Internalf(err, "encode the attribute choices")
+	}
+	return encoded, nil
+}
+
+func translateAttributeErr(err error) error {
+	if err != nil && strings.Contains(err.Error(), "taxonomy_attributes_pkey") {
+		return Conflictf("that handle is already in the dictionary")
+	}
+	return err
 }
 
 // attachAttributes fills in each category's Attributes: the fields its own

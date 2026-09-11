@@ -381,29 +381,41 @@ type taxableLine struct {
 	Taxable   bool
 }
 
-// allocateDiscount splits an order-level discount across the lines it came off,
-// in proportion to what each line contributed.
+// allocateDiscount splits a discount across the lines it came off, in
+// proportion to what each line contributed.
+//
+// `eligible` says which lines those are; nil means every line, which is what an
+// order-wide rule returns and therefore the branch an ordinary checkout takes.
+// A discount that came off the shoes must not reduce the tax base of the hats:
+// the base a line is taxed on is the base that line was actually charged, and
+// with per-category rates the order's total tax — not merely its split —
+// depends on getting that right.
 //
 // The remainders are handed out largest-first so the parts sum to the whole
 // exactly. Any other rounding leaves a minor unit unaccounted for, and a tax
 // figure computed from a base that does not add up is a figure an accountant
 // will find.
 //
-// This is not stored (D25). It exists so tax is charged on what the customer
-// actually paid for each line, which is what every jurisdiction asks for, and
-// the durable result of it — the tax itself — is what goes on the line.
-func allocateDiscount(lines []taxableLine, discount int64) []int64 {
+// The split itself is not stored; the durable result of it — the tax — is what
+// goes on the line.
+func allocateDiscount(lines []taxableLine, eligible []bool, discount int64) []int64 {
+	elig := func(i int) bool { return eligible == nil || eligible[i] }
+
 	out := make([]int64, len(lines))
 	if discount <= 0 {
 		return out
 	}
 	var gross int64
-	for _, l := range lines {
-		gross += l.Total
+	for i, l := range lines {
+		if elig(i) {
+			gross += l.Total
+		}
 	}
 	if gross <= 0 {
 		return out
 	}
+	// Belt and braces: the evaluator already clamped the amount to the eligible
+	// total, so this cannot fire for a discount that came through checkout.
 	if discount > gross {
 		discount = gross
 	}
@@ -415,6 +427,10 @@ func allocateDiscount(lines []taxableLine, discount int64) []int64 {
 	var assigned int64
 	rems := make([]rem, 0, len(lines))
 	for i, l := range lines {
+		if !elig(i) {
+			out[i] = 0
+			continue
+		}
 		exact := l.Total * discount
 		share := exact / gross
 		out[i] = share
@@ -464,12 +480,17 @@ func taxOn(base int64, rateBP int, inclusive bool) int64 {
 
 // computeTax charges every line and returns the per-line tax and the total.
 //
-// Tax is charged on what was paid, so the order-level discount is allocated
-// across the lines first. Shipping is not taxed: it is one flat number from
+// Tax is charged on what was paid, so the discount is allocated across the
+// lines first — across the lines it actually came off, which `eligible` names
+// and nil means all of. Shipping is not taxed: it is one flat number from
 // configuration today, and taxing a figure that is not yet a real shipping rate
 // would be inventing a liability.
+//
+// `eligible` is a parameter rather than a field on taxableLine because Go's
+// zero value would then mean "not eligible", so a forgotten field would
+// over-tax; a parameter cannot be forgotten.
 func (s *Taxes) computeTax(ctx context.Context, tx *sql.Tx, country, state string,
-	lines []taxableLine, discount int64, inclusive bool) ([]LineTax, int64, error) {
+	lines []taxableLine, eligible []bool, discount int64, inclusive bool) ([]LineTax, int64, error) {
 
 	result := make([]LineTax, len(lines))
 	ids := make([]int64, 0, len(lines))
@@ -490,7 +511,7 @@ func (s *Taxes) computeTax(ctx context.Context, tx *sql.Tx, country, state strin
 		return result, 0, nil
 	}
 
-	allocated := allocateDiscount(lines, discount)
+	allocated := allocateDiscount(lines, eligible, discount)
 	var total int64
 	for i, l := range lines {
 		if !l.Taxable {

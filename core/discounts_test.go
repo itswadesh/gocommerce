@@ -187,7 +187,7 @@ func TestDiscountUseIsRolledBackWithTheOrder(t *testing.T) {
 		t.Fatalf("attach: %v", err)
 	}
 	// Sell the only unit out from under the cart.
-	if _, err := app.inventory.Adjust(ctx, product.DefaultVariant().ID, 0, -1); err != nil {
+	if _, err := app.inventory.Adjust(ctx, product.DefaultVariant().ID, 0, -1, ""); err != nil {
 		t.Fatalf("adjust: %v", err)
 	}
 
@@ -334,15 +334,15 @@ func TestDeletingADiscountKeepsTheOrderTrue(t *testing.T) {
 	}
 }
 
-// D24: an edit recomputes a percentage, keeps a fixed amount, and refuses when
+// D27: an edit recomputes a percentage, keeps a fixed amount, and refuses when
 // the basket falls below the minimum the discount needed.
-func TestEditedOrderFollowsD24(t *testing.T) {
+func TestEditedOrderFollowsD27(t *testing.T) {
 	app := newTestApp(t)
 	ctx := context.Background()
 
 	// Percentage: 2 × 1000 = 2000, ten percent is 200. Drop to one and it must
 	// become 100 rather than staying 200.
-	pct := simpleProduct(t, app, "D24-PCT", 1000, 10)
+	pct := simpleProduct(t, app, "D27-PCT", 1000, 10)
 	newDiscount(t, app, DiscountInput{
 		Code: "PCT", Title: "Percent", Kind: DiscountPercentage, ValueBP: 1000,
 	})
@@ -369,7 +369,7 @@ func TestEditedOrderFollowsD24(t *testing.T) {
 	}
 
 	// Fixed: the amount is not a function of the basket and does not move.
-	fix := simpleProduct(t, app, "D24-FIX", 1000, 10)
+	fix := simpleProduct(t, app, "D27-FIX", 1000, 10)
 	newDiscount(t, app, DiscountInput{
 		Code: "FIX", Title: "Fixed", Kind: DiscountFixed, ValueMinor: 150,
 	})
@@ -388,7 +388,7 @@ func TestEditedOrderFollowsD24(t *testing.T) {
 	}
 
 	// Below the minimum: refused, with the reason.
-	minP := simpleProduct(t, app, "D24-MIN", 1000, 10)
+	minP := simpleProduct(t, app, "D27-MIN", 1000, 10)
 	min := int64(1500)
 	newDiscount(t, app, DiscountInput{
 		Code: "MIN", Title: "Minimum", Kind: DiscountPercentage, ValueBP: 1000,
@@ -448,17 +448,30 @@ func TestDiscountValidation(t *testing.T) {
 	}
 }
 
-// A scoped discount is stored and refused rather than quietly applying to the
-// whole basket — the failure that would cost a store money unnoticed.
-func TestScopedDiscountsAreRefusedNotGuessed(t *testing.T) {
+// A scoped rule written before targets existed — the only way one can still be
+// stored — is refused by a message that names the missing half rather than
+// blaming the basket.
+//
+// This replaces TestScopedDiscountsAreRefusedNotGuessed, whose premise was that
+// scoped rules are never evaluated. That is what this change removes; the
+// refusal that matters now is the one for a rule pointing at nothing.
+func TestLegacyScopedDiscountWithNoTargetsIsRefusedByName(t *testing.T) {
 	app := newTestApp(t)
+	ctx := context.Background()
 	product := simpleProduct(t, app, "DISC-10", 1000, 5)
-	newDiscount(t, app, DiscountInput{
-		Code: "SCOPED", Title: "Products only", Kind: DiscountFixed, ValueMinor: 100,
-		Scope: DiscountScopeProducts,
-	})
 
-	if _, err := checkoutWithCode(t, app, "SCOPED", product.DefaultVariant().ID, 1, ""); err == nil {
-		t.Error("a scoped discount was applied to the whole basket")
+	// Straight into the table: the service refuses to create this now.
+	if _, err := app.db.ExecContext(ctx, `
+		INSERT INTO discounts (code, title, kind, value_minor, scope)
+		VALUES ('SCOPED', 'Products only', 'fixed', 100, 'products')`); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	_, err := checkoutWithCode(t, app, "SCOPED", product.DefaultVariant().ID, 1, "")
+	if err == nil {
+		t.Fatal("a scoped discount with no targets was applied")
+	}
+	if !strings.Contains(err.Error(), "none are chosen") {
+		t.Errorf("error = %q, want it to name the rule's missing half", err)
 	}
 }

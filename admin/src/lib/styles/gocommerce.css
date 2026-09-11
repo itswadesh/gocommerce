@@ -3802,6 +3802,44 @@ tr.handle:focus-visible {
     white-space: nowrap;
 }
 
+/* ------------------------------------------------ the stock ledger table
+ *
+ * `.stock-locations`' frame, deliberately without its picker rules. That table
+ * (above, with its reasoning at the top of the block) is a control: clicking a
+ * row decides which shelf the form acts on, so the selected row has to read as
+ * pressed. Nothing in a history is clickable, and a row that reads as pressable
+ * and does nothing is worse than a plain row — so the cursor, the hover
+ * background, the `.selected` background and the accent bar are all left out.
+ */
+.stock-history {
+    border: 1px solid var(--surfaceAlt3Color);
+    border-radius: var(--borderRadius);
+    overflow: hidden;
+}
+.stock-history :is(th, td) {
+    height: auto;
+    padding: 6px 10px;
+    vertical-align: top;
+}
+.stock-history thead th {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--surfaceTxtHintColor);
+    background: var(--pageColor);
+    white-space: nowrap;
+}
+.stock-history tbody tr + tr :is(td, th) {
+    border-top: 1px solid var(--surfaceAlt2Color);
+}
+/* Tabular figures, so a column of +14 / -3 / 120 lines up on the digit rather
+   than on the glyph width — which is the only way a reader scans a ledger. */
+.stock-history td.delta {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
 /* --------- @media print — KEEP LAST ---------
  *
  * Append your section ABOVE this block. These rules carry no `!important`, so a

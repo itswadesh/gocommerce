@@ -15,7 +15,7 @@ invent a right.** What each role *carries* is the store's to change
 ```
 catalog.read      products, variants, categories, collections, media
 catalog.write     editing any of them
-inventory.read    stock levels and the low-stock report
+inventory.read    stock levels, the low-stock report and the movement ledger
 inventory.write   stock takes, adjustments and transfers
 discounts.read    discount codes and what they take off
 discounts.write   creating, editing and ending them

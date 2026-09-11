@@ -25,6 +25,12 @@
     let confirmOpen = $state(false);
     let confirmConfig = $state({});
 
+    /* A second drawer rather than a tab inside the editor: configuring a place
+       and reading what has moved there are different jobs, and burying the form
+       behind a tab would make both worse. */
+    let historyOpen = $state(false);
+    let historyFor = $state(null);
+
     $effect(() => {
         load();
     });
@@ -140,6 +146,12 @@
         }
     }
 
+    function openHistory(l, event) {
+        event?.stopPropagation();
+        historyFor = l;
+        historyOpen = true;
+    }
+
     function askDelete(l, event) {
         event?.stopPropagation();
         confirmConfig = {
@@ -231,6 +243,19 @@
                                 {/if}
                             </td>
                             <td class="col-meta min-width">
+                                <!-- Outside the is_default guard: the default
+                                     location has the most history of all, and
+                                     "this location still holds 4 units across 2
+                                     SKUs" is the refusal this answers. -->
+                                <button
+                                    type="button"
+                                    class="btn circle sm transparent secondary"
+                                    aria-label="History for {l.name}"
+                                    title="History"
+                                    onclick={(e) => openHistory(l, e)}
+                                >
+                                    <i class="ri-history-line" aria-hidden="true"></i>
+                                </button>
                                 {#if !l.is_default}
                                     <button
                                         type="button"
@@ -398,3 +423,22 @@
     danger={confirmConfig.danger}
     onconfirm={() => confirmConfig.run?.()}
 />
+
+<Drawer
+    open={historyOpen}
+    size="lg"
+    title={historyFor ? `History — ${historyFor.name}` : ""}
+    onclose={() => (historyOpen = false)}
+>
+    {#if historyFor}
+        {#key historyFor.id}
+            <StockHistory scope="location" id={historyFor.id} showSku />
+        {/key}
+    {/if}
+
+    {#snippet footer()}
+        <button type="button" class="btn transparent" onclick={() => (historyOpen = false)}>
+            <span class="txt">Close</span>
+        </button>
+    {/snippet}
+</Drawer>

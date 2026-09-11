@@ -24,12 +24,13 @@ func (a *App) mountAuditRoutes() {
 	a.HandleAdminFunc("GET /api/admin/audit", a.handleAuditFeed, RightStoreOperate)
 	a.HandleAdminFunc("GET /api/admin/audit/actors", a.handleAuditActors, RightStoreOperate)
 	a.HandleAdminFunc("GET /api/admin/products/{id}/history", a.entityHistory(AuditEntityProduct), RightCatalogRead)
-	// A variant's history is its stock movements, which are counts rather than
-	// listings — the line catalog.read and inventory.read are already drawn
-	// along. Catalog edits to a variant are filed against its product instead,
-	// which is what removes the need for an any-of check requireRights cannot
-	// express.
-	a.HandleAdminFunc("GET /api/admin/variants/{id}/history", a.entityHistory(AuditEntityStock), RightInventoryRead)
+	// There is no variant history here. A variant's history is its stock
+	// movements, and since M26 those are the ledger's — GET
+	// /api/admin/variants/{id}/movements, behind the same inventory.read —
+	// which carries the reason, the actor, the location, both balances and the
+	// order that caused it. Writing the same act into admin_audit as well would
+	// be two records with two reason fields, which is how the two come to
+	// disagree. Catalog edits to a variant are filed against its product.
 	a.HandleAdminFunc("GET /api/admin/categories/{id}/history", a.entityHistory(AuditEntityCategory), RightCatalogRead)
 	a.HandleAdminFunc("GET /api/admin/discounts/{id}/history", a.entityHistory(AuditEntityDiscount), RightDiscountsRead)
 	a.HandleAdminFunc("GET /api/admin/tax-rates/{id}/history", a.entityHistory(AuditEntityTaxRate), RightTaxesRead)

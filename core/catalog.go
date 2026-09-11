@@ -243,10 +243,14 @@ type ProductPatch struct {
 // adjustment rather than a blind overwrite of a number another request may
 // have just changed.
 type VariantPatch struct {
-	SKU                 *string `json:"sku"`
-	Barcode             *string `json:"barcode"`
-	PriceMinor          *int64  `json:"price_minor"`
-	CompareAtPriceMinor *int64  `json:"compare_at_price_minor"`
+	SKU        *string `json:"sku"`
+	Barcode    *string `json:"barcode"`
+	PriceMinor *int64  `json:"price_minor"`
+	// CompareAtPriceMinor is a NullableAmount for the same reason CostMinor is:
+	// an emptied compare-at box means "this is not on sale any more", and a
+	// plain pointer cannot tell that from a patch that never mentioned the
+	// field — so a struck-through price could be set and never taken off.
+	CompareAtPriceMinor NullableAmount `json:"compare_at_price_minor"`
 	// CostMinor is a NullableAmount because an emptied cost box means "nobody
 	// has recorded one", and a plain pointer cannot tell that from a patch that
 	// never mentioned cost at all.
@@ -495,10 +499,20 @@ func (c *Catalog) insertVariant(ctx context.Context, tx *sql.Tx, productID int64
 	if err != nil {
 		return 0, err
 	}
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO variant_stock (variant_id, location_id, on_hand) VALUES ($1, $2, $3)`,
-		id, loc, stock); err != nil {
+	var after stockBalance
+	if err := tx.QueryRowContext(ctx,
+		`INSERT INTO variant_stock (variant_id, location_id, on_hand) VALUES ($1, $2, $3)
+		 RETURNING on_hand, reserved`,
+		id, loc, stock).Scan(&after.OnHand, &after.Reserved); err != nil {
 		return 0, translateCatalogErr(err)
+	}
+	// Without this a variant created after M26 would carry a balance its own
+	// ledger could not explain — the same hole the migration's seed closes for
+	// the ones created before it. recordMovement writes nothing when the
+	// opening stock is zero, so a variant created empty stays quiet.
+	if _, err := recordMovement(ctx, tx, id, loc, MovementOpening,
+		stockBalance{OnHand: stock}, after, stockRef{Reason: "opening stock"}); err != nil {
+		return 0, err
 	}
 
 	for _, valueID := range valueIDs {
@@ -811,10 +825,19 @@ func (c *Catalog) UpdateVariant(ctx context.Context, id int64, patch VariantPatc
 		}
 		add("price_minor", *patch.PriceMinor)
 	}
-	if patch.CompareAtPriceMinor != nil {
-		add("compare_at_price_minor", *patch.CompareAtPriceMinor)
+	if patch.CompareAtPriceMinor.Present {
+		// Guarded here rather than left to the column CHECK, which
+		// translateCatalogErr does not recognise: a negative number would come
+		// back as a 500 on what is plainly a client mistake.
+		if v := patch.CompareAtPriceMinor.Value; v != nil && *v < 0 {
+			return nil, Validationf("compare_at_price_minor must not be negative")
+		}
+		add("compare_at_price_minor", patch.CompareAtPriceMinor.Value)
 	}
 	if patch.CostMinor.Present {
+		if v := patch.CostMinor.Value; v != nil && *v < 0 {
+			return nil, Validationf("cost_minor must not be negative")
+		}
 		add("cost_minor", patch.CostMinor.Value)
 	}
 	if patch.Taxable != nil {
@@ -1063,17 +1086,30 @@ func (c *Catalog) getProductWhere(ctx context.Context, where string, arg any) (*
 	return p, nil
 }
 
-// ListProducts returns a page of products and the total matching count.
-func (c *Catalog) ListProducts(ctx context.Context, q ProductQuery) ([]*Product, int, error) {
-	from, order := "products p", "p.id DESC"
-	where, args := []string{"1 = 1"}, []any{}
+// productFilters renders a ProductQuery as a join fragment and a set of
+// predicates, appending each bound value to args and numbering its placeholder
+// after whatever the caller had already bound.
+//
+// Taking and returning the slice is the whole point: the catalog export binds
+// one argument per stock location before it filters anything, so a builder that
+// assumed $1 would quietly select the wrong rows rather than fail, and every
+// single-location test would still pass.
+//
+// The collection join cannot multiply rows: the primary key is
+// (product_id, collection_id) and the join pins one collection_id, so a product
+// contributes at most one row to it.
+//
+// Ordering is deliberately not decided here. The listing and the export
+// disagree about it on purpose: one wants a collection's curated order, the
+// other wants the contiguous per-product runs the CSV importer requires.
+func productFilters(q ProductQuery, args []any) (join string, where []string, out []any) {
+	where = []string{"1 = 1"}
+	// The collection argument is bound first, so the listing's own SQL is
+	// numbered exactly as it was before this builder existed.
 	if q.CollectionID > 0 {
 		args = append(args, q.CollectionID)
-		from += fmt.Sprintf(
+		join = fmt.Sprintf(
 			" JOIN product_collections pc ON pc.product_id = p.id AND pc.collection_id = $%d", len(args))
-		// A collection is curated by hand, so its own order is the answer to
-		// "what order should these be in" — not the catalog's newest-first.
-		order = "pc.position, pc.product_id"
 	}
 	if q.Status != "" {
 		args = append(args, q.Status)
@@ -1099,6 +1135,20 @@ func (c *Catalog) ListProducts(ctx context.Context, q ProductQuery) ([]*Product,
 	if q.CategoryID > 0 {
 		args = append(args, q.CategoryID)
 		where = append(where, categoryFilter(fmt.Sprintf("$%d", len(args))))
+	}
+	return join, where, args
+}
+
+// ListProducts returns a page of products and the total matching count.
+func (c *Catalog) ListProducts(ctx context.Context, q ProductQuery) ([]*Product, int, error) {
+	join, where, args := productFilters(q, nil)
+	from, order := "products p"+join, "p.id DESC"
+	if q.CollectionID > 0 {
+		// A collection is curated by hand, so its own order is the answer to
+		// "what order should these be in" — not the catalog's newest-first.
+		// member_position, not position: position is where this collection sits
+		// in the product's own list, which is a different question (D40).
+		order = "pc.member_position, pc.product_id"
 	}
 	clause := strings.Join(where, " AND ")
 

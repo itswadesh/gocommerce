@@ -93,7 +93,7 @@ func TestRenamingAnAxisKeepsVariantsIntact(t *testing.T) {
 	if _, err := app.Products().UpdateVariant(ctx, target.ID, VariantPatch{PriceMinor: &newPrice}); err != nil {
 		t.Fatalf("reprice: %v", err)
 	}
-	if _, err := app.Stock().SetOnHand(ctx, target.ID, 0, 7); err != nil {
+	if _, err := app.Stock().SetOnHand(ctx, target.ID, 0, 7, ""); err != nil {
 		t.Fatalf("set stock: %v", err)
 	}
 

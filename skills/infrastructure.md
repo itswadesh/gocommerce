@@ -158,6 +158,8 @@ The checks, in order:
 | `fulfillment` | an order's status disagrees with what its parcels say | — |
 | `refunds` | a refund left pending past fifteen minutes: the provider was asked and never answered, and that money is blocked until somebody says what happened to it | `orders.refunded_minor` and the `order_refunds` ledger disagree |
 | `returns` | — | an order line with more units returned than were sold |
+| `stock ledger` | a `variant_stock` balance the movement ledger cannot account for — something wrote the table outside `app.Stock()` | — |
+| `discounts` | a target naming a product, collection or category that has been deleted (the promotion has narrowed); a target row whose kind disagrees with its rule's scope; a `free_shipping` rule carrying a scope | a scoped discount pointing at nothing — refused at the till, and the only place a customer finds out |
 
 These deserve reading twice — a count here rots the way the doctor's own
 did. **`returns` failing should be impossible** for the
@@ -169,7 +171,11 @@ means something wrote `order_return_lines` directly, against rule 3.
 it, so a hit means the constraint is gone (a hand-edited schema, or a restore
 from a dump that dropped it); verify the constraint before touching the data.
 **`providers` failing** means core wiring did not run at all: `cod` and
-`manual` are registered by the engine itself. **`fulfillment` warning** means
+`manual` are registered by the engine itself. **`discounts` failing should be
+impossible through the API**: a scoped rule with no targets can be neither
+created nor patched into existence, and the rule and its targets commit in one
+transaction — so a hit means a row written before that, raw SQL, or a partial
+restore. Give it targets, or set its scope back to the whole basket. **`fulfillment` warning** means
 something wrote `orders.status` outside the engine: the shipping half of that
 column is derived from `fulfillment_lines` by one function, so inside the engine
 it cannot drift — a hit is SQL by hand (rule 3) or an order imported from CSV,

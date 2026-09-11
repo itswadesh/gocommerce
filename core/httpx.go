@@ -255,6 +255,14 @@ func (w *statusWriter) WriteHeader(code int) {
 	}
 }
 
+// Unwrap is stdlib's wrapper contract: http.ResponseController walks a chain
+// of writers looking for this before it gives up. Without it every route in
+// the engine is sealed behind logMW, so a handler that needs a longer
+// deadline than the server's own WriteTimeout — the taxonomy import is one
+// transaction over ~14,000 rows — gets http.ErrNotSupported and no way to
+// find out why. It also unblocks Flush and Hijack for anything that streams.
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 func (w *statusWriter) Write(b []byte) (int, error) {
 	if w.status == 0 {
 		w.status = http.StatusOK
@@ -442,6 +450,7 @@ func (a *App) mountCoreRoutes() {
 	a.mountCatalogRoutes()
 	a.mountCollectionRoutes()
 	a.mountCategoryRoutes()
+	a.mountTaxonomyRoutes()
 	a.mountDiscountRoutes()
 	a.mountTaxRoutes()
 	a.mountLocationRoutes()

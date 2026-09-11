@@ -323,14 +323,38 @@ func (s *Collections) SetProductCollections(ctx context.Context, productID int64
 		if err := requireCollections(ctx, tx, ids); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx,
-			`DELETE FROM product_collections WHERE product_id = $1`, productID); err != nil {
+		// A reconcile, not a delete and a re-insert: a membership that
+		// survives the save keeps the place a curator gave it inside that
+		// collection (D40).
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM product_collections
+			WHERE product_id = $1 AND NOT (collection_id = ANY($2::bigint[]))`,
+			productID, int64Array(ids)); err != nil {
 			return err
 		}
-		for i, id := range ids {
+		if len(ids) > 0 {
+			// One statement, ordered by WITH ORDINALITY: the array's order is
+			// the caller's and it survives, without a round trip per
+			// collection. dedupeIDs above is load-bearing rather than tidy —
+			// ON CONFLICT cannot touch one row twice in a single statement,
+			// the hazard parseCategoryAttributes already documents for the
+			// attribute importer.
+			//
+			// member_position is computed, never sent: where this product
+			// sits inside each collection is that collection's curation, so a
+			// membership that survives keeps its place and a new one lands at
+			// the end rather than at the front of somebody's home page. The
+			// subquery is per collection_id and each row of this statement
+			// names a different one, so no two rows collide on it.
 			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO product_collections (product_id, collection_id, position)
-				VALUES ($1, $2, $3)`, productID, id, i); err != nil {
+				INSERT INTO product_collections (product_id, collection_id, position, member_position)
+				SELECT $1, ids.collection_id, ids.ord - 1,
+				       coalesce((SELECT max(pc.member_position) + 1 FROM product_collections pc
+				                 WHERE pc.collection_id = ids.collection_id), 0)
+				FROM unnest($2::bigint[]) WITH ORDINALITY AS ids(collection_id, ord)
+				ON CONFLICT (product_id, collection_id)
+				DO UPDATE SET position = excluded.position`,
+				productID, int64Array(ids)); err != nil {
 				return err
 			}
 		}
@@ -377,12 +401,104 @@ func requireCollections(ctx context.Context, tx *sql.Tx, ids []int64) error {
 	return nil
 }
 
+// requireProducts rejects the whole request when any id is unknown, for the
+// reason requireCollections gives: a typo in one of five ids must not
+// silently curate the other four.
+func requireProducts(ctx context.Context, tx *sql.Tx, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := tx.QueryContext(ctx,
+		`SELECT id FROM products WHERE id = ANY($1::bigint[])`, int64Array(ids))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	found := make(map[int64]bool, len(ids))
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		found[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if !found[id] {
+			return NotFoundf("product %d does not exist", id)
+		}
+	}
+	return nil
+}
+
 // ProductsInCollection returns a page of a collection's members in the order
 // they were curated. Narrow it with q — Status in particular, since a
 // storefront wants the active ones and the panel wants all of them.
 func (s *Collections) ProductsInCollection(ctx context.Context, collectionID int64, q ProductQuery) ([]*Product, int, error) {
 	q.CollectionID = collectionID
 	return s.app.catalog.ListProducts(ctx, q)
+}
+
+// SetCollectionProducts replaces a collection's membership with exactly
+// productIDs, in the order given — which is the order a storefront shows them
+// in, and until now the only order nothing could choose.
+//
+// Replace rather than merge, for the reason SetProductCollections gives. It
+// writes member_position and never position: where a collection sits in one
+// product's own list is that product's business, and a curation pass must not
+// reshuffle six product editors' chips (D40).
+func (s *Collections) SetCollectionProducts(ctx context.Context, collectionID int64, productIDs []int64) error {
+	ids := dedupeIDs(productIDs)
+	return InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		var title string
+		err := tx.QueryRowContext(ctx,
+			`SELECT title FROM collections WHERE id = $1`, collectionID).Scan(&title)
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("collection %d does not exist", collectionID)
+		}
+		if err != nil {
+			return err
+		}
+		if err := requireProducts(ctx, tx, ids); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM product_collections
+			WHERE collection_id = $1 AND NOT (product_id = ANY($2::bigint[]))`,
+			collectionID, int64Array(ids)); err != nil {
+			return err
+		}
+		if len(ids) > 0 {
+			// The mirror of the product-side write: ordinality carries the
+			// caller's order into member_position, and `position` — where this
+			// collection sits in each product's own list — is computed so a new
+			// membership lands at the end of that list instead of at its head.
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO product_collections (product_id, collection_id, position, member_position)
+				SELECT ids.product_id, $1,
+				       coalesce((SELECT max(pc.position) + 1 FROM product_collections pc
+				                 WHERE pc.product_id = ids.product_id), 0),
+				       ids.ord - 1
+				FROM unnest($2::bigint[]) WITH ORDINALITY AS ids(product_id, ord)
+				ON CONFLICT (product_id, collection_id)
+				DO UPDATE SET member_position = excluded.member_position`,
+				collectionID, int64Array(ids)); err != nil {
+				return err
+			}
+		}
+		// Filed against the collection, which is the record an operator was
+		// looking at. The product-side write files the same kind of change
+		// against the product for the same reason.
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditCollectionProductsSet, Entity: AuditEntityCollection,
+			ID: collectionID, Label: title,
+			Summary: "Changed what is in the collection " + title + ", and in what order",
+			After:   map[string]any{"product_ids": ids},
+		})
+	})
 }
 
 // loadProductCollections attaches each product's collections in one query for
@@ -470,6 +586,11 @@ func (a *App) mountCollectionRoutes() {
 	a.HandleAdminFunc("PATCH /api/admin/collections/{id}", a.handleUpdateCollection, RightCatalogWrite)
 	a.HandleAdminFunc("DELETE /api/admin/collections/{id}", a.handleDeleteCollection, RightCatalogWrite)
 	a.HandleAdminFunc("PUT /api/admin/products/{id}/collections", a.handleSetProductCollections, RightCatalogWrite)
+	// The other axis: what is in one collection, and in what order. Reading it
+	// is catalog.read because it is a product listing; writing it is the
+	// same right that moves a product between collections.
+	a.HandleAdminFunc("GET /api/admin/collections/{id}/products", a.handleAdminListCollectionProducts, RightCatalogRead)
+	a.HandleAdminFunc("PUT /api/admin/collections/{id}/products", a.handleSetCollectionProducts, RightCatalogWrite)
 }
 
 // ------------------------------------------------------------------- public
@@ -629,4 +750,87 @@ func (a *App) handleSetProductCollections(w http.ResponseWriter, r *http.Request
 		return
 	}
 	Respond(w, http.StatusOK, p)
+}
+
+// handleAdminListCollectionProducts is the read that pairs with the PUT below.
+//
+// ?collection_id= on the product listing answers the same question; this one
+// 404s for a collection that does not exist rather than returning an empty
+// page, which is what a curation screen has to know before it offers to
+// reorder anything. Drafts are included: staging them is what an operator is
+// doing here, and only the public slug route is active-only.
+func (a *App) handleAdminListCollectionProducts(w http.ResponseWriter, r *http.Request) {
+	id, err := pathInt64(r, "id")
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	limit, offset, err := Page(r)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	collections := a.Collections()
+	if _, err := collections.Get(r.Context(), id); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	pq, err := productQueryFrom(r.URL.Query())
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	// The path already named the collection, so a collection_id in the query
+	// string is a filter that would be silently discarded — the exact failure
+	// queryInt64 refuses to allow for a value it cannot parse.
+	if pq.CollectionID > 0 {
+		RespondError(w, r, Validationf(
+			"collection_id is not a filter on this route; the path already names the collection"))
+		return
+	}
+	pq.Limit, pq.Offset = limit, offset
+	products, total, err := collections.ProductsInCollection(r.Context(), id, pq)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	if products == nil {
+		products = []*Product{}
+	}
+	RespondList(w, products, ListMeta{Total: total, Limit: limit, Offset: offset})
+}
+
+// handleSetCollectionProducts replaces the membership and answers 204.
+//
+// No echo: the body a curation screen needs is the whole membership, and a
+// whole membership is exactly what a paged list cannot promise — an echo
+// bounded by DefaultLimit after a PUT of 300 ids is a list the screen could
+// re-save from and lose the tail. The GET above is the read.
+func (a *App) handleSetCollectionProducts(w http.ResponseWriter, r *http.Request) {
+	id, err := pathInt64(r, "id")
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	var in struct {
+		ProductIDs *[]int64 `json:"product_ids"`
+	}
+	if err := DecodeJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	// A pointer, because DecodeJSON rejects a wrong key but nothing makes a
+	// right one mandatory — and a body of {} would otherwise decode to nil and
+	// empty a collection that may hold thousands of memberships. An explicit []
+	// stays the deliberate way to clear it.
+	if in.ProductIDs == nil {
+		RespondError(w, r, Validationf(
+			"product_ids is required; send an empty array to empty the collection"))
+		return
+	}
+	if err := a.Collections().SetCollectionProducts(r.Context(), id, *in.ProductIDs); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

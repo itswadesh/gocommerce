@@ -33,13 +33,16 @@ every stock call takes `0` to mean it.
 Five movements, all in `inventory.go`, all single UPDATE statements so the check
 and the write happen under the same row lock, and all against one location:
 
-| movement | effect | when |
-| --- | --- | --- |
-| `reserveStock` | `reserved += qty` | [checkout](checkout.md) creates the order |
-| `commitStock` | `reserved -= qty`, `on_hand -= qty` | payment confirms the order |
-| `releaseStock` | `reserved -= qty` | a pending order is cancelled or swept |
-| `restockStock` | `on_hand += qty` | a *confirmed* order is cancelled, or goods come back on a return |
-| `sellStock` | `on_hand -= qty` | a committed order is edited upward, or a return is withdrawn |
+| movement | effect | ledger kind | when |
+| --- | --- | --- | --- |
+| `reserveStock` | `reserved += qty` | `reserve` | [checkout](checkout.md) creates the order |
+| `commitStock` | `reserved -= qty`, `on_hand -= qty` | `commit` | payment confirms the order |
+| `releaseStock` | `reserved -= qty` | `release` | a pending order is cancelled or swept |
+| `restockStock` | `on_hand += qty` | `restock` | a *confirmed* order is cancelled, or goods come back on a return |
+| `sellStock` | `on_hand -= qty` | `sell` | a committed order is edited upward, or a return is withdrawn |
+
+Since M26 every one of them also writes a row to `stock_movements` inside the
+same transaction — see [How to read what happened](#how-to-read-what-happened).
 
 Which of the last two is correct depends on how far the order got: a pending
 order only ever reserved stock, while a confirmed one has already taken it off
@@ -55,7 +58,7 @@ names another location — a returns desk, say — which must be active, because
 stock parked on a shelf nobody counts is stock the store has lost track of.
 
 The public service is `app.Stock()`, returning `*Inventory`, with `Adjust`,
-`SetOnHand`, `Move`, `ByLocation` and `LowStock`. Places are `app.Places()`,
+`SetOnHand`, `Move`, `ByLocation`, `LowStock` and `Movements`. Places are `app.Places()`,
 returning `*Locations`. The five movement functions above are unexported: they
 only ever run inside the order transaction that justifies them.
 
@@ -96,6 +99,22 @@ only ever run inside the order transaction that justifies them.
   sold one in between, so the API offers a delta (`adjust`) and a stock take
   (`set`) — both evaluated against the current row, not against what the caller
   last read.
+- **Every change to a balance writes a movement, in the same transaction.**
+  `stock_movements` (M26) is append-only, and the row commits with the balance
+  it explains — so a rolled-back checkout leaves no phantom movement, and a
+  committed one can always be accounted for.
+- **The ledger reconciles.** `sum(on_hand_delta)` for a (variant, location) pair
+  equals that pair's `on_hand`, and the same for `reserved`. It holds because
+  every writer records what its statement *applied* — not what the caller asked
+  for — and `gocommerce doctor`'s `stock ledger` check asserts it on every run.
+- **A movement that changes nothing is not recorded — except a stock take.** An
+  untracked variant's reservation moved nothing by design and a re-run of an
+  unchanged import changed nothing; rows saying so would hide the rows that
+  matter. An operator who counted a shelf and found the number already there has
+  produced evidence, which is the other half of what the ledger exists for.
+- **The ledger has no CHECK on its balances.** `continue_selling` makes a
+  negative `on_hand` legal, and an audit trail that refused to record a movement
+  the shelf accepted would be worse than no audit trail.
 - **A reservation has a deadline.** Checkout stamps
   `orders.reservation_expires_at` at `now() + Config.OrderTTL` (24h default);
   `Orders.SweepUnpaid` cancels what is past it — whether the payment is still
@@ -110,12 +129,14 @@ only ever run inside the order transaction that justifies them.
 refreshed variant:
 
 ```go
-v, err := app.Stock().Adjust(ctx, variantID, 0, 25)    // a delivery arrived
-v, err := app.Stock().SetOnHand(ctx, variantID, 0, 18) // a shelf was counted
+v, err := app.Stock().Adjust(ctx, variantID, 0, 25, "delivery from Acme")
+v, err := app.Stock().SetOnHand(ctx, variantID, 0, 18, "quarterly count")
 ```
 
 The third argument is the location. `0` means the default one, which is what a
-single-location store always passes; a real id says which shelf.
+single-location store always passes; a real id says which shelf. The last is the
+operator's reason, recorded verbatim in the ledger — it may be empty, and a
+script that leaves it empty produces the one row nobody can interpret.
 
 Both refuse to drop that location's on-hand below what is reserved there, and
 `explainStockFailure` turns the zero-row update into
@@ -128,9 +149,9 @@ them they were wrong.
 POST /api/admin/variants/77/inventory
 Authorization: Bearer <admin token>
 
-{"adjust": 25}                       → 200, the variant
-{"set": 18, "location_id": 3}        → 200, the variant
-{"adjust": 5, "set": 18}             → 400, "send either adjust or set, not both"
+{"adjust": 25, "reason": "delivery"}            → 200, the variant
+{"set": 18, "location_id": 3, "reason": "count"} → 200, the variant
+{"adjust": 5, "set": 18}                       → 400, "send either adjust or set, not both"
 ```
 
 Both keys omitted is also a 400. Receiving stock and counting a shelf are
@@ -141,7 +162,7 @@ different acts, and the endpoint makes you say which one you performed.
 ```go
 places, err := app.Places().List(ctx)
 rows, err := app.Stock().ByLocation(ctx, variantID)       // where it actually is
-v, err := app.Stock().Move(ctx, variantID, fromID, toID, 10)
+v, err := app.Stock().Move(ctx, variantID, fromID, toID, 10, "rebalancing")
 ```
 
 ```http
@@ -161,6 +182,55 @@ would send a picker to the wrong shelf.
 `priority` orders the search — lower is tried first. `from_location_id` has no
 default, because emptying a shelf nobody named is not something anyone means to
 do.
+
+## How to read what happened
+
+Every movement since M26 is a row in `stock_movements`, and nothing ever edits
+or deletes one. A row carries two signed deltas (`on_hand_delta`,
+`reserved_delta`) rather than one number — a commit takes units out of the
+reservation and off the shelf at once, and one column could not say which — the
+two balances *after*, a `kind`, a `source`, the operator's `reason`, the order
+behind it, and snapshots of the SKU, the location code, the order number and the
+actor's email so the row still reads after a SKU is deleted, a location closes or
+an employee leaves.
+
+The eleven kinds: `opening`, `adjust`, `stock_take`, `import`,
+`transfer_out`, `transfer_in`, `reserve`, `commit`, `release`, `restock`,
+`sell`. The six sources name the *path* rather than the person — `admin`,
+`checkout`, `order`, `sweeper`, `import`, `migration` — which is what makes a
+row with no operator a fact rather than a hole; who it was, when it was anybody,
+is `superuser_id` and `actor_email`.
+
+**The ledger records what the shelf did, not what you asked it to do.** Five of
+the movement helpers wrap their quantity in `CASE WHEN track_inventory`, one
+floors a release at zero, and two write absolutely — so a row's delta is read
+back from the statement that ran, and `sum(on_hand_delta)` meets `on_hand` for
+every pair, forever. That sum is the only thing that can catch a writer
+bypassing `app.Stock()`.
+
+```go
+rows, total, err := app.Stock().Movements(ctx, gocommerce.MovementQuery{
+    VariantID: variantID,
+    Kinds:     []string{"adjust", "stock_take"},
+    Limit:     50,
+})
+```
+
+```http
+GET /api/admin/variants/77/movements?kind=adjust,stock_take&limit=25
+GET /api/admin/locations/3/movements?from=2026-01-01&to=2026-02-01
+```
+
+Both are `inventory.read` — reading how a count got there is reading stock — and
+both take `limit`/`offset`/`page`, `from` and `to`, `kind` (comma-separated or
+repeated), `order_id`, and the other axis (`location_id` on the variant route,
+`variant_id` on the location one). Newest first, ordered by id rather than by
+timestamp: a transfer writes both of its rows in one transaction and they share
+`now()` exactly.
+
+A deleted location's rows stay readable on the variant route with their
+`location_code` intact; a deleted variant's stay readable on the location route
+with their `sku`.
 
 ## How stock travels through a CSV
 
@@ -227,7 +297,10 @@ signal for "not tracked" — a storefront must not render it as a quantity.
 ## Common mistakes
 
 - **`UPDATE variant_stock SET on_hand = …` from a module or a script.** It skips
-  the reserved-quantity check, the row lock and the event. Rule 3 in
+  the reserved-quantity check, the row lock, the event *and the ledger row* — so
+  the balance it leaves is one nothing in the store can explain, and
+  `gocommerce doctor`'s `stock ledger` check is the only thing that will ever
+  tell you. Rule 3 in
   [`AGENTS.md`](../AGENTS.md): reading with SQL is fine, writing is not. Use
   `app.Stock()`. (`variants.stock_on_hand` is not a column at all any more — M17
   dropped it. A query naming it fails loudly, which is the right outcome.)
@@ -248,10 +321,22 @@ signal for "not tracked" — a storefront must not render it as a quantity.
 - **Restocking a cancelled *pending* order.** It never left the shelf; only the
   reservation needs releasing. `Orders.Cancel` already picks correctly — do not
   "help" it with a manual adjustment afterwards.
-- **Putting returned goods back with `Stock().Adjust`.** It leaves no reason, no
-  order and no record of what came back, so nothing can tell it from a stock
-  count — and nothing stops the same units being counted again.
-  `Order().Return` is the operation that does, per line and per quantity.
+- **Putting returned goods back with `Stock().Adjust`.** Its ledger row says an
+  operator adjusted the count, which is true and not the point: nothing ties it
+  to the order the goods came off, nothing caps it at what actually went out,
+  and nothing stops the same units being put back twice. `Order().Return` is the
+  operation that does, per line and per quantity — and its movement carries the
+  order number.
+- **Reading the ledger to answer "what is on the shelf".** `variant_stock` is
+  the truth; `stock_movements` explains it. Summing the ledger to get a count is
+  slower, and it is the answer that goes wrong first if anything ever did bypass
+  the service.
+- **Calling `Adjust` from a script with an empty reason.** It is accepted — the
+  engine requires no reason from any client, deliberately, because demanding one
+  would break every script written before M26 — and it produces the row an
+  operator finds three weeks later and cannot interpret. The panel insists on a
+  reason for a count and for a write-off; a script should hold itself to the
+  same rule.
 - **Assuming a failed checkout leaves stock reserved.** The reservation is made
   inside the order transaction; a conflict rolls the whole thing back. Only a
   *created but unsettled* order holds stock — payment pending, or recorded as

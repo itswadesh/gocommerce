@@ -77,6 +77,21 @@ forever.
 
 There is no `product.*` family either, until something consumes it.
 
+**Stock movements are not events.** Every change to a stock balance is recorded
+in `stock_movements` (M26) — append-only, written inside the same transaction as
+the balance it explains, and read back through
+`GET /api/admin/variants/{id}/movements`. There is no `stock.*` name and no
+second aggregate type, for the reason this page gives for `order.confirmed`: the
+taxonomy is a public contract, nothing consumes a stock event, and `order.*`
+already tells a consumer that an order took stock. Volume decides the rest — a
+twenty-line order would put forty rows through the at-least-once dispatcher for
+nobody. If you need one, the migration path is one function: add
+`AggregateVariant = "variant"` beside `AggregateOrder`, emit `stock.moved` (v1)
+from `recordMovement` in `movements.go`, which is already the single funnel, and
+restrict it to the operator kinds — the five order-driven kinds are covered by
+`order.*` already. The payload exists: it is `StockMovement`. No schema change,
+no new call site. See D38.
+
 ## The payload
 
 Every `order.*` event carries an `OrderEvent`:

@@ -14,7 +14,8 @@
      * safety story, so this page does not pre-empt it with a guess: it asks,
      * sends, and shows what came back.
      */
-    import { api } from "$lib/api.js";
+    import { base } from "$app/paths";
+    import { api, query } from "$lib/api.js";
     import { toast } from "$lib/toast.svelte.js";
     import Drawer from "$lib/components/Drawer.svelte";
     import TokenInput from "$lib/components/TokenInput.svelte";
@@ -170,6 +171,47 @@
         attributes = [...attributes, { key: "", label: "", choices: [] }];
     }
 
+    /**
+     * The handle suggestions for a new field.
+     *
+     * A category asks for a field by its handle, and the choices come from the
+     * shared dictionary keyed on exactly that string. Derived keys are
+     * underscored (`sleeve_length`) while every published handle is hyphenated
+     * (`sleeve-length`), so without this an operator could type a field the
+     * dictionary defines and get free text anyway, with nothing on screen to
+     * explain it. Suggesting the real handles is what stops anyone ever having
+     * to know that.
+     *
+     * Searched rather than listed: after the taxonomy import the dictionary runs
+     * to hundreds of entries and the listing is capped at 200.
+     */
+    let handleSuggestions = $state([]);
+    let handleTimer = null;
+
+    function suggestHandles(term) {
+        clearTimeout(handleTimer);
+        handleTimer = setTimeout(async () => {
+            try {
+                const res = await api.get(
+                    "/api/admin/taxonomy-attributes" + query({ q: term, limit: 20 }),
+                );
+                handleSuggestions = res.data ?? [];
+            } catch {
+                // A dictionary that cannot be read is a missing convenience,
+                // not a broken form: the handle is free text either way.
+                handleSuggestions = [];
+            }
+        }, 200);
+    }
+
+    /** Picking a suggestion fills the label too, while the label is still blank. */
+    function handleChosen(attr) {
+        const match = handleSuggestions.find(
+            (h) => h.handle === attr.key.trim().toLowerCase(),
+        );
+        if (match && !attr.label.trim()) attr.label = match.label;
+    }
+
     function removeAttribute(index) {
         attributes = attributes.filter((_, i) => i !== index);
     }
@@ -189,7 +231,10 @@
         for (const attr of attributes) {
             const label = attr.label.trim();
             if (!label) continue;
-            let key = attr.key || keyFor(label);
+            // Folded, because the engine matches a handle literally and the
+            // dictionary is keyed on the lower-case form: "Sleeve-Length" typed
+            // here would be a field no dictionary entry could ever answer.
+            let key = (attr.key || keyFor(label)).trim().toLowerCase();
             while (taken.has(key)) key += "-2";
             taken.add(key);
             out.push({
@@ -457,7 +502,31 @@
 
         {#each attributes as attr, i (i)}
             <div class="attr-row" class:m-t-sm={i > 0}>
-                <div class="field">
+                {#if attr.key}
+                    <div class="field">
+                        <span class="txt-sm txt-hint">Handle</span>
+                        <div class="txt-code">{attr.key}</div>
+                    </div>
+                    <div class="field-help">
+                        This is what answers already given are filed under, so it stays as
+                        it is. A field that needs a different handle is a new field.
+                    </div>
+                {:else}
+                    <div class="field">
+                        <label for="attr-key-{i}">Handle</label>
+                        <input
+                            id="attr-key-{i}"
+                            type="text"
+                            autocomplete="off"
+                            list="attr-handles"
+                            placeholder={attr.label.trim() ? keyFor(attr.label) : "sleeve-length"}
+                            bind:value={attr.key}
+                            oninput={(e) => suggestHandles(e.currentTarget.value)}
+                            onchange={() => handleChosen(attr)}
+                        />
+                    </div>
+                {/if}
+                <div class="field m-t-5">
                     <label for="attr-label-{i}">Field {i + 1}</label>
                     <input
                         id="attr-label-{i}"
@@ -485,6 +554,12 @@
             </div>
         {/each}
 
+        <datalist id="attr-handles">
+            {#each handleSuggestions as entry (entry.handle)}
+                <option value={entry.handle}>{entry.label}</option>
+            {/each}
+        </datalist>
+
         <button type="button" class="btn sm transparent m-t-sm" onclick={addAttribute}>
             <i class="ri-add-circle-line" aria-hidden="true"></i>
             <span class="txt">Add a metafield</span>
@@ -492,6 +567,12 @@
         <div class="field-help">
             Products in this category — and in every category under it — are asked for these on
             their own page. Renaming one keeps the answers already given.
+        </div>
+        <div class="field-help">
+            A handle that matches an entry in the
+            <a href="{base}/settings/attributes">attribute dictionary</a> gets that entry's
+            fixed list of values on the product page; one that does not is a free-text
+            field. Leave it empty and it is derived from the label.
         </div>
     </form>
 

@@ -7,6 +7,10 @@ import (
 )
 
 func (a *App) mountTransferRoutes() {
+	// /api/admin/import/ is also served from taxonomy_http.go — the category
+	// tree and its attribute dictionary, whose importers belong to the taxonomy
+	// rather than to CSV transfer. Grep both before concluding the prefix has
+	// two members.
 	a.HandleAdminFunc("GET /api/admin/export/admin-products", a.handleExportProducts, RightDataExport)
 	a.HandleAdminFunc("POST /api/admin/import/products", a.handleImportProducts, RightDataImport)
 	a.HandleAdminFunc("GET /api/admin/export/admin-orders", a.handleExportOrders, RightDataExport)
@@ -14,10 +18,18 @@ func (a *App) mountTransferRoutes() {
 }
 
 func (a *App) handleExportProducts(w http.ResponseWriter, r *http.Request) {
+	// Parsed before a header is written, the shape handleExportOrders already
+	// has: once the CSV headers are out the status line is spent, so a bad
+	// filter has to become a 400 in the envelope before then.
+	query, err := productQueryFrom(r.URL.Query())
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition",
 		fmt.Sprintf(`attachment; filename="products-%s.csv"`, time.Now().UTC().Format("2006-01-02")))
-	if err := a.transfer.ExportProducts(r.Context(), w); err != nil {
+	if err := a.transfer.ExportProducts(r.Context(), w, query); err != nil {
 		// The response has already begun, so the status line is spent. Log it
 		// and let the truncated file be the signal — pretending it succeeded
 		// would be worse.

@@ -27,7 +27,9 @@ func (a *App) mountDiscountRoutes() {
 // The amount it answers with is a preview, not a promise: nothing is consumed
 // here, and checkout decides again under its own lock. A code that is valid now
 // and exhausted in ten minutes is refused then, which is the only honest place
-// to refuse it.
+// to refuse it. A scoped code whose targets this basket does not hold is
+// refused here for the same reason an exhausted one is, and refused again at
+// checkout under that lock.
 func (a *App) handleSetCartDiscount(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Code string `json:"code"`
@@ -50,7 +52,7 @@ func (a *App) handleSetCartDiscount(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	applied, err := a.discounts.Preview(r.Context(), code, in.Email, cart.Subtotal.AmountMinor)
+	applied, err := a.discounts.Preview(r.Context(), code, in.Email, cart)
 	if err != nil {
 		RespondError(w, r, err)
 		return

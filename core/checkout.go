@@ -149,6 +149,13 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 	var orderID int64
 
 	err := InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		// Every ledger row this transaction writes is labelled as the shopper's
+		// path, before anything moves. An operator placing a phone order comes
+		// through here too, and their row carries both the checkout source and
+		// their own email: the source names the path, the email names the
+		// person, and both being populated is the honest reading.
+		ctx := withStockSource(ctx, sourceCheckout)
+
 		cartID, currency, cartCode, err := lockCartForCheckout(ctx, tx, in.CartID)
 		if err != nil {
 			return err
@@ -167,8 +174,15 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		// orders and deadlock.
 		sort.Slice(lines, func(i, j int) bool { return lines[i].VariantID < lines[j].VariantID })
 
+		// The ledger rows this loop writes, collected so the order can name
+		// itself on them once it exists — see attachMovementsToOrder.
+		reserved := make([]int64, 0, len(lines))
+
 		var conflicts []LineConflict
-		var subtotal int64
+		// Filled by index rather than appended, so its alignment with `lines` and
+		// with `taxable` below is structural rather than dependent on the
+		// conflict check aborting first.
+		dlines := make([]discountLine, len(lines))
 		for i := range lines {
 			l := &lines[i]
 			switch {
@@ -188,7 +202,11 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 			// week.
 			loc, err := pickLocation(ctx, tx, l.VariantID, l.Quantity)
 			if err == nil {
-				err = reserveStock(ctx, tx, l.VariantID, loc, l.Quantity)
+				var mid int64
+				mid, err = reserveStock(ctx, tx, l.VariantID, loc, l.Quantity, stockRef{})
+				if mid != 0 {
+					reserved = append(reserved, mid)
+				}
 			}
 			if err != nil {
 				if errors.Is(err, errInsufficientStock) {
@@ -200,20 +218,29 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 				return err
 			}
 			l.LocationID = loc
-			subtotal += l.CurrentPrice * int64(l.Quantity)
+			dlines[i] = discountLine{
+				ProductID: l.ProductID,
+				Total:     l.CurrentPrice * int64(l.Quantity),
+			}
 		}
 		if len(conflicts) > 0 {
 			return &conflictError{conflicts: conflicts}
 		}
+		// Safe here and only here: every conflicting line has already returned,
+		// so each index is filled. One source of truth — the order row's subtotal
+		// and the discount's basket are the same number by construction rather
+		// than by two additions agreeing.
+		subtotal := totalOf(dlines)
 
 		shipping := s.app.cfg.FlatShippingMinor
 
 		// The discount is decided here and nowhere else, under the lock that
-		// just re-checked every price and every reservation. A code that
-		// expired while the shopper was typing their address is refused by the
-		// same mechanism that refuses a sold-out line.
-		applied, err := s.app.discounts.applyTx(ctx, tx, discountRequest{
-			Code: cartCode, Email: in.Email, Subtotal: subtotal,
+		// just re-checked every price and every reservation — the same lock the
+		// rule's targets are read under. A code that expired while the shopper
+		// was typing their address is refused by the same mechanism that refuses
+		// a sold-out line.
+		applied, eligible, err := s.app.discounts.applyTx(ctx, tx, discountRequest{
+			Code: cartCode, Email: in.Email, Lines: dlines,
 		})
 		if err != nil {
 			return err
@@ -227,8 +254,9 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		}
 		// Tax comes after the discount, because tax is charged on what the
 		// customer actually pays. The rates are looked up against the address
-		// this order is going to, and what each line is charged is stored on
-		// the line — see taxes.go.
+		// this order is going to, which lines the discount came off is carried
+		// across so a line charged in full is taxed in full, and what each line
+		// is charged is stored on the line — see taxes.go.
 		taxable := make([]taxableLine, len(lines))
 		for i, l := range lines {
 			taxable[i] = taxableLine{
@@ -239,7 +267,7 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		}
 		inclusive := s.app.cfg.PricesIncludeTax
 		lineTaxes, tax, err := s.app.taxes.computeTax(ctx, tx,
-			in.Address.Country, in.Address.State, taxable, discount, inclusive)
+			in.Address.Country, in.Address.State, taxable, eligible, discount, inclusive)
 		if err != nil {
 			return err
 		}
@@ -284,6 +312,16 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 			nullString(in.Name), addr, s.app.RequestLanguageValue(ctx), meta,
 			s.app.cfg.OrderTTL.Seconds(),
 		); err != nil {
+			return err
+		}
+
+		// The reservations above were written eighty lines before this order
+		// existed, so they are named now rather than earlier: hoisting the
+		// nextval would burn an order number on every conflicted checkout, and
+		// a flash sale of ten units against a hundred carts would jump the
+		// numbering by ninety. This is what makes "which order took these three
+		// units off shelf B" answerable.
+		if err := attachMovementsToOrder(ctx, tx, orderID, number, reserved); err != nil {
 			return err
 		}
 

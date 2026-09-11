@@ -22,6 +22,12 @@ const (
 	// in audit.go is the only reader.
 	ctxKeyAdminToken
 	ctxKeyActorLabel
+	// Which path is moving stock — a checkout, an order transition, the unpaid
+	// sweeper, a CSV import — which is a fact about the request that no service
+	// signature carries and that the ledger records beside the actor. It is
+	// here rather than in movements.go so that every context key the engine has
+	// is declared in one block; withStockSource is the only writer.
+	ctxKeyStockSource
 )
 
 // WithLanguage returns a context carrying the resolved request language.

@@ -546,19 +546,29 @@ func (a *App) handleAdjustInventory(w http.ResponseWriter, r *http.Request) {
 		// what a single-location store always sends and what every client
 		// written before locations existed still sends.
 		LocationID int64 `json:"location_id"`
+		// Reason is why the stock moved, in the operator's own words, and it is
+		// recorded verbatim in the stock ledger. Optional: the panel asks for
+		// one on a count and on a write-off, but the engine accepts a blank
+		// from any client, because requiring it here would break every script
+		// written before M26 in one release.
+		Reason string `json:"reason"`
 	}
 	if err := DecodeJSON(w, r, &in); err != nil {
 		RespondError(w, r, err)
+		return
+	}
+	if len(strings.TrimSpace(in.Reason)) > 200 {
+		RespondError(w, r, Validationf("reason must be under 200 characters"))
 		return
 	}
 	switch {
 	case in.Adjust != nil && in.Set != nil:
 		RespondError(w, r, Validationf("send either adjust or set, not both"))
 	case in.Adjust != nil:
-		v, err := a.inventory.Adjust(r.Context(), id, in.LocationID, *in.Adjust)
+		v, err := a.inventory.Adjust(r.Context(), id, in.LocationID, *in.Adjust, in.Reason)
 		respondOr(w, r, v, err)
 	case in.Set != nil:
-		v, err := a.inventory.SetOnHand(r.Context(), id, in.LocationID, *in.Set)
+		v, err := a.inventory.SetOnHand(r.Context(), id, in.LocationID, *in.Set, in.Reason)
 		respondOr(w, r, v, err)
 	default:
 		RespondError(w, r, Validationf("send either adjust or set"))

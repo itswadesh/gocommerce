@@ -21,7 +21,8 @@ The Go shape is `Variant`: `price` and `compare_at_price` as `Money`, `options`
 (`["M","Black"]`), a display `label` (`"M / Black"`, joined in option position
 order), `stock_on_hand`, `stock_reserved` and the derived `available`. The
 two counts are sums across the variant's [locations](inventory.md);
-`GET /api/admin/variants/{id}/stock` is the breakdown.
+`GET /api/admin/variants/{id}/stock` is the breakdown, and
+`GET /api/admin/variants/{id}/movements` is how it got that way.
 `Variant.InStock(qty)` is the sellability test, always true for a variant that
 does not track inventory.
 
@@ -48,7 +49,13 @@ does not track inventory.
 - **Prices are `price_minor` / `compare_at_price_minor`, both CHECKed `>= 0`,**
   and reach the client as `{"amount_minor": 2499, "currency": "USD"}` — never a
   formatted string, and `*_minor` rather than `*_cents` because JPY has no
-  decimals and KWD has three.
+  decimals and KWD has three. `compare_at_price_minor` is a `NullableAmount`
+  on `VariantPatch` for the same reason `cost_minor` is: an emptied box means
+  the item is no longer on sale, and a plain pointer cannot tell that from a
+  patch that never mentioned it — send `null` to clear a struck-through price,
+  omit the field to leave it alone. Negative is a 400 on both, not a 500 from
+  the CHECK. On `VariantInput` it stays a plain pointer, because on create
+  there is nothing to leave alone.
 - **Stock is not patchable here.** `VariantPatch` deliberately has no stock
   field: a blind `SET stock = 7` races every concurrent sale. See
   [inventory](inventory.md).

@@ -2092,6 +2092,16 @@
               "format": "int64"
             },
             "description": "Restrict to a category and everything nested under it. An unparseable value is an error rather than a silently ignored filter, because a filter that quietly matches everything is how a typo turns into \"why is this showing the whole catalogue\"."
+          },
+          {
+            "name": "collection_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Restrict to one collection's members, and order them the way that collection was curated rather than newest-first. An unparseable value is an error rather than a silently ignored filter. A collection nobody has is an empty page, not a 404. If a sort parameter is ever added to this listing, sending it together with collection_id must be a validation error rather than a silent override: a collection's order is the curation (D40)."
           }
         ],
         "responses": {
@@ -2537,7 +2547,7 @@
             "adminToken": []
           }
         ],
-        "description": "Replace, not merge: the caller holds the whole list. An \"add\" endpoint quietly re-creates a membership the operator removed in another tab, with no way for them to see that it happened. The order sent is the order stored, an unknown id rejects the whole request, and an empty list clears membership.",
+        "description": "Replace, not merge: the caller holds the whole list. An \"add\" endpoint quietly re-creates a membership the operator removed in another tab, with no way for them to see that it happened. The order sent is the order stored, an unknown id rejects the whole request, and an empty list clears membership. The `position` it writes is where each collection sits in THIS product's list, not where this product sits in each collection — that is `member_position`, which only PUT /api/admin/collections/{id}/products writes (D40).",
         "parameters": [
           {
             "$ref": "#/components/parameters/PathID"
@@ -2792,6 +2802,177 @@
         }
       }
     },
+    "/api/admin/collections/{id}/products": {
+      "get": {
+        "tags": [
+          "admin:collections"
+        ],
+        "summary": "List a collection's products",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "In the order the collection was curated, drafts included — staging them is what an operator is doing here. 404 rather than an empty page for a collection that does not exist, which is what a curation screen needs to know before it offers to reorder anything. It takes the same filter vocabulary as the product listing, except `collection_id`: the path already names the collection, so sending one is a 400 rather than a filter nobody would notice being dropped.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "active",
+                "archived"
+              ]
+            }
+          },
+          {
+            "name": "vendor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact match."
+          },
+          {
+            "name": "product_type",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact match."
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Products carrying exactly this tag. Exact rather than case-folded so the match is answered by the index; tags are de-duplicated case-insensitively on write, so one spelling of a tag is the only spelling stored."
+          },
+          {
+            "name": "category_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Restrict to a category and everything nested under it. An unparseable value is an error rather than a silently ignored filter, because a filter that quietly matches everything is how a typo turns into \"why is this showing the whole catalogue\"."
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of products.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Product"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin:collections"
+        ],
+        "summary": "Replace a collection's products",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Replace, not merge, for the reason the product-side route gives: the caller holds the whole list — INCLUDING the memberships it never fetched, which are deleted. A screen must hold the entire membership before it saves. The order sent is the order stored, and it is the only way a collection's own order is ever chosen — it writes `member_position`, never the `position` that orders a collection inside one product's own list (D40). `product_ids` is required: omitting it is a 400, and an explicit empty array is how a collection is emptied without being deleted. An unknown product id rejects the whole request. The answer is 204: the useful response would be the whole membership, and a page of it is a list a client could re-save from and lose the tail — read it back with the GET above.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "product_ids"
+                ],
+                "properties": {
+                  "product_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "example": [
+                      7,
+                      3,
+                      9
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "The membership is what was sent."
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/admin/variants/{id}": {
       "patch": {
         "tags": [
@@ -2828,7 +3009,9 @@
                   },
                   "compare_at_price_minor": {
                     "type": "integer",
-                    "format": "int64"
+                    "format": "int64",
+                    "nullable": true,
+                    "description": "The price a storefront strikes through. Send null to take the item off sale; omit the field to leave it alone. Negative is a 400."
                   },
                   "track_inventory": {
                     "type": "boolean"
@@ -2966,6 +3149,11 @@
                     "type": "integer",
                     "format": "int64",
                     "description": "Omit for the default location."
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Optional. Why the stock moved, recorded verbatim in the stock ledger — a delivery, a damage write-off, a recount. The panel asks for one on a count and on a write-off; the engine accepts a blank from any client."
                   }
                 }
               }
@@ -4060,7 +4248,7 @@
             "adminToken": []
           }
         ],
-        "description": "One row per variant. Cells beginning with =, +, - or @ are prefixed with an apostrophe, because a spreadsheet executes those on open; import strips exactly one back, so the round trip stays lossless.",
+        "description": "One row per variant. Cells beginning with =, +, - or @ are prefixed with an apostrophe, because a spreadsheet executes those on open; import strips exactly one back, so the round trip stays lossless. It takes the same filters as the admin product listing — q, status, vendor, product_type, tag, category_id and collection_id — so a reconciliation can export exactly the rows a screen is showing. There is no paging: an export streams every row that matched. Row order stays p.id, v.position, v.id whatever the filters are, because the importer requires a product's variant rows to be contiguous.",
         "responses": {
           "200": {
             "description": "A CSV file.",
@@ -4072,10 +4260,78 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "active",
+                "archived"
+              ]
+            }
+          },
+          {
+            "name": "vendor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact match."
+          },
+          {
+            "name": "product_type",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact match."
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Products carrying exactly this tag. Exact rather than case-folded so the match is answered by the index; tags are de-duplicated case-insensitively on write, so one spelling of a tag is the only spelling stored."
+          },
+          {
+            "name": "category_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Restrict to a category and everything nested under it. An unparseable value is an error rather than a silently ignored filter, because a filter that quietly matches everything is how a typo turns into \"why is this showing the whole catalogue\"."
+          },
+          {
+            "name": "collection_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Restrict to one collection's members, and order them the way that collection was curated rather than newest-first. An unparseable value is an error rather than a silently ignored filter. A collection nobody has is an empty page, not a 404. If a sort parameter is ever added to this listing, sending it together with collection_id must be a validation error rather than a silent override: a collection's order is the curation (D40)."
+          }
+        ]
       }
     },
     "/api/admin/import/products": {
@@ -4206,6 +4462,106 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/import/taxonomy": {
+      "post": {
+        "tags": [
+          "admin:data"
+        ],
+        "summary": "Import a category tree",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "An empty body imports the embedded Shopify taxonomy — ~14,000 categories, idempotent on (parent, title), so running it twice adds only what is missing. A body is the operator's own file in the published `gid : A > B > C` format. The embedded set also imports the field definitions in the same call, because they match on the taxonomy id this import writes and a tree from anywhere else has nothing to match. One transaction: half a taxonomy is worse than none. It can take minutes; the request extends its own read and write deadlines past the server's, and a client that disconnects rolls the transaction back.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the import did.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaxonomyImportResult"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/import/category-attributes": {
+      "post": {
+        "tags": [
+          "admin:data"
+        ],
+        "summary": "Import the attribute dictionary",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "An empty body imports the embedded dictionary; a body is the operator's own file in the two-section `handle = Label : v | v` then `gid : handle, handle` format. It attaches field lists to categories already carrying a taxonomy id, so it follows the tree rather than preceding it — against a tree from somewhere else every line is unmatched. The dictionary rows themselves are upserted, so a store's own entries survive. Same extended deadlines as the tree import.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the import did.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaxonomyAttributeImport"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -4597,6 +4953,273 @@
         }
       }
     },
+    "/api/admin/taxonomy-attributes": {
+      "get": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "List the attribute dictionary",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "The store-wide field dictionary: a handle, what the field is called, and the values it offers wherever a category asks for it. Ordered by handle, because a dictionary's order is its spelling.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Matches a handle or a label, case-folded."
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the dictionary.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TaxonomyAttribute"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Add a field to the dictionary",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "The handle is supplied rather than derived from the label: it is the key a category's metadata names, so deriving it would make renaming a label orphan every category using the field. It is folded to lower case and may carry neither whitespace nor a slash. Choices keep the order sent — \"XS, S, M, L, XL\" is the publisher's order and the only useful one — with blanks and exact repeats dropped.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaxonomyAttributeInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "One dictionary entry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaxonomyAttribute"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/admin/taxonomy-attributes/{handle}": {
+      "get": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Read one dictionary entry",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "handle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The key a category's metadata names, e.g. `animal-type`. Folded to lower case, because the match against a category's metadata is literal and the column is the primary key."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One dictionary entry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaxonomyAttribute"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Edit one dictionary entry",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Label and choices only. The handle is not patchable and sending it is a 400 rather than a silent no-op: it is the key every category's metadata holds, and renaming it here would detach them all without saying so. Moving a field to a new handle is a create, an edit of the categories that name it, and a delete. A sent `choices` array replaces the whole list.",
+        "parameters": [
+          {
+            "name": "handle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The key a category's metadata names, e.g. `animal-type`. Folded to lower case, because the match against a category's metadata is literal and the column is the primary key."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "choices": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One dictionary entry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaxonomyAttribute"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Remove one dictionary entry",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Never refused. A category that still names the handle keeps the field and simply offers no fixed choices, which is a free-text field rather than a broken one.",
+        "parameters": [
+          {
+            "name": "handle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The key a category's metadata names, e.g. `animal-type`. Folded to lower case, because the match against a category's metadata is literal and the column is the primary key."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "It is gone."
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/admin/variants/{id}/media": {
       "put": {
         "tags": [
@@ -4920,7 +5543,7 @@
           "cart"
         ],
         "summary": "Put a discount code on a cart",
-        "description": "Answers with what the code is worth for this basket. That amount is a preview, not a promise: nothing is consumed here, and checkout decides again under its own lock. A code that is valid now and exhausted in ten minutes is refused then, which is the only honest place to refuse it. A cart that has already been checked out refuses this: there is nothing left to discount, and the row would be one nothing reads.",
+        "description": "Answers with what the code is worth for this basket. That amount is a preview, not a promise: nothing is consumed here, and checkout decides again under its own lock. A code that is valid now and exhausted in ten minutes is refused then, which is the only honest place to refuse it. A cart that has already been checked out refuses this: there is nothing left to discount, and the row would be one nothing reads. A scoped code is refused when this basket holds none of the products, collections or categories it names — a valid code can be refused for this basket alone, and the message says so.",
         "parameters": [
           {
             "name": "token",
@@ -5163,7 +5786,7 @@
           "admin:catalog"
         ],
         "summary": "Update a discount",
-        "description": "`used_count` cannot be written: it is a fact about what happened, and letting an operator type over it would silently reopen a promotion that has been fully used.",
+        "description": "`used_count` cannot be written: it is a fact about what happened, and letting an operator type over it would silently reopen a promotion that has been fully used. `target_ids` absent leaves the stored set alone; a list replaces it whole, because the caller holds the whole list; `[]` clears it, which is refused while the resulting scope is still products, collections or categories. Setting `scope` to `order` clears the targets in the same transaction without needing `target_ids`. Moving the scope to or between the other three requires `target_ids` in the same body — the targets it would otherwise inherit are of the wrong kind. A patch that changes only `target_ids` is a real edit and bumps `updated_at`. (This operation still references DiscountInput rather than a DiscountPatch schema, so the field documents both verbs by accident rather than by design.)",
         "security": [
           {
             "adminToken": []
@@ -5672,6 +6295,114 @@
         }
       }
     },
+    "/api/admin/locations/{id}/movements": {
+      "get": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Everything that moved at one location",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "The same ledger from the other end: everything that has moved at one location, newest first. A location that has been deleted answers 404 — its rows stay readable on the variant route, where the location_code snapshot still names where the units were.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/From"
+          },
+          {
+            "$ref": "#/components/parameters/To"
+          },
+          {
+            "name": "variant_id",
+            "in": "query",
+            "description": "Narrow to one SKU.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "order_id",
+            "in": "query",
+            "description": "Only what one order caused.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "One or more movement kinds, comma-separated or repeated. An unknown kind is a 400 rather than an empty page.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "opening",
+                "adjust",
+                "stock_take",
+                "import",
+                "transfer_out",
+                "transfer_in",
+                "reserve",
+                "commit",
+                "release",
+                "restock",
+                "sell"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Movements, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/StockMovement"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/admin/locations/{id}/default": {
       "post": {
         "tags": [
@@ -5765,6 +6496,114 @@
         }
       }
     },
+    "/api/admin/variants/{id}/movements": {
+      "get": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "How a variant's stock got here",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "The append-only stock ledger for one variant, newest first. One row per real change, carrying two signed deltas, the balances after, what kind of movement it was, which path caused it, the operator's reason and the order behind it. Ordered by id rather than by created_at: a transfer writes both of its rows in one transaction and they share the instant exactly. Behind inventory.read, because reading how a count got there is reading stock.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/From"
+          },
+          {
+            "$ref": "#/components/parameters/To"
+          },
+          {
+            "name": "location_id",
+            "in": "query",
+            "description": "Narrow to one shelf.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "order_id",
+            "in": "query",
+            "description": "Only what one order caused.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "One or more movement kinds, comma-separated or repeated. An unknown kind is a 400 rather than an empty page.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "opening",
+                "adjust",
+                "stock_take",
+                "import",
+                "transfer_out",
+                "transfer_in",
+                "reserve",
+                "commit",
+                "release",
+                "restock",
+                "sell"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Movements, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/StockMovement"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/admin/variants/{id}/stock/transfer": {
       "post": {
         "tags": [
@@ -5807,6 +6646,11 @@
                     "type": "integer",
                     "minimum": 1,
                     "example": 10
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Optional. Why the units moved — rebalancing, a store request. Recorded verbatim on BOTH ends of the transfer, because the row that says they left and the row that says they arrived are one act."
                   }
                 }
               }
@@ -6544,7 +7388,8 @@
                 "location",
                 "superuser",
                 "invitation",
-                "role"
+                "role",
+                "taxonomy_attribute"
               ]
             }
           },
@@ -6653,66 +7498,6 @@
         ],
         "summary": "A product’s history",
         "description": "Product edits, options, media and collection membership, plus every variant edit under it — including the price, because a variant edit is filed against the product an operator is looking at. A record with no rows answers 200 with an empty array rather than 404: the log knowing nothing about a record is not the record being absent, and everything that existed before this table did has an honestly empty history.",
-        "security": [
-          {
-            "adminToken": []
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/PathID"
-          },
-          {
-            "$ref": "#/components/parameters/Limit"
-          },
-          {
-            "$ref": "#/components/parameters/Offset"
-          },
-          {
-            "$ref": "#/components/parameters/PageNumber"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "This record’s history, newest first.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/AuditEntry"
-                      }
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/ListMeta"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/Validation"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
-    "/api/admin/variants/{id}/history": {
-      "get": {
-        "tags": [
-          "admin:audit"
-        ],
-        "summary": "A variant’s stock history",
-        "description": "stock.adjust, stock.set and stock.transfer for this variant, each naming its location and both counts. Behind inventory.read rather than catalog.read because these are counts, not listings. A record with no rows answers 200 with an empty array rather than 404: the log knowing nothing about a record is not the record being absent, and everything that existed before this table did has an honestly empty history.",
         "security": [
           {
             "adminToken": []
@@ -8125,7 +8910,9 @@
           },
           "compare_at_price_minor": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "nullable": true,
+            "description": "Omitted or null records no compare-at price. On create there is nothing to leave alone, which is why this is not the three-state field the patch has."
           },
           "options": {
             "type": "array",
@@ -8830,7 +9617,8 @@
             "description": "Populated by the nested listing only. A flat listing omits it, so the same rows never appear twice in one response."
           },
           "metadata": {
-            "type": "object"
+            "type": "object",
+            "description": "The `attributes` key is the list of fields this category asks of a product, as `{key, label}`. A choice list written here is ignored on read — the dictionary at /api/admin/taxonomy-attributes is where a field's values live."
           },
           "created_at": {
             "type": "string",
@@ -8839,6 +9627,143 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "attributes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CategoryAttribute"
+            },
+            "description": "The fields this category asks of a product: its own declarations out of metadata, with the choices the shared dictionary holds for each handle. Populated by the ancestors route only."
+          }
+        }
+      },
+      "CategoryAttribute": {
+        "type": "object",
+        "description": "One field a category asks of a product. `key` and `label` are the category's own, out of its metadata; `choices` comes from the shared dictionary and is empty for a handle nobody has defined, which is a free-text field rather than a broken one.",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "sleeve-length"
+          },
+          "label": {
+            "type": "string",
+            "example": "Sleeve length"
+          },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TaxonomyAttribute": {
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": "string",
+            "example": "sleeve-length"
+          },
+          "label": {
+            "type": "string",
+            "example": "Sleeve length"
+          },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "Short",
+              "Long"
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TaxonomyAttributeInput": {
+        "type": "object",
+        "required": [
+          "handle",
+          "label"
+        ],
+        "properties": {
+          "handle": {
+            "type": "string",
+            "example": "sleeve-length"
+          },
+          "label": {
+            "type": "string",
+            "example": "Sleeve length"
+          },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "Short",
+              "Long"
+            ]
+          }
+        }
+      },
+      "TaxonomyImport": {
+        "type": "object",
+        "description": "Created counts rows written; matched counts categories that were already in the right place and were left alone, which is what makes a second run a no-op.",
+        "properties": {
+          "created": {
+            "type": "integer"
+          },
+          "matched": {
+            "type": "integer"
+          },
+          "skipped": {
+            "type": "integer"
+          }
+        }
+      },
+      "TaxonomyAttributeImport": {
+        "type": "object",
+        "description": "Unmatched counts lines naming a category this store does not have, which is the ordinary case when the tree came from a different release or only part of it was kept.",
+        "properties": {
+          "attributes": {
+            "type": "integer"
+          },
+          "categories": {
+            "type": "integer"
+          },
+          "unmatched": {
+            "type": "integer"
+          },
+          "skipped": {
+            "type": "integer"
+          }
+        }
+      },
+      "TaxonomyImportResult": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "embedded",
+              "upload"
+            ]
+          },
+          "categories": {
+            "$ref": "#/components/schemas/TaxonomyImport"
+          },
+          "attributes": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaxonomyAttributeImport"
+              }
+            ],
+            "description": "Absent for an uploaded file: the field definitions match on a taxonomy id only the embedded tree writes, so nothing was attempted and a report of zeros would read like a failure."
           }
         }
       },
@@ -8888,7 +9813,7 @@
           "metadata": {
             "type": "object",
             "additionalProperties": true,
-            "description": "The `attributes` key is the list of fields this category asks of a product, as `{key, label, choices}`, inherited by everything beneath it."
+            "description": "The `attributes` key is the list of fields this category asks of a product, as `{key, label}`, inherited by everything beneath it. A `choices` list written here is ignored on read — the dictionary at /api/admin/taxonomy-attributes is where a field's values live, keyed by the same handle."
           }
         }
       },
@@ -8957,7 +9882,7 @@
           "metadata": {
             "type": "object",
             "additionalProperties": true,
-            "description": "The `attributes` key is the list of fields this category asks of a product, as `{key, label, choices}`, inherited by everything beneath it."
+            "description": "The `attributes` key is the list of fields this category asks of a product, as `{key, label, choices}`, inherited by everything beneath it. A `choices` list written here is ignored on read; the dictionary holds a field's values."
           }
         }
       },
@@ -9060,13 +9985,28 @@
               "products",
               "categories"
             ],
-            "description": "Only `order` is evaluated. A scoped discount is stored and refused at checkout rather than silently applied to everything."
+            "description": "What the rule comes off. `order` is the whole basket. `products`, `collections` and `categories` mean the value comes off only the lines whose product is named by `target_ids` — directly, by collection membership read at checkout, or by category, which reaches the whole subtree beneath the categories named. A basket holding none of them is refused the code. `free_shipping` cannot be scoped: shipping is not part of any line."
+          },
+          "target_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "What a scoped rule points at: product, collection or category ids according to `scope`. Absent for an order-wide rule. Returned by both the listing and the single read, so a client editing a rule holds the whole set without a second request."
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscountTarget"
+            },
+            "description": "The same targets resolved for a reader. Returned by GET /api/admin/discounts/{id} only — a listing returns ids, because a rule aimed at two hundred products would otherwise put two hundred titles into a page of fifty rows."
           },
           "min_subtotal_minor": {
             "type": "integer",
             "format": "int64",
             "nullable": true,
-            "description": "The basket this needs before it applies. Absent is no minimum, which is not the same as zero."
+            "description": "The basket this needs before it applies, measured on the whole basket even for a scoped rule: it is the price of entry to a promotion, not the thing discounted. Absent is no minimum, which is not the same as zero."
           },
           "starts_at": {
             "type": "string",
@@ -9104,6 +10044,33 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "DiscountTarget": {
+        "type": "object",
+        "description": "One thing a scoped discount points at, resolved for a reader.",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "product",
+              "collection",
+              "category"
+            ],
+            "description": "Singular, against `scope`'s plural: a scope describes a rule, a kind describes one row. It is derived from the scope and never sent."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "title": {
+            "type": "string",
+            "description": "Read-only. A category's is its full ancestry (\"Apparel / Shirts\"), because the leaf alone does not say which one."
+          },
+          "missing": {
+            "type": "boolean",
+            "description": "The catalog row is gone. The target is kept rather than cleaned up, so a promotion that has narrowed is visible rather than silent."
           }
         }
       },
@@ -9173,13 +10140,21 @@
               "products",
               "categories"
             ],
-            "description": "Only `order` is evaluated. A scoped discount is stored and refused at checkout rather than silently applied to everything."
+            "description": "What the rule comes off. `order` is the whole basket. `products`, `collections` and `categories` mean the value comes off only the lines whose product is named by `target_ids` — directly, by collection membership read at checkout, or by category, which reaches the whole subtree beneath the categories named. A basket holding none of them is refused the code. `free_shipping` cannot be scoped: shipping is not part of any line."
+          },
+          "target_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "What the rule points at: product, collection or category ids according to `scope` — the kind is never sent, because the scope decides it. Required and non-empty for `products`, `collections` and `categories`; absent or empty for `order` and for an omitted scope. Duplicates are deduped and order is not stored. On PATCH: absent leaves the stored set alone, a list replaces it whole, and `[]` clears it, which is legal only when the resulting scope is `order`."
           },
           "min_subtotal_minor": {
             "type": "integer",
             "format": "int64",
             "nullable": true,
-            "description": "The basket this needs before it applies. Absent is no minimum, which is not the same as zero."
+            "description": "The basket this needs before it applies, measured on the whole basket even for a scoped rule: it is the price of entry to a promotion, not the thing discounted. Absent is no minimum, which is not the same as zero."
           },
           "starts_at": {
             "type": "string",
@@ -9378,6 +10353,108 @@
           },
           "metadata": {
             "type": "object"
+          }
+        }
+      },
+      "StockMovement": {
+        "type": "object",
+        "description": "One row of the append-only stock ledger. Two deltas rather than one, because a commit takes units out of the reservation and off the shelf in the same movement and a single signed number could not say which happened. Every row records what the statement APPLIED, never what the caller asked for — five of the writers move nothing for a variant that does not track inventory, one floors a release at zero, and two write absolutely — which is what makes sum(on_hand_delta) reconcile to on_hand for every (variant, location) pair. variant_id and location_id go null when their parent is deleted, while sku and location_code keep what the row was written with, so history survives a deleted SKU and a closed shelf. A null superuser_id means no person was behind it; `source` then names which path was.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "variant_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Null once the variant has been deleted; `sku` still names it."
+          },
+          "sku": {
+            "type": "string"
+          },
+          "location_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Null once the location has been deleted; `location_code` still names it."
+          },
+          "location_code": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "opening",
+              "adjust",
+              "stock_take",
+              "import",
+              "transfer_out",
+              "transfer_in",
+              "reserve",
+              "commit",
+              "release",
+              "restock",
+              "sell"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "checkout",
+              "order",
+              "sweeper",
+              "import",
+              "migration"
+            ],
+            "description": "Which path moved the stock, not who: whether a person or a static admin token was behind an `admin` movement is superuser_id's job. `migration` belongs to the ledger's own opening balances."
+          },
+          "on_hand_delta": {
+            "type": "integer"
+          },
+          "reserved_delta": {
+            "type": "integer"
+          },
+          "on_hand_after": {
+            "type": "integer"
+          },
+          "reserved_after": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string",
+            "description": "The operator's own words, when they gave any."
+          },
+          "counterpart_location_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "The other end of a transfer."
+          },
+          "counterpart_code": {
+            "type": "string"
+          },
+          "order_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "order_number": {
+            "type": "string"
+          },
+          "superuser_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Null when no person was behind the movement — a checkout, the unpaid sweeper, a script holding a static token — or when the operator's account has since been deleted, in which case actor_email still names them."
+          },
+          "actor_email": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -9692,7 +10769,8 @@
               "location",
               "superuser",
               "invitation",
-              "role"
+              "role",
+              "taxonomy_attribute"
             ]
           },
           "entity_id": {

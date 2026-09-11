@@ -143,6 +143,17 @@ WHERE dead AND event_name = 'order.paid';
 `GET /health/ready` covers the database. Beyond that, watch what you would for
 any Go service: latency, error rate, connection-pool saturation.
 
+**A stock ledger that cannot explain the shelf.** `gocommerce doctor`'s
+`stock ledger` check sums `stock_movements` per (variant, location) and
+compares it with `variant_stock`. Inside the engine the two cannot drift — the
+movement row is written in the same transaction as the balance it explains — so
+a warning means something wrote `variant_stock` directly, against
+[rule 3](../AGENTS.md). The balances are still the truth; what is missing is the
+explanation. It warns rather than fails deliberately: the store is still
+serving, and a check that failed forever over one hand-fix years ago is a check
+operators learn to ignore. It is the production counterpart of
+`TestTheLedgerReconcilesToTheShelf`.
+
 **Reserved stock that never resolves.** The unpaid-order sweeper cancels
 pending orders past `OrderTTL` and returns their inventory. If reserved
 quantities climb anyway, look for orders stuck `pending` with a payment status
@@ -151,7 +162,7 @@ nobody ever settled.
 ## Housekeeping
 
 The engine sweeps expired carts and unsettled orders — payment pending or
-recorded as failed — every five minutes on its own. Two tables grow forever and are yours to prune:
+recorded as failed — every five minutes on its own. Three tables grow forever and are yours to prune:
 
 ```sql
 -- Delivered events, once you no longer need the audit trail.
@@ -159,10 +170,16 @@ DELETE FROM outbox_events WHERE published_at < now() - interval '90 days';
 
 -- Webhook idempotency records, well past any gateway's retry window.
 DELETE FROM payments_stripe_events WHERE received_at < now() - interval '30 days';
+
+-- Stock movements, roughly two rows per order line plus every operator
+-- movement. Nothing in the engine deletes one.
+DELETE FROM stock_movements WHERE created_at < now() - interval '2 years';
 ```
 
 Keep them longer than you think you need. They are how you answer "did we
-actually send that?" three weeks later.
+actually send that?" and "why does the count say 4?" three weeks later — and
+pruning the ledger is the one thing that makes the `stock ledger` check warn on
+purpose, so prune whole periods rather than individual rows, and expect it.
 
 ## Data in and out
 

@@ -85,6 +85,8 @@ func (a *App) Diagnose(ctx context.Context) Report {
 	add(a.checkFulfillment(ctx))
 	add(a.checkRefunds(ctx))
 	add(a.checkReturns(ctx))
+	add(a.checkLedger(ctx))
+	add(a.checkDiscounts(ctx))
 
 	rep.OK = true
 	for _, c := range rep.Checks {
@@ -600,5 +602,129 @@ func (a *App) checkReturns(ctx context.Context) Diagnostic {
 		return d
 	}
 	d.Detail = fmt.Sprintf("%d return(s) received, none over what was sold", received)
+	return d
+}
+
+// checkLedger asks whether the stock ledger still explains the shelf: for every
+// (variant, location) pair, sum(on_hand_delta) has to equal on_hand and
+// sum(reserved_delta) has to equal reserved.
+//
+// It is the production counterpart of TestTheLedgerReconcilesToTheShelf, and it
+// is the only mechanism in the engine that catches a writer bypassing
+// app.Stock(): every service path writes its movement inside the transaction
+// that moved the balance, so inside the engine the two cannot drift — a drift
+// is raw SQL against variant_stock, which is AGENTS rule 3.
+//
+// Warn rather than fail, deliberately. The shelf is still correct and the store
+// is still serving; only the explanation is missing. A fail would make `doctor`
+// exit non-zero forever for a store that ran one hand-fix years ago, which
+// trains an operator to ignore the whole report — the opposite posture from
+// checkCatalog's oversold count, where a CHECK constraint is supposed to make
+// the state impossible in the first place.
+func (a *App) checkLedger(ctx context.Context) Diagnostic {
+	d := Diagnostic{Name: "stock ledger"}
+
+	var drifted, total int
+	err := a.db.QueryRowContext(ctx, `
+		SELECT
+		    (SELECT count(*) FROM variant_stock vs
+		      WHERE vs.on_hand <> coalesce((SELECT sum(m.on_hand_delta) FROM stock_movements m
+		                                     WHERE m.variant_id = vs.variant_id
+		                                       AND m.location_id = vs.location_id), 0)
+		         OR vs.reserved <> coalesce((SELECT sum(m.reserved_delta) FROM stock_movements m
+		                                      WHERE m.variant_id = vs.variant_id
+		                                        AND m.location_id = vs.location_id), 0)),
+		    (SELECT count(*) FROM stock_movements)`).Scan(&drifted, &total)
+	if err != nil {
+		d.Status, d.Detail = StatusWarn, "cannot read the stock ledger: "+err.Error()
+		d.Hint = "check that the migrations are applied"
+		return d
+	}
+
+	if drifted > 0 {
+		d.Status = StatusWarn
+		d.Detail = fmt.Sprintf("%d stock row(s) the ledger cannot account for, across %d movement(s)",
+			drifted, total)
+		d.Hint = "something wrote variant_stock outside app.Stock() — see rule 3 in AGENTS.md; " +
+			"the balances are still the truth, the ledger just cannot explain them"
+		return d
+	}
+	d.Status = StatusOK
+	d.Detail = fmt.Sprintf("%d movement(s) recorded; every balance reconciles", total)
+	return d
+}
+
+// checkDiscounts looks for promotions that cannot do what their form said.
+//
+// The scoped states below are refused by the service from here on, so a hit
+// means either a row written before that, or SQL run by hand, or a partial
+// restore. Reporting them is what stands in for the foreign key a polymorphic
+// target column cannot have: a promotion that has narrowed is put in front of
+// an operator rather than in front of a constraint.
+func (a *App) checkDiscounts(ctx context.Context) Diagnostic {
+	d := Diagnostic{Name: "discounts"}
+
+	var scoped, untargeted, mismatched, dangling, freeShipping int
+	err := a.db.QueryRowContext(ctx, `
+		SELECT
+		    (SELECT count(*) FROM discounts WHERE scope <> 'order'),
+		    -- The one state the service now refuses to create: a rule that
+		    -- names a kind of thing and then names none of them. It is refused
+		    -- at the till, which is the worst place to find out.
+		    (SELECT count(*) FROM discounts d WHERE d.scope <> 'order'
+		       AND NOT EXISTS (SELECT 1 FROM discount_targets t WHERE t.discount_id = d.id)),
+		    -- A target row whose kind disagrees with its discount's scope.
+		    -- Inert — the matcher only reads the kind the scope names — but
+		    -- somebody meant something by it.
+		    (SELECT count(*) FROM discount_targets t JOIN discounts d ON d.id = t.discount_id
+		      WHERE t.kind <> CASE d.scope WHEN 'products'    THEN 'product'
+		                                   WHEN 'collections' THEN 'collection'
+		                                   WHEN 'categories'  THEN 'category'
+		                                   ELSE '' END),
+		    -- A target naming something that has been deleted. The rule still
+		    -- works; it just covers less than it says it does.
+		    (SELECT count(*) FROM discount_targets t
+		      WHERE (t.kind = 'product'    AND NOT EXISTS (SELECT 1 FROM products    p WHERE p.id = t.target_id))
+		         OR (t.kind = 'collection' AND NOT EXISTS (SELECT 1 FROM collections c WHERE c.id = t.target_id))
+		         OR (t.kind = 'category'   AND NOT EXISTS (SELECT 1 FROM categories  c WHERE c.id = t.target_id))),
+		    (SELECT count(*) FROM discounts WHERE kind = 'free_shipping' AND scope <> 'order')
+	`).Scan(&scoped, &untargeted, &mismatched, &dangling, &freeShipping)
+	if err != nil {
+		d.Status, d.Detail = StatusWarn, "cannot inspect discounts: "+err.Error()
+		d.Hint = "check that the migrations are applied"
+		return d
+	}
+
+	// Fail wins over warn: a rule that can never apply is a promotion an
+	// operator believes is running.
+	if untargeted > 0 {
+		d.Status = StatusFail
+		d.Detail = fmt.Sprintf("%d scoped discount(s) point at nothing", untargeted)
+		d.Hint = "a scoped rule with no targets is refused at the till; " +
+			"give it targets or set its scope back to the whole basket"
+		return d
+	}
+	if dangling > 0 {
+		d.Status = StatusWarn
+		d.Detail = fmt.Sprintf("%d discount target(s) name something that has been deleted", dangling)
+		d.Hint = "those promotions have narrowed; re-aim them or remove the dead targets"
+		return d
+	}
+	if mismatched > 0 {
+		d.Status = StatusWarn
+		d.Detail = fmt.Sprintf("%d target row(s) disagree with their discount's scope", mismatched)
+		d.Hint = "those rows are ignored; remove them"
+		return d
+	}
+	if freeShipping > 0 {
+		d.Status = StatusWarn
+		d.Detail = fmt.Sprintf("%d free-shipping rule(s) carry a scope", freeShipping)
+		d.Hint = "shipping is not a line, so these are refused at the till; " +
+			"set the scope back to the whole basket or deactivate them"
+		return d
+	}
+
+	d.Status = StatusOK
+	d.Detail = fmt.Sprintf("%d scoped discount(s), all targeted", scoped)
 	return d
 }

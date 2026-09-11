@@ -68,7 +68,7 @@ func TestReturnRestocksToTheShelfTheLineLeftFrom(t *testing.T) {
 	shop := newLocation(t, app, "SHOP", "The shop floor", 1) // ahead of the default
 	product := simpleProduct(t, app, "RET-SHELF", 1000, 0)
 	variant := product.DefaultVariant()
-	if _, err := app.Stock().Adjust(ctx, variant.ID, shop.ID, 5); err != nil {
+	if _, err := app.Stock().Adjust(ctx, variant.ID, shop.ID, 5, ""); err != nil {
 		t.Fatalf("stock the shop: %v", err)
 	}
 

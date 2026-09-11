@@ -34,6 +34,8 @@ func coreMigrations() []Migration {
 		{ID: "0023_unsettled_sweep", SQL: migration0023UnsettledSweep},
 		{ID: "0024_order_refunds", SQL: migration0024OrderRefunds},
 		{ID: "0025_returns", SQL: migration0025Returns},
+		{ID: "0026_stock_movements", SQL: migration0026StockMovements},
+		{ID: "0027_collection_curation", SQL: migration0027CollectionCuration},
 	}
 }
 
@@ -1288,4 +1290,190 @@ CREATE TABLE order_return_lines (
 -- The cap reads every return line for one order line, on every return. It
 -- rides an index rather than the table.
 CREATE INDEX order_return_lines_line_idx ON order_return_lines (order_line_id, return_id);
+`
+
+// M26 — the stock ledger.
+//
+// Until now every stock movement was an in-place UPDATE and the only trace was
+// updated_at, which the next movement overwrote. "The count says 4 and the
+// shelf has 2" had no answer anywhere in the system and a stock-take dispute
+// could not be settled. Orders have kept a durable history since M3
+// (outbox_events); stock kept none.
+//
+// Two deltas rather than one signed number, because variant_stock holds two
+// independent counters and commitStock moves both in one statement: a
+// reservation leaving the shelf is not the same event as a unit leaving it, and
+// one column cannot say which happened. The balances *after* sit beside them so
+// a row reads on its own, without summing every row before it — which is what a
+// paged list starting in the middle of history requires, and what lets `doctor`
+// find a drift with one query.
+//
+// Every row records what the statement APPLIED, never what the caller asked
+// for. Five of the writers wrap their quantity in `CASE WHEN track_inventory`,
+// one floors a release at zero, and two write absolutely — so
+// `sum(on_hand_delta)` reconciling to `on_hand` for every pair is a property of
+// the writers, not of the schema, and it is the property the whole table exists
+// for.
+//
+// The names are snapshots, for the reason order_lines snapshots sku and title:
+// history that dissolves when a SKU is deleted, a location closes or an
+// employee leaves is exactly the history a dispute needs. It also makes both
+// read routes a single-table index scan with no joins.
+const migration0026StockMovements = `
+CREATE TABLE stock_movements (
+    id             bigserial   PRIMARY KEY,
+    -- SET NULL rather than variant_stock's CASCADE (M17). That CASCADE is right
+    -- for a live balance and wrong for history: variants really are deleted
+    -- (catalog.go, options.go), and "who deleted the SKU that held 40 units" is
+    -- a question this table exists to answer. The snapshot beside it is what
+    -- keeps the row legible afterwards — and it is a snapshot, so a SKU renamed
+    -- later leaves older rows naming what the shelf was called at the time.
+    variant_id     bigint      REFERENCES variants (id) ON DELETE SET NULL,
+    sku            text        NOT NULL,
+    -- SET NULL rather than variant_stock's RESTRICT. That RESTRICT stops a
+    -- location leaving while it holds units, and refuseIfHolding already
+    -- enforces it before the delete runs; a ledger that also refused would make
+    -- every location ever counted permanently undeletable, which is a different
+    -- policy than this table was asked for. order_lines.location_id is the
+    -- precedent, and its reason is this one verbatim.
+    location_id    bigint      REFERENCES locations (id) ON DELETE SET NULL,
+    location_code  text        NOT NULL,
+    kind           text        NOT NULL CHECK (kind IN (
+                       'opening', 'adjust', 'stock_take', 'import',
+                       'transfer_out', 'transfer_in',
+                       'reserve', 'commit', 'release', 'restock', 'sell')),
+    -- Which PATH moved the stock, not who: whether a person or the static admin
+    -- token was behind an 'admin' movement is superuser_id's job, and storing
+    -- that twice would be a stored duplicate. Paired with a nullable
+    -- superuser_id this makes a null actor a fact rather than a hole —
+    -- 'checkout' and 'sweeper' have no person by definition.
+    source         text        NOT NULL CHECK (source IN (
+                       'admin', 'checkout', 'order', 'sweeper', 'import', 'migration')),
+    on_hand_delta  integer     NOT NULL,
+    reserved_delta integer     NOT NULL,
+    -- No CHECK on either balance. on_hand legitimately goes negative for a
+    -- variant with continue_selling, and a ledger constraint stricter than
+    -- variant_stock's own (which has only CHECK (reserved >= 0)) would refuse to
+    -- record a sale the shelf accepted. An audit trail must never become a
+    -- business rule.
+    on_hand_after  integer     NOT NULL,
+    reserved_after integer     NOT NULL,
+    reason         text        NOT NULL DEFAULT '',
+    -- The other end of a transfer. "3 units left here" is half an answer without
+    -- "and went to the shop", and the pair cannot be found by timestamp because
+    -- both rows are written by one transaction and share now() exactly. The id
+    -- as well as the code, so the panel can link to the place while the code
+    -- keeps the row readable after it closes.
+    counterpart_location_id bigint REFERENCES locations (id) ON DELETE SET NULL,
+    counterpart_code        text   NOT NULL DEFAULT '',
+    -- No foreign key, like outbox_events.aggregate_id: checkout reserves stock
+    -- before the orders row exists, inside the same transaction, and those rows
+    -- are completed by attachMovementsToOrder before anyone can read them.
+    order_id       bigint,
+    order_number   text        NOT NULL DEFAULT '',
+    -- SET NULL for superuser_invitations.invited_by's reason (M18): who moved
+    -- the stock is a fact about the past and outlives their account.
+    -- actor_email is what survives them, so a null id with an address reads as
+    -- "somebody who has since left" and a null id with none reads as "the
+    -- system". It is a snapshot for the same reason admin_audit's is: an
+    -- operator who changes their address leaves the old one on old rows.
+    superuser_id   bigint      REFERENCES superusers (id) ON DELETE SET NULL,
+    actor_email    text        NOT NULL DEFAULT '',
+    created_at     timestamptz NOT NULL DEFAULT now(),
+    -- A row here says something happened. An untracked variant's reservation
+    -- moves nothing by design, and a re-run of an unchanged import changes
+    -- nothing — a ledger padded with those hides the rows that matter. The one
+    -- exception is a stock take: an operator who counted a shelf and found the
+    -- number it already had has produced evidence, and that is one of the two
+    -- questions this table exists to answer.
+    CONSTRAINT stock_movements_says_something
+        CHECK (on_hand_delta <> 0 OR reserved_delta <> 0 OR kind = 'stock_take')
+);
+
+-- id, not created_at: a transfer writes both of its rows at the same instant, so
+-- the serial is the only total ordering. This is outbox_aggregate_idx's shape
+-- and outbox_aggregate_idx's reason — per-parent history, newest first.
+CREATE INDEX stock_movements_variant_idx  ON stock_movements (variant_id, id DESC);
+CREATE INDEX stock_movements_location_idx ON stock_movements (location_id, id DESC);
+-- Partial, because most rows are operator movements with no order at all.
+CREATE INDEX stock_movements_order_idx    ON stock_movements (order_id, id DESC)
+    WHERE order_id IS NOT NULL;
+
+-- Every balance that already exists gets one row explaining it, or the ledger
+-- begins by disagreeing with the shelf: sum(on_hand_delta) per (variant,
+-- location) is the invariant the doctor's stock-ledger check runs, and an
+-- unexplained opening balance would break it for every variant in the store on
+-- day one.
+--
+-- created_at is the upgrade time and not the stock's real age. That is the only
+-- honest thing this migration knows — updated_at is when the balance last
+-- CHANGED, which for an untouched row is when M17 backfilled it — so the reason
+-- text says what the date means. An operator reading a variant's history on day
+-- two will see one 'opening' row where they expected months of receipts.
+--
+-- Rows already at 0/0 are bookkeeping, not stock, and get nothing: their sum is
+-- 0 either way, so the invariant holds without them.
+INSERT INTO stock_movements (variant_id, sku, location_id, location_code, kind, source,
+                             on_hand_delta, reserved_delta, on_hand_after, reserved_after,
+                             reason)
+SELECT vs.variant_id, v.sku, vs.location_id, l.code, 'opening', 'migration',
+       vs.on_hand, vs.reserved, vs.on_hand, vs.reserved,
+       'balance carried forward when the ledger began'
+FROM variant_stock vs
+JOIN variants v  ON v.id = vs.variant_id
+JOIN locations l ON l.id = vs.location_id
+WHERE vs.on_hand <> 0 OR vs.reserved <> 0;
+`
+
+// M27 — where a product sits inside a collection.
+//
+// product_collections had one `position` column and two readings of it had
+// grown. SetProductCollections writes it from the index of the PRODUCT's own
+// collection list, and loadProductCollections reads it back that way to order a
+// product's chips. ListProducts read the same column as the product's rank
+// INSIDE ONE COLLECTION, under the comment "a collection is curated by hand".
+// One integer cannot carry both, and only the first meaning was ever written —
+// so a collection's order was an artefact of how many other collections each of
+// its members happened to be in, which is not an order anybody chose.
+//
+// `position` keeps the first reading, untouched. This column is the second, and
+// it is what PUT /api/admin/collections/{id}/products writes (D40).
+const migration0027CollectionCuration = migration0027Alter + curationBackfill + migration0027Index
+
+const migration0027Alter = `
+ALTER TABLE product_collections
+    ADD COLUMN member_position integer NOT NULL DEFAULT 0;
+`
+
+// curationBackfill freezes exactly what stores can see today. It has a name of
+// its own so the migration's test runs the statement the migration ran rather
+// than a copy of it that can drift.
+//
+// The pre-migration visible order is `ORDER BY pc.position, pc.product_id` — the
+// shipped expression, NOT product_id alone. A product that belongs to three
+// collections carries member positions 0, 1 and 2 across its three rows, so
+// numbering by product_id would silently reshuffle every collection whose
+// members sit in more than one, including the storefront order served by
+// GET /api/collections/{slug}. Migrations are append-only, so that mistake
+// would have been unfixable in place.
+//
+// Numbering by the shipped expression means nothing an operator is looking at
+// moves on upgrade, and a product added afterwards lands at the end rather than
+// in the middle of a list somebody has been reading.
+const curationBackfill = `
+UPDATE product_collections pc
+SET member_position = ranked.rn - 1
+FROM (
+    SELECT product_id, collection_id,
+           row_number() OVER (
+               PARTITION BY collection_id ORDER BY position, product_id) AS rn
+    FROM product_collections
+) ranked
+WHERE pc.product_id = ranked.product_id
+  AND pc.collection_id = ranked.collection_id;
+`
+
+const migration0027Index = `
+CREATE INDEX product_collections_member_idx
+    ON product_collections (collection_id, member_position, product_id);
 `

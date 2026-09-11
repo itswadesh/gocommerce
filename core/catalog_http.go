@@ -167,27 +167,13 @@ func (a *App) handleAdminListProducts(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	q := r.URL.Query()
-	status := q.Get("status")
-	if status != "" && !validProductStatus(status) {
-		RespondError(w, r, Validationf("status must be draft, active or archived"))
-		return
-	}
-	categoryID, err := queryInt64(q, "category_id")
+	pq, err := productQueryFrom(r.URL.Query())
 	if err != nil {
 		RespondError(w, r, err)
 		return
 	}
-	products, total, err := a.catalog.ListProducts(r.Context(), ProductQuery{
-		Search:      q.Get("q"),
-		Status:      status,
-		Vendor:      q.Get("vendor"),
-		ProductType: q.Get("product_type"),
-		Tag:         q.Get("tag"),
-		CategoryID:  categoryID,
-		Limit:       limit,
-		Offset:      offset,
-	})
+	pq.Limit, pq.Offset = limit, offset
+	products, total, err := a.catalog.ListProducts(r.Context(), pq)
 	if err != nil {
 		RespondError(w, r, err)
 		return
@@ -356,6 +342,36 @@ func pathInt64(r *http.Request, name string) (int64, error) {
 		return 0, Validationf("%s must be a positive integer", name)
 	}
 	return id, nil
+}
+
+// productQueryFrom reads the filter vocabulary the admin product listing, the
+// collection membership read and the catalog export share, so an operator can
+// export exactly the rows a screen is showing them.
+//
+// Paging is deliberately not part of it: a listing takes a window, an export
+// takes everything that matched.
+func productQueryFrom(q url.Values) (ProductQuery, error) {
+	status := q.Get("status")
+	if status != "" && !validProductStatus(status) {
+		return ProductQuery{}, Validationf("status must be draft, active or archived")
+	}
+	categoryID, err := queryInt64(q, "category_id")
+	if err != nil {
+		return ProductQuery{}, err
+	}
+	collectionID, err := queryInt64(q, "collection_id")
+	if err != nil {
+		return ProductQuery{}, err
+	}
+	return ProductQuery{
+		Search:       q.Get("q"),
+		Status:       status,
+		Vendor:       q.Get("vendor"),
+		ProductType:  q.Get("product_type"),
+		Tag:          q.Get("tag"),
+		CategoryID:   categoryID,
+		CollectionID: collectionID,
+	}, nil
 }
 
 // queryInt64 reads an optional positive id from the query string. Absent is 0

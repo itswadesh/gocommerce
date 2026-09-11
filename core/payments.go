@@ -120,7 +120,7 @@ func (p *Payments) MarkPaid(ctx context.Context, orderID int64, reference string
 		o.PaymentStatus = PaymentPaid
 
 		if o.Status == OrderPending {
-			if err := commitOrderStock(ctx, tx, o); err != nil {
+			if err := commitOrderStock(ctx, tx, o, ""); err != nil {
 				return transitionResult{}, err
 			}
 			if err := setOrderStatus(ctx, tx, o.ID, OrderConfirmed); err != nil {

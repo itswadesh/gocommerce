@@ -202,3 +202,127 @@ func TestDoctorReportsFulfillmentDrift(t *testing.T) {
 		t.Errorf("detail = %q, want it to name the count", got.Detail)
 	}
 }
+
+// TestDoctorNoticesAShelfWrittenBehindTheService: the ledger row and the
+// balance are written by one transaction, so inside the engine they cannot
+// drift. A drift is raw SQL against variant_stock — rule 3 — and this check is
+// the only thing in the store that would ever say so.
+func TestDoctorNoticesAShelfWrittenBehindTheService(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+
+	product := simpleProduct(t, app, "DOC-LEDGER", 900, 6)
+	vid := product.DefaultVariant().ID
+	if got := diagnostic(t, app.Diagnose(ctx), "stock ledger"); got.Status != StatusOK {
+		t.Fatalf("an untouched store is already drifting: %+v", got)
+	}
+
+	if _, err := app.DB().ExecContext(ctx,
+		`UPDATE variant_stock SET on_hand = on_hand + 5 WHERE variant_id = $1`, vid); err != nil {
+		t.Fatalf("write the shelf by hand: %v", err)
+	}
+
+	got := diagnostic(t, app.Diagnose(ctx), "stock ledger")
+	if got.Status != StatusWarn {
+		t.Errorf("check = %+v, want a warning about the balance nothing explains", got)
+	}
+	if !strings.Contains(got.Detail, "1 stock row") {
+		t.Errorf("detail = %q, want it to name the drifted count", got.Detail)
+	}
+	if !strings.Contains(got.Hint, "rule 3") {
+		t.Errorf("hint = %q, want it to name the rule that was broken", got.Hint)
+	}
+
+	// And a legitimate movement afterwards does not absorb the drift, which is
+	// the whole difference between recording what a statement applied and
+	// deriving it from the previous row.
+	if _, err := app.Stock().Adjust(ctx, vid, 0, 2, "a delivery, honestly recorded"); err != nil {
+		t.Fatalf("adjust: %v", err)
+	}
+	if got := diagnostic(t, app.Diagnose(ctx), "stock ledger"); got.Status != StatusWarn {
+		t.Errorf("the drift vanished behind a later movement: %+v", got)
+	}
+}
+
+// Every scoped state the service now refuses to create is still reachable by
+// hand, by a restore, or by a row written before it. The doctor is what notices.
+func TestDoctorFlagsScopedDiscountTrouble(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("a healthy store counts its scoped rules", func(t *testing.T) {
+		app := newTestApp(t)
+		product := simpleProduct(t, app, "DOC-OK", 1000, 5)
+		newDiscount(t, app, DiscountInput{
+			Title: "Scoped", Kind: DiscountPercentage, ValueBP: 1000,
+			Scope: DiscountScopeProducts, TargetIDs: []int64{product.ID},
+		})
+
+		got := diagnostic(t, app.Diagnose(ctx), "discounts")
+		if got.Status != StatusOK {
+			t.Errorf("status = %q, want ok: %s", got.Status, got.Detail)
+		}
+		if !strings.Contains(got.Detail, "1 scoped discount(s)") {
+			t.Errorf("detail = %q, want the scoped count", got.Detail)
+		}
+	})
+
+	t.Run("a rule pointing at nothing fails", func(t *testing.T) {
+		app := newTestApp(t)
+		if _, err := app.db.ExecContext(ctx, `
+			INSERT INTO discounts (title, kind, value_bp, scope)
+			VALUES ('Aimless', 'percentage', 1000, 'products')`); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		got := diagnostic(t, app.Diagnose(ctx), "discounts")
+		if got.Status != StatusFail {
+			t.Errorf("status = %q, want fail: %s", got.Status, got.Detail)
+		}
+		if got.Hint == "" {
+			t.Error("a failing check with no hint just moves the puzzle")
+		}
+	})
+
+	t.Run("a target naming a deleted product warns", func(t *testing.T) {
+		app := newTestApp(t)
+		product := simpleProduct(t, app, "DOC-GONE", 1000, 5)
+		newDiscount(t, app, DiscountInput{
+			Title: "Narrowing", Kind: DiscountPercentage, ValueBP: 1000,
+			Scope: DiscountScopeProducts, TargetIDs: []int64{product.ID},
+		})
+		if err := app.Products().DeleteProduct(ctx, product.ID); err != nil {
+			t.Fatalf("delete product: %v", err)
+		}
+
+		got := diagnostic(t, app.Diagnose(ctx), "discounts")
+		if got.Status != StatusWarn {
+			t.Errorf("status = %q, want warn: %s", got.Status, got.Detail)
+		}
+		if !strings.Contains(got.Detail, "has been deleted") {
+			t.Errorf("detail = %q, want it to say the target is gone", got.Detail)
+		}
+	})
+
+	t.Run("a free-shipping rule carrying a scope warns", func(t *testing.T) {
+		app := newTestApp(t)
+		var id int64
+		if err := app.db.QueryRowContext(ctx, `
+			INSERT INTO discounts (title, kind, scope)
+			VALUES ('Old free shipping', 'free_shipping', 'products') RETURNING id`).Scan(&id); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		product := simpleProduct(t, app, "DOC-SHIP", 1000, 5)
+		if _, err := app.db.ExecContext(ctx, `
+			INSERT INTO discount_targets (discount_id, kind, target_id)
+			VALUES ($1, 'product', $2)`, id, product.ID); err != nil {
+			t.Fatalf("seed target: %v", err)
+		}
+
+		got := diagnostic(t, app.Diagnose(ctx), "discounts")
+		if got.Status != StatusWarn {
+			t.Errorf("status = %q, want warn: %s", got.Status, got.Detail)
+		}
+		if !strings.Contains(got.Detail, "free-shipping") {
+			t.Errorf("detail = %q, want it to name the free-shipping rules", got.Detail)
+		}
+	})
+}

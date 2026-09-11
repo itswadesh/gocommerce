@@ -111,7 +111,7 @@ func TestVariantTotalsAreTheSumAcrossLocations(t *testing.T) {
 	vid := p.DefaultVariant().ID
 	shop := newLocation(t, app, "shop", "The shop", 1)
 
-	if _, err := app.Stock().Adjust(ctx, vid, shop.ID, 6); err != nil {
+	if _, err := app.Stock().Adjust(ctx, vid, shop.ID, 6, ""); err != nil {
 		t.Fatalf("adjust at the shop: %v", err)
 	}
 
@@ -140,7 +140,7 @@ func TestReservationPrefersTheHigherPriorityLocation(t *testing.T) {
 	p := simpleProduct(t, app, "LOC-PRIO", 1000, 5)
 	vid := p.DefaultVariant().ID
 	near := newLocation(t, app, "near", "Near warehouse", -1)
-	if _, err := app.Stock().Adjust(ctx, vid, near.ID, 5); err != nil {
+	if _, err := app.Stock().Adjust(ctx, vid, near.ID, 5, ""); err != nil {
 		t.Fatalf("stock the near warehouse: %v", err)
 	}
 
@@ -165,7 +165,7 @@ func TestReservationFallsThroughToWhereThereIsEnough(t *testing.T) {
 	p := simpleProduct(t, app, "LOC-FALL", 1000, 1)
 	vid := p.DefaultVariant().ID
 	far := newLocation(t, app, "far", "Far warehouse", 5)
-	if _, err := app.Stock().Adjust(ctx, vid, far.ID, 10); err != nil {
+	if _, err := app.Stock().Adjust(ctx, vid, far.ID, 10, ""); err != nil {
 		t.Fatalf("stock the far warehouse: %v", err)
 	}
 
@@ -190,7 +190,7 @@ func TestCancelPutsUnitsBackOnTheShelfTheyLeft(t *testing.T) {
 	p := simpleProduct(t, app, "LOC-BACK", 1000, 0)
 	vid := p.DefaultVariant().ID
 	shop := newLocation(t, app, "shop", "The shop", 3)
-	if _, err := app.Stock().Adjust(ctx, vid, shop.ID, 5); err != nil {
+	if _, err := app.Stock().Adjust(ctx, vid, shop.ID, 5, ""); err != nil {
 		t.Fatalf("stock the shop: %v", err)
 	}
 
@@ -222,7 +222,7 @@ func TestTransferKeepsTheStoreTotalUnchanged(t *testing.T) {
 	def := defaultLocation(t, app)
 	shop := newLocation(t, app, "shop", "The shop", 1)
 
-	if _, err := app.Stock().Move(ctx, vid, def.ID, shop.ID, 4); err != nil {
+	if _, err := app.Stock().Move(ctx, vid, def.ID, shop.ID, 4, ""); err != nil {
 		t.Fatalf("move: %v", err)
 	}
 
@@ -255,10 +255,10 @@ func TestTransferWillNotMoveReservedUnits(t *testing.T) {
 		t.Fatalf("reserved at the default = %d, want 2", reserved)
 	}
 
-	if _, err := app.Stock().Move(ctx, vid, def.ID, shop.ID, 2); err == nil {
+	if _, err := app.Stock().Move(ctx, vid, def.ID, shop.ID, 2, ""); err == nil {
 		t.Fatal("moved 2 units when only 1 was free")
 	}
-	if _, err := app.Stock().Move(ctx, vid, def.ID, shop.ID, 1); err != nil {
+	if _, err := app.Stock().Move(ctx, vid, def.ID, shop.ID, 1, ""); err != nil {
 		t.Fatalf("moving the one free unit: %v", err)
 	}
 }
@@ -273,7 +273,7 @@ func TestAStrandedLocationCannotBeClosed(t *testing.T) {
 	p := simpleProduct(t, app, "LOC-STUCK", 1000, 0)
 	vid := p.DefaultVariant().ID
 	shop := newLocation(t, app, "shop", "The shop", 1)
-	if _, err := app.Stock().Adjust(ctx, vid, shop.ID, 3); err != nil {
+	if _, err := app.Stock().Adjust(ctx, vid, shop.ID, 3, ""); err != nil {
 		t.Fatalf("stock the shop: %v", err)
 	}
 
@@ -287,7 +287,7 @@ func TestAStrandedLocationCannotBeClosed(t *testing.T) {
 
 	// Emptying it clears both refusals.
 	def := defaultLocation(t, app)
-	if _, err := app.Stock().Move(ctx, vid, shop.ID, def.ID, 3); err != nil {
+	if _, err := app.Stock().Move(ctx, vid, shop.ID, def.ID, 3, ""); err != nil {
 		t.Fatalf("empty the shop: %v", err)
 	}
 	if err := app.Places().Delete(ctx, shop.ID); err != nil {
@@ -328,16 +328,16 @@ func TestStockCannotDropBelowWhatIsReservedAtThatLocation(t *testing.T) {
 	vid := p.DefaultVariant().ID
 	def := defaultLocation(t, app)
 	warehouse := newLocation(t, app, "warehouse", "Warehouse", 9)
-	if _, err := app.Stock().Adjust(ctx, vid, warehouse.ID, 5); err != nil {
+	if _, err := app.Stock().Adjust(ctx, vid, warehouse.ID, 5, ""); err != nil {
 		t.Fatalf("stock the warehouse: %v", err)
 	}
 
 	hold(t, app, vid, 2)
 
-	if _, err := app.Stock().SetOnHand(ctx, vid, def.ID, 1); err == nil {
+	if _, err := app.Stock().SetOnHand(ctx, vid, def.ID, 1, ""); err == nil {
 		t.Error("set on-hand below the 2 units reserved at that location")
 	}
-	if _, err := app.Stock().Adjust(ctx, vid, def.ID, -1); err == nil {
+	if _, err := app.Stock().Adjust(ctx, vid, def.ID, -1, ""); err == nil {
 		t.Error("adjusted on-hand below the 2 units reserved at that location")
 	}
 }
@@ -352,7 +352,7 @@ func TestUnknownLocationIsRefusedRatherThanDefaulted(t *testing.T) {
 	p := simpleProduct(t, app, "LOC-GHOST", 1000, 1)
 	vid := p.DefaultVariant().ID
 
-	if _, err := app.Stock().Adjust(ctx, vid, 424242, 5); err == nil {
+	if _, err := app.Stock().Adjust(ctx, vid, 424242, 5, ""); err == nil {
 		t.Fatal("adjusted stock at a location that does not exist")
 	}
 	onHand, _ := variantStock(t, app, vid)

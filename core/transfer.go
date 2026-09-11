@@ -210,7 +210,12 @@ func (a *App) Data() *Transfer { return a.transfer }
 // ------------------------------------------------------------------ export
 
 // ExportProducts streams the catalog as CSV, one row per variant.
-func (t *Transfer) ExportProducts(ctx context.Context, out io.Writer) error {
+//
+// It takes the same ProductQuery the admin listing does, through the same
+// builder, so an operator can export exactly the rows a screen is showing
+// them. There is no paging: a listing takes a window, an export takes
+// everything that matched.
+func (t *Transfer) ExportProducts(ctx context.Context, out io.Writer, q ProductQuery) error {
 	w := csv.NewWriter(out)
 	defer w.Flush()
 
@@ -234,6 +239,13 @@ func (t *Transfer) ExportProducts(ctx context.Context, out io.Writer) error {
 				" WHERE vs.variant_id = v.id AND vs.location_id = $%d), 0), ", len(args))
 	}
 
+	// The filters are numbered after the per-location arguments above, which
+	// is why productFilters takes the slice rather than starting at $1.
+	join, where, args := productFilters(q, args)
+
+	// The ORDER BY does not move with the filters: ImportProducts requires a
+	// product's variant rows to be contiguous, so this order is the importer's
+	// contract rather than a display choice.
 	rows, err := t.app.db.QueryContext(ctx, `
 		SELECT p.slug, p.title, p.description, p.status,
 		       v.sku, coalesce(v.barcode, ''),
@@ -248,7 +260,8 @@ func (t *Transfer) ExportProducts(ctx context.Context, out io.Writer) error {
 		       v.track_inventory, v.continue_selling, v.active,
 		       v.weight_grams, v.origin_country, v.hs_code, v.metadata
 		FROM variants v
-		JOIN products p ON p.id = v.product_id
+		JOIN products p ON p.id = v.product_id`+join+`
+		WHERE `+strings.Join(where, " AND ")+`
 		ORDER BY p.id, v.position, v.id`, args...)
 	if err != nil {
 		return err
@@ -378,6 +391,11 @@ func (t *Transfer) ExportOrders(ctx context.Context, out io.Writer, q OrderQuery
 // product is one transaction, so a failure leaves neither a half-built product
 // nor a poisoned import.
 func (t *Transfer) ImportProducts(ctx context.Context, in io.Reader, dryRun bool) (*ImportResult, error) {
+	// Labelled once, here, so every movement the file causes says so — the
+	// helpers below reach the ledger through importProductGroup's own InTx and
+	// have no other way to know they are an import.
+	ctx = withStockSource(ctx, sourceImport)
+
 	start := time.Now()
 	r := csv.NewReader(in)
 	r.FieldsPerRecord = -1
@@ -613,6 +631,18 @@ func (t *Transfer) importVariantRow(ctx context.Context, tx *sql.Tx, productID i
 		if err := ensureStockRow(ctx, tx, variantID, c.locationID); err != nil {
 			return err
 		}
+		// The pre-read the clamp below makes necessary: what the file asked for
+		// and what the shelf got routinely differ, so the delta cannot be
+		// derived from the parameter. It is arithmetic only — the condition
+		// that decides stays in the UPDATE — and it takes the lock that
+		// statement takes anyway.
+		var before stockBalance
+		if err := tx.QueryRowContext(ctx,
+			`SELECT on_hand, reserved FROM variant_stock
+			 WHERE variant_id = $1 AND location_id = $2 FOR UPDATE`,
+			variantID, c.locationID).Scan(&before.OnHand, &before.Reserved); err != nil {
+			return err
+		}
 		// The floor is reserved, for the reason SetOnHand refuses outright: a
 		// count taken on the shop floor does not know about the order that came
 		// in while it was being taken, and dropping below what is promised would
@@ -623,16 +653,29 @@ func (t *Transfer) importVariantRow(ctx context.Context, tx *sql.Tx, productID i
 		// Flooring it would let an export-edit-import round trip quietly write
 		// that debt off, which is the one thing a round trip must never do. The
 		// condition is reserveStock's, and M12's, deliberately.
-		if _, err := tx.ExecContext(ctx,
+		var after stockBalance
+		if err := tx.QueryRowContext(ctx,
 			`UPDATE variant_stock vs
 			 SET on_hand = CASE WHEN v.continue_selling
 			                    THEN $3 ELSE greatest($3, vs.reserved) END,
 			     updated_at = now()
 			 FROM variants v
 			 WHERE v.id = vs.variant_id
-			   AND vs.variant_id = $1 AND vs.location_id = $2`,
-			variantID, c.locationID, qty); err != nil {
+			   AND vs.variant_id = $1 AND vs.location_id = $2
+			 RETURNING vs.on_hand, vs.reserved`,
+			variantID, c.locationID, qty).Scan(&after.OnHand, &after.Reserved); err != nil {
 			return translateCatalogErr(err)
+		}
+		// No reason string: kind='import' with source='import' is the whole
+		// explanation, and the CSV has no field for one. A re-run of an
+		// unchanged file writes nothing, because the delta is zero and import
+		// is not the stock-take exception.
+		if _, err := recordMovement(ctx, tx, variantID, c.locationID, MovementImport,
+			stockBalance{
+				OnHand:   after.OnHand - before.OnHand,
+				Reserved: after.Reserved - before.Reserved,
+			}, after, stockRef{}); err != nil {
+			return err
 		}
 	}
 

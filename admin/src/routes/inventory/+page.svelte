@@ -3,6 +3,7 @@
     import { stockClass, pluralize } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import Drawer from "$lib/components/Drawer.svelte";
+    import StockHistory from "$lib/components/StockHistory.svelte";
 
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
     const PER_PAGE = 25;
@@ -17,8 +18,22 @@
 
     let adjustOpen = $state(false);
     let target = $state(null);
-    let mode = $state("adjust"); // adjust | set | move
+    let mode = $state("adjust"); // adjust | set | move | history
     let amount = $state("");
+    // Why the stock moved, in the operator's words. It is the row an audit
+    // reads, and the only place in the panel that collects one — the product
+    // form and the variant matrix deliberately send none rather than a canned
+    // sentence no human typed.
+    let reason = $state("");
+
+    /* Presets rather than free text alone: an operator with a case to put away
+       should not have to compose prose, and a short shared vocabulary is what
+       makes the ledger searchable three weeks later. */
+    const REASONS = {
+        adjust: ["Delivery received", "Damaged", "Shrinkage", "Returned to supplier", "Found"],
+        set: ["Stock count", "Correction"],
+        move: ["Rebalancing", "Store request"],
+    };
     let saving = $state(false);
     let error = $state("");
 
@@ -80,6 +95,7 @@
         target = variant;
         mode = initialMode;
         amount = "";
+        reason = "";
         error = "";
         rows = [];
         locationID = 0;
@@ -134,6 +150,14 @@
             error = "Choose where the units are going.";
             return;
         }
+        // The panel's rule, not the API's: the engine accepts a blank reason
+        // from any client, and a script or the MCP tool may well send one. But
+        // a count that replaced the number and a write-off are exactly the two
+        // movements somebody asks about later, so the panel insists.
+        if ((mode === "set" || (mode === "adjust" && value < 0)) && !reason.trim()) {
+            error = "Say why — this is the row an audit will read.";
+            return;
+        }
 
         saving = true;
         error = "";
@@ -143,13 +167,14 @@
                     from_location_id: locationID,
                     to_location_id: toID,
                     quantity: value,
+                    reason,
                 });
                 toast.success(`Moved ${value} × ${target.sku}`);
             } else {
                 const body =
                     mode === "adjust"
-                        ? { adjust: value, location_id: locationID }
-                        : { set: value, location_id: locationID };
+                        ? { adjust: value, location_id: locationID, reason }
+                        : { set: value, location_id: locationID, reason };
                 await api.post(`/api/admin/variants/${target.id}/inventory`, body);
                 toast.success(`Updated ${target.sku}`);
             }
@@ -325,13 +350,15 @@
 
 <Drawer
     open={adjustOpen}
-    size="sm"
+    size={mode === "history" ? "lg" : "sm"}
     title={target
         ? mode === "adjust"
             ? `Receive stock — ${target.sku}`
             : mode === "move"
               ? `Move stock — ${target.sku}`
-              : `Stock take — ${target.sku}`
+              : mode === "history"
+                ? `History — ${target.sku}`
+                : `Stock take — ${target.sku}`
         : ""}
     onclose={() => (adjustOpen = false)}
 >
@@ -387,50 +414,99 @@
                 </div>
             {/if}
 
-            {#if mode === "move"}
-                <div class="field required">
-                    <label for="move-to">Move to</label>
-                    <select id="move-to" bind:value={toID}>
-                        {#each elsewhere as r (r.location_id)}
-                            <option value={r.location_id}>{r.location_name}</option>
-                        {/each}
-                    </select>
-                </div>
-            {/if}
-
-            <div class="field required" class:error={!!error}>
-                <label for="amount">
-                    {mode === "adjust"
-                        ? "Add (or subtract) this many"
-                        : mode === "move"
-                          ? "How many units"
-                          : "Set the count to"}
-                </label>
-                <!-- svelte-ignore a11y_autofocus -->
-                <input
-                    id="amount"
-                    type="number"
-                    autofocus
-                    bind:value={amount}
-                    oninput={() => (error = "")}
-                />
-            </div>
-            {#if error}<div class="field-help error">{error}</div>{/if}
-            <div class="field-help">
-                {#if mode === "adjust"}
-                    A delta: 25 receives a case, -1 writes one off.
-                    {#if multi && here}Applied at {here.location_name}.{/if}
-                {:else if mode === "move"}
-                    Reserved units stay where they are — they are promised to orders that will be
-                    picked from {here?.location_name ?? "here"}.
-                {:else}
-                    Cannot go below the {multi
-                        ? (here?.reserved ?? 0)
-                        : target.stock_reserved} already promised to open orders{multi && here
-                        ? ` at ${here.location_name}`
-                        : ""}.
+            {#if mode === "history"}
+                <!--
+                    The location table above stays visible, so the operator can
+                    see where the units are while reading how they got there.
+                -->
+                <!-- Keyed, so moving to another variant remounts the table
+                     rather than asking for page 3 of a history it has not
+                     started reading. -->
+                {#key target.id}
+                    <StockHistory scope="variant" id={target.id} />
+                {/key}
+            {:else}
+                {#if mode === "move"}
+                    <div class="field required">
+                        <label for="move-to">Move to</label>
+                        <select id="move-to" bind:value={toID}>
+                            {#each elsewhere as r (r.location_id)}
+                                <option value={r.location_id}>{r.location_name}</option>
+                            {/each}
+                        </select>
+                    </div>
                 {/if}
-            </div>
+
+                <div class="field required" class:error={!!error}>
+                    <label for="amount">
+                        {mode === "adjust"
+                            ? "Add (or subtract) this many"
+                            : mode === "move"
+                              ? "How many units"
+                              : "Set the count to"}
+                    </label>
+                    <!-- svelte-ignore a11y_autofocus -->
+                    <input
+                        id="amount"
+                        type="number"
+                        autofocus
+                        bind:value={amount}
+                        oninput={() => (error = "")}
+                    />
+                </div>
+                {#if error}<div class="field-help error">{error}</div>{/if}
+                <div class="field-help">
+                    {#if mode === "adjust"}
+                        A delta: 25 receives a case, -1 writes one off.
+                        {#if multi && here}Applied at {here.location_name}.{/if}
+                    {:else if mode === "move"}
+                        Reserved units stay where they are — they are promised to orders that will be
+                        picked from {here?.location_name ?? "here"}.
+                    {:else}
+                        Cannot go below the {multi
+                            ? (here?.reserved ?? 0)
+                            : target.stock_reserved} already promised to open orders{multi && here
+                            ? ` at ${here.location_name}`
+                            : ""}.
+                    {/if}
+                </div>
+
+                <div class="field" class:required={mode === "set"}>
+                    <label for="reason">Why</label>
+                    <div class="inline-flex gap-5 m-b-5 flex-wrap">
+                        {#each REASONS[mode] ?? [] as preset (preset)}
+                            <button
+                                type="button"
+                                class="btn sm pill secondary"
+                                onclick={() => ((reason = preset), (error = ""))}
+                            >
+                                {preset}
+                            </button>
+                        {/each}
+                    </div>
+                    <input
+                        id="reason"
+                        type="text"
+                        maxlength="200"
+                        bind:value={reason}
+                        oninput={() => (error = "")}
+                    />
+                </div>
+                <div class="field-help">
+                    This is the row an audit will read — "the count says 4 and the shelf has 2" is
+                    answered here or nowhere.
+                </div>
+
+                <h6 class="section-title m-t-base">Recent movements</h6>
+                <!--
+                    The person about to change a count is exactly the person who
+                    needs to see what happened last time, so it is here rather than
+                    behind another click.
+                -->
+                {#key target.id}
+                    <StockHistory scope="variant" id={target.id} compact limit={3} />
+                {/key}
+            {/if}
         </form>
     {/if}
 
@@ -438,7 +514,7 @@
         <button type="button" class="btn transparent m-r-auto" onclick={() => (adjustOpen = false)}>
             <span class="txt">Cancel</span>
         </button>
-        {#if multi && mode !== "move"}
+        {#if multi && mode !== "move" && mode !== "history"}
             <button
                 type="button"
                 class="btn secondary"
@@ -448,14 +524,28 @@
                 <span class="txt">Move</span>
             </button>
         {/if}
-        <button
-            type="submit"
-            form="stock-form"
-            class="btn"
-            class:loading={saving || rowsLoading}
-            disabled={saving || rowsLoading}
-        >
-            <span class="txt">{mode === "move" ? "Move" : "Apply"}</span>
-        </button>
+        {#if mode === "history"}
+            <button type="button" class="btn" onclick={() => ((mode = "adjust"), (error = ""))}>
+                <span class="txt">Back</span>
+            </button>
+        {:else}
+            <button
+                type="button"
+                class="btn secondary"
+                onclick={() => ((mode = "history"), (error = ""))}
+            >
+                <i class="ri-history-line" aria-hidden="true"></i>
+                <span class="txt">History</span>
+            </button>
+            <button
+                type="submit"
+                form="stock-form"
+                class="btn"
+                class:loading={saving || rowsLoading}
+                disabled={saving || rowsLoading}
+            >
+                <span class="txt">{mode === "move" ? "Move" : "Apply"}</span>
+            </button>
+        {/if}
     {/snippet}
 </Drawer>
