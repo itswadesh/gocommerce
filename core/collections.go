@@ -104,12 +104,27 @@ func (s *Collections) Create(ctx context.Context, in CollectionInput) (*Collecti
 	if in.Position != nil {
 		position = *in.Position
 	}
-	c, err := scanCollection(s.app.db.QueryRowContext(ctx, `
-		INSERT INTO collections (slug, title, description, position, metadata)
-		VALUES ($1, $2, $3, $4, $5) RETURNING `+collectionColumns,
-		in.Slug, in.Title, in.Description, position, meta))
+	// The single statement gains a transaction so the change and the record of
+	// it commit together. There is no network I/O anywhere in the method, so
+	// rule 5 is untouched.
+	var c *Collection
+	err = InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		var cerr error
+		c, cerr = scanCollection(tx.QueryRowContext(ctx, `
+			INSERT INTO collections (slug, title, description, position, metadata)
+			VALUES ($1, $2, $3, $4, $5) RETURNING `+collectionColumns,
+			in.Slug, in.Title, in.Description, position, meta))
+		if cerr != nil {
+			return translateCollectionErr(cerr)
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditCollectionCreate, Entity: AuditEntityCollection,
+			ID: c.ID, Label: c.Title, Summary: "Created the collection " + c.Title,
+			After: map[string]any{"slug": c.Slug, "title": c.Title, "position": c.Position},
+		})
+	})
 	if err != nil {
-		return nil, translateCollectionErr(err)
+		return nil, err
 	}
 	return c, nil
 }
@@ -186,9 +201,11 @@ func (s *Collections) list(ctx context.Context, where string, limit, offset int)
 // Update applies a patch.
 func (s *Collections) Update(ctx context.Context, id int64, patch CollectionPatch) (*Collection, error) {
 	sets, args := []string{}, []any{}
+	after := map[string]any{}
 	add := func(column string, v any) {
 		args = append(args, v)
 		sets = append(sets, fmt.Sprintf("%s = $%d", column, len(args)))
+		after[column] = v
 	}
 	if patch.Slug != nil {
 		slug := strings.TrimSpace(*patch.Slug)
@@ -223,14 +240,43 @@ func (s *Collections) Update(ctx context.Context, id int64, patch CollectionPatc
 	sets = append(sets, "updated_at = now()")
 	args = append(args, id)
 
-	c, err := scanCollection(s.app.db.QueryRowContext(ctx,
-		"UPDATE collections SET "+strings.Join(sets, ", ")+
-			fmt.Sprintf(" WHERE id = $%d RETURNING ", len(args))+collectionColumns, args...))
-	if err != nil {
+	var c *Collection
+	err := InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		was, err := scanCollection(tx.QueryRowContext(ctx,
+			`SELECT `+collectionColumns+` FROM collections WHERE id = $1 FOR UPDATE`, id))
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, NotFoundf("collection %d does not exist", id)
+			return NotFoundf("collection %d does not exist", id)
 		}
-		return nil, translateCollectionErr(err)
+		if err != nil {
+			return err
+		}
+		before := map[string]any{}
+		for column, v := range map[string]any{
+			"slug": was.Slug, "title": was.Title,
+			"description": was.Description, "position": was.Position,
+		} {
+			if _, changed := after[column]; changed {
+				before[column] = v
+			}
+		}
+
+		c, err = scanCollection(tx.QueryRowContext(ctx,
+			"UPDATE collections SET "+strings.Join(sets, ", ")+
+				fmt.Sprintf(" WHERE id = $%d RETURNING ", len(args))+collectionColumns, args...))
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("collection %d does not exist", id)
+		}
+		if err != nil {
+			return translateCollectionErr(err)
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditCollectionUpdate, Entity: AuditEntityCollection,
+			ID: c.ID, Label: c.Title, Summary: "Edited the collection " + c.Title,
+			Before: before, After: after,
+		})
+	})
+	if err != nil {
+		return nil, err
 	}
 	return c, nil
 }
@@ -239,14 +285,22 @@ func (s *Collections) Update(ctx context.Context, id int64, patch CollectionPatc
 // products themselves are untouched: a collection groups products, it does not
 // own them, and deleting "Summer sale" must not delete the summer stock.
 func (s *Collections) Delete(ctx context.Context, id int64) error {
-	res, err := s.app.db.ExecContext(ctx, `DELETE FROM collections WHERE id = $1`, id)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return NotFoundf("collection %d does not exist", id)
-	}
-	return nil
+	return InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		var slug, title string
+		err := tx.QueryRowContext(ctx,
+			`DELETE FROM collections WHERE id = $1 RETURNING slug, title`, id).Scan(&slug, &title)
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("collection %d does not exist", id)
+		}
+		if err != nil {
+			return err
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditCollectionDelete, Entity: AuditEntityCollection,
+			ID: id, Label: title, Summary: "Deleted the collection " + title,
+			Before: map[string]any{"slug": slug, "title": title},
+		})
+	})
 }
 
 // SetProductCollections replaces a product's membership with exactly
@@ -280,7 +334,14 @@ func (s *Collections) SetProductCollections(ctx context.Context, productID int64
 				return err
 			}
 		}
-		return nil
+		// Filed against the product rather than against each collection: a
+		// merchandiser asks what happened to this product, and collections have
+		// no screen of their own to ask it from.
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditProductCollectionsSet, Entity: AuditEntityProduct,
+			ID: productID, Summary: "Changed which collections this product is in",
+			After: map[string]any{"collection_ids": ids},
+		})
 	})
 }
 

@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -95,6 +96,15 @@ type Config struct {
 	MediaDir string
 	// MediaURLPrefix is the path MediaDir is served at. Defaults to "/media".
 	MediaURLPrefix string
+
+	// PanelURL is where this store's admin panel is reached —
+	// "https://shop.example.com". It is the base of a password-reset link, and
+	// it is configuration rather than something derived from the request
+	// because the request that triggers a reset email is made by whoever wants
+	// the reset, including an attacker: a link built from Host or
+	// X-Forwarded-Host would carry a live token to a host they chose. Left
+	// empty, the reset email carries the bare token to paste instead.
+	PanelURL string
 	// MediaStore replaces the built-in local-disk store wholesale — the seam an
 	// S3 or GCS module uses. When set, MediaDir is ignored.
 	MediaStore MediaStore
@@ -178,6 +188,14 @@ func (c *Config) applyDefaults() error {
 	if !strings.HasPrefix(c.MediaURLPrefix, "/") {
 		return errors.New("gocommerce: Config.MediaURLPrefix must start with /")
 	}
+	if c.PanelURL != "" {
+		u, err := url.Parse(c.PanelURL)
+		if err != nil || u.Scheme == "" || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+			return errors.New(
+				"gocommerce: Config.PanelURL must be an absolute base URL like https://shop.example.com")
+		}
+		c.PanelURL = strings.TrimRight(c.PanelURL, "/")
+	}
 	if c.Logger == nil {
 		c.Logger = slog.Default()
 	}
@@ -224,6 +242,9 @@ type App struct {
 	locations   *Locations
 	invitations *Invitations
 	taxes       *Taxes
+	// audit reads the operator trail. The writer is a package-level function
+	// taking a *sql.Tx, so nothing needs a handle to record a change.
+	audit *Audits
 	// mediaStore is nil when the store has nowhere to put uploads, which is a
 	// supported configuration: the library still records media by URL.
 	mediaStore MediaStore
@@ -363,6 +384,7 @@ func (a *App) buildServices() {
 		wake:      make(chan struct{}, 1),
 	}
 	a.notifier = &notifierSet{log: a.log}
+	a.audit = &Audits{app: a}
 
 	a.catalog = &Catalog{app: a}
 	a.inventory = &Inventory{app: a}
@@ -373,7 +395,7 @@ func (a *App) buildServices() {
 	a.transfer = &Transfer{app: a}
 	// Before superusers: identity resolves rights through it on every scan.
 	a.roles = &RoleRights{app: a}
-	a.superusers = newSuperusers(a.db, a.roles)
+	a.superusers = newSuperusers(a)
 	a.media = &Media{app: a}
 	a.discounts = &Discounts{app: a}
 	a.locations = &Locations{app: a}
@@ -402,6 +424,13 @@ func (a *App) startBackgroundWork() {
 	a.OnStart(func(ctx context.Context) error {
 		go a.outbox.run(ctx)
 		go a.runSweepers(ctx)
+		return nil
+	})
+	// A reset email is delivered off the request goroutine, so shutdown waits
+	// for one in flight rather than dropping it. Capped, because a hung vendor
+	// must not hold the process open.
+	a.OnStop(func(ctx context.Context) error {
+		a.superusers.waitForResetDelivery(5 * time.Second)
 		return nil
 	})
 }

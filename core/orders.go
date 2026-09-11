@@ -391,21 +391,24 @@ func (s *Orders) loadChildren(ctx context.Context, orders []*Order) error {
 // reservation into a committed sale. It is idempotent: confirming an
 // already-confirmed order is a no-op, because a webhook may well arrive twice.
 func (s *Orders) Confirm(ctx context.Context, id int64) (*Order, error) {
-	return s.transition(ctx, id, func(ctx context.Context, tx *sql.Tx, o *Order) (string, any, error) {
+	return s.transition(ctx, id, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
 		switch o.Status {
 		case OrderConfirmed, OrderShipped, OrderDelivered:
-			return "", nil, nil // already done
+			return transitionResult{}, nil // already done
 		case OrderCancelled:
-			return "", nil, Conflictf("order %s has been cancelled", o.Number)
+			return transitionResult{}, Conflictf("order %s has been cancelled", o.Number)
 		}
 		if err := commitOrderStock(ctx, tx, o); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		if err := setOrderStatus(ctx, tx, o.ID, OrderConfirmed); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		o.Status = OrderConfirmed
-		return "", nil, nil // order.paid or order.created already told the story
+		// No event and no action: order.paid or order.created already told the
+		// story, and a shopper's cash-on-delivery confirmation is not somebody's
+		// act. Both callers — checkout and MarkPaid — record their own row.
+		return transitionResult{}, nil
 	})
 }
 
@@ -413,51 +416,61 @@ func (s *Orders) Confirm(ctx context.Context, id int64) (*Order, error) {
 // depends on how far the order got: a pending order only ever reserved stock,
 // while a confirmed one has already taken it off the shelf.
 func (s *Orders) Cancel(ctx context.Context, id int64, reason string) (*Order, error) {
-	return s.transition(ctx, id, func(ctx context.Context, tx *sql.Tx, o *Order) (string, any, error) {
+	return s.transition(ctx, id, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
 		switch o.Status {
 		case OrderCancelled:
-			return "", nil, nil
+			return transitionResult{}, nil
 		case OrderShipped, OrderDelivered:
-			return "", nil, Conflictf("order %s has already shipped; cancelling it is a return, not a cancellation", o.Number)
+			return transitionResult{}, Conflictf("order %s has already shipped; cancelling it is a return, not a cancellation", o.Number)
 		}
 		if stockCommitted(o.Status) {
 			if err := restockOrder(ctx, tx, o); err != nil {
-				return "", nil, err
+				return transitionResult{}, err
 			}
 		} else if err := releaseOrderStock(ctx, tx, o); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE orders SET status = $2, reservation_expires_at = NULL, updated_at = now()
 			WHERE id = $1`, o.ID, OrderCancelled); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		o.Status = OrderCancelled
 		payload := s.eventPayload(o)
 		payload.Reason = reason
-		return EventOrderCancelled, payload, nil
+		summary := "Cancelled order " + o.Number
+		if reason != "" {
+			summary += " — " + reason
+		}
+		return transitionResult{
+			Event: EventOrderCancelled, Payload: payload,
+			Action: AuditOrderCancel, Summary: summary,
+		}, nil
 	})
 }
 
 // MarkDelivered records that the customer received the order.
 func (s *Orders) MarkDelivered(ctx context.Context, id int64) (*Order, error) {
-	return s.transition(ctx, id, func(ctx context.Context, tx *sql.Tx, o *Order) (string, any, error) {
+	return s.transition(ctx, id, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
 		if o.Status == OrderDelivered {
-			return "", nil, nil
+			return transitionResult{}, nil
 		}
 		if o.Status != OrderShipped {
-			return "", nil, Conflictf("order %s must be shipped before it can be delivered (it is %s)", o.Number, o.Status)
+			return transitionResult{}, Conflictf("order %s must be shipped before it can be delivered (it is %s)", o.Number, o.Status)
 		}
 		if err := setOrderStatus(ctx, tx, o.ID, OrderDelivered); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE fulfillments SET status = 'delivered', updated_at = now()
 			 WHERE order_id = $1 AND status = 'shipped'`, o.ID); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		o.Status = OrderDelivered
-		return EventOrderDelivered, s.eventPayload(o), nil
+		return transitionResult{
+			Event: EventOrderDelivered, Payload: s.eventPayload(o),
+			Action: AuditOrderDeliver, Summary: "Marked order " + o.Number + " delivered",
+		}, nil
 	})
 }
 
@@ -469,36 +482,63 @@ func (s *Orders) MarkDelivered(ctx context.Context, id int64) (*Order, error) {
 // money — so nothing has to move back. It refuses from anywhere but delivered:
 // there is no other state a delivery can be undone from.
 func (s *Orders) MarkUndelivered(ctx context.Context, id int64) (*Order, error) {
-	return s.transition(ctx, id, func(ctx context.Context, tx *sql.Tx, o *Order) (string, any, error) {
+	return s.transition(ctx, id, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
 		if o.Status == OrderShipped {
-			return "", nil, nil
+			return transitionResult{}, nil
 		}
 		if o.Status != OrderDelivered {
-			return "", nil, Conflictf("order %s is not delivered (it is %s)", o.Number, o.Status)
+			return transitionResult{}, Conflictf("order %s is not delivered (it is %s)", o.Number, o.Status)
 		}
 		if err := setOrderStatus(ctx, tx, o.ID, OrderShipped); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		// Only the ones this delivery moved. A fulfillment cancelled separately
 		// stays cancelled — it was not part of what is being undone.
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE fulfillments SET status = 'shipped', updated_at = now()
 			 WHERE order_id = $1 AND status = 'delivered'`, o.ID); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		o.Status = OrderShipped
-		return EventOrderUndelivered, s.eventPayload(o), nil
+		return transitionResult{
+			Event: EventOrderUndelivered, Payload: s.eventPayload(o),
+			Action:  AuditOrderUndeliver,
+			Summary: "Undid the delivery of order " + o.Number,
+		}, nil
 	})
 }
 
-// transition runs a state change and its event in one transaction, which is
-// what makes the event and the change inseparable.
+// transitionResult is what a state change reports about itself.
 //
-// The callback returns the event to emit, or an empty name to emit nothing —
-// so an idempotent no-op transition stays quiet instead of announcing a change
-// that did not happen.
+// Event and Action are independent because they always were, and the old
+// (string, any, error) triple hid it: Confirm commits stock and sets status and
+// names no event, and so do MarkFailed and Refund. So an empty event could
+// never have meant "nothing happened". An empty Event publishes nothing; an
+// empty Action records nothing; and "" no longer has to mean both at once.
+//
+// Action is deliberately not the event name. EditLines and Update both emit
+// order.edited, so deriving one from the other would collapse "who changed the
+// lines" and "who changed the shipping address" into one indistinguishable row.
+// A returned struct beats an added parameter for the same reason: a zero-valued
+// parameter silently writes an empty action, while a callback that returns a
+// result names its action on the line where it already names its event.
+type transitionResult struct {
+	Event   string
+	Payload any
+
+	Action        string
+	Summary       string
+	Before, After map[string]any
+}
+
+// transition runs a state change, its event and its audit record in one
+// transaction, which is what makes all three inseparable.
+//
+// A callback that names no event emits nothing and one that names no action
+// records nothing, so an idempotent no-op transition stays quiet in both logs
+// instead of announcing a change that did not happen.
 func (s *Orders) transition(ctx context.Context, id int64,
-	fn func(context.Context, *sql.Tx, *Order) (string, any, error)) (*Order, error) {
+	fn func(context.Context, *sql.Tx, *Order) (transitionResult, error)) (*Order, error) {
 
 	err := InTx(ctx, s.app.db, func(tx *sql.Tx) error {
 		o, err := lockOrder(ctx, tx, id)
@@ -508,14 +548,39 @@ func (s *Orders) transition(ctx context.Context, id int64,
 		if err := loadOrderLinesTx(ctx, tx, o); err != nil {
 			return err
 		}
-		name, payload, err := fn(ctx, tx, o)
+		// lockOrder has already read both, so the status half of every order
+		// audit row costs nothing.
+		beforeStatus, beforePayment := o.Status, o.PaymentStatus
+
+		res, err := fn(ctx, tx, o)
 		if err != nil {
 			return err
 		}
-		if name == "" {
+		if res.Event != "" {
+			if err := s.app.outbox.write(ctx, tx, res.Event, AggregateOrder, o.ID, res.Payload); err != nil {
+				return err
+			}
+		}
+		if res.Action == "" {
 			return nil
 		}
-		return s.app.outbox.write(ctx, tx, name, AggregateOrder, o.ID, payload)
+		// Both rows are written by this one InTx, so the order between them
+		// carries no atomicity meaning: a rollback removes both, and the
+		// dispatcher claims only committed rows.
+		before, after := res.Before, res.After
+		if o.Status != beforeStatus {
+			before = withField(before, "status", beforeStatus)
+			after = withField(after, "status", o.Status)
+		}
+		if o.PaymentStatus != beforePayment {
+			before = withField(before, "payment_status", beforePayment)
+			after = withField(after, "payment_status", o.PaymentStatus)
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: res.Action, Entity: AuditEntityOrder,
+			ID: o.ID, Label: o.Number, Summary: res.Summary, Event: res.Event,
+			Before: before, After: after,
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -653,6 +718,10 @@ func (s *Orders) eventPayload(o *Order) *OrderEvent {
 // out of sale forever, which is invisible until the day it sells out a product
 // that is actually in stock.
 func (s *Orders) SweepUnpaid(ctx context.Context) (int, error) {
+	// Named once, before the loop, so two hundred cancellations at 3am read as
+	// the store doing maintenance rather than as somebody's night's work.
+	ctx = WithActorLabel(ctx, "unpaid sweeper")
+
 	rows, err := s.app.db.QueryContext(ctx, `
 		SELECT id FROM orders
 		WHERE status = $1 AND payment_status = $2
@@ -748,16 +817,16 @@ type OrderChange struct {
 // here would hide it.
 func (s *Orders) EditLines(ctx context.Context, id int64, in OrderEdit) (*Order, *OrderChange, error) {
 	change := &OrderChange{}
-	_, err := s.transition(ctx, id, func(ctx context.Context, tx *sql.Tx, o *Order) (string, any, error) {
+	_, err := s.transition(ctx, id, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
 		switch o.Status {
 		case OrderCancelled:
-			return "", nil, Conflictf("order %s has been cancelled", o.Number)
+			return transitionResult{}, Conflictf("order %s has been cancelled", o.Number)
 		case OrderShipped, OrderDelivered:
-			return "", nil, Conflictf(
+			return transitionResult{}, Conflictf(
 				"order %s has already shipped; changing what is in it is a return, not an edit", o.Number)
 		}
 		if o.PaymentStatus == PaymentRefunded {
-			return "", nil, Conflictf("order %s has been refunded", o.Number)
+			return transitionResult{}, Conflictf("order %s has been refunded", o.Number)
 		}
 
 		existing := map[int64]*OrderLine{}
@@ -770,19 +839,19 @@ func (s *Orders) EditLines(ctx context.Context, id int64, in OrderEdit) (*Order,
 		seen := map[int64]bool{}
 		for _, l := range in.Lines {
 			if l.Quantity < 0 {
-				return "", nil, Validationf("a quantity cannot be negative")
+				return transitionResult{}, Validationf("a quantity cannot be negative")
 			}
 			if l.ID == 0 {
 				if l.VariantID == 0 {
-					return "", nil, Validationf("a new line needs a variant_id")
+					return transitionResult{}, Validationf("a new line needs a variant_id")
 				}
 				continue
 			}
 			if _, ok := existing[l.ID]; !ok {
-				return "", nil, Validationf("order %s has no line %d", o.Number, l.ID)
+				return transitionResult{}, Validationf("order %s has no line %d", o.Number, l.ID)
 			}
 			if seen[l.ID] {
-				return "", nil, Validationf("line %d is named twice", l.ID)
+				return transitionResult{}, Validationf("line %d is named twice", l.ID)
 			}
 			seen[l.ID] = true
 		}
@@ -801,12 +870,12 @@ func (s *Orders) EditLines(ctx context.Context, id int64, in OrderEdit) (*Order,
 				continue
 			}
 			if err := moveOrderStock(ctx, tx, line, want-line.Quantity, committed); err != nil {
-				return "", nil, err
+				return transitionResult{}, err
 			}
 			if want == 0 {
 				if _, err := tx.ExecContext(ctx,
 					`DELETE FROM order_lines WHERE id = $1`, line.ID); err != nil {
-					return "", nil, err
+					return transitionResult{}, err
 				}
 				change.LinesRemoved = append(change.LinesRemoved, line.SKU)
 				continue
@@ -815,7 +884,7 @@ func (s *Orders) EditLines(ctx context.Context, id int64, in OrderEdit) (*Order,
 				UPDATE order_lines
 				SET quantity = $2::integer, total_minor = unit_price_minor * $2::integer
 				WHERE id = $1`, line.ID, want); err != nil {
-				return "", nil, err
+				return transitionResult{}, err
 			}
 			change.LinesChanged = append(change.LinesChanged,
 				fmt.Sprintf("%s: %d to %d", line.SKU, line.Quantity, want))
@@ -830,7 +899,7 @@ func (s *Orders) EditLines(ctx context.Context, id int64, in OrderEdit) (*Order,
 			}
 			sku, err := addOrderLine(ctx, tx, o, l.VariantID, l.Quantity, committed)
 			if err != nil {
-				return "", nil, err
+				return transitionResult{}, err
 			}
 			change.LinesAdded = append(change.LinesAdded, sku)
 		}
@@ -841,10 +910,10 @@ func (s *Orders) EditLines(ctx context.Context, id int64, in OrderEdit) (*Order,
 		if err := tx.QueryRowContext(ctx, `
 			SELECT coalesce(sum(total_minor), 0), count(*)
 			FROM order_lines WHERE order_id = $1`, o.ID).Scan(&subtotal, &lines); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		if lines == 0 {
-			return "", nil, Validationf(
+			return transitionResult{}, Validationf(
 				"an order must keep at least one line; cancel order %s instead", o.Number)
 		}
 
@@ -852,7 +921,7 @@ func (s *Orders) EditLines(ctx context.Context, id int64, in OrderEdit) (*Order,
 		if err := tx.QueryRowContext(ctx,
 			`SELECT shipping_minor, discount_minor FROM orders WHERE id = $1`,
 			o.ID).Scan(&shipping, &discount); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		// The discount follows the basket it came off (D24). A fixed amount is
 		// a fixed amount whatever is left; a percentage was a percentage of a
@@ -862,13 +931,13 @@ func (s *Orders) EditLines(ctx context.Context, id int64, in OrderEdit) (*Order,
 		// longer qualifies for, and only an operator can decide what to do.
 		discount, err := recomputeOrderDiscount(ctx, tx, o.ID, subtotal, discount)
 		if err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		total := subtotal + shipping - discount
 		if total < 0 {
 			// A discount larger than what is left of the order. The floor is the
 			// database's own CHECK; saying so beats a constraint violation.
-			return "", nil, Conflictf(
+			return transitionResult{}, Conflictf(
 				"the discount on order %s is larger than the lines that would be left", o.Number)
 		}
 
@@ -880,17 +949,33 @@ func (s *Orders) EditLines(ctx context.Context, id int64, in OrderEdit) (*Order,
 			UPDATE orders SET subtotal_minor = $2, total_minor = $3,
 			                  discount_minor = $4, updated_at = now()
 			WHERE id = $1`, o.ID, subtotal, total, discount); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		if len(change.LinesAdded) == 0 && len(change.LinesRemoved) == 0 &&
 			len(change.LinesChanged) == 0 {
-			return "", nil, nil // nothing happened, so there is nothing to announce
+			return transitionResult{}, nil // nothing happened, so there is nothing to announce
 		}
 
 		o.Total = change.TotalAfter
 		payload := s.eventPayload(o)
 		payload.Change = change
-		return EventOrderEdited, payload, nil
+		return transitionResult{
+			Event: EventOrderEdited, Payload: payload,
+			Action:  AuditOrderEditLines,
+			Summary: "Changed what is on order " + o.Number,
+			// Built from the OrderChange this method already filled. Money is
+			// minor units plus the order's currency and never a formatted
+			// amount (rule 6).
+			After: map[string]any{
+				"lines_added":        change.LinesAdded,
+				"lines_removed":      change.LinesRemoved,
+				"lines_changed":      change.LinesChanged,
+				"total_before_minor": change.TotalBefore.AmountMinor,
+				"total_after_minor":  change.TotalAfter.AmountMinor,
+				"balance_minor":      change.BalanceMinor,
+				"currency":           o.Currency,
+			},
+		}, nil
 	})
 	if err != nil {
 		return nil, nil, err
@@ -1055,62 +1140,82 @@ func (s *Orders) Update(ctx context.Context, id int64, patch OrderPatch) (*Order
 		}
 	}
 
-	return s.transition(ctx, id, func(ctx context.Context, tx *sql.Tx, o *Order) (string, any, error) {
+	return s.transition(ctx, id, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
 		if o.Status == OrderCancelled {
-			return "", nil, Conflictf("order %s has been cancelled", o.Number)
+			return transitionResult{}, Conflictf("order %s has been cancelled", o.Number)
 		}
 		if patch.PaymentProvider != nil && *patch.PaymentProvider != o.PaymentProvider &&
 			o.PaymentStatus == PaymentRefunded {
-			return "", nil, Conflictf(
+			return transitionResult{}, Conflictf(
 				"order %s was refunded through %s; the method it was settled by is part of that record",
 				o.Number, o.PaymentProvider)
 		}
 
 		set, args := []string{}, []any{id}
-		add := func(col string, v any) {
+		// before and after are filled by the same closure that builds the
+		// UPDATE, so the audit record can never name a field the statement did
+		// not set. The `from` value is read off o on the line above the one
+		// that overwrites it, which is why both sides are free here.
+		before, after := map[string]any{}, map[string]any{}
+		add := func(col string, v any, from, to any) {
 			args = append(args, v)
 			set = append(set, fmt.Sprintf("%s = $%d", col, len(args)))
+			before[col], after[col] = from, to
 		}
 		if patch.Email != nil {
+			was := o.Email
 			o.Email = strings.TrimSpace(*patch.Email)
-			add("email", o.Email)
+			add("email", o.Email, was, o.Email)
 		}
 		if patch.Phone != nil {
+			was := o.Phone
 			o.Phone = strings.TrimSpace(*patch.Phone)
-			add("phone", nullString(o.Phone))
+			add("phone", nullString(o.Phone), was, o.Phone)
 		}
 		if patch.Name != nil {
+			was := o.Name
 			o.Name = strings.TrimSpace(*patch.Name)
-			add("name", nullString(o.Name))
+			add("name", nullString(o.Name), was, o.Name)
 		}
 		if patch.Address != nil {
 			encoded, err := json.Marshal(*patch.Address)
 			if err != nil {
-				return "", nil, Internalf(err, "encode the address")
+				return transitionResult{}, Internalf(err, "encode the address")
 			}
+			was := o.Address
 			o.Address = *patch.Address
-			add("address", encoded)
+			add("address", encoded, was, o.Address)
 		}
 		if patch.PaymentProvider != nil {
+			was := o.PaymentProvider
 			o.PaymentProvider = *patch.PaymentProvider
-			add("payment_provider", o.PaymentProvider)
+			add("payment_provider", o.PaymentProvider, was, o.PaymentProvider)
 		}
 		if patch.PaymentReference != nil {
+			was := o.PaymentReference
 			o.PaymentReference = strings.TrimSpace(*patch.PaymentReference)
-			add("payment_reference", o.PaymentReference)
+			add("payment_reference", o.PaymentReference, was, o.PaymentReference)
 		}
 		if len(set) == 0 {
-			return "", nil, Validationf("nothing to change")
+			return transitionResult{}, Validationf("nothing to change")
 		}
 
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE orders SET `+strings.Join(set, ", ")+`, updated_at = now() WHERE id = $1`,
 			args...); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		// order.edited, because that is what happened and a notifier keyed to
-		// this order needs to know the address it holds has changed.
-		return EventOrderEdited, s.eventPayload(o), nil
+		// this order needs to know the address it holds has changed. The action
+		// is order.update rather than the shared event name: EditLines emits
+		// order.edited too, and "who changed the shipping address" has to stay
+		// a different question from "who changed the lines".
+		return transitionResult{
+			Event: EventOrderEdited, Payload: s.eventPayload(o),
+			Action:  AuditOrderUpdate,
+			Summary: "Corrected the details on order " + o.Number,
+			Before:  before, After: after,
+		}, nil
 	})
 }
 

@@ -117,14 +117,32 @@ func (s *Taxes) Create(ctx context.Context, in TaxRateInput) (*TaxRate, error) {
 		active = *in.Active
 	}
 
-	t, err := scanTaxRate(s.app.db.QueryRowContext(ctx, `
-		INSERT INTO tax_rates (name, rate_bp, country, state, category_id, active, metadata)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)
-		RETURNING `+strings.ReplaceAll(taxRateColumns, "t.", ""),
-		in.Name, in.RateBP, strings.ToUpper(strings.TrimSpace(in.Country)),
-		strings.ToUpper(strings.TrimSpace(in.State)), in.CategoryID, active, meta))
+	var t *TaxRate
+	err = InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		var terr error
+		t, terr = scanTaxRate(tx.QueryRowContext(ctx, `
+			INSERT INTO tax_rates (name, rate_bp, country, state, category_id, active, metadata)
+			VALUES ($1,$2,$3,$4,$5,$6,$7)
+			RETURNING `+strings.ReplaceAll(taxRateColumns, "t.", ""),
+			in.Name, in.RateBP, strings.ToUpper(strings.TrimSpace(in.Country)),
+			strings.ToUpper(strings.TrimSpace(in.State)), in.CategoryID, active, meta))
+		if terr != nil {
+			return translateTaxErr(terr)
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditTaxRateCreate, Entity: AuditEntityTaxRate,
+			ID: t.ID, Label: t.Name, Summary: "Created the tax rate " + t.Name,
+			// rate_bp in basis points on both sides of every row, never a
+			// percentage string: this is what makes "who raised VAT, and when"
+			// an answerable question.
+			After: map[string]any{
+				"name": t.Name, "rate_bp": t.RateBP, "country": t.Country,
+				"state": t.State, "category_id": t.CategoryID, "active": t.Active,
+			},
+		})
+	})
 	if err != nil {
-		return nil, translateTaxErr(err)
+		return nil, err
 	}
 	return t, nil
 }
@@ -172,9 +190,11 @@ func (s *Taxes) List(ctx context.Context) ([]*TaxRate, error) {
 // charged is on their lines.
 func (s *Taxes) Update(ctx context.Context, id int64, patch TaxRatePatch) (*TaxRate, error) {
 	set, args := []string{}, []any{id}
+	after := map[string]any{}
 	add := func(col string, v any) {
 		args = append(args, v)
 		set = append(set, fmt.Sprintf("%s = $%d", col, len(args)))
+		after[col] = v
 	}
 	if patch.Name != nil {
 		name := strings.TrimSpace(*patch.Name)
@@ -212,32 +232,68 @@ func (s *Taxes) Update(ctx context.Context, id int64, patch TaxRatePatch) (*TaxR
 		return nil, Validationf("nothing to change")
 	}
 
-	t, err := scanTaxRate(s.app.db.QueryRowContext(ctx,
-		`UPDATE tax_rates SET `+strings.Join(set, ", ")+`, updated_at = now()
-		 WHERE id = $1 RETURNING `+strings.ReplaceAll(taxRateColumns, "t.", ""), args...))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, NotFoundf("tax rate not found")
-	}
+	var t *TaxRate
+	err := InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		// One SELECT for `before`, on a row the UPDATE below locks anyway.
+		was, err := scanTaxRate(tx.QueryRowContext(ctx,
+			`SELECT `+strings.ReplaceAll(taxRateColumns, "t.", "")+
+				` FROM tax_rates WHERE id = $1 FOR UPDATE`, id))
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("tax rate not found")
+		}
+		if err != nil {
+			return err
+		}
+		before := map[string]any{}
+		for col, v := range map[string]any{
+			"name": was.Name, "rate_bp": was.RateBP, "country": was.Country,
+			"state": was.State, "category_id": was.CategoryID, "active": was.Active,
+		} {
+			if _, changed := after[col]; changed {
+				before[col] = v
+			}
+		}
+
+		t, err = scanTaxRate(tx.QueryRowContext(ctx,
+			`UPDATE tax_rates SET `+strings.Join(set, ", ")+`, updated_at = now()
+			 WHERE id = $1 RETURNING `+strings.ReplaceAll(taxRateColumns, "t.", ""), args...))
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("tax rate not found")
+		}
+		if err != nil {
+			return translateTaxErr(err)
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditTaxRateUpdate, Entity: AuditEntityTaxRate,
+			ID: t.ID, Label: t.Name, Summary: "Edited the tax rate " + t.Name,
+			Before: before, After: after,
+		})
+	})
 	if err != nil {
-		return nil, translateTaxErr(err)
+		return nil, err
 	}
 	return t, nil
 }
 
 // Delete removes a rate. Orders keep what they were charged.
 func (s *Taxes) Delete(ctx context.Context, id int64) error {
-	res, err := s.app.db.ExecContext(ctx, `DELETE FROM tax_rates WHERE id = $1`, id)
-	if err != nil {
-		return translateTaxErr(err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return NotFoundf("tax rate not found")
-	}
-	return nil
+	return InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		var name string
+		var rateBP int
+		err := tx.QueryRowContext(ctx,
+			`DELETE FROM tax_rates WHERE id = $1 RETURNING name, rate_bp`, id).Scan(&name, &rateBP)
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("tax rate not found")
+		}
+		if err != nil {
+			return translateTaxErr(err)
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditTaxRateDelete, Entity: AuditEntityTaxRate,
+			ID: id, Label: name, Summary: "Deleted the tax rate " + name,
+			Before: map[string]any{"name": name, "rate_bp": rateBP},
+		})
+	})
 }
 
 // ------------------------------------------------------------------ resolving

@@ -391,7 +391,10 @@ func (a *App) bearerAuth(next http.Handler) http.Handler {
 			return
 		}
 		if a.validAdminToken(token) {
-			next.ServeHTTP(w, r)
+			// Authentication is unchanged; the marker is read only by
+			// auditActor, and it is what lets a row say "a script did this"
+			// rather than "the store did this".
+			next.ServeHTTP(w, withAdminToken(r))
 			return
 		}
 		if su, ok := a.superusers.Resolve(r.Context(), token); ok {
@@ -444,6 +447,7 @@ func (a *App) mountCoreRoutes() {
 	a.mountLocationRoutes()
 	a.mountTeamRoutes()
 	a.mountRoleRoutes()
+	a.mountAuditRoutes()
 	a.mountSettingsRoutes()
 	a.mountCartRoutes()
 	a.mountCheckoutRoutes()

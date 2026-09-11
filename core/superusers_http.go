@@ -23,6 +23,12 @@ func (a *App) mountSuperuserRoutes() {
 	a.HandleAdminFunc("PATCH /api/admin/superusers/{id}", a.handleUpdateSuperuser, RightTeamWrite)
 	a.HandleAdminFunc("PUT /api/admin/superusers/{id}/role", a.handleSetRole, RightTeamWrite)
 	a.HandleAdminFunc("DELETE /api/admin/superusers/{id}", a.handleDeleteSuperuser, RightTeamWrite)
+
+	// The way back in when the password itself is what is missing. Mounted here
+	// rather than beside the team routes because it belongs to this file's
+	// subject — signing in — and the three public routes sit with the other two
+	// that cannot require a credential.
+	a.mountPasswordResetRoutes()
 }
 
 // authResponse is what a successful sign-in returns: the credential and the
@@ -47,6 +53,11 @@ func (a *App) handleAuthState(w http.ResponseWriter, r *http.Request) {
 		// Whether a static token would also be accepted. The panel never uses
 		// one, but an operator debugging a 401 benefits from seeing it.
 		"token_auth": len(a.cfg.AdminTokens) > 0,
+		// Whether a reset link could actually leave the building. The built-in
+		// logger does not count — a link written to a log file is no use to
+		// somebody who cannot sign in to read it — and a Forgot-password button
+		// that 202s into silence is worse than no button at all.
+		"password_reset": a.notifier.delivers(ChannelEmail),
 	})
 }
 

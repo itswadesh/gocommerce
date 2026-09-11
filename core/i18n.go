@@ -15,6 +15,13 @@ const (
 	ctxKeyLanguage ctxKey = iota
 	ctxKeyLogger
 	ctxKeySuperuser
+	// The audit trail has to tell three callers apart where ctxKeySuperuser
+	// only ever distinguished two: a person, a script holding a static admin
+	// token, and the engine's own background work. They live in this block
+	// because it is the one context-key mechanism the engine has; auditActor
+	// in audit.go is the only reader.
+	ctxKeyAdminToken
+	ctxKeyActorLabel
 )
 
 // WithLanguage returns a context carrying the resolved request language.

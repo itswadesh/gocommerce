@@ -76,6 +76,10 @@
       "description": "What each role may do in this store."
     },
     {
+      "name": "admin:audit",
+      "description": "Who did what: the store's record of every operator action."
+    },
+    {
       "name": "admin:settings",
       "description": "The store's own configuration, as the panel reads it."
     }
@@ -1371,6 +1375,10 @@
                         "token_auth": {
                           "type": "boolean",
                           "description": "A static admin token would also be accepted."
+                        },
+                        "password_reset": {
+                          "type": "boolean",
+                          "description": "An email notifier is installed, so a reset link can actually be sent. False when the only backend is the built-in logger."
                         }
                       }
                     }
@@ -1470,6 +1478,232 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/admin/password-reset": {
+      "post": {
+        "tags": [
+          "admin:auth"
+        ],
+        "summary": "Ask for a password reset link",
+        "description": "Public, because a reset cannot require the credential it replaces. The answer is 202 whatever address goes in — identical in body and in status for an address that belongs to an operator and one that does not — so the route cannot be used to discover who has an account. `delivery` is `none` when the store has no email backend beyond the built-in logger; nothing will arrive, and no token is written at all. Repeated requests are throttled, on a budget separate from the login one.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "identity": {
+                    "type": "string",
+                    "description": "The operator's email. Named `identity` for PocketBase compatibility; `email` is accepted as a synonym.",
+                    "format": "email"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Taken in. Whether an email is on its way is deliberately not said.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PasswordResetAccepted"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "description": "Too many reset requests.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/password-reset/{token}": {
+      "get": {
+        "tags": [
+          "admin:auth"
+        ],
+        "summary": "Whether a reset link is still alive",
+        "description": "Public: holding the token is the credential. It returns only when the link expires, so the reset screen can show a dead link before anybody types a password twice. It deliberately does not name the account — an endpoint that turned a token into an address would be the one place in this flow that confirms an operator exists.",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The link is live.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PasswordResetTarget"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown, expired or already spent — one answer for all three.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts from this address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/password-reset/confirm": {
+      "post": {
+        "tags": [
+          "admin:auth"
+        ],
+        "summary": "Spend a reset link and sign in",
+        "description": "Public. The token travels in the body rather than the path, so the one request that spends it is not repeated in an access log. It is claimed and spent in a single transaction, so two people opening one link cannot both win; every session that operator held ends with it, as does every other outstanding link of theirs, and the session in the response is new. The password is validated before the token is touched, so a typo does not burn the link.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "token",
+                  "password"
+                ],
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "description": "The token from the emailed link."
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "minLength": 8
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AuthResponse"
+          },
+          "400": {
+            "description": "An invalid or expired token, or a password that is too short.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts from this address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/superusers/{id}/password-reset": {
+      "post": {
+        "tags": [
+          "admin:auth"
+        ],
+        "summary": "Mail an operator a reset link",
+        "description": "Requires `team.write`, the right that can already set that operator's password outright — so this grants nothing new, and replaces the practice of choosing somebody's password for them.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Taken in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PasswordResetAccepted"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       }
@@ -5902,6 +6136,520 @@
           }
         }
       }
+    },
+    "/api/admin/audit": {
+      "get": {
+        "tags": [
+          "admin:audit"
+        ],
+        "summary": "The store’s activity",
+        "description": "Every recorded operator action, newest first. Two things a reader has to know: a key present in changes.after and absent from changes.before means the previous value was not recorded rather than that it was empty; and created_at is the transaction's start time, so an audit row and the outbox event from the same transaction carry an identical instant. An unknown actor_kind, action or entity_type answers with an empty page rather than a 400, because a feed that refuses a stale filter is a screen an operator cannot get out of. It sits behind store.operate: filtering the whole store by person is a different question from the history of one record, which follows that record's own read right.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ActorID"
+          },
+          {
+            "name": "actor_kind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "operator",
+                "token",
+                "system"
+              ]
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "An exact action name, such as order.refund.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "entity_type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "order",
+                "product",
+                "stock",
+                "category",
+                "collection",
+                "discount",
+                "tax_rate",
+                "location",
+                "superuser",
+                "invitation",
+                "role"
+              ]
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "query",
+            "description": "\"42\" for a numbered record, \"manager\" for a role.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/From"
+          },
+          {
+            "$ref": "#/components/parameters/To"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the trail, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AuditEntry"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/audit/actors": {
+      "get": {
+        "tags": [
+          "admin:audit"
+        ],
+        "summary": "Who appears in the trail",
+        "description": "Most recently active first, capped at 200. No meta block: it is a short bounded list, and it is built from the trail rather than from the team table.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The actors.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AuditActor"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/products/{id}/history": {
+      "get": {
+        "tags": [
+          "admin:audit"
+        ],
+        "summary": "A product’s history",
+        "description": "Product edits, options, media and collection membership, plus every variant edit under it — including the price, because a variant edit is filed against the product an operator is looking at. A record with no rows answers 200 with an empty array rather than 404: the log knowing nothing about a record is not the record being absent, and everything that existed before this table did has an honestly empty history.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "This record’s history, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AuditEntry"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/variants/{id}/history": {
+      "get": {
+        "tags": [
+          "admin:audit"
+        ],
+        "summary": "A variant’s stock history",
+        "description": "stock.adjust, stock.set and stock.transfer for this variant, each naming its location and both counts. Behind inventory.read rather than catalog.read because these are counts, not listings. A record with no rows answers 200 with an empty array rather than 404: the log knowing nothing about a record is not the record being absent, and everything that existed before this table did has an honestly empty history.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "This record’s history, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AuditEntry"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/categories/{id}/history": {
+      "get": {
+        "tags": [
+          "admin:audit"
+        ],
+        "summary": "A category’s history",
+        "description": "Creation, edits and deletion, with parent_id on both sides of a move. A record with no rows answers 200 with an empty array rather than 404: the log knowing nothing about a record is not the record being absent, and everything that existed before this table did has an honestly empty history.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "This record’s history, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AuditEntry"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/discounts/{id}/history": {
+      "get": {
+        "tags": [
+          "admin:audit"
+        ],
+        "summary": "A discount’s history",
+        "description": "value_bp and value_minor are integers on both sides of a change, never a percentage and never a formatted amount. A record with no rows answers 200 with an empty array rather than 404: the log knowing nothing about a record is not the record being absent, and everything that existed before this table did has an honestly empty history.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "This record’s history, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AuditEntry"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/tax-rates/{id}/history": {
+      "get": {
+        "tags": [
+          "admin:audit"
+        ],
+        "summary": "A tax rate’s history",
+        "description": "rate_bp in basis points on both sides — what makes \"who raised VAT, and when\" answerable. A record with no rows answers 200 with an empty array rather than 404: the log knowing nothing about a record is not the record being absent, and everything that existed before this table did has an honestly empty history.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "This record’s history, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AuditEntry"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/locations/{id}/history": {
+      "get": {
+        "tags": [
+          "admin:audit"
+        ],
+        "summary": "A location’s history",
+        "description": "Includes location.set_default, which silently redirects every future reservation in the store. A record with no rows answers 200 with an empty array rather than 404: the log knowing nothing about a record is not the record being absent, and everything that existed before this table did has an honestly empty history.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "This record’s history, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AuditEntry"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -5986,6 +6734,15 @@
         "description": "Exclusive upper bound.",
         "schema": {
           "type": "string"
+        }
+      },
+      "ActorID": {
+        "name": "actor_id",
+        "in": "query",
+        "description": "A superuser id. Rows written by a token or by the engine itself carry none and are never matched by this.",
+        "schema": {
+          "type": "integer",
+          "format": "int64"
         }
       },
       "DryRun": {
@@ -6385,6 +7142,33 @@
             "format": "date-time"
           },
           "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PasswordResetAccepted": {
+        "type": "object",
+        "description": "The answer to a reset request. `accepted` is always true: the route will not say whether the address belongs to an operator.",
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "delivery": {
+            "type": "string",
+            "enum": [
+              "email",
+              "none"
+            ],
+            "description": "How this store delivers a link. `none` means no email backend is installed, nothing will arrive, and no token was written — a fact about configuration, the same for every caller."
+          }
+        }
+      },
+      "PasswordResetTarget": {
+        "type": "object",
+        "description": "Everything a lookup will say about a live link. The account behind it is deliberately not named.",
+        "properties": {
+          "expires_at": {
             "type": "string",
             "format": "date-time"
           }
@@ -8263,6 +9047,132 @@
                 "store.operate"
               ]
             }
+          }
+        }
+      },
+      "AuditEntry": {
+        "type": "object",
+        "description": "One recorded operator action.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The transaction's start time. An audit row and the outbox event written by the same transaction therefore carry an identical instant, because now() is transaction_timestamp()."
+          },
+          "actor_kind": {
+            "type": "string",
+            "enum": [
+              "operator",
+              "token",
+              "system"
+            ],
+            "description": "A person, a script holding a static admin token, or the engine itself. The three are different facts: a trail that cannot tell a deploy script from the unpaid sweeper answers a different question from the one it was asked."
+          },
+          "actor_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Null for a token and for the system. It may point at a superuser who has since been deleted: who did it is a fact about the past and outlives the account."
+          },
+          "actor_email": {
+            "type": "string",
+            "description": "The email as it was at the time, snapshotted rather than joined."
+          },
+          "actor_role": {
+            "type": "string",
+            "description": "The role as it was at the time. Somebody who is a manager today may have been staff when they did this."
+          },
+          "actor_label": {
+            "type": "string",
+            "description": "A name for a caller that is not a person, such as the unpaid sweeper. Never the token."
+          },
+          "action": {
+            "type": "string",
+            "description": "What was done, as <record>.<verb>. These are not event names: order.edit_lines and order.update both publish order.edited, and order.refund publishes nothing at all.",
+            "example": "order.refund"
+          },
+          "entity_type": {
+            "type": "string",
+            "enum": [
+              "order",
+              "product",
+              "stock",
+              "category",
+              "collection",
+              "discount",
+              "tax_rate",
+              "location",
+              "superuser",
+              "invitation",
+              "role"
+            ]
+          },
+          "entity_id": {
+            "type": "string",
+            "description": "Text, because not everything an operator changes is numbered: a role is \"manager\"."
+          },
+          "entity_label": {
+            "type": "string",
+            "description": "What the record was called at the time, kept so the log stays readable after it is renamed and after it is deleted."
+          },
+          "summary": {
+            "type": "string"
+          },
+          "changes": {
+            "type": "object",
+            "description": "A key present in after and absent from before means the previous value was not recorded, never that it was empty. Money is always an integer *_minor key plus a currency, never a formatted string.",
+            "properties": {
+              "before": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "after": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "event": {
+                "type": "string",
+                "description": "The outbox event the same transaction published, where there was one. It is what lets a timeline drawn from both tables render each fact once."
+              }
+            }
+          }
+        }
+      },
+      "AuditActor": {
+        "type": "object",
+        "description": "Somebody who appears in the trail. Built from the trail and never from the team table, so it does not hand the roster to a reader who holds store.operate but not team.read.",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "operator",
+              "token",
+              "system"
+            ]
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "acts": {
+            "type": "integer"
+          },
+          "last_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },

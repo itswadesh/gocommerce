@@ -3,8 +3,10 @@ package invoices
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/misiki/gocommerce/core"
 	"github.com/misiki/gocommerce/gctest"
@@ -252,4 +254,97 @@ func itoa(v int64) string {
 		v /= 10
 	}
 	return string(digits)
+}
+
+// TestInvoiceRoutesRequireOrdersRead proves the document is behind the same
+// right as the order it renders. The snapshot embeds the buyer's name, email
+// and address, so a role that may not read the order may not read the invoice.
+//
+// A session, not gctest.AdminToken: a static admin token carries every right
+// and so cannot tell a gated route from an open one.
+func TestInvoiceRoutesRequireOrdersRead(t *testing.T) {
+	app := gctest.New(t, testModule())
+	ctx := context.Background()
+
+	result := gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
+	if _, err := app.Pay().MarkPaid(ctx, result.Order.ID, "cash"); err != nil {
+		t.Fatalf("mark paid: %v", err)
+	}
+	gctest.DrainOutbox(t, app)
+
+	document := "/api/admin/x/invoices/" + itoa(result.Order.ID)
+	staff := gctest.OperatorToken(t, app, "staff@example.com", gocommerce.RoleStaff)
+
+	// Staff carries orders.read by default.
+	if rec := gctest.SessionRequest(t, app, staff, http.MethodGet, "/api/admin/x/invoices", nil); rec.Code != http.StatusOK {
+		t.Errorf("staff listing invoices = %d, want 200: %s", rec.Code, rec.Body)
+	}
+	if rec := gctest.SessionRequest(t, app, staff, http.MethodGet, document, nil); rec.Code != http.StatusOK {
+		t.Errorf("staff reading an invoice = %d, want 200: %s", rec.Code, rec.Body)
+	}
+
+	// Cut staff back to the catalog — the narrowest legal role — and both
+	// doors close.
+	if _, err := app.Roles().Set(ctx, gocommerce.RoleStaff,
+		[]gocommerce.Right{gocommerce.RightCatalogRead}, nil); err != nil {
+		t.Fatalf("re-cut staff: %v", err)
+	}
+	for _, target := range []string{"/api/admin/x/invoices", document} {
+		rec := gctest.SessionRequest(t, app, staff, http.MethodGet, target, nil)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("a catalog-only role reading %s = %d, want 403: %s", target, rec.Code, rec.Body)
+		}
+		if strings.Contains(rec.Body.String(), "gctest@example.com") {
+			t.Errorf("the refusal of %s leaked the buyer's email", target)
+		}
+	}
+}
+
+// TestDocumentIsHTMLUnlessJSONIsAsked pins the negotiation a printing client
+// depends on: no Accept header — what a browser fetch sends by default — is the
+// printable document, and rule 6 still binds the JSON branch.
+func TestDocumentIsHTMLUnlessJSONIsAsked(t *testing.T) {
+	app := gctest.New(t, testModule())
+	ctx := context.Background()
+
+	result := gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
+	if _, err := app.Pay().MarkPaid(ctx, result.Order.ID, "cash"); err != nil {
+		t.Fatalf("mark paid: %v", err)
+	}
+	gctest.DrainOutbox(t, app)
+	path := "/api/admin/x/invoices/" + itoa(result.Order.ID)
+
+	rec := gctest.AdminRequest(t, app, http.MethodGet, path, nil)
+	if got := rec.Header().Get("Content-Type"); !strings.Contains(got, "text/html") {
+		t.Errorf("without an Accept header the content type is %q, want text/html", got)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.Header.Set("Authorization", "Bearer "+gctest.AdminToken)
+	req.Header.Set("Accept", "application/json")
+	jsonRec := httptest.NewRecorder()
+	app.Handler().ServeHTTP(jsonRec, req)
+	if got := jsonRec.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("with Accept: application/json the content type is %q", got)
+	}
+	var doc struct {
+		Number   string            `json:"number"`
+		IssuedAt time.Time         `json:"issued_at"`
+		Order    *gocommerce.Order `json:"order"`
+	}
+	gctest.DecodeData(t, jsonRec, &doc)
+	if doc.Number == "" || doc.Order == nil {
+		t.Fatalf("the JSON branch returned %+v", doc)
+	}
+	// Money crosses the wire as minor units and a currency code, here as
+	// everywhere else.
+	if doc.Order.Total.Currency == "" || doc.Order.Total.AmountMinor == 0 {
+		t.Errorf("the total is not a {amount_minor, currency} object: %+v", doc.Order.Total)
+	}
+}
+
+func TestModuleContract(t *testing.T) {
+	app := gctest.New(t, testModule())
+	gctest.AssertAdminRoutesDeclareRights(t, app, "invoices")
+	gctest.AssertSpecCoversModuleRoutes(t, app, "invoices")
 }

@@ -1,0 +1,78 @@
+{
+  "paths": {
+    "/api/admin/x/invoices": {
+      "get": {
+        "tags": ["admin:invoices"],
+        "summary": "The invoices issued, newest first",
+        "description": "Requires orders.read. There are no filters and no search: the query is the whole table, newest id first. An invoice is found from its order, not by its number. The seller name, address and tax ID printed on the document come from the invoices module's configuration in the store's own main() and have no API.",
+        "security": [{"adminToken": []}],
+        "parameters": [
+          {"$ref": "#/components/parameters/Limit"},
+          {"$ref": "#/components/parameters/PageNumber"},
+          {"$ref": "#/components/parameters/Offset"}
+        ],
+        "responses": {
+          "200": {"description": "A page of invoices.", "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {
+              "data": {"type": "array", "items": {"$ref": "#/components/schemas/InvoicesSummary"}},
+              "meta": {"$ref": "#/components/schemas/ListMeta"}
+            }
+          }}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      }
+    },
+    "/api/admin/x/invoices/{orderId}": {
+      "get": {
+        "tags": ["admin:invoices"],
+        "summary": "The invoice for an order",
+        "description": "Requires orders.read — the document embeds the buyer's name, email and address, so whoever may read the order may read it and whoever may not, may not. Returns a complete, self-contained printable HTML document by default, and JSON when the Accept header contains application/json. The JSON branch returns money as {amount_minor, currency}, like every other response.",
+        "security": [{"adminToken": []}],
+        "parameters": [
+          {"name": "orderId", "in": "path", "required": true, "schema": {"type": "integer", "format": "int64", "minimum": 1}, "description": "The ORDER's id, not the invoice's. The list row carries both."}
+        ],
+        "responses": {
+          "200": {
+            "description": "The invoice, as a document or as data.",
+            "content": {
+              "text/html": {"schema": {"type": "string"}},
+              "application/json": {"schema": {
+                "type": "object",
+                "properties": {"data": {
+                  "type": "object",
+                  "properties": {
+                    "number": {"type": "string"},
+                    "issued_at": {"type": "string", "format": "date-time"},
+                    "order": {"$ref": "#/components/schemas/Order"}
+                  }
+                }}
+              }}
+            }
+          },
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "InvoicesSummary": {
+        "type": "object",
+        "description": "A row in the invoice list. Prefixed with the module's own name, as every component a fragment owns must be: a duplicate component name is a boot failure in a store that installs two modules, not a test failure in either.",
+        "properties": {
+          "id": {"type": "integer", "format": "int64", "description": "The invoice's id."},
+          "order_id": {"type": "integer", "format": "int64", "description": "The order this invoice was issued for — the id the document route takes."},
+          "number": {"type": "string", "description": "The printed invoice number, sequential and gapless within its year."},
+          "issued_at": {"type": "string", "format": "date-time"},
+          "total": {"$ref": "#/components/schemas/Money", "description": "An object, not a scalar: {amount_minor, currency}."}
+        }
+      }
+    }
+  }
+}

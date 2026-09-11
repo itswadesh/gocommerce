@@ -1,0 +1,104 @@
+{
+  "paths": {
+    "/api/admin/x/mcp": {
+      "post": {
+        "tags": ["admin:mcp"],
+        "summary": "The MCP endpoint: JSON-RPC 2.0 over HTTP",
+        "description": "Requires store.operate. Four things a client has to know. (1) The body is JSON-RPC 2.0 and the reply is NOT the {data}/{error} envelope every other route uses — an MCP client cannot be asked to unwrap a second envelope, so this route is a deliberate, standing exception. (2) A JSON-RPC error comes back with HTTP 200 and a top-level error member; the HTTP status describes the transport, not the call. (3) A request with no id is a notification: it is answered 202 with an empty body. (4) 401 and 403 still arrive as the engine's own error envelope, from the middleware, before the body is read.",
+        "security": [{"adminToken": []}],
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/McpJsonRpcRequest"}}}
+        },
+        "responses": {
+          "200": {"description": "The JSON-RPC response, whether the call succeeded or failed.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/McpJsonRpcResponse"}}}},
+          "202": {"description": "A notification: accepted, nothing to say back."},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      }
+    },
+    "/api/admin/x/mcp/audit": {
+      "get": {
+        "tags": ["admin:mcp"],
+        "summary": "Every mutating tool call an agent has made",
+        "description": "Requires store.operate. Reads are not recorded — only tools that declare they change state. No filters: newest id first, with limit and offset.",
+        "security": [{"adminToken": []}],
+        "parameters": [
+          {"$ref": "#/components/parameters/Limit"},
+          {"$ref": "#/components/parameters/PageNumber"},
+          {"$ref": "#/components/parameters/Offset"}
+        ],
+        "responses": {
+          "200": {"description": "A page of audit entries.", "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {
+              "data": {"type": "array", "items": {"$ref": "#/components/schemas/McpAuditEntry"}},
+              "meta": {"$ref": "#/components/schemas/ListMeta"}
+            }
+          }}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "McpJsonRpcRequest": {
+        "type": "object",
+        "required": ["jsonrpc", "method"],
+        "properties": {
+          "jsonrpc": {"type": "string", "enum": ["2.0"]},
+          "id": {"description": "An integer or a string. Omit it to send a notification, which is answered 202 with no body.", "oneOf": [{"type": "integer"}, {"type": "string"}]},
+          "method": {"type": "string", "enum": ["initialize", "notifications/initialized", "ping", "tools/list", "tools/call"]},
+          "params": {"type": "object", "description": "For tools/call: {name, arguments}. The other methods take none."}
+        }
+      },
+      "McpJsonRpcResponse": {
+        "type": "object",
+        "description": "Exactly one of result and error is present. The shape of result depends on the method: tools/list returns {tools: [McpTool]}, tools/call returns {content: [...]} with an isError flag when the tool refused.",
+        "properties": {
+          "jsonrpc": {"type": "string", "enum": ["2.0"]},
+          "id": {"oneOf": [{"type": "integer"}, {"type": "string"}]},
+          "result": {"type": "object"},
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {"type": "integer"},
+              "message": {"type": "string"}
+            }
+          }
+        }
+      },
+      "McpTool": {
+        "type": "object",
+        "description": "One entry in the tools/list result.",
+        "properties": {
+          "name": {"type": "string"},
+          "description": {"type": "string"},
+          "inputSchema": {"type": "object", "description": "A JSON Schema object describing the tool's arguments."},
+          "annotations": {
+            "type": "object",
+            "description": "ToolAnnotations arrived in MCP revision 2025-03-26 while this server advertises 2024-11-05, so this member is a forward-compatible extension rather than part of the advertised revision: a newer client reads it natively, an older one ignores it.",
+            "properties": {
+              "readOnlyHint": {"type": "boolean", "description": "False for a tool that changes state. A store running the module read-only withholds those tools entirely, so every tool it lists reports true."}
+            }
+          }
+        }
+      },
+      "McpAuditEntry": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer", "format": "int64"},
+          "tool": {"type": "string"},
+          "arguments": {"type": "object", "description": "The arguments the agent sent, verbatim."},
+          "outcome": {"type": "string", "enum": ["ok", "error"]},
+          "detail": {"type": "string", "description": "Present only when the outcome is error: what the tool said."},
+          "called_at": {"type": "string", "format": "date-time", "description": "RFC 3339. Before this release it was Go's own default layout (\"2026-09-09 12:00:00 +0000 UTC\"), which no date parser accepts — a script reading this field needs updating."}
+        }
+      }
+    }
+  }
+}

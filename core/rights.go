@@ -276,6 +276,31 @@ var RequiredRights = []Right{RightCatalogRead}
 
 // ------------------------------------------------------------- enforcement
 
+// rightsExempt names the admin routes that may legitimately declare no right.
+//
+// Refreshing and ending your own session cannot require one: they are how an
+// operator with no rights at all still signs out. The /me routes are exempt
+// for that reason turned around — they act on the caller and on nobody else,
+// and the handlers read the operator from the session, so there is no id to
+// tamper with. The settings read is exempt because every screen formats money
+// before it can draw anything, so a role that could not read it would read
+// prices in the wrong currency; what keeps that safe is a rule on the payload
+// rather than on the route, and a diagnostic or a secret belongs behind a
+// right on a route of its own.
+//
+// Named rather than pattern-matched, so adding one is a decision somebody
+// writes down. Read by TestEveryAdminRouteDeclaresRights and by doctor's
+// "admin rights" check, which is the same rule enforced in a binary whose
+// author never wrote a test.
+var rightsExempt = map[string]bool{
+	"POST /api/admin/auth-refresh":       true,
+	"POST /api/admin/auth-logout":        true,
+	"GET /api/admin/me":                  true,
+	"PATCH /api/admin/me":                true,
+	"POST /api/admin/me/revoke-sessions": true,
+	"GET /api/admin/settings":            true,
+}
+
 // requireRights refuses a request whose operator does not carry every right the
 // route asked for.
 //

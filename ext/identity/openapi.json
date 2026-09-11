@@ -281,9 +281,10 @@
       "get": {
         "tags": ["admin:identity"],
         "summary": "List accounts",
+        "description": "Requires customers.read — the same right the engine's own customer route carries, because this is the same personal data.",
         "security": [{"adminToken": []}],
         "parameters": [
-          {"name": "q", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Matches an email or a name."},
+          {"name": "q", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Matches an email or a name — not a phone number."},
           {"$ref": "#/components/parameters/IdentityLimit"}, {"$ref": "#/components/parameters/IdentityPage"}, {"$ref": "#/components/parameters/IdentityOffset"}
         ],
         "responses": {
@@ -293,7 +294,9 @@
               "data": {"type": "array", "items": {"$ref": "#/components/schemas/IdentityCustomer"}},
               "meta": {"$ref": "#/components/schemas/ListMeta"}
             }
-          }}}}
+          }}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
         }
       }
     },
@@ -302,19 +305,24 @@
       "get": {
         "tags": ["admin:identity"],
         "summary": "One account",
+        "description": "Requires customers.read.",
         "security": [{"adminToken": []}],
         "responses": {
           "200": {"$ref": "#/components/responses/IdentityCustomerResponse"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
           "404": {"$ref": "#/components/responses/NotFound"}
         }
       },
       "delete": {
         "tags": ["admin:identity"],
         "summary": "Delete an account",
-        "description": "Removes the account, its sessions, its address book and its order links. The orders themselves are core's and stay.",
+        "description": "Requires customers.read AND store.operate. Rights are all-of, and erasure is not a read: this removes the account, its sessions, its address book and its order links. The orders themselves are core's and stay. There is no customers.write in the engine, so the destructive half borrows the store's operating right rather than riding a read one.",
         "security": [{"adminToken": []}],
         "responses": {
           "204": {"description": "Deleted."},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
           "404": {"$ref": "#/components/responses/NotFound"}
         }
       }

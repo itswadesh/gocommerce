@@ -1,0 +1,190 @@
+{
+  "paths": {
+    "/x/cms/pages": {
+      "get": {
+        "tags": ["cms"],
+        "summary": "Published pages in the request's language",
+        "description": "Drafts are withheld unless the store was built with Config.PublishedOnly turned off, which is a preview-environment setting.",
+        "parameters": [
+          {"$ref": "#/components/parameters/Lang"},
+          {"$ref": "#/components/parameters/Limit"},
+          {"$ref": "#/components/parameters/PageNumber"},
+          {"$ref": "#/components/parameters/Offset"}
+        ],
+        "responses": {
+          "200": {"description": "A page of content pages.", "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {
+              "data": {"type": "array", "items": {"$ref": "#/components/schemas/CmsPage"}},
+              "meta": {"$ref": "#/components/schemas/ListMeta"}
+            }
+          }}}},
+          "400": {"$ref": "#/components/responses/Validation"}
+        }
+      }
+    },
+    "/x/cms/pages/{slug}": {
+      "get": {
+        "tags": ["cms"],
+        "summary": "One page by its slug",
+        "description": "A language nobody has written the page in falls back to the store's own default language before 404ing, so a shopper whose browser asked for a translation that does not exist still gets the page.",
+        "parameters": [
+          {"name": "slug", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"$ref": "#/components/parameters/Lang"}
+        ],
+        "responses": {
+          "200": {"description": "The page.", "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {"data": {"$ref": "#/components/schemas/CmsPage"}}
+          }}}},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/api/admin/x/cms/pages": {
+      "get": {
+        "tags": ["admin:cms"],
+        "summary": "Every page, drafts included",
+        "description": "Requires catalog.read. Newest first.",
+        "security": [{"adminToken": []}],
+        "parameters": [
+          {"name": "language", "in": "query", "required": false, "schema": {"type": "string"}, "description": "An unknown language is an empty page, not an error — there is no endpoint that lists the store's configured languages."},
+          {"name": "status", "in": "query", "required": false, "schema": {"type": "string", "enum": ["draft", "published"]}, "description": "Validated: anything else is a 400 rather than an empty result."},
+          {"$ref": "#/components/parameters/Limit"},
+          {"$ref": "#/components/parameters/PageNumber"},
+          {"$ref": "#/components/parameters/Offset"}
+        ],
+        "responses": {
+          "200": {"description": "A page of content pages.", "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {
+              "data": {"type": "array", "items": {"$ref": "#/components/schemas/CmsPage"}},
+              "meta": {"$ref": "#/components/schemas/ListMeta"}
+            }
+          }}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      },
+      "post": {
+        "tags": ["admin:cms"],
+        "summary": "Create a page",
+        "description": "Requires catalog.write. Language is fixed at creation: the same slug in another language is a different page, and there is no route that moves one.",
+        "security": [{"adminToken": []}],
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CmsPageInput"}}}
+        },
+        "responses": {
+          "201": {"description": "The page.", "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {"data": {"$ref": "#/components/schemas/CmsPage"}}
+          }}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "409": {"description": "A page already exists at that slug in that language.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
+        }
+      }
+    },
+    "/api/admin/x/cms/pages/{id}": {
+      "parameters": [{"$ref": "#/components/parameters/PathID"}],
+      "get": {
+        "tags": ["admin:cms"],
+        "summary": "One page by its id",
+        "description": "Requires catalog.read.",
+        "security": [{"adminToken": []}],
+        "responses": {
+          "200": {"description": "The page.", "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {"data": {"$ref": "#/components/schemas/CmsPage"}}
+          }}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      },
+      "patch": {
+        "tags": ["admin:cms"],
+        "summary": "Update a page",
+        "description": "Requires catalog.write. Setting the status to published stamps the publication date once and never moves it again.",
+        "security": [{"adminToken": []}],
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CmsPagePatch"}}}
+        },
+        "responses": {
+          "200": {"description": "The page.", "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {"data": {"$ref": "#/components/schemas/CmsPage"}}
+          }}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"description": "Another page already uses that slug in this language.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
+        }
+      },
+      "delete": {
+        "tags": ["admin:cms"],
+        "summary": "Delete a page",
+        "description": "Requires catalog.write.",
+        "security": [{"adminToken": []}],
+        "responses": {
+          "204": {"description": "Deleted."},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CmsPage": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer", "format": "int64"},
+          "slug": {"type": "string"},
+          "title": {"type": "string"},
+          "body": {"type": "string"},
+          "excerpt": {"type": "string"},
+          "status": {"type": "string", "enum": ["draft", "published"]},
+          "language": {"type": "string"},
+          "seo": {"type": "object", "additionalProperties": {"type": "string"}},
+          "published_at": {"type": "string", "format": "date-time", "nullable": true},
+          "created_at": {"type": "string", "format": "date-time"},
+          "updated_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "CmsPageInput": {
+        "type": "object",
+        "required": ["slug", "title"],
+        "properties": {
+          "slug": {"type": "string"},
+          "title": {"type": "string"},
+          "body": {"type": "string"},
+          "excerpt": {"type": "string"},
+          "status": {"type": "string", "enum": ["draft", "published"], "default": "draft"},
+          "language": {"type": "string", "description": "Defaults to the store's own default language."},
+          "seo": {"type": "object", "additionalProperties": {"type": "string"}}
+        }
+      },
+      "CmsPagePatch": {
+        "type": "object",
+        "description": "Every field is optional; the ones you omit are left alone. There is no language field: a page cannot change language, because the same slug in another language is a different page.",
+        "properties": {
+          "slug": {"type": "string"},
+          "title": {"type": "string"},
+          "body": {"type": "string"},
+          "excerpt": {"type": "string"},
+          "status": {"type": "string", "enum": ["draft", "published"]},
+          "seo": {"type": "object", "additionalProperties": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

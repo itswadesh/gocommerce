@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -499,4 +500,72 @@ func TestEveryRouteIsDocumented(t *testing.T) {
 	if served == 0 {
 		t.Fatal("the module registered no routes")
 	}
+}
+
+// TestAdminAccountRoutesAreGated proves the asymmetry is deliberate: reading
+// account holders is customers.read, and erasing one needs the store's
+// operating right as well.
+//
+// A session, not gctest.AdminToken: a static admin token carries every right,
+// so it cannot tell a gated route from an open one.
+func TestAdminAccountRoutesAreGated(t *testing.T) {
+	app, _ := newApp(t)
+	ada := register(t, app, "ada@example.com")
+	id := strconv.FormatInt(ada.Record.ID, 10)
+
+	staff := gctest.OperatorToken(t, app, "staff@example.com", gocommerce.RoleStaff)
+	owner := gctest.OperatorToken(t, app, "owner@example.com", gocommerce.RoleOwner)
+
+	if rec := gctest.SessionRequest(t, app, staff, http.MethodGet, "/api/admin/x/identity/customers", nil); rec.Code != http.StatusOK {
+		t.Errorf("staff listing accounts = %d, want 200: %s", rec.Code, rec.Body)
+	}
+	if rec := gctest.SessionRequest(t, app, staff, http.MethodGet, "/api/admin/x/identity/customers/"+id, nil); rec.Code != http.StatusOK {
+		t.Errorf("staff reading an account = %d, want 200: %s", rec.Code, rec.Body)
+	}
+
+	rec := gctest.SessionRequest(t, app, staff, http.MethodDelete, "/api/admin/x/identity/customers/"+id, nil)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("staff erasing an account = %d, want 403: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), string(gocommerce.RightStoreOperate)) {
+		t.Errorf("the refusal does not name the missing right: %s", rec.Body)
+	}
+
+	if rec := gctest.SessionRequest(t, app, owner, http.MethodDelete, "/api/admin/x/identity/customers/"+id, nil); rec.Code != http.StatusNoContent {
+		t.Errorf("owner erasing an account = %d, want 204: %s", rec.Code, rec.Body)
+	}
+}
+
+// TestAccountListIsRefusedWithoutCustomersRead is the privilege widening this
+// gate closed, reproduced.
+//
+// A role deliberately cut down to the catalog is refused the engine's own
+// customer route; before the module named a right, the identical request here
+// returned every account holder's email, name and phone. Installing a module
+// must not widen who may read personal data.
+func TestAccountListIsRefusedWithoutCustomersRead(t *testing.T) {
+	app, _ := newApp(t)
+	register(t, app, "ada@example.com")
+
+	// catalog.read is the floor every role keeps, so this is the narrowest
+	// legal cut of staff.
+	if _, err := app.Roles().Set(context.Background(), gocommerce.RoleStaff,
+		[]gocommerce.Right{gocommerce.RightCatalogRead}, nil); err != nil {
+		t.Fatalf("re-cut staff: %v", err)
+	}
+	staff := gctest.OperatorToken(t, app, "staff@example.com", gocommerce.RoleStaff)
+
+	rec := gctest.SessionRequest(t, app, staff, http.MethodGet, "/api/admin/x/identity/customers", nil)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("a catalog-only role listing accounts = %d, want 403: %s", rec.Code, rec.Body)
+	}
+	if strings.Contains(rec.Body.String(), "ada@example.com") {
+		t.Error("the refusal leaked the data it refused")
+	}
+}
+
+func TestModuleContract(t *testing.T) {
+	app, _ := newApp(t)
+	gctest.AssertAdminRoutesDeclareRights(t, app, "identity")
+	gctest.AssertSpecCoversModuleRoutes(t, app, "identity")
 }

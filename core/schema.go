@@ -28,6 +28,8 @@ func coreMigrations() []Migration {
 		{ID: "0017_locations", SQL: migration0017Locations},
 		{ID: "0018_invitations", SQL: migration0018Invitations},
 		{ID: "0019_role_rights", SQL: migration0019RoleRights},
+		{ID: "0020_admin_audit", SQL: migration0020AdminAudit},
+		{ID: "0021_password_resets", SQL: migration0021PasswordResets},
 	}
 }
 
@@ -871,4 +873,127 @@ CREATE TABLE role_rights (
     granted_by bigint      REFERENCES superusers (id) ON DELETE SET NULL,
     PRIMARY KEY (role, right_name)
 );
+`
+
+// M20 — who did it.
+//
+// Twenty rights decided who may act (M19) and the store recorded who let
+// somebody in (M18), and then nothing recorded what any of them actually did.
+// The outbox is not that record: it announces order state to consumers, carries
+// no actor, has one aggregate type, and its rows are a delivery queue rather
+// than history. This is the other half — written in the same transaction as the
+// change, read only by operators, and delivered nowhere.
+//
+// It carries no CHECK, no foreign key and no unique index but the primary key.
+// That is the design, not an omission: this row is written inside somebody
+// else's transaction, so every constraint on it is a way for the record of a
+// change to veto the change — and a failed statement poisons a transaction, so
+// there is no ignoring one once it has fired. The vocabulary lives in Go
+// (audit.go), which is where it can be enforced without a rollback: the same
+// reasoning M19 gives for role_rights.right_name carrying no foreign key.
+//
+// actor_email and actor_role are snapshots rather than joins, for the reason
+// M18 gives for keeping superuser_invitations.invited_by: who did it is a fact
+// about the past and has to survive that person leaving. A dangling actor_id is
+// the safe direction to be wrong in.
+const migration0020AdminAudit = `
+CREATE TABLE admin_audit (
+    id           bigserial   PRIMARY KEY,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    -- Three kinds of caller, and they are not the same fact: a person, a script
+    -- holding a static admin token, and the engine's own background work.
+    -- 'system' is the default because that is honestly what a row written by a
+    -- caller nobody identified is.
+    actor_kind   text        NOT NULL DEFAULT 'system',
+    actor_id     bigint,
+    actor_email  text        NOT NULL DEFAULT '',
+    -- The role as it was at the time. Somebody who is a manager today may have
+    -- been staff when they did this, and the row has to say which.
+    actor_role   text        NOT NULL DEFAULT '',
+    -- A free description for a caller that is not a person: the sweeper's name,
+    -- a cron job, a module naming itself. Never the token.
+    actor_label  text        NOT NULL DEFAULT '',
+    action       text        NOT NULL,
+    entity_type  text        NOT NULL,
+    -- text rather than bigint, because not everything an operator changes is
+    -- numbered. A role is 'manager', and a column that could not hold it would
+    -- push the one change a store most wants attributed into a special case.
+    entity_id    text        NOT NULL,
+    -- What the record was called at the time: an order number, a SKU, a title.
+    -- Kept so the feed stays readable after the record is renamed, and after it
+    -- is deleted — a deleted product is exactly what somebody opens the log to
+    -- ask about.
+    entity_label text        NOT NULL DEFAULT '',
+    summary      text        NOT NULL DEFAULT '',
+    -- {"before": {...}, "after": {...}, "event": "order.cancelled"}. A key in
+    -- after with none in before means the previous value was not recorded,
+    -- never that it was empty. Money keys are the same *_minor integers the API
+    -- uses; nothing in here is a formatted string. "event" names the outbox
+    -- event this same transaction published, which is what lets an order
+    -- timeline drawn from both sources render each fact once.
+    changes      jsonb       NOT NULL DEFAULT '{}'
+);
+
+-- One record's history: what the per-record History card asks for, and the only
+-- query on this table that runs on a screen an operator opens all day.
+CREATE INDEX admin_audit_entity_idx ON admin_audit (entity_type, entity_id, id DESC);
+
+-- "What has this person done." Partial, because in a store that runs scripts
+-- the rows with no person behind them are the majority and are never the answer
+-- to that question.
+CREATE INDEX admin_audit_actor_idx ON admin_audit (actor_id, id DESC)
+    WHERE actor_id IS NOT NULL;
+
+-- There is no third index. Two entries per audited write is already the cost
+-- this table adds to every order transition; the unfiltered, action-filtered and
+-- date-ranged reads walk the primary key backwards, which is time order, and
+-- created_at is now() — transaction_timestamp() — so two rows can share an
+-- instant and id is the tie-break. The feed is ordered by id, never by
+-- created_at.
+`
+
+// M21 — a way back in that does not go through another operator.
+//
+// Until now an operator who forgot their password had two remedies and both
+// went through somebody else: an owner typing a password on their behalf in the
+// Edit drawer — the exact practice M18's invitations exist to end — or shell
+// access to `gocommerce superuser update`. A single-owner store whose owner
+// forgot their password was locked out entirely.
+//
+// Only the SHA-256 of the token is stored, exactly as with superuser_sessions
+// and superuser_invitations: a leaked database yields no usable link, and the
+// token exists solely in the email that was sent.
+//
+// token_hash is the key rather than superuser_id, deliberately. Keying on the
+// operator would make "one live link" a schema fact, but it would also make
+// asking again destroy the link already sitting in the victim's mailbox — and
+// unlike re-inviting, which only an authenticated owner can trigger, this
+// request is public. Several live links are therefore allowed, and ConfirmReset
+// deletes every one of that operator's rows when it spends one: the safety
+// without the denial of service.
+const migration0021PasswordResets = `
+CREATE TABLE superuser_password_resets (
+    token_hash   text        PRIMARY KEY,
+    -- CASCADE, where superuser_invitations.invited_by is SET NULL. An
+    -- invitation records a fact about the past and should outlive the inviter;
+    -- an outstanding reset for an operator who no longer exists is not history,
+    -- it is a live key to an account that is gone.
+    superuser_id bigint      NOT NULL REFERENCES superusers (id) ON DELETE CASCADE,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    expires_at   timestamptz NOT NULL,
+    -- A row born expired would present as "the link did not work and nobody can
+    -- say why".
+    CHECK (expires_at > created_at)
+);
+
+-- Spending one link drops every other link that operator holds, and any password
+-- or email change drops them all; every one of those deletes is by superuser_id.
+CREATE INDEX superuser_password_resets_user_idx
+    ON superuser_password_resets (superuser_id);
+
+-- The opportunistic sweep, as superuser_invitations_expiry_idx serves for
+-- invitations. Expiry itself is enforced by the expires_at > now() predicate in
+-- ConfirmReset, so a store that never sweeps stays correct and merely untidy.
+CREATE INDEX superuser_password_resets_expiry_idx
+    ON superuser_password_resets (expires_at);
 `

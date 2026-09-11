@@ -60,15 +60,15 @@ func (f *Fulfillments) Create(ctx context.Context, orderID int64, providerCode s
 		shipment.Provider = providerCode
 	}
 
-	return f.app.orders.transition(ctx, orderID, func(ctx context.Context, tx *sql.Tx, o *Order) (string, any, error) {
+	return f.app.orders.transition(ctx, orderID, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
 		// Re-check under the row lock: the world may have moved while the
 		// carrier was thinking.
 		if err := shippableOrder(o); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		meta, err := json.Marshal(req.Meta)
 		if err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		// Who is carrying it, worked out from the number, unless the provider
 		// already knows — an integration that booked the shipment has been told
@@ -83,10 +83,10 @@ func (f *Fulfillments) Create(ctx context.Context, orderID int64, providerCode s
 			INSERT INTO fulfillments (order_id, provider, tracking, carrier, label_url, status, metadata)
 			VALUES ($1, $2, $3, $4, $5, 'shipped', $6)`,
 			o.ID, shipment.Provider, shipment.Tracking, carrier, shipment.LabelURL, meta); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		if err := setOrderStatus(ctx, tx, o.ID, OrderShipped); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		o.Status = OrderShipped
 
@@ -96,7 +96,17 @@ func (f *Fulfillments) Create(ctx context.Context, orderID int64, providerCode s
 		if shipment.LabelURL != "" {
 			payload.Extra["label_url"] = shipment.LabelURL
 		}
-		return EventOrderShipped, payload, nil
+		return transitionResult{
+			Event: EventOrderShipped, Payload: payload,
+			Action:  AuditOrderShip,
+			Summary: "Shipped order " + o.Number + " — " + shipment.Provider + " " + shipment.Tracking,
+			After: map[string]any{
+				"provider":  shipment.Provider,
+				"tracking":  shipment.Tracking,
+				"carrier":   carrier,
+				"label_url": shipment.LabelURL,
+			},
+		}, nil
 	})
 }
 
@@ -233,35 +243,39 @@ func (f *Fulfillments) Delete(ctx context.Context, id int64) (*Order, error) {
 		return nil, err
 	}
 
-	return f.app.orders.transition(ctx, orderID, func(ctx context.Context, tx *sql.Tx, o *Order) (string, any, error) {
+	return f.app.orders.transition(ctx, orderID, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
 		if o.Status == OrderDelivered {
-			return "", nil, Conflictf(
+			return transitionResult{}, Conflictf(
 				"order %s is delivered; undo the delivery before removing what shipped it", o.Number)
 		}
 
 		res, err := tx.ExecContext(ctx, `DELETE FROM fulfillments WHERE id = $1`, id)
 		if err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		if n, err := res.RowsAffected(); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		} else if n == 0 {
 			// Deleted by somebody else between the read and the lock.
-			return "", nil, NotFoundf("fulfillment not found")
+			return transitionResult{}, NotFoundf("fulfillment not found")
 		}
 
 		var left int
 		if err := tx.QueryRowContext(ctx,
 			`SELECT count(*) FROM fulfillments WHERE order_id = $1 AND status <> 'cancelled'`,
 			o.ID).Scan(&left); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		if left == 0 && o.Status == OrderShipped {
 			if err := setOrderStatus(ctx, tx, o.ID, OrderConfirmed); err != nil {
-				return "", nil, err
+				return transitionResult{}, err
 			}
 			o.Status = OrderConfirmed
 		}
-		return EventOrderUnshipped, f.app.orders.eventPayload(o), nil
+		return transitionResult{
+			Event: EventOrderUnshipped, Payload: f.app.orders.eventPayload(o),
+			Action:  AuditOrderShipmentDelete,
+			Summary: "Removed a shipment from order " + o.Number,
+		}, nil
 	})
 }

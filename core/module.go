@@ -67,9 +67,15 @@ func (a *App) Handle(pattern string, h http.Handler) {
 // HandleAdmin mounts an admin route under "/api/admin/x/<module>/", wrapped
 // in the admin authentication middleware. A module never has to remember to
 // authenticate: choosing this method is the authentication.
-// A route may name the rights it needs. Naming none means "any authenticated
-// admin", which is what every route meant before roles existed and what a
-// module gets unless it says otherwise.
+//
+// Naming the rights is the authorisation, and it is not automatic. The
+// argument is variadic, so forgetting it is silent: the route mounts, the
+// caller is still identified, and every signed-in operator reaches it whatever
+// their role. Name at least one right from rights.go on every admin route —
+// gctest.AssertAdminRoutesDeclareRights is how a module's own suite proves it,
+// and doctor's "admin rights" check finds it in a binary where nobody did.
+// A route that legitimately needs none belongs in rightsExempt, where adding
+// one is a decision somebody wrote down.
 func (a *App) HandleAdmin(pattern string, h http.Handler, rights ...Right) {
 	a.mount(pattern, h, true, rights...)
 }

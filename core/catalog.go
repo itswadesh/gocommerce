@@ -337,7 +337,11 @@ func (c *Catalog) CreateProduct(ctx context.Context, in ProductInput) (*Product,
 				return err
 			}
 		}
-		return nil
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditProductCreate, Entity: AuditEntityProduct,
+			ID: id, Label: in.Title, Summary: "Created the product " + in.Title,
+			After: map[string]any{"slug": in.Slug, "title": in.Title, "status": in.Status},
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -542,9 +546,13 @@ func optionKey(valueIDs []int64) string {
 // UpdateProduct applies a patch.
 func (c *Catalog) UpdateProduct(ctx context.Context, id int64, patch ProductPatch) (*Product, error) {
 	sets, args := []string{}, []any{}
+	// after is filled by the same closure that builds the statement, so the
+	// audit record can never name a column the UPDATE did not set.
+	after := map[string]any{}
 	add := func(expr string, v any) {
 		args = append(args, v)
 		sets = append(sets, fmt.Sprintf("%s = $%d", expr, len(args)))
+		after[expr] = v
 	}
 	if patch.Slug != nil {
 		s := strings.TrimSpace(*patch.Slug)
@@ -581,6 +589,7 @@ func (c *Catalog) UpdateProduct(ctx context.Context, id int64, patch ProductPatc
 		}
 		args = append(args, tags)
 		sets = append(sets, "tags = "+tagsExpr(len(args)))
+		after["tags"] = *patch.Tags
 	}
 	if patch.CategoryID.Present {
 		add("category_id", patch.CategoryID.Value)
@@ -605,13 +614,50 @@ func (c *Catalog) UpdateProduct(ctx context.Context, id int64, patch ProductPatc
 	args = append(args, id)
 
 	query := "UPDATE products SET " + strings.Join(sets, ", ") +
-		fmt.Sprintf(" WHERE id = $%d", len(args))
-	res, err := c.app.db.ExecContext(ctx, query, args...)
+		fmt.Sprintf(" WHERE id = $%d RETURNING title", len(args))
+
+	// The write gains a transaction so the change and the record of it commit
+	// together. The extra SELECT takes a row lock the UPDATE two lines below
+	// takes anyway — a round trip earlier, on an edit screen, and never on the
+	// checkout path.
+	err := InTx(ctx, c.app.db, func(tx *sql.Tx) error {
+		before := map[string]any{}
+		var slug, title, status, productType, vendor string
+		var categoryID *int64
+		err := tx.QueryRowContext(ctx, `
+			SELECT slug, title, status, product_type, vendor, category_id
+			FROM products WHERE id = $1 FOR UPDATE`, id,
+		).Scan(&slug, &title, &status, &productType, &vendor, &categoryID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("product %d does not exist", id)
+		}
+		if err != nil {
+			return err
+		}
+		for col, was := range map[string]any{
+			"slug": slug, "title": title, "status": status,
+			"product_type": productType, "vendor": vendor, "category_id": categoryID,
+		} {
+			if _, changed := after[col]; changed {
+				before[col] = was
+			}
+		}
+
+		var newTitle string
+		if err := tx.QueryRowContext(ctx, query, args...).Scan(&newTitle); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return NotFoundf("product %d does not exist", id)
+			}
+			return translateCatalogErr(err)
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditProductUpdate, Entity: AuditEntityProduct,
+			ID: id, Label: newTitle, Summary: "Edited the product " + newTitle,
+			Before: before, After: after,
+		})
+	})
 	if err != nil {
-		return nil, translateCatalogErr(err)
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return nil, NotFoundf("product %d does not exist", id)
+		return nil, err
 	}
 	return c.GetProduct(ctx, id)
 }
@@ -619,14 +665,25 @@ func (c *Catalog) UpdateProduct(ctx context.Context, id int64, patch ProductPatc
 // DeleteProduct removes a product and everything hanging off it. Order lines
 // survive: they hold their own snapshot and their product reference is nulled.
 func (c *Catalog) DeleteProduct(ctx context.Context, id int64) error {
-	res, err := c.app.db.ExecContext(ctx, `DELETE FROM products WHERE id = $1`, id)
-	if err != nil {
-		return translateCatalogErr(err)
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return NotFoundf("product %d does not exist", id)
-	}
-	return nil
+	return InTx(ctx, c.app.db, func(tx *sql.Tx) error {
+		// RETURNING rather than RowsAffected, because the audit row needs the
+		// name: a deleted product is exactly what somebody opens the log to ask
+		// about, and after this statement nothing else can tell them.
+		var title, slug string
+		err := tx.QueryRowContext(ctx,
+			`DELETE FROM products WHERE id = $1 RETURNING title, slug`, id).Scan(&title, &slug)
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("product %d does not exist", id)
+		}
+		if err != nil {
+			return translateCatalogErr(err)
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditProductDelete, Entity: AuditEntityProduct,
+			ID: id, Label: title, Summary: "Deleted the product " + title,
+			Before: map[string]any{"slug": slug, "title": title},
+		})
+	})
 }
 
 // AddOption adds an axis to an existing product.
@@ -646,8 +703,14 @@ func (c *Catalog) AddOption(ctx context.Context, productID int64, in OptionInput
 			productID).Scan(&next); err != nil {
 			return err
 		}
-		_, err := c.insertOptions(ctx, tx, productID, []OptionInput{in}, next)
-		return err
+		if _, err := c.insertOptions(ctx, tx, productID, []OptionInput{in}, next); err != nil {
+			return err
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditProductOptionAdd, Entity: AuditEntityProduct,
+			ID: productID, Summary: "Added the option " + in.Name,
+			After: map[string]any{"option": in.Name, "values": in.Values},
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -679,7 +742,21 @@ func (c *Catalog) CreateVariant(ctx context.Context, productID int64, in Variant
 			return err
 		}
 		id, err = c.insertVariant(ctx, tx, productID, in, values, next)
-		return err
+		if err != nil {
+			return err
+		}
+		after := map[string]any{
+			"variant_id": id, "sku": in.SKU,
+			"price_minor": in.PriceMinor, "currency": c.app.cfg.Currency,
+		}
+		if in.Barcode != "" {
+			after["barcode"] = in.Barcode
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditVariantCreate, Entity: AuditEntityProduct,
+			ID: productID, Label: in.SKU, Summary: "Added the variant " + in.SKU,
+			After: after,
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -713,9 +790,11 @@ func (c *Catalog) optionValueLookup(ctx context.Context, tx *sql.Tx, productID i
 // UpdateVariant applies a patch. Stock is not patchable here; see [Inventory].
 func (c *Catalog) UpdateVariant(ctx context.Context, id int64, patch VariantPatch) (*Variant, error) {
 	sets, args := []string{}, []any{}
+	after := map[string]any{}
 	add := func(expr string, v any) {
 		args = append(args, v)
 		sets = append(sets, fmt.Sprintf("%s = $%d", expr, len(args)))
+		after[expr] = v
 	}
 	if patch.SKU != nil {
 		if strings.TrimSpace(*patch.SKU) == "" {
@@ -824,15 +903,74 @@ func (c *Catalog) UpdateVariant(ctx context.Context, id int64, patch VariantPatc
 	sets = append(sets, "updated_at = now()")
 	args = append(args, id)
 
-	res, err := c.app.db.ExecContext(ctx,
-		"UPDATE variants SET "+strings.Join(sets, ", ")+fmt.Sprintf(" WHERE id = $%d", len(args)), args...)
+	// A variant edit is filed against its PRODUCT: the panel edits variants
+	// inside the product editor, and that is the record whose history a
+	// merchandiser reads. Stock movements are the other half and are filed
+	// against the variant under entity type `stock`, which is the line
+	// catalog.read and inventory.read are already drawn along.
+	err := InTx(ctx, c.app.db, func(tx *sql.Tx) error {
+		// This method reads nothing about the row today, so `before` costs one
+		// real statement — acceptable on an edit screen, and this is the row
+		// that answers "who dropped the price".
+		before := map[string]any{}
+		var wasSKU string
+		var wasBarcode sql.NullString
+		var wasPrice int64
+		var wasCompare sql.NullInt64
+		var wasPosition int
+		var wasActive bool
+		var productID int64
+		err := tx.QueryRowContext(ctx, `
+			SELECT product_id, sku, price_minor, compare_at_price_minor, barcode, position, active
+			FROM variants WHERE id = $1 FOR UPDATE`, id,
+		).Scan(&productID, &wasSKU, &wasPrice, &wasCompare, &wasBarcode, &wasPosition, &wasActive)
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("variant %d does not exist", id)
+		}
+		if err != nil {
+			return err
+		}
+		for col, was := range map[string]any{
+			"sku": wasSKU, "price_minor": wasPrice, "position": wasPosition, "active": wasActive,
+			"compare_at_price_minor": nullInt64Value(wasCompare),
+			"barcode":                wasBarcode.String,
+		} {
+			if _, changed := after[col]; changed {
+				before[col] = was
+			}
+		}
+
+		var sku string
+		err = tx.QueryRowContext(ctx,
+			"UPDATE variants SET "+strings.Join(sets, ", ")+
+				fmt.Sprintf(" WHERE id = $%d RETURNING product_id, sku", len(args)), args...,
+		).Scan(&productID, &sku)
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("variant %d does not exist", id)
+		}
+		if err != nil {
+			return translateCatalogErr(err)
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditVariantUpdate, Entity: AuditEntityProduct,
+			ID: productID, Label: sku, Summary: "Edited the variant " + sku,
+			Before: before, After: after,
+		})
+	})
 	if err != nil {
-		return nil, translateCatalogErr(err)
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return nil, NotFoundf("variant %d does not exist", id)
+		return nil, err
 	}
 	return c.GetVariant(ctx, id)
+}
+
+// nullInt64Value renders a nullable integer for a changes payload: the number
+// when there is one, and JSON null when there is not. A zero would be a lie —
+// "no compare-at price" and "a compare-at price of zero" are different facts.
+func nullInt64Value(v sql.NullInt64) any {
+	if !v.Valid {
+		return nil
+	}
+	return v.Int64
 }
 
 // DeleteVariant removes a variant. The last variant of a product cannot be
@@ -856,8 +994,16 @@ func (c *Catalog) DeleteVariant(ctx context.Context, id int64) error {
 		if count <= 1 {
 			return Conflictf("a product must keep at least one variant")
 		}
-		_, err := tx.ExecContext(ctx, `DELETE FROM variants WHERE id = $1`, id)
-		return translateCatalogErr(err)
+		var sku string
+		if err := tx.QueryRowContext(ctx,
+			`DELETE FROM variants WHERE id = $1 RETURNING sku`, id).Scan(&sku); err != nil {
+			return translateCatalogErr(err)
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditVariantDelete, Entity: AuditEntityProduct,
+			ID: productID, Label: sku, Summary: "Deleted the variant " + sku,
+			Before: map[string]any{"variant_id": id, "sku": sku},
+		})
 	})
 }
 

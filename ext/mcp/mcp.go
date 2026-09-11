@@ -29,6 +29,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/misiki/gocommerce/core"
 )
@@ -123,8 +124,20 @@ func (m *Module) Register(app *gocommerce.App) error {
 
 	// Mounting through HandleAdmin means the admin token is the agent's
 	// credential — this module writes no authentication of its own.
-	app.HandleAdminFunc("POST /api/admin/x/mcp", m.handleHTTP)
-	app.HandleAdminFunc("GET /api/admin/x/mcp/audit", m.handleAudit)
+	//
+	// A second operating surface onto the store, handed to an agent: that is
+	// what store.operate names. It narrows nothing for an agent, since a static
+	// admin token carries every right by design, but a session-authenticated
+	// operator reaching this from a browser is now checked, which is the case
+	// that should be.
+	//
+	// The mount-time right is not the whole check, and is not meant to be. One
+	// route dispatches every tool, from catalog.read to orders.fulfill, and
+	// requireRights runs once before the body is parsed — so the per-tool half
+	// belongs inside callTool, against the operator on the context. Until it
+	// lands, store.operate at the mount is the whole of the authorisation here.
+	app.HandleAdminFunc("POST /api/admin/x/mcp", m.handleHTTP, gocommerce.RightStoreOperate)
+	app.HandleAdminFunc("GET /api/admin/x/mcp/audit", m.handleAudit, gocommerce.RightStoreOperate)
 	return nil
 }
 
@@ -248,6 +261,17 @@ func (m *Module) describeTools() []map[string]any {
 			"name":        t.Name,
 			"description": t.Description,
 			"inputSchema": schema,
+			// MCP's own vocabulary for "this tool does not change anything".
+			// readOnlyHint is a ToolAnnotation, which arrived in revision
+			// 2025-03-26 and so postdates the 2024-11-05 this server
+			// advertises — emitting it early is an extension either way, but a
+			// forward-compatible one that a newer client reads natively and an
+			// older one ignores, which a bare "mutates" member would not be.
+			//
+			// It is the only thing that tells a tool which reads apart from one
+			// that settles a payment. Under Config.ReadOnly the mutating tools
+			// are withheld entirely, so every tool left reports true.
+			"annotations": map[string]any{"readOnlyHint": !t.Mutates},
 		})
 	}
 	return out
@@ -326,19 +350,22 @@ func (m *Module) handleAudit(w http.ResponseWriter, r *http.Request) {
 		Arguments json.RawMessage `json:"arguments"`
 		Outcome   string          `json:"outcome"`
 		Detail    string          `json:"detail,omitempty"`
-		CalledAt  string          `json:"called_at"`
+		// time.Time, not string. Scanning the column into an `any` and running
+		// it through fmt.Sprint produced Go's own layout — "2026-09-09
+		// 12:00:00 +0000 UTC" — which is neither RFC 3339 nor anything a
+		// client's date parser accepts, so every timestamp this route has ever
+		// served was unreadable to the reader it was for.
+		CalledAt time.Time `json:"called_at"`
 	}
 	list := []entry{}
 	for rows.Next() {
 		var e entry
 		var raw []byte
-		var at any
-		if err := rows.Scan(&e.ID, &e.Tool, &raw, &e.Outcome, &e.Detail, &at); err != nil {
+		if err := rows.Scan(&e.ID, &e.Tool, &raw, &e.Outcome, &e.Detail, &e.CalledAt); err != nil {
 			gocommerce.RespondError(w, r, err)
 			return
 		}
 		e.Arguments = raw
-		e.CalledAt = fmt.Sprint(at)
 		list = append(list, e)
 	}
 	gocommerce.RespondList(w, list, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})

@@ -2,6 +2,7 @@ package cms
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/misiki/gocommerce/core"
@@ -124,4 +125,114 @@ func itoa(v int64) string {
 		v /= 10
 	}
 	return string(digits)
+}
+
+// TestAdminPageRoutesRequireCatalogRights proves the read/write split landed on
+// the right routes, and that it is enforced at all.
+//
+// It has to use a session: gctest.AdminToken is the static admin credential and
+// carries every right by design, so a route mounted with no rights and a route
+// mounted with all of them look identical through it. Staff carries catalog.read
+// and not catalog.write by default, which is exactly the line being drawn.
+func TestAdminPageRoutesRequireCatalogRights(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+
+	staff := gctest.OperatorToken(t, app, "staff@example.com", gocommerce.RoleStaff)
+	owner := gctest.OperatorToken(t, app, "owner@example.com", gocommerce.RoleOwner)
+
+	if rec := gctest.SessionRequest(t, app, staff, http.MethodGet, "/api/admin/x/cms/pages", nil); rec.Code != http.StatusOK {
+		t.Errorf("staff listing pages = %d, want 200: %s", rec.Code, rec.Body)
+	}
+
+	page := map[string]any{"slug": "about", "title": "About us"}
+	rec := gctest.SessionRequest(t, app, staff, http.MethodPost, "/api/admin/x/cms/pages", page)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("staff creating a page = %d, want 403: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), string(gocommerce.RightCatalogWrite)) {
+		t.Errorf("the refusal does not name the missing right: %s", rec.Body)
+	}
+
+	rec = gctest.SessionRequest(t, app, owner, http.MethodPost, "/api/admin/x/cms/pages", page)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("owner creating a page = %d, want 201: %s", rec.Code, rec.Body)
+	}
+	var created Page
+	gctest.DecodeData(t, rec, &created)
+	target := "/api/admin/x/cms/pages/" + itoa(created.ID)
+
+	if rec := gctest.SessionRequest(t, app, staff, http.MethodGet, target, nil); rec.Code != http.StatusOK {
+		t.Errorf("staff reading a page = %d, want 200: %s", rec.Code, rec.Body)
+	}
+	if rec := gctest.SessionRequest(t, app, staff, http.MethodPatch, target, map[string]any{"title": "Mine now"}); rec.Code != http.StatusForbidden {
+		t.Errorf("staff editing a page = %d, want 403: %s", rec.Code, rec.Body)
+	}
+	if rec := gctest.SessionRequest(t, app, staff, http.MethodDelete, target, nil); rec.Code != http.StatusForbidden {
+		t.Errorf("staff deleting a page = %d, want 403: %s", rec.Code, rec.Body)
+	}
+	if rec := gctest.SessionRequest(t, app, owner, http.MethodPatch, target, map[string]any{"title": "About"}); rec.Code != http.StatusOK {
+		t.Errorf("owner editing a page = %d, want 200: %s", rec.Code, rec.Body)
+	}
+	if rec := gctest.SessionRequest(t, app, owner, http.MethodDelete, target, nil); rec.Code != http.StatusNoContent {
+		t.Errorf("owner deleting a page = %d, want 204: %s", rec.Code, rec.Body)
+	}
+}
+
+// Renaming a page onto a slug another page already holds is the same collision
+// as creating one there, and used to answer 500 "internal error": the driver
+// error went to RespondError unrecognised, which wrapped it and blanked the
+// message. TestSlugIsUniquePerLanguage covers only the create path.
+func TestRenamingASlugOntoAnotherPageIs409(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+
+	create := func(slug string) int64 {
+		t.Helper()
+		rec := gctest.AdminRequest(t, app, http.MethodPost, "/api/admin/x/cms/pages",
+			map[string]any{"slug": slug, "title": slug})
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("create %s = %d: %s", slug, rec.Code, rec.Body)
+		}
+		var p Page
+		gctest.DecodeData(t, rec, &p)
+		return p.ID
+	}
+	create("about")
+	terms := create("terms")
+
+	rec := gctest.AdminRequest(t, app, http.MethodPatch,
+		"/api/admin/x/cms/pages/"+itoa(terms), map[string]any{"slug": "about"})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("renaming onto an existing slug = %d, want 409: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `"conflict"`) {
+		t.Errorf("the error code is not conflict: %s", rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), "about") {
+		t.Errorf("the message does not say which slug: %s", rec.Body)
+	}
+}
+
+// The status filter goes straight into a WHERE, so an unrecognised value used
+// to return an empty 200 — a contract promising an enum nothing enforces.
+func TestListStatusFilterIsValidated(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+
+	rec := gctest.AdminRequest(t, app, http.MethodGet, "/api/admin/x/cms/pages?status=bogus", nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("an unknown status = %d, want 400: %s", rec.Code, rec.Body)
+	}
+	for _, status := range []string{"", "draft", "published"} {
+		if rec := gctest.AdminRequest(t, app, http.MethodGet, "/api/admin/x/cms/pages?status="+status, nil); rec.Code != http.StatusOK {
+			t.Errorf("status=%q = %d, want 200: %s", status, rec.Code, rec.Body)
+		}
+	}
+}
+
+// TestModuleContract is the pair every module should have: no admin route open
+// to a role holding nothing, and the served routes and the fragment agreeing in
+// both directions.
+func TestModuleContract(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	gctest.AssertAdminRoutesDeclareRights(t, app, "cms")
+	gctest.AssertSpecCoversModuleRoutes(t, app, "cms")
 }

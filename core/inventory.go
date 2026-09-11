@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 )
 
 // Inventory owns stock movements. Every change goes through here rather than
@@ -198,12 +199,47 @@ func (i *Inventory) Adjust(ctx context.Context, variantID, locationID int64, del
 		if n, _ := res.RowsAffected(); n == 0 {
 			return i.explainStockFailure(ctx, tx, variantID, loc)
 		}
-		return nil
+		// The conditional UPDATE above is still the guard, and the reads below
+		// are for the record only: nothing taken for `before` or `after` is
+		// ever allowed to become the check that decides. Converting that
+		// statement to a QueryRow would move the not-matched signal from
+		// RowsAffected()==0 to sql.ErrNoRows and silently rewrite what triggers
+		// explainStockFailure.
+		var onHand int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT on_hand FROM variant_stock WHERE variant_id = $1 AND location_id = $2`,
+			variantID, loc).Scan(&onHand); err != nil {
+			return err
+		}
+		sku, err := skuOf(ctx, tx, variantID)
+		if err != nil {
+			return err
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditStockAdjust, Entity: AuditEntityStock,
+			ID: variantID, Label: sku,
+			Summary: fmt.Sprintf("Adjusted stock on %s by %d", sku, delta),
+			// before is arithmetic rather than a second read: the guarded
+			// statement moved it by exactly delta or it did not run at all.
+			Before: map[string]any{"on_hand": onHand - delta},
+			After:  map[string]any{"on_hand": onHand, "location_id": loc, "delta": delta},
+		})
 	})
 	if err != nil {
 		return nil, err
 	}
 	return i.app.catalog.GetVariant(ctx, variantID)
+}
+
+// skuOf names a variant for an audit label, inside the caller's transaction —
+// what the shelf was called at the time is part of the record.
+func skuOf(ctx context.Context, tx *sql.Tx, variantID int64) (string, error) {
+	var sku string
+	err := tx.QueryRowContext(ctx, `SELECT sku FROM variants WHERE id = $1`, variantID).Scan(&sku)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", NotFoundf("variant %d does not exist", variantID)
+	}
+	return sku, err
 }
 
 // SetOnHand sets the absolute on-hand quantity at one location, for a stock
@@ -218,6 +254,17 @@ func (i *Inventory) SetOnHand(ctx context.Context, variantID, locationID int64, 
 		if err != nil {
 			return err
 		}
+		// prepare has already made sure the row exists, so this reads the count
+		// that is about to be replaced. A stock take without the previous count
+		// is half a record, and the FOR UPDATE takes a lock the guarded
+		// statement below takes anyway.
+		var was int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT on_hand FROM variant_stock WHERE variant_id = $1 AND location_id = $2 FOR UPDATE`,
+			variantID, loc).Scan(&was); err != nil {
+			return err
+		}
+		// Still the guard, and still RowsAffected: see Adjust.
 		res, err := tx.ExecContext(ctx, `
 			UPDATE variant_stock SET on_hand = $3, updated_at = now()
 			WHERE variant_id = $1 AND location_id = $2 AND $3 >= reserved`,
@@ -228,7 +275,17 @@ func (i *Inventory) SetOnHand(ctx context.Context, variantID, locationID int64, 
 		if n, _ := res.RowsAffected(); n == 0 {
 			return i.explainStockFailure(ctx, tx, variantID, loc)
 		}
-		return nil
+		sku, err := skuOf(ctx, tx, variantID)
+		if err != nil {
+			return err
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditStockSet, Entity: AuditEntityStock,
+			ID: variantID, Label: sku,
+			Summary: fmt.Sprintf("Counted %s at %d", sku, qty),
+			Before:  map[string]any{"on_hand": was},
+			After:   map[string]any{"on_hand": qty, "location_id": loc},
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -267,10 +324,37 @@ func (i *Inventory) Move(ctx context.Context, variantID, fromID, toID int64, qty
 		if n, _ := res.RowsAffected(); n == 0 {
 			return i.explainStockFailure(ctx, tx, variantID, from)
 		}
-		_, err = tx.ExecContext(ctx, `
+		if _, err := tx.ExecContext(ctx, `
 			UPDATE variant_stock SET on_hand = on_hand + $3, updated_at = now()
-			WHERE variant_id = $1 AND location_id = $2`, variantID, to, qty)
-		return translateCatalogErr(err)
+			WHERE variant_id = $1 AND location_id = $2`, variantID, to, qty); err != nil {
+			return translateCatalogErr(err)
+		}
+		var fromOnHand, toOnHand int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT on_hand FROM variant_stock WHERE variant_id = $1 AND location_id = $2`,
+			variantID, from).Scan(&fromOnHand); err != nil {
+			return err
+		}
+		if err := tx.QueryRowContext(ctx,
+			`SELECT on_hand FROM variant_stock WHERE variant_id = $1 AND location_id = $2`,
+			variantID, to).Scan(&toOnHand); err != nil {
+			return err
+		}
+		sku, err := skuOf(ctx, tx, variantID)
+		if err != nil {
+			return err
+		}
+		// One row for the whole transfer, not one per leg: the store's total
+		// did not change, and two rows would read as two movements.
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditStockTransfer, Entity: AuditEntityStock,
+			ID: variantID, Label: sku,
+			Summary: fmt.Sprintf("Moved %d of %s between locations", qty, sku),
+			After: map[string]any{
+				"from_location_id": from, "to_location_id": to, "quantity": qty,
+				"from_on_hand": fromOnHand, "to_on_hand": toOnHand,
+			},
+		})
 	})
 	if err != nil {
 		return nil, err

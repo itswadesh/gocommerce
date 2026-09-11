@@ -81,6 +81,7 @@ func (a *App) Diagnose(ctx context.Context) Report {
 	add(a.checkCatalog(ctx))
 	add(a.checkProviders())
 	add(a.checkContract())
+	add(a.checkAdminRights())
 
 	rep.OK = true
 	for _, c := range rep.Checks {
@@ -174,6 +175,22 @@ func (a *App) checkAdminAccess(ctx context.Context) Diagnostic {
 	default:
 		d.Status = StatusOK
 		d.Detail = fmt.Sprintf("%d superuser(s), %d admin token(s)", supers, tokens)
+	}
+	// The same question this check already asks, one step further: an operator
+	// who has forgotten their password is locked out unless a link can reach
+	// them, and both of these configurations look healthy from every other angle.
+	if d.Status == StatusOK {
+		switch {
+		case !a.notifier.delivers(ChannelEmail):
+			d.Status = StatusWarn
+			d.Detail += "; no email delivery, so a locked-out operator cannot reset their own password"
+			d.Hint = "register an email notifier (ext/notify-sendgrid) and set Config.PanelURL, " +
+				"or recover with `gocommerce superuser update <email> <password>`"
+		case a.cfg.PanelURL == "":
+			d.Status = StatusWarn
+			d.Detail += "; Config.PanelURL is unset, so a reset email carries a bare code instead of a link"
+			d.Hint = "set Config.PanelURL to where the panel is reached, e.g. https://shop.example.com"
+		}
 	}
 	// Config.Dev is deliberately not reported here. It is only dangerous while
 	// serving, and the CLI sets it for its own offline commands — including
@@ -388,5 +405,39 @@ func (a *App) checkContract() Diagnostic {
 	}
 	d.Status = StatusOK
 	d.Detail = fmt.Sprintf("%d documented path(s) cover every served route", len(documented))
+	return d
+}
+
+// checkAdminRights finds admin routes that name no right.
+//
+// Rights are variadic on HandleAdmin, so forgetting them is silent: the route
+// mounts, authentication still runs, and every signed-in operator reaches it
+// whatever their role. Core has had a test for this since roles shipped, but
+// the test boots an app with no modules in it — which is exactly why twelve
+// module admin routes went ungated for as long as they did. A check here runs
+// in everybody's binary, including one whose module author never wrote a test.
+//
+// Warn rather than fail: the store is serving, and only a fail flips Report.OK,
+// so `gocommerce doctor` keeps its exit code for the things that stop a sale.
+func (a *App) checkAdminRights() Diagnostic {
+	d := Diagnostic{Name: "admin rights"}
+
+	var ungated []string
+	for _, r := range a.Routes() {
+		if !r.Admin || len(r.Rights) > 0 || rightsExempt[r.Method+" "+r.Path] {
+			continue
+		}
+		ungated = append(ungated, r.Method+" "+r.Path)
+	}
+	if len(ungated) > 0 {
+		sort.Strings(ungated)
+		d.Status = StatusWarn
+		d.Detail = fmt.Sprintf("%d admin route(s) reachable by any role: %s",
+			len(ungated), strings.Join(ungated, ", "))
+		d.Hint = "name the rights on HandleAdmin, or add the route to rightsExempt"
+		return d
+	}
+	d.Status = StatusOK
+	d.Detail = "every admin route names the rights it needs"
 	return d
 }

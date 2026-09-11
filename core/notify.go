@@ -31,6 +31,26 @@ func (n *notifierSet) forChannel(channel string) []Notifier {
 	return n.byChannel[channel]
 }
 
+// delivers reports whether a channel has a backend that will actually send
+// something.
+//
+// Counting answers the wrong question: the built-in logger is registered for
+// every channel at boot and add only appends, so len(targets) > 0 is always
+// true — and RegisterNotifier's claim that "the built-in logger stands down"
+// is aspirational rather than what the code does. Somebody locked out of the
+// panel needs to know whether an email is really coming, not whether a line
+// will be written to a log they cannot read.
+func (n *notifierSet) delivers(channel string) bool {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	for _, target := range n.byChannel[channel] {
+		if _, isLog := target.(logNotifier); !isLog {
+			return true
+		}
+	}
+	return false
+}
+
 // send delivers on one channel. Every notifier gets the message even if an
 // earlier one failed, so a broken vendor does not silence the others; the
 // aggregated error asks the outbox to retry the whole event.

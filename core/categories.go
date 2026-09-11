@@ -165,7 +165,11 @@ func (s *Categories) Create(ctx context.Context, in CategoryInput) (*Category, e
 			return translateCategoryErr(err)
 		}
 		out = c
-		return nil
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditCategoryCreate, Entity: AuditEntityCategory,
+			ID: c.ID, Label: c.Title, Summary: "Created the category " + c.Title,
+			After: map[string]any{"slug": c.Slug, "title": c.Title, "parent_id": c.ParentID},
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -524,9 +528,11 @@ func (s *Categories) Update(ctx context.Context, id int64, patch CategoryPatch) 
 	var out *Category
 	err := InTx(ctx, s.app.db, func(tx *sql.Tx) error {
 		sets, args := []string{}, []any{}
+		after := map[string]any{}
 		add := func(column string, v any) {
 			args = append(args, v)
 			sets = append(sets, fmt.Sprintf("%s = $%d", column, len(args)))
+			after[column] = v
 		}
 		if patch.ParentID.Present {
 			if err := checkReparent(ctx, tx, id, patch.ParentID.Value); err != nil {
@@ -573,6 +579,28 @@ func (s *Categories) Update(ctx context.Context, id int64, patch CategoryPatch) 
 		sets = append(sets, "updated_at = now()")
 		args = append(args, id)
 
+		// The row before the change, which this transaction has already read
+		// for the cycle check when the parent moved and is one cheap statement
+		// otherwise. A category move is the act the audit gap names, so
+		// parent_id has to be readable on both sides.
+		was, err := scanCategory(tx.QueryRowContext(ctx,
+			`SELECT `+categoryColumns+` FROM categories WHERE id = $1 FOR UPDATE`, id))
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return NotFoundf("category %d does not exist", id)
+			}
+			return err
+		}
+		before := map[string]any{}
+		for column, v := range map[string]any{
+			"parent_id": was.ParentID, "slug": was.Slug,
+			"title": was.Title, "position": was.Position,
+		} {
+			if _, changed := after[column]; changed {
+				before[column] = v
+			}
+		}
+
 		c, err := scanCategory(tx.QueryRowContext(ctx,
 			"UPDATE categories SET "+strings.Join(sets, ", ")+
 				fmt.Sprintf(" WHERE id = $%d RETURNING ", len(args))+categoryColumns, args...))
@@ -583,7 +611,11 @@ func (s *Categories) Update(ctx context.Context, id int64, patch CategoryPatch) 
 			return translateCategoryErr(err)
 		}
 		out = c
-		return nil
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditCategoryUpdate, Entity: AuditEntityCategory,
+			ID: c.ID, Label: c.Title, Summary: "Edited the category " + c.Title,
+			Before: before, After: after,
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -717,14 +749,20 @@ func (s *Categories) Delete(ctx context.Context, id int64) error {
 			return Conflictf("that category is still used by %s; recategorise them first",
 				plural(products, "product", "products"))
 		}
-		res, err := tx.ExecContext(ctx, `DELETE FROM categories WHERE id = $1`, id)
+		var slug, title string
+		err := tx.QueryRowContext(ctx,
+			`DELETE FROM categories WHERE id = $1 RETURNING slug, title`, id).Scan(&slug, &title)
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("category %d does not exist", id)
+		}
 		if err != nil {
 			return err
 		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return NotFoundf("category %d does not exist", id)
-		}
-		return nil
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditCategoryDelete, Entity: AuditEntityCategory,
+			ID: id, Label: title, Summary: "Deleted the category " + title,
+			Before: map[string]any{"slug": slug, "title": title},
+		})
 	})
 }
 

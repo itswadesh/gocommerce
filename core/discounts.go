@@ -221,20 +221,50 @@ func (s *Discounts) Create(ctx context.Context, in DiscountInput) (*Discount, er
 		active = *in.Active
 	}
 
-	d, err := scanDiscount(s.app.db.QueryRowContext(ctx, `
-		INSERT INTO discounts (code, title, kind, value_bp, value_minor, scope,
-		                       min_subtotal_minor, starts_at, ends_at, usage_limit,
-		                       once_per_email, active, metadata)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-		RETURNING `+discountColumns,
-		nullString(strings.TrimSpace(in.Code)), in.Title, in.Kind,
-		nullInt(in.ValueBP), nullInt64(in.ValueMinor), in.Scope,
-		in.MinSubtotalMinor, in.StartsAt, in.EndsAt, in.UsageLimit,
-		in.OncePerEmail, active, meta))
+	// The statement gains a transaction so the rule and the record of who wrote
+	// it commit together. "Who invented a hundred-percent-off code" is the
+	// reason discounts.write was split out of catalog.write in the first place,
+	// and until now the answer was nowhere.
+	var d *Discount
+	err = InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		var derr error
+		d, derr = scanDiscount(tx.QueryRowContext(ctx, `
+			INSERT INTO discounts (code, title, kind, value_bp, value_minor, scope,
+			                       min_subtotal_minor, starts_at, ends_at, usage_limit,
+			                       once_per_email, active, metadata)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+			RETURNING `+discountColumns,
+			nullString(strings.TrimSpace(in.Code)), in.Title, in.Kind,
+			nullInt(in.ValueBP), nullInt64(in.ValueMinor), in.Scope,
+			in.MinSubtotalMinor, in.StartsAt, in.EndsAt, in.UsageLimit,
+			in.OncePerEmail, active, meta))
+		if derr != nil {
+			return translateDiscountErr(derr)
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditDiscountCreate, Entity: AuditEntityDiscount,
+			ID: d.ID, Label: discountLabel(d), Summary: "Created the discount " + discountLabel(d),
+			// Basis points and minor units on the wire, never a percentage
+			// string and never a formatted amount (rule 6).
+			After: map[string]any{
+				"code": d.Code, "kind": d.Kind, "value_bp": d.ValueBP,
+				"value_minor": d.ValueMinor, "scope": d.Scope, "active": d.Active,
+			},
+		})
+	})
 	if err != nil {
-		return nil, translateDiscountErr(err)
+		return nil, err
 	}
 	return d, nil
+}
+
+// discountLabel is what to call a discount in a log a person reads: the code
+// where there is one, and the title for an automatic discount, which has none.
+func discountLabel(d *Discount) string {
+	if d.Code != "" {
+		return d.Code
+	}
+	return d.Title
 }
 
 // Get loads one by id.
@@ -337,9 +367,11 @@ func (s *Discounts) Update(ctx context.Context, id int64, patch DiscountPatch) (
 	}
 
 	set, args := []string{}, []any{id}
+	after := map[string]any{}
 	add := func(col string, v any) {
 		args = append(args, v)
 		set = append(set, fmt.Sprintf("%s = $%d", col, len(args)))
+		after[col] = v
 	}
 	if patch.Code != nil {
 		add("code", nullString(strings.TrimSpace(*patch.Code)))
@@ -391,29 +423,64 @@ func (s *Discounts) Update(ctx context.Context, id int64, patch DiscountPatch) (
 		return nil, Validationf("nothing to change")
 	}
 
-	d, err := scanDiscount(s.app.db.QueryRowContext(ctx,
-		`UPDATE discounts SET `+strings.Join(set, ", ")+`, updated_at = now()
-		 WHERE id = $1 RETURNING `+discountColumns, args...))
+	// `before` is free: the method already read `current` at the top, before
+	// touching anything.
+	before := map[string]any{}
+	for col, was := range map[string]any{
+		"code": current.Code, "title": current.Title, "kind": current.Kind,
+		"value_bp": current.ValueBP, "value_minor": current.ValueMinor,
+		"scope": current.Scope, "active": current.Active,
+		"once_per_email": current.OncePerEmail,
+	} {
+		if _, changed := after[col]; changed {
+			before[col] = was
+		}
+	}
+
+	var d *Discount
+	err = InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		var derr error
+		d, derr = scanDiscount(tx.QueryRowContext(ctx,
+			`UPDATE discounts SET `+strings.Join(set, ", ")+`, updated_at = now()
+			 WHERE id = $1 RETURNING `+discountColumns, args...))
+		if derr != nil {
+			return translateDiscountErr(derr)
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditDiscountUpdate, Entity: AuditEntityDiscount,
+			ID: d.ID, Label: discountLabel(d), Summary: "Edited the discount " + discountLabel(d),
+			Before: before, After: after,
+		})
+	})
 	if err != nil {
-		return nil, translateDiscountErr(err)
+		return nil, err
 	}
 	return d, nil
 }
 
 // Delete removes a discount. Orders that used it keep their snapshot.
 func (s *Discounts) Delete(ctx context.Context, id int64) error {
-	res, err := s.app.db.ExecContext(ctx, `DELETE FROM discounts WHERE id = $1`, id)
-	if err != nil {
-		return translateDiscountErr(err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return NotFoundf("discount not found")
-	}
-	return nil
+	return InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		var code sql.NullString
+		var title string
+		err := tx.QueryRowContext(ctx,
+			`DELETE FROM discounts WHERE id = $1 RETURNING code, title`, id).Scan(&code, &title)
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("discount not found")
+		}
+		if err != nil {
+			return translateDiscountErr(err)
+		}
+		label := code.String
+		if label == "" {
+			label = title
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditDiscountDelete, Entity: AuditEntityDiscount,
+			ID: id, Label: label, Summary: "Deleted the discount " + label,
+			Before: map[string]any{"code": code.String, "title": title},
+		})
+	})
 }
 
 // ------------------------------------------------------------------ applying

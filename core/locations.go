@@ -179,12 +179,24 @@ func (s *Locations) Create(ctx context.Context, in LocationInput) (*Location, er
 	}
 
 	var id int64
-	err = s.app.db.QueryRowContext(ctx, `
-		INSERT INTO locations (code, name, address, priority, active, metadata)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-		code, name, addr, priority, boolOr(in.Active, true), meta).Scan(&id)
+	active := boolOr(in.Active, true)
+	err = InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		if err := tx.QueryRowContext(ctx, `
+			INSERT INTO locations (code, name, address, priority, active, metadata)
+			VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+			code, name, addr, priority, active, meta).Scan(&id); err != nil {
+			return translateLocationErr(err, code)
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditLocationCreate, Entity: AuditEntityLocation,
+			ID: id, Label: name, Summary: "Added the location " + name,
+			After: map[string]any{
+				"code": code, "name": name, "priority": priority, "active": active,
+			},
+		})
+	})
 	if err != nil {
-		return nil, translateLocationErr(err, code)
+		return nil, err
 	}
 	return s.Get(ctx, id)
 }
@@ -198,9 +210,11 @@ func (s *Locations) Create(ctx context.Context, in LocationInput) (*Location, er
 func (s *Locations) Update(ctx context.Context, id int64, patch LocationPatch) (*Location, error) {
 	sets := []string{"updated_at = now()"}
 	args := []any{id}
+	after := map[string]any{}
 	add := func(col string, v any) {
 		args = append(args, v)
 		sets = append(sets, fmt.Sprintf("%s = $%d", col, len(args)))
+		after[col] = v
 	}
 	if patch.Name != nil {
 		if strings.TrimSpace(*patch.Name) == "" {
@@ -226,23 +240,61 @@ func (s *Locations) Update(ctx context.Context, id int64, patch LocationPatch) (
 		add("metadata", meta)
 	}
 	if patch.Active != nil {
-		if !*patch.Active {
-			if err := s.refuseIfHolding(ctx, id, "deactivated"); err != nil {
-				return nil, err
-			}
-		}
 		add("active", *patch.Active)
 	}
 	if len(sets) == 1 {
 		return s.Get(ctx, id)
 	}
-	res, err := s.app.db.ExecContext(ctx,
-		`UPDATE locations SET `+strings.Join(sets, ", ")+` WHERE id = $1`, args...)
+
+	err := InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		// The guard moved inside the transaction with the wrap that made room
+		// for the audit row, which is strictly better: it used to read outside
+		// the write it guards, so a reservation landing between the two slipped
+		// past it.
+		if patch.Active != nil && !*patch.Active {
+			if err := refuseIfHolding(ctx, tx, id, "deactivated"); err != nil {
+				return err
+			}
+		}
+		before := map[string]any{}
+		var wasName string
+		var wasPriority int
+		var wasActive bool
+		err := tx.QueryRowContext(ctx,
+			`SELECT name, priority, active FROM locations WHERE id = $1 FOR UPDATE`, id,
+		).Scan(&wasName, &wasPriority, &wasActive)
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("location %d does not exist", id)
+		}
+		if err != nil {
+			return err
+		}
+		for col, v := range map[string]any{
+			"name": wasName, "priority": wasPriority, "active": wasActive,
+		} {
+			if _, changed := after[col]; changed {
+				before[col] = v
+			}
+		}
+
+		var name string
+		err = tx.QueryRowContext(ctx,
+			`UPDATE locations SET `+strings.Join(sets, ", ")+` WHERE id = $1 RETURNING name`,
+			args...).Scan(&name)
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("location %d does not exist", id)
+		}
+		if err != nil {
+			return translateLocationErr(err, "")
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditLocationUpdate, Entity: AuditEntityLocation,
+			ID: id, Label: name, Summary: "Edited the location " + name,
+			Before: before, After: after,
+		})
+	})
 	if err != nil {
-		return nil, translateLocationErr(err, "")
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return nil, NotFoundf("location %d does not exist", id)
+		return nil, err
 	}
 	return s.Get(ctx, id)
 }
@@ -254,8 +306,9 @@ func (s *Locations) Update(ctx context.Context, id int64, patch LocationPatch) (
 func (s *Locations) SetDefault(ctx context.Context, id int64) (*Location, error) {
 	err := InTx(ctx, s.app.db, func(tx *sql.Tx) error {
 		var active bool
+		var name string
 		err := tx.QueryRowContext(ctx,
-			`SELECT active FROM locations WHERE id = $1`, id).Scan(&active)
+			`SELECT active, name FROM locations WHERE id = $1`, id).Scan(&active, &name)
 		if errors.Is(err, sql.ErrNoRows) {
 			return NotFoundf("location %d does not exist", id)
 		}
@@ -265,13 +318,29 @@ func (s *Locations) SetDefault(ctx context.Context, id int64) (*Location, error)
 		if !active {
 			return Conflictf("an inactive location cannot be the default")
 		}
+		var wasDefault string
+		// The name of the outgoing default, read before it stands down: "the
+		// default moved from A to B" is the fact, and after the next statement
+		// nothing can say what A was.
+		_ = tx.QueryRowContext(ctx,
+			`SELECT name FROM locations WHERE is_default`).Scan(&wasDefault)
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE locations SET is_default = false, updated_at = now() WHERE is_default`); err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx,
-			`UPDATE locations SET is_default = true, updated_at = now() WHERE id = $1`, id)
-		return err
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE locations SET is_default = true, updated_at = now() WHERE id = $1`, id); err != nil {
+			return err
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditLocationSetDefault, Entity: AuditEntityLocation,
+			ID: id, Label: name,
+			// Spelled out, because it is the consequence an operator may not
+			// realise they just chose.
+			Summary: "Made " + name + " the default — new stock lands here",
+			Before:  map[string]any{"default": wasDefault},
+			After:   map[string]any{"default": name},
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -283,43 +352,59 @@ func (s *Locations) SetDefault(ctx context.Context, id int64) (*Location, error)
 // answer to "where does this land" — and neither can one that still holds
 // stock, which the foreign key would refuse anyway in a sentence about a
 // constraint rather than about the shelf.
+// The wrap also closes a pre-existing window: the bookkeeping rows and the
+// location itself used to be two separate statements on the pool, so a crash
+// between them left the variant_stock rows gone and the location standing.
+// There is no network I/O in the method, so rule 5 is untouched.
 func (s *Locations) Delete(ctx context.Context, id int64) error {
-	var isDefault bool
-	err := s.app.db.QueryRowContext(ctx,
-		`SELECT is_default FROM locations WHERE id = $1`, id).Scan(&isDefault)
-	if errors.Is(err, sql.ErrNoRows) {
-		return NotFoundf("location %d does not exist", id)
-	}
-	if err != nil {
-		return err
-	}
-	if isDefault {
-		return Conflictf("this is the default location; make another one default first")
-	}
-	if err := s.refuseIfHolding(ctx, id, "deleted"); err != nil {
-		return err
-	}
-	// Rows at zero are bookkeeping, not stock, and holding up a deletion for
-	// them would make the refusal above unclearable.
-	if _, err := s.app.db.ExecContext(ctx,
-		`DELETE FROM variant_stock WHERE location_id = $1`, id); err != nil {
-		return err
-	}
-	res, err := s.app.db.ExecContext(ctx, `DELETE FROM locations WHERE id = $1`, id)
-	if err != nil {
-		return translateLocationErr(err, "")
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return NotFoundf("location %d does not exist", id)
-	}
-	return nil
+	return InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		var isDefault bool
+		var code, name string
+		err := tx.QueryRowContext(ctx,
+			`SELECT is_default, code, name FROM locations WHERE id = $1 FOR UPDATE`,
+			id).Scan(&isDefault, &code, &name)
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("location %d does not exist", id)
+		}
+		if err != nil {
+			return err
+		}
+		if isDefault {
+			return Conflictf("this is the default location; make another one default first")
+		}
+		if err := refuseIfHolding(ctx, tx, id, "deleted"); err != nil {
+			return err
+		}
+		// Rows at zero are bookkeeping, not stock, and holding up a deletion for
+		// them would make the refusal above unclearable.
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM variant_stock WHERE location_id = $1`, id); err != nil {
+			return err
+		}
+		res, err := tx.ExecContext(ctx, `DELETE FROM locations WHERE id = $1`, id)
+		if err != nil {
+			return translateLocationErr(err, "")
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return NotFoundf("location %d does not exist", id)
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditLocationDelete, Entity: AuditEntityLocation,
+			ID: id, Label: name, Summary: "Deleted the location " + name,
+			Before: map[string]any{"code": code, "name": name},
+		})
+	})
 }
 
 // refuseIfHolding blocks a change that would strand stock, and names the amount
 // so the operator knows how much to move rather than having to go and count.
-func (s *Locations) refuseIfHolding(ctx context.Context, id int64, verb string) error {
+//
+// It takes the transaction rather than the pool, because it used to read
+// outside the write it guards and a reservation landing between the two would
+// slip past it.
+func refuseIfHolding(ctx context.Context, tx *sql.Tx, id int64, verb string) error {
 	var units, skus int
-	if err := s.app.db.QueryRowContext(ctx, `
+	if err := tx.QueryRowContext(ctx, `
 		SELECT coalesce(sum(on_hand + reserved), 0), count(*) FILTER (WHERE on_hand <> 0 OR reserved <> 0)
 		FROM variant_stock WHERE location_id = $1`, id).Scan(&units, &skus); err != nil {
 		return err

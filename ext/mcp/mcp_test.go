@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/misiki/gocommerce/core"
 	"github.com/misiki/gocommerce/gctest"
@@ -249,4 +250,140 @@ func TestUnknownMethodAndTool(t *testing.T) {
 	if resp.Error == nil || resp.Error.Code != codeMethodNotFound {
 		t.Errorf("error = %+v, want method-not-found", resp.Error)
 	}
+}
+
+// TestAgentRoutesRequireStoreOperate: a second operating surface onto the store
+// is what store.operate names, and an operator reaching it from a browser is
+// now checked.
+//
+// The static admin token is unaffected, which is the half that matters for
+// compatibility: every documented agent integration keeps working.
+func TestAgentRoutesRequireStoreOperate(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+
+	// Nobody holds store.operate by default except an owner: it is absent from
+	// both configurable role sets on purpose.
+	staff := gctest.OperatorToken(t, app, "staff@example.com", gocommerce.RoleStaff)
+	manager := gctest.OperatorToken(t, app, "manager@example.com", gocommerce.RoleManager)
+	owner := gctest.OperatorToken(t, app, "owner@example.com", gocommerce.RoleOwner)
+
+	list := map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+	for _, who := range []struct {
+		name, token string
+	}{{"staff", staff}, {"manager", manager}} {
+		rec := gctest.SessionRequest(t, app, who.token, http.MethodPost, "/api/admin/x/mcp", list)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("%s calling the agent endpoint = %d, want 403: %s", who.name, rec.Code, rec.Body)
+		}
+		if !strings.Contains(rec.Body.String(), string(gocommerce.RightStoreOperate)) {
+			t.Errorf("%s: the refusal does not name the missing right: %s", who.name, rec.Body)
+		}
+		rec = gctest.SessionRequest(t, app, who.token, http.MethodGet, "/api/admin/x/mcp/audit", nil)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("%s reading the audit = %d, want 403: %s", who.name, rec.Code, rec.Body)
+		}
+	}
+
+	if rec := gctest.SessionRequest(t, app, owner, http.MethodPost, "/api/admin/x/mcp", list); rec.Code != http.StatusOK {
+		t.Errorf("owner calling the agent endpoint = %d, want 200: %s", rec.Code, rec.Body)
+	}
+	// A static admin token carries every right, so an existing integration is
+	// not broken by the new gate.
+	if rec := gctest.AdminRequest(t, app, http.MethodPost, "/api/admin/x/mcp", list); rec.Code != http.StatusOK {
+		t.Errorf("the static admin token = %d, want 200: %s", rec.Code, rec.Body)
+	}
+}
+
+// TestToolsListSaysWhichToolsAreReadOnly: the server knows which tools change
+// state and says so, rather than leaving a client to guess from a hardcoded
+// list of builtin names — which would be wrong for anything Config.Tools
+// contributed.
+func TestToolsListSaysWhichToolsAreReadOnly(t *testing.T) {
+	readOnlyHints := func(app *gocommerce.App) map[string]bool {
+		t.Helper()
+		result := rpc(t, app, "tools/list", nil)
+		tools, _ := result["tools"].([]any)
+		if len(tools) == 0 {
+			t.Fatal("tools/list returned nothing")
+		}
+		out := map[string]bool{}
+		for _, raw := range tools {
+			tool, _ := raw.(map[string]any)
+			name, _ := tool["name"].(string)
+			annotations, ok := tool["annotations"].(map[string]any)
+			if !ok {
+				t.Fatalf("tool %q carries no annotations", name)
+			}
+			hint, ok := annotations["readOnlyHint"].(bool)
+			if !ok {
+				t.Fatalf("tool %q carries no readOnlyHint", name)
+			}
+			out[name] = hint
+		}
+		return out
+	}
+
+	hints := readOnlyHints(gctest.New(t, New(Config{})))
+	for _, mutating := range []string{
+		"update_variant_inventory", "mark_order_paid", "cancel_order",
+		"create_fulfillment", "mark_order_delivered",
+	} {
+		hint, present := hints[mutating]
+		if !present {
+			t.Errorf("%s is not listed at all", mutating)
+			continue
+		}
+		if hint {
+			t.Errorf("%s reports readOnlyHint true, and it settles or ships an order", mutating)
+		}
+	}
+	for _, reading := range []string{"store_info", "list_products", "list_orders", "get_order"} {
+		if hint, present := hints[reading]; present && !hint {
+			t.Errorf("%s reports readOnlyHint false, and it only reads", reading)
+		}
+	}
+
+	// A read-only store withholds the mutating tools entirely, so nothing it
+	// lists can report false.
+	for name, hint := range readOnlyHints(gctest.New(t, New(Config{ReadOnly: true}))) {
+		if !hint {
+			t.Errorf("a read-only store lists %s as mutating", name)
+		}
+	}
+}
+
+// TestAuditCalledAtIsATimestamp: the column was scanned into an `any` and
+// printed with fmt.Sprint, which produces Go's own layout — "2026-09-09
+// 12:00:00 +0000 UTC" — and no client date parser reads that, so every
+// timestamp this route served was unusable to the reader it was for.
+func TestAuditCalledAtIsATimestamp(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+
+	result := gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
+	if out, isErr := callTool(t, app, "mark_order_paid",
+		map[string]any{"order_id": result.Order.ID, "reference": "cash"}); isErr {
+		t.Fatalf("mark_order_paid failed: %s", out)
+	}
+
+	rec := gctest.AdminRequest(t, app, http.MethodGet, "/api/admin/x/mcp/audit", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("audit status = %d: %s", rec.Code, rec.Body)
+	}
+	var entries []struct {
+		Tool     string    `json:"tool"`
+		CalledAt time.Time `json:"called_at"`
+	}
+	gctest.DecodeData(t, rec, &entries)
+	if len(entries) != 1 {
+		t.Fatalf("audit entries = %d, want 1", len(entries))
+	}
+	if entries[0].CalledAt.IsZero() {
+		t.Errorf("called_at did not decode as a timestamp: %s", rec.Body)
+	}
+}
+
+func TestModuleContract(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	gctest.AssertAdminRoutesDeclareRights(t, app, "mcp")
+	gctest.AssertSpecCoversModuleRoutes(t, app, "mcp")
 }

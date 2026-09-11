@@ -572,7 +572,15 @@ func (m *Media) SetProductMedia(ctx context.Context, productID int64, mediaIDs [
 				return Internalf(err, "attach media")
 			}
 		}
-		return nil
+		// Filed against the product, because that is the record whose history a
+		// merchandiser reads. The media library's own upload, link, alt-text and
+		// delete are deliberately not audited at all: a media item is a file,
+		// and what matters is the product it ends up on.
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditProductMediaSet, Entity: AuditEntityProduct,
+			ID: productID, Summary: "Changed this product's pictures",
+			After: map[string]any{"media_ids": mediaIDs},
+		})
 	})
 }
 
@@ -604,7 +612,11 @@ func (m *Media) SetVariantMedia(ctx context.Context, variantID int64, mediaID *i
 			return Internalf(err, "clear variant media")
 		}
 		if mediaID == nil {
-			return nil
+			return writeAudit(ctx, tx, auditRecord{
+				Action: AuditVariantMediaSet, Entity: AuditEntityProduct,
+				ID: productID, Summary: "Cleared a variant's picture",
+				After: map[string]any{"variant_id": variantID, "media_id": nil},
+			})
 		}
 
 		res, err := tx.ExecContext(ctx, `
@@ -619,7 +631,11 @@ func (m *Media) SetVariantMedia(ctx context.Context, variantID int64, mediaID *i
 			// it from here would put a file in a position nobody chose.
 			return Validationf("media %d is not on this product; add it to the product first", *mediaID)
 		}
-		return nil
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditVariantMediaSet, Entity: AuditEntityProduct,
+			ID: productID, Summary: "Changed a variant's picture",
+			After: map[string]any{"variant_id": variantID, "media_id": *mediaID},
+		})
 	})
 }
 

@@ -223,49 +223,58 @@ func TestExistingOperatorsBecomeOwners(t *testing.T) {
 // have created a hundred-percent-off code.
 //
 // The exemptions are named rather than pattern-matched, so adding one is a
-// decision somebody writes down.
+// decision somebody writes down. They live beside requireRights rather than
+// here, because doctor's "admin rights" check reads the same map: a test and a
+// running store must never disagree about which routes may be open.
 func TestEveryAdminRouteDeclaresRights(t *testing.T) {
 	app := newTestApp(t)
-
-	// Refreshing and ending your own session cannot require a right: they are
-	// how an operator with no rights at all still signs out.
-	//
-	// The /me routes are exempt for the same reason turned around. They act on
-	// the caller and on nobody else, and the only right that could gate them is
-	// settings.write — which is also the right to change everybody's role. Put
-	// them behind it and a staff member cannot change their own password without
-	// asking an owner to choose one for them, which is the practice invitations
-	// exist to end. The handlers read the operator from the session, so there is
-	// no id to tamper with.
-	//
-	// The settings read is exempt because every screen formats money before it
-	// can draw anything: a role that could not read it would read prices in the
-	// wrong currency and the wrong number of decimals, which is a correctness
-	// failure wearing a permission failure's clothes. What keeps that safe is a
-	// rule on the payload rather than on the route — nothing may be added to it
-	// that is not "what this store is configured as", and a diagnostic or a
-	// secret belongs behind a right on a route of its own.
-	exempt := map[string]bool{
-		"POST /api/admin/auth-refresh":       true,
-		"POST /api/admin/auth-logout":        true,
-		"GET /api/admin/me":                  true,
-		"PATCH /api/admin/me":                true,
-		"POST /api/admin/me/revoke-sessions": true,
-		"GET /api/admin/settings":            true,
-	}
 
 	var ungated []string
 	for _, r := range app.Routes() {
 		if !r.Admin || len(r.Rights) > 0 {
 			continue
 		}
-		if exempt[r.Method+" "+r.Path] {
+		if rightsExempt[r.Method+" "+r.Path] {
 			continue
 		}
 		ungated = append(ungated, r.Method+" "+r.Path)
 	}
 	if len(ungated) > 0 {
 		t.Errorf("admin routes with no rights, reachable by any role: %v", ungated)
+	}
+}
+
+// TestAdminRightsCheckFindsAnUngatedRoute is the same rule as the test above,
+// asked of a running store rather than of a test binary.
+//
+// It lives here rather than in doctor_test.go because it is about the rights
+// rule and reads the same rightsExempt map. The distinction it proves is the
+// one that mattered: the test above boots an app with no modules in it, so it
+// was passing for the whole time twelve module admin routes were open to any
+// authenticated operator. The check runs in everybody's binary.
+func TestAdminRightsCheckFindsAnUngatedRoute(t *testing.T) {
+	ctx := context.Background()
+
+	clean := newTestApp(t)
+	if d := diagnostic(t, clean.Diagnose(ctx), "admin rights"); d.Status != StatusOK {
+		t.Errorf("a store with no modules: %s — %s", d.Status, d.Detail)
+	}
+
+	// testModule mounts its admin routes with no rights, which is exactly the
+	// mistake a module author makes by omission.
+	withModule := newTestApp(t, &testModule{
+		name:  "openmod",
+		admin: []string{"GET /api/admin/x/openmod/things"},
+	})
+	d := diagnostic(t, withModule.Diagnose(ctx), "admin rights")
+	if d.Status != StatusWarn {
+		t.Fatalf("an ungated module route: %s — %s", d.Status, d.Detail)
+	}
+	if !strings.Contains(d.Detail, "GET /api/admin/x/openmod/things") {
+		t.Errorf("the detail does not name the route: %q", d.Detail)
+	}
+	if d.Hint == "" {
+		t.Error("a finding with no next step just moves the puzzle")
 	}
 }
 

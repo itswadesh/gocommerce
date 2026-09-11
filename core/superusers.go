@@ -77,16 +77,33 @@ type Superuser struct {
 
 // Superusers is the operator-identity service.
 type Superusers struct {
-	db *sql.DB
+	// app is here for the password-reset flow alone: it needs the notifier, the
+	// logger and Config.PanelURL. It matches every neighbouring service
+	// (Invitations, Catalog, Orders are all struct{app *App}), at the cost of
+	// making this one unconstructible without an engine.
+	app *App
+	db  *sql.DB
 	// roles resolves a role into the rights this store gave it. Identity and
 	// authorization are separate services, and this is the seam between them:
 	// every operator this one hands out has been through it.
 	roles    *RoleRights
 	throttle *loginThrottle
+	// resets is a SECOND throttle instance and deliberately not the login one.
+	// succeed clears the identity bucket, so a shared budget would let a reset
+	// request wipe five failed logins; and five failed logins are the ordinary
+	// reason to ask for a reset, so a shared budget would also block the remedy
+	// at the moment it is needed.
+	resets *loginThrottle
+	// deliveries tracks the reset emails in flight, so Close waits for one
+	// rather than dropping it and a test has a deterministic seam.
+	deliveries sync.WaitGroup
 }
 
-func newSuperusers(db *sql.DB, roles *RoleRights) *Superusers {
-	return &Superusers{db: db, roles: roles, throttle: newLoginThrottle()}
+func newSuperusers(app *App) *Superusers {
+	return &Superusers{
+		app: app, db: app.db, roles: app.roles,
+		throttle: newLoginThrottle(), resets: newLoginThrottle(),
+	}
 }
 
 // Has reports whether this operator carries a right.
@@ -177,6 +194,17 @@ func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
 
+// validatePassword is the one rule about a password itself, extracted because
+// four callers apply it — Create through validateCredentials, Update,
+// UpdateSelf and ConfirmReset — and a copy that drifts would mean a password
+// the reset route accepts and the login route can never be given.
+func validatePassword(password string) error {
+	if len([]rune(password)) < MinPasswordLength {
+		return Validationf("password must be at least %d characters", MinPasswordLength)
+	}
+	return nil
+}
+
 func validateCredentials(email, password string) error {
 	email = normalizeEmail(email)
 	if email == "" {
@@ -185,10 +213,7 @@ func validateCredentials(email, password string) error {
 	if _, err := mail.ParseAddress(email); err != nil {
 		return Validationf("%q is not a valid email address", email)
 	}
-	if len([]rune(password)) < MinPasswordLength {
-		return Validationf("password must be at least %d characters", MinPasswordLength)
-	}
-	return nil
+	return validatePassword(password)
 }
 
 const superuserColumns = `id, email, password_hash, role, created_at, updated_at`
@@ -247,16 +272,37 @@ func (s *Superusers) Create(ctx context.Context, email, password, role string) (
 	if err != nil {
 		return nil, Internalf(err, "hash password")
 	}
-	row := s.db.QueryRowContext(ctx, `
-		INSERT INTO superusers (email, password_hash, role) VALUES ($1, $2, $3)
-		RETURNING `+superuserColumns, normalizeEmail(email), hash, role)
-	su, err := s.scan(ctx, row)
-	if err != nil {
-		if isUniqueViolation(err) {
-			return nil, Conflictf("a superuser with email %q already exists", normalizeEmail(email))
+	// The statement gains a transaction so the new account and the record of
+	// who opened it commit together. Neither the password nor its hash ever
+	// enters a changes payload — they are the credential.
+	var su *Superuser
+	err = InTx(ctx, s.db, func(tx *sql.Tx) error {
+		row := tx.QueryRowContext(ctx, `
+			INSERT INTO superusers (email, password_hash, role) VALUES ($1, $2, $3)
+			RETURNING `+superuserColumns, normalizeEmail(email), hash, role)
+		var serr error
+		if su, serr = scanSuperuser(row); serr != nil {
+			if isUniqueViolation(serr) {
+				return Conflictf("a superuser with email %q already exists", normalizeEmail(email))
+			}
+			return Internalf(serr, "create superuser")
 		}
-		return nil, Internalf(err, "create superuser")
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditSuperuserCreate, Entity: AuditEntitySuperuser,
+			ID: su.ID, Label: su.Email,
+			Summary: "Added " + su.Email + " as " + su.Role,
+			After:   map[string]any{"email": su.Email, "role": su.Role},
+		})
+	})
+	if err != nil {
+		return nil, err
 	}
+	// Resolved after the commit rather than inside it: see the note on scan.
+	rights, err := s.roles.Of(ctx, su.Role)
+	if err != nil {
+		return nil, err
+	}
+	su.Rights = rights
 	return su, nil
 }
 
@@ -298,21 +344,30 @@ func (s *Superusers) List(ctx context.Context) ([]*Superuser, error) {
 // point. The caller is expected to hand the operator a fresh session
 // afterwards if they were changing their own password; see
 // handleUpdateSuperuser.
+//
+// Either change also ends every outstanding password-reset link that operator
+// holds: a link requested before the compromise was answered is one more way
+// back in, and it would otherwise outlive the answer.
 func (s *Superusers) Update(ctx context.Context, id int64, email, password string) (*Superuser, error) {
 	var (
 		sets []string
 		args []any
 	)
+	// What the audit row will say. A password change is recorded as the fact
+	// that it happened and never as what it became — not the password, not its
+	// hash, not the session token kept alive through it.
+	after := map[string]any{}
 	if email = normalizeEmail(email); email != "" {
 		if _, err := mail.ParseAddress(email); err != nil {
 			return nil, Validationf("%q is not a valid email address", email)
 		}
 		args = append(args, email)
 		sets = append(sets, fmt.Sprintf("email = $%d", len(args)))
+		after["email"] = email
 	}
 	if password != "" {
-		if len([]rune(password)) < MinPasswordLength {
-			return nil, Validationf("password must be at least %d characters", MinPasswordLength)
+		if err := validatePassword(password); err != nil {
+			return nil, err
 		}
 		hash, err := hashPassword(password)
 		if err != nil {
@@ -320,6 +375,7 @@ func (s *Superusers) Update(ctx context.Context, id int64, email, password strin
 		}
 		args = append(args, hash)
 		sets = append(sets, fmt.Sprintf("password_hash = $%d", len(args)))
+		after["password_changed"] = true
 	}
 	if len(sets) == 0 {
 		return nil, Validationf("nothing to update: supply an email, a password, or both")
@@ -353,7 +409,18 @@ func (s *Superusers) Update(ctx context.Context, id int64, email, password strin
 				return Internalf(err, "revoke sessions")
 			}
 		}
-		return nil
+		// Reaching here means the email or the password changed, and either one
+		// closes the window in which a reset link requested before a compromise
+		// response still works after it.
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM superuser_password_resets WHERE superuser_id = $1`, id); err != nil {
+			return Internalf(err, "revoke password reset links")
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditSuperuserUpdate, Entity: AuditEntitySuperuser,
+			ID: su.ID, Label: su.Email, Summary: "Edited the account " + su.Email,
+			After: after,
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -407,9 +474,11 @@ func (s *Superusers) Delete(ctx context.Context, id int64) error {
 		//
 		// The rows are already locked by the SELECT above, so counting here is
 		// serialised against a concurrent delete of the other owner.
-		var role string
+		var role, email string
+		// The email comes off the same already-locked row the role does, and it
+		// is read now because after the DELETE nothing can say who this was.
 		if err := tx.QueryRowContext(ctx,
-			`SELECT role FROM superusers WHERE id = $1`, id).Scan(&role); err != nil {
+			`SELECT role, email FROM superusers WHERE id = $1`, id).Scan(&role, &email); err != nil {
 			return Internalf(err, "read superuser")
 		}
 		if role == RoleOwner {
@@ -426,7 +495,14 @@ func (s *Superusers) Delete(ctx context.Context, id int64) error {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM superusers WHERE id = $1`, id); err != nil {
 			return Internalf(err, "delete superuser")
 		}
-		return nil
+		// The rows this person wrote keep their actor_id, which now points at
+		// nothing — see M20. That is what the missing foreign key buys: who did
+		// it is a fact about the past and has to survive them leaving.
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditSuperuserDelete, Entity: AuditEntitySuperuser,
+			ID: id, Label: email, Summary: "Removed the account " + email,
+			Before: map[string]any{"email": email, "role": role},
+		})
 	})
 }
 
@@ -451,16 +527,19 @@ func (s *Superusers) UpdateSelf(ctx context.Context, id int64, currentPassword, 
 		sets []string
 		args []any
 	)
+	// See Update: a password change is recorded as the fact that it happened.
+	after := map[string]any{}
 	if email = normalizeEmail(email); email != "" {
 		if _, err := mail.ParseAddress(email); err != nil {
 			return nil, Validationf("%q is not a valid email address", email)
 		}
 		args = append(args, email)
 		sets = append(sets, fmt.Sprintf("email = $%d", len(args)))
+		after["email"] = email
 	}
 	if password != "" {
-		if len([]rune(password)) < MinPasswordLength {
-			return nil, Validationf("password must be at least %d characters", MinPasswordLength)
+		if err := validatePassword(password); err != nil {
+			return nil, err
 		}
 		hash, err := hashPassword(password)
 		if err != nil {
@@ -468,6 +547,7 @@ func (s *Superusers) UpdateSelf(ctx context.Context, id int64, currentPassword, 
 		}
 		args = append(args, hash)
 		sets = append(sets, fmt.Sprintf("password_hash = $%d", len(args)))
+		after["password_changed"] = true
 	}
 	if len(sets) == 0 {
 		return nil, Validationf("nothing to update: supply an email, a password, or both")
@@ -513,7 +593,25 @@ func (s *Superusers) UpdateSelf(ctx context.Context, id int64, currentPassword, 
 				return Internalf(err, "revoke sessions")
 			}
 		}
-		return nil
+		// And every outstanding reset link, with no exception for this browser:
+		// the keepToken argument is about sessions, and there is no reset link
+		// worth keeping alive through a deliberate credential change.
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM superuser_password_resets WHERE superuser_id = $1`, id); err != nil {
+			return Internalf(err, "revoke password reset links")
+		}
+		// `current` was read FOR UPDATE at the top of this transaction, so the
+		// before side is free. This is what puts "I changed my own password" in
+		// the log; keepToken, the password and its hash stay out of it.
+		before := map[string]any{}
+		if _, changed := after["email"]; changed {
+			before["email"] = current.Email
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditSuperuserSelfUpdate, Entity: AuditEntitySuperuser,
+			ID: su.ID, Label: su.Email, Summary: "Changed their own account details",
+			Before: before, After: after,
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -542,14 +640,37 @@ func (s *Superusers) RevokeAll(ctx context.Context, id int64) (int, error) {
 		return 0, Internalf(err, "read superuser")
 	}
 
-	res, err := s.db.ExecContext(ctx,
-		`DELETE FROM superuser_sessions WHERE superuser_id = $1`, id)
+	var n int64
+	err = InTx(ctx, s.db, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx,
+			`DELETE FROM superuser_sessions WHERE superuser_id = $1`, id)
+		if err != nil {
+			return Internalf(err, "revoke sessions")
+		}
+		if n, err = res.RowsAffected(); err != nil {
+			return Internalf(err, "revoke sessions")
+		}
+		// This is the "I have lost the laptop" button, and a reset link sitting
+		// in that laptop's mailbox is another way in from it. The count above
+		// still counts sessions only, because that is the number the caller is
+		// asking about.
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM superuser_password_resets WHERE superuser_id = $1`, id); err != nil {
+			return Internalf(err, "revoke password reset links")
+		}
+		var email string
+		if err := tx.QueryRowContext(ctx,
+			`SELECT email FROM superusers WHERE id = $1`, id).Scan(&email); err != nil {
+			return Internalf(err, "read superuser")
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditSuperuserRevokeSessions, Entity: AuditEntitySuperuser,
+			ID: id, Label: email, Summary: "Signed " + email + " out everywhere",
+			After: map[string]any{"sessions_ended": n},
+		})
+	})
 	if err != nil {
-		return 0, Internalf(err, "revoke sessions")
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return 0, Internalf(err, "revoke sessions")
+		return 0, err
 	}
 	return int(n), nil
 }
@@ -754,11 +875,28 @@ func withSuperuser(r *http.Request, su *Superuser) *http.Request {
 // authenticated by a session rather than a static admin token.
 //
 // A nil result is normal, not an error: it means a script authenticated with
-// a token, and a handler that needs to attribute an action to a person should
-// treat that as "the system" rather than refuse.
+// a token, or that nothing authenticated at all because the call came from the
+// engine's own background work. Those are two different answers and auditActor
+// (audit.go) is what tells them apart; a handler that only needs a person
+// should treat nil as "the system" rather than refuse.
 func SuperuserFrom(ctx context.Context) *Superuser {
 	su, _ := ctx.Value(ctxKeySuperuser).(*Superuser)
 	return su
+}
+
+// withAdminToken marks a request authenticated by a configured static token
+// rather than by a person.
+//
+// It is not an identity — there is nobody behind a token — but it is not the
+// system either, and a trail that cannot tell a deploy script from the unpaid
+// sweeper answers a different question from the one it was asked.
+func withAdminToken(r *http.Request) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), ctxKeyAdminToken, true))
+}
+
+func adminTokenFrom(ctx context.Context) bool {
+	marked, _ := ctx.Value(ctxKeyAdminToken).(bool)
+	return marked
 }
 
 // --------------------------------------------------------------- throttling
@@ -945,7 +1083,15 @@ func (s *Superusers) SetRole(ctx context.Context, id int64, role string) (*Super
 		if err != nil {
 			return Internalf(err, "set role")
 		}
-		return nil
+		// The single most consequential team action there is, and the
+		// transaction already read the current row for the last-owner guard.
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditSuperuserSetRole, Entity: AuditEntitySuperuser,
+			ID: su.ID, Label: su.Email,
+			Summary: "Made " + su.Email + " " + role + " (was " + current + ")",
+			Before:  map[string]any{"role": current},
+			After:   map[string]any{"role": role},
+		})
 	})
 	if err != nil {
 		return nil, err

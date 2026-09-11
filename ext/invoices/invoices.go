@@ -110,8 +110,11 @@ func (m *Module) Register(app *gocommerce.App) error {
 
 	app.Subscribe(gocommerce.EventOrderPaid, m.onOrderPaid)
 
-	app.HandleAdminFunc("GET /api/admin/x/invoices", m.handleList)
-	app.HandleAdminFunc("GET /api/admin/x/invoices/{orderId}", m.handleGet)
+	// An invoice is a rendering of a paid order, and its snapshot embeds the
+	// buyer's name, email and address. Whoever may read the order may read it;
+	// whoever may not, may not.
+	app.HandleAdminFunc("GET /api/admin/x/invoices", m.handleList, gocommerce.RightOrdersRead)
+	app.HandleAdminFunc("GET /api/admin/x/invoices/{orderId}", m.handleGet, gocommerce.RightOrdersRead)
 
 	// Delivery is at-least-once but not guaranteed to have happened before a
 	// crash, and an invoice that was never issued is an accounting hole. So

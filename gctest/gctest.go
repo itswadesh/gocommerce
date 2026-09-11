@@ -28,6 +28,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -176,6 +177,124 @@ func Request(t *testing.T, app *gocommerce.App, method, target string, body any)
 func AdminRequest(t *testing.T, app *gocommerce.App, method, target string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	return request(t, app, method, target, body, AdminToken)
+}
+
+// OperatorPassword is the password OperatorToken signs its operators in with.
+// Exported so a test that needs a second session for the same account does not
+// have to guess it.
+const OperatorPassword = "gctest-a-long-enough-password"
+
+// OperatorToken creates a superuser with the given role and signs it in,
+// returning a session token to send as `Authorization: Bearer <token>`.
+//
+// A module's rights cannot be tested with AdminToken: a static admin token
+// carries every right by design — it is the bootstrap credential and the one
+// scripts use — so only a session proves a route is gated at all.
+func OperatorToken(t *testing.T, app *gocommerce.App, email, role string) string {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := app.Superusers().Create(ctx, email, OperatorPassword, role); err != nil {
+		t.Fatalf("gctest: create the %s operator %s: %v", role, email, err)
+	}
+	_, session, err := app.Superusers().Authenticate(ctx, email, OperatorPassword, "127.0.0.1")
+	if err != nil {
+		t.Fatalf("gctest: sign in %s: %v", email, err)
+	}
+	return session.Token
+}
+
+// SessionRequest is Request carrying an operator's session token.
+func SessionRequest(t *testing.T, app *gocommerce.App, token, method, target string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	return request(t, app, method, target, body, token)
+}
+
+// AssertAdminRoutesDeclareRights fails when a module mounts an admin route that
+// names no right.
+//
+// It is the counterpart to core's own TestEveryAdminRouteDeclaresRights, which
+// walks an app with no modules in it and so has never seen one. Rights are
+// variadic on HandleAdmin, which makes forgetting them silent: the route
+// mounts, authentication still runs, and every signed-in operator reaches it
+// whatever their role. doctor's "admin rights" check is the backstop for a
+// module whose author never calls this.
+func AssertAdminRoutesDeclareRights(t *testing.T, app *gocommerce.App, module string) {
+	t.Helper()
+
+	var ungated []string
+	var admin int
+	for _, r := range app.Routes() {
+		if r.Owner != module || !r.Admin {
+			continue
+		}
+		admin++
+		if len(r.Rights) == 0 {
+			ungated = append(ungated, r.Method+" "+r.Path)
+		}
+	}
+	if admin == 0 {
+		t.Fatalf("gctest: module %q mounts no admin routes — check the name", module)
+	}
+	if len(ungated) > 0 {
+		sort.Strings(ungated)
+		t.Errorf("gctest: module %q has admin routes with no rights, reachable by any role: %s",
+			module, strings.Join(ungated, ", "))
+	}
+}
+
+// AssertSpecCoversModuleRoutes fails in BOTH directions for the module's own
+// namespace: a served path the fragment does not document, and a documented
+// path no route serves.
+//
+// The first is the drift doctor's contract check warns about at runtime. The
+// second is its mirror, and the half that bites an integrator — a client
+// generated from /doc calling a route that 404s — which nothing else catches.
+func AssertSpecCoversModuleRoutes(t *testing.T, app *gocommerce.App, module string) {
+	t.Helper()
+
+	documented, err := app.SpecPaths()
+	if err != nil {
+		t.Fatalf("gctest: read the served contract: %v", err)
+	}
+	have := make(map[string]bool, len(documented))
+	for _, p := range documented {
+		have[p] = true
+	}
+
+	served := map[string]bool{}
+	var count int
+	for _, r := range app.Routes() {
+		if r.Owner != module || r.UI {
+			continue
+		}
+		count++
+		served[r.Path] = true
+		if !have[r.Path] {
+			t.Errorf("gctest: module %q serves %s %s, which the contract does not document",
+				module, r.Method, r.Path)
+		}
+	}
+	if count == 0 {
+		t.Fatalf("gctest: module %q mounts no routes — check the name", module)
+	}
+
+	// Only the module's own namespace, so a fragment is never blamed for a
+	// path core documents. The two prefixes are the same fence the engine
+	// enforces at mount time, matched the same way — "/x/mcp" must not claim
+	// "/x/mcpfoo".
+	mine := func(p string) bool {
+		for _, want := range []string{"/x/" + module, "/api/admin/x/" + module} {
+			if p == want || strings.HasPrefix(p, want+"/") {
+				return true
+			}
+		}
+		return false
+	}
+	for _, p := range documented {
+		if mine(p) && !served[p] {
+			t.Errorf("gctest: the contract documents %s, which module %q does not serve", p, module)
+		}
+	}
 }
 
 func request(t *testing.T, app *gocommerce.App, method, target string, body any, token string) *httptest.ResponseRecorder {

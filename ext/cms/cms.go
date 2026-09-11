@@ -106,11 +106,15 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.HandleFunc("GET /x/cms/pages", m.handleListPublic)
 	app.HandleFunc("GET /x/cms/pages/{slug}", m.handleGetPublic)
 
-	app.HandleAdminFunc("GET /api/admin/x/cms/pages", m.handleListAdmin)
-	app.HandleAdminFunc("POST /api/admin/x/cms/pages", m.handleCreate)
-	app.HandleAdminFunc("GET /api/admin/x/cms/pages/{id}", m.handleGetAdmin)
-	app.HandleAdminFunc("PATCH /api/admin/x/cms/pages/{id}", m.handleUpdate)
-	app.HandleAdminFunc("DELETE /api/admin/x/cms/pages/{id}", m.handleDelete)
+	// A page is catalog copy that happens not to carry a price, so it is gated
+	// by the rights that already govern the rest of the store's writing rather
+	// than by a content pair of its own. Naming none would have meant serving
+	// these to any authenticated operator, whatever their role.
+	app.HandleAdminFunc("GET /api/admin/x/cms/pages", m.handleListAdmin, gocommerce.RightCatalogRead)
+	app.HandleAdminFunc("POST /api/admin/x/cms/pages", m.handleCreate, gocommerce.RightCatalogWrite)
+	app.HandleAdminFunc("GET /api/admin/x/cms/pages/{id}", m.handleGetAdmin, gocommerce.RightCatalogRead)
+	app.HandleAdminFunc("PATCH /api/admin/x/cms/pages/{id}", m.handleUpdate, gocommerce.RightCatalogWrite)
+	app.HandleAdminFunc("DELETE /api/admin/x/cms/pages/{id}", m.handleDelete, gocommerce.RightCatalogWrite)
 	return nil
 }
 
@@ -176,9 +180,22 @@ func (m *Module) handleListAdmin(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
+	// list() puts the status straight into a WHERE, so an unrecognised value
+	// silently returns an empty page rather than an error. Create and update
+	// both validate it; the filter was the odd one out, and a contract that
+	// promises an enum the engine does not check is the same drift doctor's
+	// contract check exists to prevent, one level down.
+	//
+	// `language` is deliberately not validated: there is no closed vocabulary
+	// to check it against, and an unknown language is an empty page.
+	status := r.URL.Query().Get("status")
+	if status != "" && status != StatusDraft && status != StatusPublished {
+		gocommerce.RespondError(w, r, gocommerce.Validationf("status must be draft or published"))
+		return
+	}
 	pages, total, err := m.list(r.Context(), listQuery{
 		Language: r.URL.Query().Get("language"),
-		Status:   r.URL.Query().Get("status"),
+		Status:   status,
 		Limit:    limit, Offset: offset,
 	})
 	if err != nil {
@@ -214,6 +231,17 @@ type pageInput struct {
 	Status   string            `json:"status"`
 	Language string            `json:"language"`
 	SEO      map[string]string `json:"seo"`
+}
+
+// isSlugConflict recognises the (slug, language) unique violation.
+//
+// Both the create and the update path need it: renaming a page onto an
+// existing pair is the same collision as creating one there, and an
+// unrecognised driver error reaches RespondError, which wraps it as an
+// internal error and then blanks the message — so the API answered 500
+// "internal error" to a mistake the operator can fix in one keystroke.
+func isSlugConflict(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "cms_pages_slug_language_key")
 }
 
 func (m *Module) handleCreate(w http.ResponseWriter, r *http.Request) {
@@ -253,7 +281,7 @@ func (m *Module) handleCreate(w http.ResponseWriter, r *http.Request) {
 		RETURNING id`,
 		in.Slug, in.Language, in.Title, in.Body, in.Excerpt, in.Status, seo).Scan(&id)
 	if err != nil {
-		if strings.Contains(err.Error(), "cms_pages_slug_language_key") {
+		if isSlugConflict(err) {
 			gocommerce.RespondError(w, r,
 				gocommerce.Conflictf("a %s page already exists at %q", in.Language, in.Slug))
 			return
@@ -338,6 +366,13 @@ func (m *Module) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	res, err := m.db.ExecContext(r.Context(),
 		"UPDATE cms_pages SET "+strings.Join(sets, ", ")+fmt.Sprintf(" WHERE id = $%d", len(args)), args...)
 	if err != nil {
+		// Renaming a page onto a slug another page already holds in the same
+		// language is a conflict the operator can fix, not an internal error.
+		if in.Slug != nil && isSlugConflict(err) {
+			gocommerce.RespondError(w, r, gocommerce.Conflictf(
+				"another page already uses the slug %q in this language", *in.Slug))
+			return
+		}
 		gocommerce.RespondError(w, r, err)
 		return
 	}

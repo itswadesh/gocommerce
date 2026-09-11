@@ -43,15 +43,15 @@ func (p *Payments) Methods() []string {
 // Confirming here is what makes a gateway order shippable — without it, a paid
 // order would sit at "pending" forever waiting for a step nobody performs.
 func (p *Payments) MarkPaid(ctx context.Context, orderID int64, reference string) (*Order, error) {
-	return p.app.orders.transition(ctx, orderID, func(ctx context.Context, tx *sql.Tx, o *Order) (string, any, error) {
+	return p.app.orders.transition(ctx, orderID, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
 		if o.PaymentStatus == PaymentPaid {
-			return "", nil, nil
+			return transitionResult{}, nil
 		}
 		if o.Status == OrderCancelled {
 			// Money for a cancelled order is a refund problem, not a
 			// confirmation problem, and silently reviving the order would
 			// resurrect an inventory reservation nobody is holding.
-			return "", nil, Conflictf("order %s was cancelled; this payment needs a refund, not a confirmation", o.Number)
+			return transitionResult{}, Conflictf("order %s was cancelled; this payment needs a refund, not a confirmation", o.Number)
 		}
 
 		if _, err := tx.ExecContext(ctx, `
@@ -60,20 +60,27 @@ func (p *Payments) MarkPaid(ctx context.Context, orderID int64, reference string
 			    payment_reference = coalesce(nullif($3, ''), payment_reference),
 			    updated_at = now()
 			WHERE id = $1`, o.ID, PaymentPaid, reference); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		o.PaymentStatus = PaymentPaid
 
 		if o.Status == OrderPending {
 			if err := commitOrderStock(ctx, tx, o); err != nil {
-				return "", nil, err
+				return transitionResult{}, err
 			}
 			if err := setOrderStatus(ctx, tx, o.ID, OrderConfirmed); err != nil {
-				return "", nil, err
+				return transitionResult{}, err
 			}
 			o.Status = OrderConfirmed
 		}
-		return EventOrderPaid, p.app.orders.eventPayload(o), nil
+		res := transitionResult{
+			Event: EventOrderPaid, Payload: p.app.orders.eventPayload(o),
+			Action: AuditOrderMarkPaid, Summary: "Marked order " + o.Number + " paid",
+		}
+		if reference != "" {
+			res.After = map[string]any{"payment_reference": reference}
+		}
+		return res, nil
 	})
 }
 
@@ -94,16 +101,16 @@ func (p *Payments) MarkPaid(ctx context.Context, orderID int64, reference string
 // So the stock does not move. An operator who wants it back cancels the order,
 // which is the operation that means that and already knows how.
 func (p *Payments) MarkUnpaid(ctx context.Context, orderID int64) (*Order, error) {
-	return p.app.orders.transition(ctx, orderID, func(ctx context.Context, tx *sql.Tx, o *Order) (string, any, error) {
+	return p.app.orders.transition(ctx, orderID, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
 		switch o.PaymentStatus {
 		case PaymentPending, PaymentFailed:
 			// Already not paid. Nothing to take back.
-			return "", nil, nil
+			return transitionResult{}, nil
 		case PaymentRefunded:
-			return "", nil, Conflictf("order %s was refunded; that is a payment that happened and came back, not one to erase", o.Number)
+			return transitionResult{}, Conflictf("order %s was refunded; that is a payment that happened and came back, not one to erase", o.Number)
 		}
 		if o.Status == OrderCancelled {
-			return "", nil, Conflictf("order %s is cancelled; money on it is a refund, not a mistake to unrecord", o.Number)
+			return transitionResult{}, Conflictf("order %s is cancelled; money on it is a refund, not a mistake to unrecord", o.Number)
 		}
 
 		// The reference goes with it. It described a payment that did not
@@ -112,10 +119,14 @@ func (p *Payments) MarkUnpaid(ctx context.Context, orderID int64) (*Order, error
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE orders SET payment_status = $2, payment_reference = '', updated_at = now()
 			WHERE id = $1`, o.ID, PaymentPending); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		o.PaymentStatus = PaymentPending
-		return EventOrderUnpaid, p.app.orders.eventPayload(o), nil
+		return transitionResult{
+			Event: EventOrderUnpaid, Payload: p.app.orders.eventPayload(o),
+			Action:  AuditOrderMarkUnpaid,
+			Summary: "Took back a payment recorded in error on order " + o.Number,
+		}, nil
 	})
 }
 
@@ -123,21 +134,27 @@ func (p *Payments) MarkUnpaid(ctx context.Context, orderID int64) (*Order, error
 // pending so the shopper can try again; if nobody does, the unpaid sweeper
 // eventually cancels it and returns the stock.
 func (p *Payments) MarkFailed(ctx context.Context, orderID int64, reason string) (*Order, error) {
-	return p.app.orders.transition(ctx, orderID, func(ctx context.Context, tx *sql.Tx, o *Order) (string, any, error) {
+	return p.app.orders.transition(ctx, orderID, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
 		if o.PaymentStatus == PaymentPaid {
-			return "", nil, Conflictf("order %s is already paid", o.Number)
+			return transitionResult{}, Conflictf("order %s is already paid", o.Number)
 		}
 		if o.PaymentStatus == PaymentFailed {
-			return "", nil, nil
+			return transitionResult{}, nil
 		}
 		_, err := tx.ExecContext(ctx,
 			`UPDATE orders SET payment_status = $2, updated_at = now() WHERE id = $1`,
 			o.ID, PaymentFailed)
 		if err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		p.app.log.Info("payment failed", "order", o.Number, "reason", reason)
-		return "", nil, nil
+		// No event — this publishes none today and that stays true — but the
+		// reason has until now reached only the process log and nowhere a
+		// person could read it afterwards.
+		return transitionResult{
+			Action:  AuditOrderMarkFailed,
+			Summary: "Recorded a failed payment on order " + o.Number + ": " + reason,
+		}, nil
 	})
 }
 
@@ -175,17 +192,31 @@ func (p *Payments) Refund(ctx context.Context, orderID int64, amountMinor int64)
 		return nil, Internalf(err, "the refund was declined by %s", o.PaymentProvider)
 	}
 
-	return p.app.orders.transition(ctx, orderID, func(ctx context.Context, tx *sql.Tx, o *Order) (string, any, error) {
+	return p.app.orders.transition(ctx, orderID, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
 		if o.PaymentStatus == PaymentRefunded {
-			return "", nil, nil
+			return transitionResult{}, nil
 		}
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE orders SET payment_status = $2, updated_at = now() WHERE id = $1`,
 			o.ID, PaymentRefunded); err != nil {
-			return "", nil, err
+			return transitionResult{}, err
 		}
 		o.PaymentStatus = PaymentRefunded
-		return "", nil, nil
+		// The one operator act that produces no event at all, which is why the
+		// audit vocabulary is separate from the event taxonomy. The provider
+		// round trip is above and outside this transaction (rule 5), so a
+		// refund the gateway declined never reaches here and correctly leaves
+		// no row. Money stays minor units plus a currency and never enters the
+		// sentence (rule 6).
+		return transitionResult{
+			Action:  AuditOrderRefund,
+			Summary: "Refunded order " + o.Number + " through " + o.PaymentProvider,
+			After: map[string]any{
+				"amount_minor": amountMinor,
+				"currency":     o.Currency,
+				"provider":     o.PaymentProvider,
+			},
+		}, nil
 	})
 }
 
