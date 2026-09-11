@@ -12,9 +12,11 @@
      * unlocked laptop should not be enough to take the account over.
      */
     import { auth, getRecord } from "$lib/api.js";
+    import { rightLabel } from "$lib/rights.js";
     import { formatDate } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import Confirm from "$lib/components/Confirm.svelte";
+    import DirtyGuard from "$lib/components/DirtyGuard.svelte";
     import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
@@ -32,16 +34,21 @@
 
     let confirmOpen = $state(false);
 
-    const RIGHT_LABELS = {
-        "catalog.read": "See the catalog",
-        "catalog.write": "Edit products and categories",
-        "orders.read": "See orders",
-        "orders.write": "Fulfil and edit orders",
-        "orders.refund": "Refund money",
-        "inventory.write": "Adjust stock",
-        "customers.read": "See customers",
-        "settings.write": "Change settings and the team",
-    };
+    /*
+     * Typed and unsaved. A password half-entered here is not a big loss on its
+     * own, but a new email address typed into a form that then vanishes because
+     * a link was clicked is — and the guard costs nothing to state.
+     *
+     * The email compares against the loaded account rather than against empty:
+     * the field is seeded from `me.email` on load, so "not blank" would call a
+     * freshly loaded form dirty.
+     */
+    const typed = $derived(
+        !!form.current_password ||
+            !!form.password ||
+            !!form.confirm ||
+            (!!me && form.email.trim() !== me.email),
+    );
 
     $effect(() => {
         load();
@@ -125,6 +132,13 @@
     }
 </script>
 
+<svelte:head><title>Your account · GoCommerce</title></svelte:head>
+
+<DirtyGuard
+    dirty={typed}
+    message="You have typed into this form and not saved it. Leave and lose it?"
+/>
+
 <div class="page page-account">
     <SettingsSidebar />
 
@@ -180,7 +194,7 @@
                 {#each me.rights ?? [] as right (right)}
                     <div class="list-item">
                         <i class="ri-check-line" aria-hidden="true"></i>
-                        <span class="txt">{RIGHT_LABELS[right] ?? right}</span>
+                        <span class="txt" title={right}>{rightLabel(right)}</span>
                     </div>
                 {/each}
                 {#if !(me.rights ?? []).length}

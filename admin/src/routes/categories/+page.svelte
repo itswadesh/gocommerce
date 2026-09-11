@@ -15,13 +15,39 @@
      * sends, and shows what came back.
      */
     import { base } from "$app/paths";
-    import { api, query } from "$lib/api.js";
+    import { api, can, query } from "$lib/api.js";
+    import { onNewShortcut } from "$lib/shortcuts.js";
+    import { rowKey } from "$lib/rowkey.js";
+    import { listState } from "$lib/liststate.svelte.js";
+    import { selection } from "$lib/selection.svelte.js";
+    import { runBulk } from "$lib/bulk.js";
     import { toast } from "$lib/toast.svelte.js";
+    import { pluralize } from "$lib/format.js";
+    import BulkBar from "$lib/components/BulkBar.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import TokenInput from "$lib/components/TokenInput.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
+    import NoAccess from "$lib/components/NoAccess.svelte";
     import CategoryPicker from "$lib/components/CategoryPicker.svelte";
+    import CategoryMove from "$lib/components/CategoryMove.svelte";
+    import RecordHistory from "$lib/components/RecordHistory.svelte";
+    import Pager from "$lib/components/Pager.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
+
+    /* A page of matches rather than the default fifty: this is the screen the
+       tree belongs to, not a dropdown, so it can afford to show more of an
+       answer before asking the operator to narrow it. */
+    const SEARCH_LIMIT = 100;
+
+    /* The search, its page and its page size live in the URL, like every other
+       list screen — a search for "bird cage" that cannot be sent to anybody is
+       half a feature, and Back out of a category has to land on the same
+       matches. The size is a key like the rest, so the Rows control the other
+       fifteen listings have works here too. */
+    const list = listState({ q: "", page: 1, limit: SEARCH_LIMIT });
+    const search = $derived(list.params.q);
+    const perPage = $derived(list.params.limit);
+    let draftSearch = $state(list.params.q);
 
     let loading = $state(true);
     let saving = $state(false);
@@ -40,9 +66,23 @@
     let expanded = $state(new Set());
     let busyRow = $state(null);
 
+    /**
+     * The matches for the search box, which is a different question from the
+     * tree and gets its own answer.
+     *
+     * `GET /api/admin/categories?q=` is the engine's own bounded search — the
+     * one the picker in this page's own drawer has always used — and it returns
+     * a flat set of `full_name` paths rather than a shape. So while a search is
+     * running the table renders breadcrumbs with no indent and no expander: the
+     * indentation would be describing a tree that is no longer on screen.
+     */
+    let results = $state([]);
+    let resultMeta = $state(null);
+    let searchLoading = $state(false);
+
     let editorOpen = $state(false);
     let editing = $state(null); // null = creating
-    let form = $state({ title: "", slug: "", parent_id: null });
+    let form = $state({ title: "", slug: "", position: "", parent_id: null });
     /**
      * The fields products in this category are asked for, as the drawer edits
      * them. They live in the category's `metadata.attributes` — the same place
@@ -54,6 +94,32 @@
 
     let confirmOpen = $state(false);
     let pendingDelete = $state(null);
+
+    /* Who changed this category, from the row it is about. The route is gated
+       on catalog.read — the same right that draws this screen — rather than on
+       store.operate, which is what makes it answerable by a manager who cannot
+       open the store-wide feed at all. */
+    let historyOpen = $state(false);
+    let historyFor = $state(null);
+
+    function openHistory(category, event) {
+        event?.stopPropagation();
+        historyFor = category;
+        historyOpen = true;
+    }
+
+    /* The tree is catalog.read; everything that changes it is catalog.write.
+       Both are the nav's own gate on this screen, said again here so a typed
+       address does not render an armed screen that 403s on every press. */
+    const readable = $derived(can("catalog.read"));
+    const writable = $derived(can("catalog.write"));
+
+    /* `n` creates one, from anywhere on this screen. The shell owns the
+       keystroke and fires an event; what "new" means is the screen's. */
+    $effect(() => {
+        if (!writable) return;
+        return onNewShortcut(() => openCreate(null));
+    });
 
     /**
      * The parent picker must not offer the category being edited, or anything
@@ -75,15 +141,37 @@
     // to search rather than filter what this page happens to have open.
     const parentRemote = $derived(total > categories.length);
 
+    /** What the table draws: the matches while a search is running, else the tree. */
+    const rows = $derived(search ? results : categories);
+
+    /*
+     * Two effects, not one. The tree is loaded once and kept — a search must not
+     * collapse every branch the operator opened, and clearing the box has to put
+     * them back rather than re-fetch roots. The roots are loaded even while a
+     * search is running because the drawer's Parent picker reads `categories`
+     * and `total` off this page, and a deep link straight into `?q=` would
+     * otherwise open a drawer whose picker believes the store has no tree.
+     */
     $effect(() => {
-        load();
+        loadTree();
     });
 
-    async function load() {
+    $effect(() => {
+        list.params;
+        runSearch();
+    });
+
+    async function loadTree() {
+        // The screen is refused above; asking anyway would put a 403 toast
+        // over the explanation.
+        if (!readable) {
+            loading = false;
+            return;
+        }
         loading = true;
         expanded = new Set();
         try {
-            const [roots, counted] = await Promise.all([
+            const [roots, sized] = await Promise.all([
                 api.get("/api/admin/categories?parent=root"),
                 // The bounded listing is the only thing that reports the real
                 // size of the tree, and the footer should not claim the number
@@ -91,11 +179,107 @@
                 api.get("/api/admin/categories?flat=1"),
             ]);
             categories = roots.data ?? [];
-            total = counted.meta?.total ?? categories.length;
+            total = sized.meta?.total ?? categories.length;
         } catch (err) {
             toast.error(err);
         } finally {
             loading = false;
+        }
+    }
+
+    /* Two submissions leave two requests in flight, and the table would
+       otherwise settle on whichever reply arrived last rather than on the term
+       in the box. */
+    let searchReq = 0;
+
+    async function runSearch() {
+        const term = search;
+        const mine = ++searchReq;
+        if (!term) {
+            results = [];
+            resultMeta = null;
+            searchLoading = false;
+            return;
+        }
+        searchLoading = true;
+        try {
+            const res = await api.get(
+                "/api/admin/categories" + list.query({ limit: perPage }),
+            );
+            if (mine !== searchReq) return;
+            results = res.data ?? [];
+            resultMeta = res.meta ?? null;
+        } catch (err) {
+            if (mine === searchReq) toast.error(err);
+        } finally {
+            if (mine === searchReq) searchLoading = false;
+        }
+    }
+
+    function submitSearch(event) {
+        event.preventDefault();
+        list.set({ q: draftSearch.trim() });
+    }
+
+    function clearSearch() {
+        draftSearch = "";
+        list.set({ q: "" });
+    }
+
+    /** Refresh means everything, including the counts — which is the one thing
+     *  a re-read of the tree would otherwise leave stale. */
+    function refresh() {
+        counted = {};
+        asked.clear();
+        loadTree();
+        runSearch();
+    }
+
+    /**
+     * How many products are filed under a category, and under everything
+     * beneath it.
+     *
+     * There is no per-category count on the wire, and there does not need to be:
+     * `GET /api/admin/products?category_id=&limit=1` answers with the subtree's
+     * `meta.total` and one row. One request per row on screen, capped at four at
+     * a time so opening a branch of forty does not put forty requests on the
+     * wire at once, and cached — a count is what makes "what would break if I
+     * delete this" answerable before the engine refuses.
+     */
+    let counted = $state({});
+    /* Plain, not $state: reading it inside the effect below would make the
+       effect depend on every id it has already seen and re-run on every answer. */
+    const asked = new Set();
+    const pending = [];
+    let inflight = 0;
+
+    $effect(() => {
+        for (const row of rows) {
+            if (asked.has(row.id)) continue;
+            asked.add(row.id);
+            pending.push(row.id);
+        }
+        pump();
+    });
+
+    function pump() {
+        while (inflight < 4 && pending.length) {
+            const id = pending.shift();
+            inflight++;
+            api.get("/api/admin/products" + query({ category_id: id, limit: 1 }))
+                .then((res) => {
+                    counted[id] = res.meta?.total ?? 0;
+                })
+                .catch(() => {
+                    // A role with catalog.read but no products, or a store that
+                    // answered badly: the row simply says nothing about products
+                    // rather than claiming zero.
+                    counted[id] = null;
+                })
+                .finally(() => {
+                    inflight--;
+                    pump();
+                });
         }
     }
 
@@ -144,7 +328,10 @@
 
     function openCreate(parentID = null) {
         editing = null;
-        form = { title: "", slug: "", parent_id: parentID };
+        // Empty rather than 0: the engine puts a new category at the end of its
+        // siblings when no position is sent, and 0 would silently put every new
+        // one first instead.
+        form = { title: "", slug: "", position: "", parent_id: parentID };
         attributes = [];
         errors = {};
         editorOpen = true;
@@ -155,6 +342,7 @@
         form = {
             title: category.title,
             slug: category.slug,
+            position: String(category.position ?? 0),
             parent_id: category.parent_id ?? null,
         };
         attributes = (category.metadata?.attributes ?? []).map((a) => ({
@@ -266,6 +454,10 @@
 
         errors = {};
         if (!form.title.trim()) errors.title = "A title is required.";
+        const position = readPosition();
+        if (position === undefined && form.position.trim() !== "") {
+            errors.position = "A position is a whole number, 0 or more.";
+        }
         if (Object.keys(errors).length) return;
 
         saving = true;
@@ -277,6 +469,8 @@
                 await api.patch(`/api/admin/categories/${editing.id}`, {
                     title: form.title.trim(),
                     slug: form.slug.trim() || undefined,
+                    // undefined is "leave the order alone"; a number is a move.
+                    position,
                     parent_id: form.parent_id,
                     // metadata is replaced whole, so whatever else is on the
                     // category rides along — `taxonomy_gid` is written by the
@@ -288,18 +482,36 @@
                 await api.post("/api/admin/categories", {
                     title: form.title.trim(),
                     slug: form.slug.trim() || undefined,
+                    position,
                     parent_id: form.parent_id,
                     metadata: { attributes: cleanedAttributes() },
                 });
                 toast.success("Category created");
             }
             editorOpen = false;
-            await load();
+            refresh();
         } catch (err) {
             toast.error(err);
         } finally {
             saving = false;
         }
+    }
+
+    /**
+     * The Position box as the API takes it: a number, or undefined for "say
+     * nothing about it".
+     *
+     * Undefined is a real answer on both verbs — the engine appends a new
+     * category to the end of its siblings when none is sent, and leaves an
+     * existing one where it is. It is also what a malformed box returns, which
+     * is why save() checks the box was empty before treating it as one.
+     */
+    function readPosition() {
+        const raw = form.position.trim();
+        if (raw === "") return undefined;
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < 0) return undefined;
+        return n;
     }
 
     function askDelete(category, event) {
@@ -308,18 +520,129 @@
         confirmOpen = true;
     }
 
+    /**
+     * What is about to break, said before the engine says it.
+     *
+     * The refusal is still the safety story — it is transactional and this is a
+     * count taken a moment ago — but an operator who can read "and 312 products"
+     * before pressing Delete does not have to discover it from a red toast.
+     */
+    function deleteMessage(category) {
+        const products = counted[category.id];
+        const holds = [];
+        if (category.child_count > 0) {
+            holds.push(`${category.child_count} ${pluralize(category.child_count, "subcategory", "subcategories")}`);
+        }
+        if (typeof products === "number" && products > 0) {
+            holds.push(`${products} ${pluralize(products, "product")}`);
+        }
+        if (!holds.length) {
+            return `${category.title} will be removed. If any subcategories or products still point at it, the store will refuse and tell you how many.`;
+        }
+        return (
+            `${category.title} still holds ${holds.join(" and ")} — counted through everything ` +
+            `beneath it. The store will refuse the delete until they are moved elsewhere.`
+        );
+    }
+
     async function doDelete() {
         try {
             await api.delete(`/api/admin/categories/${pendingDelete.id}`);
             toast.success(`Deleted ${pendingDelete.title}`);
-            await load();
+            refresh();
         } catch (err) {
             // A 409 here is the engine refusing while subcategories or products
             // still point at it, and its message already names the count.
             toast.error(err);
         }
     }
+
+    // ------------------------------------------------------------ selection
+
+    /*
+     * The categories an operator has picked, across the tree they have opened
+     * or the search they ran. Retiring last season's taxonomy was one
+     * confirmation per node.
+     *
+     * Cleared by the search, because the rows that were picked are not on
+     * screen any more and a delete of rows nobody can see is the accident this
+     * exists to prevent. Expanding a branch is deliberately NOT a clear: the
+     * rows already picked are still exactly where they were.
+     *
+     * There is no bulk activate or deactivate here and that is the engine's
+     * shape rather than an omission — a category has no `active` (categories.go
+     * carries title, slug, position, parent and metadata), so the only
+     * per-row write route a selection can be N calls to is the delete.
+     */
+    const sel = selection();
+
+    $effect(() => {
+        list.params.q;
+        sel.clear();
+    });
+
+    let bulkBusy = $state(false);
+    let bulkDeleteOpen = $state(false);
+    let moveOpen = $state(false);
+    /*
+     * The selection as it was when Move was pressed, not the live one.
+     *
+     * A move that half succeeds leaves the drawer open on the refusals, and
+     * `ondone` has already cleared the selection and re-read the tree by then —
+     * so a drawer reading `picked` would empty its own list out from under the
+     * sentences explaining which rows did not go.
+     */
+    let moveRows = $state([]);
+
+    function openMove() {
+        moveRows = picked;
+        moveOpen = true;
+    }
+
+    const picked = $derived(sel.pick(rows));
+
+    /* How many of the selection still hold something, for the message. The
+       counts are the ones already on screen beside each row, so this costs no
+       request — and the engine's refusal is still the safety story. */
+    const pickedHolding = $derived(
+        picked.filter(
+            (c) => c.child_count > 0 || (typeof counted[c.id] === "number" && counted[c.id] > 0),
+        ),
+    );
+
+    /**
+     * Deleting a selection: N calls to the per-row route the bin already uses,
+     * deepest first.
+     *
+     * The engine refuses to delete a category while anything still points at
+     * it, so a branch selected whole would fail on every parent if the rows
+     * went in draw order — and the operator would be told about refusals that
+     * were only an ordering artefact. Child before parent, the same selection
+     * goes through.
+     */
+    async function bulkDelete() {
+        const ordered = [...picked].sort((a, b) => (b.depth ?? 0) - (a.depth ?? 0));
+        bulkBusy = true;
+        try {
+            await runBulk(ordered, (c) => api.delete(`/api/admin/categories/${c.id}`), {
+                describe: "Deleted",
+                noun: "category",
+                plural: "categories",
+                label: (c) => c.full_name || c.title,
+            });
+        } finally {
+            bulkBusy = false;
+        }
+        sel.clear();
+        refresh();
+    }
 </script>
+
+<svelte:head><title>Categories · GoCommerce</title></svelte:head>
+
+{#if !readable}
+    <NoAccess right="catalog.read" what="categories" />
+{:else}
 
 <div class="page page-categories">
     <div class="page-content full-height">
@@ -334,17 +657,48 @@
                     class="btn circle transparent secondary"
                     title="Refresh"
                     aria-label="Refresh"
-                    onclick={load}
+                    onclick={refresh}
                 >
                     <i class="ri-refresh-line" aria-hidden="true"></i>
                 </button>
             </div>
 
+            <!-- The tree is browsed one level at a time because it can hold
+                 fourteen thousand nodes, which is exactly why it also has to be
+                 searchable: expanding level by level is not a way to reach a
+                 leaf whose parent you cannot name. -->
+            <form class="fields searchbar" onsubmit={submitSearch}>
+                <div class="field">
+                    <input
+                        type="text"
+                        class="p-l-20"
+                        placeholder="Search every category by name"
+                        bind:value={draftSearch}
+                    />
+                </div>
+                {#if draftSearch || search}
+                    <div class="field addon p-r-5">
+                        {#if draftSearch !== search}
+                            <button type="submit" class="btn sm pill warning">Search</button>
+                        {/if}
+                        <button
+                            type="button"
+                            class="btn sm pill secondary transparent"
+                            onclick={clearSearch}
+                        >
+                            Clear
+                        </button>
+                    </div>
+                {/if}
+            </form>
+
             <div class="page-header-primary-btns">
-                <button type="button" class="btn" onclick={() => openCreate(null)}>
-                    <i class="ri-add-line" aria-hidden="true"></i>
-                    <span class="txt">New category</span>
-                </button>
+                {#if writable}
+                    <button type="button" class="btn" onclick={() => openCreate(null)}>
+                        <i class="ri-add-line" aria-hidden="true"></i>
+                        <span class="txt">New category</span>
+                    </button>
+                {/if}
             </div>
         </header>
 
@@ -352,88 +706,202 @@
             <table class="table responsive-table">
                 <thead class="sticky">
                     <tr>
+                        {#if writable}
+                            <th class="col-bulk-select min-width">
+                                <div class="field">
+                                    <input
+                                        id="select-all-categories"
+                                        type="checkbox"
+                                        checked={sel.allSelected(rows)}
+                                        onchange={() => sel.toggleAll(rows)}
+                                    />
+                                    <!-- "on screen", not "the whole tree": the
+                                         panel holds the branches that are open
+                                         and nothing else, and the API has no
+                                         select-everything call. -->
+                                    <label
+                                        for="select-all-categories"
+                                        aria-label="Select every category on screen"
+                                    ></label>
+                                </div>
+                            </th>
+                        {/if}
                         <th class="col-field-name-id">Category</th>
                         <th class="col-type-text">Slug</th>
+                        <!-- What is filed under it, counted through the whole
+                             subtree — the same reach the link's filter has. -->
+                        <th class="col-field-type-number min-width">Products</th>
+                        <!-- Sibling order. Read-only here and editable in the
+                             drawer: it is the number a storefront menu is drawn
+                             in, and it was previously invisible. -->
+                        <th class="col-field-type-number min-width">Position</th>
                         <th class="col-meta min-width"></th>
                     </tr>
                 </thead>
                 <tbody>
-                    {#each categories as category (category.id)}
-                        <tr class="handle" onclick={() => openEdit(category)}>
+                    {#each rows as category (category.id)}
+                        <tr
+                            class="handle"
+                            tabindex="0"
+                            onclick={() => openEdit(category)}
+                            onkeydown={(e) => rowKey(e, () => openEdit(category))}
+                        >
+                            {#if writable}
+                                <!-- stopPropagation rather than a guard inside
+                                     the row handler: ticking a box must not also
+                                     open the category. -->
+                                <td
+                                    class="col-bulk-select min-width"
+                                    onclick={(e) => e.stopPropagation()}
+                                >
+                                    <div class="field">
+                                        <input
+                                            id="select-category-{category.id}"
+                                            type="checkbox"
+                                            checked={sel.has(category.id)}
+                                            onchange={() => sel.toggle(category.id)}
+                                        />
+                                        <label
+                                            for="select-category-{category.id}"
+                                            aria-label="Select {category.full_name ||
+                                                category.title}"
+                                        ></label>
+                                    </div>
+                                </td>
+                            {/if}
                             <td class="col-field-name-id" data-name="Category">
-                                <span
-                                    class="category-indent"
-                                    class:nested={category.depth > 0}
-                                    style="--depth: {category.depth}"
-                                ></span>
-                                <!-- A leaf gets a spacer rather than a disabled
-                                     chevron: an expander that opens onto
-                                     nothing reads as broken, and `child_count`
-                                     is on the row precisely so this can tell. -->
-                                {#if category.child_count > 0}
-                                    <button
-                                        type="button"
-                                        class="btn circle sm transparent secondary"
-                                        class:loading={busyRow === category.id}
-                                        aria-expanded={expanded.has(category.id)}
-                                        aria-label="{expanded.has(category.id)
-                                            ? 'Collapse'
-                                            : 'Expand'} {category.title}"
-                                        onclick={(e) => (e.stopPropagation(), toggle(category))}
-                                    >
-                                        <i
-                                            class={expanded.has(category.id)
-                                                ? "ri-arrow-down-s-line"
-                                                : "ri-arrow-right-s-line"}
-                                            aria-hidden="true"
-                                        ></i>
-                                    </button>
-                                {:else}
-                                    <span class="expand-spacer" aria-hidden="true"></span>
-                                {/if}
-                                <span class="txt-bold">{category.title}</span>
-                                {#if category.child_count > 0}
-                                    <span class="txt-hint txt-sm">
-                                        {category.child_count}
+                                {#if search}
+                                    <!-- A match may be anywhere in the tree, so
+                                         its path is the only thing that says
+                                         which "Shirts" this is. The indent is
+                                         suppressed rather than kept: depth is
+                                         still on the row and would be drawing a
+                                         shape that is not on screen. -->
+                                    <span class="txt-bold txt-ellipsis">
+                                        {category.full_name || category.title}
                                     </span>
+                                {:else}
+                                    <span
+                                        class="category-indent"
+                                        class:nested={category.depth > 0}
+                                        style="--depth: {category.depth}"
+                                    ></span>
+                                    <!-- A leaf gets a spacer rather than a disabled
+                                         chevron: an expander that opens onto
+                                         nothing reads as broken, and `child_count`
+                                         is on the row precisely so this can tell. -->
+                                    {#if category.child_count > 0}
+                                        <button
+                                            type="button"
+                                            class="btn circle sm transparent secondary"
+                                            class:loading={busyRow === category.id}
+                                            aria-expanded={expanded.has(category.id)}
+                                            aria-label="{expanded.has(category.id)
+                                                ? 'Collapse'
+                                                : 'Expand'} {category.title}"
+                                            onclick={(e) => (e.stopPropagation(), toggle(category))}
+                                        >
+                                            <i
+                                                class={expanded.has(category.id)
+                                                    ? "ri-arrow-down-s-line"
+                                                    : "ri-arrow-right-s-line"}
+                                                aria-hidden="true"
+                                            ></i>
+                                        </button>
+                                    {:else}
+                                        <span class="expand-spacer" aria-hidden="true"></span>
+                                    {/if}
+                                    <span class="txt-bold">{category.title}</span>
+                                    {#if category.child_count > 0}
+                                        <span class="txt-hint txt-sm">
+                                            {category.child_count}
+                                        </span>
+                                    {/if}
                                 {/if}
                             </td>
                             <td class="col-type-text txt-hint txt-sm" data-name="Slug">
                                 <span class="txt-ellipsis">{category.slug}</span>
                             </td>
+                            <td class="col-field-type-number min-width" data-name="Products">
+                                <!-- A real link, so it opens in a tab and reads
+                                     its destination on hover. `category_id`
+                                     matches the whole subtree, which is what
+                                     somebody asking "what is under this" means. -->
+                                {#if counted[category.id] === undefined}
+                                    <span class="txt-hint txt-sm">…</span>
+                                {:else if counted[category.id] === null}
+                                    <span class="txt-hint txt-sm">—</span>
+                                {:else}
+                                    <a
+                                        href="{base}/products?category_id={category.id}"
+                                        class="txt-sm"
+                                        class:txt-hint={counted[category.id] === 0}
+                                        title="Products in {category.full_name || category.title}"
+                                        onclick={(e) => e.stopPropagation()}
+                                    >
+                                        {counted[category.id]}
+                                    </a>
+                                {/if}
+                            </td>
+                            <td
+                                class="col-field-type-number min-width txt-hint txt-sm"
+                                data-name="Position"
+                            >
+                                {category.position ?? 0}
+                            </td>
                             <td class="col-meta min-width">
+                                <!-- Outside the writable gate: reading who
+                                     changed a category is catalog.read, which
+                                     is the right this whole screen is drawn
+                                     under. -->
                                 <button
                                     type="button"
                                     class="btn circle sm transparent secondary"
-                                    aria-label="Add a subcategory under {category.title}"
-                                    title="Add a subcategory"
-                                    onclick={(e) => addChild(category, e)}
+                                    aria-label="Change history for {category.title}"
+                                    title="Change history"
+                                    onclick={(e) => openHistory(category, e)}
                                 >
-                                    <i class="ri-node-tree" aria-hidden="true"></i>
+                                    <i class="ri-file-history-line" aria-hidden="true"></i>
                                 </button>
-                                <button
-                                    type="button"
-                                    class="btn circle sm transparent secondary row-delete"
-                                    aria-label="Delete {category.title}"
-                                    title="Delete"
-                                    onclick={(e) => askDelete(category, e)}
-                                >
-                                    <i class="ri-delete-bin-7-line" aria-hidden="true"></i>
-                                </button>
+                                {#if writable}
+                                    <button
+                                        type="button"
+                                        class="btn circle sm transparent secondary"
+                                        aria-label="Add a subcategory under {category.title}"
+                                        title="Add a subcategory"
+                                        onclick={(e) => addChild(category, e)}
+                                    >
+                                        <i class="ri-node-tree" aria-hidden="true"></i>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn circle sm transparent secondary row-delete"
+                                        aria-label="Delete {category.title}"
+                                        title="Delete"
+                                        onclick={(e) => askDelete(category, e)}
+                                    >
+                                        <i class="ri-delete-bin-7-line" aria-hidden="true"></i>
+                                    </button>
+                                {/if}
                                 <i class="ri-arrow-right-s-line" aria-hidden="true"></i>
                             </td>
                         </tr>
                     {/each}
 
-                    {#if loading && !categories.length}
+                    {#if (loading || searchLoading) && !rows.length}
                         {#each Array(4) as _, i (i)}
-                            <tr><td colspan="3"><span class="skeleton-loader"></span></td></tr>
+                            <tr><td colspan={writable ? 6 : 5}><span class="skeleton-loader"></span></td></tr>
                         {/each}
-                    {:else if !categories.length}
+                    {:else if !rows.length}
                         <tr>
-                            <td colspan="3" class="txt-hint txt-center p-base">
-                                No categories yet. A category is where a product sits in your
-                                taxonomy — one place, with a parent.
+                            <td colspan={writable ? 6 : 5} class="txt-hint txt-center p-base">
+                                {#if search}
+                                    No category matches “{search}”. The search reads the whole
+                                    tree, not the branches you have opened.
+                                {:else}
+                                    No categories yet. A category is where a product sits in your
+                                    taxonomy — one place, with a parent.
+                                {/if}
                             </td>
                         </tr>
                     {/if}
@@ -441,14 +909,56 @@
             </table>
         </div>
 
+        {#if writable}
+            <BulkBar count={sel.count} noun="category" plural="categories" onclear={() => sel.clear()}>
+                <!-- Two acts, and both are the per-row route this screen
+                     already calls: the drawer's Parent field and the bin.
+                     There is still no `active` on a category to switch.
+                     Re-parenting is here because it is the one edit a tree
+                     sized for fourteen thousand nodes makes in bulk —
+                     reorganising a branch was forty drawer visits. -->
+                <button
+                    type="button"
+                    class="btn sm secondary"
+                    disabled={bulkBusy}
+                    onclick={openMove}
+                >
+                    <i class="ri-drag-move-2-line" aria-hidden="true"></i>
+                    <span class="txt">Move…</span>
+                </button>
+                <button
+                    type="button"
+                    class="btn sm secondary txt-danger"
+                    disabled={bulkBusy}
+                    onclick={() => (bulkDeleteOpen = true)}
+                >
+                    <i class="ri-delete-bin-7-line" aria-hidden="true"></i>
+                    <span class="txt">Delete</span>
+                </button>
+            </BulkBar>
+        {/if}
+
         <footer class="page-footer">
-            <span class="txt">
-                {total}
-                {total === 1 ? "category" : "categories"}
-                {#if categories.length !== total}
-                    <span class="txt-hint">· {categories.length} shown</span>
-                {/if}
-            </span>
+            {#if search}
+                <Pager
+                    meta={resultMeta}
+                    loading={searchLoading}
+                    noun="match"
+                    plural="matches"
+                    {perPage}
+                    onpage={(n) => list.setPage(n)}
+                    onperpage={(n) => list.set({ limit: n })}
+                />
+                <div class="flex-fill"></div>
+            {:else}
+                <span class="txt">
+                    {total}
+                    {pluralize(total, "category", "categories")}
+                    {#if categories.length !== total}
+                        <span class="txt-hint">· {categories.length} shown</span>
+                    {/if}
+                </span>
+            {/if}
             <ThemeToggle />
         </footer>
     </div>
@@ -483,11 +993,31 @@
             subcategories with it.
         </div>
 
-        <div class="field m-t-sm">
-            <label for="cat_slug">Slug</label>
-            <input id="cat_slug" type="text" autocomplete="off" bind:value={form.slug} />
+        <div class="fields m-t-sm">
+            <div class="field">
+                <label for="cat_slug">Slug</label>
+                <input id="cat_slug" type="text" autocomplete="off" bind:value={form.slug} />
+            </div>
+            <div class="delimiter"></div>
+            <div class="field" class:error={!!errors.position}>
+                <label for="cat_position">Position</label>
+                <input
+                    id="cat_position"
+                    type="number"
+                    min="0"
+                    step="1"
+                    autocomplete="off"
+                    placeholder={editing ? "" : "last"}
+                    bind:value={form.position}
+                />
+            </div>
         </div>
-        <div class="field-help">Derived from the title when left empty.</div>
+        <div class="field-help">
+            The slug is derived from the title when left empty. Position orders this category
+            against its siblings — lowest first — which is the order a storefront draws its menu
+            in. Leave it empty on a new category and it goes last.
+        </div>
+        {#if errors.position}<div class="field-help error">{errors.position}</div>{/if}
 
         <!--
             The fields products in this category are asked for. Shopify gets
@@ -578,27 +1108,63 @@
 
     {#snippet footer()}
         <button type="button" class="btn transparent m-r-auto" onclick={() => (editorOpen = false)}>
-            <span class="txt">Cancel</span>
+            <span class="txt">{writable ? "Cancel" : "Close"}</span>
         </button>
-        <button
-            type="submit"
-            form="category-form"
-            class="btn"
-            class:loading={saving}
-            disabled={saving}
-        >
-            <span class="txt">{editing ? "Save changes" : "Create category"}</span>
-        </button>
+        <!-- The drawer is still reachable without catalog.write — reading a
+             category's metafields is what catalog.read is for — so what goes is
+             the button that writes them, not the drawer. -->
+        {#if writable}
+            <button
+                type="submit"
+                form="category-form"
+                class="btn"
+                class:loading={saving}
+                disabled={saving}
+            >
+                <span class="txt">{editing ? "Save changes" : "Create category"}</span>
+            </button>
+        {/if}
     {/snippet}
 </Drawer>
 
 <Confirm
     bind:open={confirmOpen}
     title="Delete this category?"
-    message={pendingDelete
-        ? `${pendingDelete.title} will be removed. If any subcategories or products still point at it, the store will refuse and tell you how many.`
-        : ""}
+    message={pendingDelete ? deleteMessage(pendingDelete) : ""}
     confirmLabel="Delete"
     danger
     onconfirm={doDelete}
 />
+
+<!-- A second Confirm rather than a shared one with a mode flag: this message
+     names a count and the other names a category, and one component asked to
+     say both ends up saying neither. -->
+<Confirm
+    bind:open={bulkDeleteOpen}
+    title="Delete {sel.count} {pluralize(sel.count, 'category', 'categories')}?"
+    message={(pickedHolding.length
+        ? `${pickedHolding.length} of these still hold subcategories or products. A branch selected together with everything beneath it is sent deepest first and should clear; anything else is refused by name, with the count. `
+        : "") +
+        "Products are never deleted with a category — they lose the place they were filed under."}
+    confirmLabel="Delete"
+    danger
+    onconfirm={bulkDelete}
+/>
+
+<CategoryMove
+    open={moveOpen}
+    selected={moveRows}
+    {categories}
+    remote={parentRemote}
+    onclose={() => (moveOpen = false)}
+    ondone={() => (sel.clear(), refresh())}
+/>
+
+<RecordHistory
+    open={historyOpen}
+    kind="categories"
+    id={historyFor?.id}
+    label={historyFor?.full_name || historyFor?.title}
+    onclose={() => (historyOpen = false)}
+/>
+{/if}

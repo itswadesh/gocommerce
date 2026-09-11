@@ -166,6 +166,11 @@ func TestSortParametersAreDocumented(t *testing.T) {
 		"/api/admin/media":      mediaSorts,
 		"/api/admin/categories": categorySorts,
 		"/api/categories":       categorySorts,
+		// The low-stock report is documented once and served two ways. The
+		// per-location allow-list is checked against the same enum by
+		// TestTheTwoStockReportsOfferTheSameColumns below, which is what makes
+		// one entry here honest.
+		"/api/admin/inventory/low-stock": lowStockSorts,
 	} {
 		get, ok := doc.Paths[path]["get"]
 		if !ok {
@@ -198,12 +203,31 @@ func TestSortParametersAreDocumented(t *testing.T) {
 // is caught by the same assertions the moment it is registered here.
 func allSortSpecs() map[string]SortSpec {
 	return map[string]SortSpec{
-		"products":   productSorts,
-		"orders":     orderSorts,
-		"customers":  customerSorts,
-		"discounts":  discountSorts,
-		"media":      mediaSorts,
-		"categories": categorySorts,
+		"products":      productSorts,
+		"orders":        orderSorts,
+		"customers":     customerSorts,
+		"discounts":     discountSorts,
+		"media":         mediaSorts,
+		"categories":    categorySorts,
+		"lowStock":      lowStockSorts,
+		"locationStock": locationStockSorts,
+	}
+}
+
+// TestTheTwoStockReportsOfferTheSameColumns pins the one thing that cannot be
+// read off either file alone.
+//
+// GET /api/admin/inventory/low-stock serves two statements — the store's total
+// and one location's own shelf — and each has its own allow-list because the
+// numbers come from different columns. The panel draws ONE set of headers over
+// both, and the route parses against lowStockSorts whichever branch will run.
+// So a key added to one and not the other is a column that sorts until somebody
+// picks a shop, and then silently 400s.
+func TestTheTwoStockReportsOfferTheSameColumns(t *testing.T) {
+	if !reflect.DeepEqual(lowStockSorts.Fields(), locationStockSorts.Fields()) {
+		t.Errorf("the store-wide report accepts %v and the per-location one accepts %v: "+
+			"one report's headers cannot mean two different things",
+			lowStockSorts.Fields(), locationStockSorts.Fields())
 	}
 }
 

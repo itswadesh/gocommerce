@@ -395,13 +395,47 @@ func (a *App) checkProviders() Diagnostic {
 	}
 	sort.Strings(ship)
 
+	mods := a.Modules()
+	modText := "none"
+	if len(mods) > 0 {
+		modText = strings.Join(mods, ", ")
+	}
+
+	// Named, not counted. "modules: 4" is the answer to a question nobody has;
+	// which four is the answer to the one an operator reading a diagnostic
+	// actually asks, and it is what tells them the store they are looking at is
+	// not the store they deployed.
 	d.Status = StatusOK
-	d.Detail = fmt.Sprintf("payment: %s; fulfillment: %s; modules: %d",
-		strings.Join(pay, ", "), strings.Join(ship, ", "), len(a.modules))
+	d.Detail = fmt.Sprintf("payment: %s; fulfillment: %s; modules: %s",
+		strings.Join(pay, ", "), strings.Join(ship, ", "), modText)
 	if len(pay) == 0 {
 		d.Status = StatusFail
 		d.Detail = "no payment providers registered — checkout is impossible"
 		d.Hint = "cash on delivery is built in; if it is missing, core wiring did not run"
+		return d
+	}
+
+	// The notification trap, per channel. The built-in logger is registered for
+	// both channels at boot and returns success, so a store with no vendor
+	// installed reports every order confirmation as delivered and sends none —
+	// the one failure in this file that produces no error, no retry and no
+	// sign at all until a customer says they never heard from you.
+	//
+	// A warning rather than a failure: a store that takes phone orders and
+	// sends no SMS is a legitimate configuration, and the doctor's exit code
+	// gates deployments.
+	var silent []string
+	for _, c := range a.NotifierChannels() {
+		if !c.Delivers {
+			silent = append(silent, c.Channel)
+		}
+	}
+	if len(silent) > 0 {
+		d.Status = StatusWarn
+		d.Detail += fmt.Sprintf("; no delivery backend for %s — those notifications are written to the log and reported as sent",
+			strings.Join(silent, " or "))
+		d.Hint = "register a notifier for each channel the store uses (ext/notify-sendgrid, ext/notify-msg91); " +
+			"a channel nobody sends on is fine, but it should be a decision"
 	}
 	return d
 }

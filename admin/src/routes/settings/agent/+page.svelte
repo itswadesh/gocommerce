@@ -19,6 +19,7 @@
      * that.
      */
     import { api, can, request } from "$lib/api.js";
+    import { rowKey } from "$lib/rowkey.js";
     import { listState } from "$lib/liststate.svelte.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { formatDate } from "$lib/format.js";
@@ -30,9 +31,14 @@
     import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
+    /* The starting page size, not the only one: `limit` is a listState key, so
+       an operator can change it and the choice rides in the URL with the rest of
+       the screen's state. */
     const PER_PAGE = 25;
 
-    const list = listState({ page: 1 });
+    const list = listState({ page: 1, limit: PER_PAGE });
+    const perPage = $derived(list.params.limit);
+
 
     let tools = $state([]);
     let statusLoading = $state(true);
@@ -95,7 +101,7 @@
         loading = true;
         try {
             const result = await api.get(
-                "/api/admin/x/mcp/audit" + list.query({ limit: PER_PAGE }),
+                "/api/admin/x/mcp/audit" + list.query({ limit: perPage }),
             );
             entries = result.data ?? [];
             meta = result.meta ?? null;
@@ -220,7 +226,12 @@
                         </thead>
                         <tbody>
                             {#each entries as row (row.id)}
-                                <tr class="handle" onclick={() => open(row)}>
+                                <tr
+                                    class="handle"
+                                    tabindex="0"
+                                    onclick={() => open(row)}
+                                    onkeydown={(e) => rowKey(e, () => open(row))}
+                                >
                                     <td
                                         class="col-field-type-date min-width txt-hint"
                                         data-name="When"
@@ -266,7 +277,14 @@
                 </div>
 
                 <footer class="page-footer">
-                    <Pager {meta} {loading} noun="call" onpage={(n) => list.setPage(n)} />
+                    <Pager
+                        {meta}
+                        {loading}
+                        noun="call"
+                        {perPage}
+                        onpage={(n) => list.setPage(n)}
+                        onperpage={(n) => list.set({ limit: n })}
+                    />
                     <div class="flex-fill"></div>
                     <ThemeToggle />
                 </footer>

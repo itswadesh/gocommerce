@@ -1209,6 +1209,14 @@ tr.variant-child > td:first-child {
     line-height: 1;
 }
 
+/* The block above was written for a span inside a button and is now worn by a
+   button of its own. These are the two UA defaults it never had to override. */
+button.media-check {
+    cursor: pointer;
+    font: inherit;
+    line-height: 1;
+}
+
 /*
  * The searchbar's magnifier.
  *
@@ -2433,6 +2441,41 @@ tr.variant-child > td:first-child {
 }
 
 /*
+ * The header wraps on this screen, and only on this screen.
+ *
+ * PocketBase's `.page-header-primary-btns` is an `inline-flex` with
+ * `flex-shrink: 0` and no wrap, which is right for the two or three controls
+ * every other screen puts there. Orders now has five — status, payment, the
+ * date range, Export and New order — and on a phone they ran off the edge of
+ * the header in one unbreakable row.
+ */
+.page-orders .page-header-primary-btns {
+    flex-wrap: wrap;
+    /* Wrapping alone changes nothing while the group is a `flex-shrink: 0` item
+       of the header: it keeps its max-content width and never reaches a line it
+       has to break at. */
+    flex-shrink: 1;
+    min-width: 0;
+    row-gap: 5px;
+}
+
+/*
+ * And the buttons stop stretching. Below 950px PocketBase gives each one
+ * `flex-grow: 1; flex-basis: 0` so two or three of them fill the header row —
+ * which, once the row wraps, hands the last line's two buttons half the width
+ * each, and below 550px they are `aspect-ratio: 1/1` circles, so a wide button
+ * becomes a tall one and drags the whole row with it.
+ */
+.page-orders .page-header-primary-btns .btn {
+    flex-grow: 0;
+    /* `flex-basis: auto` has to come with it. PocketBase's pair is
+       `grow: 1; basis: 0`, and below 550px the button is also
+       `width: auto; aspect-ratio: 1/1` — so a basis of 0 with nothing growing
+       it resolves to a button 0 pixels wide. */
+    flex-basis: auto;
+}
+
+/*
  * Slimmer status and payment badges.
  *
  * `.label` is sized to stand beside a button — 25px on a 25px floor — which is
@@ -2623,6 +2666,23 @@ tr.variant-child > td:first-child {
 }
 .row-name > .txt-ellipsis {
     min-width: 0;
+}
+
+/*
+ * The name is a real <a> on the screens whose rows lead to a route, so that a
+ * product or a page can be opened in a second tab. It must still read as the
+ * row it names rather than as a link in prose: the row already says it is
+ * clickable, and fifteen blue underlines down a table say it fifteen more
+ * times. The underline comes back on hover and focus, which is where a link
+ * has to announce itself.
+ */
+.row-name > a {
+    color: inherit;
+    text-decoration: none;
+}
+.row-name > a:hover,
+.row-name > a:focus-visible {
+    text-decoration: underline;
 }
 .row-handle {
     flex: 0 0 auto;
@@ -3568,6 +3628,87 @@ tr.variant-child > td:first-child {
 }
 
 /*
+ * How a role departs from the rights the engine ships it.
+ *
+ * The mark sits in the cell's corner rather than beside the checkbox: the
+ * checkbox is centred by a flex row, and a sibling inside it shoves the one
+ * control in the cell off centre on every row that differs.
+ */
+.roles-table td.col-role {
+    position: relative;
+}
+
+.roles-table td.col-role .diff-mark {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    line-height: 1;
+    pointer-events: none;
+}
+
+.diff-mark {
+    font-size: var(--smFontSize);
+    font-weight: 700;
+}
+
+/* Colour says which; the glyph says it again, and the cell's own hidden label
+   says it in words — so none of the three is doing the work alone. */
+.roles-table td.col-role.diff-added .diff-mark,
+.diff-mark.added {
+    color: var(--successColor);
+}
+
+.roles-table td.col-role.diff-removed .diff-mark,
+.diff-mark.removed {
+    color: var(--dangerColor);
+}
+
+/*
+ * A tint, so a departure is visible scanning down twenty-one rows rather than
+ * only by hunting for the glyph.
+ *
+ * As background-image and not background: the signed-in operator's own column
+ * already paints a background-color, and it can also be the customised one — a
+ * shorthand here would silently take that tint away.
+ */
+.roles-table td.col-role.diff-added {
+    background-image: linear-gradient(
+        color-mix(in srgb, var(--successColor), transparent 88%) 0 100%
+    );
+}
+
+.roles-table td.col-role.diff-removed {
+    background-image: linear-gradient(
+        color-mix(in srgb, var(--dangerColor), transparent 88%) 0 100%
+    );
+}
+
+/* Under the "N of 21" count in the sticky head, one short line each so the
+   130px role column does not have to widen to hold them. */
+.roles-table .role-diff {
+    display: block;
+    margin-top: 3px;
+    font-size: 11px;
+    font-weight: normal;
+}
+
+.roles-table .role-diff > span {
+    display: block;
+}
+
+.roles-table .role-diff .added {
+    color: var(--successColor);
+}
+
+.roles-table .role-diff .removed {
+    color: var(--dangerColor);
+}
+
+.roles-intro .diff-mark {
+    padding: 0 1px;
+}
+
+/*
  * Save and Reset live in the sticky head, under the role they act on. They
  * were in a `tfoot` first, which put them below the table's own scroll — the
  * one control the screen exists for, out of sight until you scrolled to it.
@@ -4085,6 +4226,214 @@ tr.handle:focus-visible {
     display: flex;
     align-items: center;
     gap: 7px;
+}
+
+/* --------- the command palette, its trigger, and the keyboard layer --------
+ *
+ * PocketBase has no omnibox and no palette, so there is nothing upstream to
+ * extend here: `.modal.popup` gives the centred sheet and `.list` gives the
+ * rows, and what follows is the box at the top of one, the group captions
+ * between runs of rows, and the keycaps. base.css resets `kbd` to nothing, so
+ * every keycap in the panel is drawn by one rule below.
+ */
+
+/* The trigger, under the wordmark in the sidebar and in the drawer. It is a
+   button that looks like a field on purpose: it opens the palette, which owns
+   the real input, and a second box claiming to be "search" beside every list
+   screen's own is the ambiguity the palette exists to end. */
+.app-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    margin: 0 0 var(--smSpacing);
+    padding: 6px 8px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+    background: var(--surfaceAlt1Color);
+    color: var(--surfaceTxtHintColor);
+    font-size: var(--smFontSize);
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--animationSpeed), border-color var(--animationSpeed);
+}
+.app-search:hover,
+.app-search:focus-visible {
+    background: var(--surfaceAlt2Color);
+    border-color: var(--surfaceAlt3Color);
+    color: var(--surfaceTxtColor);
+}
+.app-search > .txt {
+    flex-grow: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/*
+ * On a phone the trigger is a bare circle in the topbar beside the alert, and
+ * the brand is what takes the slack. .app-topbar-alert already carries an auto
+ * left margin; a second one on the search would split the free space between
+ * the two and leave them floating apart in the middle of the bar.
+ */
+.app-topbar .app-brand {
+    margin-right: auto;
+}
+
+/* One keycap rule for the panel: the trigger, the palette's footer hint and the
+   shortcut sheet all draw the same thing, and three near-identical rules is how
+   they come to disagree. */
+kbd {
+    display: inline-block;
+    min-width: 1.6em;
+    padding: 1px 5px;
+    border: 1px solid var(--surfaceAlt3Color);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    background: var(--surfaceAlt1Color);
+    color: var(--surfaceTxtHintColor);
+    font-family: var(--monospaceFontFamily);
+    font-size: 0.85em;
+    line-height: 1.5;
+    text-align: center;
+    white-space: nowrap;
+}
+kbd + kbd {
+    margin-left: 3px;
+}
+
+/* Wider than `.sm` and narrower than the default, and pinned near the top of
+   the viewport rather than centred: a palette that grows and shrinks with its
+   results would walk up and down the screen while the operator types. */
+.modal.popup.palette {
+    width: 640px;
+    /* Near the top rather than centred, and `margin-bottom: auto` is what
+       overrides .modal.popup's own `margin: auto`: a sheet centred on a list
+       that grows and shrinks while the operator types would walk up and down
+       the screen under the cursor. */
+    margin-top: 8vh;
+    margin-bottom: auto;
+}
+
+/* Written as `.modal.palette .modal-header` rather than `.palette-head`
+   because modal.css's own `.modal .modal-header { padding: var(--spacing) }`
+   is two classes deep, and a one-class selector loses to it. The same goes for
+   the body and the footer below. */
+.modal.palette .modal-header {
+    gap: 8px;
+    padding: var(--smSpacing);
+}
+
+/* The field is the whole header. It carries no border and no fill because the
+   modal's own edge is already the box the operator is typing into. */
+.palette-input {
+    flex-grow: 1;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: inherit;
+    font-size: var(--lgFontSize);
+    line-height: var(--btnHeight);
+}
+
+.modal.palette .modal-content {
+    padding: 0 var(--smSpacing) var(--smSpacing);
+    max-height: min(60vh, 480px);
+    overflow: auto;
+    scrollbar-width: thin;
+}
+
+/* The list has no outer border inside the sheet — the sheet is the border — and
+   its rows run to both edges. */
+.palette-list {
+    border: 0;
+    border-radius: 0;
+    overflow: visible;
+}
+
+/* A caption between runs of rows, not a row. It is not a `.list-item` because
+   it is not selectable and must never take the keyboard cursor. */
+.palette-group {
+    padding: var(--smSpacing) var(--inputPadding) 2px;
+    color: var(--surfaceTxtHintColor);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+.palette-group:first-child {
+    padding-top: 0;
+}
+
+/* The row. `.list-item.handle.active` already paints the selected ground, so
+   this only has to keep the icon and the two lines of text in order. */
+.palette-list .list-item {
+    box-shadow: none;
+    border-radius: var(--borderRadius);
+    color: inherit;
+    text-decoration: none;
+}
+.palette-list .list-item > i {
+    flex-shrink: 0;
+    color: var(--surfaceTxtHintColor);
+}
+.palette-list .list-item .content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+}
+
+.modal.palette .modal-footer {
+    justify-content: center;
+    padding: var(--smSpacing);
+    border-top: 1px solid var(--surfaceAlt2Color);
+}
+
+/* The sheet's key column. Fixed width so the descriptions line up down the
+   list rather than stepping in and out with the number of keys. */
+.shortcut-keys {
+    flex-shrink: 0;
+    width: 90px;
+    text-align: right;
+}
+
+/* On a phone the palette is the screen. */
+@media screen and (max-width: 600px) {
+    .modal.popup.palette {
+        width: 100%;
+        margin-top: 0;
+    }
+    .app-search > kbd {
+        display: none;
+    }
+}
+
+/* ------------------------------------------------------- rows per page */
+
+/*
+ * The page-size control, at the end of the pager.
+ *
+ * Every list screen had its own hardcoded constant — 25 here, 30 there, 50 on
+ * discounts — and no way to change it, so a warehouse picking list and a
+ * glance at today's orders were dealt the same hand. It reads and writes
+ * `limit` on the URL like every other list parameter, so a chosen size is
+ * bookmarkable and survives Back with the rest of the screen's state.
+ */
+.pager-size {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--surfaceTxtHintColor);
+    font-size: var(--smFontSize);
+}
+.pager-size .input.select {
+    min-width: 0;
+}
+.pager-size .input.select .selected-container {
+    min-height: var(--smBtnHeight);
+    padding-top: 0;
+    padding-bottom: 0;
 }
 
 /* --------- @media print — KEEP LAST ---------

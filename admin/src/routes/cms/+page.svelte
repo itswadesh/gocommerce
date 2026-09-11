@@ -15,6 +15,7 @@
     import { base } from "$app/paths";
     import { goto } from "$app/navigation";
     import { api, can } from "$lib/api.js";
+    import { rowKey } from "$lib/rowkey.js";
     import { listState } from "$lib/liststate.svelte.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { settings } from "$lib/settings.svelte.js";
@@ -27,9 +28,14 @@
     import Select from "$lib/components/Select.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
+    /* The starting page size, not the only one: `limit` is a listState key, so
+       an operator can change it and the choice rides in the URL with the rest of
+       the screen's state. */
     const PER_PAGE = 25;
 
-    const list = listState({ language: "", status: "", page: 1 });
+    const list = listState({ language: "", status: "", page: 1, limit: PER_PAGE });
+    const perPage = $derived(list.params.limit);
+
     const language = $derived(list.params.language);
     const status = $derived(list.params.status);
 
@@ -60,7 +66,7 @@
         loading = true;
         try {
             const result = await api.get(
-                "/api/admin/x/cms/pages" + list.query({ limit: PER_PAGE }),
+                "/api/admin/x/cms/pages" + list.query({ limit: perPage }),
             );
             pages = result.data ?? [];
             meta = result.meta ?? null;
@@ -212,10 +218,25 @@
                         </thead>
                         <tbody>
                             {#each pages as row (row.id)}
-                                <tr class="handle" onclick={() => goto(`${base}/cms/${row.id}`)}>
+                                <tr
+                                    class="handle"
+                                    tabindex="0"
+                                    onclick={(e) =>
+                                        e.target.closest("a") || goto(`${base}/cms/${row.id}`)}
+                                    onkeydown={(e) => rowKey(e, () => goto(`${base}/cms/${row.id}`))}
+                                >
                                     <td class="col-field-name-id" data-name="Page">
                                         <div class="row-name">
-                                            <span class="txt-bold txt-ellipsis">{row.title}</span>
+                                            <!-- A real link as well as a row, so
+                                                 a page can be opened in a second
+                                                 tab beside the one being
+                                                 edited. -->
+                                            <a
+                                                class="txt-bold txt-ellipsis"
+                                                href="{base}/cms/{row.id}"
+                                            >
+                                                {row.title}
+                                            </a>
                                             <span class="txt-hint txt-sm row-handle">/{row.slug}</span>
                                         </div>
                                     </td>
@@ -260,7 +281,14 @@
                 </div>
 
                 <footer class="page-footer">
-                    <Pager {meta} {loading} noun="page" onpage={(n) => list.setPage(n)} />
+                    <Pager
+                        {meta}
+                        {loading}
+                        noun="page"
+                        {perPage}
+                        onpage={(n) => list.setPage(n)}
+                        onperpage={(n) => list.set({ limit: n })}
+                    />
                     <div class="flex-fill"></div>
                     <ThemeToggle />
                 </footer>

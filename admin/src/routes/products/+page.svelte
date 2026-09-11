@@ -12,9 +12,15 @@
      * is where the interesting fields are and where the operator was going
      * anyway.
      */
+    import { untrack } from "svelte";
     import { base } from "$app/paths";
     import { goto } from "$app/navigation";
-    import { api } from "$lib/api.js";
+    import { api, can, query, request } from "$lib/api.js";
+    import { rowKey } from "$lib/rowkey.js";
+    import { selection } from "$lib/selection.svelte.js";
+    import { runBulk } from "$lib/bulk.js";
+    import { onNewShortcut } from "$lib/shortcuts.js";
+    import { distinct } from "$lib/catalog.js";
     import { listState } from "$lib/liststate.svelte.js";
     import { readSort, cycleSort, sortQuery } from "$lib/listsort.js";
     import {
@@ -28,21 +34,44 @@
     } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import { settings } from "$lib/settings.svelte.js";
+    import BulkBar from "$lib/components/BulkBar.svelte";
+    import CategoryPicker from "$lib/components/CategoryPicker.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
+    import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
+    import ProductFilters from "$lib/components/ProductFilters.svelte";
     import Select from "$lib/components/Select.svelte";
     import SortHeader from "$lib/components/SortHeader.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
+    /* The starting page size, not the only one: it is a listState key below, so
+       an operator can change it and the choice rides in the URL with the rest of
+       the screen's state. */
     const PER_PAGE = 30;
 
-    /* Search, status, ordering and page all live in the URL, and the window
-       replaces the rows rather than accumulating them — a sorted list an
-       operator can send to somebody is the whole point, and page 4 of a new
-       ordering appended onto three pages of the old one is two orderings
-       interleaved in one table. */
-    const list = listState({ q: "", status: "", sort: "", order: "", page: 1 });
+    /* Search, status, the five segmenting filters, ordering and page all live
+       in the URL, and the window replaces the rows rather than accumulating
+       them — a sorted list an operator can send to somebody is the whole point,
+       and page 4 of a new ordering appended onto three pages of the old one is
+       two orderings interleaved in one table.
+
+       Every filter the engine accepts has to be *declared* here: query() walks
+       these keys and nothing else, so a parameter missing from this object is
+       one the request can never carry, however it got onto the URL. */
+    const list = listState({
+        q: "",
+        status: "",
+        vendor: "",
+        product_type: "",
+        tag: "",
+        category_id: 0,
+        collection_id: 0,
+        sort: "",
+        order: "",
+        page: 1,
+        limit: PER_PAGE,
+    });
     const SORT_FIELDS = ["title", "status", "price", "available", "created_at", "updated_at"];
 
     let loading = $state(true);
@@ -53,7 +82,145 @@
     const search = $derived(list.params.q);
     const status = $derived(list.params.status);
     const sort = $derived(readSort(list.params, SORT_FIELDS));
+    const perPage = $derived(list.params.limit);
     let draftSearch = $state(list.params.q);
+
+    /* catalog.read is what the nav gates this screen on; somebody who typed the
+       address without it got a fully armed screen and a 403 on load, which
+       reads as a broken panel rather than as a permission. */
+    const readable = $derived(can("catalog.read"));
+    const writable = $derived(can("catalog.write"));
+
+    /* The five segmenting filters, as one value: the drawer takes them
+       together and applies them together, so the page never holds four of the
+       five and a stale one. */
+    const segment = $derived({
+        vendor: list.params.vendor,
+        product_type: list.params.product_type,
+        tag: list.params.tag,
+        category_id: list.params.category_id,
+        collection_id: list.params.collection_id,
+    });
+    const filtered = $derived(
+        !!(
+            segment.vendor ||
+            segment.product_type ||
+            segment.tag ||
+            segment.category_id ||
+            segment.collection_id
+        ),
+    );
+
+    let filterOpen = $state(false);
+
+    /**
+     * What the filter drawer offers to choose from.
+     *
+     * Three of the five are free-text columns on `products` rather than tables,
+     * so the catalog is its own index — the same page-of-200 scan the product
+     * editor uses to suggest a vendor. The other two are real listings.
+     *
+     * Fetched once, and only when they are about to be needed: opening the
+     * Products screen is the most common navigation in the panel, and a second
+     * 200-row read on every visit for a drawer most visits never open is a
+     * cost nobody asked for. A filter already on the URL counts as needing
+     * them — the chips have to be able to name a category rather than an id.
+     */
+    let vendors = $state([]);
+    let productTypes = $state([]);
+    let tagPool = $state([]);
+    let categories = $state([]);
+    let categoriesTruncated = $state(false);
+    let collections = $state([]);
+    let vocabularyState = $state("idle");
+
+    async function loadVocabulary() {
+        if (vocabularyState !== "idle") return;
+        vocabularyState = "loading";
+        try {
+            const [catalog, cats, cols] = await Promise.all([
+                api.get("/api/admin/products" + query({ limit: 200 })),
+                api.get("/api/admin/categories?flat=1"),
+                api.get("/api/admin/collections" + query({ limit: 200 })),
+            ]);
+            const rows = catalog.data ?? [];
+            vendors = distinct(rows, (p) => [p.vendor]);
+            productTypes = distinct(rows, (p) => [p.product_type]);
+            tagPool = distinct(rows, (p) => p.tags ?? []);
+            categories = cats.data ?? [];
+            categoriesTruncated = (cats.meta?.total ?? 0) > categories.length;
+            collections = cols.data ?? [];
+            vocabularyState = "ready";
+        } catch {
+            // The filters are still usable — the drawer's comboboxes take a
+            // typed name, and the engine matches on that alone. Only the
+            // suggestions are missing, so this is not worth a toast; going back
+            // to "idle" so the next open tries again is.
+            vocabularyState = "idle";
+        }
+    }
+
+    /*
+     * Untracked, because loadVocabulary writes the very state it reads to
+     * decide whether to run. Left tracked, a failing vocabulary read would set
+     * it back to "idle", wake this effect, and try again for ever.
+     */
+    $effect(() => {
+        if (filtered) untrack(() => loadVocabulary());
+    });
+
+    function openFilters() {
+        loadVocabulary();
+        filterOpen = true;
+    }
+
+    function applyFilters(next) {
+        filterOpen = false;
+        list.set(next);
+    }
+
+    /**
+     * One chip per active filter, so what the list is showing is legible
+     * without opening the drawer that set it — and removable one at a time,
+     * which is the ordinary way out of a filter that turned out to be one too
+     * many.
+     *
+     * A category or collection whose name has not arrived yet is named by its
+     * id rather than left blank: the chip has to be honest about being there.
+     */
+    const chips = $derived.by(() => {
+        const out = [];
+        if (segment.vendor) out.push({ key: "vendor", label: "Vendor", text: segment.vendor });
+        if (segment.product_type) {
+            out.push({ key: "product_type", label: "Type", text: segment.product_type });
+        }
+        if (segment.tag) out.push({ key: "tag", label: "Tag", text: segment.tag });
+        if (segment.category_id) {
+            const found = categories.find((c) => c.id === segment.category_id);
+            out.push({
+                key: "category_id",
+                label: "Category",
+                text: found?.full_name || found?.title || `#${segment.category_id}`,
+            });
+        }
+        if (segment.collection_id) {
+            const found = collections.find((c) => c.id === segment.collection_id);
+            out.push({
+                key: "collection_id",
+                label: "Collection",
+                text: found?.title || `#${segment.collection_id}`,
+            });
+        }
+        return out;
+    });
+
+    // The default for each key, which is what removing a chip restores. Numbers
+    // and strings both, so it is read off the chip rather than guessed.
+    const CLEARED = { vendor: "", product_type: "", tag: "", category_id: 0, collection_id: 0 };
+
+    function clearFilters() {
+        list.set({ ...CLEARED });
+    }
 
     /* A fast second header click leaves two requests in flight; without this
        the table settles on the reply that lost rather than on the header that
@@ -83,11 +250,17 @@
     });
 
     async function load() {
+        // The screen is refused above; asking anyway would put a 403 toast
+        // over the explanation.
+        if (!readable) {
+            loading = false;
+            return;
+        }
         const mine = ++reqId;
         loading = true;
         try {
             const result = await api.get(
-                "/api/admin/products" + list.query({ limit: PER_PAGE, ...sortQuery(sort) }),
+                "/api/admin/products" + list.query({ limit: perPage, ...sortQuery(sort) }),
             );
             if (mine !== reqId) return;
             products = result.data ?? [];
@@ -119,7 +292,16 @@
         createOpen = true;
     }
 
-    function openEdit(product) {
+    /**
+     * A row click opens the product. The title is also a real link, which is
+     * what makes middle-click and "open in a new tab" work — three products
+     * open side by side is how a range gets compared.
+     *
+     * The handler stands aside when the click was on the anchor, or the browser
+     * would navigate and then this would navigate again over the top of it.
+     */
+    function openEdit(product, event) {
+        if (event?.target?.closest?.("a")) return;
         goto(`${base}/products/${product.id}`);
     }
 
@@ -177,6 +359,210 @@
         }
     }
 
+    // ------------------------------------------------------------ selection
+
+    /*
+     * The rows an operator has picked. Retiring a season used to be one page
+     * load per product; the row had no archive action on it at all, so it was
+     * open the editor, change the select, save, go back, and again.
+     *
+     * The selection is keyed by id and survives a page change, so twelve
+     * products found across two pages can be archived together. It is cleared
+     * by a FILTER change, because the rows that were picked are not on screen
+     * any more and a bulk action on rows nobody can see is how a hundred
+     * products get archived by accident. `page` is deliberately not in the
+     * list below.
+     */
+    const sel = selection();
+
+    $effect(() => {
+        list.params.q;
+        list.params.status;
+        list.params.vendor;
+        list.params.product_type;
+        list.params.tag;
+        list.params.category_id;
+        list.params.collection_id;
+        sel.clear();
+    });
+
+    let bulkBusy = $state(false);
+    let bulkDeleteOpen = $state(false);
+
+    /*
+     * The collection list the bulk bar files into is the filter drawer's, asked
+     * for once and shared. Ticking a row is what asks for it, so a visit that
+     * never selects anything never pays for the 200-row read — the same bargain
+     * the filter drawer makes, for the same reason.
+     *
+     * Untracked, because loadVocabulary writes the very state it reads to decide
+     * whether to run.
+     */
+    $effect(() => {
+        if (sel.count > 0) untrack(() => loadVocabulary());
+    });
+
+    const picked = $derived(sel.pick(products));
+
+    /**
+     * Every bulk action is N calls to the per-row route a single row already
+     * uses — there is no batch endpoint and this does not invent one — and each
+     * reports its own failure rather than the run dying on the first.
+     */
+    async function bulkStatus(status) {
+        // Filtered before the run, as bulk.js asks: telling an operator that
+        // four products "failed" to become draft when they already were is
+        // noise they could have been spared.
+        const rows = picked.filter((p) => p.status !== status);
+        if (!rows.length) {
+            toast.info(`Already ${status}`);
+            return;
+        }
+        bulkBusy = true;
+        try {
+            await runBulk(rows, (p) => api.patch(`/api/admin/products/${p.id}`, { status }), {
+                describe: `Set to ${status}`,
+                noun: "product",
+                label: (p) => p.title,
+            });
+        } finally {
+            bulkBusy = false;
+        }
+        sel.clear();
+        await load();
+    }
+
+    /**
+     * Adding to a collection, not replacing what a product is already in.
+     *
+     * `PUT /api/admin/products/{id}/collections` replaces the whole set, so the
+     * ids on the row are read back and the new one appended. The row carries
+     * them, so this costs no extra request.
+     */
+    async function bulkCollect(collectionId) {
+        const id = Number(collectionId);
+        if (!id) return;
+        const rows = picked.filter((p) => !(p.collections ?? []).some((c) => c.id === id));
+        if (!rows.length) {
+            toast.info("Every selected product is already in it");
+            return;
+        }
+        const name = collections.find((c) => c.id === id)?.title || "the collection";
+        bulkBusy = true;
+        try {
+            await runBulk(
+                rows,
+                (p) =>
+                    request("PUT", `/api/admin/products/${p.id}/collections`, {
+                        body: {
+                            collection_ids: [...(p.collections ?? []).map((c) => c.id), id],
+                        },
+                    }),
+                { describe: `Added to ${name}`, noun: "product", label: (p) => p.title },
+            );
+        } finally {
+            bulkBusy = false;
+        }
+        sel.clear();
+        await load();
+    }
+
+    /**
+     * Filing a selection under one category.
+     *
+     * This is the action a refused category delete sends an operator to
+     * perform: the engine will not delete a category that still holds
+     * products, and says how many, and the only way out was to open each
+     * product and change its one field. A category is singular by definition —
+     * one product, one answer — so unlike the collection action above this
+     * REPLACES rather than appends, and PATCH takes the whole answer.
+     *
+     * The picker is the tree's own, which is what makes it work on an imported
+     * taxonomy: fourteen thousand nodes is not a `<select>`.
+     */
+    let categoriseOpen = $state(false);
+    let bulkCategoryID = $state(null);
+
+    /* The selection's own answer when they all agree, so the drawer opens
+       showing where these products currently are rather than at "Uncategorised"
+       — which would read as a proposal to unfile them. */
+    function openCategorise() {
+        loadVocabulary();
+        const ids = new Set(picked.map((p) => p.category?.id ?? null));
+        bulkCategoryID = ids.size === 1 ? [...ids][0] : null;
+        categoriseOpen = true;
+    }
+
+    /* How many of the selection the move would actually touch — the sentence
+       the footer button needs, since a selection already half-filed there is
+       the normal case after a filtered search. */
+    const wouldRefile = $derived(
+        picked.filter((p) => (p.category?.id ?? null) !== bulkCategoryID).length,
+    );
+
+    async function bulkCategorise() {
+        const id = bulkCategoryID ?? null;
+        const rows = picked.filter((p) => (p.category?.id ?? null) !== id);
+        categoriseOpen = false;
+        if (!rows.length) {
+            toast.info(
+                id === null
+                    ? "None of them is filed anywhere"
+                    : "Every selected product is already there",
+            );
+            return;
+        }
+        bulkBusy = true;
+        try {
+            const name = await categoryName(id);
+            await runBulk(rows, (p) => api.patch(`/api/admin/products/${p.id}`, { category_id: id }), {
+                describe: `Filed under ${name}`,
+                noun: "product",
+                label: (p) => p.title,
+            });
+        } finally {
+            bulkBusy = false;
+        }
+        sel.clear();
+        await load();
+    }
+
+    /**
+     * What to call the category in the report.
+     *
+     * The tree in hand answers it for free, and on a taxonomy too large to ship
+     * it does not — `categories` there is a truncated slice. One GET is the
+     * honest way to name a node the panel was never sent, and naming it by id
+     * would make the one sentence saying what just happened unreadable.
+     */
+    async function categoryName(id) {
+        if (id === null) return "Uncategorised";
+        const known = categories.find((c) => c.id === id);
+        if (known) return known.full_name || known.title;
+        try {
+            const node = await api.get(`/api/admin/categories/${id}`);
+            return node.full_name || node.title;
+        } catch {
+            return `category #${id}`;
+        }
+    }
+
+    async function bulkDelete() {
+        const rows = picked;
+        bulkBusy = true;
+        try {
+            await runBulk(rows, (p) => api.delete(`/api/admin/products/${p.id}`), {
+                describe: "Deleted",
+                noun: "product",
+                label: (p) => p.title,
+            });
+        } finally {
+            bulkBusy = false;
+        }
+        sel.clear();
+        await load();
+    }
+
     function priceRange(product) {
         const prices = (product.variants || []).map((v) => v.price.amount_minor);
         if (!prices.length) return "—";
@@ -197,11 +583,23 @@
         return tracked.reduce((sum, v) => sum + v.available, 0);
     }
 
+    /* `n` creates one, from anywhere on this screen. The shell owns the
+       keystroke and fires an event; what "new" means is the screen's. */
+    $effect(() => {
+        if (!writable) return;
+        return onNewShortcut(openCreate);
+    });
+
     // Tones, not verdicts: a draft is a state the operator chose, not a warning
     // about one. Green for on sale, blue for not yet, grey for retired.
     const statusLabel = { active: "success", draft: "info", archived: "" };
 </script>
 
+<svelte:head><title>Products · GoCommerce</title></svelte:head>
+
+{#if !readable}
+    <NoAccess right="catalog.read" what="the product list" />
+{:else}
 <div class="page page-products">
     <div class="page-content full-height">
         <header class="page-header">
@@ -260,17 +658,87 @@
                     />
                 </div>
 
-                <button type="button" class="btn" onclick={openCreate}>
-                    <i class="ri-add-line" aria-hidden="true"></i>
-                    <span class="txt">New product</span>
+                <!-- The five segmenting filters are behind one button: they do
+                     not fit in this row, and the header collapses its buttons
+                     to bare circles at 550px, which five selects cannot do. -->
+                <button
+                    type="button"
+                    class="btn secondary"
+                    aria-expanded={filterOpen}
+                    onclick={openFilters}
+                >
+                    <i class="ri-filter-3-line" aria-hidden="true"></i>
+                    <span class="txt">
+                        Filter{chips.length ? ` (${chips.length})` : ""}
+                    </span>
                 </button>
+
+                {#if writable}
+                    <button type="button" class="btn" onclick={openCreate}>
+                        <i class="ri-add-line" aria-hidden="true"></i>
+                        <span class="txt">New product</span>
+                    </button>
+                {/if}
             </div>
         </header>
+
+        {#if chips.length}
+            <!-- What the list is showing, spelled out. A filter that is only
+                 legible by re-opening the drawer that set it is how an
+                 operator comes to believe half their catalogue has gone. -->
+            <!-- `.token-list` is carried for its chip-button sizing alone —
+                 the same chip the tag tokens use, in the same size. -->
+            <div class="token-list flex flex-wrap gap-sm m-b-sm">
+                {#each chips as chip (chip.key)}
+                    <span class="label">
+                        <span class="txt-hint">{chip.label}:</span>
+                        {chip.text}
+                        <button
+                            type="button"
+                            class="btn circle sm transparent secondary"
+                            aria-label="Remove the {chip.label.toLowerCase()} filter"
+                            title="Remove"
+                            onclick={() => list.set({ [chip.key]: CLEARED[chip.key] })}
+                        >
+                            <i class="ri-close-line" aria-hidden="true"></i>
+                        </button>
+                    </span>
+                {/each}
+                {#if chips.length > 1}
+                    <button
+                        type="button"
+                        class="btn sm transparent secondary"
+                        onclick={clearFilters}
+                    >
+                        <span class="txt">Clear all</span>
+                    </button>
+                {/if}
+            </div>
+        {/if}
 
         <div class="page-table-wrapper">
             <table class="table responsive-table" class:optimize={products.length > 60}>
                 <thead class="sticky">
                     <tr>
+                        {#if writable}
+                            <th class="col-bulk-select min-width">
+                                <div class="field">
+                                    <input
+                                        id="select-all-products"
+                                        type="checkbox"
+                                        checked={sel.allSelected(products)}
+                                        onchange={() => sel.toggleAll(products)}
+                                    />
+                                    <!-- "on this page", not "all": the panel
+                                         does not hold the other pages and the
+                                         API has no select-everything call. -->
+                                    <label
+                                        for="select-all-products"
+                                        aria-label="Select every product on this page"
+                                    ></label>
+                                </div>
+                            </th>
+                        {/if}
                         <SortHeader
                             field="title"
                             label="Product"
@@ -319,7 +787,34 @@
                 <tbody>
                     {#each products as product (product.id)}
                         {@const available = totalAvailable(product)}
-                        <tr class="handle" onclick={() => openEdit(product)}>
+                        <tr
+                            class="handle"
+                            tabindex="0"
+                            onclick={(e) => openEdit(product, e)}
+                            onkeydown={(e) => rowKey(e, () => openEdit(product))}
+                        >
+                            {#if writable}
+                                <!-- stopPropagation rather than a guard inside
+                                     the row handler: ticking a box must not
+                                     also open the product. -->
+                                <td
+                                    class="col-bulk-select min-width"
+                                    onclick={(e) => e.stopPropagation()}
+                                >
+                                    <div class="field">
+                                        <input
+                                            id="select-product-{product.id}"
+                                            type="checkbox"
+                                            checked={sel.has(product.id)}
+                                            onchange={() => sel.toggle(product.id)}
+                                        />
+                                        <label
+                                            for="select-product-{product.id}"
+                                            aria-label="Select {product.title}"
+                                        ></label>
+                                    </div>
+                                </td>
+                            {/if}
                             <!-- Name and handle on one line. The second line was
                                  costing every row 15px on a screen whose whole job
                                  is to fit rows, and the handle reads as what it is
@@ -338,7 +833,12 @@
                                         {/if}
                                     </div>
                                     <div class="row-name">
-                                        <span class="txt-bold txt-ellipsis">{product.title}</span>
+                                        <a
+                                            class="txt-bold txt-ellipsis"
+                                            href="{base}/products/{product.id}"
+                                        >
+                                            {product.title}
+                                        </a>
                                         <span class="txt-hint txt-sm txt-code row-handle">
                                             {product.slug}
                                         </span>
@@ -379,15 +879,17 @@
                                 {relativeTime(product.updated_at)}
                             </td>
                             <td class="col-meta min-width">
-                                <button
-                                    type="button"
-                                    class="btn circle sm transparent secondary row-delete"
-                                    aria-label="Delete {product.title}"
-                                    title="Delete"
-                                    onclick={(e) => askDelete(product, e)}
-                                >
-                                    <i class="ri-delete-bin-7-line" aria-hidden="true"></i>
-                                </button>
+                                {#if writable}
+                                    <button
+                                        type="button"
+                                        class="btn circle sm transparent secondary row-delete"
+                                        aria-label="Delete {product.title}"
+                                        title="Delete"
+                                        onclick={(e) => askDelete(product, e)}
+                                    >
+                                        <i class="ri-delete-bin-7-line" aria-hidden="true"></i>
+                                    </button>
+                                {/if}
                                 <i class="ri-arrow-right-s-line" aria-hidden="true"></i>
                             </td>
                         </tr>
@@ -396,19 +898,22 @@
                     {#if loading && !products.length}
                         {#each Array(6) as _, i (i)}
                             <tr>
-                                <td colspan="7"><span class="skeleton-loader"></span></td>
+                                <td colspan={writable ? 8 : 7}>
+                                    <span class="skeleton-loader"></span>
+                                </td>
                             </tr>
                         {/each}
                     {/if}
 
                     {#if !loading && !products.length}
                         <tr>
-                            <td colspan="7" class="txt-center txt-hint p-base">
+                            <td colspan={writable ? 8 : 7} class="txt-center txt-hint p-base">
                                 <div class="m-b-10">
                                     <i class="ri-price-tag-3-line" style="font-size: 32px" aria-hidden="true"></i>
                                 </div>
-                                {#if search || status}
-                                    No products match that. Try a different search or clear the filter.
+                                {#if search || status || filtered}
+                                    No products match that. Try a different search or clear the
+                                    {chips.length > 1 ? "filters" : "filter"}.
                                 {:else}
                                     No products yet. A product needs at least one variant — the thing
                                     that actually gets sold.
@@ -420,13 +925,98 @@
             </table>
         </div>
 
+        {#if writable}
+            <BulkBar count={sel.count} noun="product" onclear={() => sel.clear()}>
+                <!-- Every action here is a per-row route the screen already
+                     calls; nothing in the bulk bar is a second write path. -->
+                <button
+                    type="button"
+                    class="btn sm secondary"
+                    disabled={bulkBusy}
+                    onclick={() => bulkStatus("active")}
+                >
+                    <i class="ri-eye-line" aria-hidden="true"></i>
+                    <span class="txt">Activate</span>
+                </button>
+                <button
+                    type="button"
+                    class="btn sm secondary"
+                    disabled={bulkBusy}
+                    onclick={() => bulkStatus("draft")}
+                >
+                    <i class="ri-draft-line" aria-hidden="true"></i>
+                    <span class="txt">Draft</span>
+                </button>
+                <button
+                    type="button"
+                    class="btn sm secondary"
+                    disabled={bulkBusy}
+                    onclick={() => bulkStatus("archived")}
+                >
+                    <i class="ri-archive-line" aria-hidden="true"></i>
+                    <span class="txt">Archive</span>
+                </button>
+
+                <!-- Re-filing, which is what a refused category delete sends an
+                     operator here to do. It opens a drawer rather than dropping
+                     a tree browser into the bar: a category is singular, so this
+                     REPLACES what each product says about itself, and the
+                     destination is worth reading before it is applied. -->
+                <button
+                    type="button"
+                    class="btn sm secondary"
+                    disabled={bulkBusy}
+                    onclick={openCategorise}
+                >
+                    <i class="ri-price-tag-3-line" aria-hidden="true"></i>
+                    <span class="txt">File under…</span>
+                </button>
+
+                <!-- The collection list is the filter drawer's, fetched once and
+                     shared, so a screen that never files anything in bulk never
+                     pays for it. -->
+                <div class="field">
+                    <Select
+                        class="compact"
+                        ariaLabel="Add to a collection"
+                        placeholder="Add to collection…"
+                        value=""
+                        disabled={bulkBusy}
+                        options={[
+                            { value: "", label: "Add to collection…" },
+                            ...collections.map((c) => ({ value: c.id, label: c.title })),
+                        ]}
+                        onchange={bulkCollect}
+                    />
+                </div>
+
+                <button
+                    type="button"
+                    class="btn sm secondary txt-danger"
+                    disabled={bulkBusy}
+                    onclick={() => (bulkDeleteOpen = true)}
+                >
+                    <i class="ri-delete-bin-7-line" aria-hidden="true"></i>
+                    <span class="txt">Delete</span>
+                </button>
+            </BulkBar>
+        {/if}
+
         <footer class="page-footer">
-            <Pager {meta} {loading} noun="product" onpage={(n) => list.setPage(n)} />
+            <Pager
+                {meta}
+                {loading}
+                noun="product"
+                {perPage}
+                onpage={(n) => list.setPage(n)}
+                onperpage={(n) => list.set({ limit: n })}
+            />
             <div class="flex-fill"></div>
             <ThemeToggle />
         </footer>
     </div>
 </div>
+{/if}
 
 <Drawer open={createOpen} size="sm" title="New product" onclose={() => (createOpen = false)}>
     <form id="product-form" onsubmit={create}>
@@ -509,6 +1099,20 @@
     {/snippet}
 </Drawer>
 
+<ProductFilters
+    open={filterOpen}
+    value={segment}
+    {vendors}
+    {productTypes}
+    tags={tagPool}
+    {categories}
+    {categoriesTruncated}
+    {collections}
+    loadingVocabulary={vocabularyState === "loading"}
+    onapply={applyFilters}
+    onclose={() => (filterOpen = false)}
+/>
+
 <Confirm
     bind:open={confirmOpen}
     title="Delete this product?"
@@ -519,3 +1123,68 @@
     danger
     onconfirm={doDelete}
 />
+
+<!-- A second Confirm rather than a shared one with a mode flag: this message
+     names a count and the other names a product, and one component asked to say
+     both ends up saying neither. -->
+<Confirm
+    bind:open={bulkDeleteOpen}
+    title="Delete {sel.count} {pluralize(sel.count, 'product')}?"
+    message="Their variants go with them. Orders that included them keep their own snapshot, so history stays readable. Anything the engine refuses is reported row by row."
+    confirmLabel="Delete"
+    danger
+    onconfirm={bulkDelete}
+/>
+
+<!--
+    Re-filing a selection.
+
+    A drawer rather than a control in the bulk bar, for two reasons a
+    <select> of collections does not have: the tree browser needs room, and
+    a category REPLACES the one answer a product gives about what kind of
+    thing it is, so the destination is worth reading before it is applied.
+-->
+<Drawer
+    open={categoriseOpen}
+    size="sm"
+    title="File {sel.count} {pluralize(sel.count, 'product')}"
+    onclose={() => (categoriseOpen = false)}
+>
+    <div class="field">
+        <label for="bulk-category">Category</label>
+        <CategoryPicker
+            id="bulk-category"
+            bind:value={bulkCategoryID}
+            {categories}
+            remote={categoriesTruncated}
+        />
+    </div>
+    <div class="field-help">
+        One product, one category — this replaces whatever each of them says now, rather
+        than adding to it. Choosing <strong>Uncategorised</strong> clears the field, which is
+        what a category that has to be deleted needs first.
+    </div>
+
+    {#snippet footer()}
+        <button
+            type="button"
+            class="btn transparent m-r-auto"
+            onclick={() => (categoriseOpen = false)}
+        >
+            <span class="txt">Cancel</span>
+        </button>
+        <span class="txt txt-hint m-r-sm">
+            {wouldRefile}
+            {wouldRefile === 1 ? "moves" : "move"}
+        </span>
+        <button
+            type="button"
+            class="btn"
+            class:loading={bulkBusy}
+            disabled={bulkBusy || !wouldRefile}
+            onclick={bulkCategorise}
+        >
+            <span class="txt">File them</span>
+        </button>
+    {/snippet}
+</Drawer>

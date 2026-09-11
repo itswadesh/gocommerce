@@ -246,7 +246,7 @@ func (a *App) RegisterNotifier(channel string, n Notifier) {
 			a.ownerName(), channel, ChannelEmail, ChannelSMS)
 		return
 	}
-	a.notifier.add(channel, n)
+	a.notifier.add(channel, n, a.ownerName())
 	a.log.Info("notifier registered", "channel", channel, "module", a.ownerName())
 }
 

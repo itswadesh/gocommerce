@@ -12,20 +12,29 @@ import (
 // notifierSet holds the delivery backends, per channel.
 type notifierSet struct {
 	mu        sync.RWMutex
-	byChannel map[string][]Notifier
+	byChannel map[string][]notifierEntry
 	log       *slog.Logger
 }
 
-func (n *notifierSet) add(channel string, no Notifier) {
+// notifierEntry is a backend and the module that installed it. The module is
+// carried because the question an operator asks about a channel is not "how
+// many backends" but "who is sending my order confirmations", and a Notifier
+// has no code of its own to answer with.
+type notifierEntry struct {
+	notifier Notifier
+	module   string
+}
+
+func (n *notifierSet) add(channel string, no Notifier, module string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if n.byChannel == nil {
-		n.byChannel = map[string][]Notifier{}
+		n.byChannel = map[string][]notifierEntry{}
 	}
-	n.byChannel[channel] = append(n.byChannel[channel], no)
+	n.byChannel[channel] = append(n.byChannel[channel], notifierEntry{notifier: no, module: module})
 }
 
-func (n *notifierSet) forChannel(channel string) []Notifier {
+func (n *notifierSet) forChannel(channel string) []notifierEntry {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 	return n.byChannel[channel]
@@ -43,12 +52,42 @@ func (n *notifierSet) forChannel(channel string) []Notifier {
 func (n *notifierSet) delivers(channel string) bool {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
-	for _, target := range n.byChannel[channel] {
-		if _, isLog := target.(logNotifier); !isLog {
+	for _, e := range n.byChannel[channel] {
+		if _, isLog := e.notifier.(logNotifier); !isLog {
 			return true
 		}
 	}
 	return false
+}
+
+// describe reports one channel and what stands behind it, for the settings
+// response and the doctor. Both ask the same question, so neither gets to
+// answer it differently.
+func (n *notifierSet) describe(channel string) NotifierChannelInfo {
+	// Snapshot under the lock and ask the backends outside it: DisplayName is a
+	// module's code, and the read lock is not something to hand to a third
+	// party — a notifier that registered another one from it would deadlock the
+	// settings route rather than fail.
+	entries := n.forChannel(channel)
+
+	info := NotifierChannelInfo{Channel: channel, Backends: make([]NotifierBackend, 0, len(entries))}
+	for _, e := range entries {
+		b := NotifierBackend{Name: e.module, Module: e.module}
+		if _, isLog := e.notifier.(logNotifier); isLog {
+			// Named on the value rather than on the type: "core" is true of
+			// the built-in logger's module and says nothing about what it
+			// does, and what it does is the whole point of this row.
+			b.Name = "log"
+		} else {
+			b.Delivers = true
+			info.Delivers = true
+			if named, ok := e.notifier.(Named); ok && named.DisplayName() != "" {
+				b.Name = named.DisplayName()
+			}
+		}
+		info.Backends = append(info.Backends, b)
+	}
+	return info
 }
 
 // send delivers on one channel. Every notifier gets the message even if an
@@ -61,7 +100,7 @@ func (n *notifierSet) send(ctx context.Context, note Notification) error {
 	}
 	var failures []error
 	for _, target := range targets {
-		if err := target.Notify(ctx, note); err != nil {
+		if err := target.notifier.Notify(ctx, note); err != nil {
 			failures = append(failures, err)
 		}
 	}

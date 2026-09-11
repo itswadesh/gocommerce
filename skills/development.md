@@ -13,13 +13,9 @@ on a host without one. **Node.js is optional**: `admin/build` is committed, so
 `go build` and `go install` work without it; you need it only to change the
 panel.
 
-On this machine (see [`CLAUDE.md`](../CLAUDE.md)) Go is not on the system PATH
-and PostgreSQL is a trust-auth cluster on **5433**:
-
-```powershell
-$env:Path += ';C:\Users\LENOVO\go-sdk\go\bin'
-$env:GOCOMMERCE_TEST_DB = 'postgres://gocommerce@127.0.0.1:5433/gocommerce_test?sslmode=disable'
-```
+Where Go and PostgreSQL actually live varies by machine, and the facts of the
+one you are on are in [`CLAUDE.md`](../CLAUDE.md) rather than repeated here —
+a hard-coded path in two places is a path that goes stale in one of them.
 
 ## Tests need a real database
 
@@ -46,19 +42,20 @@ without PostgreSQL can still run the pure-logic suite; CI always sets it, so
 the database path is never untested where it counts.
 
 ```powershell
-go test ./... -count=1 -timeout 40m        # the whole suite
+go test ./... -count=1 -timeout 60m        # the whole suite
 go test ./core -run TestCheckout -count=1  # one pattern
 go build -tags no_admin ./...              # the API-only build
 go test -tags no_admin ./core -count=1     # ...and its tests
 ```
 
 `-count=1` because a cached pass on a schema that no longer exists is not a
-pass. `-timeout` because Go's default is ten minutes and the core package is
-most of the way there: every database-backed test gets its own schema and runs
-every migration into it, so the suite grows with the migration count, and CI's
-`-race` makes each test slower still. Left on the default, a slow run reports a
-panic rather than a failure, which sends the reader hunting a deadlock that is
-not there.
+pass. `-timeout` because Go's default is ten minutes and the core package alone
+is past that: every database-backed test gets its own schema and runs every
+migration into it, so the suite grows with both the test count and the
+migration count, and CI's `-race` makes each test slower again. Left on the
+default, a slow run reports a panic rather than a failure, which sends the
+reader hunting a deadlock that is not there. The figure is deliberately far
+above the real one — an over-generous timeout costs nothing.
 
 The `no_admin` tag swaps `admin/embed.go` for `admin/embed_no_admin.go`:
 no `go:embed`, no panel routes, panel tests skipping themselves. Run both — it
@@ -190,7 +187,7 @@ more than once.
 ```powershell
 gofmt -l .                      # must print nothing
 go vet ./...
-go test ./... -count=1 -timeout 40m   # needs GOCOMMERCE_TEST_DB
+go test ./... -count=1 -timeout 60m   # needs GOCOMMERCE_TEST_DB
 go build -tags no_admin ./...
 go test -tags no_admin ./core -count=1
 .\scripts\build.ps1             # required after any admin/src change

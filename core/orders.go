@@ -394,6 +394,66 @@ func (s *Orders) GetForGuest(ctx context.Context, number, accessToken string) (*
 	return o, nil
 }
 
+// OrderAccessToken is one order's guest credential, handed back to an operator
+// who has to give a customer their link again.
+type OrderAccessToken struct {
+	Number      string `json:"number"`
+	AccessToken string `json:"access_token"`
+}
+
+// RevealAccessToken reads an existing order's access token back out, and
+// records that it was read.
+//
+// The gap this closes: the token is returned exactly once, in the checkout
+// reply, and orderColumns has never selected it since — so a shopper who lost
+// their "view your order" mail could not be helped by anybody. It is their only
+// credential (D22: there is no account to sign into), which is precisely why
+// there was no way to get it and precisely why there has to be one.
+//
+// Reveal rather than re-issue, deliberately. Rotating the token would answer
+// the same question — the customer gets a working link — while silently
+// breaking the link in the confirmation mail they already have, in the mail
+// their storefront sent, and in any bookmark: an operator helping with a lost
+// link would be destroying the copy that was merely mislaid. Reveal costs
+// nothing that rotate does not also cost, because the operator is going to read
+// the token out either way.
+//
+// What makes that safe is the row this writes. It is a disclosure of a bearer
+// credential, so it needs a right (orders.write, in commerce_http.go — reading
+// an order is the default for every role, handing out the key to it is not) and
+// it needs a record. The record is written in the same transaction as the read,
+// which is what stops the two coming apart: there is no path here that returns
+// a token without leaving the row behind, because a failed audit rolls the
+// whole thing back.
+//
+// The token itself is NOT in the record. An append-only table that nothing can
+// delete from is the last place a live credential should be copied into, and
+// the question an auditor brings — who asked for this, and when — is answered
+// without it.
+func (s *Orders) RevealAccessToken(ctx context.Context, id int64) (*OrderAccessToken, error) {
+	out := &OrderAccessToken{}
+	err := InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		err := tx.QueryRowContext(ctx,
+			`SELECT number, access_token FROM orders WHERE id = $1`, id).
+			Scan(&out.Number, &out.AccessToken)
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("order not found")
+		}
+		if err != nil {
+			return err
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditOrderTokenReveal, Entity: AuditEntityOrder,
+			ID: id, Label: out.Number,
+			Summary: fmt.Sprintf("Read back the access token for order %s", out.Number),
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (s *Orders) getWhere(ctx context.Context, where string, arg any) (*Order, error) {
 	o, err := s.scanOrder(s.app.db.QueryRowContext(ctx,
 		`SELECT `+orderColumns+` FROM orders o WHERE `+where, arg))

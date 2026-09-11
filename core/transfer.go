@@ -178,6 +178,21 @@ func productHeaderFor(cols []stockColumn) []string {
 	return out
 }
 
+// customerCSVHeader is the mailing-list shape: one row per person, which is
+// what a campaign tool, a loyalty spreadsheet and an accountant asking "who are
+// our best customers" all want. There is no importer for it and there will not
+// be one — a customer is a reading of the orders (customers.go), so a row here
+// describes something that has no table to be written back into.
+//
+// spent_minor and currency rather than a formatted amount, for AGENTS rule 6:
+// how many decimals a currency has is the reader's business, and a spreadsheet
+// that received "£12.50" could not add the column up.
+var customerCSVHeader = []string{
+	"email", "name", "phone",
+	"address_line1", "address_line2", "city", "state", "postal_code", "country",
+	"orders", "spent_minor", "currency", "first_order_at", "last_order_at",
+}
+
 var orderCSVHeader = []string{
 	"number", "created_at", "status", "payment_status", "payment_provider",
 	"currency", "email", "phone", "name",
@@ -380,6 +395,82 @@ func (t *Transfer) ExportOrders(ctx context.Context, out io.Writer, q OrderQuery
 			strconv.FormatInt(discount, 10), strconv.FormatInt(total, 10), lang,
 			sku, title, label, strconv.Itoa(qty),
 			strconv.FormatInt(unitPrice, 10), strconv.FormatInt(lineTotal, 10),
+		}
+		if err := w.Write(escapeRecord(record)); err != nil {
+			return err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	w.Flush()
+	return w.Error()
+}
+
+// ExportCustomers streams the customer reading as CSV, one row per person.
+//
+// It re-runs the grouping rather than paging [Orders.Customers], because an
+// export is every row that matched and the service answers with a page. What it
+// must not do is re-derive what a customer IS: the aggregates below are the
+// same four consts the listing selects and sorts by, and the predicate is the
+// listing's own function — so the figure in the file and the figure on the
+// screen cannot come to differ, which is the failure this shape exists to
+// prevent (ExportOrders says the same thing about its search).
+func (t *Transfer) ExportCustomers(ctx context.Context, out io.Writer, q CustomerQuery) error {
+	w := csv.NewWriter(out)
+	defer w.Flush()
+	if err := w.Write(customerCSVHeader); err != nil {
+		return err
+	}
+
+	where, args := []string{"o.email <> ''"}, []any{}
+	if clause := customerSearchClause(q.Search, &args); clause != "" {
+		where = append(where, clause)
+	}
+	// Validationf, returned bare: wrapping it in Internalf would serve a bad
+	// sort field as a 500. The handler turns it into a 400 before a single CSV
+	// header byte is written, which is the only moment it still can.
+	order, err := customerSorts.Clause(q.Sort, customerLastOrder+" DESC, lower(o.email) ASC")
+	if err != nil {
+		return err
+	}
+
+	rows, err := t.app.db.QueryContext(ctx, `
+		SELECT lower(o.email),
+		       `+customerOrderCount+`,
+		       `+customerSpent+`,
+		       `+customerFirstOrder+`, `+customerLastOrder+`,
+		       (array_agg(coalesce(o.name, '')  ORDER BY o.id DESC))[1],
+		       (array_agg(coalesce(o.phone, '') ORDER BY o.id DESC))[1],
+		       (array_agg(o.address             ORDER BY o.id DESC))[1]
+		FROM orders o
+		WHERE `+strings.Join(where, " AND ")+`
+		GROUP BY lower(o.email)
+		ORDER BY `+order, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	currency := t.app.cfg.Currency
+	for rows.Next() {
+		var email, name, phone string
+		var orderCount int
+		var spent int64
+		var first, last time.Time
+		var addrRaw []byte
+		if err := rows.Scan(&email, &orderCount, &spent, &first, &last,
+			&name, &phone, &addrRaw); err != nil {
+			return err
+		}
+		var addr Address
+		_ = json.Unmarshal(addrRaw, &addr)
+
+		record := []string{
+			email, name, phone,
+			addr.Line1, addr.Line2, addr.City, addr.State, addr.PostalCode, addr.Country,
+			strconv.Itoa(orderCount), strconv.FormatInt(spent, 10), currency,
+			first.UTC().Format(time.RFC3339), last.UTC().Format(time.RFC3339),
 		}
 		if err := w.Write(escapeRecord(record)); err != nil {
 			return err

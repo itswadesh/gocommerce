@@ -2028,7 +2028,7 @@
           "admin:superusers"
         ],
         "summary": "Change what an operator may do",
-        "description": "Separate from PATCH on the superuser because it is a different act: changing somebody's email is administration, changing their role is granting or taking away access. The roles are owner, manager and staff, and what each carries is fixed — see the rights list on the operator record. A store keeps at least one owner: owner is the only role carrying settings.write, and settings.write is the only right that can hand out roles, so demoting the last one is refused.",
+        "description": "Separate from PATCH on the superuser because it is a different act: changing somebody's email is administration, changing their role is granting or taking away access. The roles are owner, manager and staff, and what each carries is fixed — see the rights list on the operator record. A store keeps at least one owner: `team.write` is the only right that can hand out roles, and demoting the last owner would leave a team where nobody carries it — so the survivors could not promote anybody, including themselves, and the way back in would be a database client. It is refused.",
         "security": [
           {
             "adminToken": []
@@ -2476,7 +2476,7 @@
             "adminToken": []
           }
         ],
-        "description": "Sets the whole matrix and reconciles the variants with it in one transaction — which is what an editor needs, since renaming an axis or dropping a value is a single intent that would leave the product incoherent if split across calls.\n\nSend an option's `id` to keep it: matched by name alone, renaming \"Size\" to \"Größe\" is indistinguishable from deleting one axis and adding another, and every variant would lose its size. Omit `id` for a new axis.\n\nA variant whose combination survives is left completely alone — price, SKU and stock included. A variant whose combination no longer exists is deleted; its order lines keep their own snapshot, so history stays readable. New combinations are created only when `generate_variants` is set.\n\nThe same value may not appear on two axes: variant options are resolved by value, so \"Small\" as both a Size and a Cup could not be told apart, and the request is refused rather than silently mis-resolved.",
+        "description": "Sets the whole matrix and reconciles the variants with it in one transaction — which is what an editor needs, since renaming an axis or dropping a value is a single intent that would leave the product incoherent if split across calls.\n\nSend an option's `id` to keep it: matched by name alone, renaming \"Size\" to \"Größe\" is indistinguishable from deleting one axis and adding another, and every variant would lose its size. Omit `id` for a new axis. A value carries an id for the same reason — send `{\"id\": 7, \"value\": \"Crimson\"}` to rename the value that row 7 holds, and a bare `\"Crimson\"` to add a new one.\n\nA variant whose combination survives is left completely alone — price, SKU and stock included. A variant whose combination no longer exists is deleted; its order lines keep their own snapshot, so history stays readable. New combinations are created only when `generate_variants` is set.\n\nThe same value may not appear on two axes: variant options are resolved by value, so \"Small\" as both a Size and a Cup could not be told apart, and the request is refused rather than silently mis-resolved.",
         "parameters": [
           {
             "$ref": "#/components/parameters/PathID"
@@ -2512,8 +2512,29 @@
                         },
                         "values": {
                           "type": "array",
+                          "description": "The axis's values, in display order. A bare string is a value with no identity — what every client sent before value ids existed, and still the right shape for a matrix being created. Send `{id, value}` to keep a value: matched by text alone, renaming \"Red\" to \"Crimson\" is a delete plus an add, and every Red variant's price, SKU, image and stock goes with it.",
                           "items": {
-                            "type": "string"
+                            "oneOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "value"
+                                ],
+                                "properties": {
+                                  "id": {
+                                    "type": "integer",
+                                    "format": "int64",
+                                    "description": "The existing value this replaces. Omit for a new one; an id this axis does not have is refused rather than treated as new."
+                                  },
+                                  "value": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            ]
                           },
                           "example": [
                             "S",
@@ -3317,6 +3338,24 @@
             }
           },
           {
+            "name": "sort",
+            "in": "query",
+            "description": "Order the page by one of these fields; omit for the report's own order, which is emptiest first. Anything else is a 400 naming the ones that exist. Text keys are folded by PostgreSQL, and every ordering breaks ties on the variant id, so two pages of one report never repeat or skip a row. The three stock keys follow `location_id`: without it they are the store-wide sums shown on the row, and with it they are that one location's own numbers — the same figures `at_location` carries, so the column being sorted is always the column being read.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "available",
+                "on_hand",
+                "price",
+                "reserved",
+                "sku"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/SortOrder"
+          },
+          {
             "$ref": "#/components/parameters/Limit"
           },
           {
@@ -3556,7 +3595,7 @@
         },
         "responses": {
           "201": {
-            "description": "The order and what must happen to pay for it. `data.order.access_token` is returned here and in no other admin response, ever: it is the guest's only credential for their own order, so it is shown once and cannot be recovered afterwards.",
+            "description": "The order and what must happen to pay for it. `data.order.access_token` is returned here and in no other admin *read*: it is the guest's only credential for their own order, so no listing and no GET carries it. A customer who has lost their link is helped with POST /api/admin/orders/{id}/access-token, which reads the same token back out under `orders.write` and writes an audit row saying who asked.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3955,6 +3994,61 @@
                     },
                     "meta": {
                       "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/orders/{id}/access-token": {
+      "post": {
+        "tags": [
+          "admin:orders"
+        ],
+        "summary": "Read an order's guest access token back out",
+        "description": "The customer rang: they have lost the \"view your order\" link. The access token is their only credential — guest checkout is permanent (D22), so there is no account to sign into — and it is returned at checkout and by nothing else, which left a support desk with no answer at all.\n\nIt reveals the existing token rather than issuing a new one. Rotating would answer the same question while silently breaking the link in the confirmation mail the customer already has, so an operator helping with a mislaid link would be destroying the mislaid copy.\n\nPOST, not GET, and `orders.write`, not `orders.read`: handing out a bearer credential is an act, and it is recorded as one. Every call writes an `order.token_reveal` row naming the operator, in the same transaction as the read — the token itself is deliberately not in that row, because an append-only table nothing can delete from is the last place a live credential should be copied into. No body.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The order's number and its access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "number": {
+                          "type": "string",
+                          "example": "1001"
+                        },
+                        "access_token": {
+                          "type": "string",
+                          "description": "Pass it to GET /api/orders/{number}?token=… — that is the whole of the customer's flow."
+                        }
+                      }
                     }
                   }
                 }
@@ -4744,6 +4838,66 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/export/admin-customers": {
+      "get": {
+        "tags": [
+          "admin:data"
+        ],
+        "summary": "Export customers as CSV",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "One row per person — the mailing list a shop actually asks this screen for. A customer is a reading of the orders and not a table (see GET /api/admin/customers), so the columns are the same aggregates the listing shows: name, phone and address from that person's most recent order, orders not cancelled, and lifetime spend as `spent_minor` plus `currency` rather than a formatted amount. `q` and `sort` are the listing's own, so a file taken off a filtered screen is the rows on that screen. There is no matching import: there is no customer record to write back into.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Matches an email or a name, case-insensitively — the same predicate the listing uses."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Order the file by one of these fields; omit for the listing's own order, most recent buyer first. Anything else is a 400 — issued before a byte of CSV is written, which is the only moment it still can be.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "email",
+                "first_order_at",
+                "last_order_at",
+                "orders",
+                "spent"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/SortOrder"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A CSV file.",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -7578,7 +7732,7 @@
           "admin:roles"
         ],
         "summary": "The store's role/right matrix",
-        "description": "What each role may do here, what the engine ships for it, and the closed list of rights to draw from. Behind settings.write with the writes, because a map of the store's access is of use only to the people who may redraw it — an operator's own rights reach them on their record.",
+        "description": "What each role may do here, what the engine ships for it, and the closed list of rights to draw from. Behind `roles.write` with the writes, because a map of the store's access is of use only to the people who may redraw it — an operator's own rights reach them on their record.",
         "security": [
           {
             "adminToken": []
@@ -7956,7 +8110,7 @@
           "admin:settings"
         ],
         "summary": "What this store is configured as",
-        "description": "Read-only: everything here is a decision the binary was started with, and changing the settlement currency mid-flight would change what every order in flight means. No right is required — every screen has to format money before it can draw anything, so an operator who could not read this would read prices in the wrong currency and the wrong number of decimals. Nothing may be added to this payload that is not \"what this store is configured as\": diagnostics and secrets belong on a route with a right. `modules` and `notifier_channels` are reserved key names, added additively.",
+        "description": "Read-only: everything here is a decision the binary was started with, and changing the settlement currency mid-flight would change what every order in flight means. No right is required — every screen has to format money before it can draw anything, so an operator who could not read this would read prices in the wrong currency and the wrong number of decimals. Nothing may be added to this payload that is not \"what this store is configured as\": diagnostics and secrets belong on a route with a right. `notifier_channels` is the one entry here that can be bad news — a channel with no delivery backend sends nothing and reports success — and it belongs anyway, because what it reports is which backends the binary was composed with.",
         "security": [
           {
             "adminToken": []
@@ -8038,7 +8192,7 @@
             "adminToken": []
           }
         ],
-        "description": "Deliberately not behind `settings.write` — that is also the right to change everybody's role, and gating this behind it means a staff member must ask an owner to choose a password for them.\n\n`current_password` is required for either change: a session left open on an unlocked laptop should not be enough to take the account over. Changing the password ends every other session and keeps this one.",
+        "description": "Deliberately not behind `team.write` — that is also the right to change everybody's role, and gating this behind it means a staff member must ask an owner to choose a password for them.\n\n`current_password` is required for either change: a session left open on an unlocked laptop should not be enough to take the account over. Changing the password ends every other session and keeps this one.",
         "requestBody": {
           "required": true,
           "content": {
@@ -9484,6 +9638,13 @@
               "type": "string"
             }
           },
+          "values_renamed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "\"Colour: Red → Crimson\". Apart from added and removed on purpose: a rename keeps every variant that held the value, and reporting it as a removal plus an addition describes a destruction that did not happen."
+          },
           "values_removed": {
             "type": "array",
             "items": {
@@ -10641,7 +10802,7 @@
           },
           "access_token": {
             "type": "string",
-            "description": "Returned once, at checkout. It is how a guest reads their own order back."
+            "description": "How a guest reads their own order back. Returned at checkout and by POST /api/admin/orders/{id}/access-token; absent from every order read, guest or admin."
           },
           "created_at": {
             "type": "string",
@@ -12441,6 +12602,69 @@
             "items": {
               "$ref": "#/components/schemas/ProviderInfo"
             }
+          },
+          "modules": {
+            "type": "array",
+            "description": "The modules this binary was composed with, named, in the order they were passed to New — the order their migrations ran in. Names and nothing else: a client's question is \"was this binary built with cms\", and anything richer would describe the running process rather than the store's configuration. Empty in a binary built with no modules.",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "cms",
+              "invoices"
+            ]
+          },
+          "notifier_channels": {
+            "type": "array",
+            "description": "Every notification channel the engine has, whether or not anything is behind it — a channel with no backend still appears, because \"sms is not configured\" is an answer and a missing row is not. Read `delivers` before anything else: with no vendor module installed the engine's built-in logger writes the message to the process log and reports success, so sending appears to work and nobody receives anything.",
+            "items": {
+              "$ref": "#/components/schemas/NotifierChannelInfo"
+            }
+          }
+        }
+      },
+      "NotifierChannelInfo": {
+        "type": "object",
+        "description": "One notification channel and what stands behind it.",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "sms"
+            ],
+            "description": "The channel. The set is closed in v1 because the dispatcher has to know which recipient field feeds a channel."
+          },
+          "delivers": {
+            "type": "boolean",
+            "description": "True when at least one backend on this channel is not the built-in logger. False is the trap: the send succeeds, the outbox marks the event delivered, and the message reached nobody."
+          },
+          "backends": {
+            "type": "array",
+            "description": "The registered backends, in registration order. Notifiers append rather than replace, so a store may send an email and mirror it to an audit sink.",
+            "items": {
+              "$ref": "#/components/schemas/NotifierBackend"
+            }
+          }
+        }
+      },
+      "NotifierBackend": {
+        "type": "object",
+        "description": "One delivery backend registered on a channel.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "What the backend calls itself when it offers a name, the module that registered it otherwise, and \"log\" for the built-in logger. A notifier has no code the way a payment provider does — nothing addresses one by name — so there is nothing more canonical to fall back to.",
+            "example": "SendGrid"
+          },
+          "module": {
+            "type": "string",
+            "description": "Which module registered it. \"core\" is the built-in logger.",
+            "example": "notify-sendgrid"
+          },
+          "delivers": {
+            "type": "boolean",
+            "description": "False for the built-in logger, which writes one line and returns success."
           }
         }
       },

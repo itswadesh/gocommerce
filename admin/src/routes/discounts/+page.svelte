@@ -9,6 +9,11 @@
      */
     import { base } from "$app/paths";
     import { api, query } from "$lib/api.js";
+    import { rowKey } from "$lib/rowkey.js";
+    import { selection } from "$lib/selection.svelte.js";
+    import { runBulk } from "$lib/bulk.js";
+    import { onNewShortcut } from "$lib/shortcuts.js";
+    import BulkBar from "$lib/components/BulkBar.svelte";
     import { listState } from "$lib/liststate.svelte.js";
     import { readSort, cycleSort, sortQuery } from "$lib/listsort.js";
     import { can } from "$lib/session.svelte.js";
@@ -25,12 +30,18 @@
     import { settings } from "$lib/settings.svelte.js";
     import Drawer from "$lib/components/Drawer.svelte";
     import Pager from "$lib/components/Pager.svelte";
+    import RecordHistory from "$lib/components/RecordHistory.svelte";
     import Select from "$lib/components/Select.svelte";
     import SortHeader from "$lib/components/SortHeader.svelte";
     import TargetPicker from "$lib/components/TargetPicker.svelte";
+    import VariantSearch from "$lib/components/VariantSearch.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
+    import NoAccess from "$lib/components/NoAccess.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
+    /* The starting page size, not the only one: `limit` is a listState key, so
+       an operator can change it and the choice rides in the URL with the rest of
+       the screen's state. */
     const PER_PAGE = 50;
 
     /* The search, the ordering and the page live in the URL, and the window
@@ -38,14 +49,93 @@
        showed whatever came back; with a sort it also chooses WHICH fifty, which
        is how an operator reaches the most-used discount in a store that has
        more than that. */
-    const list = listState({ q: "", sort: "", order: "", page: 1 });
+    const list = listState({ q: "", active: "", sort: "", order: "", page: 1, limit: PER_PAGE });
     const SORT_FIELDS = ["code", "title", "used_count", "created_at"];
+    const perPage = $derived(list.params.limit);
+
+    /* discounts.read is the nav's gate on this screen; discounts.write is what
+       creating, editing and deactivating need. */
+    const readable = $derived(can("discounts.read"));
+    const writable = $derived(can("discounts.write"));
+
+    /*
+     * The rules an operator has picked. "Every expired code, switched off" was
+     * one drawer at a time — open, untick, save, close, again — and the State
+     * column is right there telling them which ones.
+     *
+     * Cleared by a filter change, kept across a page change: selection.svelte.js
+     * states why, and `page` is deliberately absent below.
+     */
+    const sel = selection();
+
+    $effect(() => {
+        list.params.q;
+        list.params.active;
+        sel.clear();
+    });
+
+    let bulkBusy = $state(false);
+    let bulkDeleteOpen = $state(false);
+
+    const picked = $derived(sel.pick(discounts));
+    const switchOnable = $derived(picked.filter((d) => !d.active));
+    const switchOffable = $derived(picked.filter((d) => d.active));
+
+    async function setActive(rows, active) {
+        if (!rows.length) return;
+        bulkBusy = true;
+        try {
+            await runBulk(rows, (d) => api.patch(`/api/admin/discounts/${d.id}`, { active }), {
+                describe: active ? "Switched on" : "Switched off",
+                noun: "discount",
+                label: (d) => d.code || d.title,
+            });
+        } finally {
+            bulkBusy = false;
+        }
+        sel.clear();
+        await load();
+    }
+
+    async function bulkDelete() {
+        bulkBusy = true;
+        try {
+            await runBulk(picked, (d) => api.delete(`/api/admin/discounts/${d.id}`), {
+                describe: "Deleted",
+                noun: "discount",
+                label: (d) => d.code || d.title,
+            });
+        } finally {
+            bulkBusy = false;
+        }
+        sel.clear();
+        await load();
+    }
+
+    /* `n` opens the new-discount drawer, from anywhere on this screen. */
+    $effect(() => {
+        if (!writable) return;
+        return onNewShortcut(openNew);
+    });
+
+    /* `active` is the switch, not the phase: a rule can be active and scheduled,
+       active and expired, active and used up. The State column below says which
+       of those it is, and this narrows the question to the half of the list that
+       is switched on at all — which is what "is this still running" starts with,
+       and the only half of it the engine can answer (DiscountQuery carries a
+       search, this flag and a sort, and nothing about a window). */
+    const ACTIVE_OPTIONS = [
+        { value: "", label: "Any state" },
+        { value: "1", label: "Active" },
+        { value: "0", label: "Off" },
+    ];
 
     let loading = $state(true);
     let discounts = $state([]);
     let meta = $state(null);
 
     const search = $derived(list.params.q);
+    const activeFilter = $derived(list.params.active);
     const sort = $derived(readSort(list.params, SORT_FIELDS));
     let draftSearch = $state(list.params.q);
 
@@ -60,6 +150,19 @@
 
     let confirmOpen = $state(false);
     let confirmConfig = $state({});
+
+    /* Who changed this rule, from the row it is about. The route is gated on
+       discounts.read — the right this screen is already drawn under — rather
+       than on store.operate, so "who moved this to 40% off" is answerable by
+       the person running the promotion and not only by an owner. */
+    let historyOpen = $state(false);
+    let historyFor = $state(null);
+
+    function openHistory(d, event) {
+        event?.stopPropagation();
+        historyFor = d;
+        historyOpen = true;
+    }
 
     /* Chip labels and the red flags, for ids the picker has not fetched. They
        are decoration only: the ids the drawer will send never come from the
@@ -78,6 +181,22 @@
     let testEmail = $state("");
     let testing = $state(false);
     let result = $state(null);
+
+    /* A scoped rule comes off the lines its targets reach, so one number cannot
+       answer for it: PreviewID says so in as many words and refuses before it
+       evaluates anything. So the form asks for lines instead — which is also the
+       only way to try the case worth trying, a basket holding one thing the rule
+       reaches and one it does not.
+
+       It follows the SAVED scope rather than the form's, because the dry run
+       runs against the rule as the server holds it. An unsaved change to the
+       form says so below rather than quietly testing something else. */
+    const scoped = $derived(!!editing?.scope && editing.scope !== "order");
+    let testLines = $state([]);
+    let lineSeq = 0;
+    const testTotalMinor = $derived(
+        testLines.reduce((sum, l) => sum + (toMinor(l.total, currency) ?? 0), 0),
+    );
 
     /* Where it has been used. Paged inside the drawer and deliberately not in
        the URL: a drawer that writes to the address bar leaves a stale page
@@ -98,11 +217,17 @@
     });
 
     async function load() {
+        // The screen is refused above; asking anyway would put a 403 toast
+        // over the explanation.
+        if (!readable) {
+            loading = false;
+            return;
+        }
         const mine = ++reqId;
         loading = true;
         try {
             const result = await api.get(
-                "/api/admin/discounts" + list.query({ limit: PER_PAGE, ...sortQuery(sort) }),
+                "/api/admin/discounts" + list.query({ limit: perPage, ...sortQuery(sort) }),
             );
             if (mine !== reqId) return;
             discounts = result.data ?? [];
@@ -176,6 +301,7 @@
         result = null;
         testBasket = "";
         testEmail = "";
+        testLines = [];
         usedRows = [];
         usedMeta = null;
         usedPage = 1;
@@ -188,11 +314,16 @@
 
     async function loadDetail(id) {
         try {
+            // api.get already unwraps the {"data": …} envelope — a single
+            // record arrives as itself, and only a LIST answers {data, meta}.
+            // Reaching for `.data` a second time here was reading undefined, so
+            // the money line never rendered and every target chip fell back to
+            // its bare id.
             const full = await api.get("/api/admin/discounts/" + id);
-            detail = full.data ?? null;
-            targetNames = new Map((full.data?.targets ?? []).map((t) => [t.id, t.title]));
+            detail = full ?? null;
+            targetNames = new Map((full?.targets ?? []).map((t) => [t.id, t.title]));
             targetsMissing = new Set(
-                (full.data?.targets ?? []).filter((t) => t.missing).map((t) => t.id),
+                (full?.targets ?? []).filter((t) => t.missing).map((t) => t.id),
             );
         } catch {
             // A chip falling back to its id is a worse label, not a broken form,
@@ -224,6 +355,35 @@
     }
 
     /**
+     * One line of a test basket, from the same picker the stock screens use:
+     * what the engine needs is a product id and what that line is worth, and the
+     * variant's own price is the honest first guess at the second.
+     *
+     * The same product twice is a legitimate basket — two different variants of
+     * one shirt are two lines the rule reaches — so lines are keyed by their own
+     * counter rather than by product.
+     */
+    function addTestLine(row) {
+        const title = row.product?.title ?? "";
+        testLines = [
+            ...testLines,
+            {
+                key: ++lineSeq,
+                product_id: row.product?.id ?? row.product_id,
+                sku: row.sku,
+                label: [title, row.label].filter(Boolean).join(" — ") || row.sku,
+                total: fromMinor(row.price?.amount_minor ?? 0, currency),
+            },
+        ];
+        result = null;
+    }
+
+    function removeTestLine(key) {
+        testLines = testLines.filter((l) => l.key !== key);
+        result = null;
+    }
+
+    /**
      * Try the rule against a basket.
      *
      * A refusal is the answer, not a failure: it renders as a warning with the
@@ -231,23 +391,66 @@
      * stopped here.
      */
     async function preview() {
-        if (!isValidMoney(testBasket)) {
-            toast.error("Enter a basket amount to try it against.");
-            return;
+        // Either a total or lines, never both: the handler refuses a request
+        // whose stated total could disagree with its own lines.
+        let basket;
+        if (scoped) {
+            if (!testLines.length) {
+                toast.error("Add a line to the test basket.");
+                return;
+            }
+            const unreadable = testLines.find((l) => !isValidMoney(l.total));
+            if (unreadable) {
+                toast.error(`Enter what ${unreadable.sku} is worth in the basket.`);
+                return;
+            }
+            basket = {
+                lines: testLines.map((l) => ({
+                    product_id: l.product_id,
+                    total_minor: toMinor(l.total, currency),
+                })),
+            };
+        } else {
+            if (!isValidMoney(testBasket)) {
+                toast.error("Enter a basket amount to try it against.");
+                return;
+            }
+            basket = { subtotal_minor: toMinor(testBasket, currency) };
         }
         testing = true;
         result = null;
         try {
             const res = await api.post(`/api/admin/discounts/${editing.id}/preview`, {
-                subtotal_minor: toMinor(testBasket, currency),
+                ...basket,
                 email: testEmail.trim(),
             });
-            result = res.data ?? null;
+            // The preview answers with itself, not with a second envelope; the
+            // extra `.data` meant the dry run ran and then showed nothing.
+            result = res ?? null;
         } catch (err) {
             toast.error(err);
         } finally {
             testing = false;
         }
+    }
+
+    /**
+     * Changing the kind changes what the rest of the form can mean.
+     *
+     * Free shipping cannot be scoped — the engine refuses it in as many words,
+     * because shipping is not part of any line — so choosing it puts the scope
+     * back to the whole basket rather than letting the operator fill in a
+     * target list that will be rejected on save. Going the other way, a value
+     * field that was emptied by a free-shipping rule gets a usable default
+     * instead of a silent zero.
+     */
+    function pickKind(kind) {
+        if (kind === "free_shipping") {
+            form.scope = "order";
+            form.target_ids = [];
+            return;
+        }
+        if (kind === "percentage" && !String(form.percent).trim()) form.percent = "10";
     }
 
     /** The form as the engine wants it, or null when a money field cannot be read. */
@@ -339,11 +542,19 @@
         confirmOpen = true;
     }
 
-    /** What the rule takes off, in one phrase. */
+    /**
+     * What the rule takes off, in one phrase.
+     *
+     * Every kind is named, and an unrecognised one says so rather than
+     * borrowing free shipping's label: this used to return "Free shipping" as
+     * the fall-through, so a kind this panel had not been taught would have
+     * been described as the one thing it definitely was not.
+     */
     function value(d) {
         if (d.kind === "percentage") return `${d.value_bp / 100}%`;
         if (d.kind === "fixed") return `${currency} ${fromMinor(d.value_minor, currency)}`;
-        return "Free shipping";
+        if (d.kind === "free_shipping") return "Free shipping";
+        return d.kind || "—";
     }
 
     /**
@@ -407,7 +618,18 @@
         e.preventDefault();
         list.set({ q: draftSearch });
     }
+
+    function clearFilters() {
+        draftSearch = "";
+        list.set({ q: "", active: "" });
+    }
 </script>
+
+<svelte:head><title>Discounts · GoCommerce</title></svelte:head>
+
+{#if !readable}
+    <NoAccess right="discounts.read" what="discounts" />
+{:else}
 
 <div class="page page-discounts">
     <div class="page-content full-height">
@@ -440,10 +662,25 @@
             </form>
 
             <div class="page-header-primary-btns">
-                <button type="button" class="btn" onclick={openNew}>
-                    <i class="ri-add-line" aria-hidden="true"></i>
-                    <span class="txt">New discount</span>
-                </button>
+                <!-- In the right-hand group, as the orders screen's filters
+                     are: a bare `.field` in the header is `width: 100%` and
+                     takes a line to itself. -->
+                <div class="field">
+                    <Select
+                        id="d-active-filter"
+                        ariaLabel="State"
+                        value={activeFilter}
+                        options={ACTIVE_OPTIONS}
+                        onchange={(v) => list.set({ active: v })}
+                    />
+                </div>
+
+                {#if writable}
+                    <button type="button" class="btn" onclick={openNew}>
+                        <i class="ri-add-line" aria-hidden="true"></i>
+                        <span class="txt">New discount</span>
+                    </button>
+                {/if}
             </div>
         </header>
 
@@ -451,6 +688,22 @@
             <table class="table">
                 <thead class="sticky">
                     <tr>
+                        {#if writable}
+                            <th class="col-bulk-select min-width">
+                                <div class="field">
+                                    <input
+                                        id="select-all-discounts"
+                                        type="checkbox"
+                                        checked={sel.allSelected(discounts)}
+                                        onchange={() => sel.toggleAll(discounts)}
+                                    />
+                                    <label
+                                        for="select-all-discounts"
+                                        aria-label="Select every discount on this page"
+                                    ></label>
+                                </div>
+                            </th>
+                        {/if}
                         <SortHeader
                             field="code"
                             label="Code"
@@ -489,7 +742,31 @@
                 <tbody>
                     {#each discounts as d (d.id)}
                         {@const s = phase(d)}
-                        <tr class="handle" onclick={() => openEdit(d)}>
+                        <tr
+                            class="handle"
+                            tabindex="0"
+                            onclick={() => openEdit(d)}
+                            onkeydown={(e) => rowKey(e, () => openEdit(d))}
+                        >
+                            {#if writable}
+                                <td
+                                    class="col-bulk-select min-width"
+                                    onclick={(e) => e.stopPropagation()}
+                                >
+                                    <div class="field">
+                                        <input
+                                            id="select-discount-{d.id}"
+                                            type="checkbox"
+                                            checked={sel.has(d.id)}
+                                            onchange={() => sel.toggle(d.id)}
+                                        />
+                                        <label
+                                            for="select-discount-{d.id}"
+                                            aria-label="Select {d.code || d.title}"
+                                        ></label>
+                                    </div>
+                                </td>
+                            {/if}
                             <td class="col-field-name-id" data-name="Code">
                                 {#if d.code}
                                     <span class="txt-bold txt-code">{d.code}</span>
@@ -517,15 +794,29 @@
                                 {uses(d)}
                             </td>
                             <td class="col-meta min-width">
+                                <!-- Outside the writable gate: reading what was
+                                     done to a rule is discounts.read, which is
+                                     the right this screen is drawn under. -->
                                 <button
                                     type="button"
-                                    class="btn circle sm transparent secondary row-delete"
-                                    aria-label="Delete {d.code || d.title}"
-                                    title="Delete"
-                                    onclick={(e) => (e.stopPropagation(), askDelete(d))}
+                                    class="btn circle sm transparent secondary"
+                                    aria-label="Change history for {d.code || d.title}"
+                                    title="Change history"
+                                    onclick={(e) => openHistory(d, e)}
                                 >
-                                    <i class="ri-delete-bin-7-line" aria-hidden="true"></i>
+                                    <i class="ri-file-history-line" aria-hidden="true"></i>
                                 </button>
+                                {#if writable}
+                                    <button
+                                        type="button"
+                                        class="btn circle sm transparent secondary row-delete"
+                                        aria-label="Delete {d.code || d.title}"
+                                        title="Delete"
+                                        onclick={(e) => (e.stopPropagation(), askDelete(d))}
+                                    >
+                                        <i class="ri-delete-bin-7-line" aria-hidden="true"></i>
+                                    </button>
+                                {/if}
                                 <i class="ri-arrow-right-s-line" aria-hidden="true"></i>
                             </td>
                         </tr>
@@ -533,13 +824,17 @@
 
                     {#if loading && !discounts.length}
                         {#each Array(4) as _, i (i)}
-                            <tr><td colspan="7"><span class="skeleton-loader"></span></td></tr>
+                            <tr>
+                                <td colspan={writable ? 8 : 7}>
+                                    <span class="skeleton-loader"></span>
+                                </td>
+                            </tr>
                         {/each}
                     {/if}
 
                     {#if !loading && !discounts.length}
                         <tr>
-                            <td colspan="7" class="txt-center txt-hint p-base">
+                            <td colspan={writable ? 8 : 7} class="txt-center txt-hint p-base">
                                 <div class="m-b-10">
                                     <i
                                         class="ri-price-tag-2-line"
@@ -547,12 +842,15 @@
                                         aria-hidden="true"
                                     ></i>
                                 </div>
-                                {#if search}
-                                    Nothing matches that. <a
+                                {#if search || activeFilter}
+                                    Nothing matches {search ? "that search" : "that state"}{search &&
+                                    activeFilter
+                                        ? " and state"
+                                        : ""}.
+                                    <a
                                         href="#clear"
-                                        onclick={(e) => (
-                                            e.preventDefault(), (draftSearch = ""), list.set({ q: "" })
-                                        )}>Clear the search</a
+                                        onclick={(e) => (e.preventDefault(), clearFilters())}
+                                        >Clear the filters</a
                                     >.
                                 {:else}
                                     No discounts yet. Create one to take money off a basket.
@@ -564,8 +862,49 @@
             </table>
         </div>
 
+        {#if writable}
+            <BulkBar count={sel.count} noun="discount" onclear={() => sel.clear()}>
+                <button
+                    type="button"
+                    class="btn sm secondary"
+                    disabled={bulkBusy || !switchOnable.length}
+                    title="A rule that is already on is left alone"
+                    onclick={() => setActive(switchOnable, true)}
+                >
+                    <i class="ri-toggle-line" aria-hidden="true"></i>
+                    <span class="txt">Switch on ({switchOnable.length})</span>
+                </button>
+                <button
+                    type="button"
+                    class="btn sm secondary"
+                    disabled={bulkBusy || !switchOffable.length}
+                    title="A rule that is already off is left alone"
+                    onclick={() => setActive(switchOffable, false)}
+                >
+                    <i class="ri-toggle-fill" aria-hidden="true"></i>
+                    <span class="txt">Switch off ({switchOffable.length})</span>
+                </button>
+                <button
+                    type="button"
+                    class="btn sm secondary txt-danger"
+                    disabled={bulkBusy}
+                    onclick={() => (bulkDeleteOpen = true)}
+                >
+                    <i class="ri-delete-bin-7-line" aria-hidden="true"></i>
+                    <span class="txt">Delete</span>
+                </button>
+            </BulkBar>
+        {/if}
+
         <footer class="page-footer">
-            <Pager {meta} {loading} noun="discount" onpage={(n) => list.setPage(n)} />
+            <Pager
+                {meta}
+                {loading}
+                noun="discount"
+                {perPage}
+                onpage={(n) => list.setPage(n)}
+                onperpage={(n) => list.set({ limit: n })}
+            />
             <div class="flex-fill"></div>
             <ThemeToggle />
         </footer>
@@ -603,17 +942,23 @@
         <div class="fields m-t-sm">
             <div class="field">
                 <label for="d-kind">Takes off</label>
+                <!-- All three the engine has. The third was missing, so a
+                     free-shipping rule made over the API opened here with an
+                     empty picker above an Amount box that did not apply to
+                     it. -->
                 <Select
                     id="d-kind"
                     bind:value={form.kind}
                     options={[
                         { value: "percentage", label: "A percentage" },
                         { value: "fixed", label: "An amount" },
+                        { value: "free_shipping", label: "Free shipping" },
                     ]}
+                    onchange={pickKind}
                 />
             </div>
-            <div class="delimiter"></div>
             {#if form.kind === "percentage"}
+                <div class="delimiter"></div>
                 <div class="field">
                     <label for="d-percent">Percent</label>
                     <input
@@ -625,7 +970,8 @@
                         bind:value={form.percent}
                     />
                 </div>
-            {:else}
+            {:else if form.kind === "fixed"}
+                <div class="delimiter"></div>
                 <div class="field">
                     <label for="d-amount">Amount ({currency})</label>
                     <input
@@ -637,12 +983,19 @@
                 </div>
             {/if}
         </div>
+        {#if form.kind === "free_shipping"}
+            <div class="field-help">
+                Free shipping carries no value of its own: the delivery charge comes off in
+                full, and it comes off the shipping rather than off any line.
+            </div>
+        {/if}
 
         <div class="field m-t-sm">
             <label for="d-scope">Applies to</label>
             <Select
                 id="d-scope"
                 bind:value={form.scope}
+                disabled={form.kind === "free_shipping"}
                 options={[
                     { value: "order", label: "The whole basket" },
                     { value: "products", label: "Chosen products" },
@@ -652,6 +1005,13 @@
                 onchange={() => (form.target_ids = [])}
             />
         </div>
+        {#if form.kind === "free_shipping"}
+            <div class="field-help">
+                Not narrowable: shipping is not part of any line, so there is nothing for a
+                product or a collection to match. A minimum basket is how a free-shipping
+                offer is limited.
+            </div>
+        {/if}
 
         {#if form.scope !== "order"}
             <div class="field m-t-sm">
@@ -744,19 +1104,62 @@
     -->
     {#if editing}
         <h6 class="section-title m-t-base">Try it</h6>
-        <div class="fields">
-            <div class="field">
-                <label for="d-test-basket">Basket ({currency})</label>
-                <input
-                    id="d-test-basket"
-                    type="text"
-                    inputmode="decimal"
-                    bind:value={testBasket}
-                    placeholder="100.00"
-                />
+
+        {#if scoped}
+            <div class="field-help m-b-sm">
+                This rule comes off {applies(editing)}, so it is tried against a basket rather
+                than a total — a number alone cannot say which lines it reaches. Add what a
+                shopper would have, including something the rule does <em>not</em> cover: that is
+                the case most likely to be wrong.
             </div>
-            <div class="delimiter"></div>
-            <div class="field">
+
+            <VariantSearch
+                onpick={addTestLine}
+                placeholder="Add a product to the test basket"
+            />
+
+            {#each testLines as line (line.key)}
+                <!-- A row of fields rather than a table: the drawer is narrow,
+                     and `.fields` is the shape that already fits it — the name
+                     yields and the money box keeps its width. -->
+                <div class="fields m-t-5">
+                    <div class="field addon">
+                        <span class="txt-ellipsis" title={line.sku}>{line.label}</span>
+                    </div>
+                    <div class="delimiter"></div>
+                    <div class="field">
+                        <input
+                            type="text"
+                            inputmode="decimal"
+                            aria-label="What {line.sku} is worth in the basket"
+                            bind:value={line.total}
+                            oninput={() => (result = null)}
+                        />
+                    </div>
+                    <div class="field addon p-r-5">
+                        <button
+                            type="button"
+                            class="btn circle sm transparent secondary"
+                            aria-label="Remove {line.sku}"
+                            title="Remove"
+                            onclick={() => removeTestLine(line.key)}
+                        >
+                            <i class="ri-close-line" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </div>
+            {/each}
+
+            {#if testLines.length}
+                <div class="field-help">
+                    Basket of {currency}
+                    {fromMinor(testTotalMinor, currency)} across {testLines.length}
+                    {pluralize(testLines.length, "line")}. Each box is what that line is worth,
+                    in {currency}.
+                </div>
+            {/if}
+
+            <div class="field m-t-sm">
                 <label for="d-test-email">Email</label>
                 <input
                     id="d-test-email"
@@ -765,7 +1168,40 @@
                     placeholder="Optional"
                 />
             </div>
-        </div>
+        {:else}
+            <div class="fields">
+                <div class="field">
+                    <label for="d-test-basket">Basket ({currency})</label>
+                    <input
+                        id="d-test-basket"
+                        type="text"
+                        inputmode="decimal"
+                        bind:value={testBasket}
+                        placeholder="100.00"
+                    />
+                </div>
+                <div class="delimiter"></div>
+                <div class="field">
+                    <label for="d-test-email">Email</label>
+                    <input
+                        id="d-test-email"
+                        type="email"
+                        bind:value={testEmail}
+                        placeholder="Optional"
+                    />
+                </div>
+            </div>
+        {/if}
+
+        {#if form.scope !== (editing.scope ?? "order") || form.kind !== editing.kind}
+            <!-- The dry run is against the rule the server holds, by id. Saying
+                 so is the difference between a test and a misleading one. -->
+            <div class="field-help">
+                Tries the rule as it is saved — the changes above are not part of it until they
+                are saved.
+            </div>
+        {/if}
+
         <div class="inline-flex m-t-5">
             <button
                 type="button"
@@ -897,17 +1333,23 @@
 
     {#snippet footer()}
         <button type="button" class="btn transparent m-r-auto" onclick={() => (open = false)}>
-            <span class="txt">Cancel</span>
+            <span class="txt">{writable ? "Cancel" : "Close"}</span>
         </button>
-        <button
-            type="submit"
-            form="discount-form"
-            class="btn expanded"
-            class:loading={saving}
-            disabled={saving || (form.scope !== "order" && !form.target_ids.length)}
-        >
-            <span class="txt">{editing ? "Save changes" : "Create discount"}</span>
-        </button>
+        <!-- A row opens this drawer for anyone who may read a discount, because
+             reading the rule is the point of opening it. Offering Save to
+             somebody the engine will refuse is the thing that wastes their
+             time, so the button goes rather than greys. -->
+        {#if writable}
+            <button
+                type="submit"
+                form="discount-form"
+                class="btn expanded"
+                class:loading={saving}
+                disabled={saving || (form.scope !== "order" && !form.target_ids.length)}
+            >
+                <span class="txt">{editing ? "Save changes" : "Create discount"}</span>
+            </button>
+        {/if}
     {/snippet}
 </Drawer>
 
@@ -919,3 +1361,24 @@
     danger={confirmConfig.danger}
     onconfirm={() => confirmConfig.run?.()}
 />
+
+<!-- A second Confirm rather than a mode flag on the first: this message names a
+     count and the other names a code, and one component asked to say both ends
+     up saying neither. -->
+<Confirm
+    bind:open={bulkDeleteOpen}
+    title="Delete {sel.count} {sel.count === 1 ? 'discount' : 'discounts'}?"
+    message="Orders that already used one keep their own record of it, so history stays readable. Anything the engine refuses is reported row by row."
+    confirmLabel="Delete"
+    danger
+    onconfirm={bulkDelete}
+/>
+
+<RecordHistory
+    open={historyOpen}
+    kind="discounts"
+    id={historyFor?.id}
+    label={historyFor?.code || historyFor?.title}
+    onclose={() => (historyOpen = false)}
+/>
+{/if}

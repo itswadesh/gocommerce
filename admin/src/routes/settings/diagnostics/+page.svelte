@@ -96,6 +96,8 @@
     }
 </script>
 
+<svelte:head><title>Diagnostics · GoCommerce</title></svelte:head>
+
 <div class="page page-diagnostics">
     <SettingsSidebar />
 

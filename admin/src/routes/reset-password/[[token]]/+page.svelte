@@ -96,6 +96,8 @@
     }
 </script>
 
+<svelte:head><title>Reset your password · GoCommerce</title></svelte:head>
+
 <div class="page">
     <div class="wrapper sm m-auto p-b-base">
         <header class="txt-center m-b-base">

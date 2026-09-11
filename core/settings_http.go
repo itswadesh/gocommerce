@@ -22,8 +22,12 @@ import "net/http"
 // role can read it, so a field added here is a field nobody re-decided the gate
 // for. Diagnostics belong behind store.operate on their own route.
 //
-// Two names are reserved on this response for the modules/providers readout and
-// must not be taken by anything else: "modules" and "notifier_channels".
+// "notifier_channels" is the closest thing here to a diagnostic and belongs
+// anyway: what it reports is which delivery backends the binary was composed
+// with, which is the same class of fact as payment_methods. That it doubles as
+// a warning — a channel carrying only the built-in logger sends nothing while
+// reporting success — is a property of the configuration, not a measurement of
+// the running store.
 func (a *App) mountSettingsRoutes() {
 	a.HandleAdminFunc("GET /api/admin/settings", a.handleSettings)
 }

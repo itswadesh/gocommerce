@@ -19,11 +19,17 @@
     import { listState } from "$lib/liststate.svelte.js";
     import { formatMoney, pluralize } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
+    import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import SalesChart from "$lib/components/SalesChart.svelte";
     import Select from "$lib/components/Select.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
+    /* The starting size of the best-seller table, not the only one: `limit` is
+       a listState key below, so a ten-row top list can be opened out to a
+       hundred and the choice rides in the URL with the window and the grain.
+       liststate only serialises keys it was declared with, so a size that is
+       not in the defaults above cannot reach the request at all. */
     const PER_PAGE = 10;
 
     /*
@@ -42,7 +48,14 @@
         sort: "revenue",
         currency: "",
         page: 1,
+        limit: PER_PAGE,
     });
+
+    /* Both reports are orders.read — nav.js gates the link on it, and the two
+       endpoints below sum orders. Without it the address used to render the
+       whole screen and answer with a pair of 403 toasts, which reads as a
+       broken panel rather than as a permission. */
+    const readable = $derived(can("orders.read"));
 
     let report = $state(null);
     let top = $state([]);
@@ -50,6 +63,7 @@
     let loading = $state(true);
 
     const grain = $derived(list.params.group_by);
+    const perPage = $derived(list.params.limit);
     const currencies = $derived(report?.currencies ?? []);
     /* The chosen block, or the first one. A store that has only ever sold in
        one currency never sees the tab strip at all. */
@@ -66,6 +80,12 @@
     });
 
     async function load() {
+        // The screen is refused above; asking anyway would put two 403 toasts
+        // over the explanation.
+        if (!readable) {
+            loading = false;
+            return;
+        }
         loading = true;
         const p = list.params;
         try {
@@ -82,7 +102,7 @@
                             tz,
                             currency: p.currency,
                             sort: p.sort,
-                            limit: PER_PAGE,
+                            limit: p.limit,
                             page: p.page,
                         }),
                 ),
@@ -289,6 +309,10 @@
 
 <svelte:head><title>Reports · GoCommerce</title></svelte:head>
 
+{#if !readable}
+    <!-- The sidebar already hides the link; this is the direct URL. -->
+    <NoAccess right="orders.read" what="reports" />
+{:else}
 <div class="page page-reports">
     <div class="page-content full-height">
         <header class="page-header">
@@ -614,7 +638,9 @@
                 meta={topMeta}
                 {loading}
                 noun="product"
+                {perPage}
                 onpage={(n) => list.setPage(n)}
+                onperpage={(n) => list.set({ limit: n })}
             />
             <div class="flex-fill"></div>
             <span class="txt txt-hint">
@@ -625,3 +651,4 @@
         </footer>
     </div>
 </div>
+{/if}

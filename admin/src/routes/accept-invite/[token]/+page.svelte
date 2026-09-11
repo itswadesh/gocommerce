@@ -74,6 +74,8 @@
     }
 </script>
 
+<svelte:head><title>Accept your invitation · GoCommerce</title></svelte:head>
+
 <div class="page">
     <div class="wrapper sm m-auto p-b-base">
         <header class="txt-center m-b-base">

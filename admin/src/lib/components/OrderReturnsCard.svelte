@@ -57,7 +57,10 @@
                         {formatMoney(r.refundable)}
                     </span>
                     <span class="txt-hint txt-sm">{formatDate(r.created_at)}</span>
-                    {#if r.status === "received"}
+                    <!-- No handler, no button: withdrawing is orders.write, and
+                         an operator who may only read the order still needs to
+                         see what came back. -->
+                    {#if r.status === "received" && onwithdraw}
                         <button
                             type="button"
                             class="btn circle sm transparent secondary"

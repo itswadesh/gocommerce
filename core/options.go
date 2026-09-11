@@ -1,8 +1,10 @@
 package gocommerce
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -28,9 +30,59 @@ import (
 // them all onto the same empty combination. Sending the id says "this is the
 // same axis, under a new name"; omitting it says "this one is new".
 type OptionSpec struct {
-	ID     *int64   `json:"id"`
-	Name   string   `json:"name"`
-	Values []string `json:"values"`
+	ID     *int64            `json:"id"`
+	Name   string            `json:"name"`
+	Values []OptionValueSpec `json:"values"`
+}
+
+// OptionValueSpec is one value on an axis in a desired matrix.
+//
+// ID does for a value exactly what OptionSpec.ID does for the axis above it,
+// and for the same reason. Matched by text alone, changing "Red" to "Crimson"
+// is indistinguishable from dropping one value and adding another — so every
+// Red variant is deleted and a fresh Crimson one minted in its place, taking
+// that variant's price, SKU, image and stock with it. A typo in a colour name
+// cost the whole size/colour matrix. Sending the id says "this is the same
+// value, under a new name"; omitting it says "this one is new".
+//
+// It unmarshals from a bare JSON string too, because that is what every client
+// written before value ids existed sends, and `["S", "M"]` still means exactly
+// what it always did: two values, neither of them claiming an identity.
+type OptionValueSpec struct {
+	ID    *int64 `json:"id"`
+	Value string `json:"value"`
+}
+
+func (v *OptionValueSpec) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) > 0 && trimmed[0] == '"' {
+		var value string
+		if err := json.Unmarshal(trimmed, &value); err != nil {
+			return err
+		}
+		v.ID, v.Value = nil, value
+		return nil
+	}
+	// A named type with the same fields and no methods: unmarshalling into
+	// OptionValueSpec itself here would call this function again, for ever.
+	type plain OptionValueSpec
+	var out plain
+	if err := json.Unmarshal(trimmed, &out); err != nil {
+		return err
+	}
+	*v = OptionValueSpec(out)
+	return nil
+}
+
+// OptionValues names values that have no identity yet — the whole matrix of a
+// product being given options for the first time, where every value is new.
+// An edit that means to keep what is there sends the ids it read instead.
+func OptionValues(values ...string) []OptionValueSpec {
+	out := make([]OptionValueSpec, 0, len(values))
+	for _, value := range values {
+		out = append(out, OptionValueSpec{Value: value})
+	}
+	return out
 }
 
 // OptionSet is the desired option matrix for a product.
@@ -48,10 +100,15 @@ type OptionSet struct {
 // OptionChange reports what SetOptions did, so an operator can be told rather
 // than left to discover it.
 type OptionChange struct {
-	AxesAdded       []string `json:"axes_added"`
-	AxesRemoved     []string `json:"axes_removed"`
-	AxesRenamed     []string `json:"axes_renamed"`
-	ValuesAdded     []string `json:"values_added"`
+	AxesAdded   []string `json:"axes_added"`
+	AxesRemoved []string `json:"axes_removed"`
+	AxesRenamed []string `json:"axes_renamed"`
+	ValuesAdded []string `json:"values_added"`
+	// ValuesRenamed is reported apart from the other two on purpose: a rename
+	// keeps every variant that held the value, and an operator reading "Dropped
+	// Size: Red / New values: Size: Crimson" would reasonably conclude they had
+	// just destroyed their stock.
+	ValuesRenamed   []string `json:"values_renamed"`
 	ValuesRemoved   []string `json:"values_removed"`
 	VariantsCreated []string `json:"variants_created"`
 	VariantsRemoved []string `json:"variants_removed"`
@@ -83,6 +140,9 @@ func (c *Catalog) SetOptions(ctx context.Context, productID int64, in OptionSet)
 	if err := checkAxisNames(in.Options); err != nil {
 		return nil, nil, err
 	}
+	if err := checkSpecIDs(in.Options); err != nil {
+		return nil, nil, err
+	}
 	// The engine resolves a variant's options by value, so the same value on
 	// two axes is ambiguous by construction — "Small" as both a Size and a Cup
 	// cannot be told apart. Refusing is the only honest answer until the
@@ -109,12 +169,13 @@ func (c *Catalog) SetOptions(ctx context.Context, productID int64, in OptionSet)
 			return err
 		}
 
-		// wanted maps each surviving axis id to the values it keeps. An axis
-		// with no id is new and has no variants pointing at it yet.
-		wanted := map[int64][]string{}
-		order := []string{}
-		for _, o := range in.Options {
-			order = append(order, o.Name)
+		// wanted maps each surviving axis id to the values it keeps, and
+		// axisSpec to that axis's place in the request — which is what the
+		// re-link below looks its new value rows up by. An axis with no id is
+		// new and has no variants pointing at it yet.
+		wanted := map[int64][]OptionValueSpec{}
+		axisSpec := map[int64]int{}
+		for i, o := range in.Options {
 			if o.ID == nil {
 				change.AxesAdded = append(change.AxesAdded, o.Name)
 				continue
@@ -123,13 +184,25 @@ func (c *Catalog) SetOptions(ctx context.Context, productID int64, in OptionSet)
 			if !known {
 				return Validationf("this product has no option %d", *o.ID)
 			}
+			// A value id this axis never had is a stale read, not a rename, and
+			// honouring it would re-point somebody else's variants. Refused for
+			// the same reason an unknown axis id is.
+			for _, value := range o.Values {
+				if value.ID != nil && !prev.has(*value.ID) {
+					return Validationf("option %q has no value %d", o.Name, *value.ID)
+				}
+			}
 			wanted[*o.ID] = o.Values
+			axisSpec[*o.ID] = i
 			if !strings.EqualFold(prev.Name, o.Name) {
 				change.AxesRenamed = append(change.AxesRenamed, prev.Name+" → "+o.Name)
 			}
-			added, removed := diffValues(prev.Values, o.Values)
+			added, renamed, removed := diffValues(prev.Values, o.Values)
 			for _, v := range added {
 				change.ValuesAdded = append(change.ValuesAdded, o.Name+": "+v)
+			}
+			for _, v := range renamed {
+				change.ValuesRenamed = append(change.ValuesRenamed, o.Name+": "+v)
 			}
 			for _, v := range removed {
 				change.ValuesRemoved = append(change.ValuesRemoved, o.Name+": "+v)
@@ -160,13 +233,20 @@ func (c *Catalog) SetOptions(ctx context.Context, productID int64, in OptionSet)
 		//    could never be deleted from a product that has variants, which is
 		//    every product an axis is worth deleting from.
 		var keep []variantCombination
+		// Which value each survivor lands on, by axis id and by the value's
+		// place in the request. Worked out before the matrix is torn down,
+		// because it is the old rows that say which value the variant held.
+		landing := map[int64]map[int64]int{}
 		claimed := map[string]bool{}
 		for _, v := range existing {
-			key := survivingKey(v, wanted)
-			if combinationSurvives(v, wanted) && !claimed[key] {
-				claimed[key] = true
-				keep = append(keep, v)
-				continue
+			if resolved, survives := resolveCombination(v, wanted); survives {
+				key := survivingKey(resolved)
+				if !claimed[key] {
+					claimed[key] = true
+					keep = append(keep, v)
+					landing[v.ID] = resolved
+					continue
+				}
 			}
 			change.VariantsRemoved = append(change.VariantsRemoved, v.SKU)
 			if _, err := tx.ExecContext(ctx, `DELETE FROM variants WHERE id = $1`, v.ID); err != nil {
@@ -197,13 +277,12 @@ func (c *Catalog) SetOptions(ctx context.Context, productID int64, in OptionSet)
 		//    them moved.
 		for _, v := range keep {
 			var ids []int64
-			for axisID, value := range v.ByAxis {
-				if _, still := wanted[axisID]; !still {
-					continue
-				}
-				// The axis kept its identity but its rows are new, so the
-				// value is looked up under whatever the axis is called now.
-				ids = append(ids, valueIDs[valueKey(nameOf(in.Options, axisID), value)])
+			for axisID, valueIndex := range landing[v.ID] {
+				// By position in the request rather than by text: a renamed
+				// value has no row under its old name to look up, and that
+				// miss is what used to hand back a zero id and break the
+				// foreign key.
+				ids = append(ids, valueIDs[axisSpec[axisID]][valueIndex])
 			}
 			for _, id := range ids {
 				if _, err := tx.ExecContext(ctx,
@@ -220,7 +299,7 @@ func (c *Catalog) SetOptions(ctx context.Context, productID int64, in OptionSet)
 		}
 
 		if in.GenerateVariants {
-			created, err := generateMissingVariants(ctx, tx, productID, in, order, valueIDs)
+			created, err := generateMissingVariants(ctx, tx, productID, in, valueIDs)
 			if err != nil {
 				return err
 			}
@@ -246,40 +325,87 @@ type variantCombination struct {
 	SKU   string
 	Price int64
 	// Keyed by option (axis) id, because names are what a rename changes.
-	ByAxis map[int64]string
+	ByAxis map[int64]variantValue
+}
+
+// variantValue is the value a variant holds on one axis: the row it points at
+// and the text on that row. The id is what survives a rename; the text is what
+// a client that sent no ids can still be matched on.
+type variantValue struct {
+	ID    int64
+	Value string
 }
 
 // axisState is an axis as it exists now.
 type axisState struct {
 	Name   string
-	Values []string
+	Values []optionValueState
 }
 
-// nameOf returns the new name of an axis, for building the value lookup after
-// the matrix has been reinserted.
-func nameOf(specs []OptionSpec, axisID int64) string {
-	for _, s := range specs {
-		if s.ID != nil && *s.ID == axisID {
-			return s.Name
+// optionValueState is one of that axis's value rows as it exists now.
+type optionValueState struct {
+	ID    int64
+	Value string
+}
+
+func (a *axisState) has(valueID int64) bool {
+	for _, v := range a.Values {
+		if v.ID == valueID {
+			return true
 		}
 	}
-	return ""
+	return false
 }
 
-func normalizeOptionValues(in []string) []string {
+// normalizeOptionValues trims, drops the blanks and folds duplicates.
+//
+// The first spelling wins, and it keeps that spelling's id with it: "Red, red"
+// is one value, and which of the two rows the variants are re-pointed at has to
+// be decided here rather than by whichever loop happens to look first.
+func normalizeOptionValues(in []OptionValueSpec) []OptionValueSpec {
 	seen := map[string]bool{}
-	out := make([]string, 0, len(in))
+	out := make([]OptionValueSpec, 0, len(in))
 	for _, v := range in {
-		v = strings.TrimSpace(v)
-		if v == "" {
+		v.Value = strings.TrimSpace(v.Value)
+		if v.Value == "" {
 			continue
 		}
-		if k := strings.ToLower(v); !seen[k] {
+		if k := strings.ToLower(v.Value); !seen[k] {
 			seen[k] = true
 			out = append(out, v)
 		}
 	}
 	return out
+}
+
+// checkSpecIDs refuses two specs claiming one identity — the same axis id on
+// two axes, or the same value id twice on one axis.
+//
+// Malformed either way, and resolving it silently is the bad outcome: the
+// second spec would quietly replace the first in every lookup keyed by that id,
+// so a variant would be re-pointed at whichever of the two the loop reached
+// last, under a name nobody asked for.
+func checkSpecIDs(opts []OptionSpec) error {
+	axes := map[int64]bool{}
+	for _, o := range opts {
+		if o.ID != nil {
+			if axes[*o.ID] {
+				return Validationf("two options both claim to be option %d", *o.ID)
+			}
+			axes[*o.ID] = true
+		}
+		seen := map[int64]bool{}
+		for _, v := range o.Values {
+			if v.ID == nil {
+				continue
+			}
+			if seen[*v.ID] {
+				return Validationf("option %q names value %d twice", o.Name, *v.ID)
+			}
+			seen[*v.ID] = true
+		}
+	}
+	return nil
 }
 
 func checkAxisNames(opts []OptionSpec) error {
@@ -302,11 +428,11 @@ func checkValuesUniqueAcrossAxes(opts []OptionSpec) error {
 	owner := map[string]string{}
 	for _, o := range opts {
 		for _, v := range o.Values {
-			k := strings.ToLower(v)
+			k := strings.ToLower(v.Value)
 			if prev, clash := owner[k]; clash && prev != o.Name {
 				return Conflictf(
 					"%q is a value on both %q and %q; a variant's options are matched by value, so the two could not be told apart",
-					v, prev, o.Name)
+					v.Value, prev, o.Name)
 			}
 			owner[k] = o.Name
 		}
@@ -314,67 +440,126 @@ func checkValuesUniqueAcrossAxes(opts []OptionSpec) error {
 	return nil
 }
 
-func diffValues(before, after []string) (added, removed []string) {
-	had := map[string]bool{}
+// diffValues reports what one axis's edit did to its values.
+//
+// Matching is by id first and text second, which is the whole point: a spec
+// carrying id 7 with the text "Crimson" is the row that used to say "Red" being
+// renamed, and reporting that as a removal plus an addition would describe a
+// destruction that did not happen. A spec with no id is a client that has never
+// heard of value ids, and for those this is exactly the text comparison it
+// always was.
+func diffValues(before []optionValueState, after []OptionValueSpec) (added, renamed, removed []string) {
+	byID := map[int64]optionValueState{}
 	for _, v := range before {
-		had[strings.ToLower(v)] = true
+		byID[v.ID] = v
 	}
-	want := map[string]bool{}
-	for _, v := range after {
-		want[strings.ToLower(v)] = true
-		if !had[strings.ToLower(v)] {
-			added = append(added, v)
-		}
-	}
-	for _, v := range before {
-		if !want[strings.ToLower(v)] {
-			removed = append(removed, v)
-		}
-	}
-	return added, removed
-}
 
-func combinationSurvives(v variantCombination, wanted map[int64][]string) bool {
-	for axisID, value := range v.ByAxis {
-		values, still := wanted[axisID]
-		if !still {
-			// The axis is gone. The variant survives on its remaining axes;
-			// whether that leaves it identical to another survivor is
-			// survivingKey's question, not this one's.
+	kept := map[int64]bool{}
+	for _, spec := range after {
+		if spec.ID == nil {
 			continue
 		}
-		found := false
-		for _, candidate := range values {
-			if strings.EqualFold(candidate, value) {
-				found = true
+		prev, known := byID[*spec.ID]
+		if !known {
+			continue
+		}
+		kept[prev.ID] = true
+		if !strings.EqualFold(prev.Value, spec.Value) {
+			renamed = append(renamed, prev.Value+" → "+spec.Value)
+		}
+	}
+
+	// An id-less spec matches by text, but only against a value no id has
+	// already claimed: with "Red" renamed to "Crimson" and a fresh "Red" added
+	// beside it, the fresh one is genuinely new.
+	claimed := map[string]bool{}
+	for _, spec := range after {
+		if spec.ID != nil {
+			continue
+		}
+		text := strings.ToLower(spec.Value)
+		match := false
+		for _, prev := range before {
+			if !kept[prev.ID] && !claimed[strings.ToLower(prev.Value)] &&
+				strings.EqualFold(prev.Value, spec.Value) {
+				match = true
+				claimed[text] = true
 				break
 			}
 		}
-		if !found {
-			return false
+		if !match {
+			added = append(added, spec.Value)
 		}
 	}
-	return true
+
+	for _, prev := range before {
+		if !kept[prev.ID] && !claimed[strings.ToLower(prev.Value)] {
+			removed = append(removed, prev.Value)
+		}
+	}
+	return added, renamed, removed
 }
 
-// survivingKey is the combination a variant will hold once the axes that are
-// going have gone: its value on each axis that stays, keyed by axis id.
+// resolveValue returns where in the new matrix a value a variant holds lands.
 //
-// Case-insensitive, because the rebuilt matrix is. normalizeOptionValues folds
-// "Red" and "red" into one value row, so two variants holding them separately
-// end up pointing at the same row and the same option_key — which is exactly
-// what this key has to predict.
-func survivingKey(v variantCombination, wanted map[int64][]string) string {
-	axes := make([]int64, 0, len(v.ByAxis))
-	for axisID := range v.ByAxis {
-		if _, still := wanted[axisID]; still {
-			axes = append(axes, axisID)
+// By id before text, because that is what tells a rename from a replacement.
+// Text is the fallback for a client that sent plain strings, and for a value
+// that was dropped and re-added under the same name — both of which mean the
+// variant is still selling the same thing.
+func resolveValue(specs []OptionValueSpec, held variantValue) (int, bool) {
+	for i, spec := range specs {
+		if spec.ID != nil && *spec.ID == held.ID {
+			return i, true
 		}
+	}
+	for i, spec := range specs {
+		if strings.EqualFold(spec.Value, held.Value) {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// resolveCombination maps a variant onto the new matrix: for each axis that
+// survives, which of that axis's values it now holds, by position in the
+// request. ok is false when any surviving axis no longer offers the value it
+// was holding, which is the variant being deleted.
+//
+// An axis that is going is simply skipped. The variant survives on its
+// remaining axes; whether that leaves it identical to another survivor is
+// survivingKey's question, not this one's.
+func resolveCombination(v variantCombination, wanted map[int64][]OptionValueSpec) (map[int64]int, bool) {
+	out := make(map[int64]int, len(v.ByAxis))
+	for axisID, held := range v.ByAxis {
+		specs, still := wanted[axisID]
+		if !still {
+			continue
+		}
+		at, found := resolveValue(specs, held)
+		if !found {
+			return nil, false
+		}
+		out[axisID] = at
+	}
+	return out, true
+}
+
+// survivingKey is the combination a variant will hold once the edit is applied:
+// where it lands on each axis that stays, keyed by axis id.
+//
+// Keyed by the value's *position* in the new matrix rather than by its text,
+// because normalizeOptionValues has already folded "Red" and "red" into one row
+// — two variants holding them separately land on the same position, and this
+// key is what has to predict that before the unique index does.
+func survivingKey(resolved map[int64]int) string {
+	axes := make([]int64, 0, len(resolved))
+	for axisID := range resolved {
+		axes = append(axes, axisID)
 	}
 	sort.Slice(axes, func(i, j int) bool { return axes[i] < axes[j] })
 	parts := make([]string, len(axes))
 	for i, axisID := range axes {
-		parts[i] = fmt.Sprintf("%d=%s", axisID, strings.ToLower(v.ByAxis[axisID]))
+		parts[i] = fmt.Sprintf("%d=%d", axisID, resolved[axisID])
 	}
 	return strings.Join(parts, ",")
 }
@@ -390,7 +575,7 @@ func loadOptionMatrix(ctx context.Context, tx *sql.Tx, productID int64) (map[int
 	}
 
 	rows, err := tx.QueryContext(ctx, `
-		SELECT o.id, o.name, v.value
+		SELECT o.id, o.name, v.id, v.value
 		FROM product_options o
 		LEFT JOIN product_option_values v ON v.option_id = o.id
 		WHERE o.product_id = $1
@@ -404,15 +589,17 @@ func loadOptionMatrix(ctx context.Context, tx *sql.Tx, productID int64) (map[int
 	for rows.Next() {
 		var id int64
 		var name string
+		var valueID sql.NullInt64
 		var value sql.NullString
-		if err := rows.Scan(&id, &name, &value); err != nil {
+		if err := rows.Scan(&id, &name, &valueID, &value); err != nil {
 			return nil, Internalf(err, "scan option")
 		}
 		if _, ok := out[id]; !ok {
 			out[id] = &axisState{Name: name}
 		}
-		if value.Valid {
-			out[id].Values = append(out[id].Values, value.String)
+		if valueID.Valid && value.Valid {
+			out[id].Values = append(out[id].Values,
+				optionValueState{ID: valueID.Int64, Value: value.String})
 		}
 	}
 	return out, rows.Err()
@@ -420,7 +607,7 @@ func loadOptionMatrix(ctx context.Context, tx *sql.Tx, productID int64) (map[int
 
 func loadVariantCombinations(ctx context.Context, tx *sql.Tx, productID int64) ([]variantCombination, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT v.id, v.sku, v.price_minor, o.id, ov.value
+		SELECT v.id, v.sku, v.price_minor, o.id, ov.id, ov.value
 		FROM variants v
 		LEFT JOIN variant_option_values vov ON vov.variant_id = v.id
 		LEFT JOIN product_option_values ov ON ov.id = vov.option_value_id
@@ -436,23 +623,24 @@ func loadVariantCombinations(ctx context.Context, tx *sql.Tx, productID int64) (
 	var order []int64
 	for rows.Next() {
 		var (
-			id     int64
-			sku    string
-			price  int64
-			axisID sql.NullInt64
-			value  sql.NullString
+			id      int64
+			sku     string
+			price   int64
+			axisID  sql.NullInt64
+			valueID sql.NullInt64
+			value   sql.NullString
 		)
-		if err := rows.Scan(&id, &sku, &price, &axisID, &value); err != nil {
+		if err := rows.Scan(&id, &sku, &price, &axisID, &valueID, &value); err != nil {
 			return nil, Internalf(err, "scan variant")
 		}
 		v, ok := byID[id]
 		if !ok {
-			v = &variantCombination{ID: id, SKU: sku, Price: price, ByAxis: map[int64]string{}}
+			v = &variantCombination{ID: id, SKU: sku, Price: price, ByAxis: map[int64]variantValue{}}
 			byID[id] = v
 			order = append(order, id)
 		}
-		if axisID.Valid && value.Valid {
-			v.ByAxis[axisID.Int64] = value.String
+		if axisID.Valid && valueID.Valid && value.Valid {
+			v.ByAxis[axisID.Int64] = variantValue{ID: valueID.Int64, Value: value.String}
 		}
 	}
 	out := make([]variantCombination, 0, len(order))
@@ -462,10 +650,14 @@ func loadVariantCombinations(ctx context.Context, tx *sql.Tx, productID int64) (
 	return out, rows.Err()
 }
 
-// insertOptionMatrix writes the axes and returns a lookup from
-// "axis\x00value" to the new option_value id.
-func insertOptionMatrix(ctx context.Context, tx *sql.Tx, productID int64, opts []OptionSpec) (map[string]int64, error) {
-	ids := map[string]int64{}
+// insertOptionMatrix writes the axes and returns the new option_value ids, in
+// the shape of the request: ids[axis index][value index].
+//
+// By position rather than by name, because a renamed value has no name in
+// common with the row it replaces — and that is the lookup the survivors are
+// re-pointed through.
+func insertOptionMatrix(ctx context.Context, tx *sql.Tx, productID int64, opts []OptionSpec) ([][]int64, error) {
+	ids := make([][]int64, len(opts))
 	for i, o := range opts {
 		var optionID int64
 		if err := tx.QueryRowContext(ctx, `
@@ -476,40 +668,24 @@ func insertOptionMatrix(ctx context.Context, tx *sql.Tx, productID int64, opts [
 			}
 			return nil, Internalf(err, "create option %s", o.Name)
 		}
+		ids[i] = make([]int64, len(o.Values))
 		for j, v := range o.Values {
 			var valueID int64
 			if err := tx.QueryRowContext(ctx, `
 				INSERT INTO product_option_values (option_id, value, position)
-				VALUES ($1, $2, $3) RETURNING id`, optionID, v, j).Scan(&valueID); err != nil {
-				return nil, Internalf(err, "create option value %s", v)
+				VALUES ($1, $2, $3) RETURNING id`, optionID, v.Value, j).Scan(&valueID); err != nil {
+				return nil, Internalf(err, "create option value %s", v.Value)
 			}
-			ids[valueKey(o.Name, v)] = valueID
+			ids[i][j] = valueID
 		}
 	}
 	return ids, nil
 }
 
-// valueKey is how the value-id lookup is keyed: axis name and value, folded.
-//
-// Folded because the survivors are re-linked by the value they already hold,
-// and the operator may have just retyped it in a different case. Matching that
-// exactly would miss, hand back a zero id, and break the foreign key — the
-// same edit the rest of this file treats as a no-op.
-func valueKey(axisName, value string) string {
-	return strings.ToLower(axisName) + "\x00" + strings.ToLower(value)
-}
-
 // generateMissingVariants mints the combinations that have no variant yet.
 func generateMissingVariants(
-	ctx context.Context, tx *sql.Tx, productID int64, in OptionSet,
-	order []string, valueIDs map[string]int64,
+	ctx context.Context, tx *sql.Tx, productID int64, in OptionSet, valueIDs [][]int64,
 ) ([]string, error) {
-	// Keyed by the axis's *current* name, which is what valueIDs is keyed by
-	// too — ids matter for identity, names for lookup after the rebuild.
-	byName := map[string][]string{}
-	for _, o := range in.Options {
-		byName[o.Name] = o.Values
-	}
 	price := int64(0)
 	if in.PriceMinor != nil {
 		price = *in.PriceMinor
@@ -527,13 +703,18 @@ func generateMissingVariants(
 		return nil, Internalf(err, "read product slug")
 	}
 
+	counts := make([]int, len(in.Options))
+	for i, o := range in.Options {
+		counts[i] = len(o.Values)
+	}
+
 	var created []string
-	for _, combo := range cartesian(order, byName) {
-		var ids []int64
-		var parts []string
-		for _, axis := range order {
-			ids = append(ids, valueIDs[valueKey(axis, combo[axis])])
-			parts = append(parts, combo[axis])
+	for _, combo := range cartesian(counts) {
+		ids := make([]int64, len(combo))
+		parts := make([]string, len(combo))
+		for axis, at := range combo {
+			ids[axis] = valueIDs[axis][at]
+			parts[axis] = in.Options[axis].Values[at].Value
 		}
 		key := optionKeyFor(ids)
 
@@ -575,19 +756,20 @@ func generateMissingVariants(
 	return created, nil
 }
 
-// cartesian expands the axes into every combination, in axis order.
-func cartesian(order []string, values map[string][]string) []map[string]string {
-	out := []map[string]string{{}}
-	for _, axis := range order {
-		var next []map[string]string
+// cartesian expands the axes into every combination, in axis order: one entry
+// per axis holding which of that axis's values this combination takes.
+//
+// Positions rather than names, because two values on two axes can no longer be
+// told apart by their text alone once either of them can be renamed.
+func cartesian(counts []int) [][]int {
+	out := [][]int{{}}
+	for axis, n := range counts {
+		var next [][]int
 		for _, base := range out {
-			for _, v := range values[axis] {
-				combo := make(map[string]string, len(base)+1)
-				for k, existing := range base {
-					combo[k] = existing
-				}
-				combo[axis] = v
-				next = append(next, combo)
+			for at := 0; at < n; at++ {
+				combo := make([]int, len(base), axis+1)
+				copy(combo, base)
+				next = append(next, append(combo, at))
 			}
 		}
 		out = next

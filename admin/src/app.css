@@ -7,6 +7,15 @@
  * everything after _main.css's divider, which styles PocketBase's own screens
  * (collections, logs, ERD, rule fields) that gocommerce has no equivalent of.
  *
+ * And accordion.css, which is a third kind of drop: the file is upstream's and
+ * unchanged, but nothing here can ever match it. Its only selectors are
+ * `.accordion` and the `summary` inside one, and this panel writes its own
+ * disclosures — the variant matrix and the category picker both expand rows of
+ * a <table>, which a <details>-based accordion cannot wrap. That was 163 lines
+ * in every visitor's bundle with nothing to apply them to. The file itself
+ * stays in lib/styles so a re-copy from upstream still diffs cleanly; only the
+ * import is gone.
+ *
  * gocommerce.css is the only file we author, and only for screens PocketBase
  * has no counterpart to.
  */
@@ -23,7 +32,6 @@
 @import "./lib/styles/table.css";
 @import "./lib/styles/form.css";
 @import "./lib/styles/dropdown.css";
-@import "./lib/styles/accordion.css";
 @import "./lib/styles/bulkbar.css";
 @import "./lib/styles/tabs.css";
 @import "./lib/styles/modal.css";

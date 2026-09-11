@@ -128,6 +128,8 @@ func TestSettingsServesExactlyItsWhitelist(t *testing.T) {
 		"fulfillment_providers",
 		"languages",
 		"media_uploads_enabled",
+		"modules",
+		"notifier_channels",
 		"order_prefix",
 		"order_ttl_seconds",
 		"payment_methods",
@@ -270,7 +272,7 @@ func TestSettingsSerialisesEmptyListsAsArrays(t *testing.T) {
 		t.Fatalf("GET /api/admin/settings = %d: %s", rec.Code, rec.Body)
 	}
 	raw := decodeSettings(t, rec.Body.Bytes())
-	for _, key := range []string{"languages", "payment_methods", "fulfillment_providers"} {
+	for _, key := range []string{"languages", "payment_methods", "fulfillment_providers", "modules", "notifier_channels"} {
 		if !strings.HasPrefix(string(raw[key]), "[") {
 			t.Errorf("%s = %s, want a JSON array", key, raw[key])
 		}
@@ -278,9 +280,136 @@ func TestSettingsSerialisesEmptyListsAsArrays(t *testing.T) {
 
 	// The same promise held directly against the snapshot, which is where an
 	// empty store would produce the nil that marshals as null.
-	empty := &App{cfg: app.cfg, payments: &Payments{}, fulfillment: &Fulfillments{}}
+	empty := &App{cfg: app.cfg, payments: &Payments{}, fulfillment: &Fulfillments{}, notifier: &notifierSet{}}
 	s := empty.Settings()
-	if s.PaymentMethods == nil || s.FulfillmentProviders == nil || s.Languages == nil {
+	if s.PaymentMethods == nil || s.FulfillmentProviders == nil || s.Languages == nil || s.Modules == nil {
 		t.Errorf("a store with nothing installed produces nil slices: %+v", s)
+	}
+	// notifier_channels is never empty — the channel set is the engine's, not
+	// the map's keys — but the backend list under a channel nobody registered
+	// for is, and that one still has to iterate.
+	for _, c := range s.NotifierChannels {
+		if c.Backends == nil {
+			t.Errorf("channel %q has nil backends rather than an empty list", c.Channel)
+		}
+	}
+}
+
+// The modules list is what the binary was actually composed with, in the order
+// they were passed to New. The panel gates four screens on it, so a missing
+// name hides a screen that works and an invented one offers a screen that 404s.
+func TestSettingsNamesTheModulesThisBinaryWasBuiltWith(t *testing.T) {
+	// Two of them, so the test can fail on ordering as well as on membership.
+	// refundable is passed first and recorder second; alphabetically that is
+	// the other way round, which is what makes registration order visible.
+	app := newTestApp(t, refundableModule{}, &notifyModule{rec: &recordingNotifier{}})
+
+	var got struct {
+		Data StoreSettings `json:"data"`
+	}
+	rec := do(t, app, "GET", "/api/admin/settings", withAdmin)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/admin/settings = %d: %s", rec.Code, rec.Body)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v\n%s", err, rec.Body)
+	}
+	if want := []string{"refundable", "recorder"}; !slices.Equal(got.Data.Modules, want) {
+		t.Errorf("modules = %v, want %v", got.Data.Modules, want)
+	}
+
+	// A store with no modules serves [] rather than null, so a client can
+	// iterate it without a guard — the same promise languages makes.
+	bare := do(t, newTestApp(t), "GET", "/api/admin/settings", withAdmin)
+	raw := decodeSettings(t, bare.Body.Bytes())
+	if string(raw["modules"]) != "[]" {
+		t.Errorf("a module-less store serves modules = %s, want []", raw["modules"])
+	}
+}
+
+// The trap this field exists for: with no vendor installed the built-in logger
+// writes a line to the process log and returns success, so the send succeeds
+// and nobody receives anything. `delivers` is the only thing that tells them
+// apart, and a channel with nothing behind it still has to appear.
+func TestSettingsReportsAChannelThatDeliversNothing(t *testing.T) {
+	byChannel := func(t *testing.T, app *App) map[string]NotifierChannelInfo {
+		t.Helper()
+		rec := do(t, app, "GET", "/api/admin/settings", withAdmin)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /api/admin/settings = %d: %s", rec.Code, rec.Body)
+		}
+		var got struct {
+			Data StoreSettings `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode: %v\n%s", err, rec.Body)
+		}
+		out := map[string]NotifierChannelInfo{}
+		for _, c := range got.Data.NotifierChannels {
+			out[c.Channel] = c
+		}
+		if len(out) != len(got.Data.NotifierChannels) {
+			t.Fatalf("a channel is reported twice: %+v", got.Data.NotifierChannels)
+		}
+		return out
+	}
+
+	bare := byChannel(t, newTestApp(t))
+	for _, channel := range []string{ChannelEmail, ChannelSMS} {
+		c, ok := bare[channel]
+		if !ok {
+			t.Fatalf("%s is missing from notifier_channels: a channel nobody configured is still an answer", channel)
+		}
+		if c.Delivers {
+			t.Errorf("%s claims to deliver in a store with only the built-in logger", channel)
+		}
+		// The logger is reported rather than hidden: an operator asking why
+		// nothing arrived needs to see what is there, not an empty list.
+		if len(c.Backends) != 1 || c.Backends[0].Name != "log" || c.Backends[0].Delivers {
+			t.Errorf("%s backends = %+v, want one non-delivering \"log\"", channel, c.Backends)
+		}
+	}
+
+	// One channel served, the other not. The store that is easiest to get
+	// wrong is the one where email works and SMS silently does not.
+	wired := byChannel(t, newTestApp(t, &notifyModule{rec: &recordingNotifier{}}))
+	email := wired[ChannelEmail]
+	if !email.Delivers {
+		t.Errorf("email does not deliver in a store with a notifier module: %+v", email)
+	}
+	if len(email.Backends) != 2 {
+		t.Fatalf("email backends = %+v, want the logger and the module", email.Backends)
+	}
+	if got := email.Backends[1]; got.Module != "recorder" || !got.Delivers {
+		t.Errorf("the module's backend = %+v, want module recorder and delivers true", got)
+	}
+	if wired[ChannelSMS].Delivers {
+		t.Error("sms claims to deliver in a store that registered only an email notifier")
+	}
+}
+
+// The doctor asks the same question the settings response does, and says which
+// modules rather than how many: "modules: 4" answers a question nobody has.
+func TestDoctorWarnsAboutASilentChannel(t *testing.T) {
+	find := func(t *testing.T, app *App) Diagnostic {
+		t.Helper()
+		d := app.checkProviders()
+		if d.Name != "providers" {
+			t.Fatalf("checkProviders returned %q", d.Name)
+		}
+		return d
+	}
+
+	d := find(t, newTestApp(t))
+	if d.Status != StatusWarn {
+		t.Errorf("a store with no delivery backend at all = %s, want warn: %s", d.Status, d.Detail)
+	}
+	if !strings.Contains(d.Detail, "email") || !strings.Contains(d.Detail, "sms") {
+		t.Errorf("the warning names neither channel: %q", d.Detail)
+	}
+
+	named := find(t, newTestApp(t, refundableModule{}))
+	if !strings.Contains(named.Detail, "modules: refundable") {
+		t.Errorf("detail = %q, want the module named rather than counted", named.Detail)
 	}
 }

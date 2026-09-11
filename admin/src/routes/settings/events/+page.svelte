@@ -24,6 +24,7 @@
      */
     import { base } from "$app/paths";
     import { can, events } from "$lib/api.js";
+    import { rowKey } from "$lib/rowkey.js";
     import { listState } from "$lib/liststate.svelte.js";
     import { eventStateClass, formatDate, relativeTime } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
@@ -35,6 +36,9 @@
     import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
+    /* The starting page size, not the only one: `limit` is a listState key, so
+       an operator can change it and the choice rides in the URL with the rest of
+       the screen's state. */
     const PER_PAGE = 25;
 
     /* Display only, and a copy of the engine's outboxMaxAttempts. The API
@@ -47,7 +51,9 @@
        "any" rather than "" is the all-states value because a parameter equal to
        its default is dropped from the address, and the default here is a view
        rather than "unfiltered". */
-    const list = listState({ state: "dead", name: "", page: 1 });
+    const list = listState({ state: "dead", name: "", page: 1, limit: PER_PAGE });
+    const perPage = $derived(list.params.limit);
+
 
     const state = $derived(list.params.state);
     const name = $derived(list.params.name);
@@ -87,7 +93,7 @@
                 state: state === "any" ? "" : state,
                 name,
                 page: list.page,
-                limit: PER_PAGE,
+                limit: perPage,
             });
             rows = result.data ?? [];
             meta = result.meta;
@@ -324,7 +330,12 @@
                     </thead>
                     <tbody>
                         {#each rows as row (row.id)}
-                            <tr class="handle" onclick={() => open(row)}>
+                            <tr
+                                class="handle"
+                                tabindex="0"
+                                onclick={() => open(row)}
+                                onkeydown={(e) => rowKey(e, () => open(row))}
+                            >
                                 <td class="col-field-name-id" data-name="Event">
                                     <div class="row-name">
                                         <span class="txt-code txt-bold txt-ellipsis">
@@ -393,7 +404,14 @@
             </div>
 
             <footer class="page-footer">
-                <Pager {meta} {loading} noun="event" onpage={(n) => list.setPage(n)} />
+                <Pager
+                    {meta}
+                    {loading}
+                    noun="event"
+                    {perPage}
+                    onpage={(n) => list.setPage(n)}
+                    onperpage={(n) => list.set({ limit: n })}
+                />
                 <div class="flex-fill"></div>
                 <ThemeToggle />
             </footer>

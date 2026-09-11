@@ -46,7 +46,54 @@
         }
         return `${seconds} ${pluralize(seconds, "second")}`;
     }
+
+    /* The default is marked in the list rather than given a box of its own: it
+       is one of these tags, not a fourth setting beside them. */
+    const languageList = $derived(
+        settings.languages
+            .map((lang) => (lang === settings.defaultLanguage ? `${lang} (default)` : lang))
+            .join(", "),
+    );
+
+    /*
+     * The one line on this screen that can be bad news.
+     *
+     * With no notifier module installed the engine's built-in logger is
+     * registered for every channel: it writes "notification (no delivery
+     * backend installed)" to the process log and returns success. So the send
+     * succeeds, the outbox marks the event delivered, nothing anywhere errors —
+     * and the customer's order confirmation reached nobody. A store can run
+     * that way for months, which is why this is drawn in red rather than left
+     * as another grey chip.
+     *
+     * Read off `settings.all` rather than through a named getter: the store
+     * exposes those for the fields several screens share, and this one has a
+     * single reader.
+     */
+    const channels = $derived(
+        Array.isArray(store?.notifier_channels) ? store.notifier_channels : [],
+    );
+    const silent = $derived(channels.filter((c) => !c.delivers));
+
+    /* Key presence, not length. An empty list is a real answer — a store built
+       from the engine and nothing else — and it has to be told apart from a
+       binary that predates the field, which answers the same way by saying
+       nothing. */
+    const modulesKnown = $derived(Array.isArray(store?.modules));
+
+    const CHANNEL_LABEL = { email: "Email", sms: "SMS" };
+    const channelName = (code) => CHANNEL_LABEL[code] ?? code;
+
+    /** What is actually behind a channel, for the chip's tooltip. */
+    function backendsOf(channel) {
+        const names = (channel.backends ?? []).map((b) =>
+            b.delivers ? `${b.name} (${b.module})` : `${b.name} — writes to the log only`,
+        );
+        return names.length ? names.join(", ") : "nothing registered";
+    }
 </script>
+
+<svelte:head><title>Store settings · GoCommerce</title></svelte:head>
 
 <div class="page page-settings">
     <SettingsSidebar />
@@ -86,13 +133,17 @@
                     </div>
                     <div class="col-md-4">
                         <div class="field readonly">
-                            <label for="language">Default language</label>
-                            <input
-                                id="language"
-                                type="text"
-                                readonly
-                                value={store?.default_language ?? ""}
-                            />
+                            <label for="language">Languages</label>
+                            <!-- The list, not the default alone. A store that
+                                 serves three languages negotiates one per
+                                 request, stamps it on every order and hands it
+                                 to every notifier — and until this said so, the
+                                 set the store was configured for appeared
+                                 nowhere in the panel at all. The default is
+                                 marked rather than shown on its own line,
+                                 because it is one of these and not a fourth
+                                 thing. -->
+                            <input id="language" type="text" readonly value={languageList} />
                         </div>
                     </div>
                     <div class="col-md-4">
@@ -199,9 +250,140 @@
                                 </span>
                             {/each}
                         </div>
-                        <div class="field-help">
+                        <div class="field-help m-b-base">
                             The same arrangement on the shipping side: manual fulfilment is built
                             in, and a carrier module joins this list by registering a provider.
+                        </div>
+
+                        <!-- Only when the store reported its channels. The
+                             engine always reports both, so an empty list is a
+                             binary that predates the field rather than a store
+                             with no channels — and a section that renders
+                             nothing but its own heading reads as a bug. -->
+                        {#if channels.length}
+                            <h6 class="section-title">
+                                <i class="ri-notification-3-line" aria-hidden="true"></i>
+                                Notifications
+                            </h6>
+                            <!-- The warning comes before the chips, because it is
+                                 the thing to read: a channel with no delivery
+                                 backend accepts every send and reports success. -->
+                            {#if silent.length}
+                                <div class="alert danger m-b-10">
+                                    <p>
+                                        <i class="ri-error-warning-line" aria-hidden="true"></i>
+                                        <strong>
+                                            No delivery backend for {silent
+                                                .map((c) => channelName(c.channel))
+                                                .join(" or ")}.
+                                        </strong>
+                                        Those messages are written to the process log and
+                                        reported as sent — order confirmations, shipping
+                                        notices and password-reset links included. Nothing
+                                        errors, nothing retries, and nobody receives anything.
+                                    </p>
+                                    <p>
+                                        Wiring a vendor module into <code>main()</code> — one
+                                        import and one argument — puts a real backend on the
+                                        channel. <code>gocommerce doctor</code> reports the
+                                        same thing from the command line.
+                                    </p>
+                                </div>
+                            {/if}
+                            <div class="flex flex-wrap gap-5 m-b-10">
+                                {#each channels as channel (channel.channel)}
+                                    <span
+                                        class="label {channel.delivers ? 'success' : 'danger'}"
+                                        title={backendsOf(channel)}
+                                    >
+                                        {channelName(channel.channel)}
+                                        <span class="label">
+                                            {channel.delivers ? "delivering" : "log only"}
+                                        </span>
+                                    </span>
+                                {/each}
+                            </div>
+                            <div class="field-help">
+                                The engine decides when to notify and what the message is about;
+                                delivering it is a vendor's job, and a vendor is a module. A channel
+                                nobody sends on is a fine configuration — it should just be one
+                                somebody chose.
+                            </div>
+                        {/if}
+                    </div>
+
+                    {#if modulesKnown}
+                        <div class="col-12">
+                            <h6 class="section-title">
+                                <i class="ri-puzzle-line" aria-hidden="true"></i>
+                                Modules
+                            </h6>
+                            <!-- What this binary was actually built with. Until
+                                 the engine served this list the panel learned it
+                                 by probing one admin route per module on every
+                                 sign-in, and no screen said it out loud. -->
+                            {#if settings.modules.length}
+                                <div class="flex flex-wrap gap-5 m-b-10">
+                                    {#each settings.modules as name (name)}
+                                        <span class="label">{name}</span>
+                                    {/each}
+                                </div>
+                            {:else}
+                                <div class="field-help m-b-10">
+                                    This store is the engine and nothing else. Every screen you
+                                    can reach is core.
+                                </div>
+                            {/if}
+                            <div class="field-help">
+                                A store is its own Go program that composes the engine with the
+                                modules it needs, in the order shown — which is the order their
+                                migrations ran in. Changing the list is a redeploy, not a setting.
+                            </div>
+                        </div>
+                    {/if}
+
+                    {#if settings.languages.length > 1}
+                        <div class="col-12">
+                            <h6 class="section-title">
+                                <i class="ri-translate-2" aria-hidden="true"></i>
+                                Read the catalog as a shopper
+                            </h6>
+                            <div class="field-help m-b-sm">
+                                The engine negotiates a language per request, renders the public
+                                catalog through the translator the store registered, stamps the
+                                language on every order and hands it to every notifier. These open
+                                the public read for one language, which is the only way to see what
+                                a shopper in it is actually served.
+                            </div>
+                            <div class="flex flex-wrap gap-5">
+                                {#each settings.languages as lang (lang)}
+                                    <a
+                                        class="btn sm secondary"
+                                        href="/api/products?lang={lang}"
+                                        target="_blank"
+                                        rel="noreferrer"
+                                    >
+                                        <span class="txt">{lang}</span>
+                                    </a>
+                                {/each}
+                            </div>
+                        </div>
+                    {/if}
+
+                    <div class="col-12">
+                        <h6 class="section-title">
+                            <i class="ri-image-line" aria-hidden="true"></i>
+                            Media
+                        </h6>
+                        <div class="field-help">
+                            {#if settings.mediaUploadsEnabled}
+                                This store has somewhere to put a file, so the library takes
+                                uploads as well as URLs.
+                            {:else}
+                                No media backend is configured, so the library records files by URL
+                                and offers no upload control. That is a supported way to run —
+                                point the store at a directory or a media store to change it.
+                            {/if}
                         </div>
                     </div>
 

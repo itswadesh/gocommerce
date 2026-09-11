@@ -27,8 +27,20 @@
         carrierChoices = [],
         /** The carriers this tracking number could belong to, best first. */
         carrierOptions = [],
+        /**
+         * Who can book the parcel, from `settings.fulfillment_providers` — the
+         * one list the engine composes and every client reads.
+         *
+         * The panel used to post the literal "manual" on every shipment, so a
+         * store that installed a carrier module could not book through it from
+         * here at all and the module was dead weight. The control appears only
+         * when there is a choice to make: on a stock build this list is one
+         * entry long, and a select with one option is furniture.
+         */
+        providerChoices = [],
         tracking = $bindable(""),
         carrier = $bindable(""),
+        provider = $bindable(""),
         onlookup,
         onpick,
         onclose,
@@ -72,11 +84,17 @@
        than one line, or a single line of which part has already gone. */
     const choosable = $derived(lines.length > 1 || lines.some((l) => l.left < l.ordered));
 
+    /* Whether the shipment is being recorded by hand or booked by a module,
+       which is what the help text under the form is actually about. `manual` is
+       the engine's own provider; anything else came from a module. */
+    const manual = $derived(!provider || provider === "manual");
+
     function submit(event) {
         event?.preventDefault();
         onship?.({
             tracking: tracking.trim(),
             carrier,
+            provider,
             /* Only when something is being held back. An untouched dialog sends
                the body this panel has always sent, which is the one the engine
                resolves under the row lock — so a colleague shipping a unit while
@@ -98,9 +116,20 @@
     onclose={() => onclose?.()}
 >
     <form id="ship-form" onsubmit={submit}>
+        {#if providerChoices.length > 1}
+            <div class="field">
+                <label for="ship-provider">Booked through</label>
+                <Select id="ship-provider" bind:value={provider} options={providerChoices} />
+            </div>
+        {/if}
         <div class="field-help m-b-sm">
-            The manual provider records what you type. A carrier module would book the shipment and
-            fill this in itself.
+            {#if manual}
+                The manual provider records what you type — the parcel is booked wherever you
+                book parcels, and this is the store's note of it.
+            {:else}
+                This provider books the shipment itself and fills in the tracking number, the
+                carrier and any label it issues. What you type below is only used if it cannot.
+            {/if}
         </div>
 
         {#if choosable}

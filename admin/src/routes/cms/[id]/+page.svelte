@@ -23,6 +23,7 @@
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     const pageId = $derived(route.params.id);
+    const readable = $derived(can("catalog.read"));
     const writable = $derived(can("catalog.write"));
     const missing = $derived(modulesKnown() && !hasModule("cms"));
 
@@ -70,6 +71,12 @@
 
     async function load() {
         loading = true;
+        // The screen renders NoAccess without this right, so firing the
+        // request first would bury that explanation under a 403 toast.
+        if (!readable) {
+            loading = false;
+            return;
+        }
         try {
             record = await api.get(`/api/admin/x/cms/pages/${pageId}`);
             form = shapeOf(record);

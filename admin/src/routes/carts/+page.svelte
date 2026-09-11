@@ -15,15 +15,20 @@
      * a noisy one.
      */
     import { base } from "$app/paths";
-    import { api, query } from "$lib/api.js";
+    import { api, can, query } from "$lib/api.js";
+    import { rowKey } from "$lib/rowkey.js";
     import { listState } from "$lib/liststate.svelte.js";
     import { formatMoney, formatDate, relativeTime, pluralize } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import Drawer from "$lib/components/Drawer.svelte";
+    import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
+    /* The starting page size, not the only one: `limit` is a listState key, so
+       an operator can change it and the choice rides in the URL with the rest of
+       the screen's state. */
     const PER_PAGE = 25;
 
     /* The filters and the page live in the URL, and the window replaces the
@@ -31,7 +36,19 @@
        same list. "any" rather than "" is the all-states value because a
        parameter equal to its default is dropped from the address, and the
        default here is a view rather than "unfiltered". */
-    const list = listState({ state: "abandoned", has_email: "", has_lines: true, page: 1 });
+    const list = listState({
+        state: "abandoned",
+        has_email: "",
+        has_lines: true,
+        page: 1,
+        limit: PER_PAGE,
+    });
+    const perPage = $derived(list.params.limit);
+
+    /* A basket is an order that has not happened yet, so it reads under the
+       same right — which is what the nav gates this screen on. */
+    const readable = $derived(can("orders.read"));
+
 
     const state = $derived(list.params.state);
     const hasEmail = $derived(list.params.has_email);
@@ -65,6 +82,12 @@
     });
 
     async function load() {
+        // The screen is refused above; asking anyway would put a 403 toast
+        // over the explanation.
+        if (!readable) {
+            loading = false;
+            return;
+        }
         loading = true;
         try {
             const result = await api.get(
@@ -80,7 +103,7 @@
                         has_email: hasEmail,
                         has_lines: hasLines ? "true" : "",
                         page: list.page,
-                        limit: PER_PAGE,
+                        limit: perPage,
                     }),
             );
             carts = result.data ?? [];
@@ -116,6 +139,10 @@
 </script>
 
 <svelte:head><title>Carts · GoCommerce</title></svelte:head>
+
+{#if !readable}
+    <NoAccess right="orders.read" what="baskets" />
+{:else}
 
 <div class="page page-carts">
     <div class="page-content full-height">
@@ -200,7 +227,12 @@
                 </thead>
                 <tbody>
                     {#each carts as row (row.id)}
-                        <tr class="handle" onclick={() => open(row)}>
+                        <tr
+                            class="handle"
+                            tabindex="0"
+                            onclick={() => open(row)}
+                            onkeydown={(e) => rowKey(e, () => open(row))}
+                        >
                             <td class="col-field-name-id" data-name="Basket">
                                 <div class="row-name">
                                     {#if row.email}
@@ -268,7 +300,14 @@
         </div>
 
         <footer class="page-footer">
-            <Pager {meta} {loading} noun="basket" onpage={(n) => list.setPage(n)} />
+            <Pager
+                {meta}
+                {loading}
+                noun="basket"
+                {perPage}
+                onpage={(n) => list.setPage(n)}
+                onperpage={(n) => list.set({ limit: n })}
+            />
             <div class="flex-fill"></div>
             <ThemeToggle />
         </footer>
@@ -424,3 +463,4 @@
         </div>
     {/if}
 </Drawer>
+{/if}

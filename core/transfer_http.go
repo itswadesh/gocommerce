@@ -15,6 +15,13 @@ func (a *App) mountTransferRoutes() {
 	a.HandleAdminFunc("POST /api/admin/import/products", a.handleImportProducts, RightDataImport)
 	a.HandleAdminFunc("GET /api/admin/export/admin-orders", a.handleExportOrders, RightDataExport)
 	a.HandleAdminFunc("POST /api/admin/import/orders", a.handleImportOrders, RightDataImport)
+	// data.export and not customers.read, which is the same judgement the other
+	// two exports already carry: reading a listing on a screen and walking out
+	// of the building with the whole of it as a file are different acts, and
+	// data.export is the right that names the second one. There is no matching
+	// import — a customer is a reading of the orders and has no table to be
+	// written back into.
+	a.HandleAdminFunc("GET /api/admin/export/admin-customers", a.handleExportCustomers, RightDataExport)
 }
 
 func (a *App) handleExportProducts(w http.ResponseWriter, r *http.Request) {
@@ -54,6 +61,24 @@ func (a *App) handleExportOrders(w http.ResponseWriter, r *http.Request) {
 		fmt.Sprintf(`attachment; filename="orders-%s.csv"`, time.Now().UTC().Format("2006-01-02")))
 	if err := a.transfer.ExportOrders(r.Context(), w, query); err != nil {
 		a.log.Error("order export failed midway", "error", err)
+	}
+}
+
+func (a *App) handleExportCustomers(w http.ResponseWriter, r *http.Request) {
+	// Both parsed before a header is written, for handleExportProducts' reason:
+	// once the CSV headers are out the status line is spent, so a bad sort has
+	// to become a 400 in the envelope before then.
+	sortBy, err := ParseSort(r, customerSorts)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	query := CustomerQuery{Search: r.URL.Query().Get("q"), Sort: sortBy}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition",
+		fmt.Sprintf(`attachment; filename="customers-%s.csv"`, time.Now().UTC().Format("2006-01-02")))
+	if err := a.transfer.ExportCustomers(r.Context(), w, query); err != nil {
+		a.log.Error("customer export failed midway", "error", err)
 	}
 }
 

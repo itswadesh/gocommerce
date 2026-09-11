@@ -17,10 +17,17 @@
      * new", which strips every variant of that axis. Renaming "Size" without
      * the id would delete every size.
      *
+     * A value carries an id for the same reason, and it is carried the same
+     * way. Sending "Crimson" where the axis said "Red" used to be a delete plus
+     * an add — every Red variant's price, SKU, image and stock went with it —
+     * and sending `{id, value}` says "this is the same value, renamed". A value
+     * with no id is a new one, which is what a freshly typed box is.
+     *
      * And a variant's `options` is a list of values, not a map. The engine
      * refuses to let one value appear on two axes precisely so that a value can
      * be resolved back to its axis, which is what `valueOn` relies on.
      */
+    import { tick } from "svelte";
     import { api, request } from "$lib/api.js";
     import { toast } from "$lib/toast.svelte.js";
     import {
@@ -32,14 +39,42 @@
         currencySymbol,
     } from "$lib/format.js";
     import { settings } from "$lib/settings.svelte.js";
+    import { moveWithin, resequence } from "$lib/variantform.js";
     import Select from "$lib/components/Select.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
+    import VariantDetail from "$lib/components/VariantDetail.svelte";
 
-    let { product = $bindable(), media = [], onchange } = $props();
+    let {
+        product = $bindable(),
+        media = [],
+        onchange,
+        /*
+         * The unapplied option draft, readable from outside.
+         *
+         * It has its own Apply — the matrix writes options through a different
+         * route than the product form does — so it is deliberately NOT part of
+         * what the page's Save button acts on. It is part of what the page must
+         * warn about before throwing away, which is not the same thing, and
+         * until this was bindable the editor's dirty flag could not see it at
+         * all: a half-built size matrix vanished on a breadcrumb click with
+         * nothing said.
+         */
+        axesDirty = $bindable(false),
+    } = $props();
 
     // The variant whose image is being chosen; null while the picker is shut.
     let imageFor = $state(null);
+
+    /**
+     * The variant whose detail drawer is open, by id.
+     *
+     * By id rather than by object: every write here re-reads the whole product,
+     * so the object the row was holding is replaced underneath a drawer that is
+     * still open. Looking it up again each time means the drawer is always
+     * showing the record as it now stands.
+     */
+    let detailId = $state(null);
 
     /**
      * A variant nominates one of the *product's* images rather than owning a
@@ -97,6 +132,7 @@
 
     const axes = $derived(product?.options ?? []);
     const variants = $derived(product?.variants ?? []);
+    const detailVariant = $derived(variants.find((v) => v.id === detailId) ?? null);
     /*
      * A variant's own price carries the currency it was written in, and that is
      * the only authority for editing that row. The store's settlement currency
@@ -114,9 +150,8 @@
 
     // --------------------------------------------------------------- options
 
-    /** @type {{id: number|null, name: string, values: string[]}[]} */
+    /** @type {{id: number|null, name: string, values: {id: number|null, value: string}[]}[]} */
     let draftAxes = $state([]);
-    let axesDirty = $state(false);
     let savingAxes = $state(false);
     let axesError = $state("");
     /**
@@ -142,9 +177,11 @@
         draftAxes = source.map((axis) => ({
             id: axis.id,
             name: axis.name,
-            // Shopify's trailing blank: the row that becomes real when typed
-            // into, so adding a value is never a separate button press.
-            values: [...axis.values.map((v) => v.value), ""],
+            // Each value keeps the id it was read with, so retyping the box is
+            // a rename rather than a replacement. Shopify's trailing blank
+            // carries no id, because it is the row that becomes a *new* value
+            // when typed into — adding one is never a separate button press.
+            values: [...axis.values.map((v) => ({ id: v.id, value: v.value })), { id: null, value: "" }],
         }));
     });
 
@@ -161,7 +198,7 @@
 
     function addAxis() {
         axesDirty = true;
-        draftAxes = [...draftAxes, { id: null, name: "", values: [""] }];
+        draftAxes = [...draftAxes, { id: null, name: "", values: [{ id: null, value: "" }] }];
         // A new axis has nothing to show collapsed, so it opens itself.
         expandedAxis = draftAxes.length - 1;
     }
@@ -213,11 +250,101 @@
         axisOver = -1;
     }
 
+    /*
+     * Value order is the axis's own order, and it reaches the engine the same
+     * way the axis order does: insertOptionMatrix numbers each value from its
+     * index in the request, so moving a row here really does renumber the
+     * value rather than relabel it.
+     *
+     * Which is the distinction that made this necessary. Retyping two boxes to
+     * swap "S" and "M" keeps both ids where they are, so it renames S to M and
+     * M to S — every S variant becomes an M. There was no other control, so the
+     * only way to move a value was to remove it and add it back, which deletes
+     * its variants.
+     *
+     * One axis is open at a time, so a single pair of indices is the whole
+     * state: a drag cannot span two editors that are not both on screen.
+     */
+    let valueDrag = $state(-1);
+    let valueOver = $state(-1);
+
+    /**
+     * moveValue reorders the real values and never touches the trailing blank.
+     *
+     * The last row is the one that becomes a *new* value when it is typed into,
+     * so it has to stay last: a value dropped below it would be added to the
+     * axis after a value that does not exist yet, and typing into a box that is
+     * no longer at the end appends a second blank.
+     */
+    function moveValue(axisIndex, from, to) {
+        const axis = draftAxes[axisIndex];
+        if (!axis) return false;
+        const blank = axis.values.length - 1;
+        if (from < 0 || from >= blank || to < 0 || to >= blank || from === to) return false;
+        axis.values = moveWithin(axis.values, from, to);
+        axesDirty = true;
+        return true;
+    }
+
+    function startValueDrag(event, index) {
+        // The axis row is a drag source of its own and this is inside it. It
+        // refuses to start while an axis is expanded — which it always is here
+        // — but saying so explicitly keeps the two gestures independent.
+        event.stopPropagation();
+        valueDrag = index;
+        // Firefox will not begin a drag unless the payload is set.
+        event.dataTransfer?.setData("text/plain", String(index));
+        if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+    }
+
+    function dragOverValue(event, index) {
+        if (valueDrag < 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        valueOver = index;
+    }
+
+    function dropValue(event, axisIndex, index) {
+        if (valueDrag < 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const from = valueDrag;
+        valueDrag = -1;
+        valueOver = -1;
+        moveValue(axisIndex, from, index);
+    }
+
+    function endValueDrag() {
+        valueDrag = -1;
+        valueOver = -1;
+    }
+
+    /**
+     * The arrow keys on the handle, for the same reason CollectionProducts has
+     * them: dragging is the only pointer gesture for this and it has no
+     * keyboard equivalent unless one is written.
+     *
+     * Focus then follows the VALUE to its new row, and that is not a nicety.
+     * These rows are keyed by index, so the button the operator is holding
+     * stays exactly where it is while the values slide past it — press Up
+     * twice and the second press moves whatever has just arrived underneath,
+     * putting the list straight back. Moving the focus makes the second press
+     * mean what the first one did.
+     */
+    async function onValueHandleKey(event, axisIndex, index) {
+        if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+        event.preventDefault();
+        const to = event.key === "ArrowUp" ? index - 1 : index + 1;
+        if (!moveValue(axisIndex, index, to)) return;
+        await tick();
+        document.getElementById(`value-handle-${axisIndex}-${to}`)?.focus();
+    }
+
     function onValueInput(axisIndex, valueIndex) {
         axesDirty = true;
         const axis = draftAxes[axisIndex];
-        if (valueIndex === axis.values.length - 1 && axis.values[valueIndex].trim() !== "") {
-            axis.values.push("");
+        if (valueIndex === axis.values.length - 1 && axis.values[valueIndex].value.trim() !== "") {
+            axis.values.push({ id: null, value: "" });
         }
     }
 
@@ -225,8 +352,8 @@
         axesDirty = true;
         const axis = draftAxes[axisIndex];
         axis.values.splice(valueIndex, 1);
-        if (!axis.values.length || axis.values[axis.values.length - 1].trim() !== "") {
-            axis.values.push("");
+        if (!axis.values.length || axis.values[axis.values.length - 1].value.trim() !== "") {
+            axis.values.push({ id: null, value: "" });
         }
     }
 
@@ -235,7 +362,13 @@
             .map((axis) => ({
                 id: axis.id ?? undefined,
                 name: axis.name.trim(),
-                values: axis.values.map((v) => v.trim()).filter(Boolean),
+                // `{id, value}` rather than a bare string: the id is what makes
+                // a retyped box a rename instead of a deletion. The engine
+                // still takes bare strings, and a value with no id — the blank
+                // row, or a value on a brand new axis — is one.
+                values: axis.values
+                    .filter((v) => v.value.trim())
+                    .map((v) => ({ id: v.id ?? undefined, value: v.value.trim() })),
             }))
             .filter((axis) => axis.name || axis.values.length);
     }
@@ -244,6 +377,16 @@
     function valueOn(variant, axis) {
         const offered = new Set(axis.values.map((v) => v.value));
         return (variant.options ?? []).find((value) => offered.has(value)) ?? "";
+    }
+
+    /**
+     * The same answer with the value's id attached, which is what a rename has
+     * to be matched by. A variant's `options` is a list of value *texts*, so
+     * the id comes from the axis row the text belongs to.
+     */
+    function valueHeldOn(variant, axis) {
+        const held = new Set(variant.options ?? []);
+        return axis.values.find((v) => held.has(v.value)) ?? null;
     }
 
     /**
@@ -257,29 +400,50 @@
      * deleted option into a silent loss of every variant but one.
      */
     function doomed() {
+        // Per surviving axis, the draft's values with their ids — the same two
+        // ways the engine resolves one: by id first, which is what makes a
+        // rename a rename, and by text for a value the draft has just typed
+        // fresh under a name that is already there.
         const kept = new Map();
         for (const axis of draftAxes) {
             if (axis.id == null) continue;
-            kept.set(
-                axis.id,
-                new Set(axis.values.map((v) => v.trim().toLowerCase()).filter(Boolean)),
-            );
+            // Folded first, first spelling winning, because normalizeOptionValues
+            // in the engine folds before it numbers — and what is compared below
+            // is the *position* a value ends up at. A draft holding "Red" twice
+            // is one value there and would be two here.
+            const seen = new Set();
+            const values = [];
+            for (const v of axis.values) {
+                const text = v.value.trim().toLowerCase();
+                if (!text || seen.has(text)) continue;
+                seen.add(text);
+                values.push({ id: v.id, text });
+            }
+            kept.set(axis.id, values);
         }
+
+        /** Where a value the variant holds lands in the draft, or -1. */
+        const landing = (offered, held) => {
+            const byID = offered.findIndex((v) => v.id != null && v.id === held.id);
+            if (byID > -1) return byID;
+            return offered.findIndex((v) => v.text === held.value.toLowerCase());
+        };
+
         // Same order as the engine's — the catalog's own — so the survivor the
         // panel names is the survivor the engine keeps.
         const claimed = new Set();
         return variants.filter((variant) => {
-            const orphaned = axes.some((axis) => {
+            const parts = [];
+            for (const axis of axes) {
                 const offered = kept.get(axis.id);
-                if (!offered) return false;
-                const held = valueOn(variant, axis);
-                return !!held && !offered.has(held.toLowerCase());
-            });
-            if (orphaned) return true;
-            const key = axes
-                .filter((axis) => kept.has(axis.id))
-                .map((axis) => `${axis.id}=${valueOn(variant, axis).toLowerCase()}`)
-                .join(",");
+                if (!offered) continue;
+                const held = valueHeldOn(variant, axis);
+                if (!held) continue;
+                const at = landing(offered, held);
+                if (at < 0) return true;
+                parts.push(`${axis.id}=${at}`);
+            }
+            const key = parts.join(",");
             if (claimed.has(key)) return true;
             claimed.add(key);
             return false;
@@ -304,7 +468,7 @@
         // round trip and keeps the sentence next to the field that caused it.
         const owner = new Map();
         for (const axis of cleaned) {
-            for (const value of axis.values) {
+            for (const { value } of axis.values) {
                 const key = value.toLowerCase();
                 const previous = owner.get(key);
                 if (previous && previous !== axis.name) {
@@ -373,6 +537,12 @@
         if (changed.axes_renamed?.length) lines.push(`Renamed ${list(changed.axes_renamed)}`);
         if (changed.axes_removed?.length) lines.push(`Removed ${list(changed.axes_removed)}`);
         if (changed.values_added?.length) lines.push(`New values: ${list(changed.values_added)}`);
+        // Reported apart from the other two, as the engine reports it: a
+        // renamed value keeps every variant that held it, and "Dropped Red /
+        // New values: Crimson" reads as the loss it is not.
+        if (changed.values_renamed?.length) {
+            lines.push(`Renamed values: ${list(changed.values_renamed)}`);
+        }
         if (changed.values_removed?.length) {
             lines.push(`Dropped values: ${list(changed.values_removed)}`);
         }
@@ -462,7 +632,10 @@
                     options: axes.map((axis) => ({
                         id: axis.id,
                         name: axis.name,
-                        values: axis.values.map((v) => v.value),
+                        // Ids on both, so sending the matrix back to itself is
+                        // genuinely a no-op rather than a rebuild that happens
+                        // to land on the same names.
+                        values: axis.values.map((v) => ({ id: v.id, value: v.value })),
                     })),
                     generate_variants: true,
                 },
@@ -637,6 +810,83 @@
         ).then(() => (selected = []));
     }
 
+    /**
+     * One variant on or off sale.
+     *
+     * The bulk bar could always do this, and only ever for a product with
+     * options — its checkboxes live in the variant table, and a product with no
+     * options has no table. So the one product shape where this is the *only*
+     * thing you might want to turn off was the one shape that could not: the
+     * alternative was archiving the whole product, which is a different
+     * statement to make about it.
+     *
+     * The switch shows the record rather than a draft of it, and the refresh
+     * that follows is what puts it back if the engine refuses — a control that
+     * stays where you put it after the store said no is a control that lies.
+     */
+    async function setVariantActive(variant, active) {
+        working = true;
+        try {
+            await api.patch(`/api/admin/variants/${variant.id}`, { active });
+            toast.success(active ? `${variant.sku} is on sale` : `${variant.sku} is off sale`);
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            await refresh().catch((err) => toast.error(err));
+            working = false;
+        }
+    }
+
+    // ---------------------------------------------------------- merchandising
+
+    /**
+     * Move one variant a place up or down the storefront's order.
+     *
+     * The arrows sit on a grouped table, so what the operator sees moving is
+     * the row's place *within its group* — and what is written is `position`,
+     * which orders the product's variants as a whole. Swapping the two rows'
+     * places in the whole order is what makes those two descriptions the same
+     * thing: every variant between them keeps its own order, and the group the
+     * operator is looking at reorders exactly as far as they asked.
+     *
+     * The whole list is then renumbered from zero rather than the two positions
+     * swapped, because a catalogue written before position was set per row can
+     * hold several variants at 0 — and swapping two zeroes moves nothing at
+     * all. resequence sends only the rows whose number actually changes, so
+     * once a product has been touched a move is two requests.
+     */
+    async function move(group, index, delta) {
+        const target = index + delta;
+        if (working || target < 0 || target >= group.items.length) return;
+        const order = [...variants];
+        const next = moveWithin(
+            order,
+            order.indexOf(group.items[index]),
+            order.indexOf(group.items[target]),
+        );
+        const writes = resequence(next);
+        if (!writes.length) return;
+
+        working = true;
+        try {
+            // Sequential rather than parallel: these all land on rows of the
+            // same product, and a failure part-way leaves a list that is still
+            // coherent — the refresh below shows exactly how far it got.
+            for (const { variant, position } of writes) {
+                try {
+                    await api.patch(`/api/admin/variants/${variant.id}`, { position });
+                } catch (err) {
+                    toast.error(`${variant.sku}: ${err.message}`);
+                }
+            }
+            await refresh();
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            working = false;
+        }
+    }
+
     // -------------------------------------------------------- add and delete
 
     let addOpen = $state(false);
@@ -736,7 +986,7 @@
 <div class="list option-list m-b-sm">
     {#each draftAxes as axis, axisIndex (axisIndex)}
         {@const open = expandedAxis === axisIndex}
-        {@const chips = axis.values.map((v) => v.trim()).filter(Boolean)}
+        {@const chips = axis.values.map((v) => v.value.trim()).filter(Boolean)}
 
         <div
             class="list-item option-row"
@@ -764,7 +1014,40 @@
                     </div>
 
                     {#each axis.values as _, valueIndex (valueIndex)}
-                        <div class="option-value-row">
+                        {@const last = valueIndex === axis.values.length - 1}
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <div
+                            class="option-value-row"
+                            data-dragging={valueDrag === valueIndex}
+                            data-dropinto={valueOver === valueIndex && valueDrag !== valueIndex}
+                            ondragover={(e) => !last && dragOverValue(e, valueIndex)}
+                            ondrop={(e) => !last && dropValue(e, axisIndex, valueIndex)}
+                        >
+                            <!--
+                                The handle is the drag source rather than the
+                                row, which the axis rows above can afford to be:
+                                a draggable ancestor of a text box takes the
+                                pointer away from selecting the text in it, and
+                                this row is mostly text box.
+                            -->
+                            {#if !last && axis.values.length > 2}
+                                <button
+                                    type="button"
+                                    id="value-handle-{axisIndex}-{valueIndex}"
+                                    class="btn circle sm transparent secondary option-value-handle"
+                                    draggable="true"
+                                    title="Drag to reorder, or use the arrow keys"
+                                    aria-label="Reorder {axis.values[valueIndex].value ||
+                                        `value ${valueIndex + 1}`} — use the arrow keys to move it"
+                                    ondragstart={(e) => startValueDrag(e, valueIndex)}
+                                    ondragend={endValueDrag}
+                                    onkeydown={(e) => onValueHandleKey(e, axisIndex, valueIndex)}
+                                >
+                                    <i class="ri-draggable" aria-hidden="true"></i>
+                                </button>
+                            {:else}
+                                <span class="option-value-spacer" aria-hidden="true"></span>
+                            {/if}
                             <div class="field">
                                 <label for="axis-{axisIndex}-value-{valueIndex}">
                                     Option value {valueIndex + 1}
@@ -780,15 +1063,15 @@
                                     placeholder={valueIndex === axis.values.length - 1
                                         ? "Add another value"
                                         : ""}
-                                    bind:value={axis.values[valueIndex]}
+                                    bind:value={axis.values[valueIndex].value}
                                     oninput={() => onValueInput(axisIndex, valueIndex)}
                                 />
                             </div>
-                            {#if valueIndex < axis.values.length - 1}
+                            {#if !last}
                                 <button
                                     type="button"
                                     class="btn circle sm transparent secondary"
-                                    aria-label="Remove the value {axis.values[valueIndex]}"
+                                    aria-label="Remove the value {axis.values[valueIndex].value}"
                                     title="Remove this value"
                                     onclick={() => removeValue(axisIndex, valueIndex)}
                                 >
@@ -797,6 +1080,15 @@
                             {/if}
                         </div>
                     {/each}
+
+                    {#if axis.values.length > 2}
+                        <div class="field-help">
+                            This order is the order the values are stored in, and a storefront
+                            draws its swatches in it. Move a row rather than retyping two boxes:
+                            retyping swaps the <em>names</em>, which renames every variant that
+                            held them.
+                        </div>
+                    {/if}
 
                     <div class="inline-flex gap-sm m-t-sm">
                         <button
@@ -926,6 +1218,29 @@
         price, stock and weight are the fields above. Add an option to sell it in more than one
         form.
     </div>
+
+    {#if variants[0]}
+        <!-- The one control this shape of product has nowhere else. Everything
+             else about the single variant is in the cards above; `active` was
+             not among them, and the bulk bar that carries it needs a table of
+             checkboxes that only a product with options ever draws. -->
+        <div class="field m-t-sm">
+            <input
+                id="single-variant-active"
+                type="checkbox"
+                class="switch"
+                checked={variants[0].active}
+                disabled={working}
+                onchange={(e) => setVariantActive(variants[0], e.currentTarget.checked)}
+            />
+            <label for="single-variant-active">Available for sale</label>
+        </div>
+        <div class="field-help">
+            Off keeps the product and its stock exactly as they are and stops a storefront selling
+            it — which is what taking one thing off sale means. Archiving the product instead says
+            something larger, and is on the Status card.
+        </div>
+    {/if}
 {:else}
     {#if missingCombinations > 0}
         <!-- Actionable, not just descriptive. The operator can see the empty
@@ -1099,7 +1414,7 @@
                     </tr>
 
                     {#if expanded.includes(group.key)}
-                        {#each group.items as variant (variant.id)}
+                        {#each group.items as variant, index (variant.id)}
                             <tr class="variant-child">
                                 <td class="col-bulk-select min-width">
                                     <div class="field">
@@ -1223,6 +1538,42 @@
                                     </div>
                                 </td>
                                 <td class="col-meta min-width">
+                                    <!-- Merchandising order. Disabled rather
+                                         than hidden at the ends of a group, so
+                                         the column keeps its width and the
+                                         rows stay aligned. -->
+                                    <button
+                                        type="button"
+                                        class="btn circle sm transparent secondary"
+                                        disabled={working || index === 0}
+                                        aria-label="Move {variant.sku} earlier"
+                                        title="Move earlier"
+                                        onclick={() => move(group, index, -1)}
+                                    >
+                                        <i class="ri-arrow-up-s-line" aria-hidden="true"></i>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn circle sm transparent secondary"
+                                        disabled={working || index === group.items.length - 1}
+                                        aria-label="Move {variant.sku} later"
+                                        title="Move later"
+                                        onclick={() => move(group, index, 1)}
+                                    >
+                                        <i class="ri-arrow-down-s-line" aria-hidden="true"></i>
+                                    </button>
+                                    <!-- Everything the table has no column for:
+                                         barcode, compare-at, cost, taxable,
+                                         tracking, customs and the rest. -->
+                                    <button
+                                        type="button"
+                                        class="btn circle sm transparent secondary"
+                                        aria-label="Edit {variant.sku}"
+                                        title="All of this variant's fields"
+                                        onclick={() => (detailId = variant.id)}
+                                    >
+                                        <i class="ri-pencil-line" aria-hidden="true"></i>
+                                    </button>
                                     <button
                                         type="button"
                                         class="btn circle sm transparent secondary"
@@ -1263,7 +1614,9 @@
     </div>
     <div class="field-help">
         Changes apply as you leave a field. Available is on hand minus what open orders have
-        reserved.
+        reserved. The pencil opens everything this table has no column for — barcode, compare-at
+        price, cost, tax, customs and whether the variant is on sale at all — and the arrows set
+        the order a storefront shows them in.
     </div>
 {/if}
 
@@ -1371,6 +1724,20 @@
     {/snippet}
 </Drawer>
 
+<!--
+    Every field a variant has, for the products that have no other way to reach
+    them. The table above is deliberately five columns wide — it is a matrix,
+    and a matrix with sixteen columns is a spreadsheet — so the rest live here,
+    in the single-variant editor's own order and words.
+-->
+<VariantDetail
+    variant={detailVariant}
+    {currency}
+    total={variants.length}
+    onsaved={() => refresh().catch((err) => toast.error(err))}
+    onclose={() => (detailId = null)}
+/>
+
 <Confirm
     bind:open={confirmAxesOpen}
     title="This removes variants"
@@ -1470,3 +1837,38 @@
         {/if}
     {/snippet}
 </Drawer>
+
+<style>
+    /*
+     * The drag states for an option value row.
+     *
+     * `.option-value-row` itself is in gocommerce.css; these two are scoped
+     * here rather than appended to it because several agents are editing that
+     * file at once and two appends silently lose each other. The shapes match
+     * the ones the axis rows and the media grid already use — a 2px inset rule
+     * for the drop target, a faded source — so a drag reads the same wherever
+     * it is started in the panel.
+     */
+    .option-value-row[data-dragging="true"] {
+        opacity: 0.35;
+    }
+    .option-value-row[data-dropinto="true"] {
+        box-shadow: inset 0 2px 0 var(--accentColor);
+    }
+    .option-value-handle {
+        flex: 0 0 auto;
+        cursor: grab;
+    }
+    .option-value-handle:active {
+        cursor: grabbing;
+    }
+    /*
+     * The blank row and a single-value axis have nothing to reorder, and a
+     * handle that does nothing reads as broken. The spacer keeps their boxes on
+     * the same left edge as the rows that do.
+     */
+    .option-value-spacer {
+        flex: 0 0 auto;
+        width: 24px;
+    }
+</style>

@@ -135,7 +135,9 @@ func (m *Module) builtinTools() []Tool {
 							Limit: limitOr(args.Limit, 50),
 						})
 				} else {
-					variants, total, err = m.app.Stock().LowStock(ctx, threshold, limitOr(args.Limit, 50), 0)
+					variants, total, err = m.app.Stock().LowStock(ctx, gocommerce.LowStockQuery{
+						Threshold: threshold, Limit: limitOr(args.Limit, 50),
+					})
 				}
 				if err != nil {
 					return nil, err

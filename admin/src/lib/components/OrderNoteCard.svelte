@@ -27,7 +27,10 @@
 <section class="order-card">
     <div class="order-card-head">
         <h6 class="order-card-title">Note</h6>
-        {#if !editing}
+        <!-- No handler, no button. A note is edited with orders.write, and the
+             screen says so by withholding `onedit` rather than by passing a
+             second prop that could disagree with it. -->
+        {#if !editing && onedit}
             <button type="button" class="btn sm transparent secondary" onclick={onedit}>
                 <span class="txt">Edit</span>
             </button>

@@ -115,10 +115,18 @@ The cost is real and worth knowing: stock movements skip lines whose
 whose variant was deleted restocks nothing, correctly.
 
 **Guest checkout is permanent** (AGENTS.md rule 8). There is no `customer_id`.
-An order is reachable by `orders.access_token`, returned once at checkout.
-`GetForGuest` compares it in constant time and reports a mismatch as
-**not found**, so the endpoint cannot be walked to discover which order numbers
-exist.
+An order is reachable by `orders.access_token`, returned at checkout and by no
+order read, guest or admin. `GetForGuest` compares it in constant time and
+reports a mismatch as **not found**, so the endpoint cannot be walked to discover
+which order numbers exist.
+
+The one way back to it is `POST /api/admin/orders/{id}/access-token`
+(`Orders.RevealAccessToken`), for the customer who has lost their "view your
+order" mail. It **reveals** rather than rotates — re-issuing would break the link
+that customer may still find in their inbox — and because handing out a bearer
+credential is an act rather than a reading it is a POST behind `orders.write`,
+and every call writes an `order.token_reveal` audit row naming the operator in
+the same transaction. The token itself is deliberately not in that row.
 
 **Money is `*_minor` integers plus a currency.** `Money{AmountMinor, Currency}`
 serializes as `{"amount_minor": 2500, "currency": "USD"}` — never a formatted

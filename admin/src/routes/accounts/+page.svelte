@@ -16,6 +16,7 @@
     import { base } from "$app/paths";
     import { goto } from "$app/navigation";
     import { api, can } from "$lib/api.js";
+    import { rowKey } from "$lib/rowkey.js";
     import { listState } from "$lib/liststate.svelte.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { formatDate } from "$lib/format.js";
@@ -27,9 +28,14 @@
     import Pager from "$lib/components/Pager.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
+    /* The starting page size, not the only one: `limit` is a listState key, so
+       an operator can change it and the choice rides in the URL with the rest of
+       the screen's state. */
     const PER_PAGE = 25;
 
-    const list = listState({ q: "", page: 1 });
+    const list = listState({ q: "", page: 1, limit: PER_PAGE });
+    const perPage = $derived(list.params.limit);
+
     const search = $derived(list.params.q);
     let draftSearch = $state(list.params.q);
 
@@ -58,7 +64,7 @@
         loading = true;
         try {
             const result = await api.get(
-                "/api/admin/x/identity/customers" + list.query({ limit: PER_PAGE }),
+                "/api/admin/x/identity/customers" + list.query({ limit: perPage }),
             );
             accounts = result.data ?? [];
             meta = result.meta ?? null;
@@ -173,7 +179,12 @@
                         </thead>
                         <tbody>
                             {#each accounts as row (row.id)}
-                                <tr class="handle" onclick={() => open(row)}>
+                                <tr
+                                    class="handle"
+                                    tabindex="0"
+                                    onclick={() => open(row)}
+                                    onkeydown={(e) => rowKey(e, () => open(row))}
+                                >
                                     <td class="col-field-name-id" data-name="Account">
                                         <div class="row-name">
                                             <span class="txt-bold txt-ellipsis">
@@ -219,7 +230,14 @@
                 </div>
 
                 <footer class="page-footer">
-                    <Pager {meta} {loading} noun="account" onpage={(n) => list.setPage(n)} />
+                    <Pager
+                        {meta}
+                        {loading}
+                        noun="account"
+                        {perPage}
+                        onpage={(n) => list.setPage(n)}
+                        onperpage={(n) => list.set({ limit: n })}
+                    />
                     <div class="flex-fill"></div>
                     <ThemeToggle />
                 </footer>

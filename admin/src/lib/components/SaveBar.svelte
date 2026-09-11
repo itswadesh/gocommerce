@@ -15,6 +15,8 @@
      * appearance entirely; and `hidden` → visible restarts the CSS animation,
      * so the entrance still plays every time.
      */
+    import DirtyGuard from "$lib/components/DirtyGuard.svelte";
+
     let {
         dirty = false,
         saving = false,
@@ -22,7 +24,20 @@
         ondiscard,
         onsave,
         saveLabel = "Save",
+        /*
+         * What counts as unsaved for the purpose of WARNING, when that is wider
+         * than what the Save button acts on.
+         *
+         * The product editor is the case: the variant matrix holds an option
+         * draft that has not been applied yet, which Save cannot write — it has
+         * its own Apply — but which vanishes just as silently if the operator
+         * navigates away. Null means the two are the same thing, which is true
+         * on every other screen.
+         */
+        guarded = null,
     } = $props();
+
+    const unsaved = $derived(guarded ?? dirty);
 
     /**
      * The shortcut label, in the platform's own notation.
@@ -39,11 +54,14 @@
     const saveHint = apple ? "⌘S" : "Ctrl+S";
 
     $effect(() => {
-        if (!dirty) return;
-        // Lives here rather than in each page: a form that shows this bar has
-        // work in it that the browser is one Ctrl+W away from discarding, and
-        // remembering to add the listener is exactly the kind of thing that
-        // gets remembered on four screens out of five.
+        if (!unsaved) return;
+        // Two listeners, one condition. Lives here rather than in each page: a
+        // form that shows this bar has work in it that the browser is one
+        // Ctrl+W away from discarding, and remembering to add the listener is
+        // exactly the kind of thing that gets remembered on four screens out of
+        // five. In-app navigation is the other half and is DirtyGuard's, below
+        // — it is the half that used to discard an edit without saying
+        // anything at all.
         //
         // The message is the browser's own — every engine has ignored a custom
         // one for a decade — so preventDefault is the entire API.
@@ -82,6 +100,9 @@
         };
     });
 </script>
+
+<!-- Renders nothing; `unload` is off because the effect above owns that half. -->
+<DirtyGuard dirty={unsaved} unload={false} />
 
 <div class="save-bar" hidden={!dirty} role="region" aria-label="Unsaved changes">
     <span class="save-bar-message" aria-live="polite">{message}</span>

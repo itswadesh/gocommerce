@@ -22,11 +22,15 @@
     import { page } from "$app/state";
     import { base } from "$app/paths";
     import { goto } from "$app/navigation";
-    import { api, query, request } from "$lib/api.js";
+    import { api, can, query, request } from "$lib/api.js";
     import { toMinor, fromMinor, isValidMoney, stockClass, pluralize } from "$lib/format.js";
+    import { rightLabel } from "$lib/rights.js";
+    import { convertWeight, weightNumber } from "$lib/variantform.js";
+    import { distinct } from "$lib/catalog.js";
     import { toast } from "$lib/toast.svelte.js";
     import { settings } from "$lib/settings.svelte.js";
     import RichText from "$lib/components/RichText.svelte";
+    import NoAccess from "$lib/components/NoAccess.svelte";
     import SaveBar from "$lib/components/SaveBar.svelte";
     import Select from "$lib/components/Select.svelte";
     import { COUNTRIES } from "$lib/countries.js";
@@ -36,6 +40,7 @@
     import Confirm from "$lib/components/Confirm.svelte";
     import MediaZone from "$lib/components/MediaZone.svelte";
     import VariantMatrix from "$lib/components/VariantMatrix.svelte";
+    import RecordHistory from "$lib/components/RecordHistory.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     const SEO_TITLE_LIMIT = 60;
@@ -46,6 +51,10 @@
     let loading = $state(true);
     let saving = $state(false);
     let product = $state(null);
+    /* The variant matrix's unapplied option draft, bound so the save bar's
+       navigation guard can see it — it has its own Apply, so it is not part of
+       what Save writes. */
+    let axesDirty = $state(false);
     let collections = $state([]);
     // The whole tree, flattened depth-first. Unlike the vocabularies below it
     // is a real table with a route of its own, so it is asked for rather than
@@ -57,11 +66,19 @@
     let categoriesTruncated = $state(false);
     let media = $state([]);
     let snapshot = $state(null);
+
+    /* The same two rights the list screen gates on. Without catalog.read this
+       address rendered the whole editor and then 403ed on load; without
+       catalog.write it rendered a save bar and a delete that could only ever
+       be refused. */
+    const readable = $derived(can("catalog.read"));
+    const writable = $derived(can("catalog.write"));
     let form = $state(blank());
     let errors = $state({});
     let deleteOpen = $state(false);
     let duplicating = $state(false);
     let archiving = $state(false);
+    let historyOpen = $state(false);
     // The search listing shows its preview and keeps the three fields behind an
     // Edit button, as Shopify does: most visits to that card are to check how
     // the result reads, not to rewrite it.
@@ -361,6 +378,15 @@
         return `${currency} ${value.toFixed(2)}`;
     }
 
+    /* A variant's own price, for the read-only table catalog.read gets in place
+       of the matrix. The readout above is the store's currency and the form's
+       major-unit numbers; a variant carries its own Money and is read from it,
+       decimals included — a JPY row must not be printed with two. */
+    function variantPrice(money) {
+        if (!money) return "—";
+        return `${money.currency} ${fromMinor(money.amount_minor, money.currency)}`;
+    }
+
     function blank() {
         return {
             title: "",
@@ -466,39 +492,6 @@
         };
     }
 
-    /**
-     * The number to put in the weight box.
-     *
-     * The engine already renders the stored mass the way its unit wants to be
-     * read — "2.5 kg" — so the figure is taken back out of that string rather
-     * than computed here. One less place that could come to disagree with
-     * weight.go about how many grams a pound is.
-     */
-    function weightNumber(variant) {
-        const shown = parseFloat(String(variant?.weight ?? ""));
-        return isFinite(shown) ? shown : (variant?.weight_grams ?? 0);
-    }
-
-    /**
-     * The distinct spellings of one free-text column across the catalog.
-     *
-     * Folded case-insensitively because the engine folds tags that way, and the
-     * first spelling seen wins — so the suggestions read the way the catalog
-     * already reads rather than the way this function would have written them.
-     */
-    function distinct(rows, values) {
-        const seen = new Map();
-        for (const row of rows) {
-            for (const raw of values(row)) {
-                const value = String(raw ?? "").trim();
-                if (!value) continue;
-                const key = value.toLowerCase();
-                if (!seen.has(key)) seen.set(key, value);
-            }
-        }
-        return [...seen.values()].sort((a, b) => a.localeCompare(b));
-    }
-
     // The fields the variant matrix can move underneath the form.
     const VARIANT_KEYS = [
         "sku",
@@ -543,6 +536,12 @@
     });
 
     async function load(id) {
+        // The screen is refused above; asking anyway would put a 403 toast
+        // over the explanation.
+        if (!readable) {
+            loading = false;
+            return;
+        }
         loading = true;
         try {
             /*
@@ -1076,30 +1075,18 @@
         if (collectionDropdown?.matches(":popover-open")) collectionDropdown.hidePopover();
     }
 
-    /*
-     * The unit factors, exact by definition rather than by measurement — the
-     * same table weight.go holds.
-     *
-     * They are here for *display* only. What gets saved is always the number
-     * and the unit as typed, so the engine remains the single thing that
-     * decides how many grams that is; this only answers "the same parcel, read
-     * in a different unit", which is a question no request can be made of.
-     */
-    const GRAMS_PER = { g: 1, kg: 1000, oz: 28.349523125, lb: 453.59237 };
-
     /**
      * Changing the unit re-reads the same mass; it does not relabel the number.
      * 2.5 kg becomes 5.512 lb, because the parcel did not get lighter when the
      * operator changed how they wanted to read it.
+     *
+     * The factors live in variantform.js, where the variant detail drawer asks
+     * the same question of the same parcel: two copies of that table is how the
+     * two surfaces would eventually disagree about a pound.
      */
     function onWeightUnitChange(next) {
         if (next === shownIn) return;
-        const grams = (parseFloat(form.weight) || 0) * (GRAMS_PER[shownIn] ?? 1);
-        const value = grams / (GRAMS_PER[next] ?? 1);
-        // Grams are stored whole and the engine renders every other unit to
-        // three decimals, so matching it means the box says what the record
-        // will say once it is saved.
-        form.weight = next === "g" ? Math.round(value) : Math.round(value * 1000) / 1000;
+        form.weight = convertWeight(form.weight, shownIn, next);
         shownIn = next;
     }
 
@@ -1118,14 +1105,28 @@
     const statusLabel = { active: "success", draft: "info", archived: "" };
 </script>
 
+<svelte:head><title>{product?.title || "Product"} · GoCommerce</title></svelte:head>
+
+{#if !readable}
+    <NoAccess right="catalog.read" what="products" />
+{:else}
+
 <!-- `shopify-skin` re-skins this one screen: grey ground, white cards, labels
      above their fields. It is scoped to the page rather than global so the rest
      of the panel stays PocketBase — see the block in gocommerce.css. -->
 <div class="page page-products shopify-skin">
     <div class="page-content full-height">
+        <!-- `guarded` is wider than `dirty` on this one screen: the option
+             matrix holds a draft that Save cannot write — it has its own Apply
+             — and that Save must therefore not claim to. Warning about it is a
+             different question from saving it, and the answer to that one is
+             yes. -->
+        <!-- Nothing to save without catalog.write, so no bar and no
+             Ctrl+S: a save that can only be refused is worse than no save. -->
         <SaveBar
-            {dirty}
+            dirty={dirty && writable}
             {saving}
+            guarded={writable && (dirty || axesDirty)}
             message="Unsaved changes"
             saveLabel="Save"
             onsave={save}
@@ -1175,42 +1176,62 @@
                         <i class="ri-arrow-down-s-line" aria-hidden="true"></i>
                     </button>
                     <div id="product-actions" class="dropdown dropdown-sm" popover="auto" role="menu">
+                        <!-- Outside the write gate on purpose: the route is
+                             gated on catalog.read, which is the right this whole
+                             screen is drawn under, and "who dropped the price"
+                             is a question a read-only operator asks most. -->
                         <button
                             type="button"
                             role="menuitem"
                             class="dropdown-item"
-                            class:loading={duplicating}
-                            disabled={duplicating}
-                            onclick={duplicate}
-                        >
-                            <i class="ri-file-copy-line" aria-hidden="true"></i>
-                            <span class="txt">Duplicate</span>
-                        </button>
-                        <button
-                            type="button"
-                            role="menuitem"
-                            class="dropdown-item"
-                            class:loading={archiving}
-                            disabled={archiving}
-                            onclick={toggleArchive}
-                        >
-                            <i class="ri-archive-line" aria-hidden="true"></i>
-                            <span class="txt">
-                                {product.status === "archived" ? "Restore as draft" : "Archive"}
-                            </span>
-                        </button>
-                        <button
-                            type="button"
-                            role="menuitem"
-                            class="dropdown-item txt-danger"
                             onclick={() => {
                                 closeActions();
-                                deleteOpen = true;
+                                historyOpen = true;
                             }}
                         >
-                            <i class="ri-delete-bin-7-line" aria-hidden="true"></i>
-                            <span class="txt">Delete</span>
+                            <i class="ri-file-history-line" aria-hidden="true"></i>
+                            <span class="txt">Change history</span>
                         </button>
+                        {#if writable}
+                            <button
+                                type="button"
+                                role="menuitem"
+                                class="dropdown-item"
+                                class:loading={duplicating}
+                                disabled={duplicating}
+                                onclick={duplicate}
+                            >
+                                <i class="ri-file-copy-line" aria-hidden="true"></i>
+                                <span class="txt">Duplicate</span>
+                            </button>
+                            <button
+                                type="button"
+                                role="menuitem"
+                                class="dropdown-item"
+                                class:loading={archiving}
+                                disabled={archiving}
+                                onclick={toggleArchive}
+                            >
+                                <i class="ri-archive-line" aria-hidden="true"></i>
+                                <span class="txt">
+                                    {product.status === "archived" ? "Restore as draft" : "Archive"}
+                                </span>
+                            </button>
+                        {/if}
+                        {#if writable}
+                            <button
+                                type="button"
+                                role="menuitem"
+                                class="dropdown-item txt-danger"
+                                onclick={() => {
+                                    closeActions();
+                                    deleteOpen = true;
+                                }}
+                            >
+                                <i class="ri-delete-bin-7-line" aria-hidden="true"></i>
+                                <span class="txt">Delete</span>
+                            </button>
+                        {/if}
                     </div>
 
                     <!-- Through the catalog in the order the Products screen
@@ -1268,7 +1289,14 @@
                         <i class="ri-image-line" aria-hidden="true"></i>
                         Media
                     </h6>
-                    <MediaZone productId={product.id} bind:media />
+                    <!-- The zone writes the moment a file lands rather than at
+                         Save, so hiding the save bar is not enough to make it
+                         read-only: a catalog.read operator was handed a live
+                         drop target, a reorderable grid and a Remove on every
+                         thumbnail. `disabled` leaves the images legible — that
+                         is the read right — and takes away every path that
+                         writes. -->
+                    <MediaZone productId={product.id} bind:media disabled={!writable} />
 
                     </section>
 
@@ -1533,7 +1561,76 @@
                          options, so they must not share a card that hides
                          itself when it does. -->
                     <section class="card">
-                    <VariantMatrix bind:product {media} onchange={resync} />
+                    {#if writable}
+                        <VariantMatrix bind:product bind:axesDirty {media} onchange={resync} />
+                    {:else}
+                        <!--
+                            The matrix has no read-only mode, and it is the one
+                            control on this page that cannot be left armed: every
+                            cell in it writes through its own route the moment it
+                            is applied — six variant routes, an inventory route,
+                            a create and a delete — so there is no save bar to
+                            withhold and nothing to make its edits pending.
+                            Teaching it the right belongs in the component; what
+                            catalog.read is owed meanwhile is the reading, which
+                            is this table.
+                        -->
+                        <h6 class="section-title">
+                            <i class="ri-layout-grid-line" aria-hidden="true"></i>
+                            Variants
+                        </h6>
+
+                        {#if product.variants?.length}
+                            <div class="page-table-wrapper">
+                                <table class="table responsive-table">
+                                    <thead class="sticky">
+                                        <tr>
+                                            <th>Variant</th>
+                                            <th>SKU</th>
+                                            <th class="txt-right">Price</th>
+                                            <th class="txt-right">Available</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {#each product.variants as v (v.id)}
+                                            <tr>
+                                                <td data-name="Variant">
+                                                    <span class="txt-bold">
+                                                        {v.label || "Default"}
+                                                    </span>
+                                                    {#if !v.active}
+                                                        <span class="label">inactive</span>
+                                                    {/if}
+                                                </td>
+                                                <td class="txt-code txt-hint" data-name="SKU">
+                                                    {v.sku || "—"}
+                                                </td>
+                                                <td class="txt-right" data-name="Price">
+                                                    {variantPrice(v.price)}
+                                                </td>
+                                                <td
+                                                    class="txt-right txt-bold {stockClass(
+                                                        v.available,
+                                                    )}"
+                                                    data-name="Available"
+                                                >
+                                                    {v.track_inventory ? v.available : "—"}
+                                                </td>
+                                            </tr>
+                                        {/each}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {:else}
+                            <div class="txt-hint">This product has no variants.</div>
+                        {/if}
+
+                        <div class="field-help">
+                            Options, prices, SKUs and stock are edited here by a role
+                            that carries "{rightLabel('catalog.write')}". Yours does not,
+                            so this is the list rather than the editor.
+                        </div>
+                    {/if}
                     </section>
                     <!--
                         Shopify's Category metafields card: the fields the chosen
@@ -1814,6 +1911,17 @@
                     <div class="field-help">
                         Sets tax rates and helps a storefront sort this product.
                         <a href="{base}/categories">Manage the tree</a>.
+                        {#if form.category_id}
+                            <!-- The other direction of the categories screen's
+                                 own Products link, so the two are reachable from
+                                 each other. `category_id` matches the whole
+                                 subtree, which is what "filed here" means to
+                                 somebody looking at a branch. -->
+                            <a href="{base}/products?category_id={form.category_id}">
+                                See everything filed under
+                                {categoryChain[categoryChain.length - 1]?.title ?? "it"}</a
+                            >.
+                        {/if}
                     </div>
 
                     <div class="field m-t-sm">
@@ -2043,3 +2151,12 @@
     danger
     onconfirm={doDelete}
 />
+
+<RecordHistory
+    open={historyOpen}
+    kind="products"
+    id={product?.id}
+    label={product?.title}
+    onclose={() => (historyOpen = false)}
+/>
+{/if}

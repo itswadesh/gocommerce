@@ -13,11 +13,15 @@
     import { page } from "$app/state";
     import { auth, events, getToken, can, session } from "$lib/api.js";
     import { clearSettings, loadSettings } from "$lib/settings.svelte.js";
-    import { forgetModules, hasModule, loadModules } from "$lib/modules.svelte.js";
+    import { forgetModules, loadModules } from "$lib/modules.svelte.js";
     import { health } from "$lib/health.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
+    import { NAV, visibleNav as allowedNav } from "$lib/nav.js";
+    import { isBareKey, isTypingTarget, modalIsOpen, NEW_EVENT } from "$lib/shortcuts.js";
     import Toasts from "$lib/components/Toasts.svelte";
     import Login from "$lib/components/Login.svelte";
+    import CommandPalette from "$lib/components/CommandPalette.svelte";
+    import ShortcutHelp from "$lib/components/ShortcutHelp.svelte";
 
     let { children } = $props();
 
@@ -48,69 +52,16 @@
     );
 
     /*
-     * Each entry names the right that makes the screen worth showing. A staff
-     * operator has no business on a settings page they would be refused from,
-     * and an item that leads only to a 403 is worse than no item.
-     *
-     * The engine is still the one enforcing this; the nav is only telling the
-     * truth about what is behind each link.
-     *
-     * An item may also name the module that serves it. A screen for a module
-     * this binary was not built with is hidden for the same reason an item
-     * leading to a 403 is: the link would lead somewhere that does not exist.
-     *
-     * `accent` is the item own colour, as the B2B Leads sidebar does it: the
-     * icon is always tinted and the active row takes the matching soft ground.
-     * The values live in gocommerce.css, so light and dark can differ; here
-     * they are only names.
+     * The nav list itself moved to $lib/nav.js. It did not move for tidiness:
+     * the command palette offers the same destinations, and two copies of that
+     * list is how one of them comes to be missing a screen that shipped months
+     * ago. Everything that used to be written here — why each item names a
+     * right, why some name a module, what `accent` is — is written there,
+     * beside the data it describes.
      */
-    const nav = [
-        { href: "/", label: "Dashboard", icon: "ri-dashboard-line", exact: true , accent: "indigo" },
-        // "How much did we sell" is the second thing an owner opens, and until
-        // now the panel could not answer it.
-        { href: "/reports", label: "Reports", icon: "ri-line-chart-line", right: "orders.read", accent: "rose" },
-        { href: "/products", label: "Products", icon: "ri-price-tag-3-line", right: "catalog.read" , accent: "sky" },
-        { href: "/categories", label: "Categories", icon: "ri-node-tree", right: "catalog.read" , accent: "blue" },
-        // A page is catalog copy that happens not to carry a price, which is
-        // why it takes catalog.read and sits beside the rest of the catalog.
-        { href: "/cms", label: "Pages", icon: "ri-pages-line", right: "catalog.read", module: "cms" , accent: "blue" },
-        { href: "/orders", label: "Orders", icon: "ri-shopping-bag-3-line", right: "orders.read" , accent: "amber" },
-        // Amber, with Orders: an invoice is an order document, and a second
-        // accent would say the two are unrelated things.
-        { href: "/invoices", label: "Invoices", icon: "ri-file-list-3-line", right: "orders.read", module: "invoices" , accent: "amber" },
-        { href: "/carts", label: "Carts", icon: "ri-shopping-cart-2-line", right: "orders.read" , accent: "fuchsia" },
-        { href: "/discounts", label: "Discounts", icon: "ri-price-tag-2-line", right: "discounts.read" , accent: "rose" },
-        { href: "/taxes", label: "Tax", icon: "ri-percent-line", right: "taxes.read" , accent: "violet" },
-        { href: "/customers", label: "Customers", icon: "ri-user-3-line", right: "customers.read" , accent: "teal" },
-        // Teal, with Customers: both are people. The two lists overlap without
-        // being the same list, and both screens say so themselves.
-        { href: "/accounts", label: "Accounts", icon: "ri-account-circle-line", right: "customers.read", module: "identity" , accent: "teal" },
-        { href: "/inventory", label: "Inventory", icon: "ri-archive-2-line", right: "inventory.read" , accent: "emerald" },
-        { href: "/locations", label: "Locations", icon: "ri-map-pin-line", right: "locations.read" , accent: "cyan" },
-        // Settings has no right of its own: the section is a shell, and every
-        // screen inside it carries its own gate. Hiding the whole section from
-        // an operator who may reach one of them is a worse lie than showing a
-        // section with one item in it.
-        // `health` is a field rather than an href comparison in the template,
-        // so the badge's owner is declared beside the link it rides on.
-        { href: "/settings", label: "Settings", icon: "ri-settings-3-line", accent: "orange", health: true },
-    ];
+    const visibleNav = $derived(allowedNav(NAV));
 
     /*
-     * The module clause first, and that ordering is load-bearing rather than
-     * stylistic. hasModule() reads a `$state` object, and reading it is what
-     * makes this derived re-run when the answer arrives. With the right clause
-     * first, an operator lacking catalog.read, orders.read and customers.read
-     * would short-circuit before hasModule was ever read, no dependency would
-     * be registered, and the answer arriving would change nothing.
-     */
-    const visibleNav = $derived(
-        nav.filter(
-            (item) => (!item.module || hasModule(item.module)) && (!item.right || can(item.right)),
-        ),
-    );
-
-/*
      * The drawer, for widths where the sidebar cannot stay open. It closes on
      * navigation, on Escape and on a click outside — the same three ways B2B
      * Leads closes its own, minus the edge-swipe, which this panel has no touch
@@ -124,9 +75,58 @@
         menuOpen = false;
     });
 
+    /*
+     * The panel's keyboard layer, and the only one there is.
+     *
+     * It lives in the shell because every one of these is global: a shortcut
+     * that works on the products screen and nowhere else is worse than none,
+     * since the operator has to remember which screen they are on before they
+     * can use it. What "new" MEANS is still the screen's — the shell fires an
+     * event and a list screen with a create form answers it — so there is no
+     * table here of which route creates what, waiting to fall out of date.
+     *
+     * The single-key shortcuts are all guarded twice: not while something is
+     * being typed into, and not while a modal owns the keyboard. Without the
+     * first, `n` eats a letter out of every form in the panel.
+     */
+    let paletteOpen = $state(false);
+    let helpOpen = $state(false);
+
+    /* Which glyph the trigger prints. `navigator.platform` is deprecated and
+       still the only thing that answers without a permissions prompt; being
+       wrong shows the wrong hint rather than breaking anything, since both
+       modifiers are accepted above. */
+    const appleKeys =
+        typeof navigator !== "undefined" &&
+        /mac|iphone|ipad/i.test(navigator.userAgentData?.platform || navigator.platform || "");
+
     $effect(() => {
-        const onKey = (e) => {
-            if (e.key === "Escape") menuOpen = false;
+        const onKey = (event) => {
+            if (event.key === "Escape") {
+                menuOpen = false;
+                return;
+            }
+            // The one shortcut that works from inside a field, because a search
+            // box is exactly where an operator realises they want a different
+            // record and the whole point is not having to reach for the mouse.
+            if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "k") {
+                event.preventDefault();
+                paletteOpen = true;
+                return;
+            }
+            if (!isBareKey(event) || isTypingTarget(event.target) || modalIsOpen()) return;
+            if (event.key === "/") {
+                event.preventDefault();
+                paletteOpen = true;
+            } else if (event.key === "?") {
+                event.preventDefault();
+                helpOpen = true;
+            } else if (event.key === "n") {
+                // Not preventDefault: nothing in a browser owns a bare `n`, and
+                // a screen with nothing to create must be left able to ignore
+                // it entirely.
+                window.dispatchEvent(new CustomEvent(NEW_EVENT));
+            }
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
@@ -309,6 +309,19 @@
     </a>
 {/snippet}
 
+{#snippet searchTrigger()}
+    <!-- The omnibox, as a button rather than a box. It opens the palette, which
+         owns the real field: two inputs claiming to be "search" — one in the
+         shell and one in every list header — is the ambiguity the palette
+         exists to end. The keys are printed on it because a shortcut nobody can
+         see is a shortcut for whoever wrote it. -->
+    <button type="button" class="app-search" onclick={() => (paletteOpen = true)}>
+        <i class="ri-search-line" aria-hidden="true"></i>
+        <span class="txt">Search the store</span>
+        <kbd>{appleKeys ? "⌘" : "Ctrl"} K</kbd>
+    </button>
+{/snippet}
+
 {#snippet navLinks()}
     <nav class="app-sidebar-nav">
         {#each visibleNav as item (item.href)}
@@ -401,6 +414,7 @@
             <!-- Desktop: the sidebar itself. -->
             <aside class="app-sidebar">
                 {@render brand()}
+                {@render searchTrigger()}
                 {@render navLinks()}
                 <div class="app-sidebar-foot">{@render account()}</div>
             </aside>
@@ -418,6 +432,17 @@
                     <i class={menuOpen ? "ri-close-line" : "ri-menu-line"} aria-hidden="true"></i>
                 </button>
                 {@render brand()}
+                <!-- The search is a bare circle here: the labelled trigger is in
+                     the drawer with the nav, and a 390px bar has no room for a
+                     word and a keycap that no phone has anyway. -->
+                <button
+                    type="button"
+                    class="btn circle transparent secondary"
+                    aria-label="Search the store"
+                    onclick={() => (paletteOpen = true)}
+                >
+                    <i class="ri-search-line" aria-hidden="true"></i>
+                </button>
                 <!-- On a phone the Settings item lives in a closed drawer, and a
                      badge nobody can see is the failure the badge exists to
                      prevent. -->
@@ -442,11 +467,18 @@
             {/if}
             <aside class="app-drawer" class:open={menuOpen} aria-hidden={!menuOpen}>
                 {@render brand()}
+                {@render searchTrigger()}
                 {@render navLinks()}
                 <div class="app-sidebar-foot">{@render account()}</div>
             </aside>
 
             {@render children?.()}
+
+            <!-- Inside the authenticated branch, not beside it: both are
+                 modals over a panel, and neither has anything to search or
+                 explain to somebody who has not signed in. -->
+            <CommandPalette bind:open={paletteOpen} />
+            <ShortcutHelp bind:open={helpOpen} />
         {:else if ready}
             <div class="page">
                 <!-- Why the login form is back, when it is back because a

@@ -1,0 +1,1 @@
+function h(c,e={}){const o=c??[],n=o.length,t=Math.max(1,Math.round(e.limit)||50),l=Math.ceil(n/t),s=Math.min(Math.max(Math.round(e.page)||1,1),Math.max(l,1)),a=(s-1)*t;return{rows:o.slice(a,a+t),meta:{total:n,limit:t,offset:a,page:s,total_pages:l}}}export{h as p};

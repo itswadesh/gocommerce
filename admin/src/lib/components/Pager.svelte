@@ -12,8 +12,38 @@
      * PocketBase's and frozen, so the two rules it needs are in gocommerce.css.
      */
     import { pluralize } from "$lib/format.js";
+    import Select from "$lib/components/Select.svelte";
 
-    let { meta = null, noun = "item", plural = "", loading = false, onpage } = $props();
+    let {
+        meta = null,
+        noun = "item",
+        plural = "",
+        loading = false,
+        onpage,
+        /*
+         * Rows per page. It appears only when the screen hands over a setter:
+         * every list had its own hardcoded constant — 25 here, 30 there, 50 on
+         * discounts — and no way to change any of them, so a warehouse picking
+         * list and a glance at today's orders were dealt the same hand.
+         *
+         * The screen keeps `limit` on the URL with the rest of its state, so a
+         * chosen size is bookmarkable and comes back with Back. Nothing is
+         * remembered per operator, deliberately: a size that follows somebody
+         * between screens is a preference, and this is a property of the view.
+         */
+        perPage = 0,
+        onperpage = null,
+        sizes = [25, 50, 100, 200],
+    } = $props();
+
+    /* The screen's own default may not be one of the offered sizes — products
+       ships 30, media 48 — and a select that cannot show its current value
+       reads as broken. */
+    const sizeOptions = $derived(
+        [...new Set([...sizes, perPage].filter((n) => n > 0))]
+            .sort((a, b) => a - b)
+            .map((n) => ({ value: n, label: String(n) })),
+    );
 
     const page = $derived(meta?.page ?? 1);
     const pages = $derived(meta?.total_pages ?? 0);
@@ -85,4 +115,20 @@
             <i class="ri-arrow-right-s-line" aria-hidden="true"></i>
         </button>
     </nav>
+{/if}
+
+{#if onperpage && perPage > 0}
+    <!-- Offered even on a single page: an operator who has just filtered a list
+         down to eight rows is exactly the person who wants the next filter to
+         show two hundred. -->
+    <span class="pager-size">
+        <span class="txt">Rows</span>
+        <Select
+            class="compact"
+            ariaLabel="Rows per page"
+            value={perPage}
+            options={sizeOptions}
+            onchange={(n) => onperpage(n)}
+        />
+    </span>
 {/if}

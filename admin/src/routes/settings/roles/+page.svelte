@@ -20,8 +20,11 @@
      * anything they do not name falls through to "Other" rather than
      * disappearing.
      */
-    import { roles as rolesApi, auth, getRecord, rights as myRights } from "$lib/api.js";
+    import { roles as rolesApi, auth, can, getRecord, rights as myRights } from "$lib/api.js";
+    import { rightScope } from "$lib/rights.js";
     import { toast } from "$lib/toast.svelte.js";
+    import DirtyGuard from "$lib/components/DirtyGuard.svelte";
+    import NoAccess from "$lib/components/NoAccess.svelte";
     import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
@@ -33,35 +36,21 @@
 
     const me = getRecord();
 
-    const ROLE_LABEL = { owner: "Owner", manager: "Manager", staff: "Staff" };
-    /*
-     * One line per right, in the store's own words. The API sends the names; a
-     * row labelled `orders.refund` and nothing else asks the person granting it
-     * to already know what it covers.
-     */
-    const RIGHT_TEXT = {
-        "catalog.read": "Products, variants, categories, collections, media",
-        "catalog.write": "Editing any of them",
-        "inventory.read": "Stock levels and the low-stock report",
-        "inventory.write": "Stock takes, adjustments and transfers",
-        "discounts.read": "Discount codes and what they take off",
-        "discounts.write": "Creating, editing and ending discounts",
-        "taxes.read": "The tax rates orders are charged at",
-        "taxes.write": "Changing what every future order collects",
-        "locations.read": "The places stock lives",
-        "locations.write": "Opening, closing and choosing the default",
-        "orders.read": "Orders and what customers bought",
-        "orders.write": "Placing, editing, cancelling, settling payment",
-        "orders.fulfill": "Fulfilling and shipping",
-        "orders.refund": "Sending money back out of the store",
-        "customers.read": "Orders grouped by who placed them — personal data",
-        "team.read": "Who is on the team, and who has been invited",
-        "team.write": "Inviting, removing and changing roles",
-        "roles.write": "This screen — what each role may do",
-        "data.export": "The catalog or every order, as a file",
-        "data.import": "Changing prices and stock in bulk, from a file",
-    };
+    /* roles.write is what the settings sidebar gates this link on, and it is the
+       only right the screen has: there is no read-only view of the matrix on the
+       API. Said again here so a typed address refuses before the request. */
+    const allowed = $derived(can("roles.write"));
 
+    const ROLE_LABEL = { owner: "Owner", manager: "Manager", staff: "Staff" };
+
+    /*
+     * Layout only, as the header says — the sentence under each right's name
+     * comes from rightScope(). This screen used to hold a copy of that table,
+     * and the copy had fallen a right behind: store.operate had no sentence
+     * and no group, so the right that carries the outbox and the maintenance
+     * sweeps rendered under "Other" with a blank help line. A Go test pins
+     * rights.js against core/rights.go; a fourth copy here was outside it.
+     */
     const GROUPS = [
         { title: "Catalog", rights: ["catalog.read", "catalog.write"] },
         { title: "Inventory", rights: ["inventory.read", "inventory.write"] },
@@ -75,6 +64,7 @@
         { title: "Customers", rights: ["customers.read"] },
         { title: "Team and access", rights: ["team.read", "team.write", "roles.write"] },
         { title: "Data", rights: ["data.export", "data.import"] },
+        { title: "Store", rights: ["store.operate"] },
     ];
 
     /** The groups, filtered to what this engine actually has, plus anything it
@@ -95,6 +85,12 @@
     });
 
     async function load() {
+        // The screen is refused above; asking anyway would put a 403 toast
+        // over the explanation.
+        if (!allowed) {
+            loading = false;
+            return;
+        }
         loading = true;
         try {
             matrix = unwrap(await rolesApi.matrix());
@@ -114,9 +110,9 @@
     /*
      * The two locks the API also enforces, mirrored here so nothing looks
      * clickable that the server would only refuse. Required rights are the
-     * floor every role keeps; settings.write is what got you to this screen,
-     * and an operator who saves it away from their own role has no way back
-     * short of a static admin token.
+     * floor every role keeps; roles.write is what got you to this screen, and
+     * an operator who saves it away from their own role has no way back short
+     * of a static admin token.
      */
     const required = $derived(matrix?.required ?? []);
     const locked = (role, right) =>
@@ -143,9 +139,100 @@
     };
     const dirty = (role) => !same(draft[role] ?? [], rowFor(role)?.rights ?? []);
 
+    /*
+     * Whether ANY role has unticked or newly ticked boxes waiting.
+     *
+     * The screen used to render a bare "unsaved" chip and nothing else: no
+     * warning on leaving, no shortcut, no way back. Each role saves on its own
+     * button, so there is no single Save for a SaveBar to carry — but the thing
+     * a SaveBar is really for, not throwing the work away silently, does not
+     * depend on there being one.
+     */
+    const anyDirty = $derived(
+        (matrix?.roles ?? []).some((row) => row.configurable && dirty(row.role)),
+    );
+
     /** Whether the draft already matches the engine's defaults, which is what
      *  "reset" would produce — so the button has nothing left to offer. */
     const isDefault = (role) => same(draft[role] ?? [], rowFor(role)?.default ?? []);
+
+    /*
+     * The departure from the shipped default.
+     *
+     * `default` was fetched and used for nothing but disabling the Reset
+     * button, which meant an operator could be told a role was "customised"
+     * and never told how — and could press Reset without being able to see
+     * what it would do. That is the one control on this screen that changes
+     * several rights at once.
+     *
+     * Measured against the DRAFT, not against the saved rights, so the marks
+     * move as boxes are ticked. While a role is dirty the header carries an
+     * "unsaved" flag beside these numbers, which is what keeps "using
+     * defaults" (saved state) and a non-zero count (on-screen state) from
+     * reading as a contradiction.
+     */
+    const defaultsFor = (role) => rowFor(role)?.default ?? [];
+    const added = (role) => (draft[role] ?? []).filter((r) => !defaultsFor(role).includes(r));
+    const removed = (role) => defaultsFor(role).filter((r) => !(draft[role] ?? []).includes(r));
+
+    /**
+     * How one cell departs from the default: "added", "removed" or "".
+     *
+     * Always "" for a role the store cannot configure. Owner carries every
+     * right by construction, so a diff against its default is noise on twenty
+     * cells that can never move.
+     */
+    function cellDiff(role, right) {
+        const row = rowFor(role);
+        if (!row?.configurable) return "";
+        const inDraft = has(role, right);
+        const inDefault = (row.default ?? []).includes(right);
+        if (inDraft && !inDefault) return "added";
+        if (!inDraft && inDefault) return "removed";
+        return "";
+    }
+
+    /* The lock reason wins when there is one: a cell that cannot be changed
+       needs to say why before it says how it differs. */
+    function cellTitle(role, right) {
+        const row = rowFor(role);
+        if (row?.configurable && locked(role, right)) return lockReason(role, right);
+        switch (cellDiff(role, right)) {
+            case "added":
+                return `${right} is not in what the engine ships for ${ROLE_LABEL[role] ?? role}.`;
+            case "removed":
+                return (
+                    `${right} is in what the engine ships for ${ROLE_LABEL[role] ?? role}` +
+                    " and has been taken away."
+                );
+            default:
+                return null;
+        }
+    }
+
+    /** What Reset would actually do, named right by right, on the control that
+     *  would do it. */
+    function resetTitle(role) {
+        const gained = added(role);
+        const lost = removed(role);
+        if (!gained.length && !lost.length) {
+            return `${ROLE_LABEL[role] ?? role} already matches what the engine ships for it.`;
+        }
+        const parts = [];
+        if (gained.length) parts.push("take away " + gained.join(", "));
+        if (lost.length) parts.push("give back " + lost.join(", "));
+        return "Reset would " + parts.join(", and ") + ".";
+    }
+
+    /** The same comparison as a sentence, for the counts in the header. */
+    function diffTitle(role) {
+        const parts = [];
+        if (added(role).length) parts.push("added " + added(role).join(", "));
+        if (removed(role).length) parts.push("removed " + removed(role).join(", "));
+        if (!parts.length) return null;
+        const name = ROLE_LABEL[role] ?? role;
+        return `Against what the engine ships for ${name}: ${parts.join("; ")}.`;
+    }
 
     async function save(role) {
         if (busy) return;
@@ -195,6 +282,16 @@
     }
 </script>
 
+<svelte:head><title>Roles · GoCommerce</title></svelte:head>
+
+{#if !allowed}
+    <NoAccess right="roles.write" what="the role matrix" />
+{:else}
+<DirtyGuard
+    dirty={anyDirty}
+    message="A role has rights ticked that have not been saved. Leave and lose them?"
+/>
+
 <div class="page page-roles">
     <SettingsSidebar />
 
@@ -235,6 +332,8 @@
                         <tr>
                             <th class="col-right">Right</th>
                             {#each matrix.roles as row (row.role)}
+                                {@const gained = added(row.role)}
+                                {@const lost = removed(row.role)}
                                 <th class="col-role" class:mine={row.role === me?.role}>
                                     <span class="role-name">
                                         {ROLE_LABEL[row.role] ?? row.role}
@@ -255,6 +354,16 @@
                                     <span class="role-count">
                                         {(draft[row.role] ?? []).length} of {matrix.all_rights.length}
                                     </span>
+                                    {#if row.configurable && (gained.length || lost.length)}
+                                        <span class="role-diff" title={diffTitle(row.role)}>
+                                            {#if gained.length}
+                                                <span class="added">{gained.length} added</span>
+                                            {/if}
+                                            {#if lost.length}
+                                                <span class="removed">{lost.length} removed</span>
+                                            {/if}
+                                        </span>
+                                    {/if}
                                     {#if row.configurable}
                                         <span class="role-actions">
                                             <button
@@ -268,6 +377,7 @@
                                             <button
                                                 type="button"
                                                 class="btn sm transparent secondary"
+                                                title={resetTitle(row.role)}
                                                 disabled={busy === row.role ||
                                                     (!row.customized && isDefault(row.role))}
                                                 onclick={() => reset(row.role)}
@@ -295,15 +405,16 @@
                                 <tr>
                                     <td class="col-right">
                                         <code class="right-name">{right}</code>
-                                        <span class="right-help">{RIGHT_TEXT[right] ?? ""}</span>
+                                        <span class="right-help">{rightScope(right)}</span>
                                     </td>
                                     {#each matrix.roles as row (row.role)}
+                                        {@const diff = cellDiff(row.role, right)}
                                         <td
                                             class="col-role"
                                             class:mine={row.role === me?.role}
-                                            title={row.configurable && locked(row.role, right)
-                                                ? lockReason(row.role, right)
-                                                : null}
+                                            class:diff-added={diff === "added"}
+                                            class:diff-removed={diff === "removed"}
+                                            title={cellTitle(row.role, right)}
                                         >
                                             <div class="field">
                                                 <input
@@ -323,9 +434,23 @@
                                                 <label for="{row.role}-{right}">
                                                     <span class="cell-name">
                                                         {right} for {ROLE_LABEL[row.role] ?? row.role}
+                                                        {#if diff === "added"}
+                                                            — added to the default
+                                                        {:else if diff === "removed"}
+                                                            — taken away from the default
+                                                        {/if}
                                                     </span>
                                                 </label>
                                             </div>
+                                            <!-- Shape as well as colour: the two states have to
+                                                 be told apart without relying on green and red,
+                                                 and the sentence above carries them for a screen
+                                                 reader, so this glyph is decoration. -->
+                                            {#if diff}
+                                                <span class="diff-mark" aria-hidden="true">
+                                                    {diff === "added" ? "+" : "−"}
+                                                </span>
+                                            {/if}
                                         </td>
                                     {/each}
                                 </tr>
@@ -334,6 +459,14 @@
                     </tbody>
 
                 </table>
+            </div>
+
+            <div class="roles-intro field-help">
+                <span class="diff-mark added" aria-hidden="true">+</span>
+                marks a right this store has added to what the engine ships for that role;
+                <span class="diff-mark removed" aria-hidden="true">−</span>
+                marks one it has taken away. Reset puts a role back to the shipped set — hover it
+                to see exactly which rights that would move.
             </div>
 
             {#if !myRights()}
@@ -349,3 +482,5 @@
         </footer>
     </div>
 </div>
+
+{/if}

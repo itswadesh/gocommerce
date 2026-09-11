@@ -43,14 +43,17 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
       - run: go build ./...
       - run: go vet ./...
-      # -timeout because Go's default is ten minutes and the core package is
-      # most of the way there: every database-backed test gets its own schema
-      # and runs every migration into it (rule 13 — there is no mock), so the
-      # suite grows with the migration count, and -race makes each one slower.
-      # A run that dies on the default timeout reports a panic, not a failure,
-      # which sends whoever reads it looking for a deadlock that is not there.
+      # -timeout, and generously. Go's default is ten minutes and the core
+      # package alone is past that: every database-backed test gets its own
+      # schema and runs every migration into it (rule 13 — there is no mock),
+      # so the suite grows with both the test count and the migration count,
+      # and -race makes each test slower again. The number here is deliberately
+      # far above the real figure, because the cost of an over-generous timeout
+      # is nothing and the cost of a tight one is a run that dies reporting a
+      # panic rather than a failure — which sends whoever reads it hunting a
+      # deadlock that is not there.
       - name: go test (race)
-        run: go test ./... -race -count=1 -timeout 40m
+        run: go test ./... -race -count=1 -timeout 90m
         env:
           GOCOMMERCE_TEST_DB: postgres://gocommerce:gocommerce@localhost:5432/gocommerce_test?sslmode=disable
 

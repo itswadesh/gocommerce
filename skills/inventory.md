@@ -310,7 +310,9 @@ is no way to tell which one a row means.
 ## How to find what is running out
 
 ```go
-variants, total, err := app.Stock().LowStock(ctx, 5 /*threshold*/, 50, 0)
+variants, total, err := app.Stock().LowStock(ctx, gocommerce.LowStockQuery{
+    Threshold: 5, Limit: 50,
+})
 ```
 
 ```http
@@ -321,6 +323,13 @@ The threshold defaults to 5 and compares against *available*, not on-hand, so
 units already promised to open orders count as gone. Only variants with
 `track_inventory` are considered — an unlimited variant is never low. Results
 are ordered by availability ascending, so the most urgent row is first.
+
+`sort` re-orders it: `sku`, `on_hand`, `reserved`, `available` or `price`, with
+`order=asc|desc`, allow-listed the way every other listing's is (D46). The three
+stock keys follow `location_id` — without it they order by the store-wide sums
+on the row, and with it by that one location's own numbers — so the column being
+sorted is always the column being read. Anything else is a 400 naming what
+exists.
 
 Without `location_id` the threshold is against the **store's total across every
 location**. That is what a single-location store means and what a multi-location

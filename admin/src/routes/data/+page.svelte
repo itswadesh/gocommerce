@@ -1,11 +1,27 @@
 <script>
     import { api, apiErrorFrom, can, getToken, query, request } from "$lib/api.js";
+    import { formatDate } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
     import CategoryPicker from "$lib/components/CategoryPicker.svelte";
+    import DirtyGuard from "$lib/components/DirtyGuard.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
+    import NoAccess from "$lib/components/NoAccess.svelte";
     import Select from "$lib/components/Select.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
+
+    /*
+     * Two rights, two halves, and the engine cuts them apart: the export routes
+     * name data.export and the import routes name data.import, so a role that
+     * carries one of them is the ordinary case rather than the odd one. Only
+     * the taxonomy block was gated, which left an operator who may export
+     * reading a live Import panel — every button on it a 403 waiting to happen
+     * — and one who may import looking at export controls that could only
+     * refuse. A role holding neither reaches this address from the settings
+     * rail's own link and now gets the sentence instead of both.
+     */
+    const mayExport = $derived(can("data.export"));
+    const mayImport = $derived(can("data.import"));
 
     let importing = $state(false);
     let dryRun = $state(true);
@@ -24,6 +40,13 @@
     let exportStatus = $state("");
     let exportCategory = $state(null);
     let exportCollection = $state("");
+    /* The orders file's own filters. `to` is exclusive, which the label says
+       and the sentence under the controls restates: this is the one place a
+       reader could mistake it for "up to and including", and an accountant
+       given a file missing its last day would not notice for a month. */
+    let exportOrderStatus = $state("");
+    let exportOrderFrom = $state("");
+    let exportOrderTo = $state("");
     let categories = $state([]);
     let categoriesTruncated = $state(false);
     let collections = $state([]);
@@ -40,7 +63,7 @@
     });
 
     async function loadVocabulary() {
-        if (!can("data.export")) return;
+        if (!mayExport) return;
         try {
             const [cats, cols] = await Promise.all([
                 api.get("/api/admin/categories?flat=1"),
@@ -63,6 +86,31 @@
         });
         download("/api/admin/export/admin-products" + suffix, "products.csv");
     }
+
+    function exportOrders() {
+        const suffix = query({
+            status: exportOrderStatus,
+            from: exportOrderFrom,
+            to: exportOrderTo,
+        });
+        download("/api/admin/export/admin-orders" + suffix, "orders.csv");
+    }
+
+    /* The window in words, so the exclusive bound is stated in the form a
+       person reads rather than only in the label above the picker. */
+    const exportOrderWindow = $derived.by(() => {
+        if (!exportOrderFrom && !exportOrderTo) return "";
+        const spoken = (iso, shift) => {
+            const d = new Date(iso + "T00:00:00");
+            if (shift) d.setDate(d.getDate() + shift);
+            return formatDate(d.toISOString(), { withTime: false });
+        };
+        if (exportOrderFrom && exportOrderTo) {
+            return `Orders placed from ${spoken(exportOrderFrom)} to ${spoken(exportOrderTo, -1)}, inclusive. `;
+        }
+        if (exportOrderFrom) return `Orders placed from ${spoken(exportOrderFrom)} onwards. `;
+        return `Orders placed up to ${spoken(exportOrderTo, -1)}, inclusive. `;
+    });
 
     async function importTaxonomy() {
         if (importingTaxonomy) return;
@@ -169,6 +217,22 @@
     }
 </script>
 
+<svelte:head><title>Import / export · GoCommerce</title></svelte:head>
+
+<!-- A pasted or loaded CSV that has not been run is the most expensive thing on
+     this screen to lose: it may be a file somebody spent an afternoon on, and it
+     is held nowhere but this textarea. It stops counting as unsaved once a run
+     has reported, which is the point at which leaving is the ordinary thing to
+     do. -->
+<DirtyGuard
+    dirty={!!csv.trim() && !result}
+    message="The CSV in the import box has not been run. Leave and lose it?"
+/>
+
+{#if !mayExport && !mayImport}
+    <!-- The settings rail already hides the link; this is the direct URL. -->
+    <NoAccess anyOf={["data.export", "data.import"]} what="import and export" />
+{:else}
 <div class="page page-data">
     <SettingsSidebar />
 
@@ -181,6 +245,7 @@
         </header>
 
         <div class="wrapper m-b-base">
+            {#if mayExport}
             <h6 class="section-title">
                 <i class="ri-download-2-line" aria-hidden="true"></i>
                 Export
@@ -193,6 +258,11 @@
                 file cannot run them; importing strips the escape again, so the round trip is
                 lossless.
             </div>
+
+            <h6 class="section-title">
+                <i class="ri-price-tag-3-line" aria-hidden="true"></i>
+                Products
+            </h6>
 
             <div class="grid m-b-sm">
                 <div class="col-6">
@@ -252,7 +322,7 @@
             </div>
 
             <div class="field-help m-b-sm">
-                The filters apply to the products file only, and it exports every row that
+                These filters apply to the products file, and it exports every row that
                 matched rather than a page of them. A category takes everything nested
                 under it; the collection list is the first 200. Vendor, product type and
                 tag are honoured by the endpoint but have no control here, because the
@@ -260,22 +330,79 @@
                 suggestions from a sample, which would quietly miss anything past it.
             </div>
 
-            <div class="flex gap-10">
+            <div class="flex gap-10 m-b-base">
                 <button type="button" class="btn secondary" onclick={exportProducts}>
                     <i class="ri-price-tag-3-line" aria-hidden="true"></i>
                     <span class="txt">Products CSV</span>
                 </button>
-                <button
-                    type="button"
-                    class="btn secondary"
-                    onclick={() => download("/api/admin/export/admin-orders", "orders.csv")}
-                >
+            </div>
+
+            <!--
+                The orders file, with the period and the status the endpoint has
+                always taken. This button sent a bare path, so a store with any
+                history got one row per line for every order ever placed — and
+                "the last quarter", "just the refunded ones" and "everything
+                since the reconciliation" were curl-only.
+            -->
+            <h6 class="section-title">
+                <i class="ri-shopping-bag-3-line" aria-hidden="true"></i>
+                Orders
+            </h6>
+
+            <div class="grid m-b-sm">
+                <div class="col-4">
+                    <div class="field">
+                        <label for="export-order-status">Status</label>
+                        <Select
+                            id="export-order-status"
+                            bind:value={exportOrderStatus}
+                            options={[
+                                { value: "", label: "Any status" },
+                                { value: "pending", label: "Pending" },
+                                { value: "confirmed", label: "Confirmed" },
+                                { value: "partial", label: "Partly shipped" },
+                                { value: "shipped", label: "Shipped" },
+                                { value: "delivered", label: "Delivered" },
+                                { value: "cancelled", label: "Cancelled" },
+                            ]}
+                        />
+                    </div>
+                </div>
+                <div class="col-4">
+                    <div class="field">
+                        <label for="export-order-from">From</label>
+                        <input id="export-order-from" type="date" bind:value={exportOrderFrom} />
+                    </div>
+                </div>
+                <div class="col-4">
+                    <div class="field">
+                        <label for="export-order-to">To (exclusive)</label>
+                        <input id="export-order-to" type="date" bind:value={exportOrderTo} />
+                    </div>
+                </div>
+            </div>
+
+            <div class="field-help m-b-sm">
+                {#if exportOrderWindow}
+                    {exportOrderWindow}
+                {:else}
+                    Leave the dates empty and the whole order book is exported.
+                {/if}
+                <code>To</code> is exclusive, as it is everywhere else in this API — an order
+                placed on that day is not in the file. The endpoint filters on status and the
+                period and on nothing else; the orders screen has the search and the payment
+                filter, and an Export button that carries what it can.
+            </div>
+
+            <div class="flex gap-10">
+                <button type="button" class="btn secondary" onclick={exportOrders}>
                     <i class="ri-shopping-bag-3-line" aria-hidden="true"></i>
                     <span class="txt">Orders CSV</span>
                 </button>
             </div>
+            {/if}
 
-            {#if can("data.import")}
+            {#if mayImport}
                 <h6 class="section-title">
                     <i class="ri-node-tree" aria-hidden="true"></i>
                     Category taxonomy
@@ -370,7 +497,6 @@
                         </div>
                     </div>
                 {/if}
-            {/if}
 
             <h6 class="section-title">
                 <i class="ri-upload-2-line" aria-hidden="true"></i>
@@ -534,6 +660,7 @@
                     </div>
                 {/if}
             {/if}
+            {/if}
         </div>
 
         <footer class="page-footer">
@@ -550,3 +677,4 @@
         />
     </div>
 </div>
+{/if}

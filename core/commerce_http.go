@@ -201,6 +201,14 @@ func (a *App) mountOrderRoutes() {
 	// the opposite of the point; the one field in it that is genuinely
 	// operator-only is gated inside the handler instead.
 	a.HandleAdminFunc("GET /api/admin/orders/{id}/timeline", a.handleOrderTimeline, RightOrdersRead)
+	// POST, and orders.write rather than orders.read. Both are the same
+	// judgement: handing out the guest's bearer credential is an act, not a
+	// reading — it is recorded in the audit trail, and a GET that writes is the
+	// shape a prefetch, a retry or a shared link performs by accident. Staff
+	// hold orders.write, which is right: taking the call from the customer who
+	// lost their link is their job. See Orders.RevealAccessToken for why this
+	// reveals rather than re-issues.
+	a.HandleAdminFunc("POST /api/admin/orders/{id}/access-token", a.handleRevealAccessToken, RightOrdersWrite)
 	a.HandleAdminFunc("POST /api/admin/orders/{id}/cancel", a.handleCancelOrder, RightOrdersWrite)
 	a.HandleAdminFunc("POST /api/admin/orders/{id}/mark-paid", a.handleMarkPaid, RightOrdersWrite)
 	a.HandleAdminFunc("POST /api/admin/orders/{id}/mark-unpaid", a.handleMarkUnpaid, RightOrdersWrite)
@@ -291,6 +299,20 @@ func (a *App) handleGetOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	Respond(w, http.StatusOK, order)
+}
+
+func (a *App) handleRevealAccessToken(w http.ResponseWriter, r *http.Request) {
+	id, err := pathInt64(r, "id")
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	token, err := a.orders.RevealAccessToken(r.Context(), id)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, token)
 }
 
 // handleOrderTimeline serves one order's history, merged from the outbox and
@@ -669,18 +691,33 @@ func (a *App) handleLowStock(w http.ResponseWriter, r *http.Request) {
 		locationID = int64(n)
 	}
 
+	// One allow-list is parsed against even though two serve the two branches
+	// below: their key sets are identical by construction — one report, one set
+	// of column headers — so a request naming an unknown field gets the same
+	// sentence whether or not a location was chosen. A test pins the two
+	// together, because the day they drift a header stops working only for the
+	// operators who filter by shop.
+	sortBy, err := ParseSort(r, lowStockSorts)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+
 	var variants []*Variant
 	var total int
 	if locationID != 0 {
 		variants, total, err = a.inventory.AtLocation(r.Context(), locationID, LocationStockQuery{
-			Threshold: &threshold, Order: StockOrderAvailable, Limit: limit, Offset: offset,
+			Threshold: &threshold, Order: StockOrderAvailable, Sort: sortBy,
+			Limit: limit, Offset: offset,
 		})
 	} else {
 		// Without a location the threshold is against the store's total, which is
 		// the question a single-location store means and the one a multi-location
 		// store usually does not: a variant with one unit in each of five shops is
 		// not low by that reading, even though every shelf looks it.
-		variants, total, err = a.inventory.LowStock(r.Context(), threshold, limit, offset)
+		variants, total, err = a.inventory.LowStock(r.Context(), LowStockQuery{
+			Threshold: threshold, Sort: sortBy, Limit: limit, Offset: offset,
+		})
 	}
 	if err != nil {
 		RespondError(w, r, err)

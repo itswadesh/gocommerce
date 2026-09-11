@@ -59,7 +59,7 @@ There is no cgo toolchain, so `-race` is unavailable locally; CI covers it.
 ```powershell
 gofmt -l .                                  # must print nothing
 go vet ./...
-go test ./... -count=1 -timeout 40m
+go test ./... -count=1 -timeout 60m
 go build -tags no_admin ./...               # the API-only build links
 go test -tags no_admin ./core -count=1
 .\scripts\check-docs.ps1                    # skills and links still match the code

@@ -15,12 +15,14 @@
      * says so. Moving a field is a create, an edit of the categories naming it,
      * and a delete.
      */
-    import { api, can, query } from "$lib/api.js";
+    import { api, can } from "$lib/api.js";
+    import { rowKey } from "$lib/rowkey.js";
     import { toast } from "$lib/toast.svelte.js";
     import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import TokenInput from "$lib/components/TokenInput.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
+    import { listState } from "$lib/liststate.svelte.js";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
@@ -28,11 +30,25 @@
 
     const PER_PAGE = 50;
 
+    /*
+     * The search, the page and the page size live in the URL, like every other
+     * list in the panel. The screen rendered a Pager against local state, so
+     * page 3 of a search could not be bookmarked, was lost on Back, and could
+     * not be sent to anybody — the exact defect liststate.svelte.js exists to
+     * end. `set()` returns to page 1 on a search change, so the comment that
+     * used to say so lives there now rather than here.
+     */
+    const list = listState({ q: "", page: 1, limit: PER_PAGE });
+    const search = $derived(list.params.q);
+    const perPage = $derived(list.params.limit);
+    /* The box binds to its own draft and pushes to the URL, rather than reading
+       its value back from it: a goto is asynchronous, and an input whose value
+       came from the address bar drops characters typed while one is in flight. */
+    let draftSearch = $state(list.params.q);
+
     let loading = $state(true);
     let entries = $state([]);
     let meta = $state(null);
-    let search = $state("");
-    let page = $state(1);
 
     let open = $state(false);
     let editing = $state(null);
@@ -45,8 +61,7 @@
     // The search box re-runs the load, and a new search starts at the first
     // page: page 4 of the old result is not a page of the new one.
     $effect(() => {
-        search;
-        page;
+        list.params;
         load();
     });
 
@@ -59,7 +74,7 @@
         try {
             const res = await api.get(
                 "/api/admin/taxonomy-attributes" +
-                    query({ q: search, page, limit: PER_PAGE }),
+                    list.query({ limit: perPage }),
             );
             entries = res.data ?? [];
             meta = res.meta ?? null;
@@ -139,6 +154,8 @@
     }
 </script>
 
+<svelte:head><title>Attribute dictionary · GoCommerce</title></svelte:head>
+
 <div class="page page-attributes">
     <SettingsSidebar />
 
@@ -156,8 +173,8 @@
                         type="text"
                         class="p-l-20"
                         placeholder="Search a handle or a label"
-                        bind:value={search}
-                        oninput={() => (page = 1)}
+                        bind:value={draftSearch}
+                        oninput={(e) => list.set({ q: e.currentTarget.value })}
                     />
                 </div>
                 {#if search}
@@ -165,7 +182,7 @@
                         <button
                             type="button"
                             class="btn sm pill secondary transparent"
-                            onclick={() => ((search = ""), (page = 1))}
+                            onclick={() => ((draftSearch = ""), list.set({ q: "" }))}
                         >
                             Clear
                         </button>
@@ -199,7 +216,12 @@
                     </thead>
                     <tbody>
                         {#each entries as entry (entry.handle)}
-                            <tr class="handle" onclick={() => openEdit(entry)}>
+                            <tr
+                                class="handle"
+                                tabindex="0"
+                                onclick={() => openEdit(entry)}
+                                onkeydown={(e) => rowKey(e, () => openEdit(entry))}
+                            >
                                 <td class="col-field-name-id" data-name="Handle">
                                     <span class="txt-code">{entry.handle}</span>
                                 </td>
@@ -275,7 +297,9 @@
                     {meta}
                     {loading}
                     noun="field"
-                    onpage={(n) => (page = n)}
+                    {perPage}
+                    onpage={(n) => list.setPage(n)}
+                    onperpage={(n) => list.set({ limit: n })}
                 />
                 <div class="flex-fill"></div>
                 <ThemeToggle />
@@ -345,17 +369,22 @@
 
     {#snippet footer()}
         <button type="button" class="btn transparent m-r-auto" onclick={() => (open = false)}>
-            <span class="txt">Cancel</span>
+            <span class="txt">{can("catalog.write") ? "Cancel" : "Close"}</span>
         </button>
-        <button
-            type="submit"
-            form="attribute-form"
-            class="btn expanded"
-            class:loading={saving}
-            disabled={saving}
-        >
-            <span class="txt">{editing ? "Save changes" : "Add field"}</span>
-        </button>
+        <!-- A row opens this drawer for anyone who may read the catalog, since
+             reading the field's values is the point of opening it. Save goes
+             rather than greys for an operator the engine would refuse. -->
+        {#if can("catalog.write")}
+            <button
+                type="submit"
+                form="attribute-form"
+                class="btn expanded"
+                class:loading={saving}
+                disabled={saving}
+            >
+                <span class="txt">{editing ? "Save changes" : "Add field"}</span>
+            </button>
+        {/if}
     {/snippet}
 </Drawer>
 

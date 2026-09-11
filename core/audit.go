@@ -113,6 +113,12 @@ const (
 	// agreed — it says what happened to the goods afterwards.
 	AuditOrderReturn         = "order.return"
 	AuditOrderReturnWithdraw = "order.return_withdraw"
+	// An operator reading the guest's access token back out. It changes
+	// nothing, and it is recorded anyway — that is the whole point of the
+	// route: the token is a bearer credential, so the only control over handing
+	// one out is a row saying who asked for it and when. See
+	// Orders.RevealAccessToken.
+	AuditOrderTokenReveal = "order.token_reveal"
 
 	AuditProductCreate         = "product.create"
 	AuditProductUpdate         = "product.update"
@@ -189,6 +195,7 @@ var AllAuditActions = []string{
 	AuditOrderDeliver, AuditOrderUndeliver,
 	AuditOrderShip, AuditOrderShipmentUpdate, AuditOrderShipmentDelete,
 	AuditOrderReturn, AuditOrderReturnWithdraw,
+	AuditOrderTokenReveal,
 
 	AuditProductCreate, AuditProductUpdate, AuditProductDelete,
 	AuditProductOptionAdd, AuditProductOptionsSet, AuditProductMediaSet,

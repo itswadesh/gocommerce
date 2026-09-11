@@ -246,8 +246,63 @@ type LocationStockQuery struct {
 	// the low-stock report for one shop, and unlike the store-wide one it is
 	// answerable: a variant with one unit in each of five shops is low in all
 	// five.
-	Threshold     *int
-	Order         string
+	Threshold *int
+	Order     string
+	// Sort is the operator's chosen ordering, and it OVERRIDES Order when it
+	// names a field. Order stays because it is not a column choice: it is which
+	// of the two questions the listing is being asked — "what must I move before
+	// I can close this" or "what is this shop short of" — and a screen that has
+	// not offered a sort still means one of them.
+	Sort          Sort
+	Limit, Offset int
+}
+
+// locationStockSorts is the per-location listing's allow-list.
+//
+// Its keys are lowStockSorts' keys, deliberately: one report, one set of column
+// headers, and the location filter must not change which of them can be
+// clicked. The EXPRESSIONS differ because the numbers differ — here they are the
+// one shelf's own columns, and there they are the store-wide sums — which is
+// also why this cannot be one spec. A test pins the two key sets together.
+var locationStockSorts = SortSpec{
+	Tiebreak: "vs.variant_id",
+	Columns: map[string]sortField{
+		"sku":       {"lower(v.sku) ASC", "lower(v.sku) DESC"},
+		"price":     {"v.price_minor ASC", "v.price_minor DESC"},
+		"on_hand":   {"vs.on_hand ASC", "vs.on_hand DESC"},
+		"reserved":  {"vs.reserved ASC", "vs.reserved DESC"},
+		"available": {"(vs.on_hand - vs.reserved) ASC", "(vs.on_hand - vs.reserved) DESC"},
+	},
+}
+
+// lowStockSorts is the store-wide report's allow-list.
+//
+// The three stock keys are the same correlated subqueries the SELECT and the
+// threshold already use, so the ordering and the number on screen are the same
+// arithmetic. None of them can be NULL — every one is wrapped in coalesce — so
+// none carries a NULLS clause, which is what keeps an ascending index serving
+// the descending scan.
+var lowStockSorts = SortSpec{
+	Tiebreak: "v.id",
+	Columns: map[string]sortField{
+		"sku":       {"lower(v.sku) ASC", "lower(v.sku) DESC"},
+		"price":     {"v.price_minor ASC", "v.price_minor DESC"},
+		"on_hand":   {variantOnHand + " ASC", variantOnHand + " DESC"},
+		"reserved":  {variantReserved + " ASC", variantReserved + " DESC"},
+		"available": {variantAvailable + " ASC", variantAvailable + " DESC"},
+	},
+}
+
+// LowStockQuery cuts the store-wide low-stock report.
+//
+// A struct rather than four positional arguments, for the reason
+// LocationStockQuery is one: the fifth thing a report can be asked is not a
+// number, and a signature that grows one parameter per release is a signature
+// every caller has to be edited for.
+type LowStockQuery struct {
+	// Threshold is compared against the store's total availability.
+	Threshold     int
+	Sort          Sort
 	Limit, Offset int
 }
 
@@ -601,6 +656,19 @@ func (i *Inventory) AtLocation(ctx context.Context, locationID int64, q Location
 	}
 	clause := strings.Join(where, " AND ")
 
+	fallback := `(vs.on_hand + vs.reserved) DESC, vs.variant_id`
+	if q.Order == StockOrderAvailable {
+		fallback = `(vs.on_hand - vs.reserved) ASC, vs.variant_id`
+	}
+	// Resolved before any database work, so a rejected sort costs none — the
+	// count below runs after this. It is read after the two fixed orderings
+	// rather than instead of them: Order says which question the listing is
+	// being asked, and an explicit Sort overrides the answer's shape.
+	order, err := locationStockSorts.Clause(q.Sort, fallback)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	var total int
 	if err := i.app.db.QueryRowContext(ctx, `
 		SELECT count(*) FROM variant_stock vs
@@ -609,10 +677,6 @@ func (i *Inventory) AtLocation(ctx context.Context, locationID int64, q Location
 		return nil, 0, err
 	}
 
-	order := `(vs.on_hand + vs.reserved) DESC, vs.variant_id`
-	if q.Order == StockOrderAvailable {
-		order = `(vs.on_hand - vs.reserved) ASC, vs.variant_id`
-	}
 	if q.Limit <= 0 {
 		q.Limit = DefaultLimit
 	}
@@ -726,22 +790,30 @@ func (i *Inventory) explainStockFailure(ctx context.Context, tx *sql.Tx, variant
 // agent — can find what needs reordering. The threshold is against the store's
 // total: a variant with one unit in each of five shops is not low, even though
 // every individual shelf looks it.
-func (i *Inventory) LowStock(ctx context.Context, threshold, limit, offset int) ([]*Variant, int, error) {
-	if threshold < 0 {
+func (i *Inventory) LowStock(ctx context.Context, q LowStockQuery) ([]*Variant, int, error) {
+	if q.Threshold < 0 {
 		return nil, 0, Validationf("threshold must not be negative")
+	}
+	// Before the count, so a rejected sort costs no database work — and the
+	// emptiest first stays the fallback, because "what do I have to reorder" is
+	// what the report is for when nobody has clicked a column.
+	order, err := lowStockSorts.Clause(q.Sort, variantAvailable+` ASC, v.id`)
+	if err != nil {
+		return nil, 0, err
 	}
 	var total int
 	if err := i.app.db.QueryRowContext(ctx, `
 		SELECT count(*) FROM variants v
-		WHERE v.track_inventory AND `+variantAvailable+` <= $1`, threshold).Scan(&total); err != nil {
+		WHERE v.track_inventory AND `+variantAvailable+` <= $1`, q.Threshold).Scan(&total); err != nil {
 		return nil, 0, err
 	}
+	limit := q.Limit
 	if limit <= 0 {
 		limit = DefaultLimit
 	}
 	variants, err := i.app.catalog.queryVariantsOrdered(ctx,
 		`v.track_inventory AND `+variantAvailable+` <= $1`,
-		variantAvailable+` ASC, v.id`, limit, offset, threshold)
+		order, limit, q.Offset, q.Threshold)
 	if err != nil {
 		return nil, 0, err
 	}

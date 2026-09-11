@@ -56,6 +56,13 @@
             // rows it is failing on are read and made to go again.
             { href: "/settings/events", label: "Events", icon: "ri-broadcast-line",
               right: "store.operate" },
+            // Who did what in this store. Behind store.operate for the reason
+            // audit_http.go states: filtering the whole store by person is
+            // surveillance of the team, which is a heavier thing than reading
+            // one record's own history — so it is a heavier right, and it sits
+            // here rather than in the main nav beside Orders.
+            { href: "/settings/audit", label: "Audit trail", icon: "ri-history-line",
+              right: "store.operate" },
             { href: "/settings/agent", label: "Agent activity", icon: "ri-robot-2-line",
               right: "store.operate", module: "mcp" },
         ],

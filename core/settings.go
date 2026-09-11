@@ -29,8 +29,8 @@ type ProviderInfo struct {
 // every order in flight means (D14 snapshots currency per order), so it is a
 // restart with a different Config rather than a form.
 //
-// Reserved names, to be added additively by the modules/providers readout and
-// deliberately not served yet: "modules" and "notifier_channels".
+// No names are reserved on it any more: "modules" and "notifier_channels" were
+// held for the readout below and are now served.
 type StoreSettings struct {
 	Version          string   `json:"version"`
 	Currency         string   `json:"currency"`
@@ -50,6 +50,43 @@ type StoreSettings struct {
 	MediaUploadsEnabled  bool           `json:"media_uploads_enabled"`
 	PaymentMethods       []ProviderInfo `json:"payment_methods"`
 	FulfillmentProviders []ProviderInfo `json:"fulfillment_providers"`
+	// Modules is names and nothing else. A client's question is "was this
+	// binary built with cms", which a string answers; anything richer here
+	// would be a description of the running process rather than of the store's
+	// configuration, and this response is readable by every role.
+	Modules []string `json:"modules"`
+	// NotifierChannels is the one entry on this response that can be bad news.
+	// Every other field describes a choice; this one can say that order
+	// confirmations are being written to a log file nobody reads, which is a
+	// configuration that looks healthy from every other angle.
+	NotifierChannels []NotifierChannelInfo `json:"notifier_channels"`
+}
+
+// NotifierBackend is one delivery backend registered on a channel.
+type NotifierBackend struct {
+	// Name is what the backend calls itself when it implements Named, the
+	// module that registered it otherwise, and "log" for the built-in logger.
+	// A notifier has no code the way a payment provider does — nothing
+	// addresses one by name — so there is nothing more canonical to fall back
+	// to.
+	Name string `json:"name"`
+	// Module is "core" for the built-in logger, otherwise the module that
+	// registered it.
+	Module string `json:"module"`
+	// Delivers is false for the built-in logger, which writes one line to the
+	// process log and reports success. Without this field a channel with a
+	// backend and a channel that sends are indistinguishable.
+	Delivers bool `json:"delivers"`
+}
+
+// NotifierChannelInfo is one notification channel and what stands behind it.
+type NotifierChannelInfo struct {
+	Channel string `json:"channel"`
+	// Delivers is true when at least one backend on this channel is not the
+	// built-in logger. False is the trap: sending succeeds, the outbox records
+	// a delivered event, and nobody receives anything.
+	Delivers bool              `json:"delivers"`
+	Backends []NotifierBackend `json:"backends"`
 }
 
 // Settings is the composed view of the store a module or a screen reads when
@@ -82,7 +119,38 @@ func (a *App) Settings() StoreSettings {
 		MediaUploadsEnabled:  a.mediaUploadsEnabled(),
 		PaymentMethods:       a.paymentInfo(),
 		FulfillmentProviders: a.fulfillmentInfo(),
+		Modules:              a.Modules(),
+		NotifierChannels:     a.NotifierChannels(),
 	}
+}
+
+// Modules names the modules this binary was composed with, in the order they
+// were passed to New.
+//
+// Registration order rather than alphabetical: it is the order migrations run
+// in and the order a collision is resolved in, so it is the only ordering that
+// means something, and it is stable across reads of the same binary.
+func (a *App) Modules() []string {
+	out := make([]string, 0, len(a.modules))
+	for _, m := range a.modules {
+		out = append(out, m.Name())
+	}
+	return out
+}
+
+// NotifierChannels reports each notification channel and the backends behind
+// it.
+//
+// The channel set is the engine's closed one rather than the keys of the map,
+// and in a fixed order: a channel with no backend at all still has to appear,
+// because "sms is not configured" is an answer and a missing row is not.
+func (a *App) NotifierChannels() []NotifierChannelInfo {
+	channels := []string{ChannelEmail, ChannelSMS}
+	out := make([]NotifierChannelInfo, 0, len(channels))
+	for _, c := range channels {
+		out = append(out, a.notifier.describe(c))
+	}
+	return out
 }
 
 // paymentInfo describes the installed payment methods.

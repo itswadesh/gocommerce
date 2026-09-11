@@ -1,7 +1,8 @@
 <script>
     import { base } from "$app/paths";
     import { goto } from "$app/navigation";
-    import { api, query } from "$lib/api.js";
+    import { api, can, query } from "$lib/api.js";
+    import { rowKey } from "$lib/rowkey.js";
     import {
         formatMoney,
         relativeTime,
@@ -23,7 +24,28 @@
     let counts = $state({ orders: 0, products: 0, pending: 0, unpaid: 0 });
     let revenue = $state(null);
 
+    /*
+     * What this operator may actually read.
+     *
+     * The screen used to fire all six reads regardless and hand the whole page
+     * to Promise.all, so an operator whose role does not carry orders.read got
+     * one toast, no dashboard, and no way to tell which of the six was the
+     * problem. Each read is now asked for only by somebody who may have it, and
+     * the section it fills is drawn only when there was a read to fill it.
+     *
+     * This is a shell rather than a screen with a right of its own, so there is
+     * no NoAccess here: a role that can read nothing still gets the panel and
+     * its navigation, which is the honest answer.
+     */
+    const mayOrders = $derived(can("orders.read"));
+    const mayCatalog = $derived(can("catalog.read"));
+    const mayStock = $derived(can("inventory.read"));
+
     $effect(() => {
+        // Reading the three is what re-runs this if the role is re-cut.
+        mayOrders;
+        mayCatalog;
+        mayStock;
         load();
     });
 
@@ -35,32 +57,40 @@
             // that exists only for this screen would be one more thing to keep
             // in step with it.
             const [orders, products, pending, unpaid, stock, sales] = await Promise.all([
-                api.get("/api/admin/orders" + query({ limit: 8 })),
-                api.get("/api/admin/products" + query({ limit: 1 })),
-                api.get("/api/admin/orders" + query({ status: "confirmed", limit: 1 })),
-                api.get("/api/admin/orders" + query({ payment_status: "pending", limit: 1 })),
-                api.get("/api/admin/inventory/low-stock" + query({ threshold: 5, limit: 6 })),
+                mayOrders ? api.get("/api/admin/orders" + query({ limit: 8 })) : null,
+                mayCatalog ? api.get("/api/admin/products" + query({ limit: 1 })) : null,
+                mayOrders
+                    ? api.get("/api/admin/orders" + query({ status: "confirmed", limit: 1 }))
+                    : null,
+                mayOrders
+                    ? api.get("/api/admin/orders" + query({ payment_status: "pending", limit: 1 }))
+                    : null,
+                mayStock
+                    ? api.get("/api/admin/inventory/low-stock" + query({ threshold: 5, limit: 6 }))
+                    : null,
                 // Revenue is the engine's own arithmetic over a whole window,
                 // not a sum over the eight rows above it. The figure beside
                 // "Recent orders" used to describe those eight and was read as
                 // the store's revenue — on a store with nine orders it was
                 // simply wrong, and it counted a refunded order at full value.
-                api.get("/api/admin/reports/sales" + query({ group_by: "month", tz })),
+                mayOrders
+                    ? api.get("/api/admin/reports/sales" + query({ group_by: "month", tz }))
+                    : null,
             ]);
 
-            recent = orders.data;
+            recent = orders?.data ?? [];
             counts = {
-                orders: orders.meta.total,
-                products: products.meta.total,
-                pending: pending.meta.total,
-                unpaid: unpaid.meta.total,
+                orders: orders?.meta.total ?? 0,
+                products: products?.meta.total ?? 0,
+                pending: pending?.meta.total ?? 0,
+                unpaid: unpaid?.meta.total ?? 0,
             };
-            lowStock = stock.data;
+            lowStock = stock?.data ?? [];
 
             // The first currency block, which is the store's own: the report
             // never sums across currencies, and a store holding two gets the
             // whole picture on /reports rather than a wrong single number here.
-            revenue = sales.currencies[0]?.totals.net ?? null;
+            revenue = sales?.currencies[0]?.totals.net ?? null;
         } catch (err) {
             toast.error(err);
         } finally {
@@ -68,37 +98,55 @@
         }
     }
 
-    const cards = $derived([
-        {
-            icon: "ri-shopping-bag-3-line",
-            label: "Orders",
-            value: counts.orders,
-            hint: "All time",
-            href: "/orders",
-        },
-        {
-            icon: "ri-truck-line",
-            label: "Awaiting shipment",
-            value: counts.pending,
-            hint: "Confirmed, not yet shipped",
-            href: "/orders?status=confirmed",
-        },
-        {
-            icon: "ri-money-dollar-circle-line",
-            label: "Awaiting payment",
-            value: counts.unpaid,
-            hint: "Cash on delivery, or unpaid",
-            href: "/orders?payment_status=pending",
-        },
-        {
-            icon: "ri-price-tag-3-line",
-            label: "Products",
-            value: counts.products,
-            hint: "Every status",
-            href: "/products",
-        },
-    ]);
+    /* The anchor in the first cell already navigates, so the row handler stands
+       aside for it — otherwise the browser follows the link and this follows it
+       again over the top. */
+    function openOrder(event, order) {
+        if (event.target.closest("a")) return;
+        goto(`${base}/orders/${order.id}`);
+    }
+
+    /* A card whose figure nobody here may read is not shown at zero — a zero
+       is a fact about the store, and this would be a fact about the role. */
+    const cards = $derived(
+        [
+            {
+                icon: "ri-shopping-bag-3-line",
+                label: "Orders",
+                value: counts.orders,
+                hint: "All time",
+                href: "/orders",
+                show: mayOrders,
+            },
+            {
+                icon: "ri-truck-line",
+                label: "Awaiting shipment",
+                value: counts.pending,
+                hint: "Confirmed, not yet shipped",
+                href: "/orders?status=confirmed",
+                show: mayOrders,
+            },
+            {
+                icon: "ri-money-dollar-circle-line",
+                label: "Awaiting payment",
+                value: counts.unpaid,
+                hint: "Cash on delivery, or unpaid",
+                href: "/orders?payment_status=pending",
+                show: mayOrders,
+            },
+            {
+                icon: "ri-price-tag-3-line",
+                label: "Products",
+                value: counts.products,
+                hint: "Every status",
+                href: "/products",
+                show: mayCatalog,
+            },
+        ].filter((card) => card.show),
+    );
 </script>
+
+<svelte:head><title>Dashboard · GoCommerce</title></svelte:head>
 
 <div class="page page-dashboard">
     <div class="page-content">
@@ -131,6 +179,7 @@
             {/each}
         </div>
 
+        {#if mayOrders}
         <h6 class="section-title">
             <i class="ri-history-line" aria-hidden="true"></i>
             Recent orders
@@ -159,12 +208,21 @@
             </thead>
             <tbody>
                 {#each recent as order (order.id)}
-                    <!-- `id`, not `q`: the orders screen filters on what OrderQuery
-                         carries, and `q` is not one of its fields — the row
-                         landed on an unfiltered list. -->
-                    <tr class="handle" onclick={() => goto(`${base}/orders?id=${order.id}`)}>
+                    <!-- The order itself, now that an order has an address.
+                         This pointed at `/orders?id=…`, which nothing read — so
+                         the dashboard's most-clicked row landed on an
+                         unfiltered order list, exactly as a bare link would. -->
+                    <tr
+                        class="handle"
+                        tabindex="0"
+                        onclick={(e) => openOrder(e, order)}
+                        onkeydown={(e) => rowKey(e, () => openOrder(e, order))}
+                    >
                         <td class="col-field-name-id txt-code txt-sm" data-name="Order">
-                            {order.number}
+                            <!-- A link as well as a row: the point of the row is
+                                 to be opened, often in a second tab beside the
+                                 dashboard it was spotted on. -->
+                            <a href="{base}/orders/{order.id}">{order.number}</a>
                         </td>
                         <!-- The ellipsis goes on a span, never the cell: overflow
                              on a <td> takes it out of the table's border model
@@ -207,6 +265,9 @@
             </tbody>
         </table>
 
+        {/if}
+
+        {#if mayStock}
         <h6 class="section-title">
             <i class="ri-alert-line" aria-hidden="true"></i>
             Running low
@@ -261,6 +322,15 @@
                 {/if}
             </tbody>
         </table>
+
+        {/if}
+
+        {#if !mayOrders && !mayCatalog && !mayStock}
+            <p class="txt-hint txt-center p-base">
+                Your role does not carry any of the figures this page shows. The screens it does
+                reach are in the navigation.
+            </p>
+        {/if}
 
         <footer class="page-footer">
             <span class="txt">Live counts, read straight from the API</span>

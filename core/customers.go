@@ -89,6 +89,25 @@ var customerSorts = SortSpec{
 	},
 }
 
+// customerSearchClause is the reading's own predicate, in one function so the
+// listing and the export cannot come to mean different things by the same box.
+// orderSearchClause exists for the same reason and is used the same way: the
+// statements it is spliced into all alias orders as `o`.
+//
+// A single LIKE over both columns, not two: a group's name is whatever its
+// newest order says, and matching the name column row-by-row before the GROUP BY
+// is what lets "Petra" find a shopper who has since been recorded under a
+// different spelling.
+func customerSearchClause(search string, args *[]any) string {
+	needle := strings.ToLower(strings.TrimSpace(search))
+	if needle == "" {
+		return ""
+	}
+	*args = append(*args, "%"+needle+"%")
+	n := len(*args)
+	return fmt.Sprintf("(lower(o.email) LIKE $%d OR lower(coalesce(o.name, '')) LIKE $%d)", n, n)
+}
+
 // Customers groups the orders by who placed them.
 //
 // Grouped on the lower-cased email, which is the only handle a guest has. Two
@@ -96,11 +115,8 @@ var customerSorts = SortSpec{
 // address are not.
 func (s *Orders) Customers(ctx context.Context, q CustomerQuery) ([]*Customer, int, error) {
 	where, args := []string{"o.email <> ''"}, []any{}
-	if needle := strings.ToLower(strings.TrimSpace(q.Search)); needle != "" {
-		args = append(args, "%"+needle+"%")
-		where = append(where,
-			fmt.Sprintf("(lower(o.email) LIKE $%d OR lower(coalesce(o.name, '')) LIKE $%d)",
-				len(args), len(args)))
+	if clause := customerSearchClause(q.Search, &args); clause != "" {
+		where = append(where, clause)
 	}
 	clause := strings.Join(where, " AND ")
 

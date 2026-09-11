@@ -8,14 +8,36 @@
      * that operator out everywhere, which is stated on the form rather than
      * discovered afterwards.
      */
-    import { auth, getRecord } from "$lib/api.js";
-    import { formatDate, relativeTime } from "$lib/format.js";
+    import { auth, can, getRecord } from "$lib/api.js";
+    import { rowKey } from "$lib/rowkey.js";
+    import { listState } from "$lib/liststate.svelte.js";
+    import { pageSlice } from "$lib/clientpage.js";
+    import { selection } from "$lib/selection.svelte.js";
+    import { runBulk } from "$lib/bulk.js";
+    import { formatDate, relativeTime, pluralize } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
+    import BulkBar from "$lib/components/BulkBar.svelte";
+    import DirtyGuard from "$lib/components/DirtyGuard.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
+    import NoAccess from "$lib/components/NoAccess.svelte";
+    import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
     import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
+
+    /*
+     * team.read is the sidebar's gate on this screen; team.write is what every
+     * control on it needs. They are separate rights (rights.go), and the panel
+     * used to honour neither here: a team.read-only operator got a fully armed
+     * screen — Invite, Create directly, the inline role picker, sign out
+     * everywhere, Remove, Revoke — where every single button answered 403.
+     *
+     * The engine refuses by name, so the screen can say the same thing before
+     * the request instead of after it.
+     */
+    const readable = $derived(can("team.read"));
+    const writable = $derived(can("team.write"));
 
     let loading = $state(true);
     let saving = $state(false);
@@ -25,11 +47,16 @@
     let inviteOpen = $state(false);
     let invite = $state({ email: "", role: "staff" });
     let inviting = $state(false);
+    /** The invitation being re-issued, so its own row shows the spinner. */
+    let resending = $state("");
     // The link, held only for as long as the drawer that shows it is open. The
     // engine cannot produce it a second time, so this is the one chance to
     // copy it — and it must not end up anywhere it would outlive that.
     let issued = $state(null);
     let copied = $state(false);
+    /** Whether the link on screen replaced an earlier one, which the drawer has
+     *  to say out loud: the earlier link stopped working when this was made. */
+    let reissued = $state(false);
 
     let editorOpen = $state(false);
     let editing = $state(null); // null = creating
@@ -59,6 +86,12 @@
     });
 
     async function load() {
+        // The screen is refused above; asking anyway would put a 403 toast
+        // over the explanation.
+        if (!readable) {
+            loading = false;
+            return;
+        }
         loading = true;
         try {
             const [people, invites] = await Promise.all([auth.list(), auth.invitations()]);
@@ -80,10 +113,129 @@
        separately would only be another thing to get out of step. */
     const signedIn = $derived(superusers.reduce((n, su) => n + (su.sessions ?? 0), 0));
 
+    // --------------------------------------------------------------- paging
+
+    /* The starting page size, not the only one: `limit` is a listState key, so
+       an operator can change it and the choice rides in the URL with the page. */
+    const PER_PAGE = 25;
+
+    const list = listState({ page: 1, limit: PER_PAGE });
+    const perPage = $derived(list.params.limit);
+
+    /*
+     * The page is cut here rather than asked for, and that is the engine's
+     * shape rather than a shortcut: GET /api/admin/superusers takes no page
+     * parameter, its SQL has no LIMIT, and it reports
+     * ListMeta{Total: len(list), Limit: len(list)} (core/superusers_http.go) —
+     * the whole table, every time. A shop that has taken on forty people over
+     * three years still has to be able to reach the fortieth, and the footer
+     * counted them all while the table showed whatever fitted.
+     */
+    const paged = $derived(pageSlice(superusers, { page: list.page, limit: perPage }));
+
+    // ------------------------------------------------------------ selection
+
+    /*
+     * Two selections, and only ever one of them holding anything.
+     *
+     * The people and the outstanding invitations are different kinds of row
+     * with different actions, and there is one bulk bar. Ticking in either list
+     * clears the other, so what the bar is offering is never in doubt — the
+     * alternative is two sticky bars stacked over one footer, each describing
+     * half of a selection.
+     */
+    const selPeople = selection();
+    const selInvites = selection();
+
+    const pickPerson = (id) => (selInvites.clear(), selPeople.toggle(id));
+    const pickAllPeople = (rows) => (selInvites.clear(), selPeople.toggleAll(rows));
+    const pickInvite = (id) => (selPeople.clear(), selInvites.toggle(id));
+    const pickAllInvites = (rows) => (selPeople.clear(), selInvites.toggleAll(rows));
+
+    let bulkBusy = $state(false);
+    let bulkRemoveOpen = $state(false);
+
+    const pickedPeople = $derived(selPeople.pick(superusers));
+    const pickedInvites = $derived(selInvites.pick(outstanding));
+
+    /*
+     * Never yourself, in either action.
+     *
+     * "Sign out everywhere" includes the browser it is pressed in (the engine
+     * is explicit about that — see handleRevokeMySessions), and removing your
+     * own account ends the session mid-run, so every call after it would 401
+     * and the operator would be looking at a login form with no idea how much
+     * of their selection had gone through. Your own row keeps both buttons,
+     * where it is one deliberate act rather than a side effect of a tick.
+     */
+    const actionable = $derived(pickedPeople.filter((su) => !(me && su.id === me.id)));
+    const includesMe = $derived(pickedPeople.length !== actionable.length);
+
+    async function runOver(rows, fn, describe, noun = "superuser") {
+        if (!rows.length) return;
+        bulkBusy = true;
+        try {
+            await runBulk(rows, fn, { describe, noun, label: (row) => row.email });
+        } finally {
+            bulkBusy = false;
+        }
+        selPeople.clear();
+        selInvites.clear();
+        await load();
+    }
+
+    const bulkSignOut = () =>
+        runOver(actionable, (su) => auth.revokeSessions(su.id), "Signed out everywhere");
+
+    const bulkRemove = () => runOver(actionable, (su) => auth.remove(su.id), "Removed");
+
+    /*
+     * Revoking is the only bulk action an invitation has, and Resend is
+     * deliberately not beside it. One resend answers with a link that is shown
+     * once and cannot be produced again, and it cancels the link it replaces —
+     * so a run over eight rows would destroy eight live links and show none of
+     * the eight replacements. It stays a per-row button, which is where the
+     * drawer that shows the link can follow it.
+     */
+    const bulkRevoke = () =>
+        runOver(
+            pickedInvites,
+            (inv) => auth.revokeInvitation(inv.id),
+            "Revoked",
+            "invitation",
+        );
+
+    // ----------------------------------------------------------- dirty state
+
+    /*
+     * What has been typed into the two drawers and not saved.
+     *
+     * Both used to be thrown away in silence by Escape, a click on the dimmed
+     * page, or any navigation off the screen — and the shortest route out of a
+     * half-filled form was the one that said nothing. `role` counts as typing
+     * only while creating, because it is the field that is not there when
+     * editing somebody.
+     */
+    const editorDirty = $derived(
+        editorOpen &&
+            (form.email.trim() !== (editing ? editing.email : "") ||
+                form.password !== "" ||
+                (!editing && form.role !== "staff")),
+    );
+
+    /* An issued link is not a dirty form — closeInvite already refuses to
+       dismiss while one is on screen, and for a stronger reason. */
+    const inviteDirty = $derived(
+        inviteOpen && !issued && (invite.email.trim() !== "" || invite.role !== "staff"),
+    );
+
+    const anyDirty = $derived(editorDirty || inviteDirty);
+
     function openInvite() {
         invite = { email: "", role: "staff" };
         issued = null;
         copied = false;
+        reissued = false;
         errors = {};
         inviteOpen = true;
     }
@@ -120,6 +272,42 @@
         }
     }
 
+    /**
+     * Re-issue an outstanding invitation.
+     *
+     * One POST, not revoke-then-invite: the engine deletes an outstanding
+     * invitation for the same address before writing the new one
+     * (core/invitations.go), so re-inviting IS the replacement. What that means
+     * for the operator is worth being plain about — the old link stops working
+     * the moment this one exists, which is the right behaviour for a lost link
+     * and the wrong surprise if somebody still has the first one.
+     *
+     * Until this existed the only remedy for a link that never arrived was to
+     * find the row, revoke it, and then invite the same address again from a
+     * different button — three steps to repeat one request.
+     */
+    async function resendInvite(inv) {
+        if (resending) return;
+        resending = inv.id;
+        errors = {};
+        try {
+            const result = await auth.invite(inv.email, inv.role);
+            // Straight into the drawer that shows the link: the response is the
+            // only place it exists, so anything that navigates away from it
+            // first has already lost it.
+            issued = result.data ?? result;
+            copied = false;
+            reissued = true;
+            invite = { email: inv.email, role: inv.role };
+            inviteOpen = true;
+            await load();
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            resending = "";
+        }
+    }
+
     async function revokeInvite(inv) {
         try {
             await auth.revokeInvitation(inv.id);
@@ -128,6 +316,51 @@
         } catch (err) {
             toast.error(err);
         }
+    }
+
+    /**
+     * The invite drawer only closes deliberately while the one-time link is on
+     * screen.
+     *
+     * `onclose` is one callback for the backdrop, Escape and the header's X, so
+     * it cannot tell them apart — and a stray click on the dimmed page while
+     * that link is up destroys it. So every route out of the drawer is refused
+     * except the footer's Done, which says what it is doing. The form state has
+     * nothing to protect and dismisses normally.
+     *
+     * Resend makes this recoverable rather than fatal now, which is why this is
+     * a refusal with an explanation and not a confirmation dialog over a
+     * dialog.
+     */
+    function closeInvite({ deliberate = false } = {}) {
+        if (issued && !deliberate) {
+            toast.info("This link is shown once — press Done when you have copied it");
+            return;
+        }
+        /*
+         * A half-typed invitation is worth one question. Cancel passes
+         * `deliberate` and is never asked — it says what it does — while
+         * Escape, the backdrop and the header's X all arrive here saying
+         * nothing, which is how the address somebody was mid-way through
+         * typing used to disappear.
+         *
+         * `confirm` rather than a dialog over a dialog, the same reasoning
+         * DirtyGuard sets out: this has to answer synchronously and a second
+         * modal over an open drawer is worse than the browser's own question.
+         */
+        if (!deliberate && inviteDirty && !window.confirm(DISCARD)) return;
+        inviteOpen = false;
+    }
+
+    /** One sentence for both drawers, so the question reads the same whichever
+     *  one is open. */
+    const DISCARD = "You have unsaved changes. Close this and lose them?";
+
+    /** The editor's own dismissal, guarded the same way. The footer's Cancel
+     *  closes it outright, because that button already says what it is for. */
+    function closeEditor() {
+        if (editorDirty && !window.confirm(DISCARD)) return;
+        editorOpen = false;
     }
 
     async function signOutEverywhere(su, event) {
@@ -201,6 +434,15 @@
         if (editing && form.password && form.password.length < 8) {
             errors.password = "A password must be at least 8 characters.";
         }
+        /*
+         * POST /api/admin/superusers turns an omitted or empty role into
+         * OWNER — the opposite of what an invitation with no role defaults to.
+         * So the create path refuses to send one it cannot name, rather than
+         * letting a blank travel and be read as the most powerful answer.
+         */
+        if (!editing && !ROLES.some((r) => r.value === form.role)) {
+            errors.role = "Choose a role.";
+        }
         if (Object.keys(errors).length) return;
 
         saving = true;
@@ -249,6 +491,19 @@
     }
 </script>
 
+<svelte:head><title>Team · GoCommerce</title></svelte:head>
+
+{#if !readable}
+    <NoAccess right="team.read" what="the team" />
+{:else}
+<!-- The drawers are guarded against dismissal on their own; this is the other
+     half — the breadcrumb, the settings rail and anything else that navigates
+     away while a form is half filled in. -->
+<DirtyGuard
+    dirty={anyDirty}
+    message="You have started {inviteDirty ? 'an invitation' : 'a superuser'} and not saved it. Leave and lose it?"
+/>
+
 <div class="page page-superusers">
     <SettingsSidebar />
 
@@ -277,14 +532,16 @@
                      it from the moment it exists. Creating stays for the cases
                      invitations cannot serve — a shared account, or somebody
                      with no reachable inbox. -->
-                <button type="button" class="btn secondary" onclick={openCreate}>
-                    <i class="ri-add-line" aria-hidden="true"></i>
-                    <span class="txt">Create directly</span>
-                </button>
-                <button type="button" class="btn" onclick={openInvite}>
-                    <i class="ri-mail-send-line" aria-hidden="true"></i>
-                    <span class="txt">Invite</span>
-                </button>
+                {#if writable}
+                    <button type="button" class="btn secondary" onclick={openCreate}>
+                        <i class="ri-add-line" aria-hidden="true"></i>
+                        <span class="txt">Create directly</span>
+                    </button>
+                    <button type="button" class="btn" onclick={openInvite}>
+                        <i class="ri-mail-send-line" aria-hidden="true"></i>
+                        <span class="txt">Invite</span>
+                    </button>
+                {/if}
             </div>
         </header>
 
@@ -292,6 +549,22 @@
             <table class="table responsive-table">
                 <thead class="sticky">
                     <tr>
+                        {#if writable}
+                            <th class="col-bulk-select min-width">
+                                <div class="field">
+                                    <input
+                                        id="select-all-superusers"
+                                        type="checkbox"
+                                        checked={selPeople.allSelected(paged.rows)}
+                                        onchange={() => pickAllPeople(paged.rows)}
+                                    />
+                                    <label
+                                        for="select-all-superusers"
+                                        aria-label="Select everyone on this page"
+                                    ></label>
+                                </div>
+                            </th>
+                        {/if}
                         <th class="col-field-name-id">Email</th>
                         <th class="col-field-type-select">Role</th>
                         <th class="col-field-type-number min-width">Sessions</th>
@@ -301,8 +574,35 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {#each superusers as su (su.id)}
-                        <tr class="handle" onclick={() => openEdit(su)}>
+                    {#each paged.rows as su (su.id)}
+                        <tr
+                            class="handle"
+                            tabindex="0"
+                            onclick={() => openEdit(su)}
+                            onkeydown={(e) => rowKey(e, () => openEdit(su))}
+                        >
+                            {#if writable}
+                                <!-- stopPropagation rather than a guard inside
+                                     the row handler: ticking a box must not also
+                                     open the editor. -->
+                                <td
+                                    class="col-bulk-select min-width"
+                                    onclick={(e) => e.stopPropagation()}
+                                >
+                                    <div class="field">
+                                        <input
+                                            id="select-superuser-{su.id}"
+                                            type="checkbox"
+                                            checked={selPeople.has(su.id)}
+                                            onchange={() => pickPerson(su.id)}
+                                        />
+                                        <label
+                                            for="select-superuser-{su.id}"
+                                            aria-label="Select {su.email}"
+                                        ></label>
+                                    </div>
+                                </td>
+                            {/if}
                             <td class="col-field-name-id" data-name="Email">
                                 <span class="txt-bold">{su.email}</span>
                                 {#if me && su.id === me.id}
@@ -319,15 +619,22 @@
                                 data-name="Role"
                                 onclick={(e) => e.stopPropagation()}
                             >
-                                <div class="field">
-                                    <Select
-                                        id="role-{su.id}"
-                                        ariaLabel="Role for {su.email}"
-                                        value={su.role}
-                                        onchange={(role) => changeRole(su, role)}
-                                        options={ROLES}
-                                    />
-                                </div>
+                                {#if writable}
+                                    <div class="field">
+                                        <Select
+                                            id="role-{su.id}"
+                                            ariaLabel="Role for {su.email}"
+                                            value={su.role}
+                                            onchange={(role) => changeRole(su, role)}
+                                            options={ROLES}
+                                        />
+                                    </div>
+                                {:else}
+                                    <!-- Still shown, because reading who holds
+                                         which role is exactly what team.read
+                                         is for; only the changing of it goes. -->
+                                    <span class="label">{roleName(su.role)}</span>
+                                {/if}
                             </td>
                             <td class="col-field-type-number min-width" data-name="Sessions">
                                 {#if su.sessions}
@@ -349,18 +656,20 @@
                                 <!-- Enabled whatever the count says: a number
                                      read a few minutes ago must never disable a
                                      security control. The title is what changes. -->
-                                <button
-                                    type="button"
-                                    class="btn circle sm transparent secondary"
-                                    aria-label="Sign {su.email} out everywhere"
-                                    title={su.sessions
-                                        ? "Sign out everywhere"
-                                        : "Not signed in anywhere"}
-                                    onclick={(e) => signOutEverywhere(su, e)}
-                                >
-                                    <i class="ri-logout-circle-line" aria-hidden="true"></i>
-                                </button>
-                                {#if superusers.length > 1}
+                                {#if writable}
+                                    <button
+                                        type="button"
+                                        class="btn circle sm transparent secondary"
+                                        aria-label="Sign {su.email} out everywhere"
+                                        title={su.sessions
+                                            ? "Sign out everywhere"
+                                            : "Not signed in anywhere"}
+                                        onclick={(e) => signOutEverywhere(su, e)}
+                                    >
+                                        <i class="ri-logout-circle-line" aria-hidden="true"></i>
+                                    </button>
+                                {/if}
+                                {#if writable && superusers.length > 1}
                                     <button
                                         type="button"
                                         class="btn circle sm transparent secondary row-delete"
@@ -378,7 +687,7 @@
 
                     {#if loading && !superusers.length}
                         {#each Array(3) as _, i (i)}
-                            <tr><td colspan="6"><span class="skeleton-loader"></span></td></tr>
+                            <tr><td colspan={writable ? 7 : 6}><span class="skeleton-loader"></span></td></tr>
                         {/each}
                     {/if}
                 </tbody>
@@ -398,10 +707,42 @@
             <!-- Below the team rather than beside it: these are people who are
                  not here yet, and mixing them into the list would say they are. -->
             <div class="m-t-base">
-                <div class="section-title">Invited, not yet joined</div>
+                <div class="section-title">
+                    Invited, not yet joined
+                    {#if writable && outstanding.length > 1}
+                        <button
+                            type="button"
+                            class="btn sm transparent secondary"
+                            onclick={() => pickAllInvites(outstanding)}
+                        >
+                            <span class="txt">
+                                {selInvites.allSelected(outstanding) ? "Select none" : "Select all"}
+                            </span>
+                        </button>
+                    {/if}
+                </div>
                 <div class="list">
                     {#each outstanding as inv (inv.id)}
                         <div class="list-item">
+                            {#if writable}
+                                <!-- The same tick as the table above, so a
+                                     selection means one thing on this screen.
+                                     `.field` is `width: 100%` in a form column
+                                     and has to be told otherwise in a flex
+                                     row — see the scoped rule at the foot. -->
+                                <div class="field invite-select">
+                                    <input
+                                        id="select-invite-{inv.id}"
+                                        type="checkbox"
+                                        checked={selInvites.has(inv.id)}
+                                        onchange={() => pickInvite(inv.id)}
+                                    />
+                                    <label
+                                        for="select-invite-{inv.id}"
+                                        aria-label="Select the invitation to {inv.email}"
+                                    ></label>
+                                </div>
+                            {/if}
                             <i class="ri-mail-line" aria-hidden="true"></i>
                             <span class="txt">{inv.email}</span>
                             <span class="label">{roleName(inv.role)}</span>
@@ -414,26 +755,115 @@
                                 · {inv.status === "expired" ? "expired" : "expires"}
                                 {formatDate(inv.expires_at)}
                             </span>
-                            <button
-                                type="button"
-                                class="btn circle sm transparent secondary"
-                                aria-label="Revoke the invitation to {inv.email}"
-                                title="Revoke"
-                                onclick={() => revokeInvite(inv)}
-                            >
-                                <i class="ri-close-line" aria-hidden="true"></i>
-                            </button>
+                            <!-- Before Revoke, because it is the thing an
+                                 operator standing at this row nearly always
+                                 wants: the link did not arrive, or it expired.
+                                 The title says what it costs — the previous
+                                 link stops working — because the engine
+                                 replaces the outstanding invitation rather
+                                 than adding a second one. -->
+                            {#if writable}
+                                <button
+                                    type="button"
+                                    class="btn circle sm transparent secondary"
+                                    class:loading={resending === inv.id}
+                                    disabled={!!resending}
+                                    aria-label="Resend the invitation to {inv.email}"
+                                    title="Resend — issues a fresh link and cancels the old one"
+                                    onclick={() => resendInvite(inv)}
+                                >
+                                    <i class="ri-mail-send-line" aria-hidden="true"></i>
+                                </button>
+                                <button
+                                    type="button"
+                                    class="btn circle sm transparent secondary"
+                                    aria-label="Revoke the invitation to {inv.email}"
+                                    title="Revoke"
+                                    onclick={() => revokeInvite(inv)}
+                                >
+                                    <i class="ri-close-line" aria-hidden="true"></i>
+                                </button>
+                            {/if}
                         </div>
                     {/each}
                 </div>
             </div>
         {/if}
 
+        {#if writable}
+            <!-- One bar, because only one of the two selections can be holding
+                 anything. Each button says how many of the selection it can act
+                 on, since your own account is excluded from both. -->
+            {#if selPeople.count}
+                <BulkBar
+                    count={selPeople.count}
+                    noun="superuser"
+                    onclear={() => selPeople.clear()}
+                >
+                    <button
+                        type="button"
+                        class="btn sm secondary"
+                        disabled={bulkBusy || !actionable.length}
+                        title={includesMe
+                            ? "Your own sessions are not ended here — signing yourself out everywhere takes this browser with it, and the button on your own row says so"
+                            : "End every session these operators hold"}
+                        onclick={bulkSignOut}
+                    >
+                        <i class="ri-logout-circle-line" aria-hidden="true"></i>
+                        <span class="txt">Sign out everywhere ({actionable.length})</span>
+                    </button>
+                    <button
+                        type="button"
+                        class="btn sm secondary txt-danger"
+                        disabled={bulkBusy ||
+                            !actionable.length ||
+                            superusers.length - actionable.length < 1}
+                        title={includesMe
+                            ? "You cannot remove yourself in bulk — that would end this session mid-run"
+                            : "They lose access immediately, and every session they hold ends with them"}
+                        onclick={() => (bulkRemoveOpen = true)}
+                    >
+                        <i class="ri-delete-bin-7-line" aria-hidden="true"></i>
+                        <span class="txt">Remove ({actionable.length})</span>
+                    </button>
+                </BulkBar>
+            {:else}
+                <BulkBar
+                    count={selInvites.count}
+                    noun="invitation"
+                    onclear={() => selInvites.clear()}
+                >
+                    <!-- Revoke alone: a resend answers with a link shown once
+                         and cancels the one it replaces, so a run over eight
+                         rows would destroy eight live links and show none of
+                         the replacements. -->
+                    <button
+                        type="button"
+                        class="btn sm secondary txt-danger"
+                        disabled={bulkBusy}
+                        title="The links stop working immediately"
+                        onclick={bulkRevoke}
+                    >
+                        <i class="ri-close-line" aria-hidden="true"></i>
+                        <span class="txt">Revoke</span>
+                    </button>
+                </BulkBar>
+            {/if}
+        {/if}
+
         <footer class="page-footer">
+            <Pager
+                meta={paged.meta}
+                {loading}
+                noun="superuser"
+                {perPage}
+                onpage={(n) => list.setPage(n)}
+                onperpage={(n) => list.set({ limit: n })}
+            />
             <span class="txt">
-                {superusers.length}
-                {superusers.length === 1 ? "superuser" : "superusers"}{#if outstanding.length},
-                    {outstanding.length} invited{/if}{#if signedIn} · {signedIn} signed in{/if}
+                {#if outstanding.length}{outstanding.length} invited{/if}{#if signedIn}{outstanding.length
+                        ? " · "
+                        : ""}{signedIn} signed in{/if}
             </span>
             <ThemeToggle />
         </footer>
@@ -444,7 +874,7 @@
     open={editorOpen}
     title={editing ? editing.email : "New superuser"}
     size="sm"
-    onclose={() => (editorOpen = false)}
+    onclose={closeEditor}
 >
     <form id="superuser-form" onsubmit={save}>
         <div class="field required" class:error={!!errors.email}>
@@ -471,18 +901,35 @@
             <div class="field-help">
                 At least 8 characters.{#if editing}
                     Changing it signs this operator out of every other session.{/if}
+            </div>
+        {/if}
 
+        <!--
+            A sibling of the password field, not a child of its hint.
+
+            It was emitted inside the `.field-help` div AND inside the `{:else}`
+            branch above, which had two consequences on the one form in the
+            panel that grants store-wide access: the picker was drawn in hint
+            typography, and it disappeared the moment a short password put a
+            message in `errors.password` — mid-entry, with no indication it had
+            ever been there. The server defaults an omitted role to owner, the
+            opposite of what an invitation defaults to, so a form that can lose
+            its role field is a form that can quietly mint an owner. save()
+            sends `form.role` explicitly for the same reason.
+        -->
         {#if !editing}
-            <div class="field m-t-sm">
+            <div class="field m-t-sm required">
                 <label for="su-role">Role</label>
                 <Select id="su-role" bind:value={form.role} options={ROLES} />
             </div>
-            <div class="field-help">
-                What they may do. It can be changed later from the list, and the store always
-                keeps at least one owner.
-            </div>
-        {/if}
-            </div>
+            {#if errors.role}
+                <div class="field-help error">{errors.role}</div>
+            {:else}
+                <div class="field-help">
+                    What they may do. It can be changed later from the list, and the store always
+                    keeps at least one owner.
+                </div>
+            {/if}
         {/if}
     </form>
 
@@ -506,7 +953,7 @@
     open={inviteOpen}
     title={issued ? "Send this link" : "Invite somebody"}
     size="sm"
-    onclose={() => (inviteOpen = false)}
+    onclose={() => closeInvite()}
 >
     {#if issued}
         <!-- The link exists in this response and nowhere else: the store kept
@@ -515,9 +962,18 @@
         <div class="alert info m-b-base">
             <p>
                 <i class="ri-information-line" aria-hidden="true"></i>
-                This is the only time this link is shown. Close this and it cannot be
-                recovered — you would have to invite {issued.email} again.
+                This is the only time this link is shown. Close this and it cannot be recovered —
+                you would have to resend the invitation to {issued.email}, which issues a
+                different link again.
             </p>
+            {#if reissued}
+                <!-- Said here rather than only on the button that did it: the
+                     operator may have pressed Resend to chase a link somebody
+                     had already been sent, and both links are not live. -->
+                <p>
+                    Any link {issued.email} was sent before this one has stopped working.
+                </p>
+            {/if}
         </div>
 
         <div class="field">
@@ -558,7 +1014,11 @@
 
     {#snippet footer()}
         {#if issued}
-            <button type="button" class="btn transparent m-r-auto" onclick={() => (inviteOpen = false)}>
+            <button
+                type="button"
+                class="btn transparent m-r-auto"
+                onclick={() => closeInvite({ deliberate: true })}
+            >
                 <span class="txt">Done</span>
             </button>
             <button type="button" class="btn" onclick={copyLink}>
@@ -566,7 +1026,11 @@
                 <span class="txt">{copied ? "Copied" : "Copy link"}</span>
             </button>
         {:else}
-            <button type="button" class="btn transparent m-r-auto" onclick={() => (inviteOpen = false)}>
+            <button
+                type="button"
+                class="btn transparent m-r-auto"
+                onclick={() => closeInvite({ deliberate: true })}
+            >
                 <span class="txt">Cancel</span>
             </button>
             <button
@@ -592,3 +1056,50 @@
     danger
     onconfirm={doDelete}
 />
+
+<!-- A second Confirm rather than a shared one with a mode flag: this message
+     names a count and the other names a person, and one component asked to say
+     both ends up saying neither. -->
+<Confirm
+    bind:open={bulkRemoveOpen}
+    title="Remove {actionable.length} {pluralize(actionable.length, 'superuser')}?"
+    message="They lose access to this panel immediately, and every session they hold ends with them. The store always keeps at least one owner, so anything that would leave it without one is refused by name."
+    confirmLabel="Remove"
+    danger
+    onconfirm={bulkRemove}
+/>
+{/if}
+
+<style>
+    /*
+     * A checkbox as one item in a `.list-item` row.
+     *
+     * PocketBase's `.field` is `width: 100%` (form.css), which is right for a
+     * field in a form column and wrong for a tick in a flex row — it takes the
+     * whole line and pushes the address, the role chip and both buttons off the
+     * end of it. Only the width is ours; the box itself is PocketBase's.
+     */
+    .invite-select {
+        width: auto;
+        flex: 0 0 auto;
+    }
+
+    /*
+     * The same row on a phone.
+     *
+     * `.list-item` is one flex line, and at 390px it squeezed the address to
+     * 48px and spelled it down the screen a character per line — before a tick
+     * was added, which took it to 33px. So the address gets the width it needs
+     * and everything else wraps under it, which is the reading an operator
+     * chasing an invitation from their phone actually needs.
+     */
+    @media (max-width: 550px) {
+        .list-item {
+            flex-wrap: wrap;
+        }
+        .list-item .txt {
+            flex: 1 1 100%;
+            min-width: 0;
+        }
+    }
+</style>

@@ -1057,6 +1057,9 @@ func TestTheVocabularyIsReachable(t *testing.T) {
 		// The shop's own note, which is the one order write that publishes no
 		// event at all — so this row is the only record that it happened.
 		{"PATCH", "/api/admin/orders/" + id, `{"metadata":{"notes":"rang the customer"}}`},
+		// Handing the guest's own credential back to them. It changes nothing
+		// about the order, which is exactly why the row is the only trace.
+		{"POST", "/api/admin/orders/" + id + "/access-token", ``},
 	} {
 		if rec := doBody(t, app, step.method, step.path, step.body, bearer(token)); rec.Code != http.StatusOK {
 			t.Fatalf("%s %s = %d: %s", step.method, step.path, rec.Code, rec.Body.String())

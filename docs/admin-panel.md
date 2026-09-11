@@ -22,6 +22,13 @@ dashboard — it **is** PocketBase's stylesheets. `admin/src/lib/styles/` holds
 `bulkbar.css`, `tabs.css`, `tooltip.css` and `animations.css` copied verbatim
 from PocketBase's `ui/src/css`, imported in PocketBase's own order.
 
+One of them is kept but not imported. `accordion.css` styles PocketBase's
+`<details>`-based disclosure, and nothing here can match it: this panel's own
+disclosures — the variant matrix, the category picker — expand rows of a
+`<table>`, which a `<details>` cannot wrap. The file stays in `lib/styles/` so a
+re-copy from upstream still diffs cleanly; `app.css` says why the import is
+gone, beside the other deliberate drops.
+
 Do not hand-edit those files. To take an upstream change, re-copy them from a
 PocketBase checkout, so the diff stays readable. Two stylesheets are ours —
 `gocommerce.css` and `fonts-inter.css` — and the first covers only what
@@ -679,14 +686,18 @@ Honest gaps, rather than a roadmap:
   searched at the store and categories arrive flat, so only collections are
   capped; the field help says so rather than pretending otherwise.
 - **The categories screen has no sortable header.** The API accepts `sort` on a
-  category *search*, and the screen browses the tree instead — there is no
-  search box on it to reach the branch that can be ordered. The tree's own order
-  is the `position` an operator curated, which is why sorting it is refused
-  rather than ignored.
-- **`first_order_at` on customers is an allow-listed key with no column to
-  click.** It works from the API and from a hand-typed URL; the screen shows the
-  four numbers an operator asked for, and a fifth date column would cost more
-  width than it earns.
+  category *search* and refuses it on a tree listing, because the tree's own
+  order is the `position` an operator curated. The search box sends `q=` with no
+  `sort`, so matches arrive in the engine's order; `position` is edited in the
+  drawer and shown on the row instead.
+- **A category's product count is one request per row.** There is no
+  `product_count` on the wire and the screen takes `meta.total` from a
+  `limit=1` product listing per visible row, four at a time, cached. It is an
+  honest number for the whole subtree and it is not free; a count on the
+  category row itself would be one request for the page.
+- **Re-parenting is one category at a time.** The drawer's Parent field is the
+  only move there is — no drag-and-drop, no multi-select — which is the
+  operation an imported taxonomy actually wants.
 - **Sortable headers are out of reach on a phone.** `.responsive-table` hides
   the header row below 900px and labels each cell instead, so a sort has to
   arrive in the URL. Ordering a list is a desk task, and the alternative is a
@@ -707,11 +718,12 @@ Honest gaps, rather than a roadmap:
 - **A note is not versioned.** Saving replaces it, and the previous text lives
   only in the audit row underneath the History card's `Note written` line.
 
-- **An option axis cannot be removed or renamed** once it exists, and a
-  variant's option combination cannot be changed — the API has no route for
-  either, so the drawer shows them read-only and tells you the remedy (add the
-  combination you want, delete the one you don't). SKU, price and active are
-  editable.
+- **A variant's option combination cannot be changed.** The axes and their
+  values can — `PUT /api/admin/products/{id}/options` reconciles the whole
+  matrix in one transaction, and both an axis and a value carry an id so
+  renaming one keeps every variant under it. Which combination a *variant*
+  holds is not patchable, so the remedy is still the old one: add the
+  combination you want and delete the one you don't.
 - **Variants in the drawer are unpaginated.** They arrive embedded in the
   product, which has no limit; the paginated route
   (`GET /api/variants?product_id=`) returns variants without the product, so
@@ -721,28 +733,45 @@ Honest gaps, rather than a roadmap:
   visits Inventory. The form says so. Stock deliberately stays there, so every
   movement is a transactional adjustment rather than an overwrite — and every
   one of them is recorded in the variant's stock history, with who made it.
-- **Not exposed in the variant form** — two surfaces, and they differ. The
-  single-variant Pricing and Inventory card exposes everything but `position`,
-  including barcode, `track_inventory` and the compare-at price, which can now
-  be *cleared* as well as set (send `null`; the panel sends it when the box is
-  emptied). The matrix drawer, for a product with options, still omits barcode,
-  the compare-at price and `position`, and shows `track_inventory` without
-  letting anyone change it. All of them are patchable through the API.
+- **Two variant surfaces, and they no longer differ.** A product with no
+  options is edited through the page's own Pricing, Inventory and Shipping
+  cards; a product with an axis is edited through the matrix row's detail
+  drawer, which carries the same fields in the same order — barcode,
+  compare-at, cost, taxable, tracking, sell-when-out-of-stock, origin, HS code,
+  the weight unit, `active`, `position` and the variant's own metafields. The
+  compare-at price can be *cleared* as well as set (the patch sends `null` when
+  the box is emptied), and `position` is also movable a row at a time from the
+  arrows on the table. The one thing the matrix table itself still shows is
+  five columns: it is a matrix, and a matrix sixteen columns wide is a
+  spreadsheet.
 - **Duplicate option values across axes** (a `Size: Small` and a
   `Cup: Small` on one product) are caught in the panel, not the engine:
   `insertOptions` compares values only within a single call, and the value
   lookup keys on the lowercased string, so the engine would resolve the
   collision silently. That is an engine gap the panel is papering over.
-- **No collection browser.** PocketBase's dashboard is generic over
-  user-defined collections; this one is specific to a commerce domain that
-  already knows what a product and an order are.
-- **No screen curates a collection yet.** The engine has the read and the
-  ordered write — `GET` and `PUT /api/admin/collections/{id}/products` — and
-  there is no `admin/src/routes/collections` directory to drive them from, so
-  today they are reachable by curl and MCP only. The product list's
-  `?collection_id=` filter is in the same position: the endpoint takes it, the
-  control belongs to the product-list filters work.
+- **No generic record browser.** PocketBase's dashboard is generic over
+  user-defined database collections; this one is specific to a commerce domain
+  that already knows what a product and an order are. (The Collections screen
+  in the nav is the commerce concept — a curated group of products — and has
+  nothing to do with PocketBase's sense of the word.)
+- **A collection's membership is curated whole, so a big one is read-only.**
+  `PUT /api/admin/collections/{id}/products` replaces the entire ordered list,
+  which is what makes the curated order unambiguous — and what means the screen
+  cannot safely send a page of it. Past a thousand members the order is shown
+  and not editable, and the screen says why rather than PUTting a prefix and
+  deleting the tail.
+- **The collections list has no search.** `GET /api/admin/collections` takes
+  `limit` and `offset` and nothing else, so a box here would filter the page in
+  hand and lie about the collections it cannot see. It needs a `q` on the route
+  first.
 - **No log viewer or SQL console.** The one thing operators reached for a SQL
   console for — reading a dead-lettered outbox row and requeueing it — is a
   screen now, at Settings → Platform → Events.
-- **No bulk actions** on the list screens.
+- **Bulk actions are on four list screens, not all of them.** Products
+  (activate, draft, archive, add to a collection, delete), orders (mark paid,
+  mark delivered, cancel), discounts (switch on, switch off, delete) and the
+  media library carry a checkbox column and a bulk bar; categories, taxes,
+  locations, customers and the team screen do not yet. There is no batch
+  endpoint and none is wanted — each action is N calls to the per-row route a
+  single row already uses, run through `runBulk`, so a partial failure reports
+  which rows failed instead of dying on the first.
