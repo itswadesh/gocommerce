@@ -1235,6 +1235,27 @@ button.media-check {
     color: var(--surfaceTxtHintColor);
 }
 
+/*
+ * A floor under the header search.
+ *
+ * The search is the only item in `.page-header` that flexes, so every pixel the
+ * filters and buttons beside it want comes out of it — and nothing stops that
+ * at a usable width. On a 1440px window the orders list left it 76px, narrow
+ * enough that its own placeholder truncated to "Searcl": a field that cannot
+ * say what it searches.
+ *
+ * 271px is measured, not chosen — the width of "Search customers by email or
+ * name", the longest placeholder any screen sets, in the input's own 14px Inter
+ * plus its padding. Below that the header wraps instead, which costs a row and
+ * keeps a field you can read; above it nothing changes.
+ *
+ * `min()` rather than a bare length, because on a phone the search already has
+ * a line to itself and a 302px floor there would push it off the side.
+ */
+.page-header > .searchbar {
+    min-width: min(271px, 100%);
+}
+
 /* Search on the left, layout toggle on the right. */
 .media-toolbar {
     display: flex;
@@ -2431,6 +2452,43 @@ button.media-check {
  */
 .page-content > :has(+ .page-footer) {
     margin-bottom: var(--smSpacing);
+}
+
+/*
+ * The footer stays on screen, and stops sitting on the window's edge.
+ *
+ * PocketBase puts the footer in flow at the end of the scroll container, which
+ * is right while a page fits: `margin-top: auto` parks it at the bottom and it
+ * is always in view. On a page that scrolls it is wrong — Reports ran 110px
+ * past the fold and Data 830px, so the row count and the theme switch were
+ * reachable only by scrolling to the very end of the longest screen in the
+ * panel. Sticky keeps the flow position on short pages and pins it on long
+ * ones, which is the same behaviour in both cases: the footer is where you can
+ * see it.
+ *
+ * Sticky needs an opaque background, or the rows scroll through it. `--pageColor`
+ * and not `--surfaceColor`: the ground here is the grey the `.page` paints, and
+ * the white every card gets would make the footer a bar laid over the page
+ * rather than the floor of it. That token exists for exactly this question —
+ * the save bar and the sticky table head both ask it — and it already answers
+ * for dark, where the ground is #1c1c1c and no grey is wanted.
+ *
+ * The offset cancels PocketBase's negative bottom margin rather than ignoring
+ * it. `bottom: 0` sticks the margin box, which parks the painted edge 30px up
+ * and leaves the container's bottom padding — part of the scrollport, so rows
+ * scroll through it — showing beneath the footer. Pinning the painted edge to
+ * the window instead means nothing passes below it.
+ *
+ * So the breathing room goes inside. The old complaint was a footer sitting on
+ * the window's edge, and its text was 10px off the bottom of the screen; the
+ * padding is where that gap belongs, because a transparent one below the
+ * footer is a gap you can see the table through.
+ */
+.page-footer {
+    position: sticky;
+    bottom: calc(-1 * var(--spacing));
+    background: var(--pageColor);
+    padding-bottom: var(--smSpacing);
 }
 
 /* --------------------------------------------------------- orders filters */

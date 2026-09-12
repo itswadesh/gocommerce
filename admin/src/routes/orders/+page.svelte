@@ -261,6 +261,10 @@
      * what it will not carry: silently exporting more rows than the screen
      * shows would be worse than not offering the button.
      */
+    function closeMore() {
+        document.getElementById("orders-more")?.hidePopover();
+    }
+
     function exportCSV() {
         const p = list.params;
         const suffix = new URLSearchParams();
@@ -610,7 +614,7 @@
                     <input
                         type="text"
                         class="p-l-20"
-                        placeholder="Search orders by number, email or name"
+                        placeholder="Search by number, email or name"
                         bind:value={draftSearch}
                     />
                 </div>
@@ -697,32 +701,61 @@
                     </div>
                 {/if}
 
-                {#if can("data.export")}
-                    <button
-                        type="button"
-                        class="btn sm secondary"
-                        onclick={exportCSV}
-                        title={"One row per order line, for the status and the dates on screen." +
-                            (uncarried.length
-                                ? ` The export route has no parameter for ${uncarried.join(" or ")}, so the file is wider than the table.`
-                                : "")}
-                    >
-                        <i class="ri-download-2-line" aria-hidden="true"></i>
-                        <span class="txt">Export CSV</span>
-                    </button>
-                {/if}
+                <!--
+                     Export and the picking list moved behind one button.
 
-                <!-- One sheet for the whole window rather than one tab per
-                     order. A link, not a button: a warehouse opens it in a
-                     second tab and leaves the list where it is. -->
-                <a
+                     This header carries more than any other — three filters, two
+                     documents and New order — and at 1440px the six of them left
+                     the search 76 pixels, narrow enough to truncate its own
+                     placeholder. These two are the ones that can move: neither is
+                     a filter, and a warehouse reaches for them once a shift, not
+                     once a minute. Folding them frees ~205px, which is what buys
+                     the search a readable width on the same row.
+                -->
+                <button
+                    type="button"
                     class="btn sm secondary"
-                    href={pickingHref}
-                    title="A pick sheet for every order matching these filters, and a packing sheet for each"
+                    title="Export and print"
+                    aria-label="Export and print"
+                    popovertarget="orders-more"
+                    aria-haspopup="menu"
                 >
-                    <i class="ri-printer-line" aria-hidden="true"></i>
-                    <span class="txt">Picking list</span>
-                </a>
+                    <i class="ri-more-2-line" aria-hidden="true"></i>
+                </button>
+                <div id="orders-more" class="dropdown dropdown-sm" popover="auto" role="menu">
+                    {#if can("data.export")}
+                        <button
+                            type="button"
+                            role="menuitem"
+                            class="dropdown-item"
+                            onclick={() => {
+                                closeMore();
+                                exportCSV();
+                            }}
+                            title={"One row per order line, for the status and the dates on screen." +
+                                (uncarried.length
+                                    ? ` The export route has no parameter for ${uncarried.join(" or ")}, so the file is wider than the table.`
+                                    : "")}
+                        >
+                            <i class="ri-download-2-line" aria-hidden="true"></i>
+                            <span class="txt">Export CSV</span>
+                        </button>
+                    {/if}
+
+                    <!-- One sheet for the whole window rather than one tab per
+                         order. A link, not a button: a warehouse opens it in a
+                         second tab and leaves the list where it is. -->
+                    <a
+                        role="menuitem"
+                        class="dropdown-item"
+                        href={pickingHref}
+                        onclick={closeMore}
+                        title="A pick sheet for every order matching these filters, and a packing sheet for each"
+                    >
+                        <i class="ri-printer-line" aria-hidden="true"></i>
+                        <span class="txt">Picking list</span>
+                    </a>
+                </div>
 
                 {#if writable}
                     <button type="button" class="btn" onclick={openCreate}>

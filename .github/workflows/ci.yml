@@ -98,9 +98,15 @@ jobs:
 
       - name: core depends only on the PostgreSQL driver
         run: |
-          deps=$(go list -deps ./... \
+          # Ask Go which packages are standard rather than inferring it from
+          # the import path. The old test — a dot in the path means a module
+          # domain, so it must be third party — stopped being true in Go 1.27,
+          # which ships crypto/internal/entropy/v1.0.0: a stdlib package whose
+          # version segment carries the dot. It failed every run from the first
+          # commit onwards, on a dependency nobody added.
+          deps=$(go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./... \
+            | grep -v '^$' \
             | grep -v '^github.com/misiki/gocommerce' \
-            | grep '\.' | grep '/' \
             | cut -d/ -f1-3 | sort -u \
             | grep -v '^golang.org/x/' || true)
           echo "third-party module paths reached from the engine:"
