@@ -37,14 +37,30 @@ $pgbin = @(
     'C:\Program Files\PostgreSQL\16\bin'
 ) | Where-Object { Test-Path (Join-Path $_ 'createdb.exe') } | Select-Object -First 1
 
+# Windows PowerShell 5.1 wraps a native command's stderr in an ErrorRecord the
+# moment it is redirected, and the $ErrorActionPreference above promotes that to
+# terminating. So "database already exists" - the normal answer on every run
+# after the first, and the reason these two calls pipe to Out-Null in the first
+# place - killed this script at the createdb line, before the server started.
+#
+# The exit code is what matters here and neither call has one worth acting on:
+# dropdb is guarded by --if-exists, and a createdb that fails because the
+# database is already there has done its job.
+function Invoke-Quietly {
+    param([string]$Exe, [string[]]$Arguments)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $Exe @Arguments 2>&1 | Out-Null } finally { $ErrorActionPreference = $prev }
+}
+
 if (-not $pgbin) {
     Write-Host 'Could not find createdb.exe. Create the database yourself and set DATABASE_URL.' -ForegroundColor Yellow
 } else {
     if ($Reset) {
         Write-Host "Dropping $Database" -ForegroundColor DarkYellow
-        & "$pgbin\dropdb.exe" -h $PgHost -p $PgPort -U $PgUser --if-exists $Database 2>&1 | Out-Null
+        Invoke-Quietly "$pgbin\dropdb.exe" @('-h', $PgHost, '-p', $PgPort, '-U', $PgUser, '--if-exists', $Database)
     }
-    & "$pgbin\createdb.exe" -h $PgHost -p $PgPort -U $PgUser $Database 2>&1 | Out-Null
+    Invoke-Quietly "$pgbin\createdb.exe" @('-h', $PgHost, '-p', $PgPort, '-U', $PgUser, $Database)
 }
 
 # Go lives outside the machine PATH on more than one box here, in a
@@ -73,7 +89,13 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'build failed' }
 } finally { Pop-Location }
 
-$env:DATABASE_URL = "postgres://$PgUser@${PgHost}:$PgPort/$Database?sslmode=disable"
+# ${Database} is braced for the same reason ${PgHost} is, and it is not
+# cosmetic. Windows PowerShell 5.1 allows '?' inside a variable name, so
+# "$Database?sslmode=disable" parses as one variable named Database?sslmode -
+# which does not exist - and expands to "/=disable". The store then tried to
+# open a database called "=disable" and refused to start. PowerShell 7 parses
+# the same line correctly, which is what kept it hidden.
+$env:DATABASE_URL = "postgres://$PgUser@${PgHost}:$PgPort/${Database}?sslmode=disable"
 
 # -Identity installs the shopper-accounts module. The reference binary is
 # module-free by default; a storefront that offers sign-in needs this.

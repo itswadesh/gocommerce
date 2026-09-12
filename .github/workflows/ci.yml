@@ -43,6 +43,19 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
       - run: go build ./...
       - run: go vet ./...
+      # AGENTS.md has always required this to print nothing, and until now
+      # nothing enforced it. It runs on the Linux leg because the checkout there
+      # is LF whatever the committer's platform did, which is the same reason
+      # .gitattributes exists: gofmt reports a CRLF file as unformatted, so this
+      # step on Windows would fail on line endings rather than on formatting.
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt would rewrite these files:"
+            echo "$unformatted"
+            exit 1
+          fi
       # -timeout, and generously. Go's default is ten minutes and the core
       # package alone is past that: every database-backed test gets its own
       # schema and runs every migration into it (rule 13 — there is no mock),

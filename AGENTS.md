@@ -181,7 +181,7 @@ gofmt -l .                      # must print nothing
 go vet ./...
 go test ./... -count=1 -timeout 60m   # needs GOCOMMERCE_TEST_DB
 go build -tags no_admin ./...
-go test -tags no_admin ./core -count=1
+go test -tags no_admin ./core -count=1 -timeout 60m   # core is past Go's 10m default
 .\scripts\check-docs.ps1        # links resolve; skills still match the code
 .\scripts\smoke.ps1             # against a running store
 .\gocommerce.exe doctor         # operational sanity

@@ -1,0 +1,28 @@
+# Every text file here is committed LF, on every platform. This makes a working
+# copy agree with that, and it is not a style preference.
+#
+# gofmt is the sharp case. It rewrites CRLF and then reports the file as
+# unformatted, so on a Windows checkout with core.autocrlf=true `gofmt -l .` —
+# which AGENTS.md requires to print nothing — listed 57 files whose committed
+# content is perfectly formatted. The diff it wanted was the carriage returns
+# and nothing else. Nobody had broken the formatting; the working copy simply
+# did not match the index, and the check could not be run at all.
+#
+# `eol=lf` rather than `text=auto` on its own: auto leaves the ending to
+# core.autocrlf, which is the setting that caused this.
+* text=auto eol=lf
+
+# No line endings to normalise, and a normalised one is a corrupted one. Fonts
+# are the only binaries committed today; the rest are here so that adding a
+# screenshot to the docs cannot quietly mangle it.
+*.woff2 binary
+*.woff   binary
+*.ttf    binary
+*.otf    binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.webp   binary
+*.ico    binary
+*.pdf    binary

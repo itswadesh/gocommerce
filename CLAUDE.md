@@ -61,7 +61,7 @@ gofmt -l .                                  # must print nothing
 go vet ./...
 go test ./... -count=1 -timeout 60m
 go build -tags no_admin ./...               # the API-only build links
-go test -tags no_admin ./core -count=1
+go test -tags no_admin ./core -count=1 -timeout 60m
 .\scripts\check-docs.ps1                    # skills and links still match the code
 .\scripts\build.ps1                         # required after any admin/src change
 .\scripts\smoke.ps1                         # walks a whole sale; exits non-zero on any failure
