@@ -50,6 +50,7 @@ const PROBES = {
     identity: { path: "/api/admin/x/identity/customers?limit=1", right: "customers.read" },
     invoices: { path: "/api/admin/x/invoices?limit=1", right: "orders.read" },
     mcp: { path: "/api/admin/x/mcp/audit?limit=1", right: "store.operate" },
+    webhooks: { path: "/api/admin/x/webhooks/endpoints?limit=1", right: "store.operate" },
 };
 
 /* `$state`, so hasModule() read inside a `$derived` re-runs when the answer

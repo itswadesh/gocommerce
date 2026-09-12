@@ -336,3 +336,24 @@ export const ops = {
     sweepUnpaid: () => api.post("/api/admin/maintenance/sweep-unpaid", {}),
     drainOutbox: () => api.post("/api/admin/maintenance/drain-outbox", {}),
 };
+
+/**
+ * webhooks is where this store sends its events, and whether they arrived.
+ *
+ * Two of these are unlike every other call in this file: `create` and `rotate`
+ * are the only moments an endpoint's signing secret is readable. The store
+ * holds it recoverably because it signs with it, and no read returns it — so a
+ * screen that does not show it at the moment it is handed over has thrown it
+ * away on the operator's behalf.
+ */
+export const webhooks = {
+    list: (params) => api.get("/api/admin/x/webhooks/endpoints" + query(params)),
+    create: (body) => api.post("/api/admin/x/webhooks/endpoints", body),
+    update: (id, body) => api.patch(`/api/admin/x/webhooks/endpoints/${id}`, body),
+    remove: (id) => api.delete(`/api/admin/x/webhooks/endpoints/${id}`),
+    // `{}` rather than no body, matching events.retry: nothing decodes it, and
+    // a POST with no body confuses more proxies than it ought.
+    rotate: (id) => api.post(`/api/admin/x/webhooks/endpoints/${id}/rotate-secret`, {}),
+    deliveries: (params) => api.get("/api/admin/x/webhooks/deliveries" + query(params)),
+    retry: (id) => api.post(`/api/admin/x/webhooks/deliveries/${id}/retry`, {}),
+};

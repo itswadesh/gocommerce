@@ -56,6 +56,11 @@
             // rows it is failing on are read and made to go again.
             { href: "/settings/events", label: "Events", icon: "ri-broadcast-line",
               right: "store.operate" },
+            // Events is what happened; this is who outside was told. They sit
+            // together because the question that reaches this corner of the
+            // panel is usually one question: did it get out.
+            { href: "/settings/webhooks", label: "Webhooks", icon: "ri-send-plane-line",
+              right: "store.operate", module: "webhooks" },
             // Who did what in this store. Behind store.operate for the reason
             // audit_http.go states: filtering the whole store by person is
             // surveillance of the team, which is a heavier thing than reading

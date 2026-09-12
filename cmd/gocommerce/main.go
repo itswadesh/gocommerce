@@ -20,6 +20,7 @@ import (
 
 	"github.com/misiki/gocommerce/core"
 	"github.com/misiki/gocommerce/ext/identity"
+	webhooks "github.com/misiki/gocommerce/ext/webhooks"
 )
 
 func main() {
@@ -95,6 +96,7 @@ environment:
 		jsonOut      = fs.Bool("json", false, "machine-readable output (doctor)")
 		mediaDir     = fs.String("media-dir", "", "directory for uploaded media (default $GOCOMMERCE_MEDIA_DIR; empty disables uploads)")
 		withIdentity = fs.Bool("identity", false, "install the identity module: shopper accounts under /x/identity/ (guest checkout stays)")
+		withWebhooks = fs.Bool("webhooks", false, "install the webhooks module: POST this store's events to endpoints you register")
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -158,6 +160,9 @@ environment:
 		modules = append(modules, identity.New(identity.Config{
 			ResetURL: os.Getenv("GOCOMMERCE_IDENTITY_RESET_URL"),
 		}))
+	}
+	if *withWebhooks {
+		modules = append(modules, webhooks.New(webhooks.Config{}))
 	}
 
 	app, err := gocommerce.New(cfg, modules...)
