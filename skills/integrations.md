@@ -51,6 +51,7 @@ Everything in `ports.go`. Nothing else in the engine is abstracted.
 | `ReferencedRefunder` | `RefundWithReference` | *optional, detected; a `Refunder` as well* | stripe, razorpay — it returns the gateway's own refund id, which is recorded on the refund |
 | `FulfillmentProvider` | `Code`, `Ship` | `RegisterFulfillment` | built-in `manual`; `ext/fulfill-shiprocket` |
 | `Notifier` | `Notify` | `RegisterNotifier(channel, n)` | built-in log notifier; `ext/notify-sendgrid` (email), `ext/notify-msg91` (SMS) |
+| *(sending one)* | — | `App.Notify(ctx, n)` | D50. The engine delivers `order.*` itself and nothing else; a module that wants to write to a shopper about anything else calls this. `ext/cart-recovery` is the first caller |
 | `Translator` | `Translate` | `RegisterTranslator` | nothing in this repo yet — the seam is built, not speculated (D21) |
 
 One more optional capability lives in `openapi.go`: implement

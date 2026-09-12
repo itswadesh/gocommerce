@@ -3,6 +3,7 @@ package gocommerce
 import (
 	"context"
 	"net/http"
+	"strings"
 )
 
 // The ports are the places where composition matters: the engine owns the
@@ -248,6 +249,41 @@ func (a *App) RegisterNotifier(channel string, n Notifier) {
 	}
 	a.notifier.add(channel, n, a.ownerName())
 	a.log.Info("notifier registered", "channel", channel, "module", a.ownerName())
+}
+
+// Notify delivers one notification on one channel, to every backend registered
+// for it, and is how a module tells a shopper something the engine will not
+// tell them itself.
+//
+// The engine subscribes `order.*` to delivery and deliberately nothing else:
+// when and how often to chase an abandoned basket is a marketing decision with
+// opt-out obligations attached, and the first sweep after a migration would
+// otherwise mail every stale cart in the table at once. See
+// `subscribeNotifications`. That leaves the decision to a module — and until
+// this existed a module had no way to act on it, because `RegisterNotifier`
+// adds a backend and the set that drives it is unexported. A module would have
+// had to ship a transport of its own, which rule 2 forbids.
+//
+// So the split is: the engine owns the channels a store has configured, and the
+// module owns the question of whether this person should be written to at all.
+//
+// It refuses an unknown channel and an empty recipient rather than reporting a
+// delivery that did not happen: `send` over a channel nobody registered finds
+// no backends and returns nil, which reads as success.
+func (a *App) Notify(ctx context.Context, n Notification) error {
+	switch n.Channel {
+	case ChannelEmail, ChannelSMS:
+	default:
+		return Validationf("unknown notification channel %q (want %q or %q)",
+			n.Channel, ChannelEmail, ChannelSMS)
+	}
+	if strings.TrimSpace(n.To) == "" {
+		return Validationf("a notification needs a recipient")
+	}
+	if n.Language == "" {
+		n.Language = a.cfg.DefaultLanguage
+	}
+	return a.notifier.send(ctx, n)
 }
 
 // RegisterTranslator installs the catalog translator. Only one may exist:

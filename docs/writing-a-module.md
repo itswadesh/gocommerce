@@ -70,6 +70,7 @@ rather than silently shadowing a core route.
 app.RegisterPayment(p)                  // add a payment method
 app.RegisterFulfillment(f)              // add a shipping backend
 app.RegisterNotifier(channel, n)        // deliver email or SMS
+app.Notify(ctx, notification)           // send one, on the store's backends
 app.RegisterTranslator(t)               // supply catalog translations
 app.Subscribe(pattern, handler)         // react to events
 app.Handle(pattern, h)                  // public route, under /x/<name>/

@@ -93,6 +93,7 @@ graph):
 | `invoices` | Numbered, gapless invoices on payment |
 | `cms` | Content pages, per language |
 | `identity` | Shopper accounts: sessions, saved addresses, order history, password reset |
+| `cart-recovery` | Chases an abandoned basket with a link back to it |
 | `mcp` | The store as tools for an AI agent, with an audit trail |
 
 A module that ships an admin surface also ships its panel screen: install
