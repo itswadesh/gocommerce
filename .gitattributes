@@ -12,6 +12,15 @@
 # core.autocrlf, which is the setting that caused this.
 * text=auto eol=lf
 
+# The compiled panel. It is committed so `go build` needs no Node, and it is
+# not something anybody can read: the SvelteKit build is not reproducible, so
+# two builds from identical sources differ in about ninety-eight files and the
+# diff carries no information about what changed. Collapsed in review rather
+# than offered for one. `text=auto` above still applies, so it is stored LF
+# like everything else; only the diff is suppressed.
+admin/build/** linguist-generated=true
+admin/build/** -diff
+
 # No line endings to normalise, and a normalised one is a corrupted one. Fonts
 # are the only binaries committed today; the rest are here so that adding a
 # screenshot to the docs cannot quietly mangle it.

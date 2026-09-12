@@ -195,6 +195,17 @@ document, because they blame themselves.
 Changing anything under `admin/src` also needs `.\scripts\build.ps1` — the
 built panel in `admin/build` is committed so `go build` works without Node.
 
+**`admin/build` cannot be reviewed, and the diff does not mean what it looks
+like.** The SvelteKit build is not reproducible: `__sveltekit_<random>` in the
+inline bootstrap changes on every run, the CSP `sha256` is derived from it,
+`version.json` is a timestamp, and the chunk hashes cascade from all three. Two
+builds from *identical* sources differ in around ninety-eight files. So a large
+diff there is the normal output of having run the build, it is not evidence
+that anything changed, and no amount of reading it will tell you whether the
+committed panel matches `admin/src`. The only thing that does is running
+`build.ps1` and trusting it. The directory is marked `linguist-generated` and
+`-diff` so reviews collapse it rather than inviting a reading it cannot repay.
+
 ---
 
 ## For AI agents specifically
