@@ -29,6 +29,7 @@
     import Confirm from "$lib/components/Confirm.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import CategoryPicker from "$lib/components/CategoryPicker.svelte";
+    import { fieldText } from "$lib/fieldtext.js";
     import CategoryMove from "$lib/components/CategoryMove.svelte";
     import RecordHistory from "$lib/components/RecordHistory.svelte";
     import Pager from "$lib/components/Pager.svelte";
@@ -486,7 +487,7 @@
             errors.attributes = `Field ${halfFilled + 1} needs a name before it can be saved.`;
         }
         const position = readPosition();
-        if (position === undefined && form.position.trim() !== "") {
+        if (position === undefined && fieldText(form.position) !== "") {
             errors.position = "A position is a whole number, 0 or more.";
         }
         if (Object.keys(errors).length) return;
@@ -538,7 +539,7 @@
      * is why save() checks the box was empty before treating it as one.
      */
     function readPosition() {
-        const raw = form.position.trim();
+        const raw = fieldText(form.position);
         if (raw === "") return undefined;
         const n = Number(raw);
         if (!Number.isInteger(n) || n < 0) return undefined;

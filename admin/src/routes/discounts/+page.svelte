@@ -38,6 +38,7 @@
     import Confirm from "$lib/components/Confirm.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
+    import { fieldText } from "$lib/fieldtext.js";
 
     /* The starting page size, not the only one: `limit` is a listState key, so
        an operator can change it and the choice rides in the URL with the rest of
@@ -495,7 +496,8 @@
         }
         body.starts_at = form.starts_at ? new Date(form.starts_at).toISOString() : null;
         body.ends_at = form.ends_at ? new Date(form.ends_at).toISOString() : null;
-        body.usage_limit = form.usage_limit.trim() ? parseInt(form.usage_limit, 10) : null;
+        const usageLimit = fieldText(form.usage_limit);
+        body.usage_limit = usageLimit ? parseInt(usageLimit, 10) : null;
         return body;
     }
 
