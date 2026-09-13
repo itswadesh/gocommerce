@@ -934,6 +934,33 @@ th.col-field-type-number {
     text-decoration: underline;
 }
 
+/*
+ * The group row's boxes are wider than a variant's, because they say more.
+ *
+ * A variant's price box holds one number and 56px is plenty. A group's holds
+ * the spread its variants cover — "12.00 – 74.99" wants 88px — and at the
+ * variant width the placeholder was cut after the first figure, so a range
+ * read as a single price and the box looked like it was showing the wrong
+ * number rather than a span.
+ */
+.shopify-skin .card table.table .group-set {
+    min-width: 118px;
+}
+.shopify-skin .card table.table .group-set > input {
+    width: 100%;
+}
+/* What a group covers, when there is no single figure to edit. Reads as a
+   reading rather than a control: no border, no ground, the hint colour — the
+   same treatment the SKU and weight columns use to say "per variant, not
+   here". */
+.shopify-skin .card table.table .group-range {
+    display: inline-block;
+    white-space: nowrap;
+    font-size: var(--smFontSize);
+    font-variant-numeric: tabular-nums;
+    color: var(--surfaceTxtHintColor);
+}
+
 /* ------------------------------------------------- the bulk selection bar
  *
  * PocketBase's `.bulkbar` is a 450px pill, which is the right shape for the

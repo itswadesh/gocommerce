@@ -774,25 +774,38 @@
     }
 
     /**
-     * Whether a group holds more than one answer.
+     * The spread a group covers, for the box that is about to flatten it.
      *
      * An empty box and an empty box for different reasons look the same, and
      * one of them reads as broken: a group whose variants are priced
-     * differently has nothing to show, which is correct and completely
-     * uninformative. These drive the placeholder so the box says which kind of
-     * empty it is.
+     * differently has no single figure to show, which is correct and
+     * completely uninformative. So the placeholder carries the range instead —
+     * "12.00 – 74.99" says both that the group disagrees and by how much,
+     * which is the thing you actually want to know before overwriting it.
+     *
+     * Empty string when the group agrees or has nothing to say, so the callers
+     * can fall back to their ordinary placeholder.
      */
-    function priceIsMixed(group) {
-        const items = group.items ?? [];
-        if (items.length < 2) return false;
-        const first = items[0].price?.amount_minor;
-        return items.some((v) => v.price?.amount_minor !== first);
+    function priceRange(group) {
+        const minors = (group.items ?? [])
+            .map((v) => v.price?.amount_minor)
+            .filter((m) => m !== undefined && m !== null);
+        if (minors.length < 2) return "";
+        const low = Math.min(...minors);
+        const high = Math.max(...minors);
+        if (low === high) return "";
+        const code = group.items[0].price.currency;
+        return `${fromMinor(low, code)} – ${fromMinor(high, code)}`;
     }
 
-    function stockIsMixed(group) {
-        const items = (group.items ?? []).filter((v) => v.track_inventory);
-        if (items.length < 2) return false;
-        return items.some((v) => v.stock_on_hand !== items[0].stock_on_hand);
+    function stockRange(group) {
+        const counts = (group.items ?? [])
+            .filter((v) => v.track_inventory)
+            .map((v) => v.stock_on_hand);
+        if (counts.length < 2) return "";
+        const low = Math.min(...counts);
+        const high = Math.max(...counts);
+        return low === high ? "" : `${low} – ${high}`;
     }
 
     /* Typed overrides live here; `undefined` means "show what the group is".
@@ -1419,36 +1432,50 @@
                                 a bulk change — but so is typing in it, and one
                                 of the two had to be the commit.
                             -->
-                            <div class="field money-field">
-                                <span class="money-prefix" aria-hidden="true">{currencySymbol(currency)}</span>
-                                <input
-                                    type="text"
-                                    inputmode="decimal"
-                                    placeholder={priceIsMixed(group) ? "Mixed" : "0.00"}
-                                    disabled={working || !group.items.length}
-                                    aria-label={priceIsMixed(group)
-                                        ? `Price for every variant in ${group.label} — they differ at the moment`
-                                        : `Price for every variant in ${group.label}`}
-                                    value={groupPrice[group.key] ?? sharedPrice(group)}
-                                    oninput={(e) => (groupPrice[group.key] = e.currentTarget.value)}
-                                    onchange={() => applyGroupPrice(group)}
-                                />
-                            </div>
+                            {#if priceRange(group)}
+                                <!-- A range is a fact, not a field. Typing one
+                                     number into a group whose variants are
+                                     deliberately priced apart flattens that
+                                     spread, and a box invites exactly that;
+                                     open the group and price them individually
+                                     instead. -->
+                                <span class="group-range" title="These variants are priced differently">
+                                    {currencySymbol(currency)}{priceRange(group)}
+                                </span>
+                            {:else}
+                                <div class="field money-field group-set">
+                                    <span class="money-prefix" aria-hidden="true">{currencySymbol(currency)}</span>
+                                    <input
+                                        type="text"
+                                        inputmode="decimal"
+                                        placeholder="0.00"
+                                        disabled={working || !group.items.length}
+                                        aria-label="Price for every variant in {group.label}"
+                                        value={groupPrice[group.key] ?? sharedPrice(group)}
+                                        oninput={(e) => (groupPrice[group.key] = e.currentTarget.value)}
+                                        onchange={() => applyGroupPrice(group)}
+                                    />
+                                </div>
+                            {/if}
                         </td>
                         <td class="col-field-type-number min-width">
-                            <div class="field">
-                                <input
-                                    type="number"
-                                    placeholder={stockIsMixed(group) ? "Mixed" : "0"}
-                                    disabled={working || !group.items.length}
-                                    aria-label={stockIsMixed(group)
-                                        ? `On hand for every variant in ${group.label} — they differ at the moment`
-                                        : `On hand for every variant in ${group.label}`}
-                                    value={groupStock[group.key] ?? sharedStock(group)}
-                                    oninput={(e) => (groupStock[group.key] = e.currentTarget.value)}
-                                    onchange={() => applyGroupStock(group)}
-                                />
-                            </div>
+                            {#if stockRange(group)}
+                                <span class="group-range" title="These variants hold different amounts">
+                                    {stockRange(group)}
+                                </span>
+                            {:else}
+                                <div class="field group-set">
+                                    <input
+                                        type="number"
+                                        placeholder="0"
+                                        disabled={working || !group.items.length}
+                                        aria-label="On hand for every variant in {group.label}"
+                                        value={groupStock[group.key] ?? sharedStock(group)}
+                                        oninput={(e) => (groupStock[group.key] = e.currentTarget.value)}
+                                        onchange={() => applyGroupStock(group)}
+                                    />
+                                </div>
+                            {/if}
                         </td>
                         <td class="min-width txt-hint txt-sm">—</td>
                         <!-- SKU and weight are per variant; a group has neither
