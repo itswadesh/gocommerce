@@ -502,6 +502,124 @@ if ($refunded -gt 0) {
     if ($refusal) { Write-Host "  the store said: $refusal" -ForegroundColor DarkGray }
 }
 
+# ------------------------------------------------------------------ images
+#
+# A product list is mostly a column of thumbnails, and without them every row
+# shows the same "no image" placeholder — which reads as a broken catalogue
+# rather than an empty one.
+#
+# These are generated, not photographs: a soft ground with one shape on it,
+# coloured from the product's own title so a given product always gets the same
+# tile. Enough to make the column look deliberate and to exercise the media
+# pipeline end to end.
+#
+# PNG rather than SVG, and that is forced. `safeExtension` in core/media.go
+# deliberately excludes .svg — an SVG can carry script, so the store refuses to
+# hand one back under its own extension and files it without one, which the
+# media route then serves as text/plain with X-Content-Type-Options: nosniff.
+# The browser is right to refuse that, so the thumbnails came out blank. The
+# safe list is jpg, png, gif, webp and avif; System.Drawing draws a real PNG
+# without a dependency.
+#
+# Uploaded rather than linked, which is also forced: the panel's CSP is
+# `img-src 'self' data: blob:`, so an image on someone else's host is recorded
+# happily and then blocked, and `AddURL` rejects a data: URI outright. A file
+# the store serves itself is the only route that renders. The server needs
+# GOCOMMERCE_MEDIA_DIR set; without it the upload answers 501 and this reports
+# that rather than failing the seed.
+
+Write-GCStep 'Product images'
+
+Add-Type -AssemblyName System.Drawing
+
+$palette = @(
+    @('#EEF1EC', '#C2CBBD'), @('#ECEEF2', '#BFC6D2'), @('#F2EEEA', '#D2C5B8'),
+    @('#EAF0F0', '#BCD0D0'), @('#F1EDF2', '#CCC0D2'), @('#F2F0E8', '#D4CDB4')
+)
+
+function New-ProductTile {
+    param([string]$Title, [string]$Path)
+
+    # Deterministic from the title, so re-running produces the same catalogue.
+    $sum = 0
+    foreach ($ch in $Title.ToCharArray()) { $sum += [int]$ch }
+    $pair = $palette[$sum % $palette.Count]
+
+    $bmp = New-Object System.Drawing.Bitmap 600, 600
+    $g = [System.Drawing.Graphics]::FromImage($bmp)
+    try {
+        $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $g.Clear([System.Drawing.ColorTranslator]::FromHtml($pair[0]))
+        $brush = New-Object System.Drawing.SolidBrush ([System.Drawing.ColorTranslator]::FromHtml($pair[1]))
+        try {
+            switch ($sum % 3) {
+                0 {
+                    $g.FillEllipse($brush, 170, 140, 260, 260)
+                    $g.FillRectangle($brush, 170, 440, 260, 50)
+                }
+                1 {
+                    $g.FillRectangle($brush, 170, 170, 260, 290)
+                    $g.FillRectangle($brush, 240, 120, 120, 60)
+                }
+                2 {
+                    $points = @(
+                        (New-Object System.Drawing.Point(300, 140)),
+                        (New-Object System.Drawing.Point(440, 430)),
+                        (New-Object System.Drawing.Point(160, 430))
+                    )
+                    $g.FillPolygon($brush, $points)
+                    $g.FillEllipse($brush, 266, 452, 68, 68)
+                }
+            }
+        } finally { $brush.Dispose() }
+        $bmp.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
+    } finally {
+        $g.Dispose()
+        $bmp.Dispose()
+    }
+}
+
+$tileDir = Join-Path $env:TEMP 'gc-tiles'
+New-Item -ItemType Directory -Force -Path $tileDir | Out-Null
+
+$imaged = 0
+$skipped = 0
+$refusal = ''
+foreach ($p in (Invoke-GC GET '/api/admin/products?limit=200' -Admin)) {
+    # One is enough to fill the thumbnail column, and a product that already has
+    # media keeps it, so a re-run does not pile up duplicates.
+    if ($p.image_url) { $skipped++; continue }
+
+    $file = Join-Path $tileDir ("{0}.png" -f $p.id)
+    New-ProductTile -Title $p.title -Path $file
+
+    $raw = & curl.exe -s -X POST `
+        -H "Authorization: Bearer $(Get-GCToken)" `
+        -F "file=@$file;type=image/png" `
+        -F "alt=$($p.title)" `
+        "$(Get-GCBase)/api/admin/media"
+    try { $media = ($raw | ConvertFrom-Json).data } catch { $media = $null }
+    if (-not $media) {
+        if (-not $refusal) { $refusal = $raw }
+        continue
+    }
+
+    try {
+        Invoke-GC PUT "/api/admin/products/$($p.id)/media" @{ media_ids = @($media.id) } -Admin | Out-Null
+        $imaged++
+    } catch {
+        if (-not $refusal) { $refusal = "$_" }
+    }
+    if ($imaged -gt 0 -and $imaged % 20 -eq 0) { Write-Host "  ...$imaged images" }
+}
+
+if ($imaged -gt 0) {
+    Write-Host ("  {0} product(s) given a tile, {1} already had one" -f $imaged, $skipped) -ForegroundColor DarkGreen
+} else {
+    Write-Host "  none uploaded, $skipped already had one"
+}
+if ($refusal) { Write-Host ("  the store said: {0}" -f $refusal.Trim()) -ForegroundColor DarkGray }
+
 # ------------------------------------------------------------------ done
 
 Write-Host ''

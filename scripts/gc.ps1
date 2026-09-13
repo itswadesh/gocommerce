@@ -7,6 +7,9 @@ $script:GCBase  = if ($env:GC_BASE)  { $env:GC_BASE }  else { 'http://127.0.0.1:
 $script:GCToken = if ($env:GC_TOKEN) { $env:GC_TOKEN } else { 'dev-token' }
 
 function Get-GCBase { $script:GCBase }
+# For the one call Invoke-GC cannot make: a multipart upload, where the header
+# has to be handed to curl.exe rather than built here.
+function Get-GCToken { $script:GCToken }
 
 # Invoke-GC sends one API request and returns the decoded "data" member.
 #
