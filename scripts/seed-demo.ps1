@@ -75,41 +75,55 @@ foreach ($l in $locations) {
 
 Write-GCStep 'Categories'
 
-# Looked up one slug at a time, and created only when genuinely absent.
+# Two levels, because the categories screen draws a tree and a flat list gives
+# it nothing to draw. It indents by depth and puts an expander on any row with
+# children; eight roots with no parents between them render as a plain table and
+# the whole feature is invisible. Four roots with two or three leaves each is
+# enough to see it work without inventing a taxonomy nobody asked for.
 #
-# The obvious thing — list every category and build a map — does not work here.
-# A store that has had the standard taxonomy imported holds 14,606 of them, and
+# Looked up one slug at a time rather than listed. A store that has had the
+# standard taxonomy imported holds 14,606 categories, and
 # `/api/admin/categories` ignores `limit` and `offset` (meta comes back
 # `offset: 0, page: 1` whatever you ask for), so a loop that pages until it sees
 # a short page never sees one and spins on the same 200 rows forever.
-#
-# Looking each one up also means this works on both kinds of store: against an
-# imported taxonomy it reuses the real slugs rather than growing a second tree
-# beside them, and against an empty one it makes the eight it needs.
-$categoryIds = @{}
-$wantedCategories = [ordered]@{
-    'clothing'             = 'Clothing'
-    'clothing-accessories' = 'Clothing accessories'
-    'kitchen-dining'       = 'Kitchen and dining'
-    'office-supplies'      = 'Office supplies'
-    'decor'                = 'Decor'
-    'linens-bedding'       = 'Linens and bedding'
-    'tote-bags'            = 'Tote bags'
-    'backpacks'            = 'Backpacks'
+$categoryTree = [ordered]@{
+    'apparel'     = @{ title = 'Apparel';        children = [ordered]@{ 'clothing' = 'Clothing'; 'clothing-accessories' = 'Clothing accessories' } }
+    'home-living' = @{ title = 'Home and living'; children = [ordered]@{ 'kitchen-dining' = 'Kitchen and dining'; 'decor' = 'Decor'; 'linens-bedding' = 'Linens and bedding' } }
+    'bags'        = @{ title = 'Bags';           children = [ordered]@{ 'tote-bags' = 'Tote bags'; 'backpacks' = 'Backpacks' } }
+    'workspace'   = @{ title = 'Workspace';      children = [ordered]@{ 'office-supplies' = 'Office supplies' } }
 }
-foreach ($slug in $wantedCategories.Keys) {
+
+function Resolve-Category {
+    param([string]$Slug, [string]$Title, $ParentID)
     try {
-        $found = Invoke-GC GET "/api/categories/$slug"
-        $categoryIds[$slug] = $found.id
-        continue
+        $found = Invoke-GC GET "/api/categories/$Slug"
+        # It may already exist from an earlier run as a root. Re-parent it
+        # rather than leaving the tree half-built.
+        if ($ParentID -and $found.parent_id -ne $ParentID) {
+            Invoke-GC PATCH "/api/admin/categories/$($found.id)" @{ parent_id = $ParentID } -Admin | Out-Null
+            Write-Host ("  moved {0} under its parent" -f $Slug) -ForegroundColor DarkGreen
+        }
+        return $found.id
     } catch {
         # Not found is the ordinary case on a store without the taxonomy.
     }
-    $made = Invoke-GC POST '/api/admin/categories' @{ slug = $slug; title = $wantedCategories[$slug] } -Admin
-    $categoryIds[$slug] = $made.id
-    Write-Host ("  new   {0}" -f $slug) -ForegroundColor DarkGreen
+    $body = @{ slug = $Slug; title = $Title }
+    if ($ParentID) { $body.parent_id = $ParentID }
+    $made = Invoke-GC POST '/api/admin/categories' $body -Admin
+    Write-Host ("  new   {0}" -f $Slug) -ForegroundColor DarkGreen
+    return $made.id
 }
-Write-Host ("  {0} of {1} categories ready" -f $categoryIds.Count, $wantedCategories.Count)
+
+$categoryIds = @{}
+foreach ($rootSlug in $categoryTree.Keys) {
+    $rootId = Resolve-Category -Slug $rootSlug -Title $categoryTree[$rootSlug].title -ParentID $null
+    $categoryIds[$rootSlug] = $rootId
+    foreach ($childSlug in $categoryTree[$rootSlug].children.Keys) {
+        $categoryIds[$childSlug] = Resolve-Category -Slug $childSlug `
+            -Title $categoryTree[$rootSlug].children[$childSlug] -ParentID $rootId
+    }
+}
+Write-Host ("  {0} categories across {1} roots" -f $categoryIds.Count, $categoryTree.Count)
 
 # ------------------------------------------------------------- collections
 
