@@ -744,8 +744,46 @@
         }
     }
 
+    /**
+     * What a group's variants already agree on, for the boxes that set them.
+     *
+     * The group row showed an empty box with a "0.00" placeholder however the
+     * variants under it were priced, which made a successful write
+     * indistinguishable from a refused one: type a price, leave the box, read
+     * "Price set on 4 variants", and watch the number vanish. The box is an
+     * input, so it should show the value it is going to overwrite.
+     *
+     * Empty when they disagree, because there is no one number to show and
+     * inventing one would make a mixed group look uniform.
+     */
+    function sharedPrice(group) {
+        const items = group.items ?? [];
+        if (!items.length) return "";
+        const first = items[0].price?.amount_minor;
+        if (first === undefined || first === null) return "";
+        return items.every((v) => v.price?.amount_minor === first)
+            ? fromMinor(first, items[0].price.currency)
+            : "";
+    }
+
+    function sharedStock(group) {
+        const items = (group.items ?? []).filter((v) => v.track_inventory);
+        if (!items.length) return "";
+        const first = items[0].stock_on_hand;
+        return items.every((v) => v.stock_on_hand === first) ? String(first) : "";
+    }
+
+    /* Typed overrides live here; `undefined` means "show what the group is".
+       Clearing back to undefined after a write is what puts the freshly saved
+       number in the box, because `apply` re-reads the variants first. */
+    function clearGroupOverride(map, key) {
+        map[key] = undefined;
+    }
+
     function applyGroupPrice(group) {
-        const value = groupPrice[group.key];
+        // Falls back to what is on screen, which is the group's own price when
+        // nothing has been typed over it.
+        const value = groupPrice[group.key] ?? sharedPrice(group);
         if (value === undefined || !isValidMoney(value, locale)) {
             toast.error("Enter a price first.");
             return;
@@ -755,11 +793,11 @@
             group.items,
             (v) => api.patch(`/api/admin/variants/${v.id}`, { price_minor }),
             "Price set",
-        ).then(() => (groupPrice[group.key] = ""));
+        ).then(() => clearGroupOverride(groupPrice, group.key));
     }
 
     function applyGroupStock(group) {
-        const value = groupStock[group.key];
+        const value = groupStock[group.key] ?? sharedStock(group);
         const count = parseInt(value, 10);
         if (isNaN(count)) {
             toast.error("Enter a whole number first.");
@@ -774,7 +812,7 @@
             tracked,
             (v) => api.post(`/api/admin/variants/${v.id}/inventory`, { set: count }),
             "Stock set",
-        ).then(() => (groupStock[group.key] = ""));
+        ).then(() => clearGroupOverride(groupStock, group.key));
     }
 
     async function commit(variant, body) {
@@ -1367,7 +1405,8 @@
                                     placeholder="0.00"
                                     disabled={working || !group.items.length}
                                     aria-label="Price for every variant in {group.label}"
-                                    bind:value={groupPrice[group.key]}
+                                    value={groupPrice[group.key] ?? sharedPrice(group)}
+                                    oninput={(e) => (groupPrice[group.key] = e.currentTarget.value)}
                                     onchange={() => applyGroupPrice(group)}
                                 />
                             </div>
@@ -1379,7 +1418,8 @@
                                     placeholder="0"
                                     disabled={working || !group.items.length}
                                     aria-label="On hand for every variant in {group.label}"
-                                    bind:value={groupStock[group.key]}
+                                    value={groupStock[group.key] ?? sharedStock(group)}
+                                    oninput={(e) => (groupStock[group.key] = e.currentTarget.value)}
                                     onchange={() => applyGroupStock(group)}
                                 />
                             </div>
