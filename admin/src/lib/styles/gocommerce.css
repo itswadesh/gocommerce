@@ -614,12 +614,17 @@ th.col-field-type-number {
 
     position: fixed;
     /*
-     * `.app-header` measures 38px, so a 32px bar 3px down from the viewport's
-     * top edge sits inside it with the same 3px above and below. It covers
-     * the nav rather than moving it: the header is in flow and the bar is
-     * not, so nothing under it shifts when it appears.
+     * Clear of the viewport edge, because there is no longer anything up there
+     * to sit inside.
+     *
+     * This was `top: 3px`, chosen so a 32px bar nested inside a 38px
+     * `.app-header` with 3px above and below. That header went when the nav
+     * became a left rail — the class appears nowhere in the panel now — and
+     * the bar was left tucked against the top of the window, overlapping page
+     * content with a radius picked to look like part of a strip it was no
+     * longer part of.
      */
-    top: 3px;
+    top: 12px;
     /*
      * Both insets zeroed with an auto inline margin is what centres a fixed
      * element of a known width. Not a translate — `slideTop` below owns
@@ -641,10 +646,16 @@ th.col-field-type-number {
     margin-inline: auto;
     color: var(--surfaceTxtColor);
     background: var(--surfaceColor);
-    border-radius: var(--borderRadius);
-    /* No shadow. Near-black against the accent header is already the whole
-       separation, and a drop shadow under it is the part that reads as a
-       banner. */
+    /* A pill, like the bulk bar at the other end of the screen. Both are the
+       same kind of object — a floating strip that appears when there is
+       something to act on — and they should not disagree about what that looks
+       like. The old 5px was the radius of a thing embedded in a header. */
+    border-radius: 999px;
+    /* And it needs the shadow now. The note that used to be here said one would
+       read as a banner, which was true while the bar sat inside a coloured
+       header; floating over white page content it is the only thing separating
+       it from the card underneath. */
+    box-shadow: var(--boxShadow);
     animation: slideTop var(--animationSpeed) ease-out;
 }
 
