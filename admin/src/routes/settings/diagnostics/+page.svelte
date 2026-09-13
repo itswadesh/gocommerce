@@ -101,11 +101,11 @@
 <div class="page page-diagnostics">
     <SettingsSidebar />
 
-    <div class="page-content full-height">
+    <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
             <nav class="breadcrumbs">
-                <div class="breadcrumb-item">Settings</div>
-                <div class="breadcrumb-item">Diagnostics</div>
+                <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Settings</div>
+                <div class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">Diagnostics</div>
             </nav>
 
             <!-- Guarded with the screen: a refresh button on a report the role
@@ -217,7 +217,7 @@
             </div>
         {/if}
 
-        <footer class="page-footer">
+        <footer class="page-footer tw:text-xs tw:text-muted-foreground">
             {#if health.report}
                 <span class="txt">Checked {relativeTime(health.report.at)}</span>
             {/if}

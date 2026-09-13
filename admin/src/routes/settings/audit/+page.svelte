@@ -239,11 +239,11 @@
 <div class="page page-audit">
     <SettingsSidebar />
 
-    <div class="page-content full-height">
+    <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
             <nav class="breadcrumbs">
-                <div class="breadcrumb-item">Settings</div>
-                <div class="breadcrumb-item">Audit trail</div>
+                <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Settings</div>
+                <div class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">Audit trail</div>
             </nav>
 
             <!-- The filters belong to a screen this operator can read. Left
@@ -361,7 +361,7 @@
             <!-- The sidebar already hides the link; this is the direct URL. -->
             <NoAccess right="store.operate" what="the audit trail" />
         {:else}
-            <div class="page-table-wrapper">
+            <div class="page-table-wrapper tw:rounded-xl tw:border">
                 <table class="table responsive-table">
                     <thead class="sticky">
                         <tr>
@@ -457,7 +457,7 @@
                 all. Nothing can edit or delete one — there is no route that could.
             </div>
 
-            <footer class="page-footer">
+            <footer class="page-footer tw:text-xs tw:text-muted-foreground">
                 <Pager
                     {meta}
                     {loading}

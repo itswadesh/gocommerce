@@ -142,11 +142,11 @@
 <div class="page page-account">
     <SettingsSidebar />
 
-    <div class="page-content full-height">
+    <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
             <nav class="breadcrumbs">
-                <div class="breadcrumb-item">Settings</div>
-                <div class="breadcrumb-item">Your account</div>
+                <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Settings</div>
+                <div class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">Your account</div>
             </nav>
         </header>
 
@@ -162,7 +162,7 @@
                 </p>
             </div>
         {:else}
-            <div class="section-title">Who you are</div>
+            <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Who you are</h2>
             <div class="list m-b-base">
                 <div class="list-item">
                     <span class="txt-hint">Email</span>
@@ -189,7 +189,7 @@
                 </div>
             </div>
 
-            <div class="section-title">What you may do</div>
+            <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">What you may do</h2>
             <div class="list m-b-base">
                 {#each me.rights ?? [] as right (right)}
                     <div class="list-item">
@@ -204,7 +204,7 @@
                 {/if}
             </div>
 
-            <div class="section-title">Change your details</div>
+            <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Change your details</h2>
             <form onsubmit={save} class="m-b-base">
                 <div class="field required" class:error={!!errors.current}>
                     <label for="acc-current">Current password</label>
@@ -271,7 +271,7 @@
                 </button>
             </form>
 
-            <div class="section-title">Lost a device?</div>
+            <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Lost a device?</h2>
             <div class="content txt-hint m-b-sm">
                 Ends every session including this one, so you will be asked to sign in again.
             </div>
@@ -281,7 +281,7 @@
             </button>
         {/if}
 
-        <footer class="page-footer">
+        <footer class="page-footer tw:text-xs tw:text-muted-foreground">
             <span class="txt">
                 {#if me}Signed in as {me.email}{/if}
             </span>

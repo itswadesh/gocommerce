@@ -159,11 +159,11 @@
 <div class="page page-attributes">
     <SettingsSidebar />
 
-    <div class="page-content full-height">
+    <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
             <nav class="breadcrumbs">
-                <div class="breadcrumb-item">Settings</div>
-                <div class="breadcrumb-item">Attribute dictionary</div>
+                <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Settings</div>
+                <div class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">Attribute dictionary</div>
             </nav>
             <div class="flex-fill"></div>
 
@@ -203,7 +203,7 @@
         {#if !can("catalog.read")}
             <NoAccess right="catalog.read" />
         {:else}
-            <div class="page-table-wrapper">
+            <div class="page-table-wrapper tw:rounded-xl tw:border">
                 <table class="table">
                     <thead class="sticky">
                         <tr>
@@ -292,7 +292,7 @@
                 </table>
             </div>
 
-            <footer class="page-footer">
+            <footer class="page-footer tw:text-xs tw:text-muted-foreground">
                 <Pager
                     {meta}
                     {loading}

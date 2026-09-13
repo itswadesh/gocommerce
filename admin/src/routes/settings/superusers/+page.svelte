@@ -507,11 +507,11 @@
 <div class="page page-superusers">
     <SettingsSidebar />
 
-    <div class="page-content full-height">
+    <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
             <nav class="breadcrumbs">
-                <div class="breadcrumb-item">Settings</div>
-                <div class="breadcrumb-item">Superusers</div>
+                <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Settings</div>
+                <div class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">Superusers</div>
             </nav>
 
             <div class="inline-flex gap-sm">
@@ -545,7 +545,7 @@
             </div>
         </header>
 
-        <div class="page-table-wrapper">
+        <div class="page-table-wrapper tw:rounded-xl tw:border">
             <table class="table responsive-table">
                 <thead class="sticky">
                     <tr>
@@ -707,7 +707,7 @@
             <!-- Below the team rather than beside it: these are people who are
                  not here yet, and mixing them into the list would say they are. -->
             <div class="m-t-base">
-                <div class="section-title">
+                <h2 class="tw:mt-6 tw:mb-3 tw:flex tw:flex-wrap tw:items-center tw:gap-2 tw:text-sm tw:font-semibold">
                     Invited, not yet joined
                     {#if writable && outstanding.length > 1}
                         <button
@@ -720,7 +720,7 @@
                             </span>
                         </button>
                     {/if}
-                </div>
+                </h2>
                 <div class="list">
                     {#each outstanding as inv (inv.id)}
                         <div class="list-item">
@@ -851,7 +851,7 @@
             {/if}
         {/if}
 
-        <footer class="page-footer">
+        <footer class="page-footer tw:text-xs tw:text-muted-foreground">
             <Pager
                 meta={paged.meta}
                 {loading}

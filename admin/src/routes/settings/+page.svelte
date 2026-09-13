@@ -98,11 +98,11 @@
 <div class="page page-settings">
     <SettingsSidebar />
 
-    <div class="page-content full-height">
+    <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
             <nav class="breadcrumbs">
-                <div class="breadcrumb-item">Settings</div>
-                <div class="breadcrumb-item">Store</div>
+                <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Settings</div>
+                <div class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">Store</div>
             </nav>
         </header>
 
@@ -217,10 +217,7 @@
                     </div>
 
                     <div class="col-12">
-                        <h6 class="section-title">
-                            <i class="ri-bank-card-line" aria-hidden="true"></i>
-                            Installed capabilities
-                        </h6>
+                        <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Installed capabilities</h2>
                         <div class="flex flex-wrap gap-5 m-b-10">
                             <!-- The name is the provider's own, and the nested
                                  label is the module that installed it — which is
@@ -238,10 +235,7 @@
                             and one argument, and changes no engine code.
                         </div>
 
-                        <h6 class="section-title">
-                            <i class="ri-truck-line" aria-hidden="true"></i>
-                            Shipping
-                        </h6>
+                        <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Shipping</h2>
                         <div class="flex flex-wrap gap-5 m-b-10">
                             {#each store?.fulfillment_providers ?? [] as provider (provider.code)}
                                 <span class="label info" title={provider.code}>
@@ -261,10 +255,7 @@
                              with no channels — and a section that renders
                              nothing but its own heading reads as a bug. -->
                         {#if channels.length}
-                            <h6 class="section-title">
-                                <i class="ri-notification-3-line" aria-hidden="true"></i>
-                                Notifications
-                            </h6>
+                            <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Notifications</h2>
                             <!-- The warning comes before the chips, because it is
                                  the thing to read: a channel with no delivery
                                  backend accepts every send and reports success. -->
@@ -314,10 +305,7 @@
 
                     {#if modulesKnown}
                         <div class="col-12">
-                            <h6 class="section-title">
-                                <i class="ri-puzzle-line" aria-hidden="true"></i>
-                                Modules
-                            </h6>
+                            <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Modules</h2>
                             <!-- What this binary was actually built with. Until
                                  the engine served this list the panel learned it
                                  by probing one admin route per module on every
@@ -344,10 +332,7 @@
 
                     {#if settings.languages.length > 1}
                         <div class="col-12">
-                            <h6 class="section-title">
-                                <i class="ri-translate-2" aria-hidden="true"></i>
-                                Read the catalog as a shopper
-                            </h6>
+                            <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Read the catalog as a shopper</h2>
                             <div class="field-help m-b-sm">
                                 The engine negotiates a language per request, renders the public
                                 catalog through the translator the store registered, stamps the
@@ -371,10 +356,7 @@
                     {/if}
 
                     <div class="col-12">
-                        <h6 class="section-title">
-                            <i class="ri-image-line" aria-hidden="true"></i>
-                            Media
-                        </h6>
+                        <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Media</h2>
                         <div class="field-help">
                             {#if settings.mediaUploadsEnabled}
                                 This store has somewhere to put a file, so the library takes
@@ -388,10 +370,7 @@
                     </div>
 
                     <div class="col-12">
-                        <h6 class="section-title">
-                            <i class="ri-code-s-slash-line" aria-hidden="true"></i>
-                            API
-                        </h6>
+                        <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">API</h2>
                         <div class="field-help m-b-sm">
                             This panel is a client of the same API as anything else — it has no
                             private endpoints. Everything you can do here, you can do with curl.
@@ -411,7 +390,7 @@
             {/if}
         </div>
 
-        <footer class="page-footer">
+        <footer class="page-footer tw:text-xs tw:text-muted-foreground">
             <span class="txt">GoCommerce {store?.version ?? ""}</span>
             <ThemeToggle />
         </footer>

@@ -195,11 +195,11 @@
     <div class="page page-webhooks">
         <SettingsSidebar />
 
-        <div class="page-content full-height">
+        <div class="page-content full-height tw:bg-background tw:text-foreground">
             <header class="page-header">
                 <nav class="breadcrumbs">
-                    <div class="breadcrumb-item">Settings</div>
-                    <div class="breadcrumb-item">Webhooks</div>
+                    <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Settings</div>
+                    <div class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">Webhooks</div>
                 </nav>
 
                 <div class="inline-flex gap-sm">
@@ -254,7 +254,7 @@
                 {/if}
 
                 <div class="wrapper m-b-base">
-                    <div class="section-title">Endpoints</div>
+                    <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Endpoints</h2>
 
                     {#if loading && !endpoints.length}
                         <div class="block txt-center p-base"><span class="loader"></span></div>
@@ -354,7 +354,7 @@
                 </div>
 
                 <div class="wrapper">
-                    <div class="section-title">Deliveries</div>
+                    <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Deliveries</h2>
 
                     <div class="fields m-b-sm">
                         <div class="field">
@@ -445,7 +445,7 @@
                     {/if}
                 </div>
 
-                <footer class="page-footer">
+                <footer class="page-footer tw:text-xs tw:text-muted-foreground">
                     <Pager
                         {meta}
                         {loading}

@@ -137,11 +137,11 @@
     <div class="page page-agent">
         <SettingsSidebar />
 
-        <div class="page-content full-height">
+        <div class="page-content full-height tw:bg-background tw:text-foreground">
             <header class="page-header">
                 <nav class="breadcrumbs">
-                    <div class="breadcrumb-item">Settings</div>
-                    <div class="breadcrumb-item">Agent activity</div>
+                    <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Settings</div>
+                    <div class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">Agent activity</div>
                 </nav>
 
                 <div class="inline-flex gap-sm">
@@ -167,7 +167,7 @@
                 />
             {:else}
                 <div class="wrapper m-b-base">
-                    <div class="section-title">The server</div>
+                    <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">The server</h2>
 
                     {#if statusLoading && !tools.length}
                         <div class="block txt-center p-base"><span class="loader"></span></div>
@@ -211,9 +211,9 @@
                     {/if}
                 </div>
 
-                <div class="section-title">Recorded calls</div>
+                <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Recorded calls</h2>
 
-                <div class="page-table-wrapper">
+                <div class="page-table-wrapper tw:rounded-xl tw:border">
                     <table class="table responsive-table">
                         <thead class="sticky">
                             <tr>
@@ -276,7 +276,7 @@
                     </table>
                 </div>
 
-                <footer class="page-footer">
+                <footer class="page-footer tw:text-xs tw:text-muted-foreground">
                     <Pager
                         {meta}
                         {loading}
@@ -310,11 +310,11 @@
         </div>
 
         {#if entry.detail}
-            <div class="section-title">What it said</div>
+            <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">What it said</h2>
             <p>{entry.detail}</p>
         {/if}
 
-        <div class="section-title">Arguments</div>
+        <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Arguments</h2>
         <!-- base.css already gives <pre> pre-wrap and a radius, and .txt-code
              the monospace face: a JSON blob needs nothing this panel does not
              already have. -->

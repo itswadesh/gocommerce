@@ -227,11 +227,11 @@
 <div class="page page-events">
     <SettingsSidebar />
 
-    <div class="page-content full-height">
+    <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
             <nav class="breadcrumbs">
-                <div class="breadcrumb-item">Settings</div>
-                <div class="breadcrumb-item">Events</div>
+                <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Settings</div>
+                <div class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">Events</div>
             </nav>
 
             <!-- The filters belong to a screen this operator can read. Left
@@ -310,7 +310,7 @@
                  whose every control 403s, which reads as a broken panel. -->
             <NoAccess right="store.operate" what="the event outbox" />
         {:else}
-            <div class="page-table-wrapper">
+            <div class="page-table-wrapper tw:rounded-xl tw:border">
                 <table class="table responsive-table">
                     <thead class="sticky">
                         <tr>
@@ -403,7 +403,7 @@
                 </table>
             </div>
 
-            <footer class="page-footer">
+            <footer class="page-footer tw:text-xs tw:text-muted-foreground">
                 <Pager
                     {meta}
                     {loading}
