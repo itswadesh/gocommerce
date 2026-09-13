@@ -167,7 +167,17 @@
          `bg-background` costs nothing visible in light and flattens every
          surface into the page in dark. DESIGN.md §2. -->
     <div class="tw:flex tw:min-h-full tw:w-full tw:min-w-0 tw:flex-col tw:bg-background tw:font-sans tw:text-foreground">
-        <div class="tw:mx-auto tw:flex tw:w-full tw:max-w-5xl tw:flex-col tw:gap-6 tw:p-4 tw:sm:p-6">
+        <!-- Full bleed, not a centred column. Every other screen in the
+             panel runs edge to edge, so a capped width here made the dashboard
+             the one place the content jumped inward — 410px against the list
+             screens' 258px at 1440, and a 1024px column stranded in the middle
+             of a 1920px display. The gutters match `.page-content`'s (20px on
+             a phone, 30px above it) so the title and the first card line up
+             with the tables on either side of a sidebar click. The 30px is
+             literal because it has to be: it is PocketBase's `--spacing`, the
+             padding `.page-content` puts on every other screen, and it is not
+             on Tailwind's 4px scale — p-8 lands 2px wide of it. -->
+        <div class="tw:flex tw:w-full tw:min-w-0 tw:flex-col tw:gap-6 tw:p-5 tw:sm:p-[30px]">
         <!-- The page title is the only large type on the screen. Everything
              else lives at 12-14px, and hierarchy comes from weight and border
              rather than size. DESIGN.md §3. -->
@@ -258,17 +268,32 @@
                                 </p>
                             </div>
 
+                            <!-- Fixed tracks, not a flex-end cluster. Packed by
+                                 content width these three ran ragged down the
+                                 page — every row's pill started at a different
+                                 x. It read as fine in a 1024px column and badly
+                                 once the page went full width, which is the
+                                 width it actually renders at. -->
                             <div class="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:pl-3.5 tw:sm:justify-end tw:sm:pl-0 tw:sm:gap-4">
                                 <!-- Status is never the dot alone; the word is
-                                     always beside it. DESIGN.md §11. -->
-                                <span
-                                    class="tw:inline-flex tw:items-center tw:gap-1 tw:rounded-full tw:border tw:px-2 tw:py-0.5 tw:text-xs tw:whitespace-nowrap"
-                                >
-                                    <span class="tw:size-1.5 tw:rounded-full {dotFor(order.status)}" aria-hidden="true"></span>
-                                    {orderStatusLabel(order.status)}
+                                     always beside it. DESIGN.md §11. The track
+                                     is fixed; the pill hugs its text inside it. -->
+                                <span class="tw:shrink-0 tw:sm:w-32">
+                                    <span
+                                        class="tw:inline-flex tw:items-center tw:gap-1 tw:rounded-full tw:border tw:px-2 tw:py-0.5 tw:text-xs tw:whitespace-nowrap"
+                                    >
+                                        <span class="tw:size-1.5 tw:rounded-full {dotFor(order.status)}" aria-hidden="true"></span>
+                                        {orderStatusLabel(order.status)}
+                                    </span>
                                 </span>
-                                <span class="tw:text-sm tw:font-medium tw:tabular-nums">{formatMoney(order.total)}</span>
-                                <span class="tw:hidden tw:text-xs tw:whitespace-nowrap tw:text-muted-foreground tw:sm:inline">
+                                <span class="tw:shrink-0 tw:text-sm tw:font-medium tw:tabular-nums tw:sm:w-24 tw:sm:text-right">
+                                    {formatMoney(order.total)}
+                                </span>
+                                <!-- `sm:block`, not `sm:inline`: an inline box
+                                     ignores the width that makes the column. -->
+                                <span
+                                    class="tw:hidden tw:shrink-0 tw:text-xs tw:whitespace-nowrap tw:text-muted-foreground tw:sm:block tw:sm:w-28 tw:sm:text-right"
+                                >
                                     {relativeTime(order.created_at)}
                                 </span>
                             </div>
@@ -315,11 +340,18 @@
                                 <p class="tw:truncate tw:text-xs tw:text-muted-foreground">{variant.label || "—"}</p>
                             </div>
                             <!-- The three numbers keep their labels on a phone,
-                                 where a bare row of digits says nothing. -->
+                                 where a bare row of digits says nothing, and
+                                 take fixed tracks above it so the digits line up
+                                 in columns down the list rather than drifting
+                                 with the width of the count beside them. -->
                             <div class="tw:flex tw:items-center tw:gap-4 tw:text-xs tw:text-muted-foreground">
-                                <span>on hand <b class="tw:font-medium tw:text-foreground tw:tabular-nums">{variant.stock_on_hand}</b></span>
-                                <span>reserved <b class="tw:font-medium tw:text-foreground tw:tabular-nums">{variant.stock_reserved}</b></span>
-                                <span>
+                                <span class="tw:shrink-0 tw:sm:w-24 tw:sm:text-right">
+                                    on hand <b class="tw:font-medium tw:text-foreground tw:tabular-nums">{variant.stock_on_hand}</b>
+                                </span>
+                                <span class="tw:shrink-0 tw:sm:w-24 tw:sm:text-right">
+                                    reserved <b class="tw:font-medium tw:text-foreground tw:tabular-nums">{variant.stock_reserved}</b>
+                                </span>
+                                <span class="tw:shrink-0 tw:sm:w-24 tw:sm:text-right">
                                     available
                                     <b class="tw:font-semibold tw:tabular-nums {variant.available <= 0 ? 'tw:text-destructive' : 'tw:text-foreground'}">
                                         {variant.available}
