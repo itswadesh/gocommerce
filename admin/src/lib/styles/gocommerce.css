@@ -863,6 +863,36 @@ th.col-field-type-number {
     border-color: var(--accentColor);
 }
 
+/* ------------------------------------------------------ dragging a category
+ *
+ * Two states, and they say different things. The row being carried fades,
+ * because it is not where it looks like it is. The row under the cursor grows a
+ * line on top, because a drop lands ABOVE it — a whole-row highlight would be
+ * the same picture for "above this" and "into this", which on a tree is the one
+ * ambiguity worth spending a rule to avoid.
+ */
+.row-dragging {
+    opacity: 0.4;
+}
+.row-drop-target > td {
+    box-shadow: inset 0 2px 0 0 var(--primary, currentColor);
+}
+/* The grip only earns its space on a row somebody is pointing at; the rest of
+   the time it is noise beside the expander it sits next to. */
+.row-grip {
+    opacity: 0;
+    cursor: grab;
+    transition: opacity var(--animationSpeed);
+}
+tr:hover > td .row-grip,
+tr:focus-within > td .row-grip,
+.row-grip:focus-visible {
+    opacity: 1;
+}
+.row-grip:active {
+    cursor: grabbing;
+}
+
 /* ----------------------------------------------------- column-bound tables */
 
 /*

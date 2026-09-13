@@ -15,7 +15,7 @@
      * sends, and shows what came back.
      */
     import { base } from "$app/paths";
-    import { api, can, query } from "$lib/api.js";
+    import { api, can, query, request } from "$lib/api.js";
     import { onNewShortcut } from "$lib/shortcuts.js";
     import { rowKey } from "$lib/rowkey.js";
     import { listState } from "$lib/liststate.svelte.js";
@@ -157,6 +157,117 @@
         if (!full || full === category.title) return "";
         const cut = full.length - category.title.length - 3; /* " / " */
         return cut > 0 ? full.slice(0, cut) : "";
+    }
+
+    /* ------------------------------------------------------- drag to reorder
+     *
+     * Siblings only. The table is a flattened tree, so a drop between two rows
+     * at different depths has no single honest meaning — "after Clothing" and
+     * "into Clothing" look identical on screen. Moving a category to a
+     * different parent has a control that says exactly that: the Parent picker
+     * in the drawer. Dragging is refused while a search is running for the same
+     * reason the indent is suppressed there: the rows are matches from all over
+     * the tree, not an order.
+     */
+    let dragId = $state(null);
+    let dropId = $state(null);
+
+    /** Where this row's subtree ends: everything deeper, up to the next row that is not. */
+    function subtreeEnd(index) {
+        const depth = categories[index].depth;
+        let end = index + 1;
+        while (end < categories.length && categories[end].depth > depth) end++;
+        return end;
+    }
+
+    const draggedRow = $derived(dragId === null ? null : categories.find((c) => c.id === dragId));
+
+    /** A row is a target when it is a sibling of the one being dragged, and not itself. */
+    function isDropTarget(category) {
+        const from = draggedRow;
+        return !!from && category.id !== from.id && category.parent_id === from.parent_id;
+    }
+
+    function startRowDrag(event, category) {
+        if (!writable || search) return;
+        dragId = category.id;
+        // Firefox refuses to start a drag without a payload.
+        event.dataTransfer?.setData("text/plain", String(category.id));
+        if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+    }
+
+    function dragOverRow(event, category) {
+        if (!isDropTarget(category)) return;
+        event.preventDefault();
+        dropId = category.id;
+    }
+
+    function endRowDrag() {
+        dragId = null;
+        dropId = null;
+    }
+
+    async function dropOnRow(event, target) {
+        if (!isDropTarget(target)) return;
+        event.preventDefault();
+        const moving = dragId;
+        endRowDrag();
+        await moveBefore(moving, target.id);
+    }
+
+    /**
+     * Move one category to where another sibling sits, taking its open subtree
+     * with it, then persist the whole sibling order.
+     *
+     * The local move happens first so the row lands under the cursor rather
+     * than after a round trip; a failed save reloads the tree, which is the
+     * only honest way back from an order the store did not accept.
+     */
+    async function moveBefore(movingId, targetId) {
+        const from = categories.findIndex((c) => c.id === movingId);
+        const to = categories.findIndex((c) => c.id === targetId);
+        if (from < 0 || to < 0 || from === to) return;
+
+        const parentID = categories[from].parent_id ?? null;
+        const block = categories.slice(from, subtreeEnd(from));
+        const without = [...categories.slice(0, from), ...categories.slice(subtreeEnd(from))];
+
+        // Dragging downward lands after the target's own subtree, so the row
+        // ends up below it rather than inside the gap above it.
+        let at = without.findIndex((c) => c.id === targetId);
+        if (from < to) {
+            const depth = without[at].depth;
+            at += 1;
+            while (at < without.length && without[at].depth > depth) at += 1;
+        }
+        categories = [...without.slice(0, at), ...block, ...without.slice(at)];
+        await persistOrder(parentID);
+    }
+
+    /** The keyboard equivalent, because a drag has none unless one is written. */
+    async function nudge(category, delta) {
+        const siblings = categories.filter((c) => c.parent_id === category.parent_id);
+        const i = siblings.findIndex((c) => c.id === category.id);
+        const target = siblings[i + delta];
+        if (!target) return;
+        await moveBefore(category.id, target.id);
+    }
+
+    async function persistOrder(parentID) {
+        const ids = categories.filter((c) => (c.parent_id ?? null) === parentID).map((c) => c.id);
+        try {
+            await request("PUT", "/api/admin/categories/reorder", {
+                body: { parent_id: parentID, ids },
+            });
+            // The positions the rows carry are now stale by exactly their index.
+            let n = 0;
+            categories = categories.map((c) =>
+                (c.parent_id ?? null) === parentID ? { ...c, position: n++ } : c,
+            );
+        } catch (err) {
+            toast.error(err);
+            loadTree();
+        }
     }
 
     /** What the table draws: the matches while a search is running, else the tree. */
@@ -774,7 +885,14 @@
                     {#each rows as category (category.id)}
                         <tr
                             class="handle"
+                            class:row-dragging={dragId === category.id}
+                            class:row-drop-target={dropId === category.id}
                             tabindex="0"
+                            draggable={writable && !search}
+                            ondragstart={(e) => startRowDrag(e, category)}
+                            ondragover={(e) => dragOverRow(e, category)}
+                            ondrop={(e) => dropOnRow(e, category)}
+                            ondragend={endRowDrag}
                             onclick={() => openEdit(category)}
                             onkeydown={(e) => rowKey(e, () => openEdit(category))}
                         >
@@ -813,6 +931,32 @@
                                         {category.full_name || category.title}
                                     </span>
                                 {:else}
+                                    <!-- The arrows are not a nicety: dragging is
+                                         the only pointer gesture for this, and
+                                         it has no keyboard equivalent unless one
+                                         is written. -->
+                                    {#if writable && !search}
+                                        <button
+                                            type="button"
+                                            class="btn xs transparent secondary row-grip"
+                                            aria-label="Reorder {category.title}. Use the up and down arrows."
+                                            title="Drag to reorder, or use the arrow keys"
+                                            onclick={(e) => e.stopPropagation()}
+                                            onkeydown={(e) => {
+                                                if (e.key === "ArrowUp") {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    nudge(category, -1);
+                                                } else if (e.key === "ArrowDown") {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    nudge(category, 1);
+                                                }
+                                            }}
+                                        >
+                                            <i class="ri-draggable" aria-hidden="true"></i>
+                                        </button>
+                                    {/if}
                                     <span
                                         class="category-indent"
                                         class:nested={category.depth > 0}

@@ -9525,6 +9525,81 @@
           }
         ]
       }
+    },
+    "/api/admin/categories/reorder": {
+      "put": {
+        "tags": [
+          "admin:categories"
+        ],
+        "summary": "Reorder one parent's children",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Renumbers a whole sibling set in one transaction, giving the ids sent positions 0..n-1 in the order they arrive. One call rather than a PATCH per row because `position` is per-parent and dense — dropping a row above three siblings renumbers four of them, and separate writes can fail part-way and leave an order that is half old and half new (D54).\n\n`parent_id` is required and nullable: send `null` to reorder the roots. Omitting the key is refused rather than treated as null, so a body that forgets it cannot silently reorder the top level.\n\n`ids` must name exactly that parent's children — all of them, each once, and nothing else. A partial list is refused rather than interpreted, because every reading of one is a guess. Moving a category to a different parent is `parent_id` on PATCH /api/admin/categories/{id}, not this.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "parent_id",
+                  "ids"
+                ],
+                "properties": {
+                  "parent_id": {
+                    "type": "integer",
+                    "format": "int64",
+                    "nullable": true,
+                    "description": "The parent whose children are being ordered. Null is the root level."
+                  },
+                  "ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "description": "Every child of that parent, in the order they should sit.",
+                    "example": [
+                      12,
+                      9,
+                      11
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "That parent's children, in their new order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Category"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
     }
   },
   "components": {

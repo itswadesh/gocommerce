@@ -800,6 +800,83 @@ func subtreeHeight(ctx context.Context, tx *sql.Tx, id int64) (int, error) {
 // be worse in both directions: deleting "Apparel" would silently take every
 // subcategory, and uncategorising forty products is a change nobody asked for
 // and nobody would see.
+// Reorder renumbers one parent's children, in one transaction.
+//
+// The caller sends the whole sibling list in the order it wants, and gets back
+// positions 0..n-1 in that order. It is one call rather than a PATCH per row
+// because position is per-parent and dense: dropping a row above three siblings
+// renumbers four of them, and four separate writes can fail on the third and
+// leave an order that is half old and half new with nothing able to say which.
+// D54.
+//
+// A nil parentID addresses the roots, the same way Children does.
+//
+// The list has to be exactly that parent's children — every one, each once, and
+// nothing else. A partial list is refused rather than interpreted, because
+// every reading of it is a guess: renumbering only the named rows leaves the
+// unnamed ones sharing positions with them, and appending the rest invents an
+// order the caller never asked for.
+func (s *Categories) Reorder(ctx context.Context, parentID *int64, ids []int64) error {
+	return InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		// Lock the sibling set before reading it, so two operators dragging in
+		// the same branch cannot interleave into a scrambled order.
+		rows, err := tx.QueryContext(ctx, `
+			SELECT id FROM categories
+			WHERE parent_id IS NOT DISTINCT FROM $1
+			ORDER BY position, id
+			FOR UPDATE`, parentID)
+		if err != nil {
+			return err
+		}
+		existing := map[int64]bool{}
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			existing[id] = true
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+
+		if len(ids) != len(existing) {
+			return Validationf("the order must name all %d of that category's children, and named %d",
+				len(existing), len(ids))
+		}
+		seen := map[int64]bool{}
+		for _, id := range ids {
+			if seen[id] {
+				return Validationf("category %d appears twice in the order", id)
+			}
+			seen[id] = true
+			if !existing[id] {
+				return Validationf("category %d is not a child of that parent", id)
+			}
+		}
+
+		// Two passes, because position carries a uniqueness constraint per
+		// parent in some stores and a swap would collide mid-update. Negative
+		// positions are never read: nothing orders by them and the second pass
+		// always follows inside the same transaction.
+		for i, id := range ids {
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE categories SET position = $1 WHERE id = $2`, -(i + 1), id); err != nil {
+				return err
+			}
+		}
+		for i, id := range ids {
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE categories SET position = $1, updated_at = now() WHERE id = $2`, i, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (s *Categories) Delete(ctx context.Context, id int64) error {
 	return InTx(ctx, s.app.db, func(tx *sql.Tx) error {
 		var children, products int
@@ -980,6 +1057,7 @@ func (a *App) mountCategoryRoutes() {
 	a.HandleAdminFunc("GET /api/admin/categories/{id}", a.handleAdminGetCategory, RightCatalogRead)
 	a.HandleAdminFunc("GET /api/admin/categories/{id}/ancestors", a.handleAdminCategoryAncestors, RightCatalogRead)
 	a.HandleAdminFunc("PATCH /api/admin/categories/{id}", a.handleUpdateCategory, RightCatalogWrite)
+	a.HandleAdminFunc("PUT /api/admin/categories/reorder", a.handleReorderCategories, RightCatalogWrite)
 	a.HandleAdminFunc("DELETE /api/admin/categories/{id}", a.handleDeleteCategory, RightCatalogWrite)
 }
 
@@ -1202,6 +1280,39 @@ func (a *App) handleUpdateCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	Respond(w, http.StatusOK, c)
+}
+
+// handleReorderCategories renumbers one parent's children. `parent_id` is
+// nullable because the roots are a sibling set like any other, and absent is
+// not the same as null here — a body that forgets the key would silently
+// reorder the roots.
+func (a *App) handleReorderCategories(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		ParentID NullableID `json:"parent_id"`
+		IDs      []int64    `json:"ids"`
+	}
+	if err := DecodeJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	if !in.ParentID.Present {
+		RespondError(w, r, Validationf("parent_id is required; send null to reorder the roots"))
+		return
+	}
+	if len(in.IDs) == 0 {
+		RespondError(w, r, Validationf("ids is required"))
+		return
+	}
+	if err := a.Categories().Reorder(r.Context(), in.ParentID.Value, in.IDs); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	kids, err := a.Categories().Children(r.Context(), in.ParentID.Value)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, kids)
 }
 
 func (a *App) handleDeleteCategory(w http.ResponseWriter, r *http.Request) {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -1111,5 +1112,83 @@ func TestCategorySearchMetaReportsTheRealOffset(t *testing.T) {
 	}
 	if page.Meta.Offset != 1 {
 		t.Errorf("meta.offset = %d, want the offset that was asked for", page.Meta.Offset)
+	}
+}
+
+// Reordering siblings is one call and one transaction.
+//
+// The alternative — a PATCH per row — is not atomic, and a failure halfway
+// leaves an order that is half old and half new with nothing able to say which.
+// D54.
+func TestReorderChildren(t *testing.T) {
+	app := categoriesApp(t)
+	ctx := context.Background()
+
+	parent := newCategory(t, app, CategoryInput{Title: "Apparel"})
+	a := newCategory(t, app, CategoryInput{Title: "A", ParentID: &parent.ID})
+	b := newCategory(t, app, CategoryInput{Title: "B", ParentID: &parent.ID})
+	c := newCategory(t, app, CategoryInput{Title: "C", ParentID: &parent.ID})
+
+	order := func() []string {
+		t.Helper()
+		kids, err := app.Categories().Children(ctx, &parent.ID)
+		if err != nil {
+			t.Fatalf("children: %v", err)
+		}
+		out := make([]string, len(kids))
+		for i, k := range kids {
+			out[i] = k.Title
+		}
+		return out
+	}
+
+	if got := order(); !reflect.DeepEqual(got, []string{"A", "B", "C"}) {
+		t.Fatalf("created order = %v, want [A B C]", got)
+	}
+
+	// Move the last one to the front.
+	if err := app.Categories().Reorder(ctx, &parent.ID, []int64{c.ID, a.ID, b.ID}); err != nil {
+		t.Fatalf("reorder: %v", err)
+	}
+	if got := order(); !reflect.DeepEqual(got, []string{"C", "A", "B"}) {
+		t.Errorf("after reorder = %v, want [C A B]", got)
+	}
+
+	// Positions are renumbered densely, not left with gaps that the next
+	// reorder would have to reason about.
+	kids, _ := app.Categories().Children(ctx, &parent.ID)
+	for i, k := range kids {
+		if k.Position != i {
+			t.Errorf("%s position = %d, want %d", k.Title, k.Position, i)
+		}
+	}
+
+	// A list that is not exactly this parent's children is refused, because a
+	// partial list would silently renumber some rows and leave others.
+	if err := app.Categories().Reorder(ctx, &parent.ID, []int64{c.ID, a.ID}); err == nil {
+		t.Error("a partial list was accepted")
+	}
+	if err := app.Categories().Reorder(ctx, &parent.ID, []int64{c.ID, a.ID, b.ID, parent.ID}); err == nil {
+		t.Error("a list naming a category from another parent was accepted")
+	}
+	if err := app.Categories().Reorder(ctx, &parent.ID, []int64{c.ID, a.ID, a.ID}); err == nil {
+		t.Error("a list with a duplicate was accepted")
+	}
+	// The failures above changed nothing.
+	if got := order(); !reflect.DeepEqual(got, []string{"C", "A", "B"}) {
+		t.Errorf("after refused reorders = %v, want [C A B] unchanged", got)
+	}
+
+	// Roots reorder too, addressed by a nil parent.
+	other := newCategory(t, app, CategoryInput{Title: "Zed"})
+	if err := app.Categories().Reorder(ctx, nil, []int64{other.ID, parent.ID}); err != nil {
+		t.Fatalf("reorder roots: %v", err)
+	}
+	roots, err := app.Categories().Children(ctx, nil)
+	if err != nil {
+		t.Fatalf("roots: %v", err)
+	}
+	if len(roots) != 2 || roots[0].Title != "Zed" || roots[1].Title != "Apparel" {
+		t.Errorf("roots = %v, want [Zed Apparel]", roots)
 	}
 }
