@@ -159,6 +159,13 @@
      Playwright pass uses it as the proof a screen actually rendered. The new
      design lives inside it rather than in place of it. -->
 <div class="page page-dashboard">
+    <!-- This element is the page; everything card-shaped inside it is
+         `bg-card`. In light mode the two tokens are both pure white and the
+         distinction looks like pedantry — it is not. Dark is not an inversion:
+         the page goes to oklch(14.5%) and a card to oklch(20.5%), so cards lift
+         ABOVE the page rather than sinking below it. Painting a card
+         `bg-background` costs nothing visible in light and flattens every
+         surface into the page in dark. DESIGN.md §2. -->
     <div class="tw:flex tw:min-h-full tw:w-full tw:min-w-0 tw:flex-col tw:bg-background tw:font-sans tw:text-foreground">
         <div class="tw:mx-auto tw:flex tw:w-full tw:max-w-5xl tw:flex-col tw:gap-6 tw:p-4 tw:sm:p-6">
         <!-- The page title is the only large type on the screen. Everything
@@ -182,7 +189,7 @@
                 {#each cards as card (card.label)}
                     <a
                         href="{base}{card.href}"
-                        class="tw:flex tw:min-h-[120px] tw:flex-col tw:text-foreground tw:no-underline tw:justify-between tw:rounded-xl tw:border tw:bg-background tw:p-5 tw:transition-colors tw:hover:bg-accent tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:focus-visible:ring-offset-2 tw:focus-visible:ring-offset-background tw:focus-visible:outline-none tw:sm:min-h-[140px]"
+                        class="tw:flex tw:min-h-[120px] tw:flex-col tw:text-foreground tw:no-underline tw:justify-between tw:rounded-xl tw:border tw:bg-card tw:p-5 tw:transition-colors tw:hover:bg-accent tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:focus-visible:ring-offset-2 tw:focus-visible:ring-offset-background tw:focus-visible:outline-none tw:sm:min-h-[140px]"
                     >
                         <span class="tw:text-xs tw:font-medium tw:tracking-wide tw:text-muted-foreground tw:uppercase">
                             {card.label}
@@ -201,7 +208,7 @@
         {/if}
 
         {#if mayOrders}
-            <section class="tw:rounded-xl tw:border tw:bg-background">
+            <section class="tw:rounded-xl tw:border tw:bg-card">
                 <div class="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2 tw:border-b tw:px-4 tw:py-4 tw:sm:px-5">
                     <h2 class="tw:text-sm tw:font-semibold">
                         Recent orders
@@ -287,7 +294,7 @@
         {/if}
 
         {#if mayStock}
-            <section class="tw:rounded-xl tw:border tw:bg-background">
+            <section class="tw:rounded-xl tw:border tw:bg-card">
                 <div class="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2 tw:border-b tw:px-4 tw:py-4 tw:sm:px-5">
                     <h2 class="tw:text-sm tw:font-semibold">Running low</h2>
                     <a
