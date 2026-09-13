@@ -69,9 +69,9 @@
      * rights (rights.go); these are the sentences.
      */
     const ROLES = [
-        { value: "owner", label: "Owner — everything, including the team" },
-        { value: "manager", label: "Manager — the catalog, orders and refunds" },
-        { value: "staff", label: "Staff — sees the shop, moves orders along" },
+        { value: "owner", short: "Owner", label: "Owner — everything, including the team" },
+        { value: "manager", short: "Manager", label: "Manager — the catalog, orders and refunds" },
+        { value: "staff", short: "Staff", label: "Staff — sees the shop, moves orders along" },
     ];
     const roleName = (role) => ({ owner: "Owner", manager: "Manager", staff: "Staff" })[role] ?? role;
     let errors = $state({});

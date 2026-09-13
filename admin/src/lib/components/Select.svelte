@@ -150,7 +150,12 @@
         onkeydown={onTriggerKeydown}
     >
         {#if selected}
-            <div class="selected-item">{selected.label ?? selected.value}</div>
+            <!-- `short` is the closed form, for an option whose label is a
+                 sentence. The sentence is what you need while deciding; once
+                 decided, the cell is only reporting the current value, and a
+                 dropdown wide enough to hold the explanation pushes the column
+                 — and the table — past the width of the page. -->
+            <div class="selected-item">{selected.short ?? selected.label ?? selected.value}</div>
         {:else}
             <span class="placeholder">{placeholder}</span>
         {/if}
