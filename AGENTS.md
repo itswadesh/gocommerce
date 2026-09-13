@@ -147,17 +147,41 @@ A test enforces it, and `gocommerce doctor` re-checks it at runtime. Add the
 path when you add the route. Panel routes are marked `Route.UI` and excluded —
 a spec describing a file server is noise.
 
-### 12. The admin panel's CSS is PocketBase's, verbatim
+### 12. Two stylesheets share the panel, and they do not overlap
 
-`admin/src/lib/styles/*.css` are copied files. **Do not hand-edit them**; to
-take an upstream change, re-copy from a PocketBase checkout so the diff stays
-readable. `gocommerce.css` and `fonts-inter.css` are the only sheets we own,
-and the deliberate deviations are listed at the top of each.
+The panel is moving to the design system in [`DESIGN.md`](DESIGN.md) — Tailwind
+v4, zero-chroma `oklch` tokens, borders instead of shadows — **one screen at a
+time** (D53). Until that finishes, and for the controls permanently, PocketBase's
+sheets are still doing their job. Both rules below are live at once.
 
-Use PocketBase's class vocabulary and nothing else — `.label` not `.badge`,
-plain `.btn` for the primary action, `.page-table-wrapper` not
-`.table-wrapper`. Grep the stylesheets before inventing a class. See
-[`skills/development.md`](skills/development.md).
+**PocketBase's files stay verbatim.** `admin/src/lib/styles/*.css` are copied
+files. **Do not hand-edit them**; to take an upstream change, re-copy from a
+PocketBase checkout so the diff stays readable. `gocommerce.css`,
+`fonts-inter.css` and `design.css` are the only sheets we own, and the
+deliberate deviations are listed at the top of each.
+
+**On a screen that has not been migrated, use PocketBase's vocabulary and
+nothing else** — `.label` not `.badge`, plain `.btn` for the primary action,
+`.page-table-wrapper` not `.table-wrapper`. Grep the stylesheets before
+inventing a class. See [`skills/development.md`](skills/development.md).
+
+**On a migrated screen, Tailwind carries the `tw:` prefix** — `tw:flex`,
+`tw:p-4` — and that is not decoration. The two systems define the same names:
+`.grid` is PocketBase's flex grid with negative margins, and `--spacing` is
+`30px` in `vars.css` while Tailwind multiplies it, so an unprefixed `p-4`
+computed to 80px and an unprefixed `grid` collapsed a row to zero width. The
+prefix is what keeps both meanings true in one document.
+
+**The controls stay PocketBase's, on every screen.** Buttons, text inputs,
+dropdowns and the side drawer are not being restyled. A migrated screen changes
+the surfaces around them — the page, the cards, the lists — and reuses `.btn`
+and the existing components as they are.
+
+Two things about `design.css` that look like mistakes and are not: Tailwind
+arrives without Preflight, because a reset would reach the thirty-five screens
+that have not moved; and its utilities are imported **unlayered**, because
+unlayered CSS beats layered CSS outright and every PocketBase sheet is
+unlayered. Put the utilities in a layer and they lose to a bare `a` selector.
 
 ### 13. Tests run against a real PostgreSQL
 

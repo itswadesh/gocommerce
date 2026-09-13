@@ -1,0 +1,169 @@
+/*
+ * The design system from DESIGN.md, as tokens and Tailwind utilities.
+ *
+ * Two things about how this is loaded, both deliberate.
+ *
+ * Tailwind arrives WITHOUT Preflight. `@import "tailwindcss"` would pull in a
+ * reset that reaches every element on every screen, and sixteen PocketBase
+ * stylesheets are still doing that job for thirty-five screens that have not
+ * been migrated yet. Importing the theme and utilities layers on their own is
+ * the documented way to opt out in v4, and it is what makes this migration
+ * something that can happen a screen at a time rather than in one commit that
+ * either works or does not.
+ *
+ * And the tokens are declared twice on purpose. DESIGN.md names them
+ * `--background`, `--foreground` and so on; Tailwind v4 builds utilities from
+ * `--color-*` inside `@theme`. Rather than pick one and make the other a lie,
+ * the plain names are the source and `@theme` points at them — so a reader of
+ * DESIGN.md finds the names it promised, and `bg-background` works.
+ */
+
+@import "tailwindcss/theme.css" layer(theme) prefix(tw);
+
+/*
+ * The utilities arrive UNLAYERED, and that is the whole reason this works.
+ *
+ * In the cascade, unlayered CSS beats layered CSS outright — specificity never
+ * gets a say. The sixteen PocketBase sheets above are unlayered, so putting the
+ * utilities in a layer meant every one of them lost to a bare element selector.
+ * The first build of this screen came out as underlined text in a narrow
+ * column, because base.css's `a { text-decoration: underline }` was beating
+ * `text-muted-foreground`, and `flex` was losing to nothing at all.
+ *
+ * Unlayered and imported last, they compete on ordinary terms and win the ties.
+ * The theme layer stays layered because it only declares variables, which
+ * nothing competes over.
+ */
+@import "tailwindcss/utilities.css" prefix(tw);
+
+/*
+ * Zero chroma, on purpose. Every grey here is oklch with a chroma of exactly 0
+ * — not a blue-grey, not a warm one. Hierarchy is carried by weight, size and
+ * border, and the only hue in the product is a status dot or a destructive
+ * action. See DESIGN.md §1.
+ */
+:root {
+    --background: oklch(100% 0 0);
+    --foreground: oklch(14.5% 0 0);
+
+    --card: oklch(100% 0 0);
+    --card-foreground: oklch(14.5% 0 0);
+    --popover: oklch(100% 0 0);
+    --popover-foreground: oklch(14.5% 0 0);
+
+    --primary: oklch(20.5% 0 0);
+    --primary-foreground: oklch(98.5% 0 0);
+
+    --secondary: oklch(97% 0 0);
+    --secondary-foreground: oklch(20.5% 0 0);
+    --muted: oklch(97% 0 0);
+    --muted-foreground: oklch(55.6% 0 0);
+    --accent-bg: oklch(97% 0 0);
+    --accent-fg: oklch(20.5% 0 0);
+
+    --destructive: oklch(57.7% 0.245 27.325);
+    --border: oklch(92.2% 0 0);
+    --input: oklch(92.2% 0 0);
+    --ring: oklch(70.8% 0 0);
+
+    --radius: 0.625rem;
+
+    --sidebar: oklch(98.5% 0 0);
+    --sidebar-foreground: oklch(14.5% 0 0);
+    --sidebar-primary: oklch(20.5% 0 0);
+    --sidebar-primary-foreground: oklch(98.5% 0 0);
+    --sidebar-accent: oklch(97% 0 0);
+    --sidebar-accent-foreground: oklch(20.5% 0 0);
+    --sidebar-border: oklch(92.2% 0 0);
+    --sidebar-ring: oklch(70.8% 0 0);
+}
+
+/*
+ * Dark is not an inversion. Cards lift ABOVE the page rather than sinking below
+ * it — the page is the darkest surface and a card is lighter — and the borders
+ * become alpha rather than solid greys so they read on either surface. DESIGN.md
+ * §2.
+ *
+ * `[data-color-scheme="dark"]` rather than `.dark`: that is the attribute this
+ * panel's theme toggle already sets, and inventing a second switch would mean
+ * two things to keep in step.
+ */
+[data-color-scheme="dark"] {
+    --background: oklch(14.5% 0 0);
+    --foreground: oklch(98.5% 0 0);
+
+    --card: oklch(20.5% 0 0);
+    --card-foreground: oklch(98.5% 0 0);
+    --popover: oklch(20.5% 0 0);
+    --popover-foreground: oklch(98.5% 0 0);
+
+    --primary: oklch(92.2% 0 0);
+    --primary-foreground: oklch(20.5% 0 0);
+
+    --secondary: oklch(26.9% 0 0);
+    --secondary-foreground: oklch(98.5% 0 0);
+    --muted: oklch(26.9% 0 0);
+    --muted-foreground: oklch(70.8% 0 0);
+    --accent-bg: oklch(26.9% 0 0);
+    --accent-fg: oklch(98.5% 0 0);
+
+    --destructive: oklch(70.4% 0.191 22.216);
+    --border: oklch(100% 0 0 / 0.1);
+    --input: oklch(100% 0 0 / 0.15);
+    --ring: oklch(55.6% 0 0);
+
+    --sidebar: oklch(20.5% 0 0);
+    --sidebar-foreground: oklch(98.5% 0 0);
+    --sidebar-primary: oklch(92.2% 0 0);
+    --sidebar-primary-foreground: oklch(20.5% 0 0);
+    --sidebar-accent: oklch(26.9% 0 0);
+    --sidebar-accent-foreground: oklch(98.5% 0 0);
+    --sidebar-border: oklch(100% 0 0 / 0.1);
+    --sidebar-ring: oklch(55.6% 0 0);
+}
+
+/* What Tailwind builds its utilities from. */
+@theme inline {
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent-bg);
+    --color-accent-foreground: var(--accent-fg);
+    --color-destructive: var(--destructive);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+
+    /* DESIGN.md §4. Everything derives from one base so the scale stays a
+       scale: 6, 8, 10, 14. */
+    --radius-sm: calc(var(--radius) - 4px);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) + 4px);
+
+    --font-sans: Inter, "Inter Fallback", ui-sans-serif, system-ui, sans-serif;
+
+    /*
+     * DESIGN.md §6 says the spacing unit is 4px, and it means 4 pixels. Left at
+     * Tailwind's `0.25rem` the scale is relative to a root the panel sets to
+     * 14px, so every gap came out at 87.5% of what the design asked for — 14px
+     * where `p-4` should be 16. Pinning it in px keeps the numbers in the
+     * document and the numbers on the screen the same numbers.
+     */
+    --spacing: 4px;
+}

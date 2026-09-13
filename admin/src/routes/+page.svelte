@@ -1,15 +1,10 @@
 <script>
     import { base } from "$app/paths";
-    import { goto } from "$app/navigation";
     import { api, can, query } from "$lib/api.js";
-    import { rowKey } from "$lib/rowkey.js";
     import {
         formatMoney,
         relativeTime,
-        orderStatusClass,
         orderStatusLabel,
-        paymentStatusClass,
-        stockClass,
     } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
@@ -98,12 +93,23 @@
         }
     }
 
-    /* The anchor in the first cell already navigates, so the row handler stands
-       aside for it — otherwise the browser follows the link and this follows it
-       again over the top. */
-    function openOrder(event, order) {
-        if (event.target.closest("a")) return;
-        goto(`${base}/orders/${order.id}`);
+    /*
+     * The one place colour appears. DESIGN.md §2 allows four: emerald for done,
+     * red for failed, amber for in progress, muted grey for idle — as a small
+     * dot beside the word, never as a fill behind it.
+     */
+    function dotFor(status) {
+        switch (status) {
+            case "delivered":
+                return "tw:bg-emerald-500";
+            case "cancelled":
+                return "tw:bg-red-500";
+            case "shipped":
+            case "partial":
+                return "tw:bg-amber-500";
+            default:
+                return "tw:bg-muted-foreground";
+        }
     }
 
     /* A card whose figure nobody here may read is not shown at zero — a zero
@@ -148,193 +154,202 @@
 
 <svelte:head><title>Dashboard · GoCommerce</title></svelte:head>
 
+<!-- `.page` stays: the shell renders each route straight into its flex row,
+     so this element is the one that gets sized beside the sidebar, and the
+     Playwright pass uses it as the proof a screen actually rendered. The new
+     design lives inside it rather than in place of it. -->
 <div class="page page-dashboard">
-    <div class="page-content">
-        <header class="page-header">
-            <nav class="breadcrumbs"><div>Dashboard</div></nav>
-            <div class="page-header-primary-btns">
-                <button type="button" class="btn secondary" class:loading disabled={loading} onclick={load}>
-                    <i class="ri-refresh-line" aria-hidden="true"></i>
-                    <span class="txt">Refresh</span>
-                </button>
-            </div>
+    <div class="tw:flex tw:min-h-full tw:w-full tw:min-w-0 tw:flex-col tw:bg-background tw:font-sans tw:text-foreground">
+        <div class="tw:mx-auto tw:flex tw:w-full tw:max-w-5xl tw:flex-col tw:gap-6 tw:p-4 tw:sm:p-6">
+        <!-- The page title is the only large type on the screen. Everything
+             else lives at 12-14px, and hierarchy comes from weight and border
+             rather than size. DESIGN.md §3. -->
+        <header class="tw:flex tw:items-center tw:justify-between tw:gap-4">
+            <h1 class="tw:text-2xl tw:font-semibold tw:tracking-tight tw:sm:text-3xl">Dashboard</h1>
+            <!-- The panel’s own button, untouched: controls keep the vocabulary
+                 they already have, and only the surfaces around them change. -->
+            <button type="button" class="btn secondary" class:loading disabled={loading} onclick={load}>
+                <i class="ri-refresh-line" aria-hidden="true"></i>
+                <span class="txt">Refresh</span>
+            </button>
         </header>
 
-        <div class="grid m-b-base">
-            {#each cards as card (card.label)}
-                <div class="col-3">
-                    <a class="stat-card" href="{base}{card.href}">
-                        <span class="stat-label">
-                            <i class={card.icon} aria-hidden="true"></i>
+        {#if cards.length}
+            <!-- One column on a phone, two on a tablet, four on a desktop. The
+                 tile is the signature of this style: uppercase muted label, big
+                 number, small muted subline, and never a title bar. -->
+            <div class="tw:grid tw:grid-cols-1 tw:gap-4 tw:sm:grid-cols-2 tw:lg:grid-cols-4">
+                {#each cards as card (card.label)}
+                    <a
+                        href="{base}{card.href}"
+                        class="tw:flex tw:min-h-[120px] tw:flex-col tw:text-foreground tw:no-underline tw:justify-between tw:rounded-xl tw:border tw:bg-background tw:p-5 tw:transition-colors tw:hover:bg-accent tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:focus-visible:ring-offset-2 tw:focus-visible:ring-offset-background tw:focus-visible:outline-none tw:sm:min-h-[140px]"
+                    >
+                        <span class="tw:text-xs tw:font-medium tw:tracking-wide tw:text-muted-foreground tw:uppercase">
                             {card.label}
                         </span>
-                        {#if loading}
-                            <span class="skeleton-loader" style="height: 26px"></span>
-                        {:else}
-                            <span class="stat-value">{card.value}</span>
-                        {/if}
-                        <span class="stat-hint">{card.hint}</span>
+                        <div>
+                            {#if loading}
+                                <div class="tw:h-8 tw:w-16 tw:animate-pulse tw:rounded-md tw:bg-muted"></div>
+                            {:else}
+                                <div class="tw:text-3xl tw:font-bold tw:tracking-tight tw:tabular-nums">{card.value}</div>
+                            {/if}
+                            <p class="tw:mt-1 tw:text-xs tw:text-muted-foreground">{card.hint}</p>
+                        </div>
                     </a>
-                </div>
-            {/each}
-        </div>
+                {/each}
+            </div>
+        {/if}
 
         {#if mayOrders}
-        <h6 class="section-title">
-            <i class="ri-history-line" aria-hidden="true"></i>
-            Recent orders
-            {#if revenue}
-                <span class="txt-hint txt-sm">· {formatMoney(revenue)} net in the last 30 days</span>
-            {/if}
-            <a href="{base}/reports" class="btn sm transparent secondary">
-                <span class="txt">Reports</span>
-            </a>
-            <a href="{base}/orders" class="btn sm transparent secondary">
-                <span class="txt">All orders</span>
-                <i class="ri-arrow-right-line" aria-hidden="true"></i>
-            </a>
-        </h6>
-
-        <table class="table responsive-table">
-            <thead>
-                <tr>
-                    <th class="col-field-name-id">Order</th>
-                    <th>Customer</th>
-                    <th class="col-field-type-select">Status</th>
-                    <th class="col-field-type-select">Payment</th>
-                    <th class="col-field-type-number min-width">Total</th>
-                    <th class="col-field-type-date min-width">Placed</th>
-                </tr>
-            </thead>
-            <tbody>
-                {#each recent as order (order.id)}
-                    <!-- The order itself, now that an order has an address.
-                         This pointed at `/orders?id=…`, which nothing read — so
-                         the dashboard's most-clicked row landed on an
-                         unfiltered order list, exactly as a bare link would. -->
-                    <tr
-                        class="handle"
-                        tabindex="0"
-                        onclick={(e) => openOrder(e, order)}
-                        onkeydown={(e) => rowKey(e, () => openOrder(e, order))}
-                    >
-                        <td class="col-field-name-id txt-code txt-sm" data-name="Order">
-                            <!-- A link as well as a row: the point of the row is
-                                 to be opened, often in a second tab beside the
-                                 dashboard it was spotted on. -->
-                            <a href="{base}/orders/{order.id}">{order.number}</a>
-                        </td>
-                        <!-- The ellipsis goes on a span, never the cell: overflow
-                             on a <td> takes it out of the table's border model
-                             and the row's rules stop meeting. -->
-                        <td class="col-field-type-text" data-name="Customer">
-                            <span class="txt-ellipsis">{order.name || order.email}</span>
-                        </td>
-                        <td class="col-field-type-select" data-name="Status">
-                            <span class="label {orderStatusClass(order.status)}">
-                                {orderStatusLabel(order.status)}
+            <section class="tw:rounded-xl tw:border tw:bg-background">
+                <div class="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2 tw:border-b tw:px-4 tw:py-4 tw:sm:px-5">
+                    <h2 class="tw:text-sm tw:font-semibold">
+                        Recent orders
+                        {#if revenue}
+                            <span class="tw:font-normal tw:text-muted-foreground">
+                                · {formatMoney(revenue)} net in the last 30 days
                             </span>
-                        </td>
-                        <td class="col-field-type-select" data-name="Payment">
-                            <span class="label {paymentStatusClass(order.payment_status)}">
-                                {order.payment_status}
-                            </span>
-                        </td>
-                        <td class="col-field-type-number min-width" data-name="Total">
-                            {formatMoney(order.total)}
-                        </td>
-                        <td class="col-field-type-date min-width txt-hint txt-sm" data-name="Placed">
-                            {relativeTime(order.created_at)}
-                        </td>
-                    </tr>
-                {/each}
+                        {/if}
+                    </h2>
+                    <!-- Secondary navigation is a text link with an arrow, not a
+                         button. DESIGN.md §7. -->
+                    <div class="tw:flex tw:items-center tw:gap-4">
+                        <a
+                            href="{base}/reports"
+                            class="tw:text-xs tw:text-muted-foreground tw:no-underline tw:transition-colors tw:hover:text-foreground"
+                        >
+                            reports
+                        </a>
+                        <a
+                            href="{base}/orders"
+                            class="tw:text-xs tw:text-muted-foreground tw:no-underline tw:transition-colors tw:hover:text-foreground"
+                        >
+                            all orders <span aria-hidden="true">→</span>
+                        </a>
+                    </div>
+                </div>
 
-                {#if loading && !recent.length}
-                    {#each Array(4) as _, i (i)}
-                        <tr><td colspan="6"><span class="skeleton-loader"></span></td></tr>
+                <div class="tw:divide-y">
+                    {#each recent as order (order.id)}
+                        <!-- A row is a link rather than a clickable <tr>: it
+                             middle-clicks into a second tab, takes focus, and
+                             answers Enter without a key handler of its own. -->
+                        <a
+                            href="{base}/orders/{order.id}"
+                            class="tw:flex tw:flex-col tw:gap-2 tw:px-4 tw:py-3 tw:text-foreground tw:no-underline tw:transition-colors tw:hover:bg-muted/50 tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:focus-visible:ring-inset tw:focus-visible:outline-none tw:sm:flex-row tw:sm:items-center tw:sm:gap-4 tw:sm:px-5"
+                        >
+                            <div class="tw:min-w-0 tw:flex-1">
+                                <div class="tw:flex tw:items-center tw:gap-2">
+                                    <span
+                                        class="tw:size-1.5 tw:shrink-0 tw:rounded-full {dotFor(order.status)}"
+                                        aria-hidden="true"
+                                    ></span>
+                                    <span class="tw:truncate tw:font-mono tw:text-sm tw:font-semibold">{order.number}</span>
+                                </div>
+                                <p class="tw:truncate tw:pl-3.5 tw:text-xs tw:text-muted-foreground">
+                                    {order.name || order.email}
+                                </p>
+                            </div>
+
+                            <div class="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:pl-3.5 tw:sm:justify-end tw:sm:pl-0 tw:sm:gap-4">
+                                <!-- Status is never the dot alone; the word is
+                                     always beside it. DESIGN.md §11. -->
+                                <span
+                                    class="tw:inline-flex tw:items-center tw:gap-1 tw:rounded-full tw:border tw:px-2 tw:py-0.5 tw:text-xs tw:whitespace-nowrap"
+                                >
+                                    <span class="tw:size-1.5 tw:rounded-full {dotFor(order.status)}" aria-hidden="true"></span>
+                                    {orderStatusLabel(order.status)}
+                                </span>
+                                <span class="tw:text-sm tw:font-medium tw:tabular-nums">{formatMoney(order.total)}</span>
+                                <span class="tw:hidden tw:text-xs tw:whitespace-nowrap tw:text-muted-foreground tw:sm:inline">
+                                    {relativeTime(order.created_at)}
+                                </span>
+                            </div>
+                        </a>
                     {/each}
-                {/if}
 
-                {#if !loading && !recent.length}
-                    <tr>
-                        <td colspan="6" class="txt-center txt-hint p-base">
+                    {#if loading && !recent.length}
+                        {#each Array(4) as _, i (i)}
+                            <div class="tw:flex tw:items-center tw:gap-4 tw:px-4 tw:py-3 tw:sm:px-5">
+                                <div class="tw:h-4 tw:flex-1 tw:animate-pulse tw:rounded-md tw:bg-muted"></div>
+                                <div class="tw:h-4 tw:w-20 tw:animate-pulse tw:rounded-md tw:bg-muted"></div>
+                            </div>
+                        {/each}
+                    {/if}
+
+                    {#if !loading && !recent.length}
+                        <p class="tw:px-4 tw:py-8 tw:text-center tw:text-sm tw:text-muted-foreground tw:sm:px-5">
                             No orders yet. They will appear here as soon as somebody buys something.
-                        </td>
-                    </tr>
-                {/if}
-            </tbody>
-        </table>
-
+                        </p>
+                    {/if}
+                </div>
+            </section>
         {/if}
 
         {#if mayStock}
-        <h6 class="section-title">
-            <i class="ri-alert-line" aria-hidden="true"></i>
-            Running low
-            <a href="{base}/inventory" class="btn sm transparent secondary">
-                <span class="txt">Inventory</span>
-                <i class="ri-arrow-right-line" aria-hidden="true"></i>
-            </a>
-        </h6>
+            <section class="tw:rounded-xl tw:border tw:bg-background">
+                <div class="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2 tw:border-b tw:px-4 tw:py-4 tw:sm:px-5">
+                    <h2 class="tw:text-sm tw:font-semibold">Running low</h2>
+                    <a
+                        href="{base}/inventory"
+                        class="tw:text-xs tw:text-muted-foreground tw:no-underline tw:transition-colors tw:hover:text-foreground"
+                    >
+                        inventory <span aria-hidden="true">→</span>
+                    </a>
+                </div>
 
-        <table class="table responsive-table">
-            <thead>
-                <tr>
-                    <th class="col-field-name-id">SKU</th>
-                    <th>Variant</th>
-                    <th class="col-field-type-number min-width">On hand</th>
-                    <th class="col-field-type-number min-width">Reserved</th>
-                    <th class="col-field-type-number min-width">Available</th>
-                </tr>
-            </thead>
-            <tbody>
-                {#each lowStock as variant (variant.id)}
-                    <tr>
-                        <td class="col-field-name-id txt-code txt-sm" data-name="SKU">{variant.sku}</td>
-                        <td class="txt-hint" data-name="Variant">{variant.label || "—"}</td>
-                        <td class="col-field-type-number min-width" data-name="On hand">
-                            {variant.stock_on_hand}
-                        </td>
-                        <td class="col-field-type-number min-width txt-hint" data-name="Reserved">
-                            {variant.stock_reserved}
-                        </td>
-                        <td
-                            class="col-field-type-number min-width txt-bold {stockClass(variant.available)}"
-                            data-name="Available"
+                <div class="tw:divide-y">
+                    {#each lowStock as variant (variant.id)}
+                        <div
+                            class="tw:flex tw:flex-col tw:gap-2 tw:px-4 tw:py-3 tw:sm:flex-row tw:sm:items-center tw:sm:gap-4 tw:sm:px-5"
                         >
-                            {variant.available}
-                        </td>
-                    </tr>
-                {/each}
+                            <div class="tw:min-w-0 tw:flex-1">
+                                <div class="tw:truncate tw:font-mono tw:text-sm tw:font-semibold">{variant.sku}</div>
+                                <p class="tw:truncate tw:text-xs tw:text-muted-foreground">{variant.label || "—"}</p>
+                            </div>
+                            <!-- The three numbers keep their labels on a phone,
+                                 where a bare row of digits says nothing. -->
+                            <div class="tw:flex tw:items-center tw:gap-4 tw:text-xs tw:text-muted-foreground">
+                                <span>on hand <b class="tw:font-medium tw:text-foreground tw:tabular-nums">{variant.stock_on_hand}</b></span>
+                                <span>reserved <b class="tw:font-medium tw:text-foreground tw:tabular-nums">{variant.stock_reserved}</b></span>
+                                <span>
+                                    available
+                                    <b class="tw:font-semibold tw:tabular-nums {variant.available <= 0 ? 'tw:text-destructive' : 'tw:text-foreground'}">
+                                        {variant.available}
+                                    </b>
+                                </span>
+                            </div>
+                        </div>
+                    {/each}
 
-                {#if loading && !lowStock.length}
-                    <tr><td colspan="5"><span class="skeleton-loader"></span></td></tr>
-                {/if}
+                    {#if loading && !lowStock.length}
+                        <div class="tw:flex tw:items-center tw:gap-4 tw:px-4 tw:py-3 tw:sm:px-5">
+                            <div class="tw:h-4 tw:flex-1 tw:animate-pulse tw:rounded-md tw:bg-muted"></div>
+                        </div>
+                    {/if}
 
-                {#if !loading && !lowStock.length}
-                    <tr>
-                        <td colspan="5" class="txt-center txt-hint p-base">
-                            Nothing is running out — every tracked variant has more than five
-                            available across the whole store. This card is deliberately the
-                            store's view; the inventory screen can ask one location.
-                        </td>
-                    </tr>
-                {/if}
-            </tbody>
-        </table>
-
+                    {#if !loading && !lowStock.length}
+                        <p class="tw:px-4 tw:py-8 tw:text-center tw:text-sm tw:text-muted-foreground tw:sm:px-5">
+                            Nothing is running out — every tracked variant has more than five available
+                            across the whole store. This is deliberately the store's view; the inventory
+                            screen can ask one location.
+                        </p>
+                    {/if}
+                </div>
+            </section>
         {/if}
 
         {#if !mayOrders && !mayCatalog && !mayStock}
-            <p class="txt-hint txt-center p-base">
-                Your role does not carry any of the figures this page shows. The screens it does
-                reach are in the navigation.
+            <p class="tw:py-8 tw:text-center tw:text-sm tw:text-muted-foreground">
+                Your role does not carry any of the figures this page shows. The screens it does reach
+                are in the navigation.
             </p>
         {/if}
 
-        <footer class="page-footer">
-            <span class="txt">Live counts, read straight from the API</span>
+        <footer class="tw:flex tw:items-center tw:justify-between tw:gap-4 tw:border-t tw:pt-4 tw:text-xs tw:text-muted-foreground">
+            <span>Live counts, read straight from the API</span>
             <ThemeToggle />
         </footer>
     </div>
+</div>
 </div>

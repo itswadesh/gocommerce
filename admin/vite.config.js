@@ -1,4 +1,5 @@
 import { sveltekit } from "@sveltejs/kit/vite";
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 
 // During development the panel runs on Vite's own server and talks to a
@@ -9,7 +10,7 @@ const API_TARGET = process.env.GOCOMMERCE_API || "http://127.0.0.1:8080";
 const proxied = ["/api", "/health", "/doc", "/docs", "/x"];
 
 export default defineConfig({
-    plugins: [sveltekit()],
+    plugins: [tailwindcss(), sveltekit()],
     server: {
         port: 5173,
         strictPort: false,

@@ -38,3 +38,10 @@
 @import "./lib/styles/layout.css";
 
 @import "./lib/styles/gocommerce.css";
+
+/*
+ * DESIGN.md, last so its tokens win where the two overlap. It brings Tailwind
+ * without Preflight, so the sheets above still own every screen that has not
+ * been migrated yet.
+ */
+@import "./lib/styles/design.css";
