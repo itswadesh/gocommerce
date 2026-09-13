@@ -220,8 +220,19 @@
             {#if loading && !groups.length}
                 <div class="block txt-center p-base"><span class="loader"></span></div>
             {:else if !groups.length}
-                <div class="alert m-b-base">
-                    <p>
+                <!-- The empty-state shape the list screens use — a mark to
+                     rest on, then the sentence — rather than a full-bleed
+                     alert. The banner ran the whole width of the page, which
+                     set this paragraph across about 150 characters a line, and
+                     coloured a state that is not a problem: a store with no
+                     zones is correctly configured, it simply charges one rate.
+                     The measure is capped for the same reason it is on an order
+                     note; this is the only prose on the screen. -->
+                <div class="block txt-center txt-hint p-base">
+                    <div class="m-b-10">
+                        <i class="ri-truck-line" style="font-size: 32px" aria-hidden="true"></i>
+                    </div>
+                    <p class="tw:mx-auto tw:max-w-[62ch]">
                         <strong>No zones yet, so every order is charged the flat rate this store
                         was configured with.</strong>
                         Add a zone and the shopper starts choosing from the methods you price in
@@ -349,7 +360,7 @@
                 <label for="zone-name">Name</label>
                 <input id="zone-name" type="text" placeholder="India" bind:value={zoneForm.name} required />
             </div>
-            <div class="field">
+            <div class="field m-t-sm">
                 <label for="zone-countries">Countries</label>
                 <input id="zone-countries" type="text" placeholder="IN, LK" bind:value={zoneForm.countries} />
                 <div class="txt-hint txt-sm m-t-5">
@@ -357,7 +368,7 @@
                     no other zone names.
                 </div>
             </div>
-            <div class="field">
+            <div class="field m-t-sm">
                 <label for="zone-states">States</label>
                 <input id="zone-states" type="text" placeholder="KA, MH" bind:value={zoneForm.states} />
                 <div class="txt-hint txt-sm m-t-5">
@@ -388,7 +399,7 @@
                 <input id="rate-name" type="text" placeholder="Standard" bind:value={rateForm.name} required />
                 <div class="txt-hint txt-sm m-t-5">What the shopper sees at checkout.</div>
             </div>
-            <div class="field">
+            <div class="field m-t-sm">
                 <label for="rate-price">Price, in minor units</label>
                 <input id="rate-price" type="number" min="0" step="1" placeholder="4900" bind:value={rateForm.price} required />
                 <div class="txt-hint txt-sm m-t-5">
