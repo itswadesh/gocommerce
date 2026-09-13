@@ -593,9 +593,11 @@
     <NoAccess right="orders.read" what="orders" />
 {:else}
 <div class="page page-orders">
-    <div class="page-content full-height">
+    <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
-            <nav class="breadcrumbs"><div>Orders</div></nav>
+            <nav class="breadcrumbs">
+                <div class="tw:text-2xl tw:font-semibold tw:tracking-tight">Orders</div>
+            </nav>
 
             <div class="inline-flex gap-sm">
                 <button
@@ -773,7 +775,17 @@
             <div class="field-help m-b-sm">{windowWords}</div>
         {/if}
 
-        <div class="page-table-wrapper">
+        <!-- DESIGN.md §5: separation is a border and a background step, not a
+             shadow. Only the edge changes here — gocommerce.css already gives
+             this wrapper a border and a radius, and these two swap in the
+             design's token for each.
+
+             No `overflow-hidden`: table.css makes this element the table's
+             horizontal scroller, and the table under it is pinned to a 900px
+             minimum. `hidden` clips instead of scrolls, which below about
+             1200px left the last column unreachable by mouse or wheel. `auto`
+             clips to the radius just as well, so the corners cost nothing. -->
+        <div class="page-table-wrapper tw:rounded-xl tw:border">
             <table class="table responsive-table" class:optimize={orders.length > 60}>
                 <thead class="sticky">
                     <tr>
@@ -1027,7 +1039,7 @@
             </BulkBar>
         {/if}
 
-        <footer class="page-footer">
+        <footer class="page-footer tw:text-xs tw:text-muted-foreground">
             <Pager
                 {meta}
                 {loading}

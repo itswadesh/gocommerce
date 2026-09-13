@@ -4,6 +4,35 @@ A neutral, zero-chroma, shadcn/ui + Tailwind v4 design language. Copy this file 
 
 ---
 
+## 0. In this repository: every utility carries a `tw:` prefix
+
+The rest of this file writes utilities bare — `p-4`, `flex`, `rounded-xl` —
+because that is how Tailwind reads everywhere else. **In the GoCommerce panel
+they are written `tw:p-4`, `tw:flex`, `tw:rounded-xl`**, and copying an
+example from below without adding the prefix does not fail loudly, it produces
+a wrong number.
+
+Sixteen PocketBase stylesheets still dress the controls and the thirty-odd
+screens that have not migrated, and the two systems define the same names.
+`--spacing` is `30px` in PocketBase's `vars.css` and a multiplier in Tailwind,
+so an unprefixed `p-4` computed to **80px**; `.grid` is PocketBase's flex grid
+with negative margins, so an unprefixed `grid` collapsed a row to **zero
+width**. The prefix is what lets both meanings be true in one document.
+
+Two more local rules, both in `AGENTS.md` rule 12:
+
+- **The controls stay PocketBase's.** Buttons, text inputs, dropdowns and the
+  side drawer are not restyled. A migrated screen changes the surfaces around
+  them — the page, the cards, the lists — and reuses `.btn` as it is. Section
+  7's button, input and sidebar specs below are therefore *not* applied here.
+- **Check what a class is about to override.** PocketBase already styles most
+  containers, and its rule may be load-bearing rather than cosmetic:
+  `.page-table-wrapper` is the table's horizontal scroller, so adding
+  `overflow-hidden` to round its corners silently put the last column out of
+  reach. `overflow: auto` clips to a radius just as well.
+
+---
+
 ## 1. Foundation
 
 - **Framework**: Tailwind CSS v4 + shadcn/ui (Radix primitives)
