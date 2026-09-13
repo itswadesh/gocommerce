@@ -141,6 +141,23 @@
     // to search rather than filter what this page happens to have open.
     const parentRemote = $derived(total > categories.length);
 
+    /**
+     * The part of `full_name` above this row's own title — "Apparel" out of
+     * "Apparel / Clothing", and empty for a root.
+     *
+     * Derived rather than requested: `full_name` is computed by the engine on
+     * every row already (categories.go builds it from the ancestry rather than
+     * storing a path, so a rename cannot leave a stale one behind), and asking
+     * for the ancestors of every visible row would be one request per row to
+     * learn something the row is already carrying.
+     */
+    function ancestryOf(category) {
+        const full = category.full_name;
+        if (!full || full === category.title) return "";
+        const cut = full.length - category.title.length - 3; /* " / " */
+        return cut > 0 ? full.slice(0, cut) : "";
+    }
+
     /** What the table draws: the matches while a search is running, else the tree. */
     const rows = $derived(search ? results : categories);
 
@@ -810,6 +827,20 @@
                                         </button>
                                     {:else}
                                         <span class="expand-spacer" aria-hidden="true"></span>
+                                    {/if}
+                                    <!-- The ancestry, then the name. The indent
+                                         already says where a row sits, but it
+                                         says it in pixels — you have to count
+                                         them against the rows above, and a
+                                         child scrolled away from its parent
+                                         reads as a root. The path says it in
+                                         words, the way the product editor does
+                                         ("Bags / Backpacks"), and it stays true
+                                         on a phone where the stacked card has
+                                         no indent to read at all. Muted, so the
+                                         name is still the thing you scan. -->
+                                    {#if ancestryOf(category)}
+                                        <span class="txt-hint txt-sm">{ancestryOf(category)} / </span>
                                     {/if}
                                     <span class="txt-bold">{category.title}</span>
                                     {#if category.child_count > 0}
