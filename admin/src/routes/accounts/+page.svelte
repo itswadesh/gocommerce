@@ -102,7 +102,7 @@
 {#if !can("customers.read")}
     <NoAccess right="customers.read" what="accounts" />
 {:else}
-    <div class="page page-accounts">
+    <div class="page page-accounts shopify-skin">
         <div class="page-content full-height">
             <header class="page-header">
                 <nav class="breadcrumbs"><div>Accounts</div></nav>

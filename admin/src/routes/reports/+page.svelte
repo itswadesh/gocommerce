@@ -309,7 +309,7 @@
     <!-- The sidebar already hides the link; this is the direct URL. -->
     <NoAccess right="orders.read" what="reports" />
 {:else}
-<div class="page page-reports">
+<div class="page page-reports shopify-skin">
     <!-- No `full-height` here, unlike every list screen. That class makes
          `.page-content` a flex column, which is right when the page is one
          table that should fill the viewport and scroll inside itself. This page

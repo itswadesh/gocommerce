@@ -631,7 +631,7 @@
     <NoAccess right="discounts.read" what="discounts" />
 {:else}
 
-<div class="page page-discounts">
+<div class="page page-discounts shopify-skin">
     <div class="page-content full-height">
         <header class="page-header">
             <nav class="breadcrumbs"><div>Discounts</div></nav>

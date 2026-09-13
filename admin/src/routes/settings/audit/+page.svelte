@@ -236,7 +236,7 @@
 
 <svelte:head><title>Audit trail · GoCommerce</title></svelte:head>
 
-<div class="page page-audit">
+<div class="page page-audit shopify-skin">
     <SettingsSidebar />
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">

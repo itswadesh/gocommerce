@@ -71,7 +71,7 @@
 {#if !can("orders.read")}
     <NoAccess right="orders.read" what="invoices" />
 {:else}
-    <div class="page page-invoices">
+    <div class="page page-invoices shopify-skin">
         <div class="page-content full-height">
             <header class="page-header">
                 <nav class="breadcrumbs"><div>Invoices</div></nav>

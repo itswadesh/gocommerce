@@ -190,7 +190,7 @@
 {#if !can("store.operate")}
     <NoAccess right="store.operate" what="shipping" />
 {:else}
-    <div class="page page-shipping">
+    <div class="page page-shipping shopify-skin">
         <div class="page-content full-height">
             <header class="page-header">
                 <nav class="breadcrumbs"><div class="breadcrumb-item">Shipping</div></nav>

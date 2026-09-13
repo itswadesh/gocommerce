@@ -181,7 +181,7 @@
     <NoAccess right="customers.read" what="customers" />
 {:else}
 
-<div class="page page-customers">
+<div class="page page-customers shopify-skin">
     <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
             <nav class="breadcrumbs">

@@ -233,7 +233,7 @@
     <!-- The settings rail already hides the link; this is the direct URL. -->
     <NoAccess anyOf={["data.export", "data.import"]} what="import and export" />
 {:else}
-<div class="page page-data">
+<div class="page page-data shopify-skin">
     <SettingsSidebar />
 
     <div class="page-content">

@@ -504,7 +504,7 @@
     message="You have started {inviteDirty ? 'an invitation' : 'a superuser'} and not saved it. Leave and lose it?"
 />
 
-<div class="page page-superusers">
+<div class="page page-superusers shopify-skin">
     <SettingsSidebar />
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">

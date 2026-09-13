@@ -144,7 +144,7 @@
     <NoAccess right="orders.read" what="baskets" />
 {:else}
 
-<div class="page page-carts">
+<div class="page page-carts shopify-skin">
     <div class="page-content full-height">
         <header class="page-header">
             <nav class="breadcrumbs"><div>Carts</div></nav>

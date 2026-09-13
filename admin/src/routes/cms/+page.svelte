@@ -129,7 +129,7 @@
 {#if !can("catalog.read")}
     <NoAccess right="catalog.read" what="pages" />
 {:else}
-    <div class="page page-cms">
+    <div class="page page-cms shopify-skin">
         <div class="page-content full-height">
             <header class="page-header">
                 <nav class="breadcrumbs"><div>Pages</div></nav>

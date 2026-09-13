@@ -158,7 +158,7 @@
      so this element is the one that gets sized beside the sidebar, and the
      Playwright pass uses it as the proof a screen actually rendered. The new
      design lives inside it rather than in place of it. -->
-<div class="page page-dashboard">
+<div class="page page-dashboard shopify-skin">
     <!-- This element is the page; everything card-shaped inside it is
          `bg-card`. In light mode the two tokens are both pure white and the
          distinction looks like pedantry — it is not. Dark is not an inversion:

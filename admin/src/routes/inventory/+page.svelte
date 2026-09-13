@@ -454,7 +454,7 @@
     <NoAccess right="inventory.read" what="stock levels" />
 {:else}
 
-<div class="page page-inventory">
+<div class="page page-inventory shopify-skin">
     <div class="page-content full-height">
         <header class="page-header">
             <nav class="breadcrumbs"><div>Inventory</div></nav>

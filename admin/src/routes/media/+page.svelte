@@ -194,7 +194,7 @@
 {#if !can("catalog.read")}
     <NoAccess right="catalog.read" what="the media library" />
 {:else}
-    <div class="page page-media">
+    <div class="page page-media shopify-skin">
         <div class="page-content full-height">
             <header class="page-header">
                 <nav class="breadcrumbs">

@@ -76,7 +76,7 @@
 
 <svelte:head><title>Accept your invitation · GoCommerce</title></svelte:head>
 
-<div class="page">
+<div class="page shopify-skin">
     <div class="wrapper sm m-auto p-b-base">
         <header class="txt-center m-b-base">
             <img class="main-logo" src="{base}/images/logo.svg" alt="" aria-hidden="true" />

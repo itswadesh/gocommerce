@@ -156,7 +156,7 @@
 
 <svelte:head><title>Attribute dictionary · GoCommerce</title></svelte:head>
 
-<div class="page page-attributes">
+<div class="page page-attributes shopify-skin">
     <SettingsSidebar />
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">

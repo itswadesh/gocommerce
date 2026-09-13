@@ -213,7 +213,7 @@
 {#if !readable}
     <NoAccess right="orders.read" what="orders" />
 {:else}
-    <div class="page">
+    <div class="page shopify-skin">
         <div class="page-content">
             <!-- Hidden in print by the block in gocommerce.css, so what comes
                  out of the printer is the run and nothing else. -->

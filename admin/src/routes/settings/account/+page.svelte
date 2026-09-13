@@ -139,7 +139,7 @@
     message="You have typed into this form and not saved it. Leave and lose it?"
 />
 
-<div class="page page-account">
+<div class="page page-account shopify-skin">
     <SettingsSidebar />
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">

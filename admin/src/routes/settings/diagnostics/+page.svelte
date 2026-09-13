@@ -98,7 +98,7 @@
 
 <svelte:head><title>Diagnostics · GoCommerce</title></svelte:head>
 
-<div class="page page-diagnostics">
+<div class="page page-diagnostics shopify-skin">
     <SettingsSidebar />
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">

@@ -192,7 +192,7 @@
 {#if !can("store.operate")}
     <NoAccess right="store.operate" what="webhooks" />
 {:else}
-    <div class="page page-webhooks">
+    <div class="page page-webhooks shopify-skin">
         <SettingsSidebar />
 
         <div class="page-content full-height tw:bg-background tw:text-foreground">

@@ -644,7 +644,7 @@
     <NoAccess right="catalog.read" what="categories" />
 {:else}
 
-<div class="page page-categories">
+<div class="page page-categories shopify-skin">
     <div class="page-content full-height">
         <header class="page-header">
             <nav class="breadcrumbs">

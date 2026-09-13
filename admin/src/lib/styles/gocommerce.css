@@ -2399,6 +2399,17 @@ button.media-check {
 .page-header-primary-btns {
     flex-wrap: wrap;
     gap: 8px;
+    /*
+     * Centred, not stretched. A flex row defaults to stretching its children to
+     * the tallest one, and a button's height is a min-height rather than a
+     * height — so a button standing next to a select came out as tall as the
+     * select, while the same button on a screen with no select kept its own
+     * size. The same `.btn` measured 32px on Categories and 38px on Products,
+     * and the same `.btn.sm` measured 28px, 35px and 45px across three
+     * screens. A control's size should come from what it is, not from what
+     * happens to be beside it.
+     */
+    align-items: center;
 }
 
 /*

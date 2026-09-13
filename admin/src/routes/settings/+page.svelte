@@ -95,7 +95,7 @@
 
 <svelte:head><title>Store settings · GoCommerce</title></svelte:head>
 
-<div class="page page-settings">
+<div class="page page-settings shopify-skin">
     <SettingsSidebar />
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">

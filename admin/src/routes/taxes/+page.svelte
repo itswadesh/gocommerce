@@ -444,7 +444,7 @@
     <NoAccess right="taxes.read" what="tax rates" />
 {:else}
 
-<div class="page page-taxes">
+<div class="page page-taxes shopify-skin">
     <div class="page-content full-height">
         <header class="page-header">
             <nav class="breadcrumbs"><div>Tax rates</div></nav>

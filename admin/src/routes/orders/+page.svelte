@@ -592,7 +592,7 @@
 {#if !readable}
     <NoAccess right="orders.read" what="orders" />
 {:else}
-<div class="page page-orders">
+<div class="page page-orders shopify-skin">
     <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
             <nav class="breadcrumbs">

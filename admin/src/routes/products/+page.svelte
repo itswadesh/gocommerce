@@ -600,7 +600,7 @@
 {#if !readable}
     <NoAccess right="catalog.read" what="the product list" />
 {:else}
-<div class="page page-products">
+<div class="page page-products shopify-skin">
     <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
             <nav class="breadcrumbs">

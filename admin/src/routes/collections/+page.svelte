@@ -166,7 +166,7 @@
 {#if !can("catalog.read")}
     <NoAccess right="catalog.read" what="collections" />
 {:else}
-    <div class="page page-collections">
+    <div class="page page-collections shopify-skin">
         <div class="page-content full-height">
             <header class="page-header">
                 <nav class="breadcrumbs">

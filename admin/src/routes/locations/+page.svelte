@@ -527,7 +527,7 @@
     <NoAccess right="locations.read" what="locations" />
 {:else}
 
-<div class="page page-locations">
+<div class="page page-locations shopify-skin">
     <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
             <nav class="breadcrumbs">

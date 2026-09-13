@@ -134,7 +134,7 @@
 {#if !can("store.operate")}
     <NoAccess right="store.operate" what="the agent audit" />
 {:else}
-    <div class="page page-agent">
+    <div class="page page-agent shopify-skin">
         <SettingsSidebar />
 
         <div class="page-content full-height tw:bg-background tw:text-foreground">

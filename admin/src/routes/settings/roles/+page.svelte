@@ -292,7 +292,7 @@
     message="A role has rights ticked that have not been saved. Leave and lose them?"
 />
 
-<div class="page page-roles">
+<div class="page page-roles shopify-skin">
     <SettingsSidebar />
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">

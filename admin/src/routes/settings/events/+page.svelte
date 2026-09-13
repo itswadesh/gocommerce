@@ -224,7 +224,7 @@
 
 <svelte:head><title>Events · GoCommerce</title></svelte:head>
 
-<div class="page page-events">
+<div class="page page-events shopify-skin">
     <SettingsSidebar />
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">
