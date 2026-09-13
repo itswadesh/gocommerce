@@ -15,7 +15,7 @@ function Get-GCBase { $script:GCBase }
 # "response status 409".
 function Invoke-GC {
     param(
-        [Parameter(Mandatory)][ValidateSet('GET','POST','PATCH','DELETE')][string]$Method,
+        [Parameter(Mandatory)][ValidateSet('GET','POST','PUT','PATCH','DELETE')][string]$Method,
         [Parameter(Mandatory)][string]$Path,
         $Body,
         [switch]$Admin,
