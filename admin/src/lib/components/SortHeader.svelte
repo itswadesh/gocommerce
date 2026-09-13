@@ -20,20 +20,28 @@
      * means editing table.css; `aria-sort` and the tooltip say which way it is
      * in words, which is what makes the glyph unambiguous either way.
      */
-    let { field, label, sort, onsort, firstDesc = false, class: klass = "" } = $props();
+    let { field, label, note = "", sort, onsort, firstDesc = false, class: klass = "" } = $props();
 
     const active = $derived(sort.field === field);
     const direction = $derived(active ? (sort.desc ? "descending" : "ascending") : "none");
     /* Says in words what the arrow says in a glyph, and what the NEXT click will
        do — which is the half an operator cannot guess from a three-state
        control they have not met before. */
-    const hint = $derived(
+    const sortHint = $derived(
         !active
             ? `Sort by ${label}`
             : sort.desc === firstDesc
               ? `Sorted ${direction} — click to reverse`
               : `Sorted ${direction} — click to clear`,
     );
+    /* `note` is what the column counts, for a heading too short to say it. A
+       header has to earn its width twice over — the widest cell in a column is
+       usually the header, and a parenthetical qualifier in one pushed the
+       customers table wider than the page. The qualifier is still true and
+       still needed; it just does not have to be paid for in pixels on every
+       row. It leads the tooltip because it is the part a reader does not
+       already know from looking at the control. */
+    const hint = $derived(note ? `${note} · ${sortHint}` : sortHint);
 
     function activate() {
         onsort(field, firstDesc);

@@ -182,9 +182,11 @@
 {:else}
 
 <div class="page page-customers">
-    <div class="page-content full-height">
+    <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
-            <nav class="breadcrumbs"><div>Customers</div></nav>
+            <nav class="breadcrumbs">
+                <div class="tw:text-2xl tw:font-semibold tw:tracking-tight">Customers</div>
+            </nav>
 
             <div class="inline-flex gap-sm">
                 <button
@@ -238,7 +240,9 @@
             {/if}
         </header>
 
-        <div class="page-table-wrapper">
+        <!-- DESIGN.md §5: a border and a background step, never a shadow. No
+             `overflow-hidden` — this element is the table's scroller. -->
+        <div class="page-table-wrapper tw:rounded-xl tw:border">
             <table class="table responsive-table">
                 <thead class="sticky">
                     <tr>
@@ -270,14 +274,18 @@
                              order carries, not a column: there is nothing to
                              order it by. -->
                         <th class="col-field-type-text">Location</th>
-                        <!-- The two labels say their own denominator, because
-                             the two are different and a customer reading
-                             "3 orders / £0.00" otherwise looks like a bug: this
-                             is a cash-on-delivery shopper with three parcels in
-                             the post. -->
+                        <!-- The two denominators are different, and a reader
+                             seeing "3 orders / $0.00" without knowing that will
+                             read it as a bug rather than as a cash-on-delivery
+                             shopper with three parcels in the post. So each
+                             column still says what it counts — in its tooltip
+                             and in the footer, not in a parenthetical that made
+                             the header the widest cell in its column and pushed
+                             the table past the edge of the page. -->
                         <SortHeader
                             field="orders"
-                            label="Orders (not cancelled)"
+                            label="Orders"
+                            note="Not counting cancelled orders"
                             class="col-field-type-number min-width"
                             firstDesc
                             {sort}
@@ -285,7 +293,8 @@
                         />
                         <SortHeader
                             field="spent"
-                            label="Spent (paid only)"
+                            label="Spent"
+                            note="Only money that has arrived"
                             class="col-field-type-number min-width"
                             firstDesc
                             {sort}
@@ -360,12 +369,20 @@
                                 </div>
                             </td>
                             <td class="col-field-type-text txt-hint" data-name="Location">
+                                <!-- City and country, not the full postal
+                                     address. The street and postcode pushed
+                                     this column to roughly 40 characters, which
+                                     made the table wider than the page at 1440
+                                     and left "Last order" sitting underneath
+                                     the sticky action column — clipped to its
+                                     first letter, so the screen read as broken
+                                     at rest. The column is called Location: a
+                                     line1 and a postcode are for addressing a
+                                     parcel, and they are on the order. -->
                                 <span class="txt-ellipsis">
                                     {[
-                                        customer.address?.line1,
                                         customer.address?.city,
                                         customer.address?.state,
-                                        customer.address?.postal_code,
                                         customer.address?.country,
                                     ]
                                         .filter(Boolean)
@@ -429,7 +446,7 @@
             </button>
         </BulkBar>
 
-        <footer class="page-footer">
+        <footer class="page-footer tw:text-xs tw:text-muted-foreground">
             <Pager
                 {meta}
                 {loading}
