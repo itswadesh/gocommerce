@@ -4077,9 +4077,18 @@ tr.handle:focus-visible {
     flex: 0 0 auto;
     padding: var(--smSpacing);
     margin: 0;
-    background: var(--surfaceAlt1Color);
-    border: 1px solid var(--surfaceAlt2Color);
-    border-radius: var(--borderRadius);
+    /* The design's card surface rather than PocketBase's panel grey. This chart
+       renders on exactly one screen, reports, and that screen has migrated — a
+       grey box sitting between a row of `bg-card` tiles and a `bg-card` table
+       read as the one element nobody had got to yet. The radius is the same
+       calc `rounded-xl` resolves to, so its corners match the tables above and
+       below it. DESIGN.md §2, §5.
+
+       `overflow-x` stays `auto`: the bars have a 4px floor, so a year of daily
+       buckets is wider than the page and has to scroll rather than be clipped. */
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) + 4px);
     overflow-x: auto;
 }
 .report-bar {

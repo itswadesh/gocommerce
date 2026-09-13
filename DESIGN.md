@@ -25,6 +25,12 @@ Two more local rules, both in `AGENTS.md` rule 12:
   side drawer are not restyled. A migrated screen changes the surfaces around
   them — the page, the cards, the lists — and reuses `.btn` as it is. Section
   7's button, input and sidebar specs below are therefore *not* applied here.
+- **The examples below paint cards `bg-background`; use `bg-card`.** §7's
+  stat tile prints `rounded-xl border bg-background p-5`, which contradicts §2
+  — in dark, `--background` is oklch(14.5%) and `--card` is oklch(20.5%), and
+  cards are supposed to lift above the page. Light mode hides the mistake
+  completely, both tokens being pure white there, so it survives review and
+  only shows up when somebody switches the theme.
 - **Check what a class is about to override.** PocketBase already styles most
   containers, and its rule may be load-bearing rather than cosmetic:
   `.page-table-wrapper` is the table's horizontal scroller, so adding

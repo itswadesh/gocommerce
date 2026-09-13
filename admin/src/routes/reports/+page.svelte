@@ -229,25 +229,21 @@
      */
     const cards = $derived([
         {
-            icon: "ri-line-chart-line",
             label: "Net sales",
             value: totals && formatMoney(totals.net),
             hint: "Items less discounts, before tax",
         },
         {
-            icon: "ri-shopping-bag-3-line",
             label: "Orders",
             value: totals && String(totals.orders),
             hint: totals ? `${totals.units} ${pluralize(totals.units, "unit")} sold` : "",
         },
         {
-            icon: "ri-scales-3-line",
             label: "Average order",
             value: totals && formatMoney(totals.average_order),
             hint: "Charged, including tax and delivery",
         },
         {
-            icon: "ri-money-dollar-circle-line",
             label: "Collected",
             value: totals && formatMoney(totals.paid.net_collected),
             hint: totals ? `of ${formatMoney(totals.total)} charged` : "",
@@ -314,9 +310,19 @@
     <NoAccess right="orders.read" what="reports" />
 {:else}
 <div class="page page-reports">
-    <div class="page-content full-height">
+    <!-- No `full-height` here, unlike every list screen. That class makes
+         `.page-content` a flex column, which is right when the page is one
+         table that should fill the viewport and scroll inside itself. This page
+         is a document: a chart and two tables stacked. As flex items they all
+         shrank to `.page-table-wrapper`'s 130px floor, so a 32-row table was
+         being read through a 130px porthole with its own scrollbar nested
+         inside the page's. Plain `.page-content` already scrolls; letting the
+         sections take their natural height gives the screen one scrollbar. -->
+    <div class="page-content tw:bg-background tw:text-foreground">
         <header class="page-header">
-            <nav class="breadcrumbs"><div>Reports</div></nav>
+            <nav class="breadcrumbs">
+                <div class="tw:text-2xl tw:font-semibold tw:tracking-tight">Reports</div>
+            </nav>
 
             <div class="inline-flex gap-sm">
                 <button
@@ -387,24 +393,34 @@
             </div>
         </header>
 
-        <div class="grid m-b-base">
+        <!-- Two across on a phone, four from 1024px: these cards carry money,
+             and a formatted amount does not fit a quarter of 390px. The tile is
+             the same object as the dashboard's — uppercase muted label, big
+             tabular number, small muted subline, and never a title bar.
+             DESIGN.md §7, but on `bg-card` rather than the `bg-background` its
+             example prints, so the tiles lift off the page in dark. §2. -->
+        <div class="tw:mb-6 tw:grid tw:grid-cols-2 tw:gap-4 tw:lg:grid-cols-4">
             {#each cards as card (card.label)}
-                <!-- Two across on a phone, four from 550px: these cards carry money,
-                     and a formatted amount does not fit a quarter of 390px. -->
-                <div class="col-6 col-md-3">
-                    <!-- A figure is a fact, not somewhere to go: `.stat-card` is
-                         the generic card and `a.stat-card` is the link variant. -->
-                    <div class="stat-card">
-                        <span class="stat-label">
-                            <i class={card.icon} aria-hidden="true"></i>
-                            {card.label}
-                        </span>
+                <!-- A figure is a fact, not somewhere to go: no link, no hover. -->
+                <div
+                    class="tw:flex tw:min-h-[110px] tw:flex-col tw:justify-between tw:rounded-xl tw:border tw:bg-card tw:p-4 tw:sm:min-h-[130px] tw:sm:p-5"
+                >
+                    <span class="tw:text-xs tw:font-medium tw:tracking-wide tw:text-muted-foreground tw:uppercase">
+                        {card.label}
+                    </span>
+                    <div>
                         {#if loading && !totals}
-                            <span class="skeleton-loader" style="height: 26px"></span>
+                            <div class="tw:h-8 tw:w-24 tw:animate-pulse tw:rounded-md tw:bg-muted"></div>
                         {:else}
-                            <span class="stat-value">{card.value ?? "—"}</span>
+                            <!-- 2xl until there is room: two tiles across a
+                                 390px phone leave about 125px of inner width,
+                                 and a five-figure amount does not fit that at
+                                 3xl. -->
+                            <div class="tw:text-2xl tw:font-bold tw:tracking-tight tw:tabular-nums tw:sm:text-3xl">
+                                {card.value ?? "—"}
+                            </div>
                         {/if}
-                        <span class="stat-hint">{card.hint}</span>
+                        <p class="tw:mt-1 tw:text-xs tw:text-muted-foreground">{card.hint}</p>
                     </div>
                 </div>
             {/each}
@@ -413,7 +429,7 @@
         {#if totals && (totals.excluded.cancelled.orders || totals.excluded.pending.orders)}
             <!-- What stops an operator asking why this disagrees with the Orders
                  list: it disagrees on purpose, and by exactly this much. -->
-            <p class="txt-hint txt-sm m-b-base">
+            <p class="tw:mb-6 tw:text-xs tw:text-muted-foreground">
                 Not counted: {totals.excluded.cancelled.orders} cancelled, and
                 {totals.excluded.pending.orders} still in checkout worth
                 {formatMoney(totals.excluded.pending.total)}.
@@ -442,12 +458,9 @@
             {loading}
         />
 
-        <h6 class="section-title">
-            <i class="ri-calendar-line" aria-hidden="true"></i>
-            By {grain}
-        </h6>
+        <h2 class="tw:mt-2 tw:mb-3 tw:text-sm tw:font-semibold">By {grain}</h2>
 
-        <div class="page-table-wrapper">
+        <div class="page-table-wrapper tw:rounded-xl tw:border">
             <table class="table responsive-table">
                 <thead class="sticky">
                     <tr>
@@ -543,8 +556,7 @@
             </table>
         </div>
 
-        <h6 class="section-title">
-            <i class="ri-trophy-line" aria-hidden="true"></i>
+        <h2 class="tw:mt-8 tw:mb-3 tw:flex tw:flex-wrap tw:items-center tw:gap-2 tw:text-sm tw:font-semibold">
             Best sellers
             <button
                 type="button"
@@ -562,14 +574,14 @@
             >
                 Units
             </button>
-        </h6>
+        </h2>
 
-        <p class="txt-hint txt-sm">
+        <p class="tw:mb-3 tw:text-xs tw:text-muted-foreground">
             Line value excluding tax, before order-level discounts — a discount is recorded once
             per order and never split across its lines, so these do not add up to net.
         </p>
 
-        <div class="page-table-wrapper">
+        <div class="page-table-wrapper tw:rounded-xl tw:border">
             <table class="table responsive-table">
                 <thead class="sticky">
                     <tr>
@@ -633,7 +645,7 @@
             </table>
         </div>
 
-        <footer class="page-footer">
+        <footer class="page-footer tw:text-xs tw:text-muted-foreground">
             <Pager
                 meta={topMeta}
                 {loading}
