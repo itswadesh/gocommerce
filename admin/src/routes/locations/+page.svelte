@@ -528,9 +528,11 @@
 {:else}
 
 <div class="page page-locations">
-    <div class="page-content full-height">
+    <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
-            <nav class="breadcrumbs"><div>Locations</div></nav>
+            <nav class="breadcrumbs">
+                <div class="tw:text-2xl tw:font-semibold tw:tracking-tight">Locations</div>
+            </nav>
             <div class="flex-fill"></div>
             <div class="page-header-primary-btns">
                 {#if writable}
@@ -542,8 +544,17 @@
             </div>
         </header>
 
-        <div class="page-table-wrapper">
-            <table class="table">
+        <!-- DESIGN.md §5: a border and a background step, never a shadow. -->
+        <div class="page-table-wrapper tw:rounded-xl tw:border">
+            <!-- `responsive-table` restacks each row as a card below 600px,
+                 labelling the cells from their `data-name`. Every cell here
+                 already carried one, but the class was never added, so on a
+                 phone the sticky name and meta columns squeezed the middle of
+                 the table out of existence: Where, On hand, Reserved, SKUs and
+                 State were not scrolled off, they were gone. A locations screen
+                 that cannot say what a location holds is the one thing it is
+                 for. -->
+            <table class="table responsive-table">
                 <thead class="sticky">
                     <tr>
                         {#if writable}
@@ -828,7 +839,7 @@
             </BulkBar>
         {/if}
 
-        <footer class="page-footer">
+        <footer class="page-footer tw:text-xs tw:text-muted-foreground">
             <span class="txt">
                 {locations.length}
                 {pluralize(locations.length, "location")} holding {totalUnits}

@@ -75,24 +75,41 @@ foreach ($l in $locations) {
 
 Write-GCStep 'Categories'
 
-# Looked up one slug at a time, deliberately. The obvious thing — list the
-# categories and build a map — does not work here for two reasons. The taxonomy
-# import leaves this store with 14,606 categories, so a map of all of them is a
-# lot of paging for the eight slugs below; and `/api/admin/categories` ignores
-# `limit` and `offset` (meta comes back `offset: 0, page: 1` whatever you ask
-# for), so a loop that pages until it sees a short page never sees one and spins
-# on the same 200 rows forever. Eight lookups, no paging, no loop.
+# Looked up one slug at a time, and created only when genuinely absent.
+#
+# The obvious thing — list every category and build a map — does not work here.
+# A store that has had the standard taxonomy imported holds 14,606 of them, and
+# `/api/admin/categories` ignores `limit` and `offset` (meta comes back
+# `offset: 0, page: 1` whatever you ask for), so a loop that pages until it sees
+# a short page never sees one and spins on the same 200 rows forever.
+#
+# Looking each one up also means this works on both kinds of store: against an
+# imported taxonomy it reuses the real slugs rather than growing a second tree
+# beside them, and against an empty one it makes the eight it needs.
 $categoryIds = @{}
-foreach ($slug in @('clothing', 'clothing-accessories', 'kitchen-dining', 'office-supplies',
-                    'decor', 'linens-bedding', 'tote-bags', 'backpacks')) {
+$wantedCategories = [ordered]@{
+    'clothing'             = 'Clothing'
+    'clothing-accessories' = 'Clothing accessories'
+    'kitchen-dining'       = 'Kitchen and dining'
+    'office-supplies'      = 'Office supplies'
+    'decor'                = 'Decor'
+    'linens-bedding'       = 'Linens and bedding'
+    'tote-bags'            = 'Tote bags'
+    'backpacks'            = 'Backpacks'
+}
+foreach ($slug in $wantedCategories.Keys) {
     try {
         $found = Invoke-GC GET "/api/categories/$slug"
         $categoryIds[$slug] = $found.id
+        continue
     } catch {
-        Write-Host "  missing category '$slug'" -ForegroundColor Yellow
+        # Not found is the ordinary case on a store without the taxonomy.
     }
+    $made = Invoke-GC POST '/api/admin/categories' @{ slug = $slug; title = $wantedCategories[$slug] } -Admin
+    $categoryIds[$slug] = $made.id
+    Write-Host ("  new   {0}" -f $slug) -ForegroundColor DarkGreen
 }
-Write-Host ("  resolved {0} of 8 categories" -f $categoryIds.Count)
+Write-Host ("  {0} of {1} categories ready" -f $categoryIds.Count, $wantedCategories.Count)
 
 # ------------------------------------------------------------- collections
 
@@ -243,6 +260,63 @@ if ($skuPool.Count -eq 0) {
     throw 'no active variants to sell, so there is no history to build'
 }
 
+# ------------------------------------------------------------ stock spread
+#
+# Creating a product puts all of its stock at the default location, so a store
+# with five warehouses shows one holding everything and four holding nothing —
+# which makes the locations screen a column of zeros and the fill-order rule it
+# describes ("the first one, top to bottom, that can cover the line") impossible
+# to see working. This spreads it.
+#
+# Transfers go through the API, one statement out and one in inside a single
+# transaction, so the store's total never moves. Reserved units are left where
+# they are: they are promised to orders that will be picked from that shelf.
+
+Write-GCStep 'Spreading stock across locations'
+
+$allLocations = Invoke-GC GET '/api/admin/locations' -Admin
+$defaultLocation = $allLocations | Where-Object { $_.is_default } | Select-Object -First 1
+$targets = @($allLocations | Where-Object { -not $_.is_default -and $_.active })
+
+if (-not $defaultLocation -or $targets.Count -eq 0) {
+    Write-Host '  nothing to spread: need a default and at least one other open location' -ForegroundColor Yellow
+} else {
+    $moved = 0
+    $movedUnits = 0
+    foreach ($p in (Invoke-GC GET '/api/admin/products?limit=200&status=active' -Admin)) {
+        foreach ($v in $p.variants) {
+            if (-not $v.track_inventory) { continue }
+            $available = $v.stock_on_hand - $v.stock_reserved
+            if ($available -lt 6) { continue }
+
+            # Leave roughly half at the default and scatter the rest, so the
+            # default still reads as the main site rather than as one of five.
+            $toMove = [int][math]::Floor($available / 2)
+            foreach ($t in ($targets | Get-Random -Count ([math]::Min(2, $targets.Count)))) {
+                if ($toMove -lt 2) { break }
+                $share = Between 1 $toMove
+                try {
+                    Invoke-GC POST "/api/admin/variants/$($v.id)/stock/transfer" @{
+                        from_location_id = $defaultLocation.id
+                        to_location_id   = $t.id
+                        quantity         = $share
+                    } -Admin | Out-Null
+                    $toMove -= $share
+                    $movedUnits += $share
+                    $moved++
+                } catch {
+                    # A variant whose stock moved since the listing was read is
+                    # not worth failing the whole seed over.
+                    Write-Host "  could not move $($v.sku) to $($t.code)" -ForegroundColor Yellow
+                }
+            }
+        }
+        if ($moved -gt 0 -and $moved % 40 -eq 0) { Write-Host "  ...$moved transfers" }
+    }
+    Write-Host ("  {0} transfer(s) moving {1} unit(s) off {2}" -f
+        $moved, $movedUnits, $defaultLocation.name) -ForegroundColor DarkGreen
+}
+
 # --------------------------------------------------------------- discounts
 
 Write-GCStep 'Discounts'
@@ -312,20 +386,30 @@ for ($i = 0; $i -lt $Orders; $i++) {
     # Older orders have had time to arrive; recent ones are still moving. A
     # store where everything is "delivered" cannot exercise the fulfilment
     # filters, and one where nothing is cannot exercise the reports.
+    # Only statuses the import can honestly back up. `shipped` and `partial`
+    # are deliberately absent: the importer writes no fulfillment rows, and
+    # `gocommerce doctor`'s fulfillment check reads exactly those two against
+    # the parcels — an order claiming to be half-shipped with nothing in
+    # fulfillment_lines is drift, and seeding drift into a demo store means the
+    # first thing anyone runs reports a problem we invented. `delivered` is
+    # outside that check's scope, so history can still arrive.
     if ($daysAgo -gt 21) {
         $status = Pick @('delivered', 'delivered', 'delivered', 'delivered', 'cancelled')
     } elseif ($daysAgo -gt 7) {
-        $status = Pick @('delivered', 'delivered', 'shipped', 'partial', 'cancelled')
+        $status = Pick @('delivered', 'delivered', 'delivered', 'confirmed', 'cancelled')
     } else {
-        $status = Pick @('confirmed', 'confirmed', 'shipped', 'partial', 'pending')
+        $status = Pick @('confirmed', 'confirmed', 'confirmed', 'pending')
     }
 
-    if ($status -eq 'cancelled') {
-        $payment = Pick @('refunded', 'pending')
-    } elseif ($status -eq 'pending') {
+    # And no `refunded` here either. The importer sets refunded_minor from the
+    # payment status but writes no order_refunds row, so the doctor's refund
+    # check — refunded_minor against the sum of succeeded refunds — fails on
+    # every one. Refunds are issued further down through the API instead, which
+    # writes the record the check is looking for.
+    if ($status -eq 'cancelled' -or $status -eq 'pending') {
         $payment = 'pending'
     } else {
-        $payment = Pick @('paid', 'paid', 'paid', 'paid', 'paid', 'refunded')
+        $payment = 'paid'
     }
     $provider = Pick @('card', 'card', 'card', 'cod', 'ideal')
 
@@ -362,6 +446,46 @@ if ($result.errors.Count -gt 0) {
     foreach ($e in ($result.errors | Select-Object -First 5)) {
         Write-Host ("  line {0}: {1}" -f $e.line, $e.message) -ForegroundColor Yellow
     }
+}
+
+# ----------------------------------------------------------------- refunds
+#
+# Issued through the service rather than written into the import, so each one
+# leaves an order_refunds row — which is what `gocommerce doctor` reconciles
+# refunded_minor against, and what would put the red band on the reports chart.
+#
+# On the reference binary this does nothing, and that is correct rather than
+# broken. A refund goes back through the provider that took the money, and a
+# module-free build installs only cash on delivery, which cannot refund. So the
+# demo store has no refunds unless you seed it against a build with a real
+# payment module. The alternative — importing orders as `payment_status:
+# refunded` — sets refunded_minor with no refund record behind it and fails the
+# doctor's refund check on every order, which is a worse kind of nothing.
+
+Write-GCStep 'Refunds'
+$refunded = 0
+$refundedMinor = 0
+$refusal = ''
+$candidates = @(Invoke-GC GET '/api/admin/orders?limit=200&status=delivered&payment_status=paid' -Admin)
+foreach ($o in $candidates) {
+    # Roughly one in twelve, and usually part of the order rather than all of
+    # it, because a store where every refund is total is not a real store.
+    if ((Between 1 12) -ne 1) { continue }
+    $amount = [int][math]::Floor($o.total.amount_minor / (Pick @(1, 2, 3, 4)))
+    if ($amount -lt 100) { continue }
+    try {
+        Invoke-GC POST "/api/admin/orders/$($o.id)/refund" @{ amount_minor = $amount; reason = 'Returned by the customer' } -Admin | Out-Null
+        $refunded++
+        $refundedMinor += $amount
+    } catch {
+        if (-not $refusal) { $refusal = "$_" }
+    }
+}
+if ($refunded -gt 0) {
+    Write-Host ("  {0} refund(s) totalling {1} minor unit(s)" -f $refunded, $refundedMinor) -ForegroundColor DarkGreen
+} else {
+    Write-Host "  none issued, across $($candidates.Count) candidate order(s)"
+    if ($refusal) { Write-Host "  the store said: $refusal" -ForegroundColor DarkGray }
 }
 
 # ------------------------------------------------------------------ done
