@@ -638,19 +638,19 @@ th.col-field-type-number {
     align-items: center;
     gap: 8px;
     min-height: 32px;
-    /* Tighter on the right: the buttons carry their own padding, and the
-       symmetric version pushes the pill wide enough to wrap on a phone. */
-    padding: 3px 6px 3px var(--smSpacing);
+    /* Tighter on the right: the buttons carry their own padding, so the
+       symmetric version reads as too wide on that side. */
+    padding: 8px 10px 8px var(--spacing);
     width: calc(100% - 2 * var(--smSpacing));
     max-width: 440px;
     margin-inline: auto;
     color: var(--surfaceTxtColor);
     background: var(--surfaceColor);
-    /* A pill, like the bulk bar at the other end of the screen. Both are the
-       same kind of object — a floating strip that appears when there is
-       something to act on — and they should not disagree about what that looks
-       like. The old 5px was the radius of a thing embedded in a header. */
-    border-radius: 999px;
+    /* A card's radius, not a capsule's. The old 5px was the radius of a thing
+       embedded in a header that no longer exists, and a full pill makes a bar
+       this wide read as a toast — something that will disappear on its own,
+       which is the opposite of what it is asking for. */
+    border-radius: var(--radius-lg, 10px);
     /* And it needs the shadow now. The note that used to be here said one would
        read as a banner, which was true while the bar sat inside a coloured
        header; floating over white page content it is the only thing separating

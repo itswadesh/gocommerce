@@ -35,6 +35,13 @@
          * on every other screen.
          */
         guarded = null,
+        /*
+         * What the bar says when the only thing outstanding is the guarded
+         * half — a draft this Save cannot write. Without it the bar vanished
+         * the moment Save finished, which told the operator everything was
+         * saved at the exact moment it was not.
+         */
+        guardedMessage = "Some changes are not saved yet",
     } = $props();
 
     const unsaved = $derived(guarded ?? dirty);
@@ -104,11 +111,26 @@
 <!-- Renders nothing; `unload` is off because the effect above owns that half. -->
 <DirtyGuard dirty={unsaved} unload={false} />
 
-<div class="save-bar" hidden={!dirty} role="region" aria-label="Unsaved changes">
-    <span class="save-bar-message" aria-live="polite">{message}</span>
+<!--
+    Shown while ANYTHING is unsaved, not only what this Save can write.
 
-    <!-- `.sm` throughout: the bar re-points --smBtnHeight, so these stay
+    It used to hide on `!dirty`, so pressing Save on the product editor cleared
+    the bar while the option draft beside it was still unapplied: the screen
+    said "saved" and then discarded the options on the next navigation, which
+    DirtyGuard warned about but by then the operator had every reason to think
+    the work was safe.
+-->
+<div class="save-bar" hidden={!unsaved} role="region" aria-label="Unsaved changes">
+    <span class="save-bar-message" aria-live="polite">{dirty ? message : guardedMessage}</span>
+
+    <!-- Only when there is something for them to act on. Save and Discard write
+         the form, and the guarded half has its own control elsewhere on the
+         screen — a Save that would do nothing to the thing the bar is naming is
+         worse than no Save at all.
+
+         `.sm` throughout: the bar re-points --smBtnHeight, so these stay
          ordinary PocketBase buttons and pick up its compact height. -->
+    {#if dirty}
     <button
         type="button"
         class="btn sm transparent"
@@ -134,4 +156,5 @@
     >
         <span class="txt">{saveLabel}</span>
     </button>
+    {/if}
 </div>

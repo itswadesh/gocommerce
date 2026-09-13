@@ -1128,6 +1128,7 @@
             {saving}
             guarded={writable && (dirty || axesDirty)}
             message="Unsaved changes"
+            guardedMessage="Options changed — use Save options below to apply them"
             saveLabel="Save"
             onsave={save}
             ondiscard={discard}
