@@ -39,6 +39,7 @@ func coreMigrations() []Migration {
 		{ID: "0028_cart_abandonment", SQL: migration0028CartAbandonment},
 		{ID: "0029_sort_indexes", SQL: migration0029SortIndexes},
 		{ID: "0030_outbox_indexes", SQL: migration0030OutboxIndexes},
+		{ID: "0031_shipping", SQL: migration0031Shipping},
 	}
 }
 
@@ -1630,4 +1631,53 @@ CREATE INDEX IF NOT EXISTS outbox_dead_idx ON outbox_events (id)
 -- what happened to them" — staying constant-time as history grows, instead of a
 -- sequential scan over every event the store has ever delivered.
 CREATE INDEX IF NOT EXISTS outbox_name_idx ON outbox_events (event_name, id);
+`
+
+// M31 — shipping zones and rates (D52).
+//
+// Until now `shipping_minor` came from one number in `Config`, which is a
+// store that can charge one price to everyone everywhere. A zone says where,
+// a rate says what a named method costs there, and the band on the rate is
+// what lets "Standard 49, free over 2000" be one method rather than a special
+// case in the checkout.
+//
+// The zone's matchers are arrays because a zone is a set of places — "EU" is
+// twenty-seven countries and one price. Empty means "anywhere", the way an
+// empty country on a tax rate is the fallback every other rule beats.
+//
+// The band is closed at the bottom and open at the top: `max_subtotal_minor`
+// NULL is "no ceiling", and a rate applies when the basket is at or above the
+// minimum and strictly below the maximum. Half-open so that two bands meeting
+// at 200000 cannot both match the basket that is exactly 200000 — the
+// alternative is a rule nobody can hold in their head at the moment they most
+// need to.
+const migration0031Shipping = `
+CREATE TABLE shipping_zones (
+    id         bigserial PRIMARY KEY,
+    name       text NOT NULL CHECK (length(btrim(name)) > 0),
+    countries  text[] NOT NULL DEFAULT '{}',
+    states     text[] NOT NULL DEFAULT '{}',
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE shipping_rates (
+    id                 bigserial PRIMARY KEY,
+    zone_id            bigint NOT NULL REFERENCES shipping_zones(id) ON DELETE CASCADE,
+    name               text NOT NULL CHECK (length(btrim(name)) > 0),
+    price_minor        bigint NOT NULL CHECK (price_minor >= 0),
+    min_subtotal_minor bigint NOT NULL DEFAULT 0 CHECK (min_subtotal_minor >= 0),
+    max_subtotal_minor bigint CHECK (max_subtotal_minor IS NULL OR max_subtotal_minor > min_subtotal_minor),
+    active             boolean NOT NULL DEFAULT true,
+    position           integer NOT NULL DEFAULT 0,
+    created_at         timestamptz NOT NULL DEFAULT now(),
+    updated_at         timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX shipping_rates_zone ON shipping_rates (zone_id, position, id);
+
+-- What the order was actually sold. A snapshot for the reason every other
+-- snapshot here exists: the rate can be renamed, repriced or deleted, and an
+-- order must still say what the shopper agreed to pay for.
+ALTER TABLE orders ADD COLUMN shipping_method text NOT NULL DEFAULT '';
 `

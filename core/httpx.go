@@ -453,6 +453,7 @@ func (a *App) mountCoreRoutes() {
 	a.mountTaxonomyRoutes()
 	a.mountDiscountRoutes()
 	a.mountTaxRoutes()
+	a.mountShippingRoutes()
 	a.mountLocationRoutes()
 	a.mountTeamRoutes()
 	a.mountRoleRoutes()

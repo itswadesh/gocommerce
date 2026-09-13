@@ -9170,6 +9170,361 @@
           }
         }
       }
+    },
+    "/api/checkout/rates": {
+      "get": {
+        "tags": [
+          "checkout"
+        ],
+        "summary": "What it costs to send this basket there",
+        "description": "A quote rather than a price list: the price depends on what is in the cart, so the cart's own token is the input rather than a subtotal the caller could invent. An empty rates array is an answer, not an error - this store does not deliver to that destination - and a storefront has to render it either way. A store with no rates configured is still on Config.FlatShippingMinor, and this returns nothing.",
+        "parameters": [
+          {
+            "name": "cart",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The cart token."
+          },
+          {
+            "name": "country",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ISO country code."
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "ISO state or province code, where the store prices by it."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The delivery options for this basket and destination.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "rates": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ShippingQuote"
+                          }
+                        },
+                        "currency": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/shipping/zones": {
+      "get": {
+        "tags": [
+          "shipping"
+        ],
+        "summary": "Where this store delivers, and what it charges",
+        "description": "Each zone carries its own rates: a zone with no prices is not something an operator can use, so the two are never shown apart.",
+        "responses": {
+          "200": {
+            "description": "Every zone, with its rates.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "zone": {
+                            "$ref": "#/components/schemas/ShippingZone"
+                          },
+                          "rates": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/ShippingRate"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "shipping"
+        ],
+        "summary": "Add a zone",
+        "description": "Countries and states are ISO codes, and both empty is the catch-all zone that every more specific zone beats.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShippingZoneInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The zone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ShippingZone"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/admin/shipping/zones/{id}": {
+      "patch": {
+        "tags": [
+          "shipping"
+        ],
+        "summary": "Change a zone",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShippingZoneInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The zone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ShippingZone"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "shipping"
+        ],
+        "summary": "Remove a zone",
+        "description": "Its rates go with it.",
+        "responses": {
+          "200": {
+            "description": "Deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "deleted": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ]
+      }
+    },
+    "/api/admin/shipping/rates": {
+      "post": {
+        "tags": [
+          "shipping"
+        ],
+        "summary": "Price a method inside a zone",
+        "description": "The band is half-open: min_subtotal_minor is inclusive and max_subtotal_minor exclusive, so a Standard at 4900 below 200000 and a Standard at 0 from 200000 are one method the shopper recognises and cannot both claim a basket. Two bands of one name that do overlap are refused, because a shopper offered the same method at two prices has no way to choose.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShippingRateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The rate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ShippingRate"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/admin/shipping/rates/{id}": {
+      "patch": {
+        "tags": [
+          "shipping"
+        ],
+        "summary": "Change a rate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShippingRateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The rate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ShippingRate"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "shipping"
+        ],
+        "summary": "Remove a rate",
+        "responses": {
+          "200": {
+            "description": "Deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "deleted": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -13330,6 +13685,168 @@
           "hint": {
             "type": "string",
             "description": "What to do about it. Every failing check carries one; a passing check does not."
+          }
+        }
+      },
+      "ShippingZone": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "countries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "ISO country codes. Empty means anywhere."
+          },
+          "states": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "ISO state codes. Empty means anywhere within the countries above."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ShippingZoneInput": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "India"
+          },
+          "countries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "IN"
+            ]
+          },
+          "states": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "KA"
+            ]
+          }
+        }
+      },
+      "ShippingRate": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "zone_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string",
+            "description": "What the shopper sees, such as Standard or Express."
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "min_subtotal_minor": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Inclusive."
+          },
+          "max_subtotal_minor": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Exclusive. Absent means no ceiling."
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "position": {
+            "type": "integer"
+          }
+        }
+      },
+      "ShippingRateInput": {
+        "type": "object",
+        "required": [
+          "zone_id",
+          "name",
+          "price_minor"
+        ],
+        "properties": {
+          "zone_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string",
+            "example": "Standard"
+          },
+          "price_minor": {
+            "type": "integer",
+            "format": "int64",
+            "example": 4900
+          },
+          "min_subtotal_minor": {
+            "type": "integer",
+            "format": "int64",
+            "default": 0
+          },
+          "max_subtotal_minor": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "active": {
+            "type": "boolean",
+            "default": true
+          },
+          "position": {
+            "type": "integer",
+            "default": 0
+          }
+        }
+      },
+      "ShippingQuote": {
+        "type": "object",
+        "properties": {
+          "rate_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Send this back as shipping_rate_id on checkout."
+          },
+          "name": {
+            "type": "string"
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "zone_id": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       }

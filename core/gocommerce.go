@@ -262,6 +262,7 @@ type App struct {
 	locations   *Locations
 	invitations *Invitations
 	taxes       *Taxes
+	shipping    *Shipping
 	// reports is a reading of the orders: it owns no table and writes nothing,
 	// so it has no ordering constraint against anything built here.
 	reports *Reports
@@ -439,6 +440,7 @@ func (a *App) buildServices() {
 	a.locations = &Locations{app: a}
 	a.invitations = &Invitations{app: a}
 	a.taxes = &Taxes{app: a}
+	a.shipping = &Shipping{app: a}
 	a.reports = &Reports{app: a}
 
 	// An explicit store wins; otherwise a directory gets the built-in one; with

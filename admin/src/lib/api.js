@@ -357,3 +357,20 @@ export const webhooks = {
     deliveries: (params) => api.get("/api/admin/x/webhooks/deliveries" + query(params)),
     retry: (id) => api.post(`/api/admin/x/webhooks/deliveries/${id}/retry`, {}),
 };
+
+/**
+ * shipping is where this store delivers and what it charges to.
+ *
+ * Zones come back with their rates already attached rather than as two lists:
+ * a zone with no prices is not something an operator can use, so reading one
+ * without the other is reading half the configuration.
+ */
+export const shipping = {
+    zones: () => api.get("/api/admin/shipping/zones"),
+    createZone: (body) => api.post("/api/admin/shipping/zones", body),
+    updateZone: (id, body) => api.patch(`/api/admin/shipping/zones/${id}`, body),
+    removeZone: (id) => api.delete(`/api/admin/shipping/zones/${id}`),
+    createRate: (body) => api.post("/api/admin/shipping/rates", body),
+    updateRate: (id, body) => api.patch(`/api/admin/shipping/rates/${id}`, body),
+    removeRate: (id) => api.delete(`/api/admin/shipping/rates/${id}`),
+};

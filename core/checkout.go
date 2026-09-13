@@ -15,14 +15,18 @@ import (
 
 // CheckoutInput is what a client posts to POST /api/checkout/{code}.
 type CheckoutInput struct {
-	CartID      string            `json:"cart_id"`
-	Email       string            `json:"email"`
-	Phone       string            `json:"phone"`
-	Name        string            `json:"name"`
-	Address     Address           `json:"address"`
-	PaymentData map[string]string `json:"payment_data"`
-	ReturnURL   string            `json:"return_url"`
-	Metadata    Metadata          `json:"metadata"`
+	CartID  string  `json:"cart_id"`
+	Email   string  `json:"email"`
+	Phone   string  `json:"phone"`
+	Name    string  `json:"name"`
+	Address Address `json:"address"`
+	// ShippingRateID is the rate the shopper picked, from GET
+	// /api/checkout/rates. Omitted means "whichever this store lists first",
+	// which is what keeps a client written before D52 working unchanged.
+	ShippingRateID *int64            `json:"shipping_rate_id,omitempty"`
+	PaymentData    map[string]string `json:"payment_data"`
+	ReturnURL      string            `json:"return_url"`
+	Metadata       Metadata          `json:"metadata"`
 }
 
 // CheckoutResult is the order and what the client must do to pay for it.
@@ -233,7 +237,56 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		// than by two additions agreeing.
 		subtotal := totalOf(dlines)
 
+		// What this basket costs to send, and by what.
+		//
+		// The quote runs inside this transaction on purpose: it is the same lock
+		// that has just re-checked every price and every reservation, so a rate
+		// cannot move between being quoted and being charged. The band is read
+		// against the basket *before* any discount — the rule a store writes is
+		// "free over 2000 in the cart", not "free once the coupon has been
+		// taken off", and the latter would also make the two depend on each
+		// other in a circle.
 		shipping := s.app.cfg.FlatShippingMinor
+		shippingMethod := ""
+		rated, err := s.app.shipping.configured(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if rated {
+			quotes, err := s.app.shipping.quote(ctx, tx, ShippingQuery{
+				Country:       in.Address.Country,
+				State:         in.Address.State,
+				SubtotalMinor: subtotal,
+			})
+			if err != nil {
+				return err
+			}
+			if len(quotes) == 0 {
+				// A store with rates has said where it delivers. Charging the old
+				// flat number here would sell a parcel nobody can send.
+				return Validationf(
+					"this store does not deliver to %s", strings.ToUpper(in.Address.Country))
+			}
+			// Nothing chosen takes the first option this store lists, which with
+			// untouched positions is the cheapest that applies: a client written
+			// before this existed must not start paying for express by accident.
+			chosen := quotes[0]
+			if in.ShippingRateID != nil {
+				found := false
+				for _, q := range quotes {
+					if q.RateID == *in.ShippingRateID {
+						chosen, found = q, true
+						break
+					}
+				}
+				if !found {
+					return Conflictf(
+						"that delivery option is not available for this basket any more; ask for the options again")
+				}
+			}
+			shipping = chosen.Price.AmountMinor
+			shippingMethod = chosen.Name
+		}
 
 		// The discount is decided here and nowhere else, under the lock that
 		// just re-checked every price and every reservation — the same lock the
@@ -304,13 +357,13 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 			                    payment_provider, currency, subtotal_minor, shipping_minor,
 			                    discount_minor, tax_minor, tax_inclusive, total_minor,
 			                    email, phone, name, address,
-			                    lang, metadata, reservation_expires_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
-			        now() + make_interval(secs => $20))`,
+			                    lang, metadata, shipping_method, reservation_expires_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
+			        now() + make_interval(secs => $21))`,
 			orderID, number, accessToken, OrderPending, PaymentPending, code, currency,
 			subtotal, shipping, discount, tax, inclusive, total,
 			strings.ToLower(in.Email), nullString(in.Phone),
-			nullString(in.Name), addr, s.app.RequestLanguageValue(ctx), meta,
+			nullString(in.Name), addr, s.app.RequestLanguageValue(ctx), meta, shippingMethod,
 			s.app.cfg.OrderTTL.Seconds(),
 		); err != nil {
 			return err

@@ -138,6 +138,20 @@ export const NAV = [
         keywords: "vat rates",
     },
     {
+        href: "/shipping",
+        label: "Shipping",
+        icon: "ri-truck-line",
+        // store.operate rather than a right of its own: core/rights.go is a
+        // closed catalogue, and what a store charges to deliver is the same
+        // kind of decision as the outbox screen behind D49.
+        right: "store.operate",
+        // Violet, the same as Tax, and deliberately: both are money added to an
+        // order that is not the goods, and a second colour would say they are
+        // unrelated.
+        accent: "violet",
+        keywords: "delivery rates zones postage courier",
+    },
+    {
         href: "/customers",
         label: "Customers",
         icon: "ri-user-3-line",

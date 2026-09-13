@@ -61,7 +61,12 @@ type Order struct {
 
 	Subtotal Money `json:"subtotal"`
 	Shipping Money `json:"shipping"`
-	Discount Money `json:"discount"`
+	// ShippingMethod is the name of the rate the shopper chose, snapshotted
+	// for the reason every snapshot here exists: the rate can be renamed,
+	// repriced or deleted, and the order still has to say what was agreed.
+	// Empty means no rate was involved — a store still on the flat number.
+	ShippingMethod string `json:"shipping_method,omitempty"`
+	Discount       Money  `json:"discount"`
 	// Tax is what was charged across every line. When TaxInclusive it is part
 	// of Subtotal rather than added to it, which is what that flag is for.
 	Tax          Money `json:"tax"`
@@ -326,7 +331,7 @@ const orderColumns = `o.id, o.number, o.status, o.payment_status, o.payment_prov
 	coalesce(o.payment_reference, ''), o.currency, o.subtotal_minor, o.shipping_minor,
 	o.discount_minor, o.tax_minor, o.tax_inclusive, o.total_minor, o.refunded_minor,
 	o.email, coalesce(o.phone, ''), coalesce(o.name, ''),
-	o.address, o.lang, o.metadata, o.created_at, o.updated_at`
+	o.address, o.lang, o.metadata, o.shipping_method, o.created_at, o.updated_at`
 
 func (s *Orders) scanOrder(row interface{ Scan(...any) error }) (*Order, error) {
 	o := &Order{}
@@ -335,7 +340,7 @@ func (s *Orders) scanOrder(row interface{ Scan(...any) error }) (*Order, error) 
 	if err := row.Scan(&o.ID, &o.Number, &o.Status, &o.PaymentStatus, &o.PaymentProvider,
 		&o.PaymentReference, &o.Currency, &subtotal, &shipping, &discount,
 		&tax, &o.TaxInclusive, &total, &refunded,
-		&o.Email, &o.Phone, &o.Name, &addr, &o.Language, &meta,
+		&o.Email, &o.Phone, &o.Name, &addr, &o.Language, &meta, &o.ShippingMethod,
 		&o.CreatedAt, &o.UpdatedAt); err != nil {
 		return nil, err
 	}

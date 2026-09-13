@@ -2,139 +2,409 @@
   "paths": {
     "/api/admin/x/webhooks/endpoints": {
       "get": {
-        "tags": ["webhooks"],
+        "tags": [
+          "webhooks"
+        ],
         "summary": "Registered endpoints",
         "description": "The signing secret is never in this response. `secret_hint` is its last four characters, which is enough to tell two endpoints apart and not enough to sign with.",
         "parameters": [
-          {"$ref": "#/components/parameters/Limit"},
-          {"$ref": "#/components/parameters/PageNumber"},
-          {"$ref": "#/components/parameters/Offset"}
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
         ],
         "responses": {
-          "200": {"description": "A page of endpoints.", "content": {"application/json": {"schema": {
-            "type": "object",
-            "properties": {
-              "data": {"type": "array", "items": {"$ref": "#/components/schemas/WebhookEndpoint"}},
-              "meta": {"$ref": "#/components/schemas/ListMeta"}
+          "200": {
+            "description": "A page of endpoints.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WebhookEndpoint"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
             }
-          }}}},
-          "401": {"$ref": "#/components/responses/Unauthorized"}
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       },
       "post": {
-        "tags": ["webhooks"],
+        "tags": [
+          "webhooks"
+        ],
         "summary": "Register an endpoint",
         "description": "The only response that carries the secret in full, along with the one from rotate-secret. Store it now: no later read returns it.",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {
-          "type": "object",
-          "required": ["url", "events"],
-          "properties": {
-            "url": {"type": "string", "description": "An absolute http or https URL.", "example": "https://merchant.example.com/hooks"},
-            "events": {"type": "array", "items": {"type": "string"}, "description": "Exact names (`order.paid`), a prefix (`order.*`) or `*`.", "example": ["order.*"]},
-            "active": {"type": "boolean", "default": true}
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "url",
+                  "events"
+                ],
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "description": "An absolute http or https URL.",
+                    "example": "https://merchant.example.com/hooks"
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Exact names (`order.paid`), a prefix (`order.*`) or `*`.",
+                    "example": [
+                      "order.*"
+                    ]
+                  },
+                  "active": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                }
+              }
+            }
           }
-        }}}},
+        },
         "responses": {
-          "201": {"description": "Created, with the secret.", "content": {"application/json": {"schema": {
-            "type": "object", "properties": {"data": {"$ref": "#/components/schemas/WebhookEndpointWithSecret"}}
-          }}}},
-          "400": {"$ref": "#/components/responses/Validation"},
-          "401": {"$ref": "#/components/responses/Unauthorized"}
+          "201": {
+            "description": "Created, with the secret.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WebhookEndpointWithSecret"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       }
     },
     "/api/admin/x/webhooks/endpoints/{id}": {
-      "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer", "format": "int64"}}],
       "get": {
-        "tags": ["webhooks"],
+        "tags": [
+          "webhooks"
+        ],
         "summary": "One endpoint",
         "responses": {
-          "200": {"description": "The endpoint.", "content": {"application/json": {"schema": {
-            "type": "object", "properties": {"data": {"$ref": "#/components/schemas/WebhookEndpoint"}}
-          }}}},
-          "404": {"$ref": "#/components/responses/NotFound"}
-        }
+          "200": {
+            "description": "The endpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WebhookEndpoint"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ]
       },
       "patch": {
-        "tags": ["webhooks"],
+        "tags": [
+          "webhooks"
+        ],
         "summary": "Change an endpoint's url, events or active flag",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {
-          "type": "object",
-          "properties": {
-            "url": {"type": "string"},
-            "events": {"type": "array", "items": {"type": "string"}},
-            "active": {"type": "boolean"}
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string"
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "active": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
           }
-        }}}},
+        },
         "responses": {
-          "200": {"description": "The updated endpoint.", "content": {"application/json": {"schema": {
-            "type": "object", "properties": {"data": {"$ref": "#/components/schemas/WebhookEndpoint"}}
-          }}}},
-          "400": {"$ref": "#/components/responses/Validation"},
-          "404": {"$ref": "#/components/responses/NotFound"}
-        }
+          "200": {
+            "description": "The updated endpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WebhookEndpoint"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ]
       },
       "delete": {
-        "tags": ["webhooks"],
+        "tags": [
+          "webhooks"
+        ],
         "summary": "Remove an endpoint",
         "description": "Its delivery log goes with it: the log records what this store told that endpoint, and the endpoint no longer exists.",
         "responses": {
-          "200": {"description": "Deleted.", "content": {"application/json": {"schema": {
-            "type": "object", "properties": {"data": {"type": "object", "properties": {"deleted": {"type": "boolean"}}}}
-          }}}},
-          "404": {"$ref": "#/components/responses/NotFound"}
-        }
+          "200": {
+            "description": "Deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "deleted": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ]
       }
     },
     "/api/admin/x/webhooks/endpoints/{id}/rotate-secret": {
-      "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer", "format": "int64"}}],
       "post": {
-        "tags": ["webhooks"],
+        "tags": [
+          "webhooks"
+        ],
         "summary": "Issue a new signing secret",
         "description": "So that a leaked secret has an answer other than deleting the endpoint. Deliveries already queued are signed with the new secret when they are sent.",
         "responses": {
-          "200": {"description": "The endpoint, with its new secret.", "content": {"application/json": {"schema": {
-            "type": "object", "properties": {"data": {"$ref": "#/components/schemas/WebhookEndpointWithSecret"}}
-          }}}},
-          "404": {"$ref": "#/components/responses/NotFound"}
-        }
+          "200": {
+            "description": "The endpoint, with its new secret.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WebhookEndpointWithSecret"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ]
       }
     },
     "/api/admin/x/webhooks/deliveries/{id}/retry": {
-      "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer", "format": "int64"}}],
       "post": {
-        "tags": ["webhooks"],
+        "tags": [
+          "webhooks"
+        ],
         "summary": "Queue a delivery again",
         "description": "The only useful thing to do with one that gave up. It resets the attempt count as well as clearing the flag: a retry an operator asked for is a fresh start, not attempt thirteen of twelve. A delivery that already succeeded is not found.",
         "responses": {
-          "200": {"description": "Queued.", "content": {"application/json": {"schema": {
-            "type": "object", "properties": {"data": {"type": "object", "properties": {"queued": {"type": "boolean"}}}}
-          }}}},
-          "404": {"$ref": "#/components/responses/NotFound"}
-        }
+          "200": {
+            "description": "Queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "queued": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ]
       }
     },
     "/api/admin/x/webhooks/deliveries": {
       "get": {
-        "tags": ["webhooks"],
+        "tags": [
+          "webhooks"
+        ],
         "summary": "The delivery log",
         "description": "One row per event per endpoint. `state` is derived from the worker's own columns: pending, delivered, or dead once the attempts ran out.",
         "parameters": [
-          {"name": "endpoint_id", "in": "query", "schema": {"type": "integer", "format": "int64"}},
-          {"name": "state", "in": "query", "schema": {"type": "string", "enum": ["pending", "delivered", "dead"]}},
-          {"$ref": "#/components/parameters/Limit"},
-          {"$ref": "#/components/parameters/PageNumber"},
-          {"$ref": "#/components/parameters/Offset"}
+          {
+            "name": "endpoint_id",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "delivered",
+                "dead"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
         ],
         "responses": {
-          "200": {"description": "A page of deliveries.", "content": {"application/json": {"schema": {
-            "type": "object",
-            "properties": {
-              "data": {"type": "array", "items": {"$ref": "#/components/schemas/WebhookDelivery"}},
-              "meta": {"$ref": "#/components/schemas/ListMeta"}
+          "200": {
+            "description": "A page of deliveries.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WebhookDelivery"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
             }
-          }}}},
-          "400": {"$ref": "#/components/responses/Validation"}
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          }
         }
       }
     }
@@ -144,22 +414,48 @@
       "WebhookEndpoint": {
         "type": "object",
         "properties": {
-          "id": {"type": "integer", "format": "int64"},
-          "url": {"type": "string"},
-          "events": {"type": "array", "items": {"type": "string"}},
-          "active": {"type": "boolean"},
-          "secret_hint": {"type": "string", "description": "The last four characters of the signing secret."},
-          "created_at": {"type": "string", "format": "date-time"},
-          "updated_at": {"type": "string", "format": "date-time"}
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "url": {
+            "type": "string"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "secret_hint": {
+            "type": "string",
+            "description": "The last four characters of the signing secret."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "WebhookEndpointWithSecret": {
         "allOf": [
-          {"$ref": "#/components/schemas/WebhookEndpoint"},
+          {
+            "$ref": "#/components/schemas/WebhookEndpoint"
+          },
           {
             "type": "object",
             "properties": {
-              "secret": {"type": "string", "description": "Returned only on create and rotate. Sign-verify with HMAC-SHA256 over `<timestamp>.<body>`, reading both from X-GoCommerce-Signature."}
+              "secret": {
+                "type": "string",
+                "description": "Returned only on create and rotate. Sign-verify with HMAC-SHA256 over `<timestamp>.<body>`, reading both from X-GoCommerce-Signature."
+              }
             }
           }
         ]
@@ -167,17 +463,50 @@
       "WebhookDelivery": {
         "type": "object",
         "properties": {
-          "id": {"type": "integer", "format": "int64"},
-          "endpoint_id": {"type": "integer", "format": "int64"},
-          "event_id": {"type": "string"},
-          "event_name": {"type": "string"},
-          "state": {"type": "string", "enum": ["pending", "delivered", "dead"]},
-          "attempts": {"type": "integer"},
-          "last_status": {"type": "integer"},
-          "last_error": {"type": "string"},
-          "available_at": {"type": "string", "format": "date-time"},
-          "delivered_at": {"type": "string", "format": "date-time", "nullable": true},
-          "created_at": {"type": "string", "format": "date-time"}
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "endpoint_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "event_name": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "delivered",
+              "dead"
+            ]
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "last_status": {
+            "type": "integer"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "available_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "delivered_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       }
     }
