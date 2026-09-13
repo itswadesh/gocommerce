@@ -4223,11 +4223,30 @@ tr.handle:focus-visible {
    pre-wrap utility in the copied sheets is `.txt-code`, which is monospace and
    wrong for a sentence. `anywhere` because a pasted tracking URL is one word
    and would otherwise push the card wider than the column. */
+/*
+ * The shop's own writing, at the size writing is read at.
+ *
+ * It was --smFontSize, the size the panel uses for hints and metadata, which
+ * made a note somebody typed look like a machine-generated annotation of the
+ * order rather than the one part of this screen a person composed.
+ *
+ * The measure is capped for the same reason. The card runs the width of the
+ * items table, and a paragraph set across 840px is about 130 characters a line
+ * — roughly twice what the eye tracks comfortably, and the return sweep starts
+ * losing the next line. Notes are the only free prose on this screen, so they
+ * are the only thing here that needs the limit.
+ */
 .order-note {
     margin: 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    font-size: var(--smFontSize);
+    max-width: 68ch;
+}
+/* What you type is set to the width you will read it back at, and the
+   explanation under it keeps the same edge rather than running past both. */
+#notes-form .field,
+#notes-form .field-help {
+    max-width: 68ch;
 }
 
 /* The history's icon column. `.order-card .list-item` is a wrapping flex row,

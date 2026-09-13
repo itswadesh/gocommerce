@@ -39,9 +39,17 @@
 
     {#if editing}
         <form id="notes-form" onsubmit={(e) => (e.preventDefault(), onsave(draft))}>
+            <!-- `aria-label` rather than a `<label>`, for the reason
+                 TokenInput gives: a visible one here would put the word "Note"
+                 directly under the card titled NOTE, saying the same thing
+                 twice a line apart. The control still has an accessible name. -->
             <div class="field">
-                <label for="order-notes">Note</label>
-                <textarea id="order-notes" rows="4" bind:value={draft}></textarea>
+                <textarea
+                    id="order-notes"
+                    aria-label="Note"
+                    rows="4"
+                    bind:value={draft}
+                ></textarea>
             </div>
             <div class="field-help">
                 Only the shop sees this. The customer's own view of the order does not show it,
