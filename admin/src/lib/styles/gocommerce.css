@@ -886,6 +886,38 @@ th.col-field-type-number {
     color: inherit;
 }
 
+/* ------------------------------------------------- the bulk selection bar
+ *
+ * PocketBase's `.bulkbar` is a 450px pill, which is the right shape for the
+ * two or three actions its own screens put in one. Products puts seven — three
+ * status buttons, a category picker, a collection picker, Delete and the
+ * clear — and at 450px they wrapped onto four ragged lines: the count alone on
+ * the first, a select stretched across the third, Delete stranded at the
+ * bottom. A 50px radius on a 164px-tall block reads as a mistake rather than a
+ * pill.
+ *
+ * So the bar sizes to what the screen actually gives it, up to a cap, and the
+ * controls inside it stop stretching. bulkbar.css is PocketBase's file and is
+ * not edited; this overrides it from ours.
+ */
+.bulkbar {
+    width: auto;
+    max-width: min(95vw, 1100px);
+}
+/* `.field` is a full-width block — right in a form column, wrong in a toolbar,
+   where it claims the whole line and pushes everything after it onto the next.
+   The same fix `.page-header-primary-btns .field` already needed. */
+.bulkbar .field {
+    width: auto;
+    flex: 0 0 auto;
+    margin: 0;
+}
+/* The count is the label for the row, not a competitor for its space. */
+.bulkbar > .txt {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
 /* ------------------------------------------------------ dragging a category
  *
  * Two states, and they say different things. The row being carried fades,
