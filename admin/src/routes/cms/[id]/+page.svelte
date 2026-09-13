@@ -164,7 +164,7 @@
     <!-- The compact card skin the product editor uses: this is the panel's
          other long form, and two editors that look unrelated is worse than one
          extra class. -->
-    <div class="page page-cms shopify-skin">
+    <div class="page page-cms shopify-skin skin-recessed">
         <div class="page-content full-height">
             <SaveBar {dirty} {saving} onsave={save} ondiscard={reset} />
 

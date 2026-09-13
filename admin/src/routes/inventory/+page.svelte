@@ -455,9 +455,11 @@
 {:else}
 
 <div class="page page-inventory shopify-skin">
-    <div class="page-content full-height">
+    <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
-            <nav class="breadcrumbs"><div>Inventory</div></nav>
+            <nav class="breadcrumbs">
+                <div class="tw:text-2xl tw:font-semibold tw:tracking-tight">Inventory</div>
+            </nav>
 
             <div class="inline-flex gap-sm">
                 <button
@@ -604,7 +606,7 @@
             </p>
         </div>
 
-        <div class="page-table-wrapper">
+        <div class="page-table-wrapper tw:rounded-xl tw:border">
             <table class="table responsive-table" class:optimize={variants.length > 60}>
                 <thead class="sticky">
                     <tr>
@@ -863,7 +865,7 @@
             </BulkBar>
         {/if}
 
-        <footer class="page-footer">
+        <footer class="page-footer tw:text-xs tw:text-muted-foreground">
             <!-- "product", not "variant", in search mode: the total is the
                  listing's own count of PRODUCTS that matched, and the rows are
                  their variants. Describing rows with somebody else's total is

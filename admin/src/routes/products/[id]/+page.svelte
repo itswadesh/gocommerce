@@ -1114,7 +1114,7 @@
 <!-- `shopify-skin` re-skins this one screen: grey ground, white cards, labels
      above their fields. It is scoped to the page rather than global so the rest
      of the panel stays PocketBase — see the block in gocommerce.css. -->
-<div class="page page-products shopify-skin">
+<div class="page page-products shopify-skin skin-recessed">
     <div class="page-content full-height">
         <!-- `guarded` is wider than `dirty` on this one screen: the option
              matrix holds a draft that Save cannot write — it has its own Apply

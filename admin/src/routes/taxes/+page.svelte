@@ -445,9 +445,11 @@
 {:else}
 
 <div class="page page-taxes shopify-skin">
-    <div class="page-content full-height">
+    <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
-            <nav class="breadcrumbs"><div>Tax rates</div></nav>
+            <nav class="breadcrumbs">
+                <div class="tw:text-2xl tw:font-semibold tw:tracking-tight">Tax rates</div>
+            </nav>
             <div class="flex-fill"></div>
 
             <!-- A store modelling every US state has fifty rows here and the
@@ -487,7 +489,7 @@
             </div>
         </header>
 
-        <div class="page-table-wrapper">
+        <div class="page-table-wrapper tw:rounded-xl tw:border">
             <!-- Responsive now that the row carries a control: below 900px the
                  header row is replaced by a label per cell, and without it the
                  Active switch sits in a column a phone cuts off. Every cell
@@ -730,7 +732,7 @@
             </BulkBar>
         {/if}
 
-        <footer class="page-footer">
+        <footer class="page-footer tw:text-xs tw:text-muted-foreground">
             <Pager
                 meta={paged.meta}
                 {loading}

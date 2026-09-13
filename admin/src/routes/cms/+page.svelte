@@ -130,9 +130,11 @@
     <NoAccess right="catalog.read" what="pages" />
 {:else}
     <div class="page page-cms shopify-skin">
-        <div class="page-content full-height">
+        <div class="page-content full-height tw:bg-background tw:text-foreground">
             <header class="page-header">
-                <nav class="breadcrumbs"><div>Pages</div></nav>
+                <nav class="breadcrumbs">
+                <div class="tw:text-2xl tw:font-semibold tw:tracking-tight">Pages</div>
+            </nav>
 
                 <div class="inline-flex gap-sm">
                     <button
@@ -205,7 +207,7 @@
                     what="Content pages are served by ext/cms, and this binary does not have it."
                 />
             {:else}
-                <div class="page-table-wrapper">
+                <div class="page-table-wrapper tw:rounded-xl tw:border">
                     <table class="table responsive-table">
                         <thead class="sticky">
                             <tr>
@@ -280,7 +282,7 @@
                     </table>
                 </div>
 
-                <footer class="page-footer">
+                <footer class="page-footer tw:text-xs tw:text-muted-foreground">
                     <Pager
                         {meta}
                         {loading}

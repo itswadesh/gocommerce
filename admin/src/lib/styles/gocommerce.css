@@ -1471,7 +1471,19 @@ button.media-check {
  * The recessed ground is what makes a card read as a card. `.page-content` is
  * the scrolling box, so it carries it.
  */
-.shopify-skin .page-content {
+/*
+ * The recessed ground is the editors', not the whole panel's.
+ *
+ * `shopify-skin` does two separable jobs: it re-points the size tokens, which
+ * every screen wants, and it sinks `.page-content` to --pageColor so the white
+ * cards on a product editor read as cards. When the skin went panel-wide the
+ * second job came with it, and at two classes of specificity it beat the
+ * `tw:bg-background` the migrated screens set on that same element — so every
+ * one of them lost the design's white ground to a grey meant for a screen made
+ * of cards. Splitting the two keeps the sizes everywhere and the ground where
+ * it means something.
+ */
+.skin-recessed .page-content {
     background: var(--pageColor);
 }
 

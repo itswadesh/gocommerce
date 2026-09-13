@@ -160,7 +160,7 @@
 {:else}
     <!-- The compact card skin the product and page editors use: three editors
          that look unrelated is worse than one shared class. -->
-    <div class="page page-collection shopify-skin">
+    <div class="page page-collection shopify-skin skin-recessed">
         <div class="page-content full-height">
             <SaveBar
                 dirty={dirty && writable && !partial}

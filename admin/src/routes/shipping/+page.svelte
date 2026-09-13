@@ -191,9 +191,11 @@
     <NoAccess right="store.operate" what="shipping" />
 {:else}
     <div class="page page-shipping shopify-skin">
-        <div class="page-content full-height">
+        <div class="page-content full-height tw:bg-background tw:text-foreground">
             <header class="page-header">
-                <nav class="breadcrumbs"><div class="breadcrumb-item">Shipping</div></nav>
+                <nav class="breadcrumbs">
+                    <div class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">Shipping</div>
+                </nav>
 
                 <div class="inline-flex gap-sm">
                     <button
@@ -320,7 +322,7 @@
                 {/each}
             {/if}
 
-            <footer class="page-footer">
+            <footer class="page-footer tw:text-xs tw:text-muted-foreground">
                 <span class="txt-hint txt-sm">
                     The most specific zone wins: a zone naming a state beats one naming only its
                     country, which beats the zone that names nowhere in particular.

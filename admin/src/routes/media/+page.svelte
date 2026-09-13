@@ -195,10 +195,10 @@
     <NoAccess right="catalog.read" what="the media library" />
 {:else}
     <div class="page page-media shopify-skin">
-        <div class="page-content full-height">
+        <div class="page-content full-height tw:bg-background tw:text-foreground">
             <header class="page-header">
                 <nav class="breadcrumbs">
-                    <div class="breadcrumb-item">Media</div>
+                    <div class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">Media</div>
                 </nav>
 
                 <div class="inline-flex gap-sm">
@@ -250,7 +250,7 @@
                 {/if}
             </BulkBar>
 
-            <footer class="page-footer">
+            <footer class="page-footer tw:text-xs tw:text-muted-foreground">
                 <Pager
                     {meta}
                     {loading}

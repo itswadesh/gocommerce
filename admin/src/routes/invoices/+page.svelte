@@ -72,9 +72,11 @@
     <NoAccess right="orders.read" what="invoices" />
 {:else}
     <div class="page page-invoices shopify-skin">
-        <div class="page-content full-height">
+        <div class="page-content full-height tw:bg-background tw:text-foreground">
             <header class="page-header">
-                <nav class="breadcrumbs"><div>Invoices</div></nav>
+                <nav class="breadcrumbs">
+                <div class="tw:text-2xl tw:font-semibold tw:tracking-tight">Invoices</div>
+            </nav>
 
                 <div class="inline-flex gap-sm">
                     <button
@@ -109,7 +111,7 @@
                     </div>
                 </div>
 
-                <div class="page-table-wrapper">
+                <div class="page-table-wrapper tw:rounded-xl tw:border">
                     <table class="table responsive-table">
                         <thead class="sticky">
                             <tr>
@@ -198,7 +200,7 @@
                     </table>
                 </div>
 
-                <footer class="page-footer">
+                <footer class="page-footer tw:text-xs tw:text-muted-foreground">
                     <Pager
                         {meta}
                         {loading}

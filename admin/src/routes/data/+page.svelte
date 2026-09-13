@@ -236,11 +236,11 @@
 <div class="page page-data shopify-skin">
     <SettingsSidebar />
 
-    <div class="page-content">
+    <div class="page-content tw:bg-background tw:text-foreground">
         <header class="page-header">
             <nav class="breadcrumbs">
-                <div>Settings</div>
-                <div>Import / export</div>
+                <div class="tw:text-sm tw:text-muted-foreground">Settings</div>
+                <div class="tw:text-2xl tw:font-semibold tw:tracking-tight">Import / export</div>
             </nav>
         </header>
 
@@ -663,7 +663,7 @@
             {/if}
         </div>
 
-        <footer class="page-footer">
+        <footer class="page-footer tw:text-xs tw:text-muted-foreground">
             <span class="txt">CSV in, CSV out — the same shape both ways</span>
             <ThemeToggle />
         </footer>

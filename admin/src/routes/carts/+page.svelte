@@ -145,9 +145,11 @@
 {:else}
 
 <div class="page page-carts shopify-skin">
-    <div class="page-content full-height">
+    <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
-            <nav class="breadcrumbs"><div>Carts</div></nav>
+            <nav class="breadcrumbs">
+                <div class="tw:text-2xl tw:font-semibold tw:tracking-tight">Carts</div>
+            </nav>
 
             <div class="inline-flex gap-sm">
                 <button
@@ -212,7 +214,8 @@
             </div>
         </header>
 
-        <div class="page-table-wrapper">
+        <!-- DESIGN.md §5: a border and a background step, never a shadow. -->
+        <div class="page-table-wrapper tw:rounded-xl tw:border">
             <table class="table responsive-table">
                 <thead class="sticky">
                     <tr>
@@ -289,9 +292,19 @@
                     {:else if !carts.length}
                         <tr>
                             <td colspan="7" class="txt-center txt-hint p-base">
-                                {list.pristine
-                                    ? "Nothing abandoned yet. A basket lands here when a shopper leaves one longer than the cart TTL."
-                                    : "No cart matches that. Try clearing a filter."}
+                                <div class="m-b-10">
+                                    <i
+                                        class="ri-shopping-cart-2-line"
+                                        style="font-size: 32px"
+                                        aria-hidden="true"
+                                    ></i>
+                                </div>
+                                {#if list.pristine}
+                                    Nothing abandoned yet. A basket lands here when a shopper
+                                    leaves one standing longer than the cart TTL.
+                                {:else}
+                                    No cart matches that. Try clearing a filter.
+                                {/if}
                             </td>
                         </tr>
                     {/if}
@@ -299,7 +312,7 @@
             </table>
         </div>
 
-        <footer class="page-footer">
+        <footer class="page-footer tw:text-xs tw:text-muted-foreground">
             <Pager
                 {meta}
                 {loading}

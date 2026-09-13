@@ -167,10 +167,10 @@
     <NoAccess right="catalog.read" what="collections" />
 {:else}
     <div class="page page-collections shopify-skin">
-        <div class="page-content full-height">
+        <div class="page-content full-height tw:bg-background tw:text-foreground">
             <header class="page-header">
                 <nav class="breadcrumbs">
-                    <div class="breadcrumb-item">Collections</div>
+                    <div class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">Collections</div>
                 </nav>
 
                 <div class="inline-flex gap-sm">
@@ -195,7 +195,7 @@
                 {/if}
             </header>
 
-            <div class="page-table-wrapper">
+            <div class="page-table-wrapper tw:rounded-xl tw:border">
                 <table class="table responsive-table">
                     <thead class="sticky">
                         <tr>
@@ -321,7 +321,7 @@
                 </table>
             </div>
 
-            <footer class="page-footer">
+            <footer class="page-footer tw:text-xs tw:text-muted-foreground">
                 <Pager
                     {meta}
                     {loading}

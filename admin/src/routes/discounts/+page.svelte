@@ -634,9 +634,11 @@
 {:else}
 
 <div class="page page-discounts shopify-skin">
-    <div class="page-content full-height">
+    <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
-            <nav class="breadcrumbs"><div>Discounts</div></nav>
+            <nav class="breadcrumbs">
+                <div class="tw:text-2xl tw:font-semibold tw:tracking-tight">Discounts</div>
+            </nav>
 
             <form class="fields searchbar" onsubmit={submitSearch}>
                 <div class="field">
@@ -686,7 +688,7 @@
             </div>
         </header>
 
-        <div class="page-table-wrapper">
+        <div class="page-table-wrapper tw:rounded-xl tw:border">
             <table class="table">
                 <thead class="sticky">
                     <tr>
@@ -898,7 +900,7 @@
             </BulkBar>
         {/if}
 
-        <footer class="page-footer">
+        <footer class="page-footer tw:text-xs tw:text-muted-foreground">
             <Pager
                 {meta}
                 {loading}
