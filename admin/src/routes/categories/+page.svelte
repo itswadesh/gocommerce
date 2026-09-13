@@ -471,6 +471,20 @@
 
         errors = {};
         if (!form.title.trim()) errors.title = "A title is required.";
+        /*
+         * A metafield is identified by its label, and cleanedAttributes() drops
+         * a row without one. Dropping an untouched row is right — clicking "Add
+         * a metafield" and changing your mind should not be an error. Dropping
+         * one somebody filled in is not: a handle typed with no label went away
+         * on save and the screen said "Category saved", so the only way to find
+         * out was to reopen the drawer and notice the row missing.
+         */
+        const halfFilled = attributes.findIndex(
+            (a) => !a.label.trim() && (a.key.trim() || a.choices.some((c) => c.trim())),
+        );
+        if (halfFilled !== -1) {
+            errors.attributes = `Field ${halfFilled + 1} needs a name before it can be saved.`;
+        }
         const position = readPosition();
         if (position === undefined && form.position.trim() !== "") {
             errors.position = "A position is a whole number, 0 or more.";
@@ -1060,6 +1074,8 @@
             <i class="ri-list-settings-line" aria-hidden="true"></i>
             Category metafields
         </h6>
+
+        {#if errors.attributes}<div class="field-help error">{errors.attributes}</div>{/if}
 
         {#each attributes as attr, i (i)}
             <div class="attr-row" class:m-t-sm={i > 0}>
