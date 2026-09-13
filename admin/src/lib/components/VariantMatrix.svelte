@@ -773,6 +773,28 @@
         return items.every((v) => v.stock_on_hand === first) ? String(first) : "";
     }
 
+    /**
+     * Whether a group holds more than one answer.
+     *
+     * An empty box and an empty box for different reasons look the same, and
+     * one of them reads as broken: a group whose variants are priced
+     * differently has nothing to show, which is correct and completely
+     * uninformative. These drive the placeholder so the box says which kind of
+     * empty it is.
+     */
+    function priceIsMixed(group) {
+        const items = group.items ?? [];
+        if (items.length < 2) return false;
+        const first = items[0].price?.amount_minor;
+        return items.some((v) => v.price?.amount_minor !== first);
+    }
+
+    function stockIsMixed(group) {
+        const items = (group.items ?? []).filter((v) => v.track_inventory);
+        if (items.length < 2) return false;
+        return items.some((v) => v.stock_on_hand !== items[0].stock_on_hand);
+    }
+
     /* Typed overrides live here; `undefined` means "show what the group is".
        Clearing back to undefined after a write is what puts the freshly saved
        number in the box, because `apply` re-reads the variants first. */
@@ -1402,9 +1424,11 @@
                                 <input
                                     type="text"
                                     inputmode="decimal"
-                                    placeholder="0.00"
+                                    placeholder={priceIsMixed(group) ? "Mixed" : "0.00"}
                                     disabled={working || !group.items.length}
-                                    aria-label="Price for every variant in {group.label}"
+                                    aria-label={priceIsMixed(group)
+                                        ? `Price for every variant in ${group.label} — they differ at the moment`
+                                        : `Price for every variant in ${group.label}`}
                                     value={groupPrice[group.key] ?? sharedPrice(group)}
                                     oninput={(e) => (groupPrice[group.key] = e.currentTarget.value)}
                                     onchange={() => applyGroupPrice(group)}
@@ -1415,9 +1439,11 @@
                             <div class="field">
                                 <input
                                     type="number"
-                                    placeholder="0"
+                                    placeholder={stockIsMixed(group) ? "Mixed" : "0"}
                                     disabled={working || !group.items.length}
-                                    aria-label="On hand for every variant in {group.label}"
+                                    aria-label={stockIsMixed(group)
+                                        ? `On hand for every variant in ${group.label} — they differ at the moment`
+                                        : `On hand for every variant in ${group.label}`}
                                     value={groupStock[group.key] ?? sharedStock(group)}
                                     oninput={(e) => (groupStock[group.key] = e.currentTarget.value)}
                                     onchange={() => applyGroupStock(group)}
