@@ -863,6 +863,29 @@ th.col-field-type-number {
     border-color: var(--accentColor);
 }
 
+/* A count beside an option, pushed to the far edge so the numbers line up in a
+   column and can be compared down the list rather than read one at a time. */
+.select-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.select-option-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.select-option-count {
+    margin-left: auto;
+    font-size: var(--smFontSize);
+    font-variant-numeric: tabular-nums;
+    color: var(--surfaceTxtHintColor);
+}
+.select-option.active .select-option-count {
+    color: inherit;
+}
+
 /* ------------------------------------------------------ dragging a category
  *
  * Two states, and they say different things. The row being carried fades,

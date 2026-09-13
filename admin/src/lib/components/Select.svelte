@@ -194,7 +194,15 @@
                 class:active={option.value === value}
                 onclick={() => pick(option)}
             >
-                {option.label ?? option.value}
+                <span class="select-option-label">{option.label ?? option.value}</span>
+                <!-- A count is about the option, not part of its name: kept out
+                     of the label so the search box matches words rather than
+                     digits, and so an option with no count is not padded with a
+                     stray "0". `0` is shown when it is the real answer — an
+                     empty status is worth knowing before you pick it. -->
+                {#if option.count !== undefined && option.count !== null}
+                    <span class="select-option-count">{option.count}</span>
+                {/if}
             </button>
         {/each}
 

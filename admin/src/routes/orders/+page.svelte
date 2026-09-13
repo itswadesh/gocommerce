@@ -126,7 +126,57 @@
         } finally {
             if (mine === reqId) loading = false;
         }
+        loadCounts();
     }
+
+    /* ----------------------------------------------- counts per status
+     *
+     * What each choice in the status filter would actually return, shown
+     * beside it. Without them the dropdown is six guesses: an operator opens
+     * it to find the confirmed orders and cannot tell, until they pick one,
+     * whether there are three or none.
+     *
+     * The counts honour every OTHER filter on the screen — the search box, the
+     * date range, the payment status — and only override status itself. A
+     * count that ignored the date range would read "Delivered 214" above a
+     * table showing two, which is worse than no count at all.
+     *
+     * Seven requests, each `limit=1`: the number comes from `meta.total`, so
+     * the rows are never fetched. It is the same trick the dashboard uses for
+     * its tiles, and they go out in parallel with the listing itself.
+     */
+    const STATUSES = ["pending", "confirmed", "partial", "shipped", "delivered", "cancelled"];
+    let statusCounts = $state({});
+    let countsId = 0;
+
+    async function loadCounts() {
+        if (!readable) return;
+        const mine = ++countsId;
+        const ask = async (value) => {
+            const q = list.query({ status: value, limit: 1, page: 1, sort: "", order: "" });
+            const res = await api.get("/api/admin/orders" + q);
+            return [value, res.meta?.total ?? 0];
+        };
+        try {
+            const pairs = await Promise.all(["", ...STATUSES].map(ask));
+            if (mine !== countsId) return;
+            statusCounts = Object.fromEntries(pairs);
+        } catch {
+            // A count is an adornment. If it cannot be had, the filter still
+            // works and the numbers simply do not appear.
+            if (mine === countsId) statusCounts = {};
+        }
+    }
+
+    const statusOptions = $derived([
+        { value: "", label: "Any status", count: statusCounts[""] },
+        { value: "pending", label: "Pending", count: statusCounts.pending },
+        { value: "confirmed", label: "Confirmed", count: statusCounts.confirmed },
+        { value: "partial", label: "Partly shipped", count: statusCounts.partial },
+        { value: "shipped", label: "Shipped", count: statusCounts.shipped },
+        { value: "delivered", label: "Delivered", count: statusCounts.delivered },
+        { value: "cancelled", label: "Cancelled", count: statusCounts.cancelled },
+    ]);
 
     function sortBy(field, firstDesc) {
         list.set(cycleSort(sort, field, firstDesc));
@@ -643,15 +693,7 @@
                         placeholder="Any status"
                         value={status}
                         onchange={(v) => list.set({ status: v })}
-                        options={[
-                            { value: "", label: "Any status" },
-                            { value: "pending", label: "Pending" },
-                            { value: "confirmed", label: "Confirmed" },
-                            { value: "partial", label: "Partly shipped" },
-                            { value: "shipped", label: "Shipped" },
-                            { value: "delivered", label: "Delivered" },
-                            { value: "cancelled", label: "Cancelled" },
-                        ]}
+                        options={statusOptions}
                     />
                 </div>
 
