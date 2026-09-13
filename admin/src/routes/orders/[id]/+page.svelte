@@ -1167,12 +1167,43 @@
                                                             {/if}
                                                         </div>
                                                         <div class="order-item-text">
-                                                            <div>{line.title}</div>
+                                                            <!--
+                                                                Through to the product, when there
+                                                                still is one. `product_id` is null
+                                                                for a line whose product has since
+                                                                been deleted — the rest of the row
+                                                                is a snapshot and outlives it — so
+                                                                the title falls back to plain text
+                                                                and says why, which is what the
+                                                                best-sellers table on Reports
+                                                                already does.
+
+                                                                Only in the read view. The draft
+                                                                rows above are the same titles
+                                                                while the items are being edited,
+                                                                and a link there would leave the
+                                                                page with the edit unsaved.
+                                                            -->
+                                                            {#if line.product_id}
+                                                                <a
+                                                                    href="{base}/products/{line.product_id}"
+                                                                    class="order-item-link"
+                                                                >
+                                                                    {line.title}
+                                                                </a>
+                                                            {:else}
+                                                                <div>{line.title}</div>
+                                                            {/if}
                                                             <div class="txt-hint txt-sm txt-code">
                                                                 {line.sku}{line.variant_label
                                                                     ? " · " + line.variant_label
                                                                     : ""}
                                                             </div>
+                                                            {#if !line.product_id}
+                                                                <div class="txt-hint txt-sm">
+                                                                    product deleted
+                                                                </div>
+                                                            {/if}
                                                             <!-- Which shelf the units came
                                                                  off, and therefore where a
                                                                  cancellation puts them

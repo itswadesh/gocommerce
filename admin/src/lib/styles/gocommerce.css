@@ -910,6 +910,19 @@ th.col-field-type-number {
     min-height: 38px;
 }
 
+/* The line title, when there is still a product behind it. Underlined only on
+   hover: every row carries one, and a column of permanently underlined titles
+   turns the items table into a list of links rather than a list of goods. */
+.order-item-link {
+    color: inherit;
+    text-decoration: none;
+    font-weight: inherit;
+}
+.order-item-link:hover,
+.order-item-link:focus-visible {
+    text-decoration: underline;
+}
+
 /* ------------------------------------------------- the bulk selection bar
  *
  * PocketBase's `.bulkbar` is a 450px pill, which is the right shape for the
