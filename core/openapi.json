@@ -12219,7 +12219,8 @@
           },
           "usage_limit": {
             "type": "integer",
-            "nullable": true
+            "nullable": true,
+            "description": "How many times the code may be redeemed in total. Absent leaves a stored limit alone; an explicit null removes it, so a promotion can be reopened without recreating it. Zero is refused: a limit of none is null, not 0."
           },
           "once_per_email": {
             "type": "boolean",

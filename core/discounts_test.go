@@ -475,3 +475,66 @@ func TestLegacyScopedDiscountWithNoTargetsIsRefusedByName(t *testing.T) {
 		t.Errorf("error = %q, want it to name the rule's missing half", err)
 	}
 }
+
+// A usage limit can be taken off again.
+//
+// It is set with a number and cleared with an explicit null, which is the same
+// arrangement MinSubtotalMinor has had in this struct all along. Before
+// NullableInt64 the field was a *int, so a null was indistinguishable from an
+// absent key: the patch reported "nothing to change" and the limit stayed on
+// the discount for good, while the panel's "No limit" placeholder said
+// otherwise.
+func TestDiscountUsageLimitCanBeCleared(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+
+	limit := 5
+	d := newDiscount(t, app, DiscountInput{
+		Code: "LIMITED", Title: "Five only", Kind: DiscountFixed, ValueMinor: 100,
+		UsageLimit: &limit,
+	})
+	if d.UsageLimit == nil || *d.UsageLimit != 5 {
+		t.Fatalf("created usage_limit = %v, want 5", d.UsageLimit)
+	}
+
+	// Saying nothing about it leaves it alone.
+	title := "Five only, renamed"
+	updated, err := app.Discounts().Update(ctx, d.ID, DiscountPatch{Title: &title})
+	if err != nil {
+		t.Fatalf("patch without the field: %v", err)
+	}
+	if updated.UsageLimit == nil || *updated.UsageLimit != 5 {
+		t.Errorf("after an unrelated patch usage_limit = %v, want it untouched at 5", updated.UsageLimit)
+	}
+
+	// An explicit null takes it off.
+	cleared, err := app.Discounts().Update(ctx, d.ID, DiscountPatch{
+		UsageLimit: NullableInt64{Present: true, Value: nil},
+	})
+	if err != nil {
+		t.Fatalf("clear the limit: %v", err)
+	}
+	if cleared.UsageLimit != nil {
+		t.Errorf("after clearing usage_limit = %v, want nil", *cleared.UsageLimit)
+	}
+
+	// And it can be put back.
+	eight := int64(8)
+	again, err := app.Discounts().Update(ctx, d.ID, DiscountPatch{
+		UsageLimit: NullableInt64{Present: true, Value: &eight},
+	})
+	if err != nil {
+		t.Fatalf("set the limit again: %v", err)
+	}
+	if again.UsageLimit == nil || *again.UsageLimit != 8 {
+		t.Errorf("usage_limit = %v, want 8", again.UsageLimit)
+	}
+
+	// Zero is still refused, whichever form it arrives in.
+	zero := int64(0)
+	if _, err := app.Discounts().Update(ctx, d.ID, DiscountPatch{
+		UsageLimit: NullableInt64{Present: true, Value: &zero},
+	}); err == nil {
+		t.Error("a usage limit of zero was accepted")
+	}
+}

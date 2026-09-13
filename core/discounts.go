@@ -259,10 +259,13 @@ type DiscountPatch struct {
 	MinSubtotalMinor NullableInt64 `json:"min_subtotal_minor"`
 	StartsAt         *time.Time    `json:"starts_at"`
 	EndsAt           *time.Time    `json:"ends_at"`
-	UsageLimit       *int          `json:"usage_limit"`
-	OncePerEmail     *bool         `json:"once_per_email"`
-	Active           *bool         `json:"active"`
-	Metadata         *Metadata     `json:"metadata"`
+	// UsageLimit is nullable for the reason MinSubtotalMinor above it is: a
+	// limit has to be removable, and a *int cannot tell "no limit" from "the
+	// key was not in the body".
+	UsageLimit   NullableInt64 `json:"usage_limit"`
+	OncePerEmail *bool         `json:"once_per_email"`
+	Active       *bool         `json:"active"`
+	Metadata     *Metadata     `json:"metadata"`
 }
 
 // DiscountQuery filters a listing.
@@ -866,11 +869,11 @@ func (s *Discounts) applyPatch(ctx context.Context, tx *sql.Tx, current *Discoun
 	if patch.EndsAt != nil {
 		add("ends_at", *patch.EndsAt)
 	}
-	if patch.UsageLimit != nil {
-		if *patch.UsageLimit <= 0 {
+	if patch.UsageLimit.Present {
+		if patch.UsageLimit.Value != nil && *patch.UsageLimit.Value <= 0 {
 			return Validationf("a usage limit is a count above zero")
 		}
-		add("usage_limit", *patch.UsageLimit)
+		add("usage_limit", patch.UsageLimit.Value)
 	}
 	if patch.OncePerEmail != nil {
 		add("once_per_email", *patch.OncePerEmail)
