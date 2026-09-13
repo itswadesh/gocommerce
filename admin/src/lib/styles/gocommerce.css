@@ -2960,6 +2960,15 @@ button.media-check {
     font-variant-numeric: tabular-nums;
     color: var(--surfaceTxtColor);
 }
+/* Whether the money is held, said on the figure itself. The status tokens
+   rather than new colours, so this agrees with the chip beside it and with the
+   line underneath. */
+.order-total.is-paid {
+    color: var(--successColor);
+}
+.order-total.is-unpaid {
+    color: var(--dangerColor);
+}
 
 /* What that money has done, under the figure it refers to. Green only when it
    has actually arrived — an unpaid total is not bad news, it is simply the
@@ -4284,11 +4293,60 @@ tr.handle:focus-visible {
     max-width: 68ch;
 }
 
-/* The history's icon column. `.order-card .list-item` is a wrapping flex row,
-   and without a fixed width the rows do not line up — every phrase starts at a
-   different x depending on how wide its glyph happens to be, which is what
-   makes a chronology hard to read down. */
+/*
+ * A history is a sequence, and it was drawn as six unrelated records.
+ *
+ * PocketBase's list puts a hairline above every row (a box-shadow, not a
+ * border), which is right for a list of things and wrong for a chronology: the
+ * line falls between one event and the next and cuts exactly where the eye
+ * wants continuity. A rail through the icons says the opposite thing with the
+ * same amount of ink.
+ *
+ * The icon becomes a badge so the rail can pass behind it and stop cleanly at
+ * each end, and so the glyphs sit in a column of their own width rather than
+ * each phrase starting at a different x depending on how wide its glyph
+ * happens to be.
+ */
+.order-history .list-item {
+    box-shadow: none;
+    /* Top, not centre: an entry with a second line under it would otherwise
+       drag its badge halfway down the row and break the rail's rhythm. */
+    align-items: flex-start;
+    padding-top: 0;
+    padding-bottom: 14px;
+}
+.order-history .list-item:last-child {
+    padding-bottom: 0;
+}
+.order-history .list-item::before {
+    content: "";
+    position: absolute;
+    left: 11px;
+    top: 24px;
+    bottom: 0;
+    width: 2px;
+    background: var(--border);
+}
+/* The last event has nothing to lead to. */
+.order-history .list-item:last-child::before {
+    display: none;
+}
 .order-history .list-item > i {
+    position: relative;
+    z-index: 1;
+    flex: 0 0 24px;
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--muted);
+    color: var(--muted-foreground);
+    font-size: 14px;
+}
+
+.order-history-unused-marker > i {
     width: 16px;
     flex: 0 0 auto;
     color: var(--txtHintColor);

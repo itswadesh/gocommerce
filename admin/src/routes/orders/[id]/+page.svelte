@@ -505,6 +505,22 @@
                 : "",
     );
 
+    /*
+     * The total, coloured by whether the money is actually held.
+     *
+     * Its own derivation rather than `paidClass` above, because the two answer
+     * different questions. That one drives the line UNDER the figure and stays
+     * in the hint colour while an order is merely unpaid — the argument being
+     * that owing money is the next thing to do rather than bad news. This one
+     * was asked for as a two-state signal: green when payment has been made,
+     * red when it has not. Refunded counts as not held, because the money has
+     * gone back out.
+     *
+     * Read off `payment_status` alone, so the figure and the chip beside it
+     * cannot disagree about one order.
+     */
+    const totalState = $derived(order?.payment_status === "paid" ? "is-paid" : "is-unpaid");
+
     /* The label the module that installed the provider gave it. An order can
        name a provider this build no longer has, so the code itself is the
        fallback rather than a blank. */
@@ -1468,7 +1484,7 @@
                             </h6>
                             <!-- The total leads. It is the number an order is
                                  opened to see. -->
-                            <div class="order-total">{formatMoney(order.total)}</div>
+                            <div class="order-total {totalState}">{formatMoney(order.total)}</div>
 
                             <div class="order-lines">
                                 <div class="order-line">
