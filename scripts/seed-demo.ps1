@@ -24,6 +24,7 @@ param(
     [string]$Token   = $env:GC_TOKEN,
     [int]$Orders     = 260,
     [int]$Days       = 150,
+    [int]$Carts      = 24,
     [switch]$Reset
 )
 
@@ -500,6 +501,81 @@ if ($refunded -gt 0) {
 } else {
     Write-Host "  none issued, across $($candidates.Count) candidate order(s)"
     if ($refusal) { Write-Host "  the store said: $refusal" -ForegroundColor DarkGray }
+}
+
+# ------------------------------------------------------------------- carts
+#
+# Baskets somebody opened and has not checked out, so the Carts screen has
+# something to show and the dashboard's cart count is a real number.
+#
+# These are LIVE carts, not abandoned ones, and that is a limit rather than a
+# choice. A cart becomes abandoned when it has sat untouched past Config.CartTTL
+# — thirty days by default — and the sweep marks it. There is no admin route
+# that sets the state, because the state is a fact about elapsed time rather
+# than a setting, and CartTTL is not exposed as a flag on the reference binary.
+# So seeding an abandoned cart would mean either waiting a month, rebuilding
+# with a shorter TTL, or writing the column directly — and the last of those is
+# rule 3. The Carts screen opens on the "Abandoned" filter; switch it to live
+# and these are what it shows.
+#
+# Opened through the public API exactly as a shopper's browser would: POST
+# /api/carts, then a line at a time. Nothing here is privileged, which is also
+# the point — it exercises the same path a storefront uses.
+
+Write-GCStep "Carts ($Carts live baskets)"
+
+# Only variants that can actually be added: AddLine checks stock, and a basket
+# of refusals is not a basket.
+$sellable = @()
+foreach ($p in (Invoke-GC GET '/api/admin/products?limit=200&status=active' -Admin)) {
+    foreach ($v in $p.variants) {
+        if (-not $v.active) { continue }
+        if ($v.track_inventory -and $v.available -lt 3) { continue }
+        $sellable += [pscustomobject]@{ id = $v.id; title = $p.title }
+    }
+}
+
+if ($sellable.Count -eq 0) {
+    Write-Host '  nothing in stock to put in a basket' -ForegroundColor Yellow
+} else {
+    $opened = 0
+    $lines = 0
+    $refusal = ''
+    for ($i = 0; $i -lt $Carts; $i++) {
+        # Two in three carry an email — a shopper who got as far as typing one
+        # is the one worth chasing, and the screen filters on exactly that.
+        $body = @{}
+        if ((Between 1 3) -ne 1) {
+            $person = Pick $people
+            $handle = ($person -replace '[^a-zA-Z]', '').ToLower()
+            $body.email = "$handle@example.com"
+        }
+
+        try {
+            $cart = Invoke-GC POST '/api/carts' $body
+        } catch {
+            if (-not $refusal) { $refusal = "$_" }
+            continue
+        }
+        $opened++
+
+        foreach ($n in 1..(Between 1 3)) {
+            $item = Pick $sellable
+            try {
+                Invoke-GC POST "/api/carts/$($cart.id)/line-items" @{
+                    variant_id = $item.id
+                    quantity   = (Pick @(1, 1, 2, 3))
+                } | Out-Null
+                $lines++
+            } catch {
+                # A variant that sold out between the listing and now is a
+                # refusal the storefront would get too; it is not a seed error.
+                if (-not $refusal) { $refusal = "$_" }
+            }
+        }
+    }
+    Write-Host ("  {0} basket(s) opened holding {1} line(s)" -f $opened, $lines) -ForegroundColor DarkGreen
+    if ($refusal) { Write-Host ("  some lines were refused: {0}" -f $refusal.Trim()) -ForegroundColor DarkGray }
 }
 
 # ------------------------------------------------------------------ images

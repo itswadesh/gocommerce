@@ -199,10 +199,22 @@
                     what survives on a phone, and the label stays on the button
                     for a reader who cannot see it.
                 -->
+                <!--
+                    A filter chip, and never the primary button.
+
+                    This was a plain `.btn` that dropped `secondary` when the
+                    filter was on, so an active filter rendered in the dark fill
+                    every other list screen reserves for the one action that
+                    creates something — and it sat in the primary slot at the
+                    right-hand end saying so. Carts has no such action; you
+                    cannot make a basket from in here. The toggle still reads as
+                    on or off, in the tone the inventory screen already uses for
+                    the same job.
+                -->
                 <button
                     type="button"
-                    class="btn sm pill"
-                    class:secondary={!hasLines}
+                    class="btn sm pill secondary"
+                    class:transparent={!hasLines}
                     aria-pressed={hasLines}
                     aria-label="Only baskets with something in them"
                     title="Only baskets with something in them"
