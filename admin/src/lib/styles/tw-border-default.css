@@ -1,0 +1,34 @@
+/*
+ * The border colour Tailwind's Preflight would have set, which we do not load.
+ *
+ * `tw:border` sets a border WIDTH and nothing else. In a normal Tailwind build
+ * Preflight supplies the colour — it ships `border-color` on every element —
+ * but importing it here would reset thirty-odd screens PocketBase still
+ * dresses, so design.css deliberately leaves it out. That left border-color at
+ * its CSS initial value, `currentColor`, and every migrated card drew its edge
+ * in the text colour: the dashboard tiles and the reports panels were outlined
+ * in near-black oklch(0.145) where the design asks for oklch(0.922). A keyline
+ * instead of a card edge.
+ *
+ * Why this sits in a file of its own, imported HERE:
+ *
+ * It has to beat base.css's reset, which is the Eric Meyer list — `html, body,
+ * div, span, … a, … section` — setting `border: 0`, and therefore
+ * border-color: currentColor, at one type selector of specificity. A
+ * `:where()` wrapper scores zero and loses to it, which is what the first
+ * attempt did.
+ *
+ * And it must LOSE to an explicit `tw:border-red-500`, which is one class —
+ * the same specificity this selector has. Equal specificity is settled by
+ * source order, so this has to come before Tailwind's utilities. Those are
+ * imported at the top of design.css, and CSS puts @import before any rule, so
+ * there is nowhere inside that file early enough. Hence a separate sheet,
+ * imported after PocketBase's and before design.css.
+ *
+ * `divide` needs the second selector because it borders the CHILDREN of the
+ * element the class sits on.
+ */
+[class*="tw:border"],
+[class*="tw:divide"] > * {
+    border-color: var(--border);
+}

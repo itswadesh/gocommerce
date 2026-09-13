@@ -39,6 +39,10 @@
 
 @import "./lib/styles/gocommerce.css";
 
+/* Before design.css on purpose — see the file for why the cascade needs it
+   here rather than inside it. */
+@import "./lib/styles/tw-border-default.css";
+
 /*
  * DESIGN.md, last so its tokens win where the two overlap. It brings Tailwind
  * without Preflight, so the sheets above still own every screen that has not
