@@ -302,10 +302,25 @@
 </svelte:head>
 
 {#snippet brand()}
-    <!-- The logo file is itself a wordmark, so it is the whole brand row: a name
-         beside it would say GoCommerce twice. -->
+    <!--
+        A glyph and a word, rather than a picture of both.
+
+        The logo file bakes "GoCommerce" into the SVG as a <text> element, and
+        an SVG loaded through <img> is an isolated document: it cannot reach the
+        page's @font-face, so the wordmark asked for Inter and got whatever
+        serif the renderer had. It also carried a hardcoded near-black fill,
+        which is why the dark rail needed a brightness(0) invert(1) filter to
+        make it visible at all, and it was scaled to 17px tall so the lettering
+        came out smaller than the nav beneath it.
+
+        Real text fixes all three at once: it is Inter because everything here
+        is, it takes the theme's colour like any other text, and it sits at the
+        size the stylesheet already had a class for. The mark is remixicon, the
+        icon set every other glyph in this panel comes from.
+    -->
     <a href="{base}/" class="app-brand" aria-label="GoCommerce">
-        <img src="{base}/images/logo_header.svg" alt="GoCommerce" />
+        <i class="ri-shopping-bag-3-fill app-brand-mark" aria-hidden="true"></i>
+        <span class="app-brand-name">GoCommerce</span>
     </a>
 {/snippet}
 

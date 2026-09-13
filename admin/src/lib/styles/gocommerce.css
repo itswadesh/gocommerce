@@ -886,6 +886,30 @@ th.col-field-type-number {
     color: inherit;
 }
 
+/*
+ * A dropdown is the height of the buttons beside it.
+ *
+ * form.css floors `.input` at a literal 38px. Everything else in a toolbar is
+ * sized from --btnHeight, which `shopify-skin` re-points to 32 — so the tokens
+ * moved the buttons and the text inputs and left the selects six pixels taller
+ * than their neighbours, which is exactly the kind of difference that reads as
+ * broken without being nameable.
+ *
+ * `min-height`, not `height`, so a multiple select still grows to fit the
+ * tokens somebody has chosen. Single-value selects, which is nearly all of
+ * them, sit on the line.
+ */
+.input.select {
+    min-height: var(--btnHeight);
+}
+/* A chosen-token box is a different object and keeps its own floor: its content
+   is a wrapping row, and squeezing it to a button's height clips the first
+   line the moment two tokens are picked. */
+.input.select.multiple,
+.input.select.token-input {
+    min-height: 38px;
+}
+
 /* ------------------------------------------------- the bulk selection bar
  *
  * PocketBase's `.bulkbar` is a 450px pill, which is the right shape for the
@@ -3431,9 +3455,10 @@ button.media-check {
     text-decoration: none;
     color: var(--surfaceTxtColor);
 }
-.app-brand img {
-    height: 17px;
-    width: auto;
+.app-brand-mark {
+    font-size: 18px;
+    line-height: 1;
+    color: var(--primary, currentColor);
 }
 .app-brand-name {
     font-size: 13px;
@@ -3441,15 +3466,9 @@ button.media-check {
     letter-spacing: -0.01em;
 }
 
-/*
- * The wordmark is a single near-black colour, drawn for the old accent header.
- * On the dark rail it disappears, so it is forced to white rather than a second
- * file being introduced: brightness(0) flattens it to black whatever it was,
- * and invert(1) then makes that white.
- */
-[data-color-scheme="dark"] .app-brand img {
-    filter: brightness(0) invert(1);
-}
+/* No dark-mode correction any more: the mark and the name are a glyph and
+   text, so both take the theme's colour the way everything else does. The
+   filter that used to flatten and invert the image is gone with it. */
 
 .app-sidebar-nav {
     display: flex;
