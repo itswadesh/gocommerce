@@ -4314,6 +4314,11 @@ tr.handle:focus-visible {
     align-items: flex-start;
     padding-top: 0;
     padding-bottom: 14px;
+    /* list.css floors every row at 54px, which is right for a list of things
+       you click and wrong here: a one-line entry then opens a thirty-pixel hole
+       above the next while a two-line entry sits tight, so the rail's rhythm
+       reports the length of the text rather than the passage of time. */
+    min-height: 0;
 }
 .order-history .list-item:last-child {
     padding-bottom: 0;
@@ -4331,6 +4336,16 @@ tr.handle:focus-visible {
 .order-history .list-item:last-child::before {
     display: none;
 }
+/*
+ * A ring on the rail, not a filled disc.
+ *
+ * The fill was --muted, which is oklch(97%) — on a white card that is a smudge
+ * rather than a marker, and the rail appeared to pass through nothing. A border
+ * in the rail's own colour makes each entry a station on the line, and it is
+ * the answer DESIGN.md §5 gives anyway: separation is a border and a background
+ * step, never a fill for its own sake. The card-coloured background stays so
+ * the rail is masked where it crosses.
+ */
 .order-history .list-item > i {
     position: relative;
     z-index: 1;
@@ -4341,9 +4356,10 @@ tr.handle:focus-visible {
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-    background: var(--muted);
+    background: var(--card);
+    border: 1px solid var(--border);
     color: var(--muted-foreground);
-    font-size: 14px;
+    font-size: 13px;
 }
 
 .order-history-unused-marker > i {
