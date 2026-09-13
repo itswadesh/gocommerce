@@ -55,6 +55,8 @@
        navigation guard can see it — it has its own Apply, so it is not part of
        what Save writes. */
     let axesDirty = $state(false);
+    /* The matrix, so the page's Save can apply the option draft it holds. */
+    let matrix = $state(null);
     let collections = $state([]);
     // The whole tree, flattened depth-first. Unlike the vocabularies below it
     // is a real table with a route of its own, so it is asked for rather than
@@ -786,6 +788,19 @@
     async function save() {
         if (saving || !product) return;
 
+        /*
+         * The option draft goes with the rest. It has its own endpoint, because
+         * applying options creates and deletes variants and the engine reports
+         * what changed — but it no longer has its own button, because two saves
+         * on one screen meant the obvious one silently left work behind.
+         *
+         * Fired rather than awaited: a destructive change opens a confirmation,
+         * and that answer is the operator's to give in their own time. The
+         * product's own fields save either way, and if the confirmation is
+         * dismissed the save bar stays up saying the options are still pending.
+         */
+        matrix?.applyOptions();
+
         errors = {};
         if (!form.title.trim()) errors.title = "A title is required.";
         if (!hasOptions) {
@@ -1116,19 +1131,18 @@
      of the panel stays PocketBase — see the block in gocommerce.css. -->
 <div class="page page-products shopify-skin skin-recessed">
     <div class="page-content full-height">
-        <!-- `guarded` is wider than `dirty` on this one screen: the option
-             matrix holds a draft that Save cannot write — it has its own Apply
-             — and that Save must therefore not claim to. Warning about it is a
-             different question from saving it, and the answer to that one is
-             yes. -->
+        <!-- `dirty` includes the option draft, because Save now applies it.
+             This used to say the opposite — that the matrix held something Save
+             could not write, so Save must not claim to — which was honest about
+             the code and confusing on the screen: two Saves, and the obvious one
+             left work behind. One Save, and the confirmation still asks before
+             anything is deleted. -->
         <!-- Nothing to save without catalog.write, so no bar and no
              Ctrl+S: a save that can only be refused is worse than no save. -->
         <SaveBar
-            dirty={dirty && writable}
+            dirty={(dirty || axesDirty) && writable}
             {saving}
-            guarded={writable && (dirty || axesDirty)}
             message="Unsaved changes"
-            guardedMessage="Options changed — use Save options below to apply them"
             saveLabel="Save"
             onsave={save}
             ondiscard={discard}
@@ -1563,7 +1577,7 @@
                          itself when it does. -->
                     <section class="card">
                     {#if writable}
-                        <VariantMatrix bind:product bind:axesDirty {media} onchange={resync} />
+                        <VariantMatrix bind:this={matrix} bind:product bind:axesDirty {media} onchange={resync} />
                     {:else}
                         <!--
                             The matrix has no read-only mode, and it is the one

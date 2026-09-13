@@ -480,6 +480,24 @@
         return "";
     }
 
+    /**
+     * Apply the option draft, for the screen's one Save button.
+     *
+     * Options used to have a Save of their own, beside the page's. Two saves on
+     * one screen meant the obvious one did not do what it said: an operator
+     * typed an option, pressed Save, was told the product was saved, and the
+     * option was still sitting there unapplied.
+     *
+     * The confirmation stays. Applying options creates and deletes variants,
+     * and the dialog that names the ones about to go is the whole reason this
+     * was ever a separate action — it is the destructive half that needed
+     * asking about, not the saving half.
+     */
+    export function applyOptions() {
+        if (!axesDirty) return;
+        askSaveOptions();
+    }
+
     function askSaveOptions() {
         axesError = validateAxes();
         if (axesError) return;
@@ -1164,25 +1182,9 @@
 
     {#if axesError}<div class="field-help error">{axesError}</div>{/if}
 
-    <div class="inline-flex gap-sm m-t-sm">
-        <button
-            type="button"
-            class="btn sm"
-            class:loading={savingAxes}
-            disabled={savingAxes}
-            onclick={askSaveOptions}
-        >
-            <span class="txt">Save options</span>
-        </button>
-        <button
-            type="button"
-            class="btn sm transparent secondary"
-            disabled={savingAxes}
-            onclick={() => ((axesDirty = false), (axesError = ""), (generate = true))}
-        >
-            <span class="txt">Discard</span>
-        </button>
-    </div>
+    <!-- No Save of its own any more: the page has one Save and it covers this
+         too. What stays is the confirmation, which is the part that mattered —
+         applying options can delete variants, and that is worth asking about. -->
     <div class="field-help">
         The whole matrix is applied in one transaction. A variant whose combination survives is
         left completely alone — price, SKU and stock included — and one whose combination is gone
