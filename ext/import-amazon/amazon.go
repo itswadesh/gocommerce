@@ -40,6 +40,22 @@ type Listing struct {
 	// Variants each name one value per axis in that same order.
 	Options  []ListingOption  `json:"options"`
 	Variants []ListingVariant `json:"variants"`
+	// Rating and ReviewCount are the listing's summary; Reviews are the ones
+	// the page shows in full. They are the marketplace's customers' words
+	// about the marketplace's listing, and are recorded as such.
+	Rating      float64  `json:"rating"`
+	ReviewCount int      `json:"review_count"`
+	Reviews     []Review `json:"reviews"`
+}
+
+// Review is one customer review as the page showed it.
+type Review struct {
+	Title    string  `json:"title"`
+	Rating   float64 `json:"rating"`
+	Author   string  `json:"author"`
+	Date     string  `json:"date"`
+	Body     string  `json:"body"`
+	Verified bool    `json:"verified"`
 }
 
 // Spec is one row of the details table, kept ordered because the page's
@@ -93,6 +109,9 @@ type page struct {
 	Breadcrumbs []string `json:"breadcrumbs"`
 	Images      []string `json:"images"`
 	Twister     *twister `json:"twister"`
+	Rating      float64  `json:"rating"`
+	ReviewCount int      `json:"review_count"`
+	Reviews     []Review `json:"reviews"`
 }
 
 // twister is Amazon's name for the variation widget, and the shape of the
@@ -191,12 +210,11 @@ func (f *chromeFetcher) fetch(ctx context.Context, url string) (*page, error) {
 			continue
 		}
 		if !p.Blocked {
-			// The product page has just arrived; give its own scripts the
-			// same settle a navigation gets before reading it for real.
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(f.settle):
+			// The gate has cleared — and Amazon lands the person on its home
+			// page, not back on the listing. So ask for the listing again,
+			// now that the session is accepted, and read that.
+			if err := f.tab.navigate(ctx, url, f.settle); err != nil {
+				return nil, err
 			}
 			return f.extract(ctx)
 		}
@@ -254,8 +272,9 @@ func crawl(ctx context.Context, f pageFetcher, rawURL string, maxVariants int) (
 	}
 	listing := &Listing{
 		ASIN: parent.ASIN, URL: parsed.String(), Title: parent.Title, Brand: cleanBrand(parent.Brand),
-		Bullets: parent.Bullets, Description: parent.Description,
+		Bullets: dedupe(parent.Bullets), Description: parent.Description,
 		Breadcrumbs: parent.Breadcrumbs, Images: parent.Images, Currency: currency,
+		Rating: parent.Rating, ReviewCount: parent.ReviewCount, Reviews: parent.Reviews,
 	}
 	for _, kv := range parent.Specs {
 		if len(kv) == 2 {
@@ -381,6 +400,23 @@ func sortedASINs(tw *twister) []string {
 		for j := i; j > 0 && less(out[j], out[j-1]); j-- {
 			out[j], out[j-1] = out[j-1], out[j]
 		}
+	}
+	return out
+}
+
+// dedupe drops repeats, keeping the first of each and the order: the page
+// carries "About this item" in a collapsed and an expanded copy, and both
+// have the same bullets.
+func dedupe(items []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(items))
+	for _, s := range items {
+		key := strings.ToLower(strings.TrimSpace(s))
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, s)
 	}
 	return out
 }
@@ -599,6 +635,16 @@ const extractScript = `(() => {
     push(text(cells[0]), text(full || last).replace(/\s*See more$/i, ''));
   });
   qa('#detailBullets_feature_div li').forEach(li => { const parts = text(li).split(/\s*:\s*/); if (parts.length >= 2) push(parts[0], parts.slice(1).join(': ')); });
+  // The newer "product facts" layout — Fabric type, Care instructions, Origin —
+  // is a grid of left/right columns rather than a table, and lives above the
+  // "About this item" bullets on apparel listings.
+  qa('#productFactsDesktopExpander .a-fixed-left-grid, #productFactsDesktop_feature_div .a-fixed-left-grid').forEach(row => {
+    push(text(q('.a-col-left', row)), text(q('.a-col-right', row)));
+  });
+  qa('#productFactsDesktopExpander .product-facts-detail, #productFactsDesktop_feature_div .product-facts-detail').forEach(row => {
+    const cols = qa('.a-col-left, .a-col-right', row);
+    if (cols.length >= 2) push(text(cols[0]), text(cols[1]));
+  });
   out.specs = specs;
 
   // A price is read from the buy box and nowhere else: the page also carries
@@ -675,6 +721,21 @@ const extractScript = `(() => {
     }
   }
   out.images = Array.from(new Set(images.filter(Boolean)));
+
+  // Ratings and reviews, for the record: the average and the count from the
+  // summary, and every review the page shows in full.
+  const stars = s => { const m = (s || '').match(/([0-9][.,][0-9])/); return m ? parseFloat(m[1].replace(',', '.')) : 0; };
+  out.rating = stars(text(q('#acrPopover .a-icon-alt') || q('#averageCustomerReviews .a-icon-alt') || q('[data-hook="rating-out-of-text"]')));
+  const countMatch = text(q('#acrCustomerReviewText') || q('[data-hook="total-review-count"]')).replace(/[,.]/g, '').match(/(\d+)/);
+  out.review_count = countMatch ? parseInt(countMatch[1], 10) : 0;
+  out.reviews = qa('[data-hook="review"], div[id^="customer_review-"], li[data-hook="review"]').slice(0, 20).map(r => ({
+    title: text(q('[data-hook="review-title"]', r)).replace(/^[0-9][.,][0-9] out of 5 stars\s*/i, ''),
+    rating: stars(text(q('[data-hook="review-star-rating"] .a-icon-alt', r) || q('[data-hook="cmps-review-star-rating"] .a-icon-alt', r))),
+    author: text(q('.a-profile-name', r)),
+    date: text(q('[data-hook="review-date"]', r)),
+    body: text(q('[data-hook="review-body"]', r)).slice(0, 4000),
+    verified: !!q('[data-hook="avp-badge"]', r)
+  })).filter(rv => rv.body);
 
   out.debug = {
     prices: qa('.a-price .a-offscreen, #price_inside_buybox, #priceblock_ourprice, .priceToPay').slice(0, 6).map(text),

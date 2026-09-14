@@ -70,12 +70,20 @@
     "schemas": {
       "ImportAmazonImageOptions": {
         "type": "object",
-        "description": "What to do to every picture. The defaults are a little lighter, a little more contrast, and mirrored — mirroring reverses any text in a picture.",
+        "description": "What to do to every picture: the background, the lighting and the orientation, never the content. By default a plain background is replaced with a soft gradient and a shadow, the lighting is lifted a touch, and the subject is turned three degrees and drawn a little smaller so the turn fits. Warmth and saturation are available and off, because they change the product rather than the photograph. A photo without a plain background (a lifestyle shot) gets the lighting change only. Mirroring is available and off: it reverses any text in a picture.",
         "properties": {
-          "brightness": {"type": "number", "minimum": -1, "maximum": 1, "default": 0.06, "description": "Added to every channel as a fraction of full scale."},
-          "contrast": {"type": "number", "minimum": 0, "maximum": 4, "default": 1.05, "description": "Scales distance from mid-grey; 1 leaves it alone."},
-          "flip": {"type": "string", "enum": ["none", "horizontal", "vertical"], "default": "horizontal"},
-          "rotate": {"type": "integer", "enum": [0, 90, 180, 270], "default": 0, "description": "Clockwise."}
+          "brightness": {"type": "number", "minimum": -1, "maximum": 1, "default": 0.03, "description": "Added to every channel as a fraction of full scale."},
+          "contrast": {"type": "number", "minimum": 0, "maximum": 4, "default": 1.04, "description": "Scales distance from mid-grey; 0 or 1 leaves it alone."},
+          "warmth": {"type": "number", "minimum": -1, "maximum": 1, "default": 0, "description": "Colour balance: positive towards amber, negative towards blue. Off by default: it changes the product's colour."},
+          "saturation": {"type": "number", "minimum": 0, "maximum": 3, "default": 0, "description": "Colour away from grey; 0 or 1 leaves it alone. Off by default, for the same reason."},
+          "background": {"type": "string", "enum": ["keep", "color", "gradient"], "default": "gradient", "description": "What replaces a plain background: nothing, one colour, or a vertical gradient from background_color to background_to."},
+          "background_color": {"type": "string", "default": "#F6F7F9", "description": "#RRGGBB."},
+          "background_to": {"type": "string", "default": "#E4E7EC", "description": "#RRGGBB; the bottom of a gradient."},
+          "scale": {"type": "number", "minimum": 0.5, "maximum": 1, "default": 0.92, "description": "Shrinks the subject about the centre so the new background shows around it; 1 leaves it alone."},
+          "tilt": {"type": "number", "minimum": -15, "maximum": 15, "default": 3, "description": "Turns the subject by a few degrees, clockwise positive — the orientation change that does not reverse text."},
+          "shadow": {"type": "boolean", "default": true, "description": "A soft shadow under the subject on the new background."},
+          "flip": {"type": "string", "enum": ["none", "horizontal", "vertical"], "default": "none"},
+          "rotate": {"type": "integer", "enum": [0, 90, 180, 270], "default": 0, "description": "Clockwise, the whole picture."}
         }
       },
       "ImportAmazonJob": {

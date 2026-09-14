@@ -313,7 +313,9 @@
     let importForm = $state({
         url: "",
         brighten: true,
-        mirror: true,
+        background: true,
+        tilt: true,
+        mirror: false,
         max_variants: 30,
         status: "draft",
         price: "",
@@ -406,8 +408,12 @@
         const body = {
             url: importForm.url.trim(),
             images: {
-                brightness: importForm.brighten ? 0.06 : 0,
-                contrast: importForm.brighten ? 1.05 : 1,
+                brightness: importForm.brighten ? 0.03 : 0,
+                contrast: importForm.brighten ? 1.04 : 1,
+                background: importForm.background ? "gradient" : "keep",
+                scale: importForm.background || importForm.tilt ? 0.92 : 1,
+                tilt: importForm.tilt ? 3 : 0,
+                shadow: importForm.background,
                 flip: importForm.mirror ? "horizontal" : "none",
                 rotate: 0,
             },
@@ -1310,16 +1316,30 @@
                     Pictures
                 </h6>
                 <div class="field">
+                    <label for="import-background">New background</label>
+                    <input id="import-background" type="checkbox" bind:checked={importForm.background} />
+                </div>
+                <div class="field-help">
+                    A plain white background becomes a soft grey gradient with a shadow under the
+                    product, drawn a little smaller inside it. Photos without a plain background are
+                    left as they are.
+                </div>
+                <div class="field m-t-sm">
                     <label for="import-brighten">Lift the lighting a little</label>
                     <input id="import-brighten" type="checkbox" bind:checked={importForm.brighten} />
+                </div>
+                <div class="field m-t-sm">
+                    <label for="import-tilt">Turn it three degrees</label>
+                    <input id="import-tilt" type="checkbox" bind:checked={importForm.tilt} />
                 </div>
                 <div class="field m-t-sm">
                     <label for="import-mirror">Mirror left to right</label>
                     <input id="import-mirror" type="checkbox" bind:checked={importForm.mirror} />
                 </div>
                 <div class="field-help">
-                    Mirroring reverses any text in a picture — switch it off for packaging shots.
-                    Neither change alters whose picture it is.
+                    Background, lighting and orientation change; the product itself does not — no
+                    colour shift. Mirroring reverses any text, so it is off. None of this alters
+                    whose picture it is.
                 </div>
 
                 <h6 class="section-title">

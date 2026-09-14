@@ -130,20 +130,22 @@ func testImage() *image.RGBA {
 func TestAdjustLighting(t *testing.T) {
 	t.Parallel()
 	src := testImage()
-	out := adjust(src, imageOptions{Brightness: 0.1})
+	out, _ := adjust(src, imageOptions{Brightness: 0.1})
 	if luma(out.RGBAAt(1, 1)) <= luma(src.RGBAAt(1, 1)) {
 		t.Error("brightness did not make the picture lighter")
 	}
 	// Clamped, not wrapped: a bright pixel pushed past white stays white.
 	white := image.NewRGBA(image.Rect(0, 0, 1, 1))
 	white.SetRGBA(0, 0, color.RGBA{250, 250, 250, 255})
-	if got := adjust(white, imageOptions{Brightness: 0.5}).RGBAAt(0, 0); got.R != 255 || got.A != 255 {
+	if lit, _ := adjust(white, imageOptions{Brightness: 0.5}); lit.RGBAAt(0, 0).R != 255 || lit.RGBAAt(0, 0).A != 255 {
+		got := lit.RGBAAt(0, 0)
 		t.Errorf("pushed past white = %+v, want 255 with alpha kept", got)
 	}
 	// Contrast pulls a mid-grey nowhere and a dark pixel darker.
 	dark := image.NewRGBA(image.Rect(0, 0, 1, 1))
 	dark.SetRGBA(0, 0, color.RGBA{40, 40, 40, 255})
-	if got := adjust(dark, imageOptions{Contrast: 1.5}).RGBAAt(0, 0); got.R >= 40 {
+	if darker, _ := adjust(dark, imageOptions{Contrast: 1.5}); darker.RGBAAt(0, 0).R >= 40 {
+		got := darker.RGBAAt(0, 0)
 		t.Errorf("contrast 1.5 on 40 = %d, want darker", got.R)
 	}
 }
@@ -152,15 +154,15 @@ func TestAdjustOrientation(t *testing.T) {
 	t.Parallel()
 	src := testImage()
 
-	h := adjust(src, imageOptions{Flip: "horizontal"})
+	h, _ := adjust(src, imageOptions{Flip: "horizontal"})
 	if h.RGBAAt(0, 0) != src.RGBAAt(63, 0) || h.RGBAAt(63, 31) != src.RGBAAt(0, 31) {
 		t.Error("horizontal flip did not mirror left to right")
 	}
-	v := adjust(src, imageOptions{Flip: "vertical"})
+	v, _ := adjust(src, imageOptions{Flip: "vertical"})
 	if v.RGBAAt(0, 0) != src.RGBAAt(0, 31) {
 		t.Error("vertical flip did not mirror top to bottom")
 	}
-	r := adjust(src, imageOptions{Rotate: 90})
+	r, _ := adjust(src, imageOptions{Rotate: 90})
 	if b := r.Bounds(); b.Dx() != 32 || b.Dy() != 64 {
 		t.Fatalf("rotated bounds = %v, want 32x64", b)
 	}
@@ -168,15 +170,166 @@ func TestAdjustOrientation(t *testing.T) {
 	if r.RGBAAt(31, 0) != src.RGBAAt(0, 0) {
 		t.Error("90° rotation is not clockwise")
 	}
-	full := adjust(src, imageOptions{Rotate: 180})
+	full, _ := adjust(src, imageOptions{Rotate: 180})
 	if full.RGBAAt(0, 0) != src.RGBAAt(63, 31) {
 		t.Error("180° rotation did not turn the picture over")
 	}
-	if !(imageOptions{}).noop() || (imageOptions{Flip: "horizontal"}).noop() {
+	if !(imageOptions{}).noop() || (imageOptions{Flip: "horizontal"}).noop() || (imageOptions{Background: "gradient"}).noop() {
 		t.Error("noop is wrong about what changes a picture")
 	}
 	if err := (imageOptions{Rotate: 45}).validate(); err == nil {
 		t.Error("a 45° rotation was accepted")
+	}
+	if err := (imageOptions{BackgroundColor: "beige"}).validate(); err == nil {
+		t.Error("a colour that is not #RRGGBB was accepted")
+	}
+	if err := (imageOptions{Scale: 0.2}).validate(); err == nil {
+		t.Error("a scale that would shrink the subject to a dot was accepted")
+	}
+}
+
+// productShot is a blue box on a white background with a white label on the
+// box: the shape of a marketplace product photo, and the trap in it — a white
+// patch that is not background because nothing connects it to the edge.
+func productShot() *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, 96, 64))
+	for y := 0; y < 64; y++ {
+		for x := 0; x < 96; x++ {
+			c := color.RGBA{255, 255, 255, 255}
+			if x >= 33 && x < 63 && y >= 22 && y < 42 {
+				c = color.RGBA{30, 60, 200, 255}
+			}
+			if x >= 46 && x < 50 && y >= 30 && y < 34 {
+				c = color.RGBA{255, 255, 255, 255}
+			}
+			img.SetRGBA(x, y, c)
+		}
+	}
+	return img
+}
+
+func TestBackgroundIsReplacedAndTheSubjectKept(t *testing.T) {
+	t.Parallel()
+	out, how := adjust(productShot(), imageOptions{
+		Background: "gradient", BackgroundColor: "#E0E0E0", BackgroundTo: "#A0A0A0",
+		Scale: 0.9, Shadow: true,
+	})
+	if how != treatedFully {
+		t.Fatalf("treatment = %v, want the full one for a blue box on white", how)
+	}
+	// The corners are the gradient now, not white: the top of it at the top.
+	if c := out.RGBAAt(2, 2); c.R < 214 || c.R > 226 || c.R != c.G {
+		t.Errorf("top corner = %+v, want about #E0E0E0", c)
+	}
+	if c := out.RGBAAt(2, 61); c.R < 154 || c.R > 170 {
+		t.Errorf("bottom corner = %+v, want about #A0A0A0", c)
+	}
+	// The subject is still the subject, a little smaller about the centre.
+	if c := out.RGBAAt(36, 24); c.B < 150 || c.R > 80 {
+		t.Errorf("subject = %+v, want it still blue", c)
+	}
+	// Blue is B well above R; the gradient grey there now has them equal.
+	if c := out.RGBAAt(34, 22); int(c.B)-int(c.R) > 60 {
+		t.Errorf("old subject corner = %+v, want it given up to the background by the scale", c)
+	}
+	// The white label inside the box is not background: nothing connects it
+	// to the edge, so the flood never reached it.
+	if c := out.RGBAAt(48, 32); c.R < 240 || c.G < 240 {
+		t.Errorf("label = %+v, want it still white", c)
+	}
+	// A shadow under the subject, and none out in the open.
+	if under, open := luma(out.RGBAAt(48, 45)), luma(out.RGBAAt(10, 45)); under > open-3 {
+		t.Errorf("under the subject %.0f vs open ground %.0f, want a shadow", under, open)
+	}
+}
+
+// whiteShirt is a white product on a white background with a dark logo and
+// dark trim — the undershirt that came back from a real listing with its
+// torso painted over. The only pixels a colour cut can find are the logo and
+// the trim; everything between them is the product, and white.
+func whiteShirt() *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, 120, 120))
+	for y := 0; y < 120; y++ {
+		for x := 0; x < 120; x++ {
+			c := color.RGBA{255, 255, 255, 255}
+			if x >= 30 && x < 90 && y >= 20 && y < 100 {
+				c = color.RGBA{252, 252, 252, 255} // the shirt: white, within tolerance of white
+			}
+			if x >= 55 && x < 65 && y >= 40 && y < 50 {
+				c = color.RGBA{20, 20, 20, 255} // the logo
+			}
+			if x >= 30 && x < 90 && y >= 96 && y < 100 {
+				c = color.RGBA{60, 60, 60, 255} // the hem
+			}
+			img.SetRGBA(x, y, c)
+		}
+	}
+	return img
+}
+
+func TestWhiteProductIsNotCutOut(t *testing.T) {
+	t.Parallel()
+	out, how := adjust(whiteShirt(), imageOptions{
+		Background: "gradient", BackgroundColor: "#E0E0E0", BackgroundTo: "#A0A0A0",
+		Scale: 0.92, Tilt: 3, Shadow: true,
+	})
+	if how != treatedAround {
+		t.Fatalf("treatment = %v, want the around-the-edges one for white on white", how)
+	}
+	// The shirt is exactly as photographed: white, where it was, and the logo
+	// where it was — not turned, not shrunk, not painted over.
+	if c := out.RGBAAt(45, 70); c.R < 248 || c.G < 248 || c.B < 248 {
+		t.Errorf("shirt = %+v, want it left white", c)
+	}
+	if c := out.RGBAAt(60, 45); c.R > 40 {
+		t.Errorf("logo = %+v, want it where it was", c)
+	}
+	// The far corners are the new background, so the picture did change.
+	if c := out.RGBAAt(2, 2); c.R > 236 {
+		t.Errorf("corner = %+v, want it blended toward the gradient", c)
+	}
+	// No ghost: nothing dark was painted where the shadow of the fragments
+	// would have fallen.
+	if c := out.RGBAAt(60, 108); c.R < 150 {
+		t.Errorf("below the shirt = %+v, want no shadow of a cut that was not made", c)
+	}
+}
+
+// A picture with no plain background keeps the one it has.
+func TestLifestyleShotKeepsItsBackground(t *testing.T) {
+	t.Parallel()
+	src := testImage() // dark on the left, bright on the right: no plain edge
+	out, how := adjust(src, imageOptions{Background: "gradient", Scale: 0.9, Shadow: true})
+	if how != treatedToneOnly {
+		t.Errorf("treatment = %v, want tone only for a picture with no plain background", how)
+	}
+	for _, p := range [][2]int{{0, 0}, {63, 31}, {32, 16}} {
+		if out.RGBAAt(p[0], p[1]) != src.RGBAAt(p[0], p[1]) {
+			t.Errorf("pixel %v changed on a picture with no plain background", p)
+		}
+	}
+}
+
+func TestTiltAndWarmth(t *testing.T) {
+	t.Parallel()
+	tilted, _ := adjust(productShot(), imageOptions{Background: "color", BackgroundColor: "#FFFFFF", Tilt: 10})
+	// A tilted box has a corner where the level one had background.
+	if c := tilted.RGBAAt(35, 43); c.B < 150 {
+		// The exact pixel depends on the resampler; the row below the old
+		// bottom edge must have picked up some blue somewhere.
+		var blue int
+		for x := 30; x < 66; x++ {
+			if tilted.RGBAAt(x, 43).B > 150 {
+				blue++
+			}
+		}
+		if blue == 0 {
+			t.Error("a 10° tilt left the row below the box untouched")
+		}
+	}
+	warm, _ := adjust(productShot(), imageOptions{Warmth: 0.5})
+	if c, s := warm.RGBAAt(40, 30), productShot().RGBAAt(40, 30); c.R <= s.R || c.B >= s.B {
+		t.Errorf("warmth moved %+v to %+v, want more red and less blue", s, c)
 	}
 }
 
@@ -288,6 +441,8 @@ func (h *harness) listingWithVariants() string {
 		Description: "A widget.", Specs: [][]string{{"Material", "Steel"}, {"Weight", "1 lb"}},
 		Price: "$19.99", Available: true, Breadcrumbs: []string{"Tools", "Widgets"},
 		Images: []string{pic("parent-1.jpg"), pic("parent-2.jpg")},
+		Rating: 4.5, ReviewCount: 1234,
+		Reviews: []Review{{Title: "Solid", Rating: 5, Author: "A. Buyer", Date: "Reviewed in the United States on May 1, 2026", Body: "Does the job.", Verified: true}},
 		Twister: &twister{
 			Dimensions: []string{"color_name", "size_name"},
 			Labels:     map[string]string{"color_name": "Color", "size_name": "Size"},
@@ -397,6 +552,12 @@ func TestImportCreatesTheProductWithVariantsAndPictures(t *testing.T) {
 	if meta["asin"] != "B0PARENT01" || meta["currency"] != "USD" {
 		t.Errorf("metadata.amazon = %v, want the ASIN and currency recorded", meta)
 	}
+	if fmt.Sprint(meta["rating"]) != "4.5" || fmt.Sprint(meta["review_count"]) != "1234" {
+		t.Errorf("rating %v / %v reviews, want 4.5 and 1234 recorded", meta["rating"], meta["review_count"])
+	}
+	if reviews, _ := meta["reviews"].([]any); len(reviews) != 1 {
+		t.Errorf("reviews = %v, want the one the page showed", meta["reviews"])
+	}
 
 	// Pictures: parent's two, then each child's own; the one that 404ed is a
 	// warning, not a failure. Each variant nominates its own first picture.
@@ -420,21 +581,22 @@ func TestImportCreatesTheProductWithVariantsAndPictures(t *testing.T) {
 		t.Errorf("%d variants nominate a picture, want all 3", nominated)
 	}
 
-	// The stored picture was adjusted: mirrored, so the bright half is now on
-	// the left, and lighter than the source. Sampled well inside each half,
-	// where JPEG's blocks have not touched the boundary.
+	// The stored picture was adjusted. The test picture's border is dark on
+	// one side and bright on the other, so it is not a plain-background shot
+	// and keeps its composition; what changes is the tone — warmer, lighter —
+	// and nothing is mirrored. Sampled well inside each half, where JPEG's
+	// blocks have not touched the boundary.
 	stored := readStoredImage(t, h.app, media[0].URL)
 	if b := stored.Bounds(); b.Dx() != 64 || b.Dy() != 32 {
 		t.Fatalf("stored bounds = %v, want 64x32", b)
 	}
 	left, right := stored.RGBAAt(8, 16), stored.RGBAAt(56, 16)
-	if left.R < 180 || right.R > 80 {
-		t.Errorf("stored red left/right = %d/%d, want bright on the left and dark on the right after mirroring", left.R, right.R)
+	if left.R > 80 || right.R < 200 {
+		t.Errorf("stored red left/right = %d/%d, want dark on the left and bright on the right — not mirrored", left.R, right.R)
 	}
-	// 220 lifted by 0.06 and stretched by 1.05 is about 232; JPEG keeps it
-	// within a few.
-	if left.R < 224 {
-		t.Errorf("stored bright half red = %d, want it lighter than the source's 220", left.R)
+	// 220, warmed and lifted, is about 234; JPEG keeps it within a few.
+	if right.R < 224 {
+		t.Errorf("stored bright half red = %d, want it lighter than the source's 220", right.R)
 	}
 }
 
@@ -460,6 +622,11 @@ func TestImportWithoutAKeyUsesTheListingCopy(t *testing.T) {
 	}
 	if !strings.Contains(product.Description, "<li>Sturdy</li>") {
 		t.Errorf("description = %q, want the bullets as a list", product.Description)
+	}
+	// The detail rows are on the page too, not only in metadata — that is
+	// where an operator looks for the fabric and the model number.
+	if !strings.Contains(product.Description, "<strong>Material:</strong> Steel") {
+		t.Errorf("description = %q, want the details listed", product.Description)
 	}
 }
 

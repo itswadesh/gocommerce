@@ -268,12 +268,19 @@ type createRequest struct {
 	PriceMinor  *int64        `json:"price_minor"`
 }
 
-// defaultImages is what an import does to pictures when not told otherwise:
-// a touch lighter, a touch more contrast, mirrored. Mirroring is the default
-// because the request was that pictures not be the marketplace's pixel for
-// pixel, and it is the one adjustment a viewer never notices — except on
-// text, which it reverses. The drawer says so beside the switch.
-var defaultImages = imageOptions{Brightness: 0.06, Contrast: 1.05, Flip: "horizontal"}
+// defaultImages is what an import does to pictures when not told otherwise,
+// and it is the three things that can change without changing what the
+// product looks like: the plain background replaced with a soft gradient and
+// a shadow; the lighting lifted a touch; the orientation turned by three
+// degrees, drawn a little smaller so the turn fits. Colour is deliberately
+// left alone — warmth and saturation are available, and off, because they
+// change the product and not the photograph. Not mirrored: that reverses
+// text, and it is the one change a viewer catches.
+var defaultImages = imageOptions{
+	Brightness: 0.03, Contrast: 1.04,
+	Background: "gradient", BackgroundColor: "#F6F7F9", BackgroundTo: "#E4E7EC",
+	Scale: 0.92, Tilt: 3, Shadow: true,
+}
 
 func (m *Module) handleCreate(w http.ResponseWriter, r *http.Request) {
 	var in createRequest
@@ -538,6 +545,7 @@ func (m *Module) importImages(ctx context.Context, l *Listing, o imageOptions) (
 	seen := map[string]int64{}
 	linkedOnly := false
 	total := 0
+	var kept int // pictures whose product could not be separated from its background
 
 	store := func(rawURL, alt string) (int64, bool) {
 		if id, ok := seen[rawURL]; ok {
@@ -555,10 +563,13 @@ func (m *Module) importImages(ctx context.Context, l *Listing, o imageOptions) (
 		}
 		filename := l.ASIN + "-" + strconv.Itoa(total) + ".jpg"
 		if !o.noop() {
-			if processed, _, _, err := processImage(data, o); err != nil {
+			if processed, _, _, how, err := processImage(data, o); err != nil {
 				warnings = append(warnings, "could not adjust "+rawURL+": "+err.Error()+"; stored as downloaded")
 			} else {
 				data = processed
+				if how == treatedAround && (o.replacesBackground() || o.changesGeometry()) {
+					kept++
+				}
 			}
 		}
 
@@ -606,6 +617,10 @@ func (m *Module) importImages(ctx context.Context, l *Listing, o imageOptions) (
 	if total >= m.cfg.MaxImages {
 		warnings = append(warnings, fmt.Sprintf("stopped after %d pictures (Config.MaxImages)", m.cfg.MaxImages))
 	}
+	if kept > 0 {
+		warnings = append(warnings, fmt.Sprintf(
+			"%d picture(s) show a product the same colour as its background, so the product was left exactly as photographed and not turned; only the background around the edges was blended toward the new one", kept))
+	}
 	return out, warnings
 }
 
@@ -643,6 +658,7 @@ func (m *Module) createProduct(ctx context.Context, l *Listing, rw *rewrite, opt
 			"asin": l.ASIN, "url": l.URL, "brand": l.Brand,
 			"price_minor": l.PriceMinor, "currency": l.Currency,
 			"specs": l.Specs, "breadcrumbs": l.Breadcrumbs, "bullets": l.Bullets,
+			"rating": l.Rating, "review_count": l.ReviewCount, "reviews": l.Reviews,
 			"imported_at": time.Now().UTC().Format(time.RFC3339),
 			"rewritten":   rw != nil,
 		}},
@@ -732,20 +748,47 @@ func (m *Module) createProduct(ctx context.Context, l *Listing, rw *rewrite, opt
 }
 
 // plainDescription is the listing's own copy as HTML, for a store with no
-// rewrite: the description as a paragraph, the bullets as a list.
+// rewrite: the description as a paragraph, the "About this item" bullets as
+// a list, and every detail row — fabric, care, dimensions, model number — as
+// a second list. On the page, because the product page is where an operator
+// looks for them; a metadata field is where they went missing.
 func plainDescription(l *Listing) string {
 	var b strings.Builder
 	if d := strings.TrimSpace(l.Description); d != "" {
 		b.WriteString("<p>" + html.EscapeString(d) + "</p>")
 	}
 	if len(l.Bullets) > 0 {
-		b.WriteString("<ul>")
+		b.WriteString("<h3>About this item</h3><ul>")
 		for _, bullet := range l.Bullets {
 			b.WriteString("<li>" + html.EscapeString(bullet) + "</li>")
 		}
 		b.WriteString("</ul>")
 	}
+	if specs := usefulSpecs(l.Specs); len(specs) > 0 {
+		b.WriteString("<h3>Details</h3><ul>")
+		for _, s := range specs {
+			b.WriteString("<li><strong>" + html.EscapeString(s.Key) + ":</strong> " + html.EscapeString(s.Value) + "</li>")
+		}
+		b.WriteString("</ul>")
+	}
 	return b.String()
+}
+
+// usefulSpecs is the detail rows worth putting in front of a shopper: each
+// key once, and without the two rows that only describe the marketplace —
+// its own review summary and its sales rank.
+func usefulSpecs(specs []Spec) []Spec {
+	seen := map[string]bool{}
+	out := make([]Spec, 0, len(specs))
+	for _, s := range specs {
+		key := strings.ToLower(strings.TrimSpace(s.Key))
+		if key == "" || seen[key] || strings.Contains(key, "customer reviews") || strings.Contains(key, "best sellers rank") {
+			continue
+		}
+		seen[key] = true
+		out = append(out, s)
+	}
+	return out
 }
 
 // skuBase is the ASIN a SKU began as, before any "-2" a retry added.
