@@ -33,6 +33,7 @@
         pluralize,
     } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
+    import { hasModule } from "$lib/modules.svelte.js";
     import { settings } from "$lib/settings.svelte.js";
     import BulkBar from "$lib/components/BulkBar.svelte";
     import CategoryPicker from "$lib/components/CategoryPicker.svelte";
@@ -298,6 +299,28 @@
     const currency = $derived(settings.currency);
 
     let createOpen = $state(false);
+
+    /* Import from Amazon. The drawer belongs to the import-amazon module and
+       shows only in a binary that serves it — hasModule() is the probe. The
+       job runs on the server, and this polls it, so a listing with thirty
+       variations shows where it has got to rather than a spinner for a
+       minute; and when Amazon asks for a person, the job says so and waits
+       for the operator to click through in the Chrome window. */
+    let importOpen = $state(false);
+    let importing = $state(false);
+    let importJob = $state(null);
+    let importTimer = null;
+    let importForm = $state({
+        url: "",
+        brighten: true,
+        mirror: true,
+        max_variants: 30,
+        status: "draft",
+        price: "",
+    });
+    const importBusy = $derived(
+        !!importJob && (importJob.status === "queued" || importJob.status === "running"),
+    );
     let form = $state(blankForm());
     let errors = $state({});
 
@@ -359,6 +382,76 @@
     function clearSearch() {
         draftSearch = "";
         list.set({ q: "" });
+    }
+
+    function openImport() {
+        importJob = null;
+        importOpen = true;
+    }
+
+    function closeImport() {
+        importOpen = false;
+        if (importTimer) {
+            clearTimeout(importTimer);
+            importTimer = null;
+        }
+    }
+
+    async function startImport(event) {
+        event.preventDefault();
+        if (!importForm.url.trim()) {
+            toast.error("Paste the listing's URL.");
+            return;
+        }
+        const body = {
+            url: importForm.url.trim(),
+            images: {
+                brightness: importForm.brighten ? 0.06 : 0,
+                contrast: importForm.brighten ? 1.05 : 1,
+                flip: importForm.mirror ? "horizontal" : "none",
+                rotate: 0,
+            },
+            max_variants: Number(importForm.max_variants) || 30,
+            status: importForm.status,
+        };
+        if (String(importForm.price).trim() !== "") {
+            const minor = toMinor(importForm.price, currency);
+            if (minor === null || minor < 0) {
+                toast.error("That price is not a number.");
+                return;
+            }
+            body.price_minor = minor;
+        }
+        importing = true;
+        try {
+            const result = await api.post("/api/admin/x/import-amazon/jobs", body);
+            importJob = result;
+            importTimer = setTimeout(pollImport, 1200);
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            importing = false;
+        }
+    }
+
+    async function pollImport() {
+        importTimer = null;
+        if (!importJob || !importOpen) return;
+        try {
+            const result = await api.get(`/api/admin/x/import-amazon/jobs/${importJob.id}`);
+            importJob = result;
+        } catch (err) {
+            toast.error(err);
+            return;
+        }
+        if (importJob.status === "queued" || importJob.status === "running") {
+            importTimer = setTimeout(pollImport, 1500);
+            return;
+        }
+        if (importJob.status === "done") {
+            toast.success("Imported.");
+            await load();
+        }
     }
 
     function openCreate() {
@@ -751,6 +844,12 @@
                     </span>
                 </button>
 
+                {#if writable && hasModule("import-amazon")}
+                    <button type="button" class="btn secondary" onclick={openImport}>
+                        <i class="ri-amazon-line" aria-hidden="true"></i>
+                        <span class="txt">Import from Amazon</span>
+                    </button>
+                {/if}
                 {#if writable}
                     <button type="button" class="btn" onclick={openCreate}>
                         <i class="ri-add-line" aria-hidden="true"></i>
@@ -1186,6 +1285,149 @@
         </button>
     {/snippet}
 </Drawer>
+
+{#if hasModule("import-amazon")}
+    <Drawer open={importOpen} size="sm" title="Import from Amazon" onclose={closeImport}>
+        {#if !importJob}
+            <form id="import-form" onsubmit={startImport}>
+                <div class="field required">
+                    <label for="import-url">Listing URL</label>
+                    <input
+                        id="import-url"
+                        type="url"
+                        placeholder="https://www.amazon.com/dp/…"
+                        bind:value={importForm.url}
+                    />
+                </div>
+                <div class="field-help">
+                    Any marketplace. The listing and every one of its variations are read in a
+                    real Chrome, the copy is rewritten, and the product is created as a draft for
+                    you to check before it goes on sale.
+                </div>
+
+                <h6 class="section-title">
+                    <i class="ri-image-line" aria-hidden="true"></i>
+                    Pictures
+                </h6>
+                <div class="field">
+                    <label for="import-brighten">Lift the lighting a little</label>
+                    <input id="import-brighten" type="checkbox" bind:checked={importForm.brighten} />
+                </div>
+                <div class="field m-t-sm">
+                    <label for="import-mirror">Mirror left to right</label>
+                    <input id="import-mirror" type="checkbox" bind:checked={importForm.mirror} />
+                </div>
+                <div class="field-help">
+                    Mirroring reverses any text in a picture — switch it off for packaging shots.
+                    Neither change alters whose picture it is.
+                </div>
+
+                <h6 class="section-title">
+                    <i class="ri-price-tag-3-line" aria-hidden="true"></i>
+                    Prices and variations
+                </h6>
+                <div class="fields">
+                    <div class="field">
+                        <label for="import-price">Price for every variant ({currency})</label>
+                        <input
+                            id="import-price"
+                            type="text"
+                            inputmode="decimal"
+                            placeholder="Leave empty to keep the listing's"
+                            bind:value={importForm.price}
+                        />
+                    </div>
+                    <div class="delimiter"></div>
+                    <div class="field">
+                        <label for="import-max">Variations to visit</label>
+                        <input id="import-max" type="number" min="1" max="200" bind:value={importForm.max_variants} />
+                    </div>
+                </div>
+                <div class="field-help">
+                    The listing's prices are used only when the marketplace sells in {currency};
+                    otherwise they are recorded but not set, and the product stays a draft until
+                    you price it here or in the editor.
+                </div>
+
+                <div class="field m-t-sm">
+                    <label for="import-status">Create it as</label>
+                    <Select
+                        id="import-status"
+                        bind:value={importForm.status}
+                        options={[
+                            { value: "draft", label: "Draft — check it first" },
+                            { value: "active", label: "Active — on sale at once" },
+                        ]}
+                    />
+                </div>
+            </form>
+        {:else}
+            <div class="block">
+                {#if importBusy}
+                    <div class="flex gap-sm">
+                        <span class="loader sm" aria-hidden="true"></span>
+                        <span class="txt-bold">{importJob.message || importJob.step || "Starting"}</span>
+                    </div>
+                    {#if importJob.step === "waiting"}
+                        <div class="field-help m-t-sm">
+                            Amazon wants a person to click first. It is waiting in the Chrome window
+                            on the machine the store runs on; the import continues on its own once
+                            you have.
+                        </div>
+                    {/if}
+                {:else if importJob.status === "done"}
+                    <div class="txt-bold">
+                        <i class="ri-checkbox-circle-line" aria-hidden="true"></i>
+                        {importJob.message}
+                    </div>
+                {:else if importJob.status === "blocked"}
+                    <div class="txt-bold">
+                        <i class="ri-robot-line" aria-hidden="true"></i>
+                        Amazon asked for a person
+                    </div>
+                    <div class="field-help m-t-xs">{importJob.message}</div>
+                {:else}
+                    <div class="txt-bold txt-danger">
+                        <i class="ri-error-warning-line" aria-hidden="true"></i>
+                        The import failed
+                    </div>
+                    <div class="field-help m-t-xs">{importJob.message}</div>
+                {/if}
+
+                {#if importJob.warnings?.length}
+                    <h6 class="section-title m-t-base">
+                        <i class="ri-alert-line" aria-hidden="true"></i>
+                        Worth reading before it goes on sale
+                    </h6>
+                    <ul class="m-0 p-l-base">
+                        {#each importJob.warnings as warning (warning)}
+                            <li class="txt-sm txt-hint">{warning}</li>
+                        {/each}
+                    </ul>
+                {/if}
+            </div>
+        {/if}
+
+        {#snippet footer()}
+            <button type="button" class="btn transparent m-r-auto" onclick={closeImport}>
+                <span class="txt">{importJob && !importBusy ? "Close" : "Cancel"}</span>
+            </button>
+            {#if !importJob}
+                <button type="submit" form="import-form" class="btn" class:loading={importing} disabled={importing}>
+                    <span class="txt">Import</span>
+                </button>
+            {:else if importJob.status === "done" && importJob.product_id}
+                <a class="btn" href="{base}/products/{importJob.product_id}">
+                    <span class="txt">Open the product</span>
+                </a>
+            {:else if !importBusy}
+                <button type="button" class="btn secondary" onclick={() => (importJob = null)}>
+                    <span class="txt">Try again</span>
+                </button>
+            {/if}
+        {/snippet}
+    </Drawer>
+{/if}
 
 <ProductFilters
     open={filterOpen}

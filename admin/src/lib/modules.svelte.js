@@ -30,7 +30,7 @@ import { can, request } from "$lib/api.js";
 import { ensureSettings, settings } from "$lib/settings.svelte.js";
 
 /**
- * The four bundled modules that mount an admin surface, where to poke, and the
+ * The bundled modules that mount an admin surface, where to poke, and the
  * right that poke needs.
  *
  * The right is here so a probe that is certain to be refused is not made at
@@ -51,6 +51,9 @@ const PROBES = {
     invoices: { path: "/api/admin/x/invoices?limit=1", right: "orders.read" },
     mcp: { path: "/api/admin/x/mcp/audit?limit=1", right: "store.operate" },
     webhooks: { path: "/api/admin/x/webhooks/endpoints?limit=1", right: "store.operate" },
+    // Not a screen: a drawer on the products page. Probed all the same, so the
+    // "Import from Amazon" button only appears in a binary that can answer it.
+    "import-amazon": { path: "/api/admin/x/import-amazon/jobs", right: "catalog.write" },
 };
 
 /* `$state`, so hasModule() read inside a `$derived` re-runs when the answer
