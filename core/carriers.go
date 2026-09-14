@@ -175,6 +175,12 @@ var carrierPatterns = []carrierPattern{
 	{code: "safexpress", name: "Safexpress"},
 	{code: "trackon", name: "Trackon"},
 	{code: "dpd", name: "DPD"},
+	// Onfleet is a store's own drivers rather than a courier, and its task id
+	// is case-sensitive — so there is deliberately no URL here: normalizing a
+	// tracking number upper-cases it, which would produce a link that does not
+	// resolve. The recipient gets Onfleet's own tracking link from Onfleet; the
+	// number recorded here is what finds the task in the dashboard.
+	{code: "onfleet", name: "Onfleet"},
 	{
 		code: "tnt", name: "TNT",
 		urlTemplate: "https://www.tnt.com/express/en_in/site/tracking.html?searchType=con&cons=%s",

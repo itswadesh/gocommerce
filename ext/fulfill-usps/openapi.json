@@ -1,0 +1,30 @@
+{
+  "paths": {
+    "/api/admin/x/fulfill-usps/labels/{tracking}": {
+      "get": {
+        "tags": ["admin:fulfill-usps"],
+        "summary": "The USPS label for a tracking number",
+        "description": "Requires orders.read — the label prints the buyer's name and address, so whoever may read the order may print it and whoever may not, may not. Returns the PDF exactly as USPS issued it. USPS does not host labels; the engine stores the bytes when the label is bought, which is why this route exists at all and why it is the only fulfillment module with one.",
+        "security": [{"adminToken": []}],
+        "parameters": [
+          {
+            "name": "tracking",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "string"},
+            "description": "The USPS tracking number, as it appears on the shipment."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The label, ready to print.",
+            "content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}}
+          },
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    }
+  }
+}
