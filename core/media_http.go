@@ -279,11 +279,13 @@ func (a *App) handleSetProductMedia(w http.ResponseWriter, r *http.Request) {
 	RespondList(w, items, ListMeta{Total: len(items), Limit: len(items)})
 }
 
-// handleSetVariantMedia nominates one of the product's images for a variant.
+// handleSetVariantMedia sets the list of its product's pictures a variant shows.
 //
-// `media_id` is a NullableID for the reason it always is: an omitted field and
-// an explicit null decode to the same nil pointer, and "this variant has no
-// image of its own" is a choice an operator makes rather than an absence.
+// `media_ids` is the list, and `[]` clears it. `media_id` is the shape from
+// before there was a list — one picture, null to clear — and still works, so
+// a client written against it does not break on the upgrade. One of the two
+// is required: an omitted field is not an empty list, and guessing is how a
+// variant's pictures get removed by a request that never mentioned them.
 func (a *App) handleSetVariantMedia(w http.ResponseWriter, r *http.Request) {
 	id, err := pathInt64(r, "id")
 	if err != nil {
@@ -291,22 +293,31 @@ func (a *App) handleSetVariantMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		MediaID NullableID `json:"media_id"`
+		MediaIDs *[]int64   `json:"media_ids"`
+		MediaID  NullableID `json:"media_id"`
 	}
 	if err := DecodeJSON(w, r, &in); err != nil {
 		RespondError(w, r, err)
 		return
 	}
-	if !in.MediaID.Present {
-		RespondError(w, r, Validationf("media_id is required; send null to clear the image"))
+	var ids []int64
+	switch {
+	case in.MediaIDs != nil:
+		ids = *in.MediaIDs
+	case in.MediaID.Present && in.MediaID.Value != nil:
+		ids = []int64{*in.MediaID.Value}
+	case in.MediaID.Present:
+		// An explicit null: clear.
+	default:
+		RespondError(w, r, Validationf("media_ids is required; send [] to clear the pictures"))
 		return
 	}
-	if err := a.media.SetVariantMedia(r.Context(), id, in.MediaID.Value); err != nil {
+	if err := a.media.SetVariantMedia(r.Context(), id, ids); err != nil {
 		RespondError(w, r, err)
 		return
 	}
-	// The variant back, so the caller sees the image the store now holds rather
-	// than the one it just asked for.
+	// The variant back, so the caller sees the pictures the store now holds
+	// rather than the ones it just asked for.
 	v, err := a.catalog.GetVariant(r.Context(), id)
 	if err != nil {
 		RespondError(w, r, err)

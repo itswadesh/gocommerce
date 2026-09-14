@@ -681,76 +681,134 @@ func TestVariantMedia(t *testing.T) {
 		t.Fatalf("SetProductMedia: %v", err)
 	}
 
-	imageOf := func(variantID int64) *VariantImage {
+	// imagesOf is the variant's list, and checks that Image is its first: the
+	// thumbnail every client that predates the list still reads.
+	imagesOf := func(variantID int64) []int64 {
 		t.Helper()
 		v, err := app.Products().GetVariant(ctx, variantID)
 		if err != nil {
 			t.Fatalf("GetVariant: %v", err)
 		}
-		return v.Image
+		ids := make([]int64, 0, len(v.Images))
+		for _, img := range v.Images {
+			ids = append(ids, img.MediaID)
+		}
+		switch {
+		case len(ids) == 0 && v.Image != nil:
+			t.Errorf("variant %d has image %+v and no images list", variantID, v.Image)
+		case len(ids) > 0 && (v.Image == nil || v.Image.MediaID != ids[0]):
+			t.Errorf("variant %d image = %+v, want the first of %v", variantID, v.Image, ids)
+		}
+		return ids
+	}
+	same := func(got, want []int64) bool {
+		if len(got) != len(want) {
+			return false
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				return false
+			}
+		}
+		return true
 	}
 
-	if got := imageOf(red.ID); got != nil {
-		t.Errorf("a fresh variant has image %v, want none", got)
+	if got := imagesOf(red.ID); len(got) != 0 {
+		t.Errorf("a fresh variant has images %v, want none", got)
 	}
 
-	if err := lib.SetVariantMedia(ctx, red.ID, &one.ID); err != nil {
+	if err := lib.SetVariantMedia(ctx, red.ID, []int64{one.ID}); err != nil {
 		t.Fatalf("SetVariantMedia: %v", err)
 	}
-	img := imageOf(red.ID)
-	if img == nil || img.MediaID != one.ID || img.URL != "https://cdn.example/red.jpg" {
-		t.Fatalf("red's image = %+v, want media %d", img, one.ID)
+	if got := imagesOf(red.ID); !same(got, []int64{one.ID}) {
+		t.Fatalf("red's images = %v, want media %d", got, one.ID)
 	}
-	if got := imageOf(blue.ID); got != nil {
-		t.Errorf("blue picked up red's image: %+v", got)
+	if v, _ := app.Products().GetVariant(ctx, red.ID); v.Image.URL != "https://cdn.example/red.jpg" {
+		t.Errorf("red's image URL = %q", v.Image.URL)
+	}
+	if got := imagesOf(blue.ID); len(got) != 0 {
+		t.Errorf("blue picked up red's image: %v", got)
 	}
 
-	// Re-pointing replaces rather than adding a second: the unique index would
-	// reject the insert, so the service has to clear first.
-	if err := lib.SetVariantMedia(ctx, red.ID, &two.ID); err != nil {
+	// The list is replaced whole and keeps the order it was given, so a
+	// storefront shows a colour's photographs in the order the operator put
+	// them. A picture named twice is one picture.
+	if err := lib.SetVariantMedia(ctx, red.ID, []int64{two.ID, one.ID, two.ID}); err != nil {
 		t.Fatalf("re-point: %v", err)
 	}
-	if img := imageOf(red.ID); img == nil || img.MediaID != two.ID {
-		t.Errorf("after re-pointing = %+v, want media %d", img, two.ID)
+	if got := imagesOf(red.ID); !same(got, []int64{two.ID, one.ID}) {
+		t.Errorf("after re-pointing = %v, want %d then %d", got, two.ID, one.ID)
 	}
 
-	// Two variants may not share one media row — it carries a single variant_id.
-	if err := lib.SetVariantMedia(ctx, blue.ID, &one.ID); err != nil {
+	// Two variants may share a picture: every size of one colour shows the
+	// same photographs, and a store with forty sizes must not need forty
+	// copies of each.
+	if err := lib.SetVariantMedia(ctx, blue.ID, []int64{one.ID}); err != nil {
 		t.Fatalf("blue: %v", err)
+	}
+	if got := imagesOf(red.ID); !same(got, []int64{two.ID, one.ID}) {
+		t.Errorf("red lost a picture when blue took the same one: %v", got)
+	}
+	if got := imagesOf(blue.ID); !same(got, []int64{one.ID}) {
+		t.Errorf("blue's images = %v, want media %d", got, one.ID)
+	}
+	// And the product's list says which variants show each picture.
+	pm, err := lib.ForProduct(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("ForProduct: %v", err)
+	}
+	for _, item := range pm {
+		switch item.ID {
+		case one.ID:
+			if !same(item.VariantIDs, []int64{red.ID, blue.ID}) && !same(item.VariantIDs, []int64{blue.ID, red.ID}) {
+				t.Errorf("media %d is shown by variants %v, want red and blue", one.ID, item.VariantIDs)
+			}
+		case two.ID:
+			if !same(item.VariantIDs, []int64{red.ID}) {
+				t.Errorf("media %d is shown by variants %v, want red only", two.ID, item.VariantIDs)
+			}
+		}
 	}
 
 	// The regression this whole test exists for: reordering the product's media
-	// used to DELETE every row and re-insert it, silently dropping variant_id.
+	// used to DELETE every row and re-insert it, silently dropping every
+	// variant's picture.
 	if err := lib.SetProductMedia(ctx, p.ID, []int64{two.ID, one.ID}); err != nil {
 		t.Fatalf("reorder: %v", err)
 	}
-	if img := imageOf(red.ID); img == nil || img.MediaID != two.ID {
-		t.Errorf("red's image after a reorder = %+v, want it kept", img)
+	if got := imagesOf(red.ID); !same(got, []int64{two.ID, one.ID}) {
+		t.Errorf("red's images after a reorder = %v, want them kept", got)
 	}
-	if img := imageOf(blue.ID); img == nil || img.MediaID != one.ID {
-		t.Errorf("blue's image after a reorder = %+v, want it kept", img)
+	if got := imagesOf(blue.ID); !same(got, []int64{one.ID}) {
+		t.Errorf("blue's images after a reorder = %v, want them kept", got)
 	}
 
-	// Detaching a picture from the product takes the nomination with it, which
-	// is the only sane reading: the variant pointed at a product image.
+	// Detaching a picture from the product takes it off every variant, which
+	// is the only sane reading: a variant shows the product's pictures.
 	if err := lib.SetProductMedia(ctx, p.ID, []int64{two.ID}); err != nil {
 		t.Fatalf("detach: %v", err)
 	}
-	if got := imageOf(blue.ID); got != nil {
-		t.Errorf("blue kept an image whose file left the product: %+v", got)
+	if got := imagesOf(blue.ID); len(got) != 0 {
+		t.Errorf("blue kept a picture whose file left the product: %v", got)
+	}
+	if got := imagesOf(red.ID); !same(got, []int64{two.ID}) {
+		t.Errorf("red's images after the detach = %v, want just %d", got, two.ID)
 	}
 
 	// Clearing, and the refusal to nominate something not on the product.
 	if err := lib.SetVariantMedia(ctx, red.ID, nil); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
-	if got := imageOf(red.ID); got != nil {
-		t.Errorf("image = %+v after clearing, want none", got)
+	if got := imagesOf(red.ID); len(got) != 0 {
+		t.Errorf("images = %v after clearing, want none", got)
 	}
-	if err := lib.SetVariantMedia(ctx, red.ID, &one.ID); !errors.Is(err, ErrValidation) {
+	if err := lib.SetVariantMedia(ctx, red.ID, []int64{one.ID}); !errors.Is(err, ErrValidation) {
 		t.Errorf("nominating media not on the product = %v, want a validation error", err)
 	}
-	if err := lib.SetVariantMedia(ctx, 999999, &two.ID); !errors.Is(err, ErrNotFound) {
+	if got := imagesOf(red.ID); len(got) != 0 {
+		t.Errorf("a refused list left pictures behind: %v", got)
+	}
+	if err := lib.SetVariantMedia(ctx, 999999, []int64{two.ID}); !errors.Is(err, ErrNotFound) {
 		t.Errorf("unknown variant = %v, want a not-found error", err)
 	}
 }
@@ -777,7 +835,7 @@ func TestVariantMediaRoute(t *testing.T) {
 	target := "/api/admin/variants/" + strconv.FormatInt(v.ID, 10) + "/media"
 
 	rec := do(t, app, http.MethodPut, target, withAdmin,
-		jsonBody(t, map[string]any{"media_id": item.ID}))
+		jsonBody(t, map[string]any{"media_ids": []int64{item.ID}}))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("PUT = %d, want 200: %s", rec.Code, rec.Body)
 	}
@@ -785,14 +843,25 @@ func TestVariantMediaRoute(t *testing.T) {
 		Data Variant `json:"data"`
 	}
 	decodeJSONBody(t, rec.Body.Bytes(), &body)
-	if body.Data.Image == nil || body.Data.Image.MediaID != item.ID {
-		t.Errorf("response image = %+v, want media %d", body.Data.Image, item.ID)
+	if body.Data.Image == nil || body.Data.Image.MediaID != item.ID || len(body.Data.Images) != 1 {
+		t.Errorf("response image = %+v / images %+v, want media %d", body.Data.Image, body.Data.Images, item.ID)
 	}
 
+	// The shape before the list — one `media_id`, null to clear — still works,
+	// because a client written against it should not break on the upgrade.
 	cleared := do(t, app, http.MethodPut, target, withAdmin,
 		jsonBody(t, map[string]any{"media_id": nil}))
 	if cleared.Code != http.StatusOK {
 		t.Fatalf("PUT null = %d, want 200: %s", cleared.Code, cleared.Body)
+	}
+	if rec := do(t, app, http.MethodPut, target, withAdmin, jsonBody(t, map[string]any{"media_id": item.ID})); rec.Code != http.StatusOK {
+		t.Errorf("PUT media_id = %d, want 200: %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, app, http.MethodPut, target, withAdmin, jsonBody(t, map[string]any{"media_ids": []int64{}})); rec.Code != http.StatusOK {
+		t.Errorf("PUT [] = %d, want 200: %s", rec.Code, rec.Body)
+	}
+	if v, _ := app.Products().GetVariant(ctx, v.ID); len(v.Images) != 0 {
+		t.Errorf("images = %+v after an empty list, want none", v.Images)
 	}
 	// A fresh target, not the one above: `image` is omitempty, so decoding a
 	// cleared response over a populated struct leaves the old value sitting
@@ -808,6 +877,6 @@ func TestVariantMediaRoute(t *testing.T) {
 	// An omitted field is not the same as null, and guessing which was meant is
 	// how an image gets removed by a request that never mentioned it.
 	if rec := do(t, app, http.MethodPut, target, withAdmin, jsonBody(t, map[string]any{})); rec.Code != http.StatusBadRequest {
-		t.Errorf("PUT with no media_id = %d, want 400", rec.Code)
+		t.Errorf("PUT with no media_ids = %d, want 400", rec.Code)
 	}
 }

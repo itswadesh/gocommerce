@@ -44,6 +44,7 @@ func coreMigrations() []Migration {
 		{ID: "0033_attribute_index", SQL: migration0033AttributeIndex},
 		{ID: "0034_customer_groups_and_price_lists", SQL: migration0034Pricing},
 		{ID: "0035_channels", SQL: migration0035Channels},
+		{ID: "0036_variant_pictures", SQL: migration0036VariantPictures},
 	}
 }
 
@@ -1875,4 +1876,41 @@ CREATE INDEX orders_channel_idx ON orders (channel_id) WHERE channel_id IS NOT N
 -- A price list may narrow to one channel. NULL is every channel, exactly as
 -- NULL group_id is everybody.
 ALTER TABLE price_lists ADD COLUMN channel_id bigint REFERENCES channels (id) ON DELETE CASCADE;
+`
+
+// M36 — a variant's pictures.
+//
+// M9 gave a variant one picture by putting `variant_id` on the product_media
+// row, which made two things impossible that a real catalogue needs: a variant
+// with several pictures, and two variants sharing one. The second is the
+// common case, not the edge — every size of a colour shows that colour's
+// photographs — and under M9 the last size to nominate a photograph took it
+// from the one before, so a forty-variant shirt ended up with pictures on
+// seven of them.
+//
+// So the nomination moves to its own table, one row per (variant, picture),
+// ordered. The invariant stays: a variant shows pictures the product already
+// has, enforced in media.go rather than by a constraint, because the check
+// needs the variant's product and a foreign key cannot say that. RESTRICT on
+// the file for product_media's reason, though in practice product_media
+// refuses first. CASCADE on the variant, because a variant's list is nothing
+// without the variant; the product still has the file either way.
+//
+// The column goes. Nothing reads it once this runs, and a column that is
+// still there but no longer true is how the next reader gets it wrong.
+const migration0036VariantPictures = `
+CREATE TABLE variant_media (
+    variant_id bigint  NOT NULL REFERENCES variants (id) ON DELETE CASCADE,
+    media_id   bigint  NOT NULL REFERENCES media (id) ON DELETE RESTRICT,
+    position   integer NOT NULL DEFAULT 0,
+    PRIMARY KEY (variant_id, media_id)
+);
+CREATE INDEX variant_media_media_idx ON variant_media (media_id);
+
+INSERT INTO variant_media (variant_id, media_id)
+    SELECT variant_id, media_id FROM product_media WHERE variant_id IS NOT NULL;
+
+DROP INDEX product_media_variant_key;
+DROP INDEX product_media_variant_idx;
+ALTER TABLE product_media DROP COLUMN variant_id;
 `

@@ -5851,13 +5851,13 @@
         "tags": [
           "admin:media"
         ],
-        "summary": "Set or clear a variant's image",
+        "summary": "Set or clear a variant's pictures",
         "security": [
           {
             "adminToken": []
           }
         ],
-        "description": "`media_id` must already be on the variant's product — a variant nominates one of the product's images rather than owning a file, and attaching from here would put a picture at a position in the product's ordered list that nobody chose. Send `null` to clear. The field is required: an omitted `media_id` is a 400 rather than a guess, because guessing is how an image gets removed by a request that never mentioned it. One image per variant, enforced by a unique index.",
+        "description": "Replaces the list of the product's pictures this variant shows, in the order given. Every id in `media_ids` must already be on the variant's product — a variant nominates some of the product's pictures rather than owning files, which is what lets every size of a colour show the same photographs stored once, and attaching from here would put a picture at a position in the product's ordered list that nobody chose. Send `[]` to clear. `media_id` is the shape from before there was a list — one picture, or `null` to clear — and still works. One of the two is required: an omitted field is a 400 rather than a guess, because guessing is how pictures get removed by a request that never mentioned them.",
         "parameters": [
           {
             "$ref": "#/components/parameters/PathID"
@@ -5869,14 +5869,21 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "media_id"
-                ],
+                "description": "One of the two fields is required.",
                 "properties": {
+                  "media_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "description": "The pictures, in display order; `[]` clears. Each must already be on the variant's product."
+                  },
                   "media_id": {
                     "type": "integer",
                     "format": "int64",
-                    "nullable": true
+                    "nullable": true,
+                    "description": "One picture, or null to clear — the shape from before the list. Ignored when `media_ids` is present."
                   }
                 }
               }
@@ -5885,7 +5892,7 @@
         },
         "responses": {
           "200": {
-            "description": "The variant, with the image the store now holds.",
+            "description": "The variant, with the pictures the store now holds.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11136,10 +11143,13 @@
                 "type": "integer",
                 "description": "Display order within the product."
               },
-              "variant_id": {
-                "type": "integer",
-                "format": "int64",
-                "description": "Set when the file belongs to one variant rather than the whole product."
+              "variant_ids": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "description": "The variants that show this picture — several when the sizes of one colour share its photographs. Absent for a picture only the product shows."
               }
             }
           }
@@ -11602,6 +11612,13 @@
             "description": "The same mass rendered for display, so a client that only shows it need not know that a pound is 453.59237 g.",
             "example": "2.5 kg"
           },
+          "images": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VariantImage"
+            },
+            "description": "The product's pictures this variant shows, in order — what a storefront swaps to when a shopper picks a colour. Absent for most variants. Several variants may list the same picture."
+          },
           "image": {
             "allOf": [
               {
@@ -11609,7 +11626,7 @@
               }
             ],
             "nullable": true,
-            "description": "Absent when the variant has not nominated one, which is the normal case for most variants."
+            "description": "The first of `images`, kept as the thumbnail. Absent when the variant shows none, which is the normal case for most variants."
           },
           "cost": {
             "allOf": [
@@ -12888,7 +12905,7 @@
       },
       "VariantImage": {
         "type": "object",
-        "description": "The one of its product's images a variant nominates — what a storefront swaps to when a shopper picks a colour. A variant never owns a file; it points at one the product already shows, so the same picture is stored once.",
+        "description": "One of its product's pictures a variant shows — what a storefront swaps to when a shopper picks a colour. A variant never owns a file; it points at ones the product already shows, so the same picture is stored once however many sizes share it.",
         "properties": {
           "media_id": {
             "type": "integer",

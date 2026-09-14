@@ -143,12 +143,14 @@ type Variant struct {
 	// client that only wants to show it does not have to know that an inch is
 	// 25.4 mm.
 	Size string `json:"size,omitempty"`
-	// Image is the one of the product's media this variant shows — what a
-	// storefront swaps to when a shopper picks a colour. Nil when the variant
-	// has not nominated one, which is the normal case for most variants.
-	Image    *VariantImage `json:"image,omitempty"`
-	Position int           `json:"position"`
-	Metadata Metadata      `json:"metadata"`
+	// Images are the ones of the product's media this variant shows, in
+	// order — what a storefront swaps to when a shopper picks a colour. Empty
+	// for most variants. Image is the first of them, kept because it is the
+	// thumbnail every client that predates the list reads.
+	Images   []VariantImage `json:"images,omitempty"`
+	Image    *VariantImage  `json:"image,omitempty"`
+	Position int            `json:"position"`
+	Metadata Metadata       `json:"metadata"`
 
 	optionKey string
 }
@@ -1606,13 +1608,14 @@ func (c *Catalog) selectVariants(ctx context.Context, where, orderBy, page strin
 		v.Label = strings.Join(v.Options, " / ")
 	}
 
-	// The nominated image, for the whole page in one query. A unique index
-	// keeps this to at most one row per variant — see M9.
+	// Every variant's pictures, for the whole page in one query, each list
+	// in the order it was set (M36).
 	imageRows, err := c.app.db.QueryContext(ctx, `
-		SELECT pm.variant_id, m.id, m.url, m.kind, m.alt
-		FROM product_media pm
-		JOIN media m ON m.id = pm.media_id
-		WHERE pm.variant_id = ANY($1::bigint[])`, int64Array(ids))
+		SELECT vm.variant_id, m.id, m.url, m.kind, m.alt
+		FROM variant_media vm
+		JOIN media m ON m.id = vm.media_id
+		WHERE vm.variant_id = ANY($1::bigint[])
+		ORDER BY vm.variant_id, vm.position, vm.media_id`, int64Array(ids))
 	if err != nil {
 		return nil, err
 	}
@@ -1625,7 +1628,12 @@ func (c *Catalog) selectVariants(ctx context.Context, where, orderBy, page strin
 			return nil, err
 		}
 		if v := byID[variantID]; v != nil {
-			v.Image = &img
+			v.Images = append(v.Images, img)
+		}
+	}
+	for _, v := range variants {
+		if len(v.Images) > 0 {
+			v.Image = &v.Images[0]
 		}
 	}
 	return variants, imageRows.Err()

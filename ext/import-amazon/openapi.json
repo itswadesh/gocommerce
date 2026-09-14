@@ -29,7 +29,7 @@
           "properties": {
             "url": {"type": "string", "description": "An Amazon product page — any marketplace, /dp/ or /gp/product/."},
             "images": {"$ref": "#/components/schemas/ImportAmazonImageOptions"},
-            "max_variants": {"type": "integer", "minimum": 1, "maximum": 200, "description": "How many variation pages to visit. The rest are created with the parent's price and pictures."},
+            "max_variants": {"type": "integer", "minimum": 1, "maximum": 200, "description": "How many variation pages to visit — one of each colour first, then the sizes. A variant past the cap is created with the parent's price and the pictures of a visited variant of its colour, or the parent's when none was."},
             "status": {"type": "string", "enum": ["draft", "active"], "default": "draft"},
             "price_minor": {"type": "integer", "minimum": 0, "description": "A price for every variant, in the store's currency — the way to import from a marketplace that sells in another."}
           }
@@ -70,7 +70,7 @@
     "schemas": {
       "ImportAmazonImageOptions": {
         "type": "object",
-        "description": "What to do to every picture: the background, the lighting and the orientation, never the content. By default a plain background is replaced with a soft gradient and a shadow, the lighting is lifted a touch, and the subject is turned three degrees and drawn a little smaller so the turn fits. Warmth and saturation are available and off, because they change the product rather than the photograph. A photo without a plain background (a lifestyle shot) gets the lighting change only. Mirroring is available and off: it reverses any text in a picture.",
+        "description": "What to do to every picture: the background, the lighting and the orientation, never the content. By default a plain background is replaced with a soft gradient and a shadow, the lighting is lifted a touch, and the subject is turned three degrees and drawn a little smaller so the turn fits. Warmth and saturation are available and off, because they change the product rather than the photograph. A photo without a plain background (a lifestyle shot) gets the lighting change only. Mirroring is on by default; it reverses any text in a picture.",
         "properties": {
           "brightness": {"type": "number", "minimum": -1, "maximum": 1, "default": 0.03, "description": "Added to every channel as a fraction of full scale."},
           "contrast": {"type": "number", "minimum": 0, "maximum": 4, "default": 1.04, "description": "Scales distance from mid-grey; 0 or 1 leaves it alone."},
@@ -82,7 +82,7 @@
           "scale": {"type": "number", "minimum": 0.5, "maximum": 1, "default": 0.92, "description": "Shrinks the subject about the centre so the new background shows around it; 1 leaves it alone."},
           "tilt": {"type": "number", "minimum": -15, "maximum": 15, "default": 3, "description": "Turns the subject by a few degrees, clockwise positive — the orientation change that does not reverse text."},
           "shadow": {"type": "boolean", "default": true, "description": "A soft shadow under the subject on the new background."},
-          "flip": {"type": "string", "enum": ["none", "horizontal", "vertical"], "default": "none"},
+          "flip": {"type": "string", "enum": ["none", "horizontal", "vertical"], "default": "horizontal", "description": "Horizontal by default. A horizontal flip reverses any text in the picture."},
           "rotate": {"type": "integer", "enum": [0, 90, 180, 270], "default": 0, "description": "Clockwise, the whole picture."}
         }
       },

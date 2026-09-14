@@ -315,7 +315,7 @@
         brighten: true,
         background: true,
         tilt: true,
-        mirror: false,
+        mirror: true,
         max_variants: 30,
         status: "draft",
         price: "",
@@ -1338,8 +1338,8 @@
                 </div>
                 <div class="field-help">
                     Background, lighting and orientation change; the product itself does not — no
-                    colour shift. Mirroring reverses any text, so it is off. None of this alters
-                    whose picture it is.
+                    colour shift. Mirroring reverses any text in a picture, so switch it off for
+                    packaging shots. None of this alters whose picture it is.
                 </div>
 
                 <h6 class="section-title">
@@ -1366,7 +1366,9 @@
                 <div class="field-help">
                     The listing's prices are used only when the marketplace sells in {currency};
                     otherwise they are recorded but not set, and the product stays a draft until
-                    you price it here or in the editor.
+                    you price it here or in the editor. Each visit opens one variation's page —
+                    one of every colour first — and each variant gets the pictures its page
+                    showed; a size past the limit borrows its colour's.
                 </div>
 
                 <div class="field m-t-sm">

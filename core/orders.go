@@ -1848,8 +1848,9 @@ func (s *Orders) loadLineImages(ctx context.Context, orders []*Order) error {
 		ids = append(ids, id)
 	}
 
+	// Position order, so the first row for a product is its lead image.
 	rows, err := s.app.db.QueryContext(ctx, `
-		SELECT pm.product_id, pm.variant_id, m.url
+		SELECT pm.product_id, m.url
 		FROM product_media pm
 		JOIN media m ON m.id = pm.media_id
 		WHERE pm.product_id = ANY($1::bigint[]) AND m.kind = 'image'
@@ -1860,23 +1861,45 @@ func (s *Orders) loadLineImages(ctx context.Context, orders []*Order) error {
 	defer rows.Close()
 
 	byProduct := map[int64]string{}
-	byVariant := map[int64]string{}
 	for rows.Next() {
 		var productID int64
-		var variantID *int64
 		var url string
-		if err := rows.Scan(&productID, &variantID, &url); err != nil {
+		if err := rows.Scan(&productID, &url); err != nil {
 			return err
 		}
-		if variantID != nil {
-			byVariant[*variantID] = url
-		}
-		// Position order, so the first row for a product is its lead image.
 		if _, seen := byProduct[productID]; !seen {
 			byProduct[productID] = url
 		}
 	}
 	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	// And each variant's first picture, in the order its list was set.
+	shown, err := s.app.db.QueryContext(ctx, `
+		SELECT vm.variant_id, m.url
+		FROM variant_media vm
+		JOIN variants v ON v.id = vm.variant_id
+		JOIN media m ON m.id = vm.media_id
+		WHERE v.product_id = ANY($1::bigint[]) AND m.kind = 'image'
+		ORDER BY vm.variant_id, vm.position, vm.media_id`, int64Array(ids))
+	if err != nil {
+		return err
+	}
+	defer shown.Close()
+
+	byVariant := map[int64]string{}
+	for shown.Next() {
+		var variantID int64
+		var url string
+		if err := shown.Scan(&variantID, &url); err != nil {
+			return err
+		}
+		if _, seen := byVariant[variantID]; !seen {
+			byVariant[variantID] = url
+		}
+	}
+	if err := shown.Err(); err != nil {
 		return err
 	}
 

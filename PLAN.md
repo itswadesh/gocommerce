@@ -2229,7 +2229,10 @@ nothing.
 Media is a **library**, not a per-product list, because the same photograph
 belongs to several products and should be stored once. `product_media` joins
 them with `ON DELETE RESTRICT`, so deleting a file six products still display
-is refused rather than silently stripping them.
+is refused rather than silently stripping them. A variant shows some of its
+product's pictures, in its own order (`variant_media`, M36), and several
+variants may show the same one — every size of a colour shows that colour's
+photographs — with `Variant.Image` kept as the first of the list.
 
 ---
 

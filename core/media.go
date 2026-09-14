@@ -555,8 +555,11 @@ func (m *Media) Delete(ctx context.Context, id int64) error {
 // ProductMedia is one library item as it appears on a product.
 type ProductMedia struct {
 	*MediaItem
-	Position  int    `json:"position"`
-	VariantID *int64 `json:"variant_id,omitempty"`
+	Position int `json:"position"`
+	// VariantIDs are the variants that show this picture — several, when the
+	// sizes of one colour share its photographs. Empty for a picture only the
+	// product shows.
+	VariantIDs []int64 `json:"variant_ids,omitempty"`
 }
 
 // SetProductMedia replaces a product's media list in one transaction.
@@ -577,15 +580,22 @@ func (m *Media) SetProductMedia(ctx context.Context, productID int64, mediaIDs [
 		}
 
 		// Remove what is no longer in the list, rather than clearing the lot and
-		// rebuilding it. The difference matters: `variant_id` lives on these
-		// rows, so a delete-and-reinsert silently dropped every variant image
-		// each time somebody added a file or dragged one into a new position.
-		// Upserting leaves a surviving row — and its variant — alone.
+		// rebuilding it: a reorder is then a few position updates, not a churn
+		// of every row. A picture that leaves the product leaves every variant
+		// that showed it, too — a variant shows the product's pictures, so one
+		// the product no longer has is not something it can show.
 		if _, err := tx.ExecContext(ctx, `
 			DELETE FROM product_media
 			WHERE product_id = $1 AND media_id <> ALL($2::bigint[])`,
 			productID, int64Array(mediaIDs)); err != nil {
 			return Internalf(err, "clear product media")
+		}
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM variant_media vm USING variants v
+			WHERE v.id = vm.variant_id AND v.product_id = $1
+			  AND vm.media_id <> ALL($2::bigint[])`,
+			productID, int64Array(mediaIDs)); err != nil {
+			return Internalf(err, "clear variant media")
 		}
 		for i, id := range mediaIDs {
 			if _, err := tx.ExecContext(ctx, `
@@ -611,14 +621,24 @@ func (m *Media) SetProductMedia(ctx context.Context, productID int64, mediaIDs [
 	})
 }
 
-// SetVariantMedia points a variant at one of its product's images, or clears
-// the assignment when mediaID is nil.
+// SetVariantMedia replaces the list of its product's pictures a variant shows,
+// in the order given; an empty list clears it.
 //
-// The media must already be attached to the variant's product. That is the
-// whole model: a variant does not own a picture, it *nominates* one of the
-// product's — which is what lets a storefront swap image as a shopper picks a
-// colour without the file existing twice.
-func (m *Media) SetVariantMedia(ctx context.Context, variantID int64, mediaID *int64) error {
+// Every picture must already be attached to the variant's product. That is
+// the whole model: a variant does not own a picture, it *nominates* some of
+// the product's — which is what lets a storefront swap the gallery as a
+// shopper picks a colour without any file existing twice, and lets every size
+// of that colour show the same photographs.
+func (m *Media) SetVariantMedia(ctx context.Context, variantID int64, mediaIDs []int64) error {
+	// Named twice is once, in the position of the first mention.
+	ids := make([]int64, 0, len(mediaIDs))
+	seen := map[int64]bool{}
+	for _, id := range mediaIDs {
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
 	return InTx(ctx, m.app.db, func(tx *sql.Tx) error {
 		var productID int64
 		err := tx.QueryRowContext(ctx,
@@ -630,38 +650,61 @@ func (m *Media) SetVariantMedia(ctx context.Context, variantID int64, mediaID *i
 			return Internalf(err, "read variant")
 		}
 
-		// Always clear first. A variant shows one image, and the unique index
-		// added in M9 would reject the second assignment rather than replace
-		// it — so the replace has to be spelled out.
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE product_media SET variant_id = NULL
-			WHERE product_id = $1 AND variant_id = $2`, productID, variantID); err != nil {
-			return Internalf(err, "clear variant media")
-		}
-		if mediaID == nil {
-			return writeAudit(ctx, tx, auditRecord{
-				Action: AuditVariantMediaSet, Entity: AuditEntityProduct,
-				ID: productID, Summary: "Cleared a variant's picture",
-				After: map[string]any{"variant_id": variantID, "media_id": nil},
-			})
+		// Attaching a missing one to the product first would be the friendly
+		// thing and the wrong one: the product's media list is ordered, and
+		// adding to it from here would put a file in a position nobody chose.
+		// Checked before anything is written, so a refused list changes nothing.
+		if len(ids) > 0 {
+			rows, err := tx.QueryContext(ctx, `
+				SELECT media_id FROM product_media
+				WHERE product_id = $1 AND media_id = ANY($2::bigint[])`, productID, int64Array(ids))
+			if err != nil {
+				return Internalf(err, "check product media")
+			}
+			onProduct := map[int64]bool{}
+			for rows.Next() {
+				var id int64
+				if err := rows.Scan(&id); err != nil {
+					rows.Close()
+					return Internalf(err, "scan product media")
+				}
+				onProduct[id] = true
+			}
+			rows.Close()
+			if err := rows.Err(); err != nil {
+				return Internalf(err, "scan product media")
+			}
+			for _, id := range ids {
+				if !onProduct[id] {
+					return Validationf("media %d is not on this product; add it to the product first", id)
+				}
+			}
 		}
 
-		res, err := tx.ExecContext(ctx, `
-			UPDATE product_media SET variant_id = $1
-			WHERE product_id = $2 AND media_id = $3`, variantID, productID, *mediaID)
-		if err != nil {
-			return Internalf(err, "set variant media")
+		// Replace, the way SetProductMedia does: the caller sends the list it
+		// is showing, and a reorder is the same operation as an add.
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM variant_media
+			WHERE variant_id = $1 AND media_id <> ALL($2::bigint[])`, variantID, int64Array(ids)); err != nil {
+			return Internalf(err, "clear variant media")
 		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			// Attaching it to the product first would be the friendly thing and
-			// the wrong one: the product's media list is ordered, and adding to
-			// it from here would put a file in a position nobody chose.
-			return Validationf("media %d is not on this product; add it to the product first", *mediaID)
+		for i, id := range ids {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO variant_media (variant_id, media_id, position)
+				VALUES ($1, $2, $3)
+				ON CONFLICT (variant_id, media_id) DO UPDATE SET position = EXCLUDED.position`,
+				variantID, id, i); err != nil {
+				return Internalf(err, "set variant media")
+			}
+		}
+		summary := "Changed a variant's pictures"
+		if len(ids) == 0 {
+			summary = "Cleared a variant's pictures"
 		}
 		return writeAudit(ctx, tx, auditRecord{
 			Action: AuditVariantMediaSet, Entity: AuditEntityProduct,
-			ID: productID, Summary: "Changed a variant's picture",
-			After: map[string]any{"variant_id": variantID, "media_id": *mediaID},
+			ID: productID, Summary: summary,
+			After: map[string]any{"variant_id": variantID, "media_ids": ids},
 		})
 	})
 }
@@ -669,7 +712,7 @@ func (m *Media) SetVariantMedia(ctx context.Context, variantID int64, mediaID *i
 // ForProduct returns a product's media in display order.
 func (m *Media) ForProduct(ctx context.Context, productID int64) ([]*ProductMedia, error) {
 	rows, err := m.app.db.QueryContext(ctx, `
-		SELECT `+prefixColumns(mediaColumns, "m")+`, pm.position, pm.variant_id
+		SELECT `+prefixColumns(mediaColumns, "m")+`, pm.position
 		FROM product_media pm
 		JOIN media m ON m.id = pm.media_id
 		WHERE pm.product_id = $1
@@ -682,14 +725,13 @@ func (m *Media) ForProduct(ctx context.Context, productID int64) ([]*ProductMedi
 	out := []*ProductMedia{}
 	for rows.Next() {
 		var (
-			item      MediaItem
-			meta      []byte
-			pos       int
-			variantID *int64
+			item MediaItem
+			meta []byte
+			pos  int
 		)
 		if err := rows.Scan(&item.ID, &item.Kind, &item.URL, &item.storageKey, &item.Filename,
 			&item.MIME, &item.SizeBytes, &item.Width, &item.Height, &item.Alt, &meta,
-			&item.CreatedAt, &pos, &variantID); err != nil {
+			&item.CreatedAt, &pos); err != nil {
 			return nil, Internalf(err, "scan product media")
 		}
 		if len(meta) > 0 {
@@ -698,9 +740,44 @@ func (m *Media) ForProduct(ctx context.Context, productID int64) ([]*ProductMedi
 		if item.Metadata == nil {
 			item.Metadata = Metadata{}
 		}
-		out = append(out, &ProductMedia{MediaItem: &item, Position: pos, VariantID: variantID})
+		out = append(out, &ProductMedia{MediaItem: &item, Position: pos})
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, Internalf(err, "read product media")
+	}
+	if len(out) == 0 {
+		return out, nil
+	}
+
+	// Which variants show each picture, so the panel can say "on Black, all
+	// sizes" beside a thumbnail without asking for every variant.
+	byMedia := map[int64]*ProductMedia{}
+	for _, pm := range out {
+		byMedia[pm.ID] = pm
+	}
+	shown, err := m.app.db.QueryContext(ctx, `
+		SELECT vm.media_id, vm.variant_id
+		FROM variant_media vm
+		JOIN variants v ON v.id = vm.variant_id
+		WHERE v.product_id = $1
+		ORDER BY vm.media_id, v.position, v.id`, productID)
+	if err != nil {
+		return nil, Internalf(err, "read variant media")
+	}
+	defer shown.Close()
+	for shown.Next() {
+		var mediaID, variantID int64
+		if err := shown.Scan(&mediaID, &variantID); err != nil {
+			return nil, Internalf(err, "scan variant media")
+		}
+		if pm := byMedia[mediaID]; pm != nil {
+			pm.VariantIDs = append(pm.VariantIDs, variantID)
+		}
+	}
+	if err := shown.Err(); err != nil {
+		return nil, Internalf(err, "read variant media")
+	}
+	return out, nil
 }
 
 // prefixColumns qualifies a column list with a table alias, so the shared

@@ -63,11 +63,17 @@ func main() {
 		// Products from Amazon listings, through the Chrome installed on this
 		// machine. Nothing is started until an operator asks for an import,
 		// so a server without Chrome boots all the same and the first job says
-		// what is missing. Without an Anthropic key the listing's own copy is
-		// used; with IMPORT_AMAZON_HEADED set the browser is visible, which
-		// is what gets a person past Amazon's robot check once.
+		// what is missing. The copy is rewritten by whichever model is
+		// configured — an Anthropic, Gemini or OpenAI key, or a local server —
+		// and used as scraped when none is; with IMPORT_AMAZON_HEADED set the
+		// browser is visible, which is what gets a person past Amazon's robot
+		// check once.
 		amazon.New(amazon.Config{
 			AnthropicAPIKey: os.Getenv("ANTHROPIC_API_KEY"),
+			GeminiAPIKey:    os.Getenv("GEMINI_API_KEY"),
+			OpenAIAPIKey:    os.Getenv("OPENAI_API_KEY"),
+			LLMBaseURL:      os.Getenv("IMPORT_AMAZON_LLM_URL"),
+			Model:           os.Getenv("IMPORT_AMAZON_LLM_MODEL"),
 			Headed:          os.Getenv("IMPORT_AMAZON_HEADED") != "",
 		}),
 	}

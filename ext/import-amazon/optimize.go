@@ -18,21 +18,41 @@ import (
 // search for, a description in paragraphs, a type, tags, and the two SEO
 // fields, all from the facts the listing gave and nothing it did not.
 //
-// It is optional. Without an API key the listing is used as scraped, which is
-// a worse product page and a working one, and the job says so in its warnings.
-// Claude's Messages API over net/http, no SDK — rule 2.
+// It is optional. Without a model to call, the listing is used as scraped,
+// which is a worse product page and a working one, and the job says so in its
+// warnings.
+//
+// Two wire formats, no SDK — rule 2. Claude's Messages API when an Anthropic
+// key is configured; otherwise the OpenAI chat-completions shape, which
+// Gemini answers at its OpenAI-compatible endpoint, OpenAI answers, and every
+// local server answers — Ollama, LM Studio, anything of that kind on this
+// machine — so a store can have the rewrite on a free tier or with no key
+// and no bill at all. A chat subscription is not a door: Claude.ai and
+// ChatGPT are products for people, with no endpoint a server can call.
 
 const (
-	defaultAnthropicURL = "https://api.anthropic.com"
-	defaultModel        = "claude-sonnet-5"
-	anthropicVersion    = "2023-06-01"
+	defaultAnthropicURL   = "https://api.anthropic.com"
+	defaultAnthropicModel = "claude-sonnet-5"
+	anthropicVersion      = "2023-06-01"
+	// The OpenAI-shaped doors take a base that already carries the version
+	// segment, because the three differ in it and a local server has its own.
+	defaultOpenAIURL   = "https://api.openai.com/v1"
+	defaultOpenAIModel = "gpt-4o-mini"
+	defaultGeminiURL   = "https://generativelanguage.googleapis.com/v1beta/openai"
+	defaultGeminiModel = "gemini-2.0-flash"
+
+	providerAnthropic = "anthropic"
+	providerGemini    = "gemini"
+	providerOpenAI    = "openai"
+	providerLocal     = "local model"
 )
 
 type optimizer struct {
-	apiKey  string
-	model   string
-	baseURL string
-	client  *http.Client
+	provider string
+	apiKey   string
+	model    string
+	baseURL  string
+	client   *http.Client
 }
 
 // rewrite is what the model hands back. Every field is optional on purpose:
@@ -63,8 +83,8 @@ Answer with a single JSON object with exactly these keys: title, description, pr
 
 // optimize asks the model for the rewrite.
 func (o *optimizer) optimize(ctx context.Context, l *Listing) (*rewrite, error) {
-	if o == nil || o.apiKey == "" {
-		return nil, errors.New("no Anthropic API key is configured")
+	if o == nil {
+		return nil, errors.New("no model is configured for the rewrite")
 	}
 
 	// A trimmed view: the model needs the copy and the facts, not the image
@@ -83,36 +103,108 @@ func (o *optimizer) optimize(ctx context.Context, l *Listing) (*rewrite, error) 
 		return nil, err
 	}
 
+	user := "The listing:\n\n" + string(listing)
+	var answer string
+	if o.provider == providerAnthropic {
+		answer, err = o.askAnthropic(ctx, user)
+	} else {
+		answer, err = o.askOpenAI(ctx, user)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return parseRewrite(answer)
+}
+
+// askAnthropic is the Messages API.
+func (o *optimizer) askAnthropic(ctx context.Context, user string) (string, error) {
 	body := map[string]any{
 		"model":      o.model,
 		"max_tokens": 2048,
 		"system":     systemPrompt,
-		"messages": []map[string]any{{
-			"role":    "user",
-			"content": "The listing:\n\n" + string(listing),
-		}},
+		"messages":   []map[string]any{{"role": "user", "content": user}},
 	}
+	headers := map[string]string{"x-api-key": o.apiKey, "anthropic-version": anthropicVersion}
+	payload, err := o.post(ctx, "/v1/messages", body, headers)
+	if err != nil {
+		return "", err
+	}
+	var out struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(payload, &out); err != nil {
+		return "", fmt.Errorf("%s: could not read the response: %w", o.provider, err)
+	}
+	var answer strings.Builder
+	for _, c := range out.Content {
+		if c.Type == "text" {
+			answer.WriteString(c.Text)
+		}
+	}
+	return answer.String(), nil
+}
+
+// askOpenAI is the chat-completions shape, which Gemini, OpenAI and every
+// local server speak. The key is optional because a local server has none.
+func (o *optimizer) askOpenAI(ctx context.Context, user string) (string, error) {
+	body := map[string]any{
+		"model": o.model,
+		"messages": []map[string]any{
+			{"role": "system", "content": systemPrompt},
+			{"role": "user", "content": user},
+		},
+		// Low, not zero: a rewrite should be the same product twice, but the
+		// model is allowed a turn of phrase.
+		"temperature": 0.3,
+	}
+	headers := map[string]string{}
+	if o.apiKey != "" {
+		headers["Authorization"] = "Bearer " + o.apiKey
+	}
+	payload, err := o.post(ctx, "/chat/completions", body, headers)
+	if err != nil {
+		return "", err
+	}
+	var out struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(payload, &out); err != nil {
+		return "", fmt.Errorf("%s: could not read the response: %w", o.provider, err)
+	}
+	if len(out.Choices) == 0 {
+		return "", fmt.Errorf("%s: the model answered with no choices", o.provider)
+	}
+	return out.Choices[0].Message.Content, nil
+}
+
+func (o *optimizer) post(ctx context.Context, path string, body any, headers map[string]string) ([]byte, error) {
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, o.baseURL+"/v1/messages", bytes.NewReader(encoded))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, o.baseURL+path, bytes.NewReader(encoded))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", o.apiKey)
-	req.Header.Set("anthropic-version", anthropicVersion)
-
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 	resp, err := o.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("anthropic: %w", err)
+		return nil, fmt.Errorf("%s: %w", o.provider, err)
 	}
 	defer resp.Body.Close()
 	payload, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return nil, fmt.Errorf("anthropic: read the response: %w", err)
+		return nil, fmt.Errorf("%s: read the response: %w", o.provider, err)
 	}
 	if resp.StatusCode >= 300 {
 		var fail struct {
@@ -122,27 +214,11 @@ func (o *optimizer) optimize(ctx context.Context, l *Listing) (*rewrite, error) 
 			} `json:"error"`
 		}
 		if json.Unmarshal(payload, &fail) == nil && fail.Error.Message != "" {
-			return nil, fmt.Errorf("anthropic: %s (%s)", fail.Error.Message, fail.Error.Type)
+			return nil, fmt.Errorf("%s: %s (%s)", o.provider, fail.Error.Message, fail.Error.Type)
 		}
-		return nil, fmt.Errorf("anthropic: %s", resp.Status)
+		return nil, fmt.Errorf("%s: %s", o.provider, resp.Status)
 	}
-
-	var out struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	if err := json.Unmarshal(payload, &out); err != nil {
-		return nil, fmt.Errorf("anthropic: could not read the response: %w", err)
-	}
-	var answer strings.Builder
-	for _, c := range out.Content {
-		if c.Type == "text" {
-			answer.WriteString(c.Text)
-		}
-	}
-	return parseRewrite(answer.String())
+	return payload, nil
 }
 
 // parseRewrite reads the model's JSON, tolerating the code fence it was told
@@ -178,18 +254,35 @@ func truncate(s string, n int) string {
 	return s[:n] + "…"
 }
 
-func newOptimizer(apiKey, model, baseURL string) *optimizer {
-	if apiKey == "" {
-		return nil
+// newOptimizer picks the door from what is configured, in this order: an
+// Anthropic key, a Gemini key, an OpenAI key, a base URL alone (a local
+// server). Nothing configured means no rewrite, and nil says so.
+func newOptimizer(cfg Config) *optimizer {
+	client := &http.Client{Timeout: 120 * time.Second}
+	base := func(configured, fallback string) string {
+		return strings.TrimRight(firstNonEmpty(configured, fallback), "/")
 	}
-	if model == "" {
-		model = defaultModel
+	switch {
+	case cfg.AnthropicAPIKey != "":
+		return &optimizer{
+			provider: providerAnthropic, apiKey: cfg.AnthropicAPIKey,
+			model: firstNonEmpty(cfg.Model, defaultAnthropicModel), baseURL: base(cfg.AnthropicBaseURL, defaultAnthropicURL), client: client,
+		}
+	case cfg.GeminiAPIKey != "":
+		return &optimizer{
+			provider: providerGemini, apiKey: cfg.GeminiAPIKey,
+			model: firstNonEmpty(cfg.Model, defaultGeminiModel), baseURL: base(cfg.LLMBaseURL, defaultGeminiURL), client: client,
+		}
+	case cfg.OpenAIAPIKey != "":
+		return &optimizer{
+			provider: providerOpenAI, apiKey: cfg.OpenAIAPIKey,
+			model: firstNonEmpty(cfg.Model, defaultOpenAIModel), baseURL: base(cfg.LLMBaseURL, defaultOpenAIURL), client: client,
+		}
+	case cfg.LLMBaseURL != "":
+		return &optimizer{
+			provider: providerLocal,
+			model:    firstNonEmpty(cfg.Model, defaultOpenAIModel), baseURL: base(cfg.LLMBaseURL, ""), client: client,
+		}
 	}
-	if baseURL == "" {
-		baseURL = defaultAnthropicURL
-	}
-	return &optimizer{
-		apiKey: apiKey, model: model, baseURL: strings.TrimRight(baseURL, "/"),
-		client: &http.Client{Timeout: 90 * time.Second},
-	}
+	return nil
 }

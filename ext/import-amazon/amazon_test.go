@@ -355,6 +355,13 @@ func (f *fixtures) fetch(_ context.Context, url string) (*page, error) {
 
 func (f *fixtures) close() error { return nil }
 
+// reset forgets the pages visited so far, for a test that imports twice.
+func (f *fixtures) reset() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.seen = nil
+}
+
 func (f *fixtures) visited() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -383,6 +390,97 @@ type llmStub struct {
 	calls  int
 	answer string
 	status int
+	model  string
+}
+
+// The chat-completions shape, as Gemini, OpenAI or a local server answer it.
+func openAIStub(t *testing.T, llm *llmStub, wantKey string) *httptest.Server {
+	t.Helper()
+	return gctest.StubHTTP(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		if wantKey != "" && r.Header.Get("Authorization") != "Bearer "+wantKey {
+			http.Error(w, `{"error":{"type":"invalid_request_error","message":"bad key"}}`, http.StatusUnauthorized)
+			return
+		}
+		if wantKey == "" && r.Header.Get("Authorization") != "" {
+			// A local server has no key; sending one anyway is a sign the
+			// wrong door was chosen.
+			http.Error(w, `{"error":{"message":"unexpected Authorization"}}`, http.StatusBadRequest)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		var in struct {
+			Model    string `json:"model"`
+			Messages []struct {
+				Role string `json:"role"`
+			} `json:"messages"`
+		}
+		_ = json.Unmarshal(body, &in)
+		llm.mu.Lock()
+		llm.calls++
+		llm.model = in.Model
+		answer := llm.answer
+		llm.mu.Unlock()
+		if len(in.Messages) != 2 || in.Messages[0].Role != "system" {
+			http.Error(w, `{"error":{"message":"expected a system and a user message"}}`, http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		payload, _ := json.Marshal(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": answer}}},
+		})
+		_, _ = w.Write(payload)
+	})
+}
+
+// The rewrite works through the chat-completions shape at every door that
+// needs no Anthropic account: a Gemini key, an OpenAI key, a local server.
+func TestRewriteThroughTheOtherDoors(t *testing.T) {
+	for name, tc := range map[string]struct {
+		cfg      func(url string) Config
+		wantKey  string
+		wantName string
+		want     string
+	}{
+		"gemini key":   {cfg: func(u string) Config { return Config{GeminiAPIKey: "g-key", LLMBaseURL: u + "/v1"} }, wantKey: "g-key", wantName: providerGemini, want: defaultGeminiModel},
+		"openai key":   {cfg: func(u string) Config { return Config{OpenAIAPIKey: "sk-openai", LLMBaseURL: u + "/v1"} }, wantKey: "sk-openai", wantName: providerOpenAI, want: defaultOpenAIModel},
+		"local server": {cfg: func(u string) Config { return Config{LLMBaseURL: u + "/v1", Model: "llama3.1"} }, wantKey: "", wantName: providerLocal, want: "llama3.1"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			llm := &llmStub{answer: `{"title":"Rewritten elsewhere","description":"<p>Elsewhere.</p>"}`}
+			server := openAIStub(t, llm, tc.wantKey)
+			opt := newOptimizer(tc.cfg(server.URL))
+			if opt == nil || opt.provider != tc.wantName {
+				t.Fatalf("optimizer = %+v, want the %s door", opt, tc.wantName)
+			}
+			rw, err := opt.optimize(context.Background(), &Listing{Title: "Thing", Bullets: []string{"a"}})
+			if err != nil {
+				t.Fatalf("optimize: %v", err)
+			}
+			if rw.Title != "Rewritten elsewhere" {
+				t.Errorf("title = %q", rw.Title)
+			}
+			llm.mu.Lock()
+			defer llm.mu.Unlock()
+			if llm.model != tc.want {
+				t.Errorf("model sent = %q, want %q", llm.model, tc.want)
+			}
+		})
+	}
+	if newOptimizer(Config{}) != nil {
+		t.Error("an optimizer was built with nothing configured")
+	}
+	// The Anthropic key opens the Anthropic door even when the others are set.
+	if opt := newOptimizer(Config{AnthropicAPIKey: "sk-ant", GeminiAPIKey: "g", OpenAIAPIKey: "sk-openai"}); opt == nil || opt.provider != providerAnthropic {
+		t.Errorf("optimizer = %+v, want the Anthropic door first", opt)
+	}
+	// Gemini's default endpoint is its OpenAI-compatible one, version and all.
+	if opt := newOptimizer(Config{GeminiAPIKey: "g"}); opt == nil || opt.baseURL != defaultGeminiURL {
+		t.Errorf("gemini base = %+v, want %s", opt, defaultGeminiURL)
+	}
 }
 
 func newHarness(t *testing.T, cfg Config, withLLM bool) *harness {
@@ -464,6 +562,45 @@ func (h *harness) listingWithVariants() string {
 		ASIN: "B0CHILD003", Title: parent.Title, Price: "$21.49", Available: false,
 		Images: []string{pic("red-1.jpg"), pic("missing.jpg")},
 	}
+	return parent.URL
+}
+
+// listingWithSharedPictures is the shape a clothing listing takes: every size
+// of a colour shows that colour's photographs, so two variants' pages carry
+// the same pictures.
+func (h *harness) listingWithSharedPictures() string {
+	base := "https://www.amazon.com"
+	pic := func(name string) string { return h.images.URL + "/" + name }
+	parent := &page{
+		URL: base + "/dp/B0SHIRT001", ASIN: "B0SHIRT001", Title: "Acme Tee",
+		Price: "$9.99", Available: true,
+		Images: []string{pic("black-1.jpg"), pic("black-2.jpg")},
+		Twister: &twister{
+			Dimensions: []string{"size_name", "color_name"},
+			Labels:     map[string]string{"size_name": "Size", "color_name": "Color"},
+			Values: map[string][]string{
+				"B0SHIRT001": {"Small", "Black"},
+				"B0SHIRT002": {"Large", "Black"},
+				"B0SHIRT003": {"Small", "White"},
+			},
+			Order:   map[string][]string{"size_name": {"Small", "Large"}, "color_name": {"Black", "White"}},
+			Current: "B0SHIRT001", Parent: "B0SHIRTFAM",
+		},
+	}
+	h.fx.pages[parent.URL] = parent
+	h.fx.pages[base+"/dp/B0SHIRT002"] = &page{
+		ASIN: "B0SHIRT002", Title: parent.Title, Price: "$9.99", Available: true,
+		Images: []string{pic("black-1.jpg"), pic("black-2.jpg")},
+	}
+	h.fx.pages[base+"/dp/B0SHIRT003"] = &page{
+		ASIN: "B0SHIRT003", Title: parent.Title, Price: "$9.99", Available: true,
+		Images: []string{pic("white-1.jpg")},
+	}
+	h.fx.pages[base+"/dp/B0SHIRT004"] = &page{
+		ASIN: "B0SHIRT004", Title: parent.Title, Price: "$9.99", Available: true,
+		Images: []string{pic("white-1.jpg")},
+	}
+	parent.Twister.Values["B0SHIRT004"] = []string{"Large", "White"}
 	return parent.URL
 }
 
@@ -560,7 +697,7 @@ func TestImportCreatesTheProductWithVariantsAndPictures(t *testing.T) {
 	}
 
 	// Pictures: parent's two, then each child's own; the one that 404ed is a
-	// warning, not a failure. Each variant nominates its own first picture.
+	// warning, not a failure.
 	media, err := h.app.MediaLibrary().ForProduct(context.Background(), product.ID)
 	if err != nil {
 		t.Fatalf("product media: %v", err)
@@ -571,32 +708,78 @@ func TestImportCreatesTheProductWithVariantsAndPictures(t *testing.T) {
 	if !containsPrefix(job.Warnings, "could not download") {
 		t.Errorf("warnings = %v, want the 404 reported", job.Warnings)
 	}
-	var nominated int
-	for _, pm := range media {
-		if pm.VariantID != nil {
-			nominated++
+	// Each variant carries every picture its own page showed, in that order;
+	// the parent's pictures are the product's, and the parent variant's too.
+	urlsOf := func(v gocommerce.Variant) []string {
+		var out []string
+		for _, img := range v.Images {
+			out = append(out, img.URL)
 		}
+		return out
 	}
-	if nominated != 3 {
-		t.Errorf("%d variants nominate a picture, want all 3", nominated)
+	if got := urlsOf(bySKU["B0PARENT01"]); len(got) != 2 {
+		t.Errorf("parent variant pictures = %v, want its own two", got)
+	}
+	if got := urlsOf(bySKU["B0CHILD002"]); len(got) != 1 || got[0] != media[2].URL {
+		t.Errorf("large's pictures = %v, want large-1 (%s)", got, media[2].URL)
+	}
+	if got := urlsOf(bySKU["B0CHILD003"]); len(got) != 1 || got[0] != media[3].URL {
+		t.Errorf("red's pictures = %v, want red-1 alone (%s); missing.jpg could not be fetched", got, media[3].URL)
 	}
 
 	// The stored picture was adjusted. The test picture's border is dark on
 	// one side and bright on the other, so it is not a plain-background shot
-	// and keeps its composition; what changes is the tone — warmer, lighter —
-	// and nothing is mirrored. Sampled well inside each half, where JPEG's
-	// blocks have not touched the boundary.
+	// and keeps its composition; what changes is the lighting, and it is
+	// mirrored — the default — so the bright half is now on the left.
+	// Sampled well inside each half, where JPEG's blocks have not touched
+	// the boundary.
 	stored := readStoredImage(t, h.app, media[0].URL)
 	if b := stored.Bounds(); b.Dx() != 64 || b.Dy() != 32 {
 		t.Fatalf("stored bounds = %v, want 64x32", b)
 	}
 	left, right := stored.RGBAAt(8, 16), stored.RGBAAt(56, 16)
-	if left.R > 80 || right.R < 200 {
-		t.Errorf("stored red left/right = %d/%d, want dark on the left and bright on the right — not mirrored", left.R, right.R)
+	if left.R < 200 || right.R > 80 {
+		t.Errorf("stored red left/right = %d/%d, want bright on the left and dark on the right after mirroring", left.R, right.R)
 	}
-	// 220, warmed and lifted, is about 234; JPEG keeps it within a few.
-	if right.R < 224 {
-		t.Errorf("stored bright half red = %d, want it lighter than the source's 220", right.R)
+	// 220, lifted, is about 231; JPEG keeps it within a few.
+	if left.R < 224 {
+		t.Errorf("stored bright half red = %d, want it lighter than the source's 220", left.R)
+	}
+}
+
+// Every size of a colour shows that colour's photographs: the pictures are
+// stored once, on the product, and each variant lists the ones its page had.
+func TestVariantsOfOneColourShareItsPictures(t *testing.T) {
+	h := newHarness(t, Config{}, false)
+	job := h.wait(t, h.start(t, map[string]any{"url": h.listingWithSharedPictures()}).ID)
+	if job.Status != StatusDone {
+		t.Fatalf("status = %s: %s", job.Status, job.Message)
+	}
+	product, err := h.app.Products().GetProduct(context.Background(), *job.ProductID)
+	if err != nil {
+		t.Fatalf("get product: %v", err)
+	}
+	media, err := h.app.MediaLibrary().ForProduct(context.Background(), product.ID)
+	if err != nil {
+		t.Fatalf("product media: %v", err)
+	}
+	if len(media) != 3 {
+		t.Fatalf("attached %d pictures, want 3 — black's two stored once, and white's", len(media))
+	}
+	pictures := map[string][]int64{}
+	for _, v := range product.Variants {
+		for _, img := range v.Images {
+			pictures[v.SKU] = append(pictures[v.SKU], img.MediaID)
+		}
+	}
+	black := []int64{media[0].ID, media[1].ID}
+	for _, sku := range []string{"B0SHIRT001", "B0SHIRT002"} {
+		if got := pictures[sku]; len(got) != 2 || got[0] != black[0] || got[1] != black[1] {
+			t.Errorf("%s pictures = %v, want black's %v", sku, got, black)
+		}
+	}
+	if got := pictures["B0SHIRT003"]; len(got) != 1 || got[0] != media[2].ID {
+		t.Errorf("white's pictures = %v, want %d", got, media[2].ID)
 	}
 }
 
@@ -610,8 +793,8 @@ func TestImportWithoutAKeyUsesTheListingCopy(t *testing.T) {
 	if job.Status != StatusDone {
 		t.Fatalf("status = %s: %s", job.Status, job.Message)
 	}
-	if !containsPrefix(job.Warnings, "no Anthropic API key") {
-		t.Errorf("warnings = %v, want the missing key named", job.Warnings)
+	if !containsPrefix(job.Warnings, "no model is configured") {
+		t.Errorf("warnings = %v, want the missing model named", job.Warnings)
 	}
 	product, err := h.app.Products().GetProduct(context.Background(), *job.ProductID)
 	if err != nil {
@@ -740,7 +923,13 @@ func TestImportingTwiceDoesNotCollideOnTheSlug(t *testing.T) {
 	}
 }
 
-func TestVariantsPastTheCapCarryTheParent(t *testing.T) {
+// With a cap, the colours come first: a listing's pictures follow its
+// colour, so one page of each colour is opened before a second size of any,
+// and a size left unvisited borrows its colour's pictures. Here the cap is
+// one. Red (B0CHILD003) is opened because nobody has seen Red; Blue/Large
+// (B0CHILD002) is not, and shows Blue's pictures — the parent's — at the
+// parent's price.
+func TestVariantsPastTheCapBorrowTheirColoursPictures(t *testing.T) {
 	h := newHarness(t, Config{}, false)
 	url := h.listingWithVariants()
 
@@ -748,17 +937,48 @@ func TestVariantsPastTheCapCarryTheParent(t *testing.T) {
 	if job.Status != StatusDone {
 		t.Fatalf("status = %s: %s", job.Status, job.Message)
 	}
-	if len(h.fx.visited()) != 2 {
-		t.Errorf("visited %v, want the parent and one child", h.fx.visited())
+	visited := h.fx.visited()
+	if len(visited) != 2 || !strings.HasSuffix(visited[1], "B0CHILD003") {
+		t.Errorf("visited %v, want the parent and then Red, the colour nobody had seen", visited)
 	}
-	if !containsPrefix(job.Warnings, "variant B0CHILD003 was not visited") {
+	if !containsPrefix(job.Warnings, "variant B0CHILD002 was not visited") {
 		t.Errorf("warnings = %v, want the unvisited variant named", job.Warnings)
 	}
 	product, _ := h.app.Products().GetProduct(context.Background(), *job.ProductID)
 	for _, v := range product.Variants {
-		if v.SKU == "B0CHILD003" && v.Price.AmountMinor != 1999 {
-			t.Errorf("unvisited variant price = %d, want the parent's 1999", v.Price.AmountMinor)
+		switch v.SKU {
+		case "B0CHILD002":
+			if v.Price.AmountMinor != 1999 {
+				t.Errorf("unvisited variant price = %d, want the parent's 1999", v.Price.AmountMinor)
+			}
+			if len(v.Images) != 2 {
+				t.Errorf("unvisited Blue/Large shows %d pictures, want Blue's two", len(v.Images))
+			}
+		case "B0CHILD003":
+			if len(v.Images) != 1 {
+				t.Errorf("Red shows %d pictures, want its own one", len(v.Images))
+			}
 		}
+	}
+
+	// And when the sibling is not the parent: with one visit on the shirt,
+	// Small/White is opened (a new colour), Large/White borrows its picture
+	// and the warning says whose, while Large/Black borrows the parent's.
+	h.fx.reset()
+	job = h.wait(t, h.start(t, map[string]any{"url": h.listingWithSharedPictures(), "max_variants": 1}).ID)
+	if job.Status != StatusDone {
+		t.Fatalf("status = %s: %s", job.Status, job.Message)
+	}
+	if !containsPrefix(job.Warnings, "variant B0SHIRT004 was not visited (over the limit of 1); it carries the parent's price and the pictures of B0SHIRT003, the same Color") {
+		t.Errorf("warnings = %v, want Large/White to say it borrowed Small/White's pictures", job.Warnings)
+	}
+	product, _ = h.app.Products().GetProduct(context.Background(), *job.ProductID)
+	pictures := map[string]int{}
+	for _, v := range product.Variants {
+		pictures[v.SKU] = len(v.Images)
+	}
+	if pictures["B0SHIRT004"] != 1 || pictures["B0SHIRT002"] != 2 || pictures["B0SHIRT003"] != 1 {
+		t.Errorf("pictures per variant = %v, want White's one on both whites and Black's two on Large/Black", pictures)
 	}
 }
 

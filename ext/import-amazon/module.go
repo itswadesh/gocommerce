@@ -84,12 +84,32 @@ type Config struct {
 	// on purpose: it is where a passed robot check and a signed-in session
 	// live. Defaults to a directory under the OS temp directory.
 	ProfileDir string
-	// AnthropicAPIKey enables the rewrite. Empty means the listing is used as
-	// scraped, and each job says so in its warnings.
+	// The rewrite has four doors, and the first one configured is used:
+	//
+	//   - AnthropicAPIKey: Claude, through the Messages API.
+	//   - GeminiAPIKey: Google's Gemini, through its OpenAI-compatible
+	//     endpoint. Google AI Studio hands these out with a free tier.
+	//   - OpenAIAPIKey: OpenAI, through chat completions.
+	//   - LLMBaseURL alone: a local OpenAI-compatible server — Ollama at
+	//     http://127.0.0.1:11434/v1, LM Studio at http://127.0.0.1:1234/v1 —
+	//     with no key and no bill. Name the model in Model.
+	//
+	// LLMBaseURL also overrides the endpoint for the Gemini and OpenAI doors,
+	// and carries the version segment, because the three differ in it.
+	//
+	// None of them configured means the listing is used as scraped, and each
+	// job says so in its warnings. A Claude.ai or ChatGPT subscription is not
+	// a door: those are products for people, with no endpoint a server calls.
 	AnthropicAPIKey string
-	// Model is the Claude model for the rewrite. Defaults to claude-sonnet-5.
+	GeminiAPIKey    string
+	OpenAIAPIKey    string
+	LLMBaseURL      string
+	// Model names the model at whichever door is open. Defaults to
+	// claude-sonnet-5, gemini-2.0-flash and gpt-4o-mini for the three
+	// services; a local server has no sensible default, so name the one you
+	// pulled.
 	Model string
-	// AnthropicBaseURL overrides the API endpoint, for tests.
+	// AnthropicBaseURL overrides the Anthropic endpoint, for tests.
 	AnthropicBaseURL string
 	// MaxVariants bounds how many variation pages one import visits. The rest
 	// are created with the parent's price and pictures. Defaults to 30.
@@ -195,7 +215,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	m.log = app.Log()
 	m.db = app.DB()
-	m.optimizer = newOptimizer(m.cfg.AnthropicAPIKey, m.cfg.Model, m.cfg.AnthropicBaseURL)
+	m.optimizer = newOptimizer(m.cfg)
 	m.sem = make(chan struct{}, 1)
 	// Owned here rather than taken from OnStart, so a job posted the moment
 	// the routes are up has a context — and so the tests, which never call
@@ -272,14 +292,15 @@ type createRequest struct {
 // and it is the three things that can change without changing what the
 // product looks like: the plain background replaced with a soft gradient and
 // a shadow; the lighting lifted a touch; the orientation turned by three
-// degrees, drawn a little smaller so the turn fits. Colour is deliberately
-// left alone — warmth and saturation are available, and off, because they
-// change the product and not the photograph. Not mirrored: that reverses
-// text, and it is the one change a viewer catches.
+// degrees, drawn a little smaller so the turn fits, and mirrored. Colour is
+// deliberately left alone — warmth and saturation are available, and off,
+// because they change the product and not the photograph. The mirror is on
+// because it was asked for; it reverses any text in a picture, and the
+// drawer says so beside the switch.
 var defaultImages = imageOptions{
 	Brightness: 0.03, Contrast: 1.04,
 	Background: "gradient", BackgroundColor: "#F6F7F9", BackgroundTo: "#E4E7EC",
-	Scale: 0.92, Tilt: 3, Shadow: true,
+	Scale: 0.92, Tilt: 3, Shadow: true, Flip: "horizontal",
 }
 
 func (m *Module) handleCreate(w http.ResponseWriter, r *http.Request) {
@@ -481,7 +502,7 @@ func (m *Module) run(id int64) {
 	var rw *rewrite
 	m.progress(ctx, id, StatusRunning, "optimizing", "Rewriting the copy")
 	if m.optimizer == nil {
-		warnings = append(warnings, "no Anthropic API key is configured, so the listing's own copy was used")
+		warnings = append(warnings, "no model is configured for the rewrite (an Anthropic, Gemini or OpenAI key, or a local server's URL), so the listing's own copy was used")
 	} else if rw, err = m.optimizer.optimize(ctx, listing); err != nil {
 		warnings = append(warnings, "the rewrite failed, so the listing's own copy was used: "+err.Error())
 		rw = nil
@@ -534,13 +555,13 @@ func (m *Module) dropFetcher() {
 // which variant nominates which.
 type imported struct {
 	order     []int64
-	byVariant map[string]int64 // variant ASIN → media id of its first picture
+	byVariant map[string][]int64 // variant ASIN → its pictures, in page order
 }
 
 // importImages fetches, adjusts and stores every distinct picture, parent
 // first, then each variant's, up to the cap.
 func (m *Module) importImages(ctx context.Context, l *Listing, o imageOptions) (imported, []string) {
-	out := imported{byVariant: map[string]int64{}}
+	out := imported{byVariant: map[string][]int64{}}
 	var warnings []string
 	seen := map[string]int64{}
 	linkedOnly := false
@@ -605,12 +626,9 @@ func (m *Module) importImages(ctx context.Context, l *Listing, o imageOptions) (
 	}
 	for _, v := range l.Variants {
 		alt := strings.TrimSpace(l.Title + " " + strings.Join(v.Options, " "))
-		first := true
 		for _, u := range v.Images {
-			id, ok := store(u, alt)
-			if ok && first {
-				out.byVariant[v.ASIN] = id
-				first = false
+			if id, ok := store(u, alt); ok {
+				out.byVariant[v.ASIN] = append(out.byVariant[v.ASIN], id)
 			}
 		}
 	}
@@ -736,9 +754,9 @@ func (m *Module) createProduct(ctx context.Context, l *Listing, rw *rewrite, opt
 			warnings = append(warnings, "could not attach the pictures: "+err.Error())
 		} else {
 			for _, v := range product.Variants {
-				if id, ok := media.byVariant[skuBase(v.SKU)]; ok {
-					if err := m.app.MediaLibrary().SetVariantMedia(ctx, v.ID, &id); err != nil {
-						warnings = append(warnings, "could not set the picture for variant "+v.SKU+": "+err.Error())
+				if ids, ok := media.byVariant[skuBase(v.SKU)]; ok {
+					if err := m.app.MediaLibrary().SetVariantMedia(ctx, v.ID, ids); err != nil {
+						warnings = append(warnings, "could not set the pictures for variant "+v.SKU+": "+err.Error())
 					}
 				}
 			}

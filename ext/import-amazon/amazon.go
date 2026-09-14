@@ -314,8 +314,9 @@ func crawl(ctx context.Context, f pageFetcher, rawURL string, maxVariants int) (
 		listing.Options = append(listing.Options, option)
 	}
 
-	visited := 0
-	for _, asin := range sortedASINs(tw) {
+	all := sortedASINs(tw)
+	visit, key := chooseVisits(tw, all, parent.ASIN, maxVariants)
+	for _, asin := range all {
 		vals := tw.Values[asin]
 		if len(vals) != len(tw.Dimensions) {
 			continue
@@ -325,8 +326,7 @@ func crawl(ctx context.Context, f pageFetcher, rawURL string, maxVariants int) (
 		switch {
 		case asin == parent.ASIN:
 			v.Available, v.Fetched = parent.Available, true
-		case visited < maxVariants:
-			visited++
+		case visit[asin]:
 			child, err := f.fetch(ctx, variantURL(parsed, asin))
 			if err != nil {
 				return nil, nil, fmt.Errorf("variant %s: %w", asin, err)
@@ -343,13 +343,111 @@ func crawl(ctx context.Context, f pageFetcher, rawURL string, maxVariants int) (
 			} else if child.Price != "" {
 				warnings = append(warnings, "variant "+asin+": could not read the price "+strconv.Quote(child.Price))
 			}
-		default:
-			warnings = append(warnings, "variant "+asin+" was not visited (over the limit of "+
-				strconv.Itoa(maxVariants)+"); it carries the parent's price and pictures")
 		}
 		listing.Variants = append(listing.Variants, v)
 	}
+
+	// A variant past the cap borrows its pictures from a visited one of its
+	// colour, because that is what its own page would have shown; the
+	// parent's pictures — a mix of every colour on most listings — are the
+	// fallback when no page of that colour was opened. The price stays the
+	// parent's, which is as good a guess as any sibling's.
+	shown := map[string]*ListingVariant{}
+	for i := range listing.Variants {
+		v := &listing.Variants[i]
+		if v.Fetched {
+			if _, ok := shown[key(v.ASIN)]; !ok || v.ASIN == parent.ASIN {
+				shown[key(v.ASIN)] = v
+			}
+		}
+	}
+	for i := range listing.Variants {
+		v := &listing.Variants[i]
+		if v.Fetched {
+			continue
+		}
+		carries := "the parent's price and pictures"
+		if sibling, ok := shown[key(v.ASIN)]; ok && sibling.ASIN != parent.ASIN {
+			v.Images = sibling.Images
+			carries = "the parent's price and the pictures of " + sibling.ASIN +
+				", the same " + strings.Join(pictureDimNames(tw), " and ")
+		}
+		warnings = append(warnings, "variant "+v.ASIN+" was not visited (over the limit of "+
+			strconv.Itoa(maxVariants)+"); it carries "+carries)
+	}
 	return listing, warnings, nil
+}
+
+// chooseVisits picks which variation pages to open when there are more than
+// the cap: one of each colour before a second size of any, because pictures
+// follow the colour (or style, or pattern) — a size left unvisited can borrow
+// its colour's pictures, while a colour left unvisited has nothing to borrow.
+// Within that, page order. The parent's page is already open and not counted.
+// The key it returns names a variant's colour, so the caller can match a
+// variant past the cap with the sibling whose pictures it borrows.
+func chooseVisits(tw *twister, all []string, parent string, max int) (map[string]bool, func(string) string) {
+	dims := pictureDims(tw)
+	key := func(asin string) string {
+		vals := tw.Values[asin]
+		parts := make([]string, 0, len(dims))
+		for _, i := range dims {
+			if i < len(vals) {
+				parts = append(parts, vals[i])
+			}
+		}
+		return strings.Join(parts, "\x00")
+	}
+	visit := map[string]bool{}
+	seen := map[string]bool{key(parent): true}
+	for pass := 0; pass < 2; pass++ {
+		for _, asin := range all {
+			if len(visit) >= max {
+				return visit, key
+			}
+			if asin == parent || visit[asin] || (pass == 0 && seen[key(asin)]) {
+				continue
+			}
+			seen[key(asin)] = true
+			visit[asin] = true
+		}
+	}
+	return visit, key
+}
+
+// pictureDims are the dimensions a listing's pictures follow: every one that
+// is not a size. Amazon keys those size_name, fit_type, item_package_quantity
+// and the like and labels them Size, Fit, Number of Items; the photographs
+// change with the colour, style, pattern or material, and never with those.
+// A listing whose every dimension is a size has no picture dimension, and
+// then every variant shares the parent's pictures, which is right.
+func pictureDims(tw *twister) []int {
+	var out []int
+	for i, dim := range tw.Dimensions {
+		if !sizeLike(dim) && !sizeLike(tw.Labels[dim]) {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+func pictureDimNames(tw *twister) []string {
+	var out []string
+	for _, i := range pictureDims(tw) {
+		dim := tw.Dimensions[i]
+		out = append(out, firstNonEmpty(tw.Labels[dim], dim))
+	}
+	return out
+}
+
+func sizeLike(name string) bool {
+	name = strings.ToLower(name)
+	for _, word := range []string{"size", "fit", "length", "width", "waist", "inseam", "quantity",
+		"count", "pack", "number", "capacity", "wattage", "voltage", "weight", "volume", "unit"} {
+		if strings.Contains(name, word) {
+			return true
+		}
+	}
+	return false
 }
 
 // sortedASINs keeps the widget's ASINs in a stable order, because a map's

@@ -63,8 +63,11 @@
         axesDirty = $bindable(false),
     } = $props();
 
-    // The variant whose image is being chosen; null while the picker is shut.
+    // The variant whose pictures are being chosen; null while the picker is
+    // shut. `picked` is the working list, in the order the tiles were chosen,
+    // so the drawer can be cancelled without having written anything.
     let imageFor = $state(null);
+    let picked = $state([]);
 
     /**
      * The variant whose detail drawer is open, by id.
@@ -77,19 +80,31 @@
     let detailId = $state(null);
 
     /**
-     * A variant nominates one of the *product's* images rather than owning a
-     * file, so the picker offers exactly what the product already shows. That
+     * A variant nominates some of the *product's* images rather than owning
+     * files, so the picker offers exactly what the product already shows. That
      * is also why it can be empty: with no media on the product there is
      * nothing to nominate, and the honest answer is to say so rather than to
-     * open an upload behind a variant's back.
+     * open an upload behind a variant's back. Several variants may pick the
+     * same picture — every size of a colour usually does.
      */
     const imageChoices = $derived(media.filter((m) => m.kind === "image"));
 
-    async function setVariantImage(variant, mediaID) {
+    function openImages(variant) {
+        picked = (variant.images ?? []).map((img) => img.media_id);
+        imageFor = variant;
+    }
+
+    function togglePicked(mediaID) {
+        picked = picked.includes(mediaID)
+            ? picked.filter((id) => id !== mediaID)
+            : [...picked, mediaID];
+    }
+
+    async function saveVariantImages(variant, mediaIDs) {
         working = true;
         try {
             await request("PUT", `/api/admin/variants/${variant.id}/media`, {
-                body: { media_id: mediaID },
+                body: { media_ids: mediaIDs },
             });
             imageFor = null;
         } catch (err) {
@@ -1530,17 +1545,22 @@
                                         type="button"
                                         class="thumb sm variant-thumb"
                                         disabled={working}
-                                        aria-label="Choose the image for {variant.sku}"
+                                        aria-label="Choose the pictures for {variant.sku}"
                                         title={variant.image
-                                            ? "Change this variant's image"
-                                            : "Choose an image for this variant"}
-                                        onclick={() => (imageFor = variant)}
+                                            ? `Change this variant's pictures (${variant.images?.length ?? 1})`
+                                            : "Choose pictures for this variant"}
+                                        onclick={() => openImages(variant)}
                                     >
                                         {#if variant.image}
                                             <img
                                                 src={variant.image.url}
                                                 alt={variant.image.alt || variant.sku}
                                             />
+                                            {#if (variant.images?.length ?? 0) > 1}
+                                                <span class="variant-thumb-count" aria-hidden="true">
+                                                    {variant.images.length}
+                                                </span>
+                                            {/if}
                                         {:else}
                                             <i class="ri-image-add-line" aria-hidden="true"></i>
                                         {/if}
@@ -1865,14 +1885,16 @@
 />
 
 <!--
-    Choosing a variant's image. It picks from the product's media rather than
-    uploading, because that is the model: a variant nominates one of the
-    pictures the product already shows, so the same file is stored once and a
-    storefront can swap to it when a shopper picks a colour.
+    Choosing a variant's pictures. It picks from the product's media rather
+    than uploading, because that is the model: a variant nominates some of the
+    pictures the product already shows, so each file is stored once however
+    many sizes share it, and a storefront can swap the gallery when a shopper
+    picks a colour. The tiles toggle, and the number on each is its place in
+    the variant's gallery; nothing is written until Save.
 -->
 <Drawer
     open={!!imageFor}
-    title={imageFor ? `Image for ${imageFor.label || imageFor.sku}` : "Variant image"}
+    title={imageFor ? `Pictures for ${imageFor.label || imageFor.sku}` : "Variant pictures"}
     size="sm"
     onclose={() => (imageFor = null)}
 >
@@ -1884,7 +1906,8 @@
     {:else}
         <div class="media-grid" role="list">
             {#each imageChoices as item (item.id)}
-                {@const chosen = imageFor?.image?.media_id === item.id}
+                {@const order = picked.indexOf(item.id)}
+                {@const chosen = order >= 0}
                 <div class="media-cell" role="listitem">
                     <div class="media-tile" data-dropinto={chosen}>
                         <button
@@ -1893,13 +1916,14 @@
                             style="height: 100%"
                             aria-pressed={chosen}
                             disabled={working}
-                            aria-label="{chosen ? 'Currently chosen' : 'Choose'} {item.filename ||
-                                `media ${item.id}`}"
-                            onclick={() => setVariantImage(imageFor, item.id)}
+                            aria-label="{chosen
+                                ? `Picture ${order + 1}, chosen; remove`
+                                : 'Choose'} {item.filename || `media ${item.id}`}"
+                            onclick={() => togglePicked(item.id)}
                         >
                             <img src={item.url} alt={item.alt || item.filename || ""} />
                             <span class="media-check" data-checked={chosen} aria-hidden="true">
-                                {#if chosen}<i class="ri-check-line"></i>{/if}
+                                {#if chosen}<span class="media-check-order">{order + 1}</span>{/if}
                             </span>
                         </button>
                     </div>
@@ -1912,24 +1936,34 @@
     {/if}
 
     <div class="field-help">
-        One image per variant. Removing the file from the product removes it here too — the
-        variant points at the product's picture rather than holding its own.
+        Pick the pictures this variant shows, in the order a shopper should see them; the first is
+        its thumbnail. Several variants may share a picture — every size of a colour usually does.
+        Removing a file from the product removes it here too: a variant points at the product's
+        pictures rather than holding its own.
     </div>
 
     {#snippet footer()}
         <button type="button" class="btn transparent m-r-auto" onclick={() => (imageFor = null)}>
             <span class="txt">Cancel</span>
         </button>
-        {#if imageFor?.image}
+        {#if imageFor?.images?.length}
             <button
                 type="button"
                 class="btn secondary"
                 disabled={working}
-                onclick={() => setVariantImage(imageFor, null)}
+                onclick={() => saveVariantImages(imageFor, [])}
             >
-                <span class="txt">Remove image</span>
+                <span class="txt">Remove all</span>
             </button>
         {/if}
+        <button
+            type="button"
+            class="btn"
+            disabled={working || !imageChoices.length}
+            onclick={() => saveVariantImages(imageFor, picked)}
+        >
+            <span class="txt">Save pictures</span>
+        </button>
     {/snippet}
 </Drawer>
 

@@ -98,7 +98,7 @@ environment:
 		mediaDir     = fs.String("media-dir", "", "directory for uploaded media (default $GOCOMMERCE_MEDIA_DIR; empty disables uploads)")
 		withIdentity = fs.Bool("identity", false, "install the identity module: shopper accounts under /x/identity/ (guest checkout stays)")
 		withWebhooks = fs.Bool("webhooks", false, "install the webhooks module: POST this store's events to endpoints you register")
-		withAmazon   = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY rewrites the copy; IMPORT_AMAZON_HEADED=1 shows the browser)")
+		withAmazon   = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or IMPORT_AMAZON_LLM_URL + IMPORT_AMAZON_LLM_MODEL for a local model rewrite the copy; IMPORT_AMAZON_HEADED=1 shows the browser)")
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -169,6 +169,10 @@ environment:
 	if *withAmazon {
 		modules = append(modules, amazon.New(amazon.Config{
 			AnthropicAPIKey: os.Getenv("ANTHROPIC_API_KEY"),
+			GeminiAPIKey:    os.Getenv("GEMINI_API_KEY"),
+			OpenAIAPIKey:    os.Getenv("OPENAI_API_KEY"),
+			LLMBaseURL:      os.Getenv("IMPORT_AMAZON_LLM_URL"),
+			Model:           os.Getenv("IMPORT_AMAZON_LLM_MODEL"),
 			ChromePath:      os.Getenv("CHROME_PATH"),
 			Headed:          os.Getenv("IMPORT_AMAZON_HEADED") != "",
 		}))
