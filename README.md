@@ -72,6 +72,12 @@ routes in its own namespace, and provides payments, fulfillment or
 notifications. It may not write core commerce tables — it calls a service,
 which performs the transition and writes the event.
 
+**One catalogue, several prices.** A price list can narrow to a customer
+group, a quantity break, a date window or a storefront — resolved in one place,
+so what a shopper is charged has a single answer. Channels differ in what is
+published and what it costs, never in currency: the store settles in one, and
+every order snapshots it.
+
 **Guest checkout, permanently.** A shopper buys with a cart token and an email.
 The `identity` module adds accounts on top of that; it may never make one
 required.
@@ -87,11 +93,13 @@ graph):
 |---|---|
 | `payments-stripe` | Card payments, signed webhooks, refunds |
 | `payments-razorpay` | Cards and UPI, hosted or in-page |
+| `payments-paddle` | Merchant of record: hosted checkout, adjustments as refunds |
 | `notify-sendgrid` | Order email, templates you own |
 | `notify-msg91` | Order SMS via DLT templates |
 | `fulfill-shiprocket` | Booking shipments and waybills |
 | `invoices` | Numbered, gapless invoices on payment |
 | `cms` | Content pages, per language |
+| `translations` | Catalogue content in the language a shopper asked for |
 | `identity` | Shopper accounts: sessions, saved addresses, order history, password reset |
 | `cart-recovery` | Chases an abandoned basket with a link back to it |
 | `mcp` | The store as tools for an AI agent, with an audit trail |
