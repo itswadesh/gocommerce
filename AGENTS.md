@@ -151,8 +151,9 @@ a spec describing a file server is noise.
 
 The panel is moving to the design system in [`DESIGN.md`](DESIGN.md) — Tailwind
 v4, zero-chroma `oklch` tokens, borders instead of shadows — **one screen at a
-time** (D53). Until that finishes, and for the controls permanently, PocketBase's
-sheets are still doing their job. Both rules below are live at once.
+time** (D53), and the controls move with it, one control at a time (D55). Until
+that finishes PocketBase's sheets are still doing their job. Both rules below are
+live at once.
 
 **PocketBase's files stay verbatim.** `admin/src/lib/styles/*.css` are copied
 files. **Do not hand-edit them**; to take an upstream change, re-copy from a
@@ -172,10 +173,22 @@ inventing a class. See [`skills/development.md`](skills/development.md).
 computed to 80px and an unprefixed `grid` collapsed a row to zero width. The
 prefix is what keeps both meanings true in one document.
 
-**The controls stay PocketBase's, on every screen.** Buttons, text inputs,
-dropdowns and the side drawer are not being restyled. A migrated screen changes
-the surfaces around them — the page, the cards, the lists — and reuses `.btn`
-and the existing components as they are.
+**The controls are moving too, one at a time (D55).** They used to be frozen —
+buttons, inputs, dropdowns and the side drawer were to stay PocketBase's on every
+screen — and that freeze is lifted. A control moves when there is a reason to
+move it, and moving it means **detaching** it, not overriding it: PocketBase's
+sheet stays verbatim, our markup stops using their class, and the styling is
+written in `gocommerce.css` against the design tokens.
+
+The select menu is the first, and why it had to be detached rather than
+overridden is the general lesson. `dropdown.css` nests `.dropdown-item` inside
+`.dropdown`, which is two classes of specificity, so every single-class override
+lost silently — one attempt made the rows taller than before and read as a
+mystery. And `vars.css` re-declares its **entire** token block on
+`:root, .dropdown, .base-surface`, so nothing inside a popover inherits a token
+the screen around it changed: `--fontSize` is 14px and `--btnHeight` 45px in
+there whatever the page chose. A control you can only override is a control you
+do not own. Until a control has moved, reuse `.btn` and the rest as they are.
 
 Two things about `design.css` that look like mistakes and are not: Tailwind
 arrives without Preflight, because a reset would reach the thirty-five screens
