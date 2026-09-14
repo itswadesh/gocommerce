@@ -360,6 +360,28 @@ a.stat-card:focus-visible {
     min-width: 150px;
 }
 
+/*
+ * A record's title in the breadcrumb gets the room the header actually has.
+ *
+ * base.css caps the last crumb at 400px whatever the window is doing, so on
+ * the product editor "Amazon Essentials Men's Slim Fit Crewneck Undershirts,
+ * Pack of 6" (570px at this size) ended in an ellipsis with 280px of header
+ * unused beside the buttons. Measured on a 1440px window: crumb 400, text
+ * 570, header 1180, buttons 394.
+ *
+ * Only a two-crumb trail — a link and then a title — is a record's; a list
+ * page's single crumb is its own short name and never reached the cap, so
+ * those headers are left exactly as they were. The trail flexes to fill the
+ * row, the title may use all of it, and it still truncates — now only when
+ * the window genuinely runs out, which is what the ellipsis is for.
+ */
+.page-header > .breadcrumbs:has(> a + *) {
+    flex: 1 1 auto;
+}
+.page-header > .breadcrumbs:has(> a + *) > :last-child {
+    max-width: 100%;
+}
+
 /* ---------------------------------------------------------- footer toggle */
 
 /*
