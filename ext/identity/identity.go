@@ -1163,3 +1163,46 @@ func (t *loginThrottle) sweep(now time.Time) {
 		}
 	}
 }
+
+// Screens implements gocommerce.ScreenContributor.
+//
+// A store running this module has shopper accounts and, until the panel learned
+// to render a module's screen, no way to see them: the routes existed and the
+// interface did not. This is that gap closed from the module's own side, which
+// is the point of the descriptor — the panel draws it, so it looks like every
+// other screen and needs no code from this package.
+//
+// Read-only but for the delete. Accounts are the shopper's to edit, not the
+// operator's: an operator who could rewrite an address book would be a support
+// call away from changing where somebody's parcels go. Deleting is the
+// exception because somebody has to be able to honour an erasure request, and
+// it pairs customers.read with store.operate for exactly that reason.
+func (m *Module) Screens() []gocommerce.Screen {
+	return []gocommerce.Screen{{
+		Slug:  "identity-accounts",
+		Title: "Shopper accounts",
+		Icon:  "ri-account-circle-line",
+		Group: "Customers",
+		Right: gocommerce.RightCustomersRead,
+		Help: "People who signed up rather than checking out as guests. " +
+			"Guest checkout never stops working, so this is a subset of the customers list, not a replacement for it.",
+		List: gocommerce.ScreenList{
+			Endpoint: "/api/admin/x/identity/customers",
+			Paged:    true,
+			Empty:    "Nobody has created an account yet. Orders still arrive through guest checkout.",
+			Columns: []gocommerce.ScreenColumn{
+				{Key: "email", Label: "Email"},
+				{Key: "name", Label: "Name"},
+				{Key: "phone", Label: "Phone", Narrow: true},
+				{Key: "created_at", Label: "Joined", Kind: "relative", Narrow: true},
+			},
+		},
+		Form: &gocommerce.ScreenForm{
+			// No create and no update: see the note above. Delete alone, so an
+			// erasure request can be honoured from the panel.
+			Delete: "/api/admin/x/identity/customers/{id}",
+			DeleteWarning: "The account, its saved addresses and its sign-in go for good. " +
+				"Orders already placed keep their own snapshot of the address they shipped to, so history stays readable.",
+		},
+	}}
+}

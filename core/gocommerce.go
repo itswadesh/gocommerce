@@ -239,6 +239,10 @@ type App struct {
 	mux *http.ServeMux
 
 	modules []Module
+	// screens are the admin screens modules contributed, in registration
+	// order. Static after boot: a descriptor describes a screen's shape and
+	// never its contents, so there is nothing to invalidate.
+	screens []Screen
 	// current is the module whose Register is executing, or "" for the
 	// engine's own wiring. Route namespacing is enforced against it, so a
 	// module cannot claim a route outside its namespace even by lying about
@@ -391,6 +395,14 @@ func New(cfg Config, mods ...Module) (*App, error) {
 		if err != nil {
 			db.Close()
 			return nil, fmt.Errorf("gocommerce: module %q: Register: %w", m.Name(), err)
+		}
+		// Screens are collected after Register so a module can decide what it
+		// contributes from its own configuration, and refused here rather than
+		// later: a malformed descriptor shows up as a blank page long after the
+		// mistake, which is the worst place to find it.
+		if err := a.registerScreens(m.Name(), m); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("gocommerce: module %q: %w", m.Name(), err)
 		}
 		if a.regErr != nil {
 			db.Close()

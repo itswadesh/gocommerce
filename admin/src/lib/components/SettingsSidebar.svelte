@@ -1,4 +1,5 @@
 <script>
+    import { api } from "$lib/api.js";
     /**
      * PocketBase's settings sidebar: `<details class="nav-group">` groups of
      * `.nav-item` links inside a `.sidebar-content.scrollable`.
@@ -71,6 +72,11 @@
             { href: "/settings/agent", label: "Agent activity", icon: "ri-robot-2-line",
               right: "store.operate", module: "mcp" },
         ],
+        // Storefronts sit under Settings rather than the main nav: a store
+        // configures them once and then works in the screens they scope, the
+        // same shape as the attribute dictionary below.
+        Selling: [{ href: "/channels", label: "Channels", icon: "ri-store-2-line",
+                    right: "store.operate" }],
         // The attribute dictionary sits under Settings rather than beside
         // Categories in the main nav: it is vocabulary configured once and then
         // consumed from the categories drawer, not a screen worked in daily.
@@ -79,6 +85,24 @@
         Data: [{ href: "/data", label: "Import / export", icon: "ri-file-transfer-line",
                  anyOf: ["data.export", "data.import"] }],
     };
+
+    /**
+     * Screens a module contributed, fetched once and merged into the groups
+     * below.
+     *
+     * The engine already filters the listing by the caller's rights, so an
+     * entry that arrives here is one this operator may use — the `allowed`
+     * test below still runs, because a right can be withdrawn while a panel is
+     * open and the nav should lose the entry without a reload.
+     */
+    let moduleScreens = $state([]);
+    $effect(() => {
+        api.get("/api/admin/screens")
+            .then((result) => (moduleScreens = result.data ?? []))
+            // A panel that cannot list module screens is a panel with the
+            // built-in ones, not a broken panel.
+            .catch(() => (moduleScreens = []));
+    });
 
     /** A group with nothing left in it should not render its heading either. */
     const allowed = (l) =>
@@ -89,11 +113,22 @@
         (!l.right || can(l.right)) &&
         (!l.anyOf || l.anyOf.some((r) => can(r)));
 
-    const visible = $derived(
-        Object.entries(groups)
+    const visible = $derived.by(() => {
+        // A module screen joins the group it names, or one headed by the module
+        // itself when it names none — so a module cannot quietly plant an entry
+        // in the middle of the store's own settings without saying where.
+        const merged = { ...groups };
+        for (const s of moduleScreens) {
+            const group = s.group || s.module;
+            merged[group] = [
+                ...(merged[group] ?? []),
+                { href: `/x/${s.slug}`, label: s.title, icon: s.icon || "ri-puzzle-line", right: s.right },
+            ];
+        }
+        return Object.entries(merged)
             .map(([name, links]) => [name, links.filter(allowed)])
-            .filter(([, links]) => links.length),
-    );
+            .filter(([, links]) => links.length);
+    });
 
     function isActive(item) {
         const path = page.url.pathname.replace(base, "") || "/";
