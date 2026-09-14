@@ -68,6 +68,14 @@ func (f *Fulfillments) Create(ctx context.Context, orderID int64, providerCode s
 	}
 	req.Lines = lines
 
+	// What the parcel physically is, worked out once here rather than guessed
+	// separately by every carrier module.
+	parcel, err := f.parcelFor(ctx, order, lines)
+	if err != nil {
+		return nil, err
+	}
+	req.Parcel = parcel
+
 	shipment, err := provider.Ship(ctx, order, req)
 	if err != nil {
 		return nil, Internalf(err, "%s could not create the shipment", providerCode)
@@ -557,4 +565,76 @@ func (f *Fulfillments) Delete(ctx context.Context, id int64) (*Order, error) {
 			Summary: "Removed a shipment from order " + o.Number,
 		}, nil
 	})
+}
+
+// parcelFor works out what a shipment physically is, from the variants behind
+// the lines going into it.
+//
+// See the Parcel type for why weight is summed and dimensions usually are not.
+func (f *Fulfillments) parcelFor(ctx context.Context, o *Order, lines []ShipLine) (Parcel, error) {
+	variantOf := make(map[int64]int64, len(o.Lines))
+	for _, l := range o.Lines {
+		// A line whose variant has since been deleted keeps its snapshot and
+		// loses the reference, so there is nothing to weigh for it.
+		if l.VariantID != nil {
+			variantOf[l.ID] = *l.VariantID
+		}
+	}
+
+	var (
+		parcel   Parcel
+		units    int
+		onlyOne  int64
+		weighed  = true
+		distinct = map[int64]bool{}
+	)
+	for _, line := range lines {
+		variantID, ok := variantOf[line.OrderLineID]
+		if !ok || line.Quantity <= 0 {
+			continue
+		}
+		distinct[variantID] = true
+		onlyOne = variantID
+		units += line.Quantity
+
+		var grams sql.NullInt64
+		if err := f.app.db.QueryRowContext(ctx,
+			`SELECT weight_grams FROM variants WHERE id = $1`, variantID).Scan(&grams); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			return Parcel{}, Internalf(err, "read the weight of variant %d", variantID)
+		}
+		if !grams.Valid {
+			// One unweighed line makes the total a floor rather than the
+			// weight, and a module quoting a carrier on it should know.
+			weighed = false
+			continue
+		}
+		parcel.WeightGrams += int(grams.Int64) * line.Quantity
+	}
+	parcel.Measured = weighed && parcel.WeightGrams > 0
+
+	// One unit of one variant is the only case with an unambiguous size.
+	if len(distinct) == 1 && units == 1 {
+		var l, w, h sql.NullInt64
+		if err := f.app.db.QueryRowContext(ctx,
+			`SELECT length_mm, width_mm, height_mm FROM variants WHERE id = $1`, onlyOne,
+		).Scan(&l, &w, &h); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return Parcel{}, Internalf(err, "read the size of variant %d", onlyOne)
+		}
+		if l.Valid {
+			mm := int(l.Int64)
+			parcel.Dimensions.Length = &mm
+		}
+		if w.Valid {
+			mm := int(w.Int64)
+			parcel.Dimensions.Width = &mm
+		}
+		if h.Valid {
+			mm := int(h.Int64)
+			parcel.Dimensions.Height = &mm
+		}
+	}
+	return parcel, nil
 }

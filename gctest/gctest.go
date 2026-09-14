@@ -356,23 +356,60 @@ func CreateProduct(t *testing.T, app *gocommerce.App, sku string, priceMinor int
 	return p
 }
 
+// MeasuredProduct creates an active single-variant product whose variant has a
+// real weight and a real size, in the units the engine stores them: grams and
+// millimetres.
+//
+// It exists because a fulfillment provider's most important behaviour is what
+// it declares to the carrier, and that can only be tested against a catalogue
+// somebody has actually measured. CreateProduct leaves both unset, which is
+// the other case worth testing and not the same one.
+func MeasuredProduct(t *testing.T, app *gocommerce.App, sku string, priceMinor int64, stock,
+	weightGrams, lengthMM, widthMM, heightMM int) *gocommerce.Product {
+	t.Helper()
+	mm := func(v int) *int { return &v }
+	p, err := app.Products().CreateProduct(context.Background(), gocommerce.ProductInput{
+		Title:  "gctest " + sku,
+		Status: "active",
+		Variants: []gocommerce.VariantInput{{
+			SKU: sku, PriceMinor: priceMinor, StockOnHand: &stock,
+			WeightGrams: &weightGrams,
+			Dimensions: gocommerce.Dimensions{
+				Length: mm(lengthMM), Width: mm(widthMM), Height: mm(heightMM),
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("gctest: create measured product %s: %v", sku, err)
+	}
+	return p
+}
+
 // PlaceOrder runs a complete purchase — product, cart, checkout — with the
 // given payment method, and returns the result.
 func PlaceOrder(t *testing.T, app *gocommerce.App, paymentCode string) *gocommerce.CheckoutResult {
 	t.Helper()
-	ctx := context.Background()
-
 	product := CreateProduct(t, app, "GCTEST-"+paymentCode, 2500, 10)
 	variant := product.DefaultVariant()
 	if variant == nil {
 		t.Fatal("gctest: the product has no sellable variant")
 	}
+	return Buy(t, app, paymentCode, variant.ID, 1)
+}
+
+// Buy is PlaceOrder against a variant you made yourself, in the quantity you
+// want — which is what a fulfillment provider's tests need, because one unit
+// and two units are the two different answers the engine gives for a parcel's
+// size.
+func Buy(t *testing.T, app *gocommerce.App, paymentCode string, variantID int64, quantity int) *gocommerce.CheckoutResult {
+	t.Helper()
+	ctx := context.Background()
 
 	cart, err := app.Cart().Create(ctx, "")
 	if err != nil {
 		t.Fatalf("gctest: create cart: %v", err)
 	}
-	if _, err := app.Cart().AddLine(ctx, cart.Token, variant.ID, 1); err != nil {
+	if _, err := app.Cart().AddLine(ctx, cart.Token, variantID, quantity); err != nil {
 		t.Fatalf("gctest: add to cart: %v", err)
 	}
 
@@ -381,14 +418,26 @@ func PlaceOrder(t *testing.T, app *gocommerce.App, paymentCode string) *gocommer
 		Email:  "gctest@example.com",
 		Name:   "GC Test",
 		Address: gocommerce.Address{
-			Line1: "1 Test Street", City: "Testville",
-			PostalCode: "12345", Country: "US",
+			Line1: "1 Test Street", City: "Testville", State: "CA",
+			PostalCode: "94117", Country: "US", Phone: "+15555550123",
 		},
 	}, "")
 	if err != nil {
 		t.Fatalf("gctest: checkout with %s: %v", paymentCode, err)
 	}
 	return result
+}
+
+// Ship books a shipment through a fulfillment provider, and fails the test if
+// the carrier module refuses.
+func Ship(t *testing.T, app *gocommerce.App, orderID int64, provider string,
+	req gocommerce.ShipRequest) *gocommerce.Order {
+	t.Helper()
+	order, err := app.Ship().Create(context.Background(), orderID, provider, req)
+	if err != nil {
+		t.Fatalf("gctest: ship order %d with %s: %v", orderID, provider, err)
+	}
+	return order
 }
 
 // DrainOutbox delivers every pending event, so a test can assert on what

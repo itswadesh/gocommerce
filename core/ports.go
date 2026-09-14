@@ -128,6 +128,42 @@ type ShipRequest struct {
 	// to work out what "empty" covered.
 	Lines []ShipLine        `json:"lines,omitempty"`
 	Meta  map[string]string `json:"meta,omitempty"`
+	// Parcel is what the shipment physically is, filled in by the engine from
+	// the variants in Lines. A provider should prefer it over anything it would
+	// otherwise guess; it is read-only from a provider's point of view and
+	// whatever the caller sent here is overwritten.
+	Parcel Parcel `json:"parcel,omitempty"`
+}
+
+// Parcel is the measured weight and size of one shipment.
+//
+// The engine works it out rather than each carrier module guessing, because the
+// figures are on the variants and every module would otherwise reach for the
+// same fallback — which is how ext/fulfill-shiprocket came to ship a config
+// default past a catalogue somebody had measured.
+//
+// Weight is the honest part: mass is additive, so the sum over the lines is
+// exactly what the parcel weighs.
+//
+// Dimensions are not additive, and this is where the engine stops. Two boxes
+// side by side are not one box of twice the width, and how several items pack
+// into a carton is a decision about cartons, not about the order — the engine
+// has no view of what boxes a store keeps. So the sides are filled only when
+// the shipment is a single unit of a single variant, where there is exactly one
+// honest answer, and left empty otherwise. A module that needs a size for a
+// multi-item parcel should ask the operator for one rather than be handed a
+// number the engine invented.
+type Parcel struct {
+	// WeightGrams is the sum over the shipped lines. Zero when nothing in the
+	// parcel has a weight recorded, which is not the same as weightless.
+	WeightGrams int `json:"weight_grams,omitempty"`
+	// Dimensions are in whole millimetres, and present only for a single unit
+	// of a single variant. See the note above.
+	Dimensions Dimensions `json:"dimensions,omitempty"`
+	// Measured says whether every shipped line had a weight. False means the
+	// figure above is a floor rather than the parcel's weight, and a module
+	// quoting a carrier on it should say so or fall back.
+	Measured bool `json:"measured"`
 }
 
 // ShipLine is how much of one order line goes in this parcel.

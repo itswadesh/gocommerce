@@ -2,7 +2,7 @@
 //
 // Registering it adds "shiprocket" as a fulfillment provider, so an operator
 // ships by posting to the engine's own /api/admin/create-fulfillment with
-// `"provider": "shiprocket"` — the engine still owns the order's state and its
+// `"provider": "shiprocket"` â€” the engine still owns the order's state and its
 // events, and this module only talks to the carrier.
 //
 //	app, err := gocommerce.New(cfg,
@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -43,11 +44,15 @@ type Config struct {
 	// Email and Password are the Shiprocket API user's credentials. Required.
 	Email, Password string
 	// PickupLocation is the nickname of the pickup address registered in
-	// Shiprocket. Required — the carrier has to collect the parcel somewhere.
+	// Shiprocket. Required â€” the carrier has to collect the parcel somewhere.
 	PickupLocation string
-	// DefaultWeightKg is used for a variant with no weight recorded.
+	// DefaultWeightKg is the last resort, per unit, for a parcel the engine
+	// could not weigh â€” one holding a variant with no weight recorded. A
+	// catalogue that is fully weighed never reaches it.
 	DefaultWeightKg float64
-	// DefaultDimensionsCm is used for a parcel with no dimensions.
+	// DefaultLengthCm and friends are the last resort for a parcel the engine
+	// has no unambiguous size for, which is any parcel holding more than a
+	// single unit. See gocommerce.Parcel.
 	DefaultLengthCm, DefaultBreadthCm, DefaultHeightCm float64
 	// BaseURL overrides the endpoint, for tests.
 	BaseURL string
@@ -84,7 +89,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	case strings.TrimSpace(m.cfg.Password) == "":
 		return errors.New("shiprocket: Password is required")
 	case strings.TrimSpace(m.cfg.PickupLocation) == "":
-		return errors.New("shiprocket: PickupLocation is required — the carrier has to collect the parcel somewhere")
+		return errors.New("shiprocket: PickupLocation is required â€” the carrier has to collect the parcel somewhere")
 	}
 	if m.cfg.BaseURL == "" {
 		m.cfg.BaseURL = defaultBaseURL
@@ -147,8 +152,8 @@ func (m *Module) createOrder(ctx context.Context, order *gocommerce.Order, req g
 	first, last := splitName(name)
 
 	// What is declared is what is in this box, not what is on the order. The
-	// engine has already resolved req.Lines to explicit quantities — on a
-	// whole-order shipment that is every line at its full count — so a parcel
+	// engine has already resolved req.Lines to explicit quantities â€” on a
+	// whole-order shipment that is every line at its full count â€” so a parcel
 	// holding one of three lines does not tell the carrier it holds three, and
 	// the declared value is not the whole order's.
 	byLine := make(map[int64]gocommerce.OrderLine, len(order.Lines))
@@ -174,8 +179,8 @@ func (m *Module) createOrder(ctx context.Context, order *gocommerce.Order, req g
 	}
 
 	// Shiprocket rejects a duplicate external order id, and a second parcel
-	// against the same order would be exactly that. len is 0 on the first call —
-	// the order was read before this shipment's row exists — so the first
+	// against the same order would be exactly that. len is 0 on the first call â€”
+	// the order was read before this shipment's row exists â€” so the first
 	// payload is byte-identical to the one this module always sent.
 	externalID := order.Number
 	if n := len(order.Fulfillments); n > 0 {
@@ -200,10 +205,16 @@ func (m *Module) createOrder(ctx context.Context, order *gocommerce.Order, req g
 		"order_items":           items,
 		"payment_method":        paymentMethodFor(order),
 		"sub_total":             float64(subtotalMinor) / 100,
-		"length":                m.dimension(req.Meta, "length_cm", m.cfg.DefaultLengthCm),
-		"breadth":               m.dimension(req.Meta, "breadth_cm", m.cfg.DefaultBreadthCm),
-		"height":                m.dimension(req.Meta, "height_cm", m.cfg.DefaultHeightCm),
-		"weight":                m.dimension(req.Meta, "weight_kg", m.cfg.DefaultWeightKg*float64(max(units, 1))),
+		// Three sources, in this order: what the operator typed, what the
+		// engine measured from the variants, and the configured fallback. The
+		// operator comes first because they are holding the box; the measured
+		// figure comes before the default because a catalogue somebody took
+		// the trouble to weigh should not be overruled by a guess â€” which is
+		// exactly what this module used to do.
+		"length":  m.dimension(req.Meta, "length_cm", centimetres(req.Parcel.Dimensions.Length, m.cfg.DefaultLengthCm)),
+		"breadth": m.dimension(req.Meta, "breadth_cm", centimetres(req.Parcel.Dimensions.Width, m.cfg.DefaultBreadthCm)),
+		"height":  m.dimension(req.Meta, "height_cm", centimetres(req.Parcel.Dimensions.Height, m.cfg.DefaultHeightCm)),
+		"weight":  m.dimension(req.Meta, "weight_kg", m.weight(req.Parcel, units)),
 	}
 
 	var created struct {
@@ -269,6 +280,33 @@ func paymentMethodFor(order *gocommerce.Order) string {
 		return "Prepaid"
 	}
 	return "COD"
+}
+
+// weight is what to declare, in kilograms.
+//
+// The engine's figure is used only when it measured every line: a Parcel whose
+// Measured is false has a weight that is a floor, not the parcel's, and
+// declaring a floor to a carrier is how a shipment comes back with a
+// reweighing charge. In that case the configured default per unit is the more
+// honest guess, because it is at least a guess about a whole parcel.
+func (m *Module) weight(parcel gocommerce.Parcel, units int) float64 {
+	if parcel.Measured && parcel.WeightGrams > 0 {
+		return float64(parcel.WeightGrams) / 1000
+	}
+	// Rounded to the gram, which is all the precision a weight ever has here.
+	// Without it, 0.4 kg three times is 1.2000000000000002 on the wire â€” not
+	// wrong, but not something to put in front of a carrier either.
+	return math.Round(m.cfg.DefaultWeightKg*float64(max(units, 1))*1000) / 1000
+}
+
+// centimetres converts one of the engine's millimetre sides, falling back when
+// the engine had no unambiguous answer â€” which it does not for any parcel
+// holding more than a single unit. See gocommerce.Parcel for why.
+func centimetres(mm *int, fallback float64) float64 {
+	if mm == nil || *mm <= 0 {
+		return fallback
+	}
+	return float64(*mm) / 10
 }
 
 func (m *Module) dimension(meta map[string]string, key string, fallback float64) float64 {

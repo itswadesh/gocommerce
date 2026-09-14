@@ -355,6 +355,17 @@ order, err := app.Order().MarkDelivered(ctx, 42)
 order, err := app.Order().Cancel(ctx, 42, "customer changed their mind")
 ```
 
+Whatever the caller puts in `ShipRequest.Parcel` is overwritten: the engine
+fills it from the variants behind the resolved lines and hands it to the
+provider, so every carrier module declares the same figures rather than each
+one reaching for its own default. Weight is the sum over the parcel, because
+mass is additive. The three sides are filled **only** for a single unit of a
+single variant — two boxes side by side are not one box of twice the width, and
+how several items pack into a carton is a decision about cartons. A module
+needing a size for a multi-item parcel falls back to a configured box rather
+than a number the engine invented. `Parcel.Measured` is false when any line had
+no weight recorded, which makes the total a floor rather than the weight.
+
 ```http
 POST /api/admin/create-fulfillment
 {"order_id":42,"provider":"manual","tracking":"1Z999AA1"}
