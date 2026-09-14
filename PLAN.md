@@ -67,6 +67,7 @@ Everything around those primitives is replaceable:
 ```text
                  ┌──────── payments-stripe
                  ├──────── payments-razorpay
+                 ├──────── payments-paddle
                  ├──────── fulfill-shiprocket
                  ├──────── notify-sendgrid
                  ├──────── notify-msg91
@@ -1422,6 +1423,7 @@ gocommerce/                      # ONE Go module: github.com/misiki/gocommerce
 └── ext/                         # bundled extensions: ZERO third-party deps (D23)
     ├── payments-stripe/         # package stripe — REST + HMAC, no SDK
     ├── payments-razorpay/
+    ├── payments-paddle/          # merchant of record: hosted checkout + adjustments
     ├── notify-sendgrid/   notify-msg91/
     ├── fulfill-shiprocket/
     └── invoices/   cms/   mcp/
