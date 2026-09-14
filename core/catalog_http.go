@@ -48,6 +48,18 @@ func (a *App) handleListProducts(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	// Which storefront is asking. Absent takes the default; a store with no
+	// channels resolves to nothing and reads the whole catalogue, exactly as it
+	// did before channels existed.
+	channel, err := a.Channels().Resolve(r.Context(), r.URL.Query().Get("channel"))
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	var channelID int64
+	if channel != nil {
+		channelID = channel.ID
+	}
 	// The storefront gets the facet filter too, and it is the place it earns
 	// its keep: narrowing a category down to the canvas bags is a shopper's
 	// move before it is an operator's. Status stays pinned to active here —
@@ -57,6 +69,7 @@ func (a *App) handleListProducts(w http.ResponseWriter, r *http.Request) {
 		Search:     r.URL.Query().Get("q"),
 		Status:     ProductActive,
 		Attributes: attributeFilters(r.URL.Query()["attr"]),
+		ChannelID:  channelID,
 		Limit:      limit,
 		Offset:     offset,
 	})

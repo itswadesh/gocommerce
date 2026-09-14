@@ -357,14 +357,16 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 			                    payment_provider, currency, subtotal_minor, shipping_minor,
 			                    discount_minor, tax_minor, tax_inclusive, total_minor,
 			                    email, phone, name, address,
-			                    lang, metadata, shipping_method, reservation_expires_at)
+			                    lang, metadata, shipping_method, channel_id,
+			                    reservation_expires_at)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
+			        (SELECT channel_id FROM carts WHERE id = $22),
 			        now() + make_interval(secs => $21))`,
 			orderID, number, accessToken, OrderPending, PaymentPending, code, currency,
 			subtotal, shipping, discount, tax, inclusive, total,
 			strings.ToLower(in.Email), nullString(in.Phone),
 			nullString(in.Name), addr, s.app.RequestLanguageValue(ctx), meta, shippingMethod,
-			s.app.cfg.OrderTTL.Seconds(),
+			s.app.cfg.OrderTTL.Seconds(), cartID,
 		); err != nil {
 			return err
 		}
@@ -511,12 +513,13 @@ func (s *Orders) initiatePayment(ctx context.Context, provider PaymentProvider, 
 
 // refreshCartPrices re-snapshots a cart to current prices after a conflict.
 func (s *Orders) refreshCartPrices(ctx context.Context, cartToken string) {
+	priced := effectivePriceSQL("v.id", "l.quantity", "c.email", "c.channel_id", "v.price_minor")
 	if _, err := s.app.db.ExecContext(ctx, `
 		UPDATE cart_line_items l
-		SET unit_price_minor = v.price_minor, updated_at = now()
+		SET unit_price_minor = `+priced+`, updated_at = now()
 		FROM variants v, carts c
 		WHERE v.id = l.variant_id AND c.id = l.cart_id AND c.token = $1
-		  AND l.unit_price_minor <> v.price_minor`, cartToken); err != nil {
+		  AND l.unit_price_minor <> `+priced, cartToken); err != nil {
 		s.app.log.Warn("could not refresh cart prices", "error", err)
 	}
 }
@@ -573,9 +576,14 @@ func lockCartForCheckout(ctx context.Context, tx *sql.Tx, tok string, ttl time.D
 }
 
 func loadCheckoutLines(ctx context.Context, tx *sql.Tx, cartID int64) ([]checkoutLine, error) {
+	// The current price is the resolved one, not the catalogue one: a trade
+	// list or a quantity break is what this buyer is owed, and comparing the
+	// snapshot against the catalogue would make every listed line look changed.
 	rows, err := tx.QueryContext(ctx, `
 		SELECT l.variant_id, v.product_id, v.sku, p.title, l.quantity,
-		       l.unit_price_minor, v.price_minor, v.active, v.taxable,
+		       l.unit_price_minor,
+		       `+effectivePriceSQL("v.id", "l.quantity", "c.email", "c.channel_id", "v.price_minor")+`,
+		       v.active, v.taxable,
 		       CASE WHEN v.track_inventory AND NOT v.continue_selling
 		            THEN coalesce((SELECT sum(vs.on_hand - vs.reserved) FROM variant_stock vs WHERE vs.variant_id = v.id), 0) ELSE -1 END,
 		       coalesce((
@@ -588,6 +596,7 @@ func loadCheckoutLines(ctx context.Context, tx *sql.Tx, cartID int64) ([]checkou
 		FROM cart_line_items l
 		JOIN variants v ON v.id = l.variant_id
 		JOIN products p ON p.id = v.product_id
+		JOIN carts c ON c.id = l.cart_id
 		WHERE l.cart_id = $1
 		ORDER BY l.id`, cartID)
 	if err != nil {

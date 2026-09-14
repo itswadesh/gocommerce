@@ -42,6 +42,8 @@ func coreMigrations() []Migration {
 		{ID: "0031_shipping", SQL: migration0031Shipping},
 		{ID: "0032_variant_dimensions", SQL: migration0032VariantDimensions},
 		{ID: "0033_attribute_index", SQL: migration0033AttributeIndex},
+		{ID: "0034_customer_groups_and_price_lists", SQL: migration0034Pricing},
+		{ID: "0035_channels", SQL: migration0035Channels},
 	}
 }
 
@@ -1739,4 +1741,138 @@ ALTER TABLE variants
 const migration0033AttributeIndex = `
 CREATE INDEX products_category_attrs_idx
     ON products USING gin ((metadata -> 'category') jsonb_path_ops);
+`
+
+// M34 — who is buying, and how many.
+//
+// Until now a variant had exactly one price and the whole money path leaned on
+// that: AddLine snapshots `variants.price_minor`, checkout re-prices to it under
+// the lock, and the difference between the two is what makes a shopper
+// re-confirm. Nothing here changes that shape — it changes what "the current
+// price" resolves to, and leaves the single source intact.
+//
+// Membership keys on the email rather than on a customer id because this engine
+// has no customers table: a customer is an address that has ordered, which is
+// what customers.go reads and the only handle a group can hold. It is folded to
+// lower case on the way in, because a cart carries whatever the shopper typed.
+//
+// A list with no group is everybody's — a launch price, a seasonal one — so
+// group_id is nullable and NULL means "applies to all", not "applies to none".
+// Getting that backwards would make every ungrouped list silently dead.
+//
+// The window columns are nullable at both ends: most lists are open-ended in one
+// direction or both, and a NOT NULL default would make "from now until further
+// notice" something an operator has to express with a date in 2099.
+//
+// ON DELETE CASCADE from group to list is deliberate where the catalogue uses
+// RESTRICT. A category with products under it is refused because the products
+// are the valuable thing and would be orphaned; a price list whose audience has
+// gone is not orphaned, it is meaningless — it would price for nobody and could
+// never be reached again.
+const migration0034Pricing = `
+CREATE TABLE customer_groups (
+    id         bigserial   PRIMARY KEY,
+    code       text        NOT NULL UNIQUE CHECK (code <> ''),
+    name       text        NOT NULL CHECK (name <> ''),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE customer_group_members (
+    group_id bigint      NOT NULL REFERENCES customer_groups (id) ON DELETE CASCADE,
+    -- Stored folded; the service lowers it on the way in so that the primary
+    -- key does the de-duplication rather than a query having to remember.
+    email    text        NOT NULL CHECK (email <> '' AND email = lower(email)),
+    added_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (group_id, email)
+);
+CREATE INDEX customer_group_members_email_idx ON customer_group_members (email);
+
+CREATE TABLE price_lists (
+    id         bigserial   PRIMARY KEY,
+    name       text        NOT NULL CHECK (name <> ''),
+    -- NULL is everybody.
+    group_id   bigint      REFERENCES customer_groups (id) ON DELETE CASCADE,
+    starts_at  timestamptz,
+    ends_at    timestamptz,
+    active     boolean     NOT NULL DEFAULT true,
+    -- Higher wins when two lists both cover a line.
+    priority   integer     NOT NULL DEFAULT 0,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT price_lists_window
+        CHECK (starts_at IS NULL OR ends_at IS NULL OR ends_at > starts_at)
+);
+CREATE INDEX price_lists_live_idx ON price_lists (group_id) WHERE active;
+
+CREATE TABLE price_list_prices (
+    price_list_id bigint  NOT NULL REFERENCES price_lists (id) ON DELETE CASCADE,
+    variant_id    bigint  NOT NULL REFERENCES variants (id) ON DELETE CASCADE,
+    -- The quantity break. 1 is "any quantity", which is why it is the default
+    -- rather than 0: a break at zero units is not a thing anybody sells.
+    min_quantity  integer NOT NULL DEFAULT 1 CHECK (min_quantity >= 1),
+    amount_minor  bigint  NOT NULL CHECK (amount_minor >= 0),
+    PRIMARY KEY (price_list_id, variant_id, min_quantity)
+);
+-- The resolution query starts from the variant, so this is the index it needs.
+CREATE INDEX price_list_prices_variant_idx ON price_list_prices (variant_id, min_quantity);
+`
+
+// M35 — one catalogue, several storefronts.
+//
+// The decision the rest of this hangs off is what an unpublished product means,
+// and it is the opposite of the obvious one. A product with no row in
+// product_channels belongs to EVERY channel, not to none.
+//
+// The obvious reading — a join table that grants visibility — would empty every
+// existing catalogue the instant a store created its first channel, because no
+// product would have a row yet. Every store that adopted channels would take
+// its shop down and only find out from the sales figures. So the table records
+// a *narrowing* an operator opts into product by product, and a product that
+// has never been asked about stays where it was: everywhere.
+//
+// The same shape as M34's nullable group_id, and for the same reason: the empty
+// state has to mean "no restriction" rather than "no access", or adopting the
+// feature is a breaking change disguised as a migration.
+//
+// Currency deliberately does not appear here. D14 settled one settlement
+// currency per store and snapshots it onto every order; per-channel currency
+// would reopen that decision on the money path, and a channel that differs only
+// in what is published and what it costs is the whole of what this claims to be.
+//
+// The default channel is enforced by a partial unique index rather than by
+// application code, because two defaults is a state with no meaning — a request
+// that names no channel would have no answer — and the database is the only
+// place that can refuse it under concurrency.
+const migration0035Channels = `
+CREATE TABLE channels (
+    id         bigserial   PRIMARY KEY,
+    code       text        NOT NULL UNIQUE CHECK (code <> ''),
+    name       text        NOT NULL CHECK (name <> ''),
+    active     boolean     NOT NULL DEFAULT true,
+    is_default boolean     NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX channels_one_default_idx ON channels (is_default) WHERE is_default;
+
+-- A narrowing, not a grant. No rows for a product means every channel.
+CREATE TABLE product_channels (
+    product_id bigint NOT NULL REFERENCES products (id) ON DELETE CASCADE,
+    channel_id bigint NOT NULL REFERENCES channels (id) ON DELETE CASCADE,
+    PRIMARY KEY (product_id, channel_id)
+);
+CREATE INDEX product_channels_channel_idx ON product_channels (channel_id);
+
+-- Which storefront opened this basket, and which sold this order. Nullable
+-- because every cart and order that already exists was opened before channels
+-- did, and backfilling them into a channel invented after the sale would be a
+-- fact the store never recorded.
+ALTER TABLE carts  ADD COLUMN channel_id bigint REFERENCES channels (id) ON DELETE SET NULL;
+ALTER TABLE orders ADD COLUMN channel_id bigint REFERENCES channels (id) ON DELETE SET NULL;
+CREATE INDEX orders_channel_idx ON orders (channel_id) WHERE channel_id IS NOT NULL;
+
+-- A price list may narrow to one channel. NULL is every channel, exactly as
+-- NULL group_id is everybody.
+ALTER TABLE price_lists ADD COLUMN channel_id bigint REFERENCES channels (id) ON DELETE CASCADE;
 `

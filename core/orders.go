@@ -62,6 +62,9 @@ type Order struct {
 	Subtotal Money `json:"subtotal"`
 	Shipping Money `json:"shipping"`
 	// ShippingMethod is the name of the rate the shopper chose, snapshotted
+	// ChannelCode is the storefront that sold it, empty on a store with no
+	// channels and on every order placed before they existed.
+	ChannelCode string `json:"channel,omitempty"`
 	// for the reason every snapshot here exists: the rate can be renamed,
 	// repriced or deleted, and the order still has to say what was agreed.
 	// Empty means no rate was involved — a store still on the flat number.
@@ -331,7 +334,9 @@ const orderColumns = `o.id, o.number, o.status, o.payment_status, o.payment_prov
 	coalesce(o.payment_reference, ''), o.currency, o.subtotal_minor, o.shipping_minor,
 	o.discount_minor, o.tax_minor, o.tax_inclusive, o.total_minor, o.refunded_minor,
 	o.email, coalesce(o.phone, ''), coalesce(o.name, ''),
-	o.address, o.lang, o.metadata, o.shipping_method, o.created_at, o.updated_at`
+	o.address, o.lang, o.metadata, o.shipping_method,
+	coalesce((SELECT ch.code FROM channels ch WHERE ch.id = o.channel_id), ''),
+	o.created_at, o.updated_at`
 
 func (s *Orders) scanOrder(row interface{ Scan(...any) error }) (*Order, error) {
 	o := &Order{}
@@ -341,7 +346,7 @@ func (s *Orders) scanOrder(row interface{ Scan(...any) error }) (*Order, error) 
 		&o.PaymentReference, &o.Currency, &subtotal, &shipping, &discount,
 		&tax, &o.TaxInclusive, &total, &refunded,
 		&o.Email, &o.Phone, &o.Name, &addr, &o.Language, &meta, &o.ShippingMethod,
-		&o.CreatedAt, &o.UpdatedAt); err != nil {
+		&o.ChannelCode, &o.CreatedAt, &o.UpdatedAt); err != nil {
 		return nil, err
 	}
 	o.Subtotal = money(subtotal, o.Currency)

@@ -40,18 +40,22 @@ var cartSweepBatch = 500
 // there is no account, and there never has to be, because guest checkout is a
 // permanent guarantee rather than a stage this project grows out of.
 type Cart struct {
-	ID        int64      `json:"-"`
-	Token     string     `json:"id"`
-	Status    string     `json:"status"`
-	Currency  string     `json:"currency"`
-	Email     string     `json:"email,omitempty"`
-	Lines     []CartLine `json:"line_items"`
-	ItemCount int        `json:"item_count"`
-	Subtotal  Money      `json:"subtotal"`
-	Metadata  Metadata   `json:"metadata"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	ExpiresAt time.Time  `json:"expires_at"`
+	ID       int64  `json:"-"`
+	Token    string `json:"id"`
+	Status   string `json:"status"`
+	Currency string `json:"currency"`
+	Email    string `json:"email,omitempty"`
+	// ChannelCode is the storefront this basket was opened on, empty on a store
+	// that has no channels. It is what the price of every line was resolved
+	// against, so it travels with the cart rather than being looked up again.
+	ChannelCode string     `json:"channel,omitempty"`
+	Lines       []CartLine `json:"line_items"`
+	ItemCount   int        `json:"item_count"`
+	Subtotal    Money      `json:"subtotal"`
+	Metadata    Metadata   `json:"metadata"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	ExpiresAt   time.Time  `json:"expires_at"`
 }
 
 // CartLine is one variant in a cart, with the price as it was when added.
@@ -131,16 +135,40 @@ func (a *App) Cart() *Carts { return a.carts }
 
 // Create opens an empty cart and mints its token.
 func (c *Carts) Create(ctx context.Context, email string) (*Cart, error) {
+	return c.CreateInChannel(ctx, email, "")
+}
+
+// CreateInChannel opens a basket on one storefront.
+//
+// An empty code takes the default channel, and a store with no channels gets a
+// cart with none — which is every cart that existed before channels did, and is
+// why the column is nullable rather than defaulted.
+//
+// The channel is fixed at creation rather than read per request, because it is
+// what the price of every line was resolved against: a basket that changed
+// storefront halfway would hold lines priced on two different ones and no
+// honest way to say which total is right.
+func (c *Carts) CreateInChannel(ctx context.Context, email, channelCode string) (*Cart, error) {
+	channel, err := c.app.Channels().Resolve(ctx, channelCode)
+	if err != nil {
+		return nil, err
+	}
+	var channelID *int64
+	if channel != nil {
+		channelID = &channel.ID
+	}
+
 	tok, err := token()
 	if err != nil {
 		return nil, err
 	}
 	var id int64
 	err = c.app.db.QueryRowContext(ctx, `
-		INSERT INTO carts (token, currency, email, expires_at)
-		VALUES ($1, $2, $3, now() + make_interval(secs => $4))
+		INSERT INTO carts (token, currency, email, channel_id, expires_at)
+		VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5))
 		RETURNING id`,
-		tok, c.app.cfg.Currency, nullString(email), c.app.cfg.CartTTL.Seconds()).Scan(&id)
+		tok, c.app.cfg.Currency, nullString(email), channelID,
+		c.app.cfg.CartTTL.Seconds()).Scan(&id)
 	if err != nil {
 		return nil, err
 	}
@@ -155,11 +183,14 @@ func (c *Carts) GetByToken(ctx context.Context, tok string) (*Cart, error) {
 	}
 	cart := &Cart{}
 	var meta []byte
-	var email sql.NullString
+	var email, channelCode sql.NullString
 	err := c.app.db.QueryRowContext(ctx, `
-		SELECT id, token, status, currency, email, metadata, created_at, updated_at, expires_at
-		FROM carts WHERE token = $1`, tok,
-	).Scan(&cart.ID, &cart.Token, &cart.Status, &cart.Currency, &email,
+		SELECT c.id, c.token, c.status, c.currency, c.email, ch.code,
+		       c.metadata, c.created_at, c.updated_at, c.expires_at
+		FROM carts c
+		LEFT JOIN channels ch ON ch.id = c.channel_id
+		WHERE c.token = $1`, tok,
+	).Scan(&cart.ID, &cart.Token, &cart.Status, &cart.Currency, &email, &channelCode,
 		&meta, &cart.CreatedAt, &cart.UpdatedAt, &cart.ExpiresAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -168,6 +199,7 @@ func (c *Carts) GetByToken(ctx context.Context, tok string) (*Cart, error) {
 		return nil, err
 	}
 	cart.Email = email.String
+	cart.ChannelCode = channelCode.String
 	if err := scanMetadata(meta, &cart.Metadata); err != nil {
 		return nil, err
 	}
@@ -198,13 +230,21 @@ func (c *Carts) loadLines(ctx context.Context, cart *Cart) error {
 // currency at Create, so a store that changed Config.Currency was re-labelling
 // baskets opened before the change with a code their prices were never in.
 func (c *Carts) linesOf(ctx context.Context, cartID int64, currency string) (lines []CartLine, itemCount int, subtotalMinor int64, err error) {
+	// The current price is the resolved one, not the catalogue one — the same
+	// rule checkout applies. Comparing the snapshot against v.price_minor would
+	// flag every line a price list covers as "the price changed", which is the
+	// banner a shopper is shown before being asked to re-confirm: it would fire
+	// on every trade cart, every time, and mean nothing after the first.
 	rows, err := c.app.db.QueryContext(ctx, `
 		SELECT l.id, l.variant_id, v.product_id, v.sku, p.title, l.quantity,
-		       l.unit_price_minor, v.price_minor, v.track_inventory,
+		       l.unit_price_minor,
+		       `+effectivePriceSQL("v.id", "l.quantity", "c.email", "c.channel_id", "v.price_minor")+`,
+		       v.track_inventory,
 		       coalesce((SELECT sum(vs.on_hand - vs.reserved) FROM variant_stock vs WHERE vs.variant_id = v.id), 0), v.active
 		FROM cart_line_items l
 		JOIN variants v ON v.id = l.variant_id
 		JOIN products p ON p.id = v.product_id
+		JOIN carts c ON c.id = l.cart_id
 		WHERE l.cart_id = $1
 		ORDER BY l.id`, cartID)
 	if err != nil {
@@ -446,14 +486,14 @@ func (c *Carts) AddLine(ctx context.Context, tok string, variantID int64, qty in
 			return err
 		}
 
-		var price int64
+		var base int64
 		var active, tracks, oversell bool
 		var available int
 		err = tx.QueryRowContext(ctx, `
 			SELECT price_minor, active, track_inventory, continue_selling,
 			       coalesce((SELECT sum(on_hand - reserved) FROM variant_stock WHERE variant_id = $1), 0)
 			FROM variants WHERE id = $1`, variantID,
-		).Scan(&price, &active, &tracks, &oversell, &available)
+		).Scan(&base, &active, &tracks, &oversell, &available)
 		if errors.Is(err, sql.ErrNoRows) {
 			return NotFoundf("variant %d does not exist", variantID)
 		}
@@ -465,26 +505,69 @@ func (c *Carts) AddLine(ctx context.Context, tok string, variantID int64, qty in
 		}
 
 		var existing int
-		err = tx.QueryRowContext(ctx,
-			`SELECT coalesce((SELECT quantity FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2), 0)`,
-			cartID, variantID).Scan(&existing)
+		var storedPrice sql.NullInt64
+		var cartEmail string
+		var cartChannel sql.NullInt64
+		err = tx.QueryRowContext(ctx, `
+			SELECT coalesce((SELECT quantity FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2), 0),
+			       (SELECT unit_price_minor FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2),
+			       coalesce((SELECT email FROM carts WHERE id = $1), ''),
+			       (SELECT channel_id FROM carts WHERE id = $1)`,
+			cartID, variantID).Scan(&existing, &storedPrice, &cartEmail, &cartChannel)
 		if err != nil {
 			return err
+		}
+		var channelID *int64
+		if cartChannel.Valid {
+			channelID = &cartChannel.Int64
 		}
 		if tracks && !oversell && available < existing+qty {
 			return Conflictf("only %d left in stock", available)
 		}
 
+		// What this line costs at the quantity it will hold once this call is
+		// applied — the resulting total rather than the units just added,
+		// because a quantity break is a statement about the line.
+		price, err := c.app.Pricing().priceFor(ctx, tx, variantID, existing+qty, cartEmail, channelID)
+		if err != nil {
+			return err
+		}
+
+		// Two things can move a line's price, and only one of them is the
+		// shopper's doing. Crossing a quantity break is theirs and needs no
+		// telling; the shop changing a price underneath them is not, and the
+		// snapshot diverging from the live price is exactly what stops checkout
+		// and asks them to look again.
+		//
+		// Repricing on every re-add loses the second, which is not a trade-off
+		// but a hole: adding one more of something silently accepted whatever
+		// the price had become since. TestAddLineKeepsTheOriginalPriceSnapshot
+		// caught it, having been written for the rule this replaced.
+		//
+		// So the two are told apart rather than conflated. What the line would
+		// cost *at the quantity it already had* says whether anything moved
+		// underneath: if it still matches the snapshot, the only change is the
+		// quantity and the new price is safe to take; if it does not, the price
+		// moved and the snapshot stays put for checkout to notice.
+		if existing > 0 && storedPrice.Valid {
+			atOldQuantity, err := c.app.Pricing().priceFor(ctx, tx, variantID, existing, cartEmail, channelID)
+			if err != nil {
+				return err
+			}
+			if atOldQuantity != storedPrice.Int64 {
+				price = storedPrice.Int64
+			}
+		}
+
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO cart_line_items (cart_id, variant_id, quantity, unit_price_minor)
 			VALUES ($1, $2, $3, $4)
-			-- The price is set on insert and never touched again. Re-adding a
-			-- variant to bump its quantity must not silently move the units
-			-- already in the cart to today's price: the snapshot is what lets
-			-- checkout notice a price change and make the shopper re-confirm,
-			-- and overwriting it here destroys that evidence.
+			-- The price moves when the quantity does, and only then — see the
+			-- rule above this statement, which decides whether the value bound
+			-- here is the newly resolved price or the one already stored.
 			ON CONFLICT (cart_id, variant_id) DO UPDATE
 			SET quantity = cart_line_items.quantity + EXCLUDED.quantity,
+			    unit_price_minor = EXCLUDED.unit_price_minor,
 			    updated_at = now()`,
 			cartID, variantID, qty, price)
 		if err != nil {

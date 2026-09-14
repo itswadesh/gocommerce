@@ -130,6 +130,17 @@ export const NAV = [
         keywords: "codes promotions coupons",
     },
     {
+        // Beside Discounts rather than under Settings, and behind the same
+        // right: a price list is a rule about what somebody pays, worked in as
+        // often as a promotion is, not vocabulary configured once.
+        href: "/pricing",
+        label: "Price lists",
+        icon: "ri-funds-box-line",
+        right: "discounts.read",
+        accent: "amber",
+        keywords: "trade wholesale b2b customer groups quantity breaks tiers",
+    },
+    {
         href: "/taxes",
         label: "Tax",
         icon: "ri-percent-line",

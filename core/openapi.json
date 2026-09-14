@@ -240,6 +240,16 @@
             },
             "description": "Filter by a category attribute's recorded value, as `handle:value` — for example `attr=bag-case-material:Canvas`. Repeat the parameter to add more. Several values of the SAME handle widen the result (canvas OR leather, because a shopper who ticks both wants either); different handles narrow it (canvas AND black, because they describe one item). Only the first colon separates, so `color:Black:ish` is the value \"Black:ish\". Matching is exact, not a substring. An entry with no colon, no handle or no value is ignored rather than refused, so a truncated URL narrows to everything or to nothing instead of taking the listing away. The values are the ones stored under `metadata.category` by the category's own field list.",
             "example": "bag-case-material:Canvas"
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "wholesale",
+            "description": "Which storefront is asking. Absent takes the default channel; a store with no channels reads the whole catalogue, exactly as before channels existed. An unknown or inactive code is refused with a 400 rather than quietly served the default — a typo in a storefront's configuration should fail at its first request, not sell the wrong catalogue for a week."
           }
         ],
         "responses": {
@@ -561,6 +571,11 @@
                   "email": {
                     "type": "string",
                     "format": "email"
+                  },
+                  "channel": {
+                    "type": "string",
+                    "example": "wholesale",
+                    "description": "Which storefront opened the basket. The `X-Channel` header says the same thing store-wide; the body wins when both are present. Fixed at creation, because it is what every line's price is resolved against — a basket that changed storefront halfway would hold lines priced on two and no honest way to say which total is right."
                   }
                 }
               }
@@ -571,7 +586,18 @@
           "201": {
             "$ref": "#/components/responses/CartResponse"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "X-Channel",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The storefront, for clients that set it once rather than per request."
+          }
+        ]
       }
     },
     "/api/carts/{cartId}": {
@@ -9648,6 +9674,960 @@
           }
         }
       }
+    },
+    "/api/admin/customer-groups": {
+      "get": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "Customer groups",
+        "description": "Groups a price list can be aimed at. Membership is by email address, because this engine has no customers table — a customer is an address that has ordered.",
+        "responses": {
+          "200": {
+            "description": "The groups, by name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CustomerGroup"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "Create a customer group",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerGroupInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The group.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CustomerGroup"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api/admin/customer-groups/{id}": {
+      "get": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "One customer group",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The group."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The group.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CustomerGroup"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "Rename or re-code a group",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The group."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The group.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CustomerGroup"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "Delete a customer group",
+        "description": "Takes its membership and the price lists aimed at it with it. Cascading rather than refusing, unlike a category with products under it: a product orphaned by a deleted category is still valuable and has merely lost its filing, while a price list whose audience has gone is meaningless — it would price for nobody and could never be reached again.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The group."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Gone."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/customer-groups/{id}/members": {
+      "get": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "Who is in a group",
+        "description": "Takes `customers.read` rather than the discounts right the rest of these routes take: it answers with the shop's customer addresses, and somebody trusted to write a promotion is not thereby trusted to page through the customer list.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The group."
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The addresses, folded to lower case.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "email"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "Add an address to a group",
+        "description": "Adding one twice is not an error: the caller asked for it to be a member, and it is. The address travels in the body rather than the path because an email in a URL is an email in an access log.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The group."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "In the group."
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "Remove an address from a group",
+        "description": "Removing one that is not in leaves the world as the caller asked, so it is not an error.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The group."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Out of the group."
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api/admin/price-lists": {
+      "get": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "Price lists",
+        "description": "Highest priority first. A list prices a variant for a group, over a window, optionally at quantity breaks. Resolution takes the most specific break, then the higher priority, then the cheaper price.",
+        "responses": {
+          "200": {
+            "description": "The lists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PriceList"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "Create a price list",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriceListInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PriceList"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api/admin/price-lists/{id}": {
+      "get": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "One price list",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The list."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PriceList"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "Change a price list",
+        "description": "`group_id` takes the nullable form: sending null makes the list everybody's, which is a real intention an absent field could not express.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The list."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriceListInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PriceList"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "Delete a price list",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The list."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Gone, with its prices."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/price-lists/{id}/prices": {
+      "get": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "What a list prices",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The list."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The rows, by variant then break.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PriceRow"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "Set one variant's price on a list",
+        "description": "PUT rather than POST because the row is identified by what the body carries — list, variant and break — so sending it twice states the same fact twice rather than creating two prices.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The list."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriceRow"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The row as stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PriceRow"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "Remove one price",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The list."
+          },
+          {
+            "name": "variant_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "min_quantity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Gone."
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api/admin/channels": {
+      "get": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "Storefronts",
+        "description": "One catalogue can be served as several storefronts, differing in what is published to them and what it costs. They deliberately do not differ in currency: D14 settled one settlement currency per store and snapshots it onto every order.",
+        "responses": {
+          "200": {
+            "description": "The channels, default first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Channel"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "Create a channel",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The channel.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Channel"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api/admin/channels/{id}": {
+      "get": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "One channel",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The channel."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The channel.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Channel"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "Change a channel",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The channel."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The channel.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Channel"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "Delete a channel",
+        "description": "Its publication rows go with it, which widens the products that named it back to every channel — the state they were in before somebody narrowed them, and the only honest answer once the narrowing is gone. Carts and orders keep their history and lose only the reference.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The channel."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Gone."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/products/{id}/channels": {
+      "get": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "Which channels a product is narrowed to",
+        "description": "An empty list means every channel, not none — see PUT below.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The product."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The channel ids.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "format": "int64"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "Narrow a product to channels",
+        "description": "Replaces the narrowing whole. **An empty list clears it, which puts the product back in every channel rather than in none.** A product with no publication rows sells everywhere; publication is a narrowing an operator opts into, product by product. Reading it the other way would empty a catalogue the moment a store created its first channel.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The product."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "channel_ids"
+                ],
+                "properties": {
+                  "channel_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "format": "int64"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The channel ids as stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "format": "int64"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/screens": {
+      "get": {
+        "tags": [
+          "screens"
+        ],
+        "summary": "Screens modules contributed",
+        "description": "What the panel builds its module navigation from. Filtered by the caller's rights, so an entry is never offered to somebody it would answer 403 to — and filtered rather than refused outright, because this list *is* the nav: a 403 here would leave an operator with a panel missing entries instead of a panel without the ones they cannot use.",
+        "responses": {
+          "200": {
+            "description": "The screens, by group then title.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Screen"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -14071,6 +15051,387 @@
           "height": {
             "type": "number",
             "nullable": true
+          }
+        }
+      },
+      "CustomerGroup": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "code": {
+            "type": "string",
+            "description": "The stable handle a script or an import names the group by, so a renamed group stays the same group."
+          },
+          "name": {
+            "type": "string"
+          },
+          "members": {
+            "type": "integer",
+            "description": "How many addresses are in it."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CustomerGroupInput": {
+        "type": "object",
+        "required": [
+          "code",
+          "name"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "trade"
+          },
+          "name": {
+            "type": "string",
+            "example": "Trade accounts"
+          }
+        }
+      },
+      "PriceList": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "group_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Absent is everybody — a launch price, a seasonal one. It does not mean nobody."
+          },
+          "group_code": {
+            "type": "string",
+            "nullable": true
+          },
+          "starts_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "ends_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "priority": {
+            "type": "integer",
+            "description": "Breaks a tie when two live lists both cover a line. Higher wins."
+          },
+          "prices": {
+            "type": "integer",
+            "description": "How many rows the list holds."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "channel_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Absent is every channel, for the same reason an absent group is everybody."
+          },
+          "channel_code": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "PriceListInput": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "group_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "starts_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "ends_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "active": {
+            "type": "boolean",
+            "default": true
+          },
+          "priority": {
+            "type": "integer",
+            "default": 0
+          },
+          "channel_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Narrow the list to one storefront. Null is every channel."
+          }
+        }
+      },
+      "PriceRow": {
+        "type": "object",
+        "required": [
+          "variant_id",
+          "amount_minor"
+        ],
+        "properties": {
+          "variant_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "min_quantity": {
+            "type": "integer",
+            "default": 1,
+            "minimum": 1,
+            "description": "The quantity break. 1 is any quantity, and is what an absent field means."
+          },
+          "amount_minor": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The unit price in the store's currency's minor units, like every other amount here."
+          }
+        }
+      },
+      "Channel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "code": {
+            "type": "string",
+            "example": "wholesale",
+            "description": "What a storefront names itself as, in `?channel=` or the `X-Channel` header."
+          },
+          "name": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean",
+            "description": "An inactive channel refuses requests rather than answering with an empty catalogue, which would read as a broken import."
+          },
+          "default": {
+            "type": "boolean",
+            "description": "The channel a request naming none is served from. Exactly one carries it, enforced by a partial unique index — two defaults is a state with no meaning."
+          },
+          "products": {
+            "type": "integer",
+            "description": "How many products have been narrowed to it. Not how many it sells: a product narrowed to no channel at all sells on every one."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ChannelInput": {
+        "type": "object",
+        "required": [
+          "code",
+          "name"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "wholesale"
+          },
+          "name": {
+            "type": "string",
+            "example": "Wholesale"
+          },
+          "active": {
+            "type": "boolean",
+            "default": true
+          },
+          "default": {
+            "type": "boolean",
+            "default": false,
+            "description": "Setting this moves the default rather than adding a second one."
+          }
+        }
+      },
+      "Screen": {
+        "type": "object",
+        "description": "A screen a module contributes to the admin panel, described as data rather than shipped as code — the panel is compiled once and embedded, so a module cannot put components into it.",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "The URL segment the panel serves it at, under /x/. Unique across modules; the engine refuses a collision at boot."
+          },
+          "module": {
+            "type": "string",
+            "description": "Stamped by the engine, so a descriptor cannot claim to come from somewhere it does not."
+          },
+          "title": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string",
+            "description": "A Remix Icon class, the set the panel already ships."
+          },
+          "group": {
+            "type": "string",
+            "description": "The settings-sidebar heading it appears under. Empty puts it under the module's own name."
+          },
+          "right": {
+            "type": "string",
+            "description": "The right that gates both the nav entry and the screen. Required — a screen with no right would be visible to everyone with a session."
+          },
+          "help": {
+            "type": "string"
+          },
+          "list": {
+            "type": "object",
+            "properties": {
+              "endpoint": {
+                "type": "string",
+                "description": "A GET answering {\"data\": [...]}."
+              },
+              "paged": {
+                "type": "boolean"
+              },
+              "empty": {
+                "type": "string",
+                "description": "What the table says with no rows. A sentence about this screen rather than \"No data\"."
+              },
+              "columns": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "description": "A field of the row. Dots reach into nested objects."
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "text",
+                        "code",
+                        "number",
+                        "date",
+                        "relative",
+                        "badge",
+                        "bool"
+                      ],
+                      "description": "How the cell is drawn. An unknown kind falls back to text, so a module built against a newer engine degrades rather than breaking."
+                    },
+                    "narrow": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "form": {
+            "type": "object",
+            "nullable": true,
+            "description": "Optional. Without it the screen is a reading.",
+            "properties": {
+              "create": {
+                "type": "string"
+              },
+              "update": {
+                "type": "string",
+                "description": "A PATCH endpoint with {id} where the row's id goes."
+              },
+              "delete": {
+                "type": "string"
+              },
+              "id_key": {
+                "type": "string",
+                "default": "id"
+              },
+              "delete_warning": {
+                "type": "string",
+                "description": "The sentence in the confirm dialog. A module knows what deleting one of its rows costs and the panel does not."
+              },
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "text",
+                        "textarea",
+                        "number",
+                        "toggle",
+                        "select"
+                      ]
+                    },
+                    "help": {
+                      "type": "string"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "options": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

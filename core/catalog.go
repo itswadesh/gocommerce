@@ -323,6 +323,10 @@ type ProductQuery struct {
 	// one attribute widen the result and several attributes narrow it — see
 	// AttributeFilter.
 	Attributes []AttributeFilter
+	// ChannelID narrows to one storefront: products published to it, plus every
+	// product published to no channel at all. Zero does not narrow, which is
+	// what a store with no channels wants and what every admin listing wants.
+	ChannelID int64
 	// Sort is an operator-chosen ordering. Zero keeps the listing's own —
 	// newest first, or a collection's curated one — and an explicit sort beats
 	// both, because the operator who asked for one asked for this one.
@@ -1227,6 +1231,10 @@ func productFilters(q ProductQuery, args []any) (join string, where []string, ou
 	if q.CategoryID > 0 {
 		args = append(args, q.CategoryID)
 		where = append(where, categoryFilter(fmt.Sprintf("$%d", len(args))))
+	}
+	if q.ChannelID > 0 {
+		args = append(args, q.ChannelID)
+		where = append(where, channelFilter(fmt.Sprintf("$%d", len(args))))
 	}
 	// Containment rather than a join or an unnested comparison: a product's
 	// answers live in one jsonb object, `{handle: [values]}`, and

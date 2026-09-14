@@ -27,6 +27,10 @@ func (a *App) mountCartRoutes() {
 func (a *App) handleCreateCart(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Email string `json:"email"`
+		// Which storefront opened it. Absent takes the default channel, and a
+		// store with no channels gets a cart with none — the shape every cart
+		// had before channels existed.
+		Channel string `json:"channel"`
 	}
 	// A cart may be created with no body at all: shopping starts before a
 	// shopper has told you anything about themselves.
@@ -36,7 +40,12 @@ func (a *App) handleCreateCart(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	cart, err := a.carts.Create(r.Context(), in.Email)
+	// The header is the storefront-wide way to say it; the body wins when both
+	// are present, because a client that named one in the request meant that one.
+	if in.Channel == "" {
+		in.Channel = r.Header.Get("X-Channel")
+	}
+	cart, err := a.carts.CreateInChannel(r.Context(), in.Email, in.Channel)
 	if err != nil {
 		RespondError(w, r, err)
 		return
