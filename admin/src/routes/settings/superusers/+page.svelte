@@ -646,11 +646,28 @@
                                     <span class="txt-hint">—</span>
                                 {/if}
                             </td>
-                            <td class="col-field-type-date txt-hint txt-sm" data-name="Created">
-                                {formatDate(su.created_at)}
+                            <!-- Relative, with the timestamp as the tooltip, which
+                                 is what Orders does with the same column. Two
+                                 absolute timestamps side by side answered a
+                                 question nobody asks — what matters here is
+                                 "recently" or "ages ago", and the exact minute is
+                                 one hover away. They were also tight enough to
+                                 clip: "Sep 13, 2026, 11:47 AM" measured 142px in a
+                                 142px box, so a longer month or a two-digit hour
+                                 lost its last glyph. -->
+                            <td
+                                class="col-field-type-date txt-hint txt-sm"
+                                data-name="Created"
+                                title={formatDate(su.created_at)}
+                            >
+                                {relativeTime(su.created_at)}
                             </td>
-                            <td class="col-field-type-date txt-hint txt-sm" data-name="Updated">
-                                {formatDate(su.updated_at)}
+                            <td
+                                class="col-field-type-date txt-hint txt-sm"
+                                data-name="Updated"
+                                title={formatDate(su.updated_at)}
+                            >
+                                {relativeTime(su.updated_at)}
                             </td>
                             <td class="col-meta min-width">
                                 <!-- Enabled whatever the count says: a number

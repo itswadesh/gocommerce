@@ -399,6 +399,28 @@ a.stat-card:focus-visible {
  * cell with asymmetric padding tuned for exactly that. Ours sits beside a
  * button.
  */
+/*
+ * A short table stops drawing an empty box under itself.
+ *
+ * table.css floors `.page-table-wrapper` at 130px, and that was invisible for
+ * as long as the wrapper had no edge: a table with one row simply had some
+ * blank page beneath it, like every other short thing. Once the wrapper took
+ * the design's border and radius, the floor became a *drawn* box — on
+ * Superusers, 52px of bordered nothing under the only row, which reads as a
+ * table that failed to load the rest.
+ *
+ * The floor still earns its place while there is nothing to show: it reserves
+ * the space a list is about to occupy, so the page does not jump when the rows
+ * arrive. So it is kept for exactly that case and dropped once any row exists.
+ *
+ * `:has(tbody tr)` rather than a class the screens set, because this is true of
+ * all twenty-odd tables and a class is twenty places to forget it. table.css is
+ * PocketBase's file and is not edited; this overrides it from ours.
+ */
+.page-table-wrapper:has(tbody tr) {
+    min-height: 0;
+}
+
 table td.col-meta > i {
     vertical-align: middle;
     line-height: 1;
