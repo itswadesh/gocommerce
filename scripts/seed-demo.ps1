@@ -351,6 +351,115 @@ foreach ($d in $discounts) {
     }
 }
 
+# --------------------------------------------------------------- shipping
+#
+# One zone and the nine rates a US store actually offers, which is more
+# interesting to lay out than it sounds: three carrier services, each priced
+# over disjoint bands of the basket subtotal, so one method name appears
+# several times at different prices and the paid tier disappears once the
+# basket is big enough to earn free carriage.
+#
+# The bands are half-open, [min, max), which is what lets two of them meet at a
+# number without both claiming it. The engine refuses overlapping bands for one
+# method name — a basket offered the same service twice at two prices has no
+# answer to "how much is postage" — so "above $100" is a floor of 10000 and
+# "below $100" a ceiling of the same 10000, and they do not collide.
+#
+# Prices are minor units, like every other amount the API takes. A rate with no
+# ceiling omits the key rather than sending null: both mean "no ceiling" to the
+# engine, and the absent one cannot be misread as zero.
+
+Write-GCStep 'Shipping zones'
+
+$zones = @(
+    @{
+        name      = 'Local'
+        countries = @('US')
+        states    = @()
+        rates     = @(
+            @{ name = 'USPS priority';         price_minor = 0;    min = 10000 }
+            @{ name = 'USPS ground advantage'; price_minor = 0;    min = 0;     max = 10000 }
+            @{ name = 'USPS priority';         price_minor = 700;  min = 0;     max = 10000 }
+            @{ name = 'Fedex Overnight';       price_minor = 2000; min = 50000; max = 100000 }
+            @{ name = 'Fedex Overnight';       price_minor = 3000; min = 10000; max = 50000 }
+            @{ name = 'FedEx 2-Day';           price_minor = 700;  min = 0;     max = 10000 }
+            @{ name = 'FedEx 2-Day';           price_minor = 0;    min = 10000; max = 100000 }
+            @{ name = 'Fedex Overnight';       price_minor = 4500; min = 0;     max = 10000 }
+            @{ name = 'Fedex Overnight';       price_minor = 0;    min = 100000 }
+        )
+    }
+)
+
+# The listing answers `{zone, rates}` pairs rather than zones carrying a rates
+# key, because a zone with no prices is not something an operator can use and
+# showing the two apart invites reading half the configuration. Both halves are
+# wanted here, so both are kept.
+$existing = @{}
+foreach ($row in (Invoke-GC GET '/api/admin/shipping/zones' -Admin)) {
+    $existing[$row.zone.name] = $row
+}
+
+foreach ($zone in $zones) {
+    $row = $existing[$zone.name]
+    $haveRates = @()
+    if ($row) {
+        $zoneId = $row.zone.id
+        if ($row.rates) { $haveRates = $row.rates }
+        Write-Host ("  zone  {0} (already there)" -f $zone.name)
+    } else {
+        # POST answers the zone itself, not a {zone, rates} pair.
+        $created = Invoke-GC POST '/api/admin/shipping/zones' @{
+            name      = $zone.name
+            countries = $zone.countries
+            states    = $zone.states
+        } -Admin
+        $zoneId = $created.id
+        Write-Host ("  zone  {0} ({1})" -f $zone.name, ($zone.countries -join ', ')) -ForegroundColor DarkGreen
+    }
+
+    # A rate is identified by its name *and* its band, because the same service
+    # legitimately appears several times in one zone. Comparing both is what
+    # makes a re-run quiet instead of a row of refusals from the overlap guard.
+    $seen = @{}
+    foreach ($r in $haveRates) {
+        $ceiling = 'none'
+        if ($null -ne $r.max_subtotal_minor) { $ceiling = $r.max_subtotal_minor }
+        $seen["$($r.name.ToLower())|$($r.min_subtotal_minor)|$ceiling"] = $true
+    }
+
+    $made = 0
+    $kept = 0
+    $position = 0
+    foreach ($rate in $zone.rates) {
+        $body = @{
+            zone_id            = $zoneId
+            name               = $rate.name
+            price_minor        = $rate.price_minor
+            min_subtotal_minor = $rate.min
+            position           = $position
+        }
+        $ceiling = 'none'
+        if ($rate.ContainsKey('max')) {
+            $body.max_subtotal_minor = $rate.max
+            $ceiling = $rate.max
+        }
+        $position++
+
+        if ($seen["$($rate.name.ToLower())|$($rate.min)|$ceiling"]) { $kept++; continue }
+
+        try {
+            Invoke-GC POST '/api/admin/shipping/rates' $body -Admin | Out-Null
+            $made++
+        } catch {
+            # An overlap is worth seeing rather than swallowing: it means the
+            # bands in this file stopped being disjoint, which is a mistake
+            # here and not a condition of the store.
+            Write-Host ("  rate  {0} refused: {1}" -f $rate.name, "$_".Trim()) -ForegroundColor Yellow
+        }
+    }
+    Write-Host ("  {0} rate(s) added, {1} already there" -f $made, $kept) -ForegroundColor DarkGreen
+}
+
 # ------------------------------------------------------------------ orders
 #
 # Written as one CSV and imported in a single request. The alternative — a POST
