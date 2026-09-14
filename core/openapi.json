@@ -3166,6 +3166,24 @@
                   },
                   "taxable": {
                     "type": "boolean"
+                  },
+                  "size": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/DimensionPatch"
+                      }
+                    ],
+                    "description": "Only the sides named are written, so changing the height does not erase a length somebody measured earlier."
+                  },
+                  "dimension_unit": {
+                    "type": "string",
+                    "enum": [
+                      "mm",
+                      "cm",
+                      "m",
+                      "in"
+                    ],
+                    "description": "The unit the sides in `size` are given in, and the unit they are read back in. Sending this alone re-reads the sides already stored in the new unit: the millimetres are the fact, and switching units changes how the box is read, not how big it is. A patch that wants exact millimetres names \"mm\" here — there is one way to give a side rather than two that can disagree."
                   }
                 }
               }
@@ -10595,6 +10613,29 @@
           "taxable": {
             "type": "boolean",
             "description": "Whether tax applies to this variant. True for almost everything, and the safe default to be wrong about: tax charged in error is refundable, tax not charged is not. It sits on the variant rather than the product because a gift card and a shirt can share a product's shape and not its tax treatment."
+          },
+          "dimensions": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Dimensions"
+              }
+            ],
+            "description": "Absent when nobody has measured the parcel, which is the normal case for most variants."
+          },
+          "dimension_unit": {
+            "type": "string",
+            "enum": [
+              "mm",
+              "cm",
+              "m",
+              "in"
+            ],
+            "description": "How the sides should be read, exactly as `weight_unit` says how a mass should be read. The millimetres are the fact; the unit is presentation, kept so an operator who typed 30 cm sees 30 cm again and not 300 mm. One unit covers all three sides, because a box is measured in a single unit by whoever holds the tape."
+          },
+          "size": {
+            "type": "string",
+            "description": "The same parcel rendered for display, so a client that only shows it need not know that an inch is 25.4 mm. A side nobody measured reads as an em dash rather than being hidden, so a half-finished parcel says which side is missing.",
+            "example": "30 × 20 × 45 cm"
           }
         }
       },
@@ -10866,6 +10907,32 @@
           "taxable": {
             "type": "boolean",
             "default": true
+          },
+          "dimensions": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Dimensions"
+              }
+            ],
+            "description": "The parcel in millimetres. The API's shape; a form should send `size` and `dimension_unit` instead."
+          },
+          "size": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DimensionValues"
+              }
+            ]
+          },
+          "dimension_unit": {
+            "type": "string",
+            "enum": [
+              "mm",
+              "cm",
+              "m",
+              "in"
+            ],
+            "default": "mm",
+            "description": "How the sides should be read, exactly as `weight_unit` says how a mass should be read. The millimetres are the fact; the unit is presentation, kept so an operator who typed 30 cm sees 30 cm again and not 300 mm. One unit covers all three sides, because a box is measured in a single unit by whoever holds the tape."
           }
         }
       },
@@ -13923,6 +13990,57 @@
           "zone_id": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "Dimensions": {
+        "type": "object",
+        "description": "A parcel's three sides in whole millimetres — the canonical stored value, exactly as `weight_grams` is for the mass beside it. An absent side is one nobody has measured, which is not a side of zero: a zero-height parcel is a carrier error, an unmeasured one is paperwork still to do.",
+        "properties": {
+          "length_mm": {
+            "type": "integer",
+            "nullable": true
+          },
+          "width_mm": {
+            "type": "integer",
+            "nullable": true
+          },
+          "height_mm": {
+            "type": "integer",
+            "nullable": true
+          }
+        }
+      },
+      "DimensionValues": {
+        "type": "object",
+        "description": "The same three sides as a person typed them, in `dimension_unit`, converted server-side. Sent together with the unit this is a form's shape; sending `dimensions` is the API's. When both name a side this one wins — a caller that computed millimetres itself and then also sent a value contradicted itself, and the human-entered number is the one a person can check. The rule `weight` follows against `weight_grams`.",
+        "properties": {
+          "length": {
+            "type": "number"
+          },
+          "width": {
+            "type": "number"
+          },
+          "height": {
+            "type": "number"
+          }
+        }
+      },
+      "DimensionPatch": {
+        "type": "object",
+        "description": "A parcel's three sides as a patch, in `dimension_unit`. A side left out is kept; an explicit null clears it back to unmeasured; a number sets it. The three states are the point: emptying a box and never touching it are different intentions, and storing zero for the first would tell a carrier the parcel is flat.",
+        "properties": {
+          "length": {
+            "type": "number",
+            "nullable": true
+          },
+          "width": {
+            "type": "number",
+            "nullable": true
+          },
+          "height": {
+            "type": "number",
+            "nullable": true
           }
         }
       }

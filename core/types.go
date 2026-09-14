@@ -148,6 +148,50 @@ func ClearAmount() NullableAmount { return NullableAmount{Present: true} }
 // ClearID builds the "remove the reference" form.
 func ClearID() NullableID { return NullableID{Present: true} }
 
+// NullableFloat64 is NullableInt64 for a measurement somebody typed — a parcel's
+// side in centimetres, say, where the three states are "not mentioned", "set to
+// this" and "cleared back to unmeasured".
+//
+// A separate type rather than a generic one because the engine is on Go's own
+// library only and a type parameter here would buy nothing: these are the two
+// shapes a patch ever carries.
+type NullableFloat64 struct {
+	Present bool
+	Value   *float64
+}
+
+// UnmarshalJSON records that the field appeared at all, which is the whole
+// point of the type — encoding/json only calls this for keys the body carries.
+func (n *NullableFloat64) UnmarshalJSON(b []byte) error {
+	n.Present = true
+	if string(b) == "null" {
+		n.Value = nil
+		return nil
+	}
+	var v float64
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	n.Value = &v
+	return nil
+}
+
+// MarshalJSON round-trips the cleared and set forms, for the reason
+// NullableInt64.MarshalJSON gives.
+func (n NullableFloat64) MarshalJSON() ([]byte, error) {
+	if n.Value == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(*n.Value)
+}
+
+// SetMeasure builds the "set it to this" form.
+func SetMeasure(v float64) NullableFloat64 { return NullableFloat64{Present: true, Value: &v} }
+
+// ClearMeasure records "nobody has measured this", which for a parcel's side is
+// different from a side of zero.
+func ClearMeasure() NullableFloat64 { return NullableFloat64{Present: true} }
+
 // token returns an unguessable opaque identifier. Cart tokens and order access
 // tokens are the only credential a guest shopper ever holds, so they are
 // 256 bits from crypto/rand and nothing else.

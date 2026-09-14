@@ -134,6 +134,15 @@ type Variant struct {
 	// Weight is the same mass rendered for display, so a client that only
 	// wants to show it does not have to know that a pound is 453.59237 g.
 	Weight string `json:"weight,omitempty"`
+	// Dimensions are the parcel's three sides in whole millimetres, read in
+	// DimensionUnit — the same split as the weight above. A nil side is one
+	// nobody has measured, which is not a zero-sided box.
+	Dimensions    Dimensions `json:"dimensions,omitempty"`
+	DimensionUnit string     `json:"dimension_unit,omitempty"`
+	// Size is the same parcel rendered for display — "30 × 20 × 45 cm" — so a
+	// client that only wants to show it does not have to know that an inch is
+	// 25.4 mm.
+	Size string `json:"size,omitempty"`
 	// Image is the one of the product's media this variant shows — what a
 	// storefront swaps to when a shopper picks a colour. Nil when the variant
 	// has not nominated one, which is the normal case for most variants.
@@ -218,8 +227,15 @@ type VariantInput struct {
 	// conversion, which is what a form actually has.
 	WeightUnit  string   `json:"weight_unit"`
 	WeightValue *float64 `json:"weight"`
-	Position    *int     `json:"position"`
-	Metadata    Metadata `json:"metadata"`
+	// Dimensions and DimensionValues are the two shapes of the same three
+	// sides: millimetres straight from an API client, or what a person typed
+	// plus DimensionUnit. DimensionValues wins when both arrive, for the reason
+	// WeightValue does.
+	Dimensions      Dimensions      `json:"dimensions"`
+	DimensionValues DimensionValues `json:"size"`
+	DimensionUnit   string          `json:"dimension_unit"`
+	Position        *int            `json:"position"`
+	Metadata        Metadata        `json:"metadata"`
 }
 
 // ProductPatch updates a product. Every field is optional; a nil field is left
@@ -274,9 +290,15 @@ type VariantPatch struct {
 	// the form's shape; sending WeightGrams is the API's. Both are accepted,
 	// and WeightValue wins, because a client that computed grams itself and
 	// then also sent a value disagreed with itself.
-	WeightValue *float64  `json:"weight"`
-	Position    *int      `json:"position"`
-	Metadata    *Metadata `json:"metadata"`
+	WeightValue *float64 `json:"weight"`
+	// The parcel, in the unit the patch names. Mentioning the unit alone
+	// re-reads the sides already stored in the new unit, exactly as WeightUnit
+	// alone does: the millimetres are the fact and switching units is a change
+	// of how they are read, not of how big the box is.
+	Size          DimensionPatch `json:"size"`
+	DimensionUnit *string        `json:"dimension_unit"`
+	Position      *int           `json:"position"`
+	Metadata      *Metadata      `json:"metadata"`
 }
 
 // ProductQuery filters a product listing. Every field is optional; a zero one
@@ -476,6 +498,10 @@ func (c *Catalog) insertVariant(ctx context.Context, tx *sql.Tx, productID int64
 	if err != nil {
 		return 0, err
 	}
+	size, sizeUnit, err := resolveDimensions(in.Dimensions, in.DimensionValues, in.DimensionUnit)
+	if err != nil {
+		return 0, err
+	}
 	origin, err := normalizeOriginCountry(in.OriginCountry)
 	if err != nil {
 		return 0, err
@@ -490,14 +516,18 @@ func (c *Catalog) insertVariant(ctx context.Context, tx *sql.Tx, productID int64
 		INSERT INTO variants (product_id, sku, barcode, price_minor, compare_at_price_minor,
 		                      cost_minor, taxable, track_inventory,
 		                      continue_selling, active, origin_country, hs_code,
-		                      weight_grams, weight_unit, position, option_key, metadata)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		                      weight_grams, weight_unit,
+		                      length_mm, width_mm, height_mm, dimension_unit,
+		                      position, option_key, metadata)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 		RETURNING id`,
 		productID, strings.TrimSpace(in.SKU), nullString(in.Barcode), in.PriceMinor,
 		in.CompareAtPriceMinor, in.CostMinor, boolOr(in.Taxable, true),
 		boolOr(in.TrackInventory, true), boolOr(in.ContinueSelling, false),
 		boolOr(in.Active, true), origin, hs,
-		grams, unit, pos, optionKey(valueIDs), meta,
+		grams, unit,
+		size.Length, size.Width, size.Height, sizeUnit,
+		pos, optionKey(valueIDs), meta,
 	).Scan(&id)
 	if err != nil {
 		return 0, translateCatalogErr(err)
@@ -920,6 +950,36 @@ func (c *Catalog) UpdateVariant(ctx context.Context, id int64, patch VariantPatc
 			add("weight_grams", *grams)
 		}
 		add("weight_unit", normalized)
+	}
+	// The parcel and its unit move together, for the reason the weight above
+	// gives: converting a typed side needs to know which unit it is in, and
+	// changing only the unit would silently restate the same millimetres as a
+	// different box.
+	if patch.Size.Mentioned() || patch.DimensionUnit != nil {
+		unit := ""
+		if patch.DimensionUnit != nil {
+			unit = *patch.DimensionUnit
+		} else {
+			// Not mentioned: keep whatever the variant already reads in.
+			_ = c.app.db.QueryRowContext(ctx,
+				`SELECT dimension_unit FROM variants WHERE id = $1`, id).Scan(&unit)
+		}
+		sides, normalized, err := resolveDimensionPatch(patch.Size, unit)
+		if err != nil {
+			return nil, err
+		}
+		// Only the sides the patch spoke about, so changing the height alone
+		// does not erase a length somebody measured earlier. A mentioned side
+		// with no value is an emptied box, which stores NULL — "nobody has
+		// measured this" — rather than a zero, which would claim a flat parcel.
+		for _, side := range sides {
+			if side.MM == nil {
+				add(side.Column, nil)
+				continue
+			}
+			add(side.Column, *side.MM)
+		}
+		add("dimension_unit", normalized)
 	}
 	if patch.Position != nil {
 		add("position", *patch.Position)
@@ -1367,7 +1427,9 @@ const (
 const variantColumns = `v.id, v.product_id, v.sku, coalesce(v.barcode, ''), v.price_minor,
 	v.compare_at_price_minor, v.cost_minor, v.taxable, ` + variantOnHand + `, ` + variantReserved + `,
 	v.track_inventory, v.continue_selling, v.active, v.origin_country, v.hs_code,
-	v.weight_grams, v.weight_unit, v.position, v.option_key, v.metadata`
+	v.weight_grams, v.weight_unit,
+	v.length_mm, v.width_mm, v.height_mm, v.dimension_unit,
+	v.position, v.option_key, v.metadata`
 
 func (c *Catalog) queryVariants(ctx context.Context, where string, args ...any) ([]*Variant, error) {
 	return c.selectVariants(ctx, where, "v.position, v.id", "", args...)
@@ -1397,10 +1459,13 @@ func (c *Catalog) selectVariants(ctx context.Context, where, orderBy, page strin
 		var compareAt sql.NullInt64
 		var cost sql.NullInt64
 		var weight sql.NullInt64
+		var length, width, height sql.NullInt64
 		if err := rows.Scan(&v.ID, &v.ProductID, &v.SKU, &v.Barcode, &v.Price.AmountMinor,
 			&compareAt, &cost, &v.Taxable, &v.StockOnHand, &v.StockReserved,
 			&v.TrackInventory, &v.ContinueSelling, &v.Active, &v.OriginCountry, &v.HSCode,
-			&weight, &v.WeightUnit, &v.Position, &v.optionKey, &meta); err != nil {
+			&weight, &v.WeightUnit,
+			&length, &width, &height, &v.DimensionUnit,
+			&v.Position, &v.optionKey, &meta); err != nil {
 			return nil, err
 		}
 		v.Price.Currency = c.app.cfg.Currency
@@ -1418,6 +1483,25 @@ func (c *Catalog) selectVariants(ctx context.Context, where, orderBy, page strin
 			// The rendered form travels with the raw one so a client that only
 			// displays it never has to know the conversion factors.
 			v.Weight = FormatWeight(w, v.WeightUnit)
+		}
+		// A side is carried only when it was measured, so an unmeasured parcel
+		// answers with no dimensions at all rather than three zeroes.
+		if length.Valid {
+			mm := int(length.Int64)
+			v.Dimensions.Length = &mm
+		}
+		if width.Valid {
+			mm := int(width.Int64)
+			v.Dimensions.Width = &mm
+		}
+		if height.Valid {
+			mm := int(height.Int64)
+			v.Dimensions.Height = &mm
+		}
+		if v.Dimensions.Set() {
+			// The rendered form travels with the raw one, for the reason the
+			// weight above gives.
+			v.Size = FormatDimensions(v.Dimensions, v.DimensionUnit)
 		}
 		v.Available = v.StockOnHand - v.StockReserved
 		v.Options = []string{}

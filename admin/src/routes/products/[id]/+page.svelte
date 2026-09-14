@@ -25,7 +25,12 @@
     import { api, can, query, request } from "$lib/api.js";
     import { toMinor, fromMinor, isValidMoney, stockClass, pluralize } from "$lib/format.js";
     import { rightLabel } from "$lib/rights.js";
-    import { convertWeight, weightNumber } from "$lib/variantform.js";
+    import {
+        convertDimension,
+        convertWeight,
+        dimensionNumbers,
+        weightNumber,
+    } from "$lib/variantform.js";
     import { distinct } from "$lib/catalog.js";
     import { toast } from "$lib/toast.svelte.js";
     import { settings } from "$lib/settings.svelte.js";
@@ -123,6 +128,9 @@
      * conversion would otherwise have nothing to convert *from*.
      */
     let shownIn = $state("g");
+
+    /** The same, for the three dimension boxes. See shownIn above. */
+    let shownSizeIn = $state("mm");
 
     // Bumped on discard so TokenInput remounts. The half-typed tag it is
     // holding is part of what discarding means, and it lives inside the
@@ -424,6 +432,15 @@
             stock_on_hand: 0,
             weight: 0,
             weight_unit: "g",
+            // Empty rather than 0, unlike the weight above, and the difference
+            // is the point: an unweighed parcel and one that weighs nothing are
+            // both "0 g" to a carrier, but a side of zero is a flat box and a
+            // carrier will quote for one. Empty is how a side says nobody has
+            // measured it.
+            length: "",
+            width: "",
+            height: "",
+            dimension_unit: "mm",
         };
     }
 
@@ -491,6 +508,8 @@
             stock_on_hand: variant?.stock_on_hand ?? 0,
             weight: weightNumber(variant),
             weight_unit: variant?.weight_unit ?? "g",
+            ...dimensionNumbers(variant),
+            dimension_unit: variant?.dimension_unit || "mm",
         };
     }
 
@@ -507,12 +526,17 @@
         "stock_on_hand",
         "weight",
         "weight_unit",
+        "length",
+        "width",
+        "height",
+        "dimension_unit",
     ];
 
     function seed(p) {
         snapshot = shapeOf(p);
         form = shapeOf(p);
         shownIn = form.weight_unit;
+        shownSizeIn = form.dimension_unit;
         errors = {};
     }
 
@@ -529,6 +553,7 @@
         snapshot = shapeOf(fresh);
         for (const key of VARIANT_KEYS) form[key] = snapshot[key];
         shownIn = form.weight_unit;
+        shownSizeIn = form.dimension_unit;
     }
 
     $effect(() => {
@@ -726,6 +751,9 @@
                 stock_on_hand: 0,
                 weight_grams: v.weight_grams ?? null,
                 weight_unit: v.weight_unit || "g",
+                // The copy is the same goods in the same box.
+                dimensions: v.dimensions ?? {},
+                dimension_unit: v.dimension_unit || "mm",
             })),
         });
 
@@ -947,6 +975,25 @@
                     body.weight = parseFloat(form.weight) || 0;
                     body.weight_unit = form.weight_unit;
                 }
+                if (
+                    form.length !== snapshot.length ||
+                    form.width !== snapshot.width ||
+                    form.height !== snapshot.height ||
+                    form.dimension_unit !== snapshot.dimension_unit
+                ) {
+                    // All three sides go together even when one moved: the unit
+                    // beside them applies to all three, so a patch naming one
+                    // would leave the other two to be re-read in a unit they
+                    // were never converted to. An emptied box travels as null,
+                    // which is "nobody has measured this" — zero would claim a
+                    // flat parcel and a carrier would believe it.
+                    body.size = {};
+                    for (const side of ["length", "width", "height"]) {
+                        const raw = String(form[side] ?? "").trim();
+                        body.size[side] = raw === "" ? null : parseFloat(raw);
+                    }
+                    body.dimension_unit = form.dimension_unit;
+                }
                 if (Object.keys(body).length) {
                     await api.patch(`/api/admin/variants/${defaultVariant.id}`, body);
                 }
@@ -1103,6 +1150,15 @@
         if (next === shownIn) return;
         form.weight = convertWeight(form.weight, shownIn, next);
         shownIn = next;
+    }
+
+    /** The same for the parcel, one side at a time. See onWeightUnitChange. */
+    function onDimensionUnitChange(next) {
+        if (next === shownSizeIn) return;
+        form.length = convertDimension(form.length, shownSizeIn, next);
+        form.width = convertDimension(form.width, shownSizeIn, next);
+        form.height = convertDimension(form.height, shownSizeIn, next);
+        shownSizeIn = next;
     }
 
     // The storefront chooses its own paths, so this is the store's host and the
@@ -1544,6 +1600,80 @@
                             the engine, so switching units here shows the same mass in the new
                             unit rather than relabelling the figure. The tariff number is stored as
                             digits, so 6109.10 and 610910 are the same code.
+                        </div>
+
+                        <!--
+                            The parcel: three sides and the unit they were
+                            measured in, on one row for the reason the weight
+                            row above is one — this is what gets read off a tape
+                            in a single pass, and splitting it would make three
+                            numbers look like three unrelated settings.
+
+                            One unit for all three, because a box is measured in
+                            a single unit by whoever holds the tape. Three unit
+                            pickers would make "30 × 20 × 45" a sentence nobody
+                            can read without three more lookups.
+                        -->
+                        <div class="fields m-t-sm">
+                            <div class="field">
+                                <label for="length">Length</label>
+                                <input
+                                    id="length"
+                                    type="number"
+                                    min="0"
+                                    step="any"
+                                    placeholder="—"
+                                    bind:value={form.length}
+                                />
+                            </div>
+                            <div class="delimiter"></div>
+                            <div class="field">
+                                <label for="width">Width</label>
+                                <input
+                                    id="width"
+                                    type="number"
+                                    min="0"
+                                    step="any"
+                                    placeholder="—"
+                                    bind:value={form.width}
+                                />
+                            </div>
+                            <div class="delimiter"></div>
+                            <div class="field">
+                                <label for="height">Height</label>
+                                <input
+                                    id="height"
+                                    type="number"
+                                    min="0"
+                                    step="any"
+                                    placeholder="—"
+                                    bind:value={form.height}
+                                />
+                            </div>
+                            <div class="delimiter"></div>
+                            <!-- No label, for the reason the weight unit has
+                                 none: the options name themselves. -->
+                            <div class="field">
+                                <Select
+                                    id="dimension-unit"
+                                    ariaLabel="Dimension unit"
+                                    bind:value={form.dimension_unit}
+                                    onchange={onDimensionUnitChange}
+                                    options={[
+                                        { value: "mm", label: "Millimetres (mm)" },
+                                        { value: "cm", label: "Centimetres (cm)" },
+                                        { value: "m", label: "Metres (m)" },
+                                        { value: "in", label: "Inches (in)" },
+                                    ]}
+                                />
+                            </div>
+                        </div>
+                        <div class="field-help">
+                            For a carrier that prices by parcel size as well as weight. An empty
+                            box means that side has not been measured, which is not the same as a
+                            side of zero — a zero-height parcel is something a carrier will quote
+                            for. Stored in whole millimetres and read back in the unit you chose,
+                            the same way the weight above is.
                         </div>
 
                         <!-- The country keeps the row below to itself: it is the

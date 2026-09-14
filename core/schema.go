@@ -40,6 +40,7 @@ func coreMigrations() []Migration {
 		{ID: "0029_sort_indexes", SQL: migration0029SortIndexes},
 		{ID: "0030_outbox_indexes", SQL: migration0030OutboxIndexes},
 		{ID: "0031_shipping", SQL: migration0031Shipping},
+		{ID: "0032_variant_dimensions", SQL: migration0032VariantDimensions},
 	}
 }
 
@@ -1680,4 +1681,35 @@ CREATE INDEX shipping_rates_zone ON shipping_rates (zone_id, position, id);
 -- snapshot here exists: the rate can be renamed, repriced or deleted, and an
 -- order must still say what the shopper agreed to pay for.
 ALTER TABLE orders ADD COLUMN shipping_method text NOT NULL DEFAULT '';
+`
+
+// M32 — how big the box is.
+//
+// Dimensions follow weight's rule, which follows money's: one canonical stored
+// value per side plus the unit they are read in. The millimetres are the fact a
+// carrier API is given; `dimension_unit` is presentation, exactly as
+// `weight_unit` is for the mass beside them.
+//
+// Millimetres rather than centimetres because it is the resolution carriers
+// quote in, and an integer count of them needs no conversion to be correct.
+//
+// One unit for all three sides rather than one each. A box is measured in a
+// single unit by whoever holds the tape, and three independent units would
+// make "30 × 20 × 45" unreadable without three more lookups.
+//
+// NULL rather than 0 for an unmeasured side, and this is the distinction that
+// earns the nullable column: a zero-height parcel is a carrier error, while an
+// unmeasured one is paperwork still to do. A NOT NULL DEFAULT 0 would make
+// every variant in every existing store claim to be a flat sheet.
+//
+// No index. Nothing searches or sorts on a side — these are read with the
+// variant that owns them and sent to a carrier, which is the same access path
+// weight_grams has had since M1.
+const migration0032VariantDimensions = `
+ALTER TABLE variants
+    ADD COLUMN length_mm integer CHECK (length_mm IS NULL OR length_mm >= 0),
+    ADD COLUMN width_mm  integer CHECK (width_mm  IS NULL OR width_mm  >= 0),
+    ADD COLUMN height_mm integer CHECK (height_mm IS NULL OR height_mm >= 0),
+    ADD COLUMN dimension_unit text NOT NULL DEFAULT 'mm'
+        CHECK (dimension_unit IN ('mm', 'cm', 'm', 'in'));
 `

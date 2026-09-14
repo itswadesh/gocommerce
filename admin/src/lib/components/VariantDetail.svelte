@@ -29,7 +29,8 @@
     import { toast } from "$lib/toast.svelte.js";
     import { parseMoney, stockClass } from "$lib/format.js";
     import {
-        convertWeight,
+        convertDimension,
+    convertWeight,
         validateVariant,
         variantPatch,
         variantShape,
@@ -68,6 +69,9 @@
      */
     let shownIn = $state("g");
 
+    /** The same, for the three dimension boxes. See shownIn above. */
+    let shownSizeIn = $state("mm");
+
     // Re-seeded whenever the drawer is pointed at a different variant. Keyed on
     // the id rather than on the object: the matrix refreshes the whole product
     // after every write, so the object identity changes under a drawer that is
@@ -80,6 +84,7 @@
         form = variantShape(variant, currency);
         snapshot = variantShape(variant, currency);
         shownIn = form.weight_unit;
+        shownSizeIn = form.dimension_unit;
         errors = {};
     });
 
@@ -137,6 +142,15 @@
         if (next === shownIn) return;
         form.weight = convertWeight(form.weight, shownIn, next);
         shownIn = next;
+    }
+
+    /** The same for the parcel, one side at a time. See onWeightUnitChange. */
+    function onDimensionUnitChange(next) {
+        if (next === shownSizeIn) return;
+        form.length = convertDimension(form.length, shownSizeIn, next);
+        form.width = convertDimension(form.width, shownSizeIn, next);
+        form.height = convertDimension(form.height, shownSizeIn, next);
+        shownSizeIn = next;
     }
 
     function addMetafield() {
@@ -397,6 +411,70 @@
                 currency code is. Both are sent as typed and converted by the engine, so switching
                 units here shows the same mass in the new unit rather than relabelling the figure.
                 The tariff number is stored as digits, so 6109.10 and 610910 are the same code.
+            </div>
+
+            <!-- The parcel. Same row, same order and same words as the product
+                 editor's, because it is the same field — an operator who has
+                 measured a box on a product with no options should not have to
+                 learn a second layout to measure one on a product with sizes. -->
+            <div class="fields m-t-sm">
+                <div class="field">
+                    <label for="vd-length">Length</label>
+                    <input
+                        id="vd-length"
+                        type="number"
+                        min="0"
+                        step="any"
+                        placeholder="—"
+                        bind:value={form.length}
+                    />
+                </div>
+                <div class="delimiter"></div>
+                <div class="field">
+                    <label for="vd-width">Width</label>
+                    <input
+                        id="vd-width"
+                        type="number"
+                        min="0"
+                        step="any"
+                        placeholder="—"
+                        bind:value={form.width}
+                    />
+                </div>
+                <div class="delimiter"></div>
+                <div class="field">
+                    <label for="vd-height">Height</label>
+                    <input
+                        id="vd-height"
+                        type="number"
+                        min="0"
+                        step="any"
+                        placeholder="—"
+                        bind:value={form.height}
+                    />
+                </div>
+                <div class="delimiter"></div>
+                <!-- No label, for the reason the weight unit has none. -->
+                <div class="field">
+                    <Select
+                        id="vd-dimension-unit"
+                        ariaLabel="Dimension unit"
+                        bind:value={form.dimension_unit}
+                        onchange={onDimensionUnitChange}
+                        options={[
+                            { value: "mm", label: "Millimetres (mm)" },
+                            { value: "cm", label: "Centimetres (cm)" },
+                            { value: "m", label: "Metres (m)" },
+                            { value: "in", label: "Inches (in)" },
+                        ]}
+                    />
+                </div>
+            </div>
+            <div class="field-help">
+                For a carrier that prices by parcel size as well as weight. An empty box means
+                that side has not been measured, which is not the same as a side of zero — a
+                zero-height parcel is something a carrier will quote for. Stored in whole
+                millimetres and read back in the unit you chose.
             </div>
 
             <div class="field m-t-sm">

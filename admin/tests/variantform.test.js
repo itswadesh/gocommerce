@@ -15,7 +15,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+    convertDimension,
     convertWeight,
+    dimensionNumbers,
     duplicateMetafield,
     metafieldRows,
     metafieldsObject,
@@ -294,4 +296,72 @@ test("a move off the end of the list is not a wrap-around", () => {
     const rows = [{ id: 1 }, { id: 2 }];
     assert.deepEqual(moveWithin(rows, 0, -1).map((v) => v.id), [1, 2]);
     assert.deepEqual(moveWithin(rows, 1, 2).map((v) => v.id), [1, 2]);
+});
+
+/*
+ * The parcel: three sides plus the unit they are read in.
+ *
+ * The distinction every assertion below turns on is unmeasured versus zero. A
+ * side nobody has measured is paperwork still to do; a side of zero is a flat
+ * parcel, and a carrier will quote for one.
+ */
+
+test("a parcel is read back out of what the engine rendered", () => {
+    assert.deepEqual(dimensionNumbers({ size: "30 × 20 × 45 cm" }), {
+        length: 30,
+        width: 20,
+        height: 45,
+    });
+    // An em dash is the engine saying that side was never measured, and it has
+    // to come back as an empty box rather than as a zero.
+    assert.deepEqual(dimensionNumbers({ size: "12 × — × 11 cm" }), {
+        length: 12,
+        width: "",
+        height: 11,
+    });
+    // Nothing measured at all, and a variant from a store that predates the
+    // field, are the same empty three boxes.
+    assert.deepEqual(dimensionNumbers({ size: "" }), { length: "", width: "", height: "" });
+    assert.deepEqual(dimensionNumbers({}), { length: "", width: "", height: "" });
+    assert.deepEqual(dimensionNumbers(undefined), { length: "", width: "", height: "" });
+});
+
+test("switching units re-reads the same box", () => {
+    // 30 cm did not shrink because somebody wanted to read it in inches.
+    assert.equal(convertDimension(30, "cm", "in"), 11.811);
+    assert.equal(convertDimension(30, "cm", "mm"), 300);
+    // Millimetres are stored whole, so the box says what the record will say.
+    assert.equal(convertDimension(1, "in", "mm"), 25);
+    // An unmeasured side stays unmeasured. Converting "" to 0 would turn "we
+    // have not measured the width" into "the width is zero" on a unit switch.
+    assert.equal(convertDimension("", "cm", "in"), "");
+});
+
+test("an emptied side travels as null, not as zero", () => {
+    const shape = variantShape(variant({ size: "30 × 20 × 45 cm", dimension_unit: "cm" }), "USD");
+    assert.deepEqual(
+        { length: shape.length, width: shape.width, height: shape.height },
+        { length: 30, width: 20, height: 45 },
+    );
+
+    const form = { ...shape, width: "" };
+    const { body } = variantPatch(form, shape, "USD", EN);
+    assert.deepEqual(body.size, { length: 30, width: null, height: 45 });
+    assert.equal(body.dimension_unit, "cm");
+});
+
+test("a parcel nobody touched is not in the patch", () => {
+    const shape = variantShape(variant({ size: "30 × 20 × 45 cm", dimension_unit: "cm" }), "USD");
+    const { body } = variantPatch({ ...shape }, shape, "USD", EN);
+    assert.equal("size" in body, false);
+    assert.equal("dimension_unit" in body, false);
+});
+
+test("all three sides travel together when one moves", () => {
+    const shape = variantShape(variant({ size: "30 × 20 × 45 cm", dimension_unit: "cm" }), "USD");
+    // Only the height moved, but the unit beside it applies to all three: a
+    // patch naming the height alone would leave the other two to be re-read in
+    // a unit they were never converted to.
+    const { body } = variantPatch({ ...shape, height: 50 }, shape, "USD", EN);
+    assert.deepEqual(body.size, { length: 30, width: 20, height: 50 });
 });

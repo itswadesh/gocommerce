@@ -35,6 +35,37 @@ export function weightNumber(variant) {
 }
 
 /**
+ * The three numbers to show in a variant's dimension boxes, in its own unit.
+ *
+ * Taken back out of the rendered string the engine already sends — "30 × 20 ×
+ * 45 cm" — for weightNumber's reason: one less place that could come to
+ * disagree with dimensions.go about how many millimetres an inch is.
+ *
+ * A side nobody has measured comes back as "" rather than 0. The boxes have to
+ * be able to say "not measured", because 0 is a flat parcel and a carrier will
+ * believe it.
+ */
+export function dimensionNumbers(variant) {
+    const blank = { length: "", width: "", height: "" };
+    const shown = String(variant?.size ?? "").trim();
+    if (!shown) return blank;
+
+    // The unit is the tail; the sides are what precede it.
+    const parts = shown
+        .replace(/s+S+$/, "")
+        .split("×")
+        .map((part) => part.trim());
+    if (parts.length !== 3) return blank;
+
+    const [length, width, height] = parts.map((part) => {
+        // An em dash is the engine saying this side was never measured.
+        const n = parseFloat(part);
+        return isFinite(n) ? n : "";
+    });
+    return { length, width, height };
+}
+
+/**
  * The operator's own metafields, as rows.
  *
  * Namespaced under `custom` for the same reason the product editor namespaces
@@ -105,6 +136,8 @@ export function variantShape(variant, currency) {
         position: variant?.position ?? 0,
         weight: weightNumber(variant),
         weight_unit: variant?.weight_unit || "g",
+        ...dimensionNumbers(variant),
+        dimension_unit: variant?.dimension_unit || "mm",
         metafields: metafieldRows(variant),
     };
 }
@@ -191,6 +224,22 @@ export function variantPatch(form, snapshot, currency, locale, metadata = {}) {
         body.weight = parseFloat(form.weight) || 0;
         body.weight_unit = form.weight_unit;
     }
+    if (SIDES.some((side) => form[side] !== snapshot[side]) ||
+        form.dimension_unit !== snapshot.dimension_unit) {
+        // All three sides go together even when one moved. A side that did not
+        // move restates what the record already holds, which is not a change;
+        // sending only the moved one would mean the unit switch beside it
+        // re-read the other two in a unit they were never converted to.
+        body.size = {};
+        for (const side of SIDES) {
+            const raw = String(form[side] ?? "").trim();
+            // An emptied box is "nobody has measured this", which the patch
+            // says with null. Zero would claim a flat parcel, and a carrier
+            // would believe it.
+            body.size[side] = raw === "" ? null : parseFloat(raw);
+        }
+        body.dimension_unit = form.dimension_unit;
+    }
     const position = parseInt(form.position, 10);
     if (isFinite(position) && position >= 0 && position !== snapshot.position) {
         body.position = position;
@@ -231,6 +280,32 @@ export function convertWeight(value, from, to) {
     const grams = (parseFloat(value) || 0) * (GRAMS_PER[from] ?? 1);
     const out = grams / (GRAMS_PER[to] ?? 1);
     return to === "g" ? Math.round(out) : Math.round(out * 1000) / 1000;
+}
+
+/** The three sides, in the order a parcel is read out. */
+const SIDES = ["length", "width", "height"];
+
+/**
+ * The millimetres in each unit, exact by definition — the same table
+ * dimensions.go holds, here for display only, for the reason GRAMS_PER is.
+ */
+const MM_PER = { mm: 1, cm: 10, m: 1000, in: 25.4 };
+
+/**
+ * convertDimension re-reads the same side in a new unit. 30 cm becomes
+ * 11.811 in, because the box did not shrink when the operator changed how they
+ * wanted to read it.
+ *
+ * An unmeasured side stays unmeasured: converting "" to 0 would turn "we have
+ * not measured the width" into "the width is zero" the moment somebody
+ * switched from centimetres to inches.
+ */
+export function convertDimension(value, from, to) {
+    const raw = String(value ?? "").trim();
+    if (raw === "") return "";
+    const mm = (parseFloat(raw) || 0) * (MM_PER[from] ?? 1);
+    const out = mm / (MM_PER[to] ?? 1);
+    return to === "mm" ? Math.round(out) : Math.round(out * 1000) / 1000;
 }
 
 /**
