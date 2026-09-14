@@ -2084,7 +2084,7 @@
                                         type="button"
                                         role="option"
                                         aria-selected={chosen}
-                                        class="dropdown-item select-option"
+                                        class="select-option"
                                         onclick={() => toggleCollection(collection.id)}
                                     >
                                         <i
@@ -2100,7 +2100,7 @@
                                 {#if collectionIsNew}
                                     <button
                                         type="button"
-                                        class="dropdown-item select-option"
+                                        class="select-option"
                                         disabled={creatingCollection}
                                         onclick={createCollection}
                                     >

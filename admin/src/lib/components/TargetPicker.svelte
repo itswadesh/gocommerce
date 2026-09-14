@@ -286,7 +286,7 @@
                 type="button"
                 role="option"
                 aria-selected={picked}
-                class="dropdown-item select-option"
+                class="select-option"
                 onclick={() => toggle(option.id)}
             >
                 <i

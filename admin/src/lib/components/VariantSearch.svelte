@@ -221,7 +221,7 @@
         {#each rows as row (row.id)}
             <button
                 type="button"
-                class="dropdown-item select-option"
+                class="select-option"
                 onclick={() => choose(row)}
             >
                 <span class="txt-bold txt-code">{row.sku}</span>

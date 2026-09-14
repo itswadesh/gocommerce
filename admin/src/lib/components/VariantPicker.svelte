@@ -287,7 +287,7 @@
                 aria-selected={row.value === value}
                 disabled={!row.sellable}
                 title={row.sellable ? undefined : "The checkout would refuse this line"}
-                class="dropdown-item select-option"
+                class="select-option"
                 class:active={row.value === value}
                 onclick={() => pick(row)}
             >

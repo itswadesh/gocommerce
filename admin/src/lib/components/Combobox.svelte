@@ -213,7 +213,7 @@
                 type="button"
                 role="option"
                 aria-selected={option === value}
-                class="dropdown-item select-option"
+                class="select-option"
                 class:active={option === value}
                 onclick={() => pick(option)}
             >
@@ -226,7 +226,7 @@
                 type="button"
                 role="option"
                 aria-selected="false"
-                class="dropdown-item select-option"
+                class="select-option"
                 onclick={() => pick(typed)}
             >
                 <i class="ri-add-line" aria-hidden="true"></i>

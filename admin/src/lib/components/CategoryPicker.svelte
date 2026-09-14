@@ -330,7 +330,7 @@
                 type="button"
                 role="option"
                 aria-selected={value === null}
-                class="dropdown-item select-option"
+                class="select-option"
                 class:active={value === null}
                 onclick={() => pick(null)}
             >
@@ -378,7 +378,7 @@
                     type="button"
                     role="option"
                     aria-selected={category.id === value}
-                    class="dropdown-item select-option category-choose"
+                    class="select-option category-choose"
                     class:active={category.id === value}
                     onclick={() => pick(category.id, category)}
                 >

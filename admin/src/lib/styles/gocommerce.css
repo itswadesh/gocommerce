@@ -883,27 +883,156 @@ th.col-field-type-number {
     border-color: var(--accentColor);
 }
 
-/* A count beside an option, pushed to the far edge so the numbers line up in a
-   column and can be compared down the list rather than read one at a time. */
+/* ------------------------------------------------------- the select menu
+ *
+ * shadcn's select, on this panel's tokens.
+ *
+ * Every picker in the panel — Select, Combobox, TokenInput, the category,
+ * target, variant and collection pickers — opens the same list of
+ * `.select-option` rows, and until now each row was also a PocketBase
+ * `.dropdown-item`. That pairing is what made the list impossible to tighten:
+ * dropdown.css nests the item inside `.dropdown`, so its 10px/12px padding
+ * carries two classes of specificity and beat every single-class override we
+ * wrote. The rows are no longer `.dropdown-item`, so this file styles them
+ * outright rather than arguing with that one.
+ *
+ * The panel is matched with `:has(.select-option)` rather than a class added to
+ * each popover: eight components would have been eight edits that can fall out
+ * of step, and the rows are the thing that actually makes a menu a select.
+ *
+ * The size tokens are re-pointed here for a reason that is not obvious. vars.css
+ * declares its *entire* token block on `:root, .dropdown, .base-surface`, so a
+ * popover does not inherit the compact scale — inside one, --fontSize is 14px
+ * and --btnHeight is 45px again, whatever the screen around it chose. That is
+ * why the menus stayed large while the panel shrank, and why the search box in
+ * a long list stood a head above the rows it filters.
+ */
+.dropdown:has(.select-option) {
+    /* The compact scale, restored across the boundary vars.css draws. */
+    --fontSize: 13px;
+    --lineHeight: 20px;
+    --smFontSize: 12px;
+    --smLineHeight: 16px;
+    --btnHeight: 32px;
+    --inputPadding: 8px;
+
+    gap: 0;
+    padding: 4px;
+    margin: 4px 0;
+    /* Ten rows and a sliver of the eleventh, which is what says the list
+       scrolls. In px on purpose: base.css sets the root font size to 14px, so
+       `rem` here is 14 rather than 16 and every round number in rem comes out
+       12.5% short of what it reads as. */
+    max-height: 340px;
+    font-size: var(--fontSize);
+    line-height: var(--lineHeight);
+    color: var(--popover-foreground);
+    background: var(--popover);
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) - 2px);
+    /* shadcn's `shadow-md`. The design system prefers a border to a shadow, but
+       a popover is the one place it keeps one: the panel floats over content,
+       and an edge alone does not say which layer it is on. */
+    box-shadow:
+        0 4px 6px -1px oklch(0% 0 0 / 0.1),
+        0 2px 4px -2px oklch(0% 0 0 / 0.1);
+}
+
+/*
+ * A row: 6px of padding on a 20px line, so the step is 32px and ten fit the
+ * panel. The old pairing stepped 41px and showed seven, which meant scrolling
+ * past most of the alphabet to reach a country.
+ */
 .select-option {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 8px;
+    font: inherit;
+    line-height: var(--lineHeight);
+    text-align: left;
+    color: inherit;
+    background: none;
+    border: 0;
+    border-radius: calc(var(--radius) - 6px);
+    cursor: default;
+    user-select: none;
+    word-break: break-word;
+    outline: 0;
+    transition:
+        background var(--animationSpeed),
+        color var(--animationSpeed);
 }
+/* One highlight, whether the pointer or the keyboard put it there — `:hover`
+   alone would leave arrow-key navigation invisible, and a focus ring inside a
+   menu reads as a second selection. */
+.select-option:hover,
+.select-option:focus-visible {
+    color: var(--accent-fg);
+    background: var(--accent-bg);
+}
+.select-option[disabled],
+.select-option.disabled {
+    pointer-events: none;
+    opacity: 0.5;
+}
+
+/*
+ * The current value is marked with a tick, not a fill.
+ *
+ * A filled row was the old signal and it collided with the hover state: moving
+ * the pointer down the list lit up rows that looked exactly like the chosen
+ * one, so at any moment two rows claimed to be the answer. A tick says it
+ * without spending the highlight.
+ *
+ * Drawn as a mask rather than an <img> so it takes `currentColor` and stays
+ * legible on the highlight and in dark mode, and as a pseudo-element so all
+ * eight pickers get it without eight markup changes.
+ */
+.select-option.active::after {
+    content: "";
+    flex: none;
+    width: 15px;
+    height: 15px;
+    margin-left: auto;
+    background-color: currentColor;
+    --tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+    -webkit-mask: var(--tick) center / 15px 15px no-repeat;
+    mask: var(--tick) center / 15px 15px no-repeat;
+}
+
 .select-option-label {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+/* A count beside an option, pushed to the far edge so the numbers line up in a
+   column and can be compared down the list rather than read one at a time. On
+   a chosen row it sits just inside the tick, which is why the tick takes the
+   remaining space rather than a fixed offset. */
 .select-option-count {
     margin-left: auto;
     font-size: var(--smFontSize);
     font-variant-numeric: tabular-nums;
-    color: var(--surfaceTxtHintColor);
+    color: var(--muted-foreground);
 }
-.select-option.active .select-option-count {
+.select-option:hover > .select-option-count,
+.select-option:focus-visible > .select-option-count {
     color: inherit;
+}
+.select-option.active > .select-option-count {
+    margin-left: auto;
+}
+
+/* The filter box, as shadcn's command input: full-bleed across the panel's
+   padding so its rule separates the box from the list rather than floating
+   inside it. */
+.dropdown:has(.select-option) > .dropdown-search {
+    margin: -4px -4px 4px;
+    padding: 0 4px;
+    border-bottom: 1px solid var(--border);
 }
 
 /*

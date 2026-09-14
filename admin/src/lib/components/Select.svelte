@@ -1,17 +1,23 @@
 <script>
     /**
-     * PocketBase's select, in its own markup:
+     * PocketBase's select trigger, shadcn's menu:
      *
      *   .input.select.single
      *     button.selected-container   ← the chevron is its ::after, from the
      *       .selected-item              icon font, and flips to point up while
      *     .dropdown[popover]            the popover is open
-     *       button.dropdown-item.select-option
+     *       button.select-option
      *
      * A native <select> was the obvious thing and it is the wrong thing here:
      * its popup is drawn by the operating system, so it ignores every token in
-     * the panel and looks like nothing else on the page. This one is the same
-     * `.dropdown` the header menus use.
+     * the panel and looks like nothing else on the page.
+     *
+     * The trigger stays PocketBase's, so a select sits on the same line as the
+     * text inputs beside it. The rows are deliberately NOT `.dropdown-item`:
+     * dropdown.css nests that class inside `.dropdown`, which is two classes of
+     * specificity and beat every attempt to tighten the row from our own sheet.
+     * `.select-option` is styled outright in gocommerce.css instead — see the
+     * note there, which also explains why a popover loses the compact scale.
      *
      * What that costs is the native keyboard behaviour, so it is re-added
      * below: arrows to move, Enter to choose, Escape to close, type-ahead. The
@@ -195,7 +201,7 @@
                 type="button"
                 role="option"
                 aria-selected={option.value === value}
-                class="dropdown-item select-option"
+                class="select-option"
                 class:active={option.value === value}
                 onclick={() => pick(option)}
             >
