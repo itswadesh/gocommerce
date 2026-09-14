@@ -1549,8 +1549,16 @@
                         <!-- The country keeps the row below to itself: it is the
                              one control here that is a name rather than a
                              figure, and squeezed into the row above its list
-                             becomes too narrow to read a country out of. -->
-                        <div class="field m-t-sm">
+                             becomes too narrow to read a country out of.
+
+                             A row to itself is not the same as the whole card,
+                             though. At full width the trigger and its list ran
+                             747px to hold "Andorra", which reads as a panel
+                             that has lost track of what it is asking for — and
+                             leaves every name stranded at the left edge of a
+                             very wide row. Wide enough for the longest country,
+                             and no wider. -->
+                        <div class="field m-t-sm origin-field">
                             <label for="origin-country">Country of origin</label>
                             <!-- A list, not a two-letter box: nobody knows the
                                  codes, and Select reveals its own search once

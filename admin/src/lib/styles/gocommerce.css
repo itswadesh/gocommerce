@@ -684,6 +684,15 @@ th.col-field-type-number {
     color: var(--surfaceTxtColor);
 }
 
+/* A name, not a column. The country list is the one control in the shipping
+   card that holds a word, and at the card's full width it was 747px of box
+   around "Andorra". 22rem fits the longest country name in the list with room
+   to spare; the dropdown inherits the trigger's width, so capping one caps
+   both. */
+.origin-field {
+    max-width: 22rem;
+}
+
 /* -------------------------------------------------- product editor columns */
 
 /*
