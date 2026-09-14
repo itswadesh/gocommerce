@@ -551,6 +551,14 @@ func (a *App) translateProducts(r *http.Request, products []*Product) {
 		a.log.Error("translator failed", "language", lang, "error", err)
 		return
 	}
+	// A field with no override keeps the product's stored text rather than
+	// being blanked: half a translation is common and normal — somebody has
+	// done the titles and not yet the descriptions — and a storefront showing
+	// an empty description would be worse than showing an English one.
+	//
+	// The SEO pair travels with the other two because a translated page under
+	// an English meta description is half a translation, and it is the half a
+	// search engine reads.
 	for _, p := range products {
 		fields := overrides[p.ID]
 		if v, ok := fields["title"]; ok && v != "" {
@@ -558,6 +566,12 @@ func (a *App) translateProducts(r *http.Request, products []*Product) {
 		}
 		if v, ok := fields["description"]; ok && v != "" {
 			p.Description = v
+		}
+		if v, ok := fields["seo_title"]; ok && v != "" {
+			p.SEOTitle = v
+		}
+		if v, ok := fields["seo_description"]; ok && v != "" {
+			p.SEODescription = v
 		}
 	}
 }

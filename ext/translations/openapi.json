@@ -1,0 +1,232 @@
+{
+  "paths": {
+    "/api/admin/x/translations/{kind}/{id}": {
+      "get": {
+        "tags": [
+          "translations"
+        ],
+        "summary": "Every translation of one product",
+        "description": "Ordered by language, so a picker renders the same way twice. A product nobody has translated answers an empty list rather than null.",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "product"
+              ]
+            },
+            "description": "The kind of thing being translated. Only `product` is accepted, because `translateProducts` is the engine's only hook on the public read path — storing a variant row would look like a translation that does not work rather than one that was never wired up."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The product's id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The translations, one per language.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Translation"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api/admin/x/translations/{kind}/{id}/{language}": {
+      "put": {
+        "tags": [
+          "translations"
+        ],
+        "summary": "Write one product's translation into one language",
+        "description": "Replaces the whole field set rather than merging it, like every other whole-object PUT here: the caller sent the translation it wants, and a merge would make removing a field impossible. Emptying every field is the same intention as deleting the row, and answers 204 — an empty object left behind would show up as a language this product claims to be translated into.",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "product"
+              ]
+            },
+            "description": "The kind of thing being translated. Only `product` is accepted, because `translateProducts` is the engine's only hook on the public read path — storing a variant row would look like a translation that does not work rather than one that was never wired up."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The product's id."
+          },
+          {
+            "name": "language",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "fr",
+            "description": "A BCP 47 tag. A regional tag falls back to its primary subtag on read, so a row stored for `fr` serves a shopper asking for `fr-CA`, and an exact `fr-CA` row beats it."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fields": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "fields"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The stored translation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Translation"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Every field was empty, so the translation was removed."
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "translations"
+        ],
+        "summary": "Remove one product's translation into one language",
+        "description": "204 whether or not a row went: deleting a translation that is not there leaves the world in the state the caller asked for.",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "product"
+              ]
+            },
+            "description": "The kind of thing being translated. Only `product` is accepted, because `translateProducts` is the engine's only hook on the public read path — storing a variant row would look like a translation that does not work rather than one that was never wired up."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The product's id."
+          },
+          {
+            "name": "language",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "fr",
+            "description": "A BCP 47 tag. A regional tag falls back to its primary subtag on read, so a row stored for `fr` serves a shopper asking for `fr-CA`, and an exact `fr-CA` row beats it."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Gone."
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Translation": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "example": "product"
+          },
+          "entity_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "language": {
+            "type": "string",
+            "example": "fr"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "The translated fields. Only `title`, `description`, `seo_title` and `seo_description` are accepted — an unknown name is refused rather than dropped, because a silently discarded field is a translation somebody believes they wrote. A field left out keeps the product's stored text rather than blanking it.",
+            "example": {
+              "title": "Chemise en lin",
+              "seo_title": "Chemise en lin — la boutique"
+            }
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  }
+}

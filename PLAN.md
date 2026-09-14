@@ -1426,6 +1426,7 @@ gocommerce/                      # ONE Go module: github.com/misiki/gocommerce
     ├── payments-paddle/          # merchant of record: hosted checkout + adjustments
     ├── notify-sendgrid/   notify-msg91/
     ├── fulfill-shiprocket/
+    ├── translations/            # the Translator port, filled in
     └── invoices/   cms/   mcp/
 ```
 
