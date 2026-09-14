@@ -67,6 +67,14 @@
         tag: "",
         category_id: 0,
         collection_id: 0,
+        // The category-attribute facets, as JSON in one parameter.
+        //
+        // The API takes them as a repeated `attr=handle:value`, which listState
+        // cannot hold — its params are one scalar per key, and URLSearchParams
+        // .set() cannot repeat one anyway. JSON round-trips the shape exactly,
+        // keeps the URL openable and Back-survivable (D30), and is turned back
+        // into the repeated form in load() where the request is built.
+        attrs: "",
         sort: "",
         order: "",
         page: 1,
@@ -100,6 +108,7 @@
         tag: list.params.tag,
         category_id: list.params.category_id,
         collection_id: list.params.collection_id,
+        attrs: parseAttrs(list.params.attrs),
     });
     const filtered = $derived(
         !!(
@@ -107,9 +116,22 @@
             segment.product_type ||
             segment.tag ||
             segment.category_id ||
-            segment.collection_id
+            segment.collection_id ||
+            Object.keys(segment.attrs).length
         ),
     );
+
+    /* A hand-edited URL is the ordinary way this gets malformed, and a filter
+       that throws takes the whole screen rather than one facet. */
+    function parseAttrs(raw) {
+        if (!raw) return {};
+        try {
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+        } catch {
+            return {};
+        }
+    }
 
     let filterOpen = $state(false);
 
@@ -176,7 +198,14 @@
 
     function applyFilters(next) {
         filterOpen = false;
-        list.set(next);
+        const { attrs, labels, ...rest } = next;
+        if (labels) attributeLabels = { ...attributeLabels, ...labels };
+        list.set({
+            ...rest,
+            // Empty rather than "{}" so the parameter leaves the URL entirely
+            // when nothing is chosen; "{}" would read as a live filter.
+            attrs: attrs && Object.keys(attrs).length ? JSON.stringify(attrs) : "",
+        });
     }
 
     /**
@@ -211,15 +240,52 @@
                 text: found?.title || `#${segment.collection_id}`,
             });
         }
+        // One chip per attribute rather than per value: the values of one
+        // attribute are a single question — canvas or leather — and splitting
+        // them would offer to remove half of it, which means nothing.
+        for (const [key, values] of Object.entries(segment.attrs)) {
+            if (!values?.length) continue;
+            out.push({
+                key: "attr:" + key,
+                label: attributeLabels[key] ?? key,
+                text: values.join(" or "),
+            });
+        }
         return out;
     });
 
+    /* The human names for the handles on screen. Filled from whatever the
+       filter drawer last looked up, and falling back to the handle: a chip
+       reading "bag-case-material" is still true, just less kind. */
+    let attributeLabels = $state({});
+
     // The default for each key, which is what removing a chip restores. Numbers
     // and strings both, so it is read off the chip rather than guessed.
-    const CLEARED = { vendor: "", product_type: "", tag: "", category_id: 0, collection_id: 0 };
+    const CLEARED = {
+        vendor: "",
+        product_type: "",
+        tag: "",
+        category_id: 0,
+        collection_id: 0,
+        attrs: "",
+    };
 
     function clearFilters() {
         list.set({ ...CLEARED });
+    }
+
+    /* An attribute chip is not a listState key — it is one entry inside the
+       `attrs` object — so removing it rewrites that object rather than
+       resetting a parameter. Without this branch the close button on a facet
+       chip set an unknown key and appeared to do nothing. */
+    function removeChip(chip) {
+        if (!chip.key.startsWith("attr:")) {
+            list.set({ [chip.key]: CLEARED[chip.key] });
+            return;
+        }
+        const next = { ...segment.attrs };
+        delete next[chip.key.slice(5)];
+        list.set({ attrs: Object.keys(next).length ? JSON.stringify(next) : "" });
     }
 
     /* A fast second header click leaves two requests in flight; without this
@@ -259,8 +325,17 @@
         const mine = ++reqId;
         loading = true;
         try {
+            // `attrs` is this screen's shape, not the API's: it goes out as the
+            // repeated `attr=handle:value` the engine reads, and is suppressed
+            // from the generic builder, which could not repeat a key anyway.
+            const facets = new URLSearchParams();
+            for (const [key, values] of Object.entries(segment.attrs)) {
+                for (const value of values ?? []) facets.append("attr", key + ":" + value);
+            }
+            const base = list.query({ limit: perPage, attrs: "", ...sortQuery(sort) });
+            const tail = facets.toString();
             const result = await api.get(
-                "/api/admin/products" + list.query({ limit: perPage, ...sortQuery(sort) }),
+                "/api/admin/products" + base + (tail ? (base ? "&" : "?") + tail : ""),
             );
             if (mine !== reqId) return;
             products = result.data ?? [];
@@ -383,6 +458,7 @@
         list.params.tag;
         list.params.category_id;
         list.params.collection_id;
+        list.params.attrs;
         sel.clear();
     });
 
@@ -700,7 +776,7 @@
                             class="btn circle sm transparent secondary"
                             aria-label="Remove the {chip.label.toLowerCase()} filter"
                             title="Remove"
-                            onclick={() => list.set({ [chip.key]: CLEARED[chip.key] })}
+                            onclick={() => removeChip(chip)}
                         >
                             <i class="ri-close-line" aria-hidden="true"></i>
                         </button>

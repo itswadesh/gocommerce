@@ -41,6 +41,7 @@ func coreMigrations() []Migration {
 		{ID: "0030_outbox_indexes", SQL: migration0030OutboxIndexes},
 		{ID: "0031_shipping", SQL: migration0031Shipping},
 		{ID: "0032_variant_dimensions", SQL: migration0032VariantDimensions},
+		{ID: "0033_attribute_index", SQL: migration0033AttributeIndex},
 	}
 }
 
@@ -1712,4 +1713,30 @@ ALTER TABLE variants
     ADD COLUMN height_mm integer CHECK (height_mm IS NULL OR height_mm >= 0),
     ADD COLUMN dimension_unit text NOT NULL DEFAULT 'mm'
         CHECK (dimension_unit IN ('mm', 'cm', 'm', 'in'));
+`
+
+// M33 — finding products by what a category asked about them.
+//
+// The answers have been storable since the taxonomy landed and unreadable ever
+// since: they sit in `products.metadata.category` as
+// `{handle: [values]}`, and nothing queried them, so a store could
+// record a material on five hundred products and not list the canvas ones.
+//
+// The filter asks containment — does this product's answers object contain
+// `{"bag-material": ["Canvas"]}"` — which is one operator rather
+// than a lateral unnest per attribute, and which a GIN index can answer.
+//
+// jsonb_path_ops rather than the default operator class: it stores a hash per
+// path rather than an entry per key AND per value, which is roughly a third the
+// size and faster for exactly the `@>` this asks. What it gives up is
+// the key-existence operators (`?`, `?|`, `?&`), which this query does
+// not use — an attribute filter always names a value.
+//
+// The index is on the expression `(metadata -> 'category')` rather
+// than on the whole column, because the rest of metadata is a module's
+// scratch space and an operator's free-form metafields: indexing those would
+// pay for writes nobody searches.
+const migration0033AttributeIndex = `
+CREATE INDEX products_category_attrs_idx
+    ON products USING gin ((metadata -> 'category') jsonb_path_ops);
 `

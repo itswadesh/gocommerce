@@ -48,11 +48,17 @@ func (a *App) handleListProducts(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	// The storefront gets the facet filter too, and it is the place it earns
+	// its keep: narrowing a category down to the canvas bags is a shopper's
+	// move before it is an operator's. Status stays pinned to active here —
+	// this listing has never shown a draft and an attribute must not be a way
+	// to reach one.
 	products, total, err := a.catalog.ListProducts(r.Context(), ProductQuery{
-		Search: r.URL.Query().Get("q"),
-		Status: ProductActive,
-		Limit:  limit,
-		Offset: offset,
+		Search:     r.URL.Query().Get("q"),
+		Status:     ProductActive,
+		Attributes: attributeFilters(r.URL.Query()["attr"]),
+		Limit:      limit,
+		Offset:     offset,
 	})
 	if err != nil {
 		RespondError(w, r, err)
@@ -389,7 +395,54 @@ func productQueryFrom(q url.Values) (ProductQuery, error) {
 		Tag:          q.Get("tag"),
 		CategoryID:   categoryID,
 		CollectionID: collectionID,
+		Attributes:   attributeFilters(q["attr"]),
 	}, nil
+}
+
+// attributeFilters reads the repeated `?attr=handle:value` parameter.
+//
+// Repeated rather than comma-joined, because a taxonomy value may contain a
+// comma — "Bags, totes and cases" is a real Shopify value — and there is no
+// separator that is safe inside free text. The same reason picks the split:
+// only the FIRST colon separates, so "color:Black:ish" is the value
+// "Black:ish" rather than an error. Attribute handles are normalised on the way
+// in and never contain a colon, so the first one is always the right one.
+//
+// Values for the same handle are gathered together, because that is what makes
+// them widen the result rather than narrow it: `?attr=m:Canvas&attr=m:Leather`
+// is one filter with two values, not two filters that no product can satisfy.
+//
+// A parameter with no colon, an empty handle or an empty value is ignored
+// rather than refused. A hand-edited or truncated URL should narrow to
+// everything or to nothing; answering 400 to a listing because one facet was
+// malformed takes the whole screen away over a fixable typo.
+func attributeFilters(raw []string) []AttributeFilter {
+	if len(raw) == 0 {
+		return nil
+	}
+	order := make([]string, 0, len(raw))
+	byKey := make(map[string][]string, len(raw))
+	for _, entry := range raw {
+		key, value, ok := strings.Cut(entry, ":")
+		if !ok {
+			continue
+		}
+		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
+		if key == "" || value == "" {
+			continue
+		}
+		if _, seen := byKey[key]; !seen {
+			order = append(order, key)
+		}
+		byKey[key] = append(byKey[key], value)
+	}
+	// Built in the order the keys first appeared, so the SQL a request produces
+	// is stable and a slow query log stays readable.
+	out := make([]AttributeFilter, 0, len(order))
+	for _, key := range order {
+		out = append(out, AttributeFilter{Key: key, Values: byKey[key]})
+	}
+	return out
 }
 
 // queryInt64 reads an optional positive id from the query string. Absent is 0

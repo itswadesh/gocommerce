@@ -319,12 +319,33 @@ type ProductQuery struct {
 	// switches the ordering to the collection's own, which is the order an
 	// operator curated by hand.
 	CollectionID int64
+	// Attributes narrows by the answers a category asked for. Several values of
+	// one attribute widen the result and several attributes narrow it — see
+	// AttributeFilter.
+	Attributes []AttributeFilter
 	// Sort is an operator-chosen ordering. Zero keeps the listing's own —
 	// newest first, or a collection's curated one — and an explicit sort beats
 	// both, because the operator who asked for one asked for this one.
 	Sort   Sort
 	Limit  int
 	Offset int
+}
+
+// AttributeFilter is one facet: an attribute's handle and the values that count
+// as a match.
+//
+// The two directions are deliberately not symmetric, because this is what a
+// person ticking boxes means. Several values of ONE attribute widen the result
+// — canvas OR leather, because a shopper who ticks both wants either — while
+// several attributes narrow it — canvas AND black, because they are describing
+// one bag. A filter that ANDed within an attribute would return nothing the
+// moment a second box was ticked, which is the usual way this is got wrong.
+//
+// An empty Values is not a filter at all rather than a filter matching nothing:
+// an unticked facet must leave the listing alone, not empty the screen.
+type AttributeFilter struct {
+	Key    string
+	Values []string
 }
 
 // -------------------------------------------------------------------- service
@@ -1206,6 +1227,35 @@ func productFilters(q ProductQuery, args []any) (join string, where []string, ou
 	if q.CategoryID > 0 {
 		args = append(args, q.CategoryID)
 		where = append(where, categoryFilter(fmt.Sprintf("$%d", len(args))))
+	}
+	// Containment rather than a join or an unnested comparison: a product's
+	// answers live in one jsonb object, `{handle: [values]}`, and
+	// `metadata->'category' @> '{"handle":["value"]}'` asks exactly the
+	// question — does this product's answer list for that field include this
+	// value — in one operator that the GIN index in M33 can answer. Unnesting
+	// would need a lateral join per attribute and could not use an index at all.
+	//
+	// Exact, not LIKE. "Can" must not match "Canvas": a substring match here
+	// would quietly cross value boundaries and would also give up the index.
+	for _, f := range q.Attributes {
+		key := strings.TrimSpace(f.Key)
+		if key == "" || len(f.Values) == 0 {
+			continue
+		}
+		ors := make([]string, 0, len(f.Values))
+		for _, v := range f.Values {
+			doc, err := json.Marshal(map[string][]string{key: {v}})
+			if err != nil {
+				// A string and a string cannot fail to marshal; skipping rather
+				// than failing keeps a listing answerable whatever arrives.
+				continue
+			}
+			args = append(args, string(doc))
+			ors = append(ors, fmt.Sprintf("p.metadata -> 'category' @> $%d::jsonb", len(args)))
+		}
+		if len(ors) > 0 {
+			where = append(where, "("+strings.Join(ors, " OR ")+")")
+		}
 	}
 	return join, where, args
 }

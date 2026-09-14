@@ -225,6 +225,21 @@
           },
           {
             "$ref": "#/components/parameters/Lang"
+          },
+          {
+            "name": "attr",
+            "in": "query",
+            "required": false,
+            "explode": true,
+            "style": "form",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": "Filter by a category attribute's recorded value, as `handle:value` — for example `attr=bag-case-material:Canvas`. Repeat the parameter to add more. Several values of the SAME handle widen the result (canvas OR leather, because a shopper who ticks both wants either); different handles narrow it (canvas AND black, because they describe one item). Only the first colon separates, so `color:Black:ish` is the value \"Black:ish\". Matching is exact, not a substring. An entry with no colon, no handle or no value is ignored rather than refused, so a truncated URL narrows to everything or to nothing instead of taking the listing away. The values are the ones stored under `metadata.category` by the category's own field list.",
+            "example": "bag-case-material:Canvas"
           }
         ],
         "responses": {
@@ -2199,6 +2214,21 @@
           },
           {
             "$ref": "#/components/parameters/SortOrder"
+          },
+          {
+            "name": "attr",
+            "in": "query",
+            "required": false,
+            "explode": true,
+            "style": "form",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": "Filter by a category attribute's recorded value, as `handle:value` — for example `attr=bag-case-material:Canvas`. Repeat the parameter to add more. Several values of the SAME handle widen the result (canvas OR leather, because a shopper who ticks both wants either); different handles narrow it (canvas AND black, because they describe one item). Only the first colon separates, so `color:Black:ish` is the value \"Black:ish\". Matching is exact, not a substring. An entry with no colon, no handle or no value is ignored rather than refused, so a truncated URL narrows to everything or to nothing instead of taking the listing away. The values are the ones stored under `metadata.category` by the category's own field list.",
+            "example": "bag-case-material:Canvas"
           }
         ],
         "responses": {
