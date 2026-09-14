@@ -1442,6 +1442,7 @@ gocommerce/                      # ONE Go module: github.com/misiki/gocommerce
     ├── fulfill-onfleet/         # your own drivers, not a carrier
     ├── fulfill-veeqo/           # pushes the shipment back into Veeqo
     ├── translations/            # the Translator port, filled in
+    ├── import-amazon/           # real Chrome over CDP, stdlib WebSocket; no SDK
     └── invoices/   cms/   mcp/
 ```
 

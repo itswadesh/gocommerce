@@ -117,6 +117,7 @@ graph):
 | `translations` | Catalogue content in the language a shopper asked for |
 | `identity` | Shopper accounts: sessions, saved addresses, order history, password reset |
 | `cart-recovery` | Chases an abandoned basket with a link back to it |
+| `import-amazon` | A product, its variations and pictures from an Amazon URL, through a real Chrome; copy rewritten by Claude |
 | `mcp` | The store as tools for an AI agent, with an audit trail |
 
 A module that ships an admin surface also ships its panel screen: install

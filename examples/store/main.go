@@ -24,6 +24,7 @@ import (
 
 	"github.com/misiki/gocommerce/ext/cms"
 	"github.com/misiki/gocommerce/ext/identity"
+	amazon "github.com/misiki/gocommerce/ext/import-amazon"
 	"github.com/misiki/gocommerce/ext/invoices"
 	"github.com/misiki/gocommerce/ext/mcp"
 	sendgrid "github.com/misiki/gocommerce/ext/notify-sendgrid"
@@ -57,6 +58,17 @@ func main() {
 		// The reset email goes through whichever notifier is installed below.
 		identity.New(identity.Config{
 			ResetURL: "https://shop.example.com/auth/reset-password?token={token}",
+		}),
+
+		// Products from Amazon listings, through the Chrome installed on this
+		// machine. Nothing is started until an operator asks for an import,
+		// so a server without Chrome boots all the same and the first job says
+		// what is missing. Without an Anthropic key the listing's own copy is
+		// used; with IMPORT_AMAZON_HEADED set the browser is visible, which
+		// is what gets a person past Amazon's robot check once.
+		amazon.New(amazon.Config{
+			AnthropicAPIKey: os.Getenv("ANTHROPIC_API_KEY"),
+			Headed:          os.Getenv("IMPORT_AMAZON_HEADED") != "",
 		}),
 	}
 

@@ -1,0 +1,107 @@
+{
+  "paths": {
+    "/api/admin/x/import-amazon/jobs": {
+      "get": {
+        "tags": ["admin:import-amazon"],
+        "summary": "The most recent imports",
+        "description": "Requires catalog.write. The twenty-five newest jobs, newest first — enough for the drawer to show what happened last, not a history. A job records its outcome (done, failed, or blocked by Amazon's robot check) and every warning the import raised along the way.",
+        "security": [{"adminToken": []}],
+        "responses": {
+          "200": {"description": "A page of jobs.", "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {
+              "data": {"type": "array", "items": {"$ref": "#/components/schemas/ImportAmazonJob"}},
+              "meta": {"$ref": "#/components/schemas/ListMeta"}
+            }
+          }}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      },
+      "post": {
+        "tags": ["admin:import-amazon"],
+        "summary": "Import a product from an Amazon listing",
+        "description": "Requires catalog.write. Starts a job and answers 202 at once; poll the job for progress. The job opens the URL in a real Chrome, reads the listing and each variation's own page, rewrites the copy with Claude when a key is configured, adjusts the pictures, and creates the product — as a draft unless told otherwise. Prices cross only when the marketplace sells in the store's currency; otherwise price_minor sets every variant, or none is set and the job says so.",
+        "security": [{"adminToken": []}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {
+          "type": "object",
+          "required": ["url"],
+          "properties": {
+            "url": {"type": "string", "description": "An Amazon product page — any marketplace, /dp/ or /gp/product/."},
+            "images": {"$ref": "#/components/schemas/ImportAmazonImageOptions"},
+            "max_variants": {"type": "integer", "minimum": 1, "maximum": 200, "description": "How many variation pages to visit. The rest are created with the parent's price and pictures."},
+            "status": {"type": "string", "enum": ["draft", "active"], "default": "draft"},
+            "price_minor": {"type": "integer", "minimum": 0, "description": "A price for every variant, in the store's currency — the way to import from a marketplace that sells in another."}
+          }
+        }}}},
+        "responses": {
+          "202": {"description": "The job, queued.", "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {"data": {"$ref": "#/components/schemas/ImportAmazonJob"}}
+          }}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      }
+    },
+    "/api/admin/x/import-amazon/jobs/{id}": {
+      "get": {
+        "tags": ["admin:import-amazon"],
+        "summary": "One import, with its progress",
+        "description": "Requires catalog.write. While running, step and message say where it is; once finished, status is done, failed or blocked, product_id names what was created, and warnings lists everything worth reading before publishing.",
+        "security": [{"adminToken": []}],
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "integer", "format": "int64", "minimum": 1}}
+        ],
+        "responses": {
+          "200": {"description": "The job.", "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {"data": {"$ref": "#/components/schemas/ImportAmazonJob"}}
+          }}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ImportAmazonImageOptions": {
+        "type": "object",
+        "description": "What to do to every picture. The defaults are a little lighter, a little more contrast, and mirrored — mirroring reverses any text in a picture.",
+        "properties": {
+          "brightness": {"type": "number", "minimum": -1, "maximum": 1, "default": 0.06, "description": "Added to every channel as a fraction of full scale."},
+          "contrast": {"type": "number", "minimum": 0, "maximum": 4, "default": 1.05, "description": "Scales distance from mid-grey; 1 leaves it alone."},
+          "flip": {"type": "string", "enum": ["none", "horizontal", "vertical"], "default": "horizontal"},
+          "rotate": {"type": "integer", "enum": [0, 90, 180, 270], "default": 0, "description": "Clockwise."}
+        }
+      },
+      "ImportAmazonJob": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer", "format": "int64"},
+          "url": {"type": "string"},
+          "asin": {"type": "string"},
+          "status": {"type": "string", "enum": ["queued", "running", "done", "failed", "blocked"]},
+          "step": {"type": "string", "description": "While running: fetching, fetched, optimizing, images, creating."},
+          "message": {"type": "string"},
+          "product_id": {"type": "integer", "format": "int64", "nullable": true},
+          "warnings": {"type": "array", "items": {"type": "string"}},
+          "options": {
+            "type": "object",
+            "properties": {
+              "images": {"$ref": "#/components/schemas/ImportAmazonImageOptions"},
+              "max_variants": {"type": "integer"},
+              "status": {"type": "string"},
+              "price_minor": {"type": "integer", "nullable": true}
+            }
+          },
+          "created_at": {"type": "string", "format": "date-time"},
+          "updated_at": {"type": "string", "format": "date-time"}
+        }
+      }
+    }
+  }
+}

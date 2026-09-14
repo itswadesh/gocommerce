@@ -24,7 +24,8 @@ param(
     [string]$PgUser = 'gocommerce',
     [switch]$Seed,
     [switch]$Reset,
-    [switch]$Identity
+    [switch]$Identity,
+    [switch]$ImportAmazon
 )
 
 $ErrorActionPreference = 'Stop'
@@ -101,6 +102,7 @@ $env:DATABASE_URL = "postgres://$PgUser@${PgHost}:$PgPort/${Database}?sslmode=di
 # module-free by default; a storefront that offers sign-in needs this.
 $serveArgs = @('-addr', "127.0.0.1:$Port", '-admin-token', $Token)
 if ($Identity) { $serveArgs += '-identity' }
+if ($ImportAmazon) { $serveArgs += '-import-amazon' }
 $base = "http://127.0.0.1:$Port"
 
 # Create the panel operator. Bootstrap only acts when there is none, so this is

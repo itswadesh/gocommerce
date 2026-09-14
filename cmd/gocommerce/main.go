@@ -20,6 +20,7 @@ import (
 
 	"github.com/misiki/gocommerce/core"
 	"github.com/misiki/gocommerce/ext/identity"
+	amazon "github.com/misiki/gocommerce/ext/import-amazon"
 	webhooks "github.com/misiki/gocommerce/ext/webhooks"
 )
 
@@ -97,6 +98,7 @@ environment:
 		mediaDir     = fs.String("media-dir", "", "directory for uploaded media (default $GOCOMMERCE_MEDIA_DIR; empty disables uploads)")
 		withIdentity = fs.Bool("identity", false, "install the identity module: shopper accounts under /x/identity/ (guest checkout stays)")
 		withWebhooks = fs.Bool("webhooks", false, "install the webhooks module: POST this store's events to endpoints you register")
+		withAmazon   = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY rewrites the copy; IMPORT_AMAZON_HEADED=1 shows the browser)")
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -163,6 +165,13 @@ environment:
 	}
 	if *withWebhooks {
 		modules = append(modules, webhooks.New(webhooks.Config{}))
+	}
+	if *withAmazon {
+		modules = append(modules, amazon.New(amazon.Config{
+			AnthropicAPIKey: os.Getenv("ANTHROPIC_API_KEY"),
+			ChromePath:      os.Getenv("CHROME_PATH"),
+			Headed:          os.Getenv("IMPORT_AMAZON_HEADED") != "",
+		}))
 	}
 
 	app, err := gocommerce.New(cfg, modules...)
