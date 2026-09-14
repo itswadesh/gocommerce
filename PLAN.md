@@ -68,6 +68,8 @@ Everything around those primitives is replaceable:
                  ┌──────── payments-stripe
                  ├──────── payments-razorpay
                  ├──────── payments-paddle
+                 ├──────── payments-adyen
+                 ├──────── payments-hyperswitch
                  ├──────── fulfill-shiprocket
                  ├──────── notify-sendgrid
                  ├──────── notify-msg91
@@ -1424,8 +1426,21 @@ gocommerce/                      # ONE Go module: github.com/misiki/gocommerce
     ├── payments-stripe/         # package stripe — REST + HMAC, no SDK
     ├── payments-razorpay/
     ├── payments-paddle/          # merchant of record: hosted checkout + adjustments
+    ├── payments-lemonsqueezy/    # merchant of record, digital goods
+    ├── payments-adyen/           # payment links + signed notifications
+    ├── payments-hyperswitch/     # a router in front of many gateways
+    ├── payments-helcim/          # HelcimPay.js, North America
+    ├── payments-revenuecat/      # Web Billing links; no refund API exists
     ├── notify-sendgrid/   notify-msg91/
-    ├── fulfill-shiprocket/
+    ├── fulfill-shiprocket/      # India: aggregator, waybills
+    ├── fulfill-delhivery/       # India: a JSON payload inside a form field
+    ├── fulfill-nimbuspost/      # India: aggregator, 200 + status:false
+    ├── fulfill-indiapost/       # records a booking; DoP has no public API
+    ├── fulfill-shippo/  fulfill-shipstation/  fulfill-easyship/
+    ├── fulfill-shippit/         # AU/NZ; the one API that reads metres
+    ├── fulfill-usps/            # the only one that stores its own labels
+    ├── fulfill-onfleet/         # your own drivers, not a carrier
+    ├── fulfill-veeqo/           # pushes the shipment back into Veeqo
     ├── translations/            # the Translator port, filled in
     └── invoices/   cms/   mcp/
 ```

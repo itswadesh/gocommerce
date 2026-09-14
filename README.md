@@ -94,9 +94,24 @@ graph):
 | `payments-stripe` | Card payments, signed webhooks, refunds |
 | `payments-razorpay` | Cards and UPI, hosted or in-page |
 | `payments-paddle` | Merchant of record: hosted checkout, adjustments as refunds |
+| `payments-lemonsqueezy` | Merchant of record for digital goods, refunds |
+| `payments-adyen` | Payment links, HMAC-signed notifications, refunds |
+| `payments-hyperswitch` | One integration in front of many gateways |
+| `payments-helcim` | HelcimPay.js in-page checkout, North America |
+| `payments-revenuecat` | Web Billing purchase links; digital goods, no refund API |
 | `notify-sendgrid` | Order email, templates you own |
 | `notify-msg91` | Order SMS via DLT templates |
-| `fulfill-shiprocket` | Booking shipments and waybills |
+| `fulfill-shiprocket` | Booking shipments and waybills, India |
+| `fulfill-delhivery` | Manifesting parcels with Delhivery |
+| `fulfill-nimbuspost` | NimbusPost's courier aggregation |
+| `fulfill-indiapost` | Recording a consignment handed to India Post |
+| `fulfill-shippo` | Multi-carrier labels through Shippo |
+| `fulfill-shipstation` | Multi-carrier labels through ShipStation V2 |
+| `fulfill-easyship` | Cross-border labels and customs through Easyship |
+| `fulfill-shippit` | Shippit's carrier allocation, Australia and NZ |
+| `fulfill-usps` | USPS labels bought directly, served to print |
+| `fulfill-onfleet` | Dispatching your own drivers, last mile |
+| `fulfill-veeqo` | Telling Veeqo a parcel went out |
 | `invoices` | Numbered, gapless invoices on payment |
 | `cms` | Content pages, per language |
 | `translations` | Catalogue content in the language a shopper asked for |

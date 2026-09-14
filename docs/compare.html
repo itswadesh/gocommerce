@@ -1,0 +1,641 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GoCommerce — how it compares</title>
+<meta name="description" content="A Go commerce engine: one binary, one Postgres database, one third-party dependency. Compared against 111 other platforms on 43 capabilities.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :root {
+    --paper:#FAFAFA; --card:#FFFFFF; --ink:#18181B; --ink-soft:#3F3F46;
+    --muted:#71717A; --rule:#E4E4E7; --rule-firm:#C8C8CE;
+    --on:#15803D; --part:#B45309; --off:#A1A1AA;
+    --accent:#0F766E; --accent-bg:#E6F3F1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#0C0C0E; --card:#151518; --ink:#F4F4F5; --ink-soft:#D4D4D8;
+      --muted:#8E8E98; --rule:#27272B; --rule-firm:#3A3A41;
+      --on:#4ADE80; --part:#FBBF24; --off:#5B5B63;
+      --accent:#5EEAD4; --accent-bg:#0E2B28;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#0C0C0E; --card:#151518; --ink:#F4F4F5; --ink-soft:#D4D4D8;
+    --muted:#8E8E98; --rule:#27272B; --rule-firm:#3A3A41;
+    --on:#4ADE80; --part:#FBBF24; --off:#5B5B63;
+    --accent:#5EEAD4; --accent-bg:#0E2B28;
+  }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:"IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size:16px; line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  img { max-width:100%; }
+  a { color:var(--accent); }
+  code { font-family:"IBM Plex Mono",monospace; font-size:.85em;
+         background:color-mix(in srgb, var(--rule) 55%, transparent);
+         padding:.12em .38em; border-radius:3px; color:var(--ink-soft); }
+  pre code { background:none; padding:0; }
+
+  .hero { border-bottom:1px solid var(--rule-firm); }
+  .hero-inner { max-width:60rem; margin:0 auto; padding-inline:20px; padding-block:72px 56px; }
+  .kicker { font-family:"IBM Plex Mono",monospace; font-size:11.5px; letter-spacing:.14em;
+            text-transform:uppercase; color:var(--muted); margin:0 0 18px; }
+  h1 { font-family:"Archivo",sans-serif; font-weight:900; font-size:clamp(2.3rem,6.5vw,4rem);
+       line-height:1.02; letter-spacing:-.03em; margin:0 0 20px; text-wrap:balance; max-width:20ch; }
+  .lede { font-size:1.14rem; color:var(--ink-soft); max-width:44rem; margin:0 0 28px; }
+  .cta { display:flex; flex-wrap:wrap; gap:10px; }
+  .btn { font-family:"IBM Plex Sans",sans-serif; font-size:.92rem; font-weight:600;
+         padding:10px 18px; border-radius:7px; text-decoration:none; display:inline-block; }
+  .btn-primary { background:var(--accent); color:var(--paper); }
+  .btn-ghost { border:1px solid var(--rule-firm); color:var(--ink); }
+
+  section { max-width:60rem; margin:0 auto; padding-inline:20px; padding-block:56px; }
+  section.wide { max-width:96rem; }
+  h2 { font-family:"Archivo",sans-serif; font-weight:800; font-size:clamp(1.5rem,3.4vw,2rem);
+       letter-spacing:-.02em; margin:0 0 10px; text-wrap:balance; }
+  .sub { color:var(--muted); max-width:42rem; margin:0 0 30px; }
+
+  .three { display:grid; grid-template-columns:repeat(auto-fit,minmax(15rem,1fr)); gap:22px; }
+  .three h3 { font-family:"Archivo",sans-serif; font-weight:700; font-size:1.06rem;
+              letter-spacing:-.01em; margin:0 0 8px; }
+  .three p { margin:0; color:var(--ink-soft); font-size:.95rem; }
+
+  .ledger ul { margin:0; padding:0; border-top:1px solid var(--rule-firm); }
+  .ledger li { list-style:none; padding-block:14px; border-bottom:1px solid var(--rule); }
+  .ledger b { font-family:"Archivo",sans-serif; font-weight:700; }
+  .ledger .why { color:var(--muted); font-size:.93rem; display:block; margin-top:2px; }
+
+  pre { background:var(--card); border:1px solid var(--rule-firm); border-radius:8px;
+        padding:18px; overflow-x:auto; font-family:"IBM Plex Mono",monospace;
+        font-size:.82rem; line-height:1.6; color:var(--ink-soft); margin:0; }
+
+  footer { border-top:1px solid var(--rule-firm); }
+  .foot-inner { max-width:60rem; margin:0 auto; padding-inline:20px; padding-block:34px 60px;
+                color:var(--muted); font-size:.88rem; }
+  .controls { display:flex; flex-wrap:wrap; gap:10px 12px; align-items:center; margin-bottom:12px; }
+  .search { flex:1 1 15rem; min-width:0; font:inherit; font-size:.9rem; padding:8px 12px;
+            color:var(--ink); background:var(--card); border:1px solid var(--rule-firm); border-radius:6px; }
+  .search:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  .segmented { display:flex; flex-wrap:wrap; gap:5px; }
+  .seg { font:inherit; font-size:.82rem; font-weight:500; padding:6px 11px; border-radius:6px; cursor:pointer;
+         color:var(--ink-soft); background:var(--card); border:1px solid var(--rule-firm); }
+  .seg[aria-pressed="true"] { background:var(--accent-bg); border-color:var(--accent); color:var(--ink); }
+  .seg:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+
+  .grouprow { display:flex; flex-wrap:wrap; gap:5px; align-items:center; margin-bottom:12px; }
+  .grouprow .lbl { font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.08em;
+                   text-transform:uppercase; color:var(--muted); margin-right:4px; }
+
+  .legend { display:flex; flex-wrap:wrap; gap:6px 18px; font-size:.83rem; color:var(--muted); margin-bottom:12px; }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .m { font-family:"IBM Plex Mono",monospace; font-weight:600; }
+  .m-on{color:var(--on)} .m-part{color:var(--part)} .m-off{color:var(--off)}
+  .count { font-family:"IBM Plex Mono",monospace; font-size:12px; color:var(--muted); }
+
+  .scroller { overflow:auto; max-height:78vh; border:1px solid var(--rule-firm); border-radius:8px; background:var(--card); }
+  table { border-collapse:separate; border-spacing:0; width:100%; font-size:.86rem; }
+
+  thead th {
+    position:sticky; background:var(--card); text-align:left;
+    font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:10px; letter-spacing:.04em;
+    text-transform:uppercase; color:var(--muted); padding:8px 9px; white-space:nowrap;
+    cursor:pointer; user-select:none;
+  }
+  thead tr.groups th { top:0; z-index:5; font-size:9.5px; letter-spacing:.1em; color:var(--ink-soft);
+                       border-bottom:1px solid var(--rule); text-align:center; cursor:default;
+                       background:color-mix(in srgb, var(--rule) 32%, var(--card)); }
+  thead tr.cols th { top:29px; z-index:4; border-bottom:1px solid var(--rule-firm); }
+  thead th:hover { color:var(--ink); }
+  thead th .dir { color:var(--accent); }
+  th.name, td.name { min-width:14rem; }
+  thead tr.groups th.name { background:color-mix(in srgb, var(--rule) 32%, var(--card)); }
+
+  tbody td { padding:7px 9px; border-bottom:1px solid var(--rule); vertical-align:middle; white-space:nowrap; }
+  tbody tr:last-child td { border-bottom:0; }
+  tbody tr:hover td { background:color-mix(in srgb, var(--rule) 35%, transparent); }
+  tbody tr:hover td.name { background:color-mix(in srgb, var(--rule) 55%, var(--card)); }
+
+  .pname { font-family:"Archivo",sans-serif; font-weight:600; color:var(--ink); }
+  .pnote { display:block; font-size:11px; color:var(--muted); font-weight:400; white-space:normal; max-width:24rem; }
+  td.mark { text-align:center; font-family:"IBM Plex Mono",monospace; font-weight:600; }
+  td.meta { font-size:11.5px; color:var(--ink-soft); }
+
+  tr.self td, tr.self td.name { background:var(--accent-bg) !important; }
+  .badge { font-family:"IBM Plex Mono",monospace; font-size:9px; font-weight:600; letter-spacing:.06em;
+           padding:1px 5px; border-radius:3px; background:var(--accent); color:var(--card); margin-left:6px; vertical-align:1px; }
+  .chk { font-family:"IBM Plex Mono",monospace; font-size:9.5px; font-weight:600; color:var(--on); margin-left:5px; vertical-align:1px; }
+
+  .empty { padding:28px; text-align:center; color:var(--muted); font-size:.92rem; }
+
+  .notes { margin-top:32px; border-top:2px solid var(--ink); padding-top:20px; font-size:.87rem; color:var(--muted); }
+  .notes h2 { font-family:"Archivo",sans-serif; font-size:1rem; color:var(--ink); margin:0 0 10px; }
+  .notes dl { margin:0; display:grid; grid-template-columns:11rem 1fr; gap:5px 16px; }
+  .notes dt { font-family:"IBM Plex Mono",monospace; font-size:10.5px; text-transform:uppercase;
+              letter-spacing:.05em; color:var(--ink-soft); padding-top:3px; }
+  .notes dd { margin:0; }
+
+  @media (max-width:700px) {
+    th.name, td.name { min-width:10rem; }
+    .pnote { max-width:14rem; }
+    .notes dl { grid-template-columns:1fr; gap:2px; }
+    .notes dt { padding-top:8px; }
+  }
+</style>
+
+<header class="hero">
+  <div class="hero-inner">
+    <p class="kicker">Commerce primitives in Go</p>
+    <h1>A commerce engine you can hold in your head.</h1>
+    <p class="lede">
+      One binary, one PostgreSQL database, one third-party dependency. Products
+      and variants, inventory, carts, checkout, orders, payments, fulfilment and
+      durable events — with integrations as ordinary Go packages you wire in
+      <code>main()</code>. No Redis to stand up, no search cluster, no vendor SDK
+      in your dependency graph.
+    </p>
+    <div class="cta">
+      <a class="btn btn-primary" href="https://github.com/misiki-in/gocommerce">Read the source</a>
+      <a class="btn btn-ghost" href="#matrix">Skip to the comparison</a>
+    </div>
+  </div>
+</header>
+
+<section>
+  <h2>What it does that the others mostly don&rsquo;t</h2>
+  <p class="sub">
+    Three things unusual in an engine this size, and that none of Vendure,
+    Saleor or Medusa ships in core.
+  </p>
+  <div class="three">
+    <div>
+      <h3>A transactional outbox you can repair</h3>
+      <p>
+        A state change and the event describing it commit together. A dispatcher
+        claims unsent rows with <code>FOR UPDATE SKIP LOCKED</code>, so two
+        instances never double-deliver — and dead letters are inspected and
+        un-parked through the API rather than through a SQL runbook.
+      </p>
+    </div>
+    <div>
+      <h3>An audit trail over 27 entity kinds</h3>
+      <p>
+        Who changed what, merged with the outbox into one order timeline by the
+        transaction timestamp both rows take. Not an add-on: the engine records
+        it because an operator will eventually have to answer for a number.
+      </p>
+    </div>
+    <div>
+      <h3>A doctor that checks its own invariants</h3>
+      <p>
+        Fifteen checks, among them a stock-ledger reconciliation, a refund-total
+        reconciliation, and &ldquo;every admin route names the rights it
+        needs&rdquo;. The store says when it has drifted instead of waiting to be
+        asked.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>A store is a Go program</h2>
+  <p class="sub">
+    No YAML, no plugin registry, no runtime discovery. What the store is made of
+    is what the code says it is made of.
+  </p>
+<pre><code>app, err := gocommerce.New(
+    gocommerce.Config{
+        DBURL:       os.Getenv("DATABASE_URL"),
+        Currency:    "USD",
+        AdminTokens: []string{os.Getenv("GOCOMMERCE_ADMIN_TOKEN")},
+    },
+    stripe.New(stripe.Config{ /* ... */ }),
+    sendgrid.New(sendgrid.Config{ /* ... */ }),
+    translations.New(),
+)
+log.Fatal(app.ListenAndServe())</code></pre>
+</section>
+
+<section class="ledger">
+  <h2>And what it doesn&rsquo;t do</h2>
+  <p class="sub">
+    Published for the same reason as everything above. A comparison that lists
+    only strengths is an advertisement; this is the part you would otherwise
+    find out in week three.
+  </p>
+  <ul>
+    <li><b>No multi-currency.</b>
+      <span class="why">One settlement currency per store, snapshotted onto every order. Deliberate — mixed-currency checkout reopens every rounding decision on the money path — but if you sell in three currencies, this is the wrong engine today.</span></li>
+    <li><b>No gift cards, loyalty or store credit.</b>
+      <span class="why">A gift card is a tender, not a discount, so it lands on the payment path rather than beside the promotions. Not built, and not faked with a discount code.</span></li>
+    <li><b>No subscriptions.</b>
+      <span class="why">Orders are one-shot. Recurring billing is a domain of its own, not a flag on a product.</span></li>
+    <li><b>No marketplace.</b>
+      <span class="why">One seller per store. Several independent sellers with their own orders and payouts is a different engine, not a module.</span></li>
+    <li><b>API keys are configuration, not records.</b>
+      <span class="why">Every integration shares one token, rotating it needs a restart, and revoking one revokes all of them. Fine for a single deployment, wrong for a dozen integrations.</span></li>
+    <li><b>Module screens cover a list and a form.</b>
+      <span class="why">A module can contribute an admin screen without touching the panel — but a chart, a drag-to-reorder or a bespoke editor still needs core to build it.</span></li>
+  </ul>
+</section>
+
+<section class="wide" id="matrix">
+  <h2>The comparison, in full</h2>
+  <p class="sub">
+    Every notable open-source engine, the global SaaS leaders, the enterprise
+    suites and the regional incumbents, scored on forty-three capabilities.
+    Search it, filter by licence, toggle the column groups, sort any column.
+  </p>
+
+</section>
+
+<footer>
+  <div class="foot-inner">
+    <p><strong>On the numbers.</strong> Rows marked &check; were read against
+    source — repository, schema or the vendor&rsquo;s own documentation. The rest
+    come from general knowledge of these products and are not verified capability
+    by capability: forty-three capabilities across this many platforms is more
+    cells than anyone should check by hand, and these products ship changes
+    faster than a table survives. Use it to build a shortlist, then confirm the
+    two or three capabilities you actually care about against the vendor before
+    deciding anything. Corrections are welcome as issues.</p>
+    <p>GoCommerce is pre-1.0 and says so: the API is unstable until v0.1.0.</p>
+  </div>
+</footer>
+<script>
+  // Capability groups. Each platform encodes one digit-string per group, in
+  // this order — 2 native, 1 via a module/plugin/paid tier, 0 absent.
+  const GROUPS = [
+    { id: "arch", label: "Architecture", cols: [
+      ["selfhost", "Self-host",   "Can be run on your own infrastructure."],
+      ["headless", "Headless",    "API-first by design, not merely having an API bolted on."],
+      ["graphql",  "GraphQL",     "A GraphQL API, as opposed to REST only."],
+      ["webhooks", "Webhooks",    "Outbound HTTP callbacks on store events."],
+      ["events",   "Event bus",   "An internal async event stream extensions can subscribe to."],
+      ["extui",    "Ext. UI",     "A third-party extension can add its own screen to the admin, not just its own API."],
+      ["appstore", "App market",  "A marketplace of third-party extensions."],
+    ]},
+    { id: "cat", label: "Catalogue", cols: [
+      ["variants",   "Variants",     "Options and variants on a product."],
+      ["digital",    "Digital",      "Downloadable or licence-key goods that need no parcel."],
+      ["bundles",    "Bundles",      "Kits or grouped products sold as one line."],
+      ["customf",    "Custom fields","Arbitrary structured data on catalogue entities."],
+      ["facets",     "Facets",       "Filtering the catalogue by attribute value."],
+      ["i18n",       "Translations", "Translated catalogue content, not a translated admin."],
+      ["media",      "Media",        "Image and asset management, variants and galleries."],
+    ]},
+    { id: "sell", label: "Selling", cols: [
+      ["channels",  "Channels",    "One catalogue served as several storefronts that can differ in price, stock and publishing."],
+      ["currency",  "Multi-cur",   "More than one settlement currency."],
+      ["multistore","Multi-store", "Several distinct stores from one installation."],
+      ["market",    "Marketplace", "Several independent sellers on one storefront, with their own orders and payouts."],
+      ["b2b",       "B2B pricing", "The same variant priced differently by who is buying — customer groups, price lists, contracts."],
+      ["tiered",    "Volume",      "Quantity breaks: a different unit price above a threshold."],
+      ["subs",      "Subscriptions","Recurring billing on a schedule."],
+      ["gift",      "Gift cards",  "Gift cards as a tender, not as a discount."],
+      ["loyalty",   "Loyalty",     "Points, rewards or store credit balances."],
+      ["promo",     "Promotions",  "A rules engine beyond flat codes: buy-X-get-Y, tiers, campaigns."],
+    ]},
+    { id: "money", label: "Money", cols: [
+      ["guest",     "Guest",       "Checkout without an account."],
+      ["gateways",  "Gateways",    "More than one payment gateway, swappable."],
+      ["taxengine", "Tax",         "A tax engine in the product: zones, rates, categories."],
+      ["taxprov",   "Tax vendors", "Integration with external tax services such as Avalara or TaxJar."],
+      ["prefund",   "Part refund", "Refunding less than the whole order, recorded as its own thing."],
+      ["returns",   "Returns",     "Goods coming back as a record, with restocking."],
+    ]},
+    { id: "ship", label: "Fulfilment", cols: [
+      ["multistock","Multi-stock", "Inventory held and tracked in more than one place."],
+      ["reserve",   "Reservations","Stock held during checkout so two shoppers cannot buy the last one."],
+      ["partial",   "Partial ship","Shipping part of an order, with the rest still owed."],
+      ["pickup",    "Click&collect","Collecting from a shop or locker instead of delivery."],
+      ["carriers",  "Carriers",    "Carrier integrations: live rates, labels, tracking."],
+      ["shipzones", "Zones/rates", "Shipping zones with priced methods."],
+    ]},
+    { id: "ops", label: "Operations", cols: [
+      ["rbac",      "Roles",       "Staff roles with granular permissions."],
+      ["audit",     "Audit log",   "A record of which operator changed what."],
+      ["orderedit", "Order edit",  "Changing a placed order's lines."],
+      ["draft",     "Draft orders","Building an order from the admin side."],
+      ["report",    "Reporting",   "Sales and operational reporting in the product."],
+      ["impexp",    "Import/export","Bulk catalogue and order transfer."],
+      ["apikeys",   "API keys",    "Managed, revocable API credentials as records rather than config."],
+    ]},
+  ];
+
+  const META = [
+    ["model",  "Model"],
+    ["licence","Licence"],
+    ["stack",  "Stack"],
+    ["api",    "API"],
+  ];
+
+  // name, model, licence, stack, api, note, [arch, cat, sell, money, ship, ops]
+  const RAW = [
+    ["GoCommerce","Open source","MIT","Go","REST","One binary, one third-party dependency. Channels, B2B and volume pricing, and module-contributed admin screens all landed this week; multi-currency stays out by decision (D14), and gift cards, loyalty and subscriptions are not there.",["2202220","2002212","2000220001","212022","222012","2222220"],{self:1,checked:1}],
+
+    ["Litekart","Proprietary","Commercial, self-host","Not published","REST","The reason this engine has a distribution path at all (PLAN.md §31). Its own site claims multi-vendor, multiple storefronts, multi-tenant SaaS, B2B accounts with approvals and tiered pricing — the three things the gap ledger says GoCommerce lacks. Capability row is part vendor-stated, part inferred.",["2201110","2112212","2222221112","222122","211122","2121221"]],
+    ["Svelte Commerce","Open source","MIT","SvelteKit / TS","REST · GraphQL","A storefront, not a backend: 26 backend connectors, with Litekart as the reference implementation at 39 of 43 services. Rows below are near-empty because it holds no commerce state of its own.",["2210000","1001211","0000000000","110000","000000","0000000"],{checked:1}],
+
+    ["Medusa","Open source","MIT","Node / TS","REST","Modular monolith. Sales channels, pricing and translations are core modules; loyalty and store credit too.",["2212221","2122222","2222221221","222122","222122","2222222"],{checked:1}],
+    ["Vendure","Open source","MIT","Node / TS","GraphQL","Channels and customer groups are core concepts; the dashboard is extensible by plugins.",["2222221","2122222","2212221121","222122","222122","2222221"],{checked:1}],
+    ["Saleor","Open source","BSD-3","Python / Django","GraphQL","Native multi-channel; apps embed dashboard views as iframes. Gift cards and click & collect since 3.1.",["2222221","2222222","2212112222","222222","222222","2222222"],{checked:1}],
+    ["Sylius","Open source","MIT","PHP / Symfony","REST","Symfony-native and heavily customisable; B2B lives in the paid Plus tier.",["2202122","2122222","2212112112","222122","121112","2212222"]],
+    ["Spree Commerce","Open source","BSD-3","Ruby on Rails","REST","Vendor documents native B2B modules, a multi-vendor marketplace engine, multi-store operations and Markets for geography, currency and locale.",["2212122","2122222","2222111112","222122","222112","2212221"],{checked:1}],
+    ["Solidus","Open source","BSD-3","Ruby on Rails","REST","Community fork of Spree, conservative about breaking changes.",["2202122","2122222","1211112112","222122","222112","2212221"]],
+    ["Bagisto","Open source","MIT","PHP / Laravel","GraphQL","Multi-channel, multi-currency, multi-warehouse inventory, ACL and a multivendor marketplace, all vendor-documented.",["2212122","2222222","2222112112","222022","221112","2212221"],{checked:1}],
+    ["Shuup","Open source","AGPL / commercial","Python / Django","REST","Multi-vendor first; dual-licensed.",["2202122","2122212","2212212112","222022","221112","2212221"]],
+    ["Thelia","Open source","LGPL","PHP / Symfony","REST","Francophone ecosystem; modest beyond it.",["2102122","2122212","1211002011","222012","120112","2211221"]],
+    ["Aimeos","Open source","LGPL","PHP / Laravel","GraphQL","Built for very large catalogues and marketplaces.",["2222122","2222222","2222122212","222122","221122","2212221"]],
+    ["Shopsys Platform","Open source","MIT","PHP / Symfony","GraphQL","Multi-domain by design, aimed at large catalogues.",["2222122","2122222","2222112012","222122","221122","2212221"]],
+    ["EverShop","Open source","GPL-3","Node / TS","GraphQL","Young and deliberately small.",["2212111","2021212","0000001001","212011","000112","2201111"]],
+    ["Reaction Commerce","Open source","GPL-3","Node / TS","GraphQL","Effectively unmaintained since the Mailchimp acquisition — listed for completeness.",["2222121","2122212","1212002001","222112","221112","2211121"]],
+    ["Django Oscar","Open source","BSD-3","Python / Django","REST","A framework more than a product; you assemble the shop.",["2101112","2122212","1211112011","222112","120112","2211121"]],
+    ["Apache OFBiz","Open source","Apache-2","Java","REST","ERP suite with commerce inside it; enormous and dated.",["2101112","2122212","2222212011","222122","222212","2222221"]],
+    ["Shopizer","Open source","LGPL","Java / Spring","REST","Java shop for teams already on the JVM.",["2202112","2122212","2211002011","222112","121112","2211221"]],
+    ["Virto Commerce","Open source","Apache-2","C# / .NET","REST","Modular .NET platform with a B2B lean.",["2222222","2222222","2222212112","222222","222122","2222222"]],
+    ["Smartstore","Open source","AGPL","C# / .NET","REST","nopCommerce-era .NET with a modern admin.",["2102122","2222222","2212112122","222122","221122","2212221"]],
+    ["GrandNode","Open source","GPL-3","C# / .NET · MongoDB","REST","nopCommerce fork on MongoDB.",["2202122","2222212","2212112122","222122","221122","2212221"]],
+    ["SimplCommerce","Open source","Apache-2","C# / .NET","REST","Small, readable .NET reference implementation.",["2101111","2121211","0011002001","212011","000112","2201121"]],
+    ["EC-CUBE","Open source","LGPL","PHP / Symfony","REST","The dominant open-source cart in Japan.",["2102122","2122212","1211002011","222122","120112","2211221"]],
+    ["OroCommerce","Open source","OSL-3","PHP / Symfony","REST","Open-source platform built specifically for B2B.",["2202122","2222222","2222222112","222222","222122","2222222"]],
+    ["Sharetribe","Open source","Apache-2 / SaaS","Clojure / Node","REST","Marketplace-first: the product is the two-sided market.",["1212112","2021211","0012002001","222101","000001","2211121"]],
+    ["WooCommerce","Open source","GPL-2","PHP / WordPress","REST","Largest install base of any platform. The vendor's own feature page puts multi-currency, subscriptions, bundles, B2B pricing, gift cards and loyalty behind paid extensions.",["2102122","2222122","0101111111","222111","111112","1112221"],{checked:1}],
+    ["PrestaShop","Open source","OSL-3","PHP","REST","Multistore and advanced stock management in core.",["2102122","2222222","2222112112","222122","221122","2212221"]],
+    ["OpenCart","Open source","GPL-3","PHP","REST","Multi-store in core; light everywhere else.",["2001112","2122212","2222001111","222111","000112","2111221"]],
+    ["Drupal Commerce","Open source","GPL-2","PHP / Drupal","REST · JSON:API","Content-first; inherits Drupal's field and translation systems.",["2112122","2222222","1211112111","222122","111112","2212221"]],
+    ["nopCommerce","Open source","nopCommerce PL","C# / .NET","REST","Multi-store, multi-vendor, warehouses, tier pricing, gift cards, reward points and RMA are all in core — unusually complete for an open-source cart.",["2102122","2222222","2222222222","222122","221122","2222221"],{checked:1}],
+    ["osCommerce","Open source","GPL-2","PHP","—","Historic. Still running in places, rarely chosen new.",["2000101","2121211","0011000001","221001","000012","1001210"]],
+    ["Zen Cart","Open source","GPL-2","PHP","—","osCommerce descendant of the same era.",["2000101","2121211","0011000011","221001","000012","1001210"]],
+    ["VirtueMart","Open source","GPL-2","PHP / Joomla","—","Joomla's commerce extension.",["2000101","2121211","0011000011","221001","000012","1101211"]],
+    ["CubeCart","Open source","GPL-3","PHP","REST","Small self-hosted cart with a long history.",["2001101","2122211","0011001011","222101","000112","1101221"]],
+    ["AbanteCart","Open source","OSL-3","PHP","REST","Lightweight self-hosted cart.",["2001101","2122211","0011001011","222101","000112","1101221"]],
+    ["LiteCart","Open source","Custom","PHP","—","Deliberately minimal single-store cart.",["2000101","2121211","0011000001","222101","000012","1001210"]],
+
+    ["Magento Open Source","Open core","OSL-3","PHP","GraphQL · REST","Websites/stores/store views; MSI gives multi-source inventory.",["2122122","2222222","2222112122","222222","222122","2222221"]],
+    ["Adobe Commerce","Proprietary","Commercial","PHP","GraphQL · REST","Magento plus B2B, staging, hosting and support.",["2122122","2222222","2222222222","222222","222222","2222222"]],
+    ["Shopware 6","Open core","MIT + commercial","PHP / Symfony","REST","Store API, sales channels, rule builder and flow builder are core. Docs put B2B Suite, Subscriptions and Multi-Inventory under commercial plans.",["2212222","2222222","2221111112","222122","121122","2222221"],{checked:1}],
+    ["Odoo eCommerce","Open core","LGPL + EE","Python","REST · XML-RPC","Strongest when the shop is a front end on Odoo's ERP.",["2102122","2222222","1211112222","222122","222222","2222222"]],
+    ["X-Cart","Open core","Commercial + OSS","PHP","REST","Source-available with paid editions.",["2102122","2222222","1211112112","222122","221122","2212221"]],
+    ["Broadleaf Commerce","Open core","Apache-2 + EE","Java / Spring","REST","Enterprise Java, B2B-leaning.",["2222122","2222222","2222212112","222222","222122","2222222"]],
+    ["Spryker","Open core","Source-available","PHP","REST · GraphQL","B2B and marketplace oriented, assembled from modules.",["2222122","2222222","2222222122","222222","222222","2222222"]],
+    ["Oxid eSales","Open core","GPL + EE","PHP","GraphQL","German mid-market, B2B-capable.",["2212122","2222222","2222112112","222122","221122","2222221"]],
+    ["Pimcore","Open core","GPL + EE","PHP / Symfony","REST · GraphQL","PIM and DXP first; commerce is one framework inside it.",["2222122","2222222","2222212112","222122","221122","2222222"]],
+    ["JTL-Shop","Open core","Free + commercial","PHP","REST","German SMB incumbent. The shop is free; the money is in JTL-Wawi, the ERP it is really a front end for.",["2101112","2222222","1220221112","222122","222122","2121221"]],
+    ["Spurtcommerce","Open core","Source-available, paid tiers","Node / TS · Angular · React","REST","Marketplace-first and bought outright rather than subscribed to: vendor onboarding, commission and settlement, plus B2B customer-specific pricing, bulk ordering and quote negotiation. MySQL, RabbitMQ and Redis underneath; monolith or microservices.",["2201210","2112222","1112220112","222022","211222","2111221"],{checked:1}],
+    ["CS-Cart","Open core","Commercial","PHP","REST","Ships a multi-vendor edition as its headline product.",["2102122","2222222","2222212122","222122","221122","2212221"]],
+    ["Vue Storefront (Alokai)","Open core","MIT + SaaS","Node / TS","GraphQL","A frontend and middleware layer, not a commerce backend — it fronts the others.",["1222111","1011210","1100000000","110000","000000","0000110"]],
+
+    ["Shopify","Proprietary","SaaS","Hosted","GraphQL · REST","The default. Markets for currency, Translate & Adapt for content, apps for the rest.",["0212222","2222222","2222112222","222222","222222","2222222"]],
+    ["Shopify Plus","Proprietary","SaaS","Hosted","GraphQL · REST","Plus adds B2B, checkout extensibility, scripts and higher limits.",["0212222","2222222","2222222222","222222","222222","2222222"]],
+    ["BigCommerce","Proprietary","SaaS","Hosted","GraphQL · REST","Headless-friendly early; B2B Edition for trade.",["0222222","2222222","2222212122","222222","222222","2222222"]],
+    ["commercetools","Proprietary","SaaS","Hosted","GraphQL · REST","The API-first enterprise benchmark; MACH-native, brings no storefront.",["0222212","2222222","2222220112","222222","222122","2222222"]],
+    ["Salesforce Commerce Cloud","Proprietary","SaaS","Hosted","REST","B2C and B2B Commerce are distinct products under one roof.",["0222212","2222222","2222221222","222222","222222","2222222"]],
+    ["SAP Commerce Cloud","Proprietary","Commercial","Java","REST","Hybris lineage; very deep B2B.",["1222212","2222222","2222221222","222222","222222","2222222"]],
+    ["VTEX","Proprietary","SaaS","Hosted","REST · GraphQL","Marketplace and seller management are first-class; strong in Latin America.",["0222222","2222222","2222222222","222222","222222","2222222"]],
+    ["Elastic Path","Proprietary","SaaS","Hosted","REST","Composable and B2B-heavy.",["0222212","2222222","2222220112","222222","222122","2222222"]],
+    ["Intershop","Proprietary","Commercial","Java","REST","European enterprise B2B.",["1222212","2222222","2222221112","222222","222222","2222222"]],
+    ["HCL Commerce","Proprietary","Commercial","Java","REST","IBM WebSphere Commerce lineage.",["1222212","2222222","2222221112","222222","222222","2222222"]],
+    ["Oracle Commerce","Proprietary","Commercial","Java","REST","ATG lineage; a long enterprise tail.",["1122212","2222222","2222221112","222222","222222","2222222"]],
+    ["Kibo Commerce","Proprietary","SaaS","Hosted","REST","Composable, with strong order management.",["0222212","2222222","2222221122","222222","222222","2222222"]],
+    ["Fabric","Proprietary","SaaS","Hosted","REST","Headless commerce packaged with PIM and OMS.",["0222212","2222222","2222220112","222222","222122","2222222"]],
+    ["Optimizely Commerce","Proprietary","Commercial","C# / .NET","REST","DXP-led; commerce beside content and experimentation.",["1222212","2222222","2222221112","222222","222122","2222222"]],
+    ["Sitecore OrderCloud","Proprietary","SaaS","Hosted","REST","API-only, B2B-first, brings no admin of its own to speak of.",["0222211","2122212","2222220112","222122","221122","2222222"]],
+    ["Emporix","Proprietary","SaaS","Hosted","REST","Composable, B2B and grocery lean.",["0222211","2222222","2222221112","222222","222222","2222222"]],
+    ["Scayle","Proprietary","SaaS","Hosted","REST","Spun out of About You; fashion-shaped.",["0222212","2222222","2222211122","222222","222222","2222222"]],
+    ["Centra","Proprietary","SaaS","Hosted","GraphQL · REST","Built for fashion brands running retail and wholesale together.",["0222211","2222222","2222221112","222222","222122","2222222"]],
+    ["Norce","Proprietary","SaaS","Hosted","REST","Nordic composable commerce.",["0222211","2222222","2222221112","222222","222122","2222222"]],
+    ["Sana Commerce","Proprietary","SaaS","Hosted","REST","ERP-integrated B2B on Dynamics and SAP; the ERP is the source of truth.",["0122211","2222222","1211221112","222222","222122","2222222"]],
+    ["Znode","Proprietary","Commercial","C# / .NET","REST","B2B multi-store on .NET.",["2222212","2222222","2222221112","222222","222122","2222222"]],
+    ["Miva","Proprietary","SaaS","Hosted","REST","Long-running B2B-capable mid-market host.",["0122212","2222222","1212221112","222222","222122","2222221"]],
+    ["Craft Commerce","Proprietary","Commercial","PHP / Craft CMS","GraphQL","Commerce for teams already building in Craft.",["2212212","2222222","1211112112","222122","121122","2222221"]],
+    ["Umbraco Commerce","Proprietary","Commercial","C# / .NET","REST","Commerce for teams already building in Umbraco.",["2102212","2222222","1211112112","222122","121122","2222221"]],
+
+    ["Wix eCommerce","Proprietary","SaaS","Hosted","REST","Site-builder first; Wix Headless is the newer path out.",["0122222","2222222","1211112212","222122","122112","1212221"]],
+    ["Squarespace Commerce","Proprietary","SaaS","Hosted","REST","Design-led and deliberately narrow commerce.",["0002212","2222122","1101002212","222112","021111","1112221"]],
+    ["Square Online","Proprietary","SaaS","Hosted","REST","Strongest where the shop is an extension of the till.",["0002212","2222122","1101001212","222112","122111","1112221"]],
+    ["Weebly","Proprietary","SaaS","Hosted","REST","Square-owned site builder with a store attached.",["0002211","2222122","1101001212","222112","021111","1112221"]],
+    ["GoDaddy Online Store","Proprietary","SaaS","Hosted","REST","Bundled with hosting and domains.",["0002211","2222122","1101001112","222112","021111","1112221"]],
+    ["Ecwid (Lightspeed)","Proprietary","SaaS","Hosted","REST","Embeds a store into a site you already have.",["0122212","2222222","1211001112","222112","121111","1112221"]],
+    ["Lightspeed eCom","Proprietary","SaaS","Hosted","REST","Retail POS lineage; store and till share stock.",["0122212","2222222","1211112212","222122","222112","1212221"]],
+    ["Volusion","Proprietary","SaaS","Hosted","REST","Long-standing SMB host.",["0002211","2222122","0101001112","222112","021111","1112221"]],
+    ["Shift4Shop","Proprietary","SaaS","Hosted","REST","Formerly 3dcart; bundled with payment processing.",["0002212","2222222","1101112112","222122","121112","1212221"]],
+    ["Big Cartel","Proprietary","SaaS","Hosted","—","Deliberately minimal, for individual makers.",["0000101","2121110","0000000000","221001","000001","0002110"]],
+    ["Webflow Ecommerce","Proprietary","SaaS","Hosted","REST","Design tool with commerce attached.",["0122211","2221121","0101001112","222101","001111","1102221"]],
+    ["Jimdo","Proprietary","SaaS","Hosted","—","Small-business site builder.",["0000101","2121110","0101000012","221001","000101","0002211"]],
+    ["Zoho Commerce","Proprietary","SaaS","Hosted","REST","Commerce inside the Zoho suite.",["0102212","2222222","1211001112","222112","121112","1212221"]],
+    ["Sellfy","Proprietary","SaaS","Hosted","—","Creator-oriented, digital-first.",["0001211","2220210","0100002212","222101","000001","0002211"]],
+    ["Podia","Proprietary","SaaS","Hosted","—","Digital products, courses and memberships.",["0001211","2220210","0100002212","222101","000001","0002211"]],
+    ["Gumroad","Proprietary","SaaS","Hosted","REST","Creator storefront; digital and MoR.",["0011211","2220210","0100002112","222101","000001","0002211"]],
+
+    ["Mirakl","Proprietary","SaaS","Hosted","REST","The enterprise marketplace layer — seller onboarding, catalogue mapping and payouts — bolted onto a platform you already run, rather than a storefront of its own.",["0202211","2112222","2222220001","121122","212122","2210222"]],
+    ["Bold Commerce","Proprietary","SaaS","Hosted","REST","Headless checkout, subscriptions and pricing sold as pieces to bolt onto Shopify and others.",["0202111","1101001","1200222012","221121","011011","1111102"]],
+    ["plentymarkets","Proprietary","SaaS","Hosted","REST","DACH multichannel: shop, ERP and marketplace connections in one, aimed at sellers listing everywhere at once.",["0102112","2222222","2221221112","222122","222122","2222222"]],
+    ["Commerce Layer","Proprietary","SaaS","Hosted","REST","API-only by design: no storefront, no admin theme, markets instead of channels.",["0222211","2122212","2222220112","222122","222122","2222222"]],
+    ["Swell","Proprietary","SaaS","Hosted","REST · GraphQL","Headless with native subscriptions.",["0212212","2222222","1211122212","222122","121112","2212222"]],
+    ["Crystallize","Proprietary","SaaS","Hosted","GraphQL","Headless PIM and commerce with a content lean.",["0222211","2222222","1211102112","222112","121111","2212221"]],
+    ["Snipcart","Proprietary","SaaS","Hosted","REST","A cart you drop into any static site.",["0212211","2221211","0100002112","222112","000111","1102211"]],
+    ["Foxy.io","Proprietary","SaaS","Hosted","REST","Hosted cart and checkout for existing sites.",["0212211","2221211","0100002112","222212","001111","1102221"]],
+    ["Chec / Commerce.js","Proprietary","SaaS","Hosted","REST","Headless API for JAMstack storefronts.",["0212211","2221211","0100001112","222112","001111","1102221"]],
+    ["Nacelle","Proprietary","SaaS","Hosted","GraphQL","A headless data layer in front of another platform.",["0222211","1011210","1100000000","110000","000000","0002210"]],
+
+    ["Shopline","Proprietary","SaaS","Hosted","REST","Strong across Greater China and South-East Asia.",["0122222","2222222","2212112222","222122","222112","1212221"]],
+    ["Shoplazza","Proprietary","SaaS","Hosted","REST","Cross-border DTC out of China.",["0122222","2222222","2212112212","222122","222112","1212221"]],
+    ["Cafe24","Proprietary","SaaS","Hosted","REST","Korea's dominant storefront host.",["0122222","2222222","2212112212","222122","222112","1212221"]],
+    ["BASE","Proprietary","SaaS","Hosted","REST","Japan's mass-market easy storefront.",["0002212","2222122","0101001212","222112","021111","1112221"]],
+    ["Shoper","Proprietary","SaaS","Hosted","REST","Poland's largest SMB storefront host; CEE had no representation in this list before it.",["0101112","2222212","1211001112","222122","121122","1121221"]],
+    ["Tiendanube / Nuvemshop","Proprietary","SaaS","Hosted","REST","The Latin American SMB leader.",["0122222","2222222","1211112212","222122","122112","1212221"]],
+    ["Salla","Proprietary","SaaS","Hosted","REST","Saudi and Gulf storefront platform.",["0122222","2222222","1211112212","222122","122112","1212221"]],
+    ["StoreHippo","Proprietary","SaaS","Hosted","REST","Indian platform with a B2B and marketplace lean.",["0122212","2222222","2212222212","222122","222112","1212221"]],
+  ];
+
+  const MARK = { 2: ["●", "m-on"], 1: ["◐", "m-part"], 0: ["○", "m-off"] };
+
+  const FLAT = GROUPS.flatMap((g) => g.cols.map(([key, label, help]) => ({ key, label, help, group: g.id })));
+
+  const DATA = RAW.map(([name, model, licence, stack, api, note, codes, opts = {}]) => {
+    const row = { name, model, licence, stack, api, note, self: !!opts.self, checked: !!opts.checked };
+    GROUPS.forEach((g, gi) => {
+      const s = codes[gi] || "";
+      g.cols.forEach(([key], ci) => { row[key] = Number(s[ci] ?? 0); });
+    });
+    return row;
+  });
+
+  let sortKey = null, sortDir = 1, model = "all", term = "";
+  const shown = new Set(GROUPS.map((g) => g.id));
+
+  const grouphead = document.getElementById("grouphead");
+  const colhead = document.getElementById("colhead");
+  const body = document.getElementById("body");
+  const empty = document.getElementById("empty");
+  const count = document.getElementById("count");
+
+  // Group toggles: forty-three columns at once is a spreadsheet nobody reads,
+  // so the groups turn on and off and the header says which is which.
+  const grouprow = document.getElementById("grouprow");
+  for (const g of GROUPS) {
+    const b = document.createElement("button");
+    b.className = "seg"; b.textContent = g.label;
+    b.setAttribute("aria-pressed", "true");
+    b.addEventListener("click", () => {
+      if (shown.has(g.id)) { if (shown.size > 1) shown.delete(g.id); }
+      else shown.add(g.id);
+      b.setAttribute("aria-pressed", String(shown.has(g.id)));
+      render();
+    });
+    grouprow.appendChild(b);
+  }
+
+  const glossary = document.getElementById("glossary");
+  for (const c of FLAT) {
+    const dt = document.createElement("dt"); dt.textContent = c.label;
+    const dd = document.createElement("dd"); dd.textContent = c.help;
+    glossary.append(dt, dd);
+  }
+
+  function visibleCols() {
+    return FLAT.filter((c) => shown.has(c.group));
+  }
+
+  function matches(row) {
+    if (model !== "all" && row.model !== model) return false;
+    if (!term) return true;
+    return (row.name + " " + row.model + " " + row.licence + " " + row.stack + " " + row.api + " " + row.note)
+      .toLowerCase().includes(term);
+  }
+
+  function buildHead() {
+    grouphead.replaceChildren();
+    colhead.replaceChildren();
+
+    const nameGroup = document.createElement("th");
+    nameGroup.className = "name"; nameGroup.textContent = "Platform";
+    nameGroup.colSpan = 1 + META.length;
+    grouphead.appendChild(nameGroup);
+
+    for (const g of GROUPS) {
+      if (!shown.has(g.id)) continue;
+      const th = document.createElement("th");
+      th.colSpan = g.cols.length; th.textContent = g.label;
+      grouphead.appendChild(th);
+    }
+
+    const nameTh = document.createElement("th");
+    nameTh.className = "name"; nameTh.textContent = "Name";
+    nameTh.dataset.key = "name";
+    nameTh.addEventListener("click", () => sortOn("name", "text"));
+    colhead.appendChild(nameTh);
+
+    for (const [key, label] of META) {
+      const th = document.createElement("th");
+      th.textContent = label; th.dataset.key = key;
+      th.addEventListener("click", () => sortOn(key, "text"));
+      colhead.appendChild(th);
+    }
+    for (const c of visibleCols()) {
+      const th = document.createElement("th");
+      th.textContent = c.label; th.dataset.key = c.key; th.title = c.help;
+      th.addEventListener("click", () => sortOn(c.key, "mark"));
+      colhead.appendChild(th);
+    }
+    markSort();
+  }
+
+  function sortOn(key, type) {
+    if (sortKey === key) sortDir = -sortDir;
+    else { sortKey = key; sortDir = type === "mark" ? -1 : 1; }
+    render();
+  }
+
+  function markSort() {
+    for (const th of colhead.children) {
+      const c = FLAT.find((x) => x.key === th.dataset.key);
+      const m = META.find(([k]) => k === th.dataset.key);
+      th.textContent = c ? c.label : m ? m[1] : "Name";
+      if (th.dataset.key === sortKey) {
+        const d = document.createElement("span");
+        d.className = "dir"; d.textContent = sortDir === 1 ? " ▲" : " ▼";
+        th.appendChild(d);
+      }
+    }
+  }
+
+  function render() {
+    buildHead();
+    let rows = DATA.filter(matches);
+    if (sortKey) {
+      const isMark = FLAT.some((c) => c.key === sortKey);
+      rows = [...rows].sort((a, b) => {
+        const x = a[sortKey], y = b[sortKey];
+        return (isMark ? x - y : String(x).localeCompare(String(y))) * sortDir;
+      });
+    }
+
+    const cols = visibleCols();
+    body.replaceChildren();
+    for (const row of rows) {
+      const tr = document.createElement("tr");
+      if (row.self) tr.className = "self";
+
+      const td = document.createElement("td");
+      td.className = "name";
+      const strong = document.createElement("span");
+      strong.className = "pname"; strong.textContent = row.name;
+      td.appendChild(strong);
+      if (row.self) {
+        const b = document.createElement("span");
+        b.className = "badge"; b.textContent = "THIS ENGINE";
+        td.appendChild(b);
+      }
+      if (row.checked) {
+        const c = document.createElement("span");
+        c.className = "chk"; c.textContent = "✓"; c.title = "Checked against source";
+        td.appendChild(c);
+      }
+      const note = document.createElement("span");
+      note.className = "pnote"; note.textContent = row.note;
+      td.appendChild(note);
+      tr.appendChild(td);
+
+      for (const [key] of META) {
+        const m = document.createElement("td");
+        m.className = "meta"; m.textContent = row[key];
+        tr.appendChild(m);
+      }
+      for (const c of cols) {
+        const cell = document.createElement("td");
+        const [glyph, cls] = MARK[row[c.key]] || MARK[0];
+        cell.className = "mark " + cls;
+        cell.textContent = glyph;
+        cell.title = c.label + " — " +
+          (row[c.key] === 2 ? "native" : row[c.key] === 1 ? "via a module, plugin or paid tier" : "not available");
+        tr.appendChild(cell);
+      }
+      body.appendChild(tr);
+    }
+
+    empty.hidden = rows.length > 0;
+    count.textContent = rows.length + " of " + DATA.length + " platforms · " + cols.length + " capabilities shown";
+  }
+
+  document.getElementById("q").addEventListener("input", (e) => {
+    term = e.target.value.trim().toLowerCase();
+    render();
+  });
+  for (const btn of document.querySelectorAll(".controls .seg")) {
+    btn.addEventListener("click", () => {
+      model = btn.dataset.model;
+      for (const b of document.querySelectorAll(".controls .seg")) {
+        b.setAttribute("aria-pressed", String(b === btn));
+      }
+      render();
+    });
+  }
+
+  render();
+</script>
