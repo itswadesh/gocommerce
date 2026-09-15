@@ -23,6 +23,10 @@ function Invoke-GC {
         $Body,
         [switch]$Admin,
         [hashtable]$Headers = @{},
+        # For the bodies that are not JSON — a CSV going back into an import.
+        # Declared rather than assumed, so a file posted as `text/csv` says so
+        # on the wire and a proxy in the middle cannot decide otherwise.
+        [string]$ContentType,
         [switch]$Raw
     )
 
@@ -35,8 +39,17 @@ function Invoke-GC {
     }
     if ($Admin) { $params.Headers['Authorization'] = "Bearer $script:GCToken" }
     if ($null -ne $Body) {
-        $params.Body = if ($Body -is [string]) { $Body } else { $Body | ConvertTo-Json -Depth 10 -Compress }
-        $params.ContentType = 'application/json'
+        $text = if ($Body -is [string]) { $Body } else { $Body | ConvertTo-Json -Depth 10 -Compress }
+        # Encoded to bytes here rather than handed over as a string.
+        #
+        # Windows PowerShell 5.1 writes a string request body in the system's
+        # ANSI codepage, so a product titled "Charger 20W × 2" leaves as a lone
+        # 0xD7 and PostgreSQL refuses it as an invalid UTF-8 sequence. The
+        # symptom is a CSV round-trip failing on a file the engine exported
+        # correctly seconds earlier, which reads as an engine bug and is not
+        # one — the export is clean UTF-8 and the client broke it in transit.
+        $params.Body = [System.Text.Encoding]::UTF8.GetBytes($text)
+        $params.ContentType = if ($ContentType) { $ContentType } else { 'application/json; charset=utf-8' }
     }
 
     try {

@@ -159,7 +159,7 @@ $csv = Invoke-GC GET '/api/admin/export/admin-products' -Admin -Raw
 Confirm-GCTrue 'header is the documented one' ($csv.StartsWith('product_slug,product_title'))
 Confirm-GCTrue 'the new SKUs are in the export' ($csv -match "SMOKE-$run-M")
 
-$dryRun = Invoke-GC POST '/api/admin/import/products?dry_run=1' $csv -Admin
+$dryRun = Invoke-GC POST '/api/admin/import/products?dry_run=1' $csv -Admin -ContentType 'text/csv; charset=utf-8'
 Confirm-GCTrue 'dry run reports work without doing it' ($dryRun.dry_run -eq $true -and $dryRun.errors.Count -eq 0)
 
 Write-GCStep '14. Pagination works both ways and agrees with itself'
