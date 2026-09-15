@@ -216,8 +216,10 @@ curl -X POST localhost:8080/api/checkout/cod \
 
 One executable serves both the API and a full admin panel. Run the binary,
 open `http://localhost:8080/`, and you have a dashboard, product and order
-management, inventory, CSV import/export (in the store's own layout or
-Shopify's, so a Shopify export imports as it is), settings and an events
+management, inventory, CSV import/export for products, inventory, orders, the
+category tree, reviews and menus (products, inventory and orders in the
+store's own layout or Shopify's, so a Shopify export imports as it is),
+settings and an events
 screen for what the outbox could not deliver — with no separate process, no
 Node.js on the server and no configuration beyond a database URL.
 

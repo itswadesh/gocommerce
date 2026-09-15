@@ -1,6 +1,7 @@
 <script>
     import { api, apiErrorFrom, can, getToken, query, request } from "$lib/api.js";
     import { formatDate } from "$lib/format.js";
+    import { hasModule } from "$lib/modules.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
     import CategoryPicker from "$lib/components/CategoryPicker.svelte";
     import DirtyGuard from "$lib/components/DirtyGuard.svelte";
@@ -135,6 +136,24 @@
         download("/api/admin/export/admin-inventory" + query({ format: exportFormat }), fileName("inventory"));
     }
 
+    /*
+     * The three files that have one layout and no Shopify dialect, so none of
+     * them carries the format switch: a category tree, the reviews, and the
+     * menus. Shopify's category export is its taxonomy file, which the block
+     * further down imports; its reviews and menus are not CSV at all.
+     */
+    function exportCategories() {
+        download("/api/admin/export/admin-categories", "categories.csv");
+    }
+
+    function exportReviews() {
+        download("/api/admin/x/reviews/export", "reviews.csv");
+    }
+
+    function exportMenus() {
+        download("/api/admin/x/navigation/export", "menus.csv");
+    }
+
     /* The window in words, so the exclusive bound is stated in the form a
        person reads rather than only in the label above the picker. */
     const exportOrderWindow = $derived.by(() => {
@@ -214,6 +233,37 @@
         }
     }
 
+    /*
+     * Where each file goes in. The engine's own kinds live under
+     * /api/admin/import/; a module's live under its own prefix, because a
+     * module cannot add a verb to the engine's namespace and should not want
+     * to — the door is the module's, and it closes when the module is not in
+     * the binary.
+     */
+    const IMPORT_PATHS = {
+        reviews: "/api/admin/x/reviews/import",
+        menus: "/api/admin/x/navigation/import",
+    };
+    const importPath = (k) => IMPORT_PATHS[k] ?? `/api/admin/import/${k}`;
+
+    /* What this store can actually be given, in the order the list reads. A
+       module that is not installed contributes nothing rather than an option
+       that answers 404. */
+    const importKinds = $derived([
+        { value: "products", label: "Products and variants" },
+        { value: "inventory", label: "Inventory counts" },
+        { value: "orders", label: "Historical orders" },
+        { value: "categories", label: "Category tree" },
+        ...(hasModule("reviews") ? [{ value: "reviews", label: "Product reviews" }] : []),
+        ...(hasModule("navigation") ? [{ value: "menus", label: "Menus" }] : []),
+    ]);
+
+    /* A kind the store lost — the module went away while this screen was
+       open, or a stale URL — falls back rather than posting into nothing. */
+    $effect(() => {
+        if (!importKinds.some((k) => k.value === kind)) kind = "products";
+    });
+
     function pickFile() {
         fileInput?.click();
     }
@@ -237,7 +287,7 @@
             if (kind === "products" && !overwrite) params.set("overwrite", "0");
             const suffix = params.toString() ? "?" + params.toString() : "";
 
-            result = await request("POST", `/api/admin/import/${kind}${suffix}`, {
+            result = await request("POST", importPath(kind) + suffix, {
                 body: csv,
                 headers: { "Content-Type": "text/csv" },
             });
@@ -471,6 +521,48 @@
                 have spent — so the file leaves but does not come back: there is no customer
                 to import into.
             </div>
+
+            <!--
+                The structural files. None of them has a Shopify dialect, so
+                none of them takes the format switch above: Shopify's category
+                export is its taxonomy file, which the block below imports, and
+                its reviews and menus are not CSV at all.
+            -->
+            <h6 class="section-title">
+                <i class="ri-stack-line" aria-hidden="true"></i>
+                Structure
+            </h6>
+
+            <div class="field-help m-b-sm">
+                The tree, the menus and what shoppers have said — the parts of a store that
+                are neither catalogue nor ledger. Each has one layout, and each imports back
+                from the box below.
+            </div>
+
+            <div class="flex gap-10 flex-wrap">
+                <button type="button" class="btn secondary" onclick={exportCategories}>
+                    <i class="ri-node-tree" aria-hidden="true"></i>
+                    <span class="txt">Categories CSV</span>
+                </button>
+                {#if hasModule("reviews")}
+                    <button type="button" class="btn secondary" onclick={exportReviews}>
+                        <i class="ri-star-line" aria-hidden="true"></i>
+                        <span class="txt">Reviews CSV</span>
+                    </button>
+                {/if}
+                {#if hasModule("navigation")}
+                    <button type="button" class="btn secondary" onclick={exportMenus}>
+                        <i class="ri-menu-line" aria-hidden="true"></i>
+                        <span class="txt">Menus CSV</span>
+                    </button>
+                {/if}
+            </div>
+            <div class="field-help m-t-sm">
+                The category file adds and updates; it never moves or deletes, because one
+                typo in a path would otherwise drag a subtree and the products under it
+                somewhere else, and a spreadsheet has no undo. Moving a category stays on the
+                Categories screen, which shows what is nested under it first.
+            </div>
             {/if}
 
             {#if mayImport}
@@ -569,26 +661,59 @@
                     </div>
                 {/if}
 
+            <!-- Import is its own panel, not another heading in the column.
+                 Everything above it hands a file out and is over in one
+                 click; this is a form with a mode, a rehearsal switch and a
+                 result that appears underneath. Giving it an edge is what
+                 stops the result of an import reading as part of the export
+                 controls above it. -->
+            <section class="card import-panel">
             <h6 class="section-title">
                 <i class="ri-upload-2-line" aria-hidden="true"></i>
                 Import
             </h6>
 
-            <div class="field">
-                <label for="kind">What is in the file</label>
-                <Select
-                    id="kind"
-                    bind:value={kind}
-                    options={[
-                        { value: "products", label: "Products and variants" },
-                        { value: "inventory", label: "Inventory counts" },
-                        { value: "orders", label: "Historical orders" },
-                    ]}
-                />
+            <!-- One tab per kind rather than a dropdown. What can be imported
+                 is the first thing this section has to answer, and a closed
+                 select answers it one option at a time: an operator holding a
+                 reviews file had to open the list to learn whether reviews
+                 were even possible here. The tabs also make the sentence
+                 below them read as belonging to the chosen kind. -->
+            <div class="tabs-header m-b-base" role="tablist" aria-label="What is in the file">
+                {#each importKinds as k (k.value)}
+                    <button
+                        type="button"
+                        role="tab"
+                        id="kind-tab-{k.value}"
+                        class="tab-item"
+                        class:active={kind === k.value}
+                        aria-selected={kind === k.value}
+                        onclick={() => (kind = k.value)}
+                    >
+                        {k.label}
+                    </button>
+                {/each}
             </div>
+
             <div class="field-help">
-                Either layout: the store's own, or a file exported from Shopify, as it is. The
-                engine reads which off the first line.
+                {#if kind === "products" || kind === "inventory" || kind === "orders"}
+                    Either layout: the store's own, or a file exported from Shopify, as it is.
+                    The engine reads which off the first line.
+                {:else if kind === "categories"}
+                    The trail from the root in one cell — <code>Apparel / Clothing / Shirts</code>
+                    — with <code>slug</code>, <code>position</code> and <code>metadata</code> beside
+                    it. A path the store already has is updated; one it does not have is built,
+                    along with every step on the way to it.
+                {:else if kind === "reviews"}
+                    A row with an <code>id</code> updates that review; every other row is a new
+                    one and needs <code>product_slug</code>, <code>name</code>,
+                    <code>rating</code> and <code>body</code>. Blank cells are left alone, so
+                    pasting one column of statuses back is a moderation run.
+                {:else if kind === "menus"}
+                    <code>menu</code> is the handle and <code>path</code> is the trail of titles.
+                    Every menu the file names is rebuilt in the file's own row order; a menu it
+                    does not name is untouched.
+                {/if}
             </div>
 
             <div class="flex gap-20 flex-wrap m-t-base">
@@ -653,7 +778,12 @@
                     placeholder="Paste CSV here, or choose a file"
                     bind:value={csv}
                 ></textarea>
-                {#if csv.trim()}
+                <!-- Only the three kinds that HAVE two dialects get the line
+                     about which one this is. A category, review or menu file
+                     has one layout, and telling its author it "does not look
+                     like either" is a warning about a choice they were never
+                     offered. -->
+                {#if csv.trim() && (kind === "products" || kind === "inventory" || kind === "orders")}
                     <div class="field-help">
                         {#if detected === "shopify"}
                             Looks like a Shopify file.
@@ -764,6 +894,7 @@
                     </div>
                 {/if}
             {/if}
+            </section>
             {/if}
         </div>
 

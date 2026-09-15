@@ -17,6 +17,7 @@
     import { page } from "$app/state";
     import { goto } from "$app/navigation";
     import { api, can, query, request } from "$lib/api.js";
+    import { downloadFile } from "$lib/download.js";
     import { rowKey } from "$lib/rowkey.js";
     import { selection } from "$lib/selection.svelte.js";
     import { runBulk } from "$lib/bulk.js";
@@ -370,6 +371,31 @@
         } finally {
             if (mine === reqId) loading = false;
         }
+    }
+
+    /**
+     * The CSV, cut to exactly what the screen is showing.
+     *
+     * The export route is given the same query the listing is, because both
+     * sides read it through one parser (`productQueryFrom`): search, status,
+     * vendor, product type, tag, category, collection and the attribute
+     * facets. So unlike the orders export there is nothing this button cannot
+     * carry, and the file matches the table rather than the whole catalogue.
+     */
+    function exportCSV() {
+        const facets = new URLSearchParams();
+        for (const [key, values] of Object.entries(segment.attrs)) {
+            for (const value of values ?? []) facets.append("attr", key + ":" + value);
+        }
+        // Everything but the pagination and the sort: a file is not a page,
+        // and the columns are the file's own.
+        const base = list.query({ attrs: "", page: "", limit: "", sort: "", order: "" });
+        const tail = facets.toString();
+        downloadFile(
+            "/api/admin/export/admin-products" + base + (tail ? (base ? "&" : "?") + tail : ""),
+            "products.csv",
+            "text/csv",
+        );
     }
 
     function sortBy(field, firstDesc) {
@@ -861,6 +887,19 @@
                     </span>
                 </button>
 
+                {#if can("data.export")}
+                    <button
+                        type="button"
+                        class="btn secondary"
+                        onclick={exportCSV}
+                        title={filtered || search || status
+                            ? "Exports the rows this screen is showing, filters and all."
+                            : "Exports the whole catalogue, one row per variant."}
+                    >
+                        <i class="ri-download-2-line" aria-hidden="true"></i>
+                        <span class="txt">Export</span>
+                    </button>
+                {/if}
                 {#if writable && hasModule("import-amazon")}
                     <button type="button" class="btn secondary" onclick={openImport}>
                         <i class="ri-amazon-line" aria-hidden="true"></i>

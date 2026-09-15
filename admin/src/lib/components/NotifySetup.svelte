@@ -170,7 +170,10 @@
                 one is active every message is written to the log and nobody receives it.
             </p>
 
-            <div class="card-grid provider-grid m-b-lg">
+            <!-- m-b-base, not m-b-lg: there is no `lg` step in the panel's
+                 margin utilities, so the class that used to be here styled
+                 nothing and the templates heading sat against the cards. -->
+            <div class="card-grid provider-grid m-b-base">
                 {#each providers as provider (provider.module + "/" + provider.name)}
                     <section class="card provider-card">
                         <div class="flex gap-10">
@@ -226,13 +229,15 @@
                 {/if}
             </div>
             {#if providers.length <= 1 && !loading}
-                <p class="txt-hint txt-sm m-b-lg">
+                <p class="txt-hint txt-sm m-b-base">
                     No {words.noun} module is installed in this binary. Build the store with one
                     (ext/notify-{channel === "email" ? "sendgrid" : "msg91"}) and it appears here.
                 </p>
             {/if}
 
-            <h2 class="tw:text-2xl tw:font-semibold tw:tracking-tight">{words.title} templates</h2>
+            <!-- A section heading that follows a block needs air above it, or
+                 it reads as a caption belonging to the cards it sits under. -->
+            <h2 class="tw:mt-10 tw:text-2xl tw:font-semibold tw:tracking-tight">{words.title} templates</h2>
             <p class="txt-hint m-b-base">
                 {templates.length} messages{#if customizedCount}, {customizedCount} reworded{/if}. Each is a Go
                 text/template over the event's data: <code>{"{{.order_number}}"}</code> prints the

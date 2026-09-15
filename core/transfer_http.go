@@ -27,6 +27,46 @@ func (a *App) mountTransferRoutes() {
 	// count is the only thing changing.
 	a.HandleAdminFunc("GET /api/admin/export/admin-inventory", a.handleExportInventory, RightDataExport)
 	a.HandleAdminFunc("POST /api/admin/import/inventory", a.handleImportInventory, RightDataImport)
+	// The tree as a spreadsheet, the trail from the root in one cell. The
+	// taxonomy importer next door reads Shopify's published list; this one
+	// reads the store's own file, and adds or updates without ever moving
+	// anything.
+	a.HandleAdminFunc("GET /api/admin/export/admin-categories", a.handleExportCategories, RightDataExport)
+	a.HandleAdminFunc("POST /api/admin/import/categories", a.handleImportCategories, RightDataImport)
+}
+
+func (a *App) handleExportCategories(w http.ResponseWriter, r *http.Request) {
+	opts, err := exportOptionsFrom(r)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	// Refused before a header is written, the shape handleExportProducts
+	// explains: once the CSV headers are out the status line is spent.
+	if opts.Format == FormatShopify {
+		RespondError(w, r, errCategoryDialect)
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", exportFilename("categories", opts.Format))
+	if err := a.transfer.ExportCategories(r.Context(), w, opts); err != nil {
+		a.log.Error("category export failed midway", "error", err)
+	}
+}
+
+func (a *App) handleImportCategories(w http.ResponseWriter, r *http.Request) {
+	opts, err := importOptionsFrom(r)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	body := limitedBody(w, r, maxUploadBytes)
+	result, err := a.transfer.ImportCategories(r.Context(), body, opts)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, result)
 }
 
 func (a *App) handleExportInventory(w http.ResponseWriter, r *http.Request) {

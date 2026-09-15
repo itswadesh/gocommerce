@@ -5207,3 +5207,94 @@ kbd + kbd {
     /* !important because base.css sets pre-wrap with one. */
     white-space: nowrap !important;
 }
+
+/*
+ * Import / export: the import form as its own panel.
+ *
+ * Everything above it on that screen hands a file out and is over in one
+ * click. This is a form with a mode, a rehearsal switch and a result that
+ * appears underneath it, so it gets an edge — otherwise the result of an
+ * import reads as belonging to the export controls above.
+ *
+ * The first heading loses its top margin because the card's padding is
+ * already the gap; two of them stacked is what makes a panel look
+ * misaligned against the sections beside it.
+ */
+.shopify-skin .import-panel {
+    padding: var(--baseSpacing);
+}
+.shopify-skin .import-panel > .section-title:first-child {
+    margin-top: 0;
+}
+
+/*
+ * Roles: the rights grid.
+ *
+ * A right is a toggle rather than a checkbox because the row is read across,
+ * not down: "Orders — Read Write Fulfil Refund" is one sentence, and four
+ * checkboxes with four labels beside them is four. The check is the state and
+ * the only thing that takes colour; the pill itself stays quiet, because on
+ * most rows most rights are not granted and a page of coloured pills says
+ * nothing about which ones matter.
+ */
+.shopify-skin .right-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border: 1px solid var(--baseAlt3Color);
+    border-radius: 999px;
+    background: var(--baseAlt1Color);
+    color: var(--txtHintColor);
+    font-size: var(--smFontSize);
+    line-height: 1.4;
+    cursor: pointer;
+    transition:
+        background 0.15s,
+        border-color 0.15s,
+        color 0.15s;
+}
+.shopify-skin .right-pill i {
+    font-size: 1.05em;
+}
+.shopify-skin .right-pill:hover:not(:disabled) {
+    border-color: var(--baseAlt3Color);
+    color: var(--txtPrimaryColor);
+}
+.shopify-skin .right-pill.on {
+    background: var(--baseColor);
+    border-color: var(--successAltColor, var(--baseAlt3Color));
+    color: var(--txtPrimaryColor);
+}
+.shopify-skin .right-pill.on i {
+    color: var(--successColor);
+}
+/* Added and taken away are the departure from what the engine ships, and they
+   are marked on the edge rather than by re-colouring the check: the check is
+   already saying granted or not, and one mark cannot carry two facts. */
+.shopify-skin .right-pill.added {
+    border-color: var(--successColor);
+}
+.shopify-skin .right-pill.removed {
+    border-style: dashed;
+    border-color: var(--dangerColor);
+}
+.shopify-skin .right-pill:disabled,
+.shopify-skin .right-pill.locked {
+    cursor: not-allowed;
+    opacity: 0.75;
+}
+.shopify-skin .right-pill:focus-visible {
+    outline: 2px solid var(--primaryColor);
+    outline-offset: 2px;
+}
+/* The grid's own rows: the area name is a fixed narrow column so every row of
+   pills starts on the same line, which is what makes a column readable. */
+.shopify-skin .right-grid td.col-field-name-id {
+    width: 180px;
+    vertical-align: middle;
+}
+/* A row that opens a screen says so on hover, the way the other listings do. */
+.shopify-skin tr.row-handle {
+    cursor: pointer;
+}

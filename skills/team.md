@@ -158,9 +158,17 @@ the token, not about the route.
 
 Three edits and no migration — `role_rights` has no foreign key to the rights,
 because the rights live in Go. Declare the constant in `rights.go`, **append** it
-to `AllRights` (that slice is the order the roles matrix draws its rows in, so
-inserting one silently moves every row an operator has learned the position of),
-and decide which default sets carry it.
+to `AllRights` (that slice is the order the Roles screen draws its grid in,
+down the rows and across each one, so inserting one silently moves a pill an
+operator has learned the position of), and decide which default sets carry it.
+
+The panel needs no edit for it. A right is `resource.verb`, and the Roles
+screen splits on the dot: a new verb appears as a pill on its resource's row, a
+new resource appears as a row of its own, and `admin/src/lib/rights.js` only
+supplies the label — an unlabelled one falls back to its own name rather than
+disappearing. Worth adding the label and the scope sentence in the same commit
+all the same: a row that says `orders.refund` and nothing else asks the person
+granting it to already know what it covers.
 
 Two tests keep it honest in opposite directions, and they are the reason the
 right and the route have to land in one commit:

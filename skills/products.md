@@ -163,6 +163,50 @@ select-then-update of the columns present). And `overwrite=false` leaves a
 product the store already has — by slug or Handle — exactly as it is, which
 is how a second catalogue is loaded beside the first.
 
+### The three files that are trees, not tables
+
+The category tree, the menus and the reviews each have a CSV pair of their
+own, and the two tree-shaped ones carry **the trail from the root in one
+cell** rather than a parent id column (D62): nobody can keep ids consistent
+editing in Excel, and an id from another store means nothing here.
+
+```http
+GET  /api/admin/export/admin-categories       # path,slug,position,products,metadata
+POST /api/admin/import/categories             # ?dry_run=1 rehearses
+GET  /api/admin/x/reviews/export              # the reviews module
+POST /api/admin/x/reviews/import
+GET  /api/admin/x/navigation/export           # the navigation module
+POST /api/admin/x/navigation/import
+```
+
+**The path is the identity.** `Apparel / Clothing / Shirts` — either
+separator, `/` or `>` — updates the category standing there and builds every
+missing step on the way to one that is not, exactly as `taxonomy import`
+does, so a second run of the same file is a no-op. The whole file is one
+transaction, and a row the file gets wrong is refused in Go before any
+statement runs, because a failed statement inside one transaction would cost
+the other 999 rows. What the file deliberately **cannot** do is move or
+delete: one typo in a path would otherwise drag a subtree and the products
+filed under it somewhere else, and a spreadsheet has no undo.
+
+A menu the file names is written **whole** — its items replaced by the file's
+rows, in the file's own order, which is why there is no position column — and
+a menu the file does not name is untouched, so a file of header rows cannot
+empty the footer. An item nested under a path no row above it creates is a
+row error rather than an invented parent.
+
+A review row carrying an `id` updates that review and every other row is a
+new one; blank cells are left alone, which is what makes exporting, pasting a
+column of statuses back, and importing a moderation run. `verified` is the
+store's own judgement when the file omits it — an email that has bought the
+product — and the file's when it does not.
+
+Modules do not hand-roll any of this. `gocommerce.NewCSVReader` and
+`NewCSVWriter` in `core/csv.go` are the one implementation of the three rules
+every file here follows: a cell opening `=`, `+`, `-` or `@` is escaped on the
+way out and unescaped on the way back, a header matches case-insensitively
+past a byte-order mark, and an absent column says nothing.
+
 Both pagination coordinates work everywhere `Page(r)` is used, and **`page` wins
 when a request sends both** — it is the more specific intent, and honouring the
 offset instead would quietly serve a different window than the one asked for.

@@ -169,6 +169,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.HandleAdminFunc("PATCH /api/admin/x/navigation/menus/{id}", m.handleUpdate, gocommerce.RightCatalogWrite)
 	app.HandleAdminFunc("PUT /api/admin/x/navigation/menus/{id}/items", m.handleSetItems, gocommerce.RightCatalogWrite)
 	app.HandleAdminFunc("DELETE /api/admin/x/navigation/menus/{id}", m.handleDelete, gocommerce.RightCatalogWrite)
+	m.mountTransferRoutes(app)
 	return nil
 }
 
@@ -489,9 +490,21 @@ func (m *Module) handleSetItems(w http.ResponseWriter, r *http.Request) {
 	gocommerce.Respond(w, http.StatusOK, mn)
 }
 
+// maxMenuDepth caps a menu's nesting. Four is what a header bar can render
+// without becoming a filesystem browser, and it is the number the CSV
+// importer checks per row so that too deep costs one row rather than a file.
+const maxMenuDepth = 4
+
 func validateItems(items []*Item, depth int) error {
-	if depth > 3 {
-		return gocommerce.Validationf("a menu goes at most four levels deep")
+	// An empty child list is not a level. The depth check used to run before
+	// this, so a leaf at the fourth level recursed into its own nil children
+	// at depth four and tripped the limit — which made "at most four levels"
+	// mean three, and only for anybody who tried it.
+	if len(items) == 0 {
+		return nil
+	}
+	if depth >= maxMenuDepth {
+		return gocommerce.Validationf("a menu goes at most %d levels deep", maxMenuDepth)
 	}
 	for _, it := range items {
 		if it == nil {

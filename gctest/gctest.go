@@ -179,6 +179,22 @@ func AdminRequest(t *testing.T, app *gocommerce.App, method, target string, body
 	return request(t, app, method, target, body, AdminToken)
 }
 
+// AdminUpload sends a body that is not JSON — a CSV file, in practice —
+// through the same chain, with a valid admin token attached.
+//
+// Request and AdminRequest marshal whatever they are given, which is right
+// for every route that speaks JSON and wrong for the import routes, whose
+// whole subject is a file somebody exported from a spreadsheet.
+func AdminUpload(t *testing.T, app *gocommerce.App, method, target, contentType, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("Authorization", "Bearer "+AdminToken)
+	rec := httptest.NewRecorder()
+	app.Handler().ServeHTTP(rec, req)
+	return rec
+}
+
 // OperatorPassword is the password OperatorToken signs its operators in with.
 // Exported so a test that needs a second session for the same account does not
 // have to guess it.

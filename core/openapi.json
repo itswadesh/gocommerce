@@ -11331,6 +11331,83 @@
           }
         }
       }
+    },
+    "/api/admin/export/admin-categories": {
+      "get": {
+        "tags": [
+          "admin:data"
+        ],
+        "summary": "Export the category tree as CSV",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "The tree written down: one row per category, the trail from the root in one cell — `Apparel / Clothing / Shirts`, the same thing the product file's `category` column says. Columns are `path, slug, position, products, metadata`. Rows come depth first, so a parent is always above its children and the file reads back in one pass. `products` is counted from the products filed directly under the category; it is written for the reader and ignored on the way in. The tree has one dialect: `format=shopify` is refused, because Shopify's category export is its taxonomy file, which `/api/admin/import/taxonomy` reads.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Format"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A CSV file.",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/import/categories": {
+      "post": {
+        "tags": [
+          "admin:data"
+        ],
+        "summary": "Add and update categories from a CSV",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "`path` is required and is the identity: a row whose trail already exists updates that category's position, slug and metadata, and a row whose trail does not builds every missing step on the way to it. Either separator is read, `/` or `>`. Running the same file twice therefore changes nothing the second time. The file cannot move or delete a category — a typo in a path would otherwise drag a subtree and the products under it somewhere else with no undo; moving stays on the screen that has the cycle check and the product count. A blank cell leaves a field alone, a slug another category already holds is a row error, and the whole file is one transaction, so a tree is never half built. `dry_run=1` reports what would happen and writes nothing.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DryRun"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "text/csv": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ImportResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
     }
   },
   "components": {

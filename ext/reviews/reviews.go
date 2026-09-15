@@ -149,6 +149,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.HandleAdminFunc("GET /api/admin/x/reviews", m.handleList, gocommerce.RightCatalogRead)
 	app.HandleAdminFunc("PATCH /api/admin/x/reviews/{id}", m.handleUpdate, gocommerce.RightCatalogWrite)
 	app.HandleAdminFunc("DELETE /api/admin/x/reviews/{id}", m.handleDelete, gocommerce.RightCatalogWrite)
+	m.mountTransferRoutes(app)
 	return nil
 }
 

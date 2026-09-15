@@ -115,3 +115,77 @@ export function rightLabel(right) {
 export function rightScope(right) {
     return RIGHT_SCOPES[right] || right;
 }
+
+/*
+ * The same rights, read as a grid.
+ *
+ * Every right the engine has is `resource.verb`, which is a table nobody was
+ * drawing: the roles screen listed twenty-one dotted names down one side, so
+ * "what may this role do to orders" meant finding four rows that happened to
+ * share a prefix. Split on the dot and the answer is one line.
+ *
+ * Both tables below are labels only. Anything they have not caught up with
+ * falls back to the identifier with its first letter raised, so a resource or
+ * a verb added to the engine appears here as a row rather than disappearing.
+ */
+export const RESOURCE_LABELS = {
+    catalog: "Catalog",
+    inventory: "Inventory",
+    discounts: "Discounts",
+    taxes: "Tax",
+    locations: "Locations",
+    orders: "Orders",
+    customers: "Customers",
+    team: "Team",
+    roles: "Roles",
+    data: "Import and export",
+    store: "Store",
+};
+
+export const VERB_LABELS = {
+    read: "Read",
+    write: "Write",
+    fulfill: "Fulfil",
+    refund: "Refund",
+    export: "Export",
+    import: "Import",
+    operate: "Operate",
+};
+
+const titleCase = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+
+/** resourceLabel is the grid's left column. */
+export function resourceLabel(key) {
+    return RESOURCE_LABELS[key] || titleCase(key);
+}
+
+/** verbLabel is what one cell is called. */
+export function verbLabel(verb) {
+    return VERB_LABELS[verb] || titleCase(verb);
+}
+
+/**
+ * rightsByResource groups a list of rights into grid rows.
+ *
+ * The order is the engine's own (`AllRights`), both down the rows and across
+ * each row, for the reason core/rights.go gives for never inserting into that
+ * list: an operator learns where a thing sits, and re-sorting moves it.
+ */
+export function rightsByResource(all) {
+    const rows = [];
+    const byKey = new Map();
+    for (const right of all ?? []) {
+        const dot = right.indexOf(".");
+        // A right with no verb is its own resource rather than a dropped row.
+        const key = dot < 0 ? right : right.slice(0, dot);
+        const verb = dot < 0 ? right : right.slice(dot + 1);
+        let row = byKey.get(key);
+        if (!row) {
+            row = { key, label: resourceLabel(key), rights: [] };
+            byKey.set(key, row);
+            rows.push(row);
+        }
+        row.rights.push({ right, verb, label: verbLabel(verb) });
+    }
+    return rows;
+}
