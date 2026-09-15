@@ -202,15 +202,15 @@ func TestSettingsNamesProvidersAndTheirModules(t *testing.T) {
 	}
 
 	wantPay := []ProviderInfo{
-		{Code: CodeCOD, Name: "Cash on delivery", Module: "core"},
+		{Code: CodeCOD, Name: "Cash on delivery", Module: "core", Configured: true},
 		// refundableProvider implements no Named, so its name is its code —
 		// and its module is the one that registered it, not core.
-		{Code: "refundable", Name: "refundable", Module: "refundable"},
+		{Code: "refundable", Name: "refundable", Module: "refundable", Configured: true},
 	}
 	if !slices.Equal(got.Data.PaymentMethods, wantPay) {
 		t.Errorf("payment_methods = %+v, want %+v", got.Data.PaymentMethods, wantPay)
 	}
-	wantShip := []ProviderInfo{{Code: ProviderManual, Name: "Manual", Module: "core"}}
+	wantShip := []ProviderInfo{{Code: ProviderManual, Name: "Manual", Module: "core", Configured: true}}
 	if !slices.Equal(got.Data.FulfillmentProviders, wantShip) {
 		t.Errorf("fulfillment_providers = %+v, want %+v", got.Data.FulfillmentProviders, wantShip)
 	}

@@ -61,6 +61,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	gocommerce "github.com/misiki/gocommerce/core"
@@ -71,36 +72,93 @@ const maxWebhookBytes = 1 << 20
 // Config configures the module.
 type Config struct {
 	// APIKey is an Adyen API credential's key, sent as X-API-Key. Required.
-	APIKey string
+	APIKey string `plugin:"api_key"`
 	// MerchantAccount is the account to charge against. Required.
-	MerchantAccount string
+	MerchantAccount string `plugin:"merchant_account"`
 	// HMACKey is the hex HMAC key generated for the webhook in Adyen's
 	// Customer Area. Required: without it any caller could mark orders paid.
-	HMACKey string
+	HMACKey string `plugin:"hmac_key"`
+	// hmacBytes is HMACKey decoded, filled by finish.
+	hmacBytes []byte
 	// BaseURL is the Checkout API endpoint, including the version segment —
 	// "https://checkout-test.adyen.com/v71" for test, and the merchant's own
 	// prefixed host for live. Required; see the package comment.
-	BaseURL string
+	BaseURL string `plugin:"base_url"`
 	// ReturnURL is where the shopper lands after paying, when the checkout
 	// request did not carry one of its own.
-	ReturnURL string
+	ReturnURL string `plugin:"return_url"`
 	// Client overrides the HTTP client.
 	Client *http.Client
 }
 
 // Module is the Adyen payment provider.
 type Module struct {
-	cfg     Config
-	hmacKey []byte
-	client  *http.Client
-	log     *slog.Logger
-	db      *sql.DB
-	pay     *gocommerce.Payments
-	orders  *gocommerce.Orders
+	cfg    Config
+	live   atomic.Pointer[Config]
+	app    *gocommerce.App
+	client *http.Client
+	log    *slog.Logger
+	db     *sql.DB
+	pay    *gocommerce.Payments
+	orders *gocommerce.Orders
 }
 
 // New builds the module. Register it with gocommerce.New.
 func New(cfg Config) *Module { return &Module{cfg: cfg} }
+
+// PluginKey is the plugin this module registers, where the panel keeps its
+// credentials. Config is the environment's fallback for each field; a value
+// typed into the panel wins.
+const PluginKey = "payments-adyen"
+
+var errNotConfigured = errors.New("adyen: not set up — activate and configure it under Settings")
+
+// conf is the effective configuration: the last one refresh computed, or
+// Config alone before the first use.
+func (m *Module) conf() *Config {
+	if c := m.live.Load(); c != nil {
+		return c
+	}
+	return &m.cfg
+}
+
+// refresh recomputes the effective configuration — Config with the plugin's
+// settings laid over it — and reports whether the provider can work: switched
+// on, with every required field filled. Called before each use, so a key
+// typed into the panel a moment ago counts without a restart.
+func (m *Module) refresh(ctx context.Context) bool {
+	c := m.cfg
+	on := false
+	if m.app != nil {
+		on, _ = m.app.Plugins().Enabled(ctx, PluginKey)
+		if on {
+			_ = m.app.Plugins().Fill(ctx, PluginKey, &c)
+		}
+	}
+	m.finish(&c)
+	m.live.Store(&c)
+	return on && m.complete(&c)
+}
+
+// Configured implements gocommerce.Configurable.
+func (m *Module) Configured(ctx context.Context) bool { return m.refresh(ctx) }
+
+// complete is whether a configuration has everything the provider needs.
+func (m *Module) complete(c *Config) bool {
+	return strings.TrimSpace(c.APIKey) != "" &&
+		strings.TrimSpace(c.MerchantAccount) != "" &&
+		strings.TrimSpace(c.HMACKey) != "" &&
+		strings.TrimSpace(c.BaseURL) != ""
+}
+
+// finish fills a configuration's defaults.
+func (m *Module) finish(c *Config) {
+	// The key is hex in the Customer Area and bytes in the HMAC; a key that
+	// does not decode leaves the provider unconfigured rather than failing
+	// every notification in production.
+	c.hmacBytes, _ = hex.DecodeString(strings.TrimSpace(c.HMACKey))
+	c.BaseURL = strings.TrimRight(c.BaseURL, "/")
+}
 
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "payments-adyen" }
@@ -127,27 +185,23 @@ func (m *Module) Migrations() []gocommerce.Migration {
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
-	switch {
-	case strings.TrimSpace(m.cfg.APIKey) == "":
-		return errors.New("adyen: APIKey is required")
-	case strings.TrimSpace(m.cfg.MerchantAccount) == "":
-		return errors.New("adyen: MerchantAccount is required")
-	case strings.TrimSpace(m.cfg.HMACKey) == "":
-		return errors.New("adyen: HMACKey is required — without it, anyone could mark orders paid")
-	case strings.TrimSpace(m.cfg.BaseURL) == "":
-		return errors.New("adyen: BaseURL is required — a live endpoint carries your own merchant prefix, so there is no default this package could pick")
-	}
-
-	// The key is hex in the Customer Area and bytes in the HMAC. Decoding it
-	// once at boot turns "somebody pasted it wrong" into a refusal to start
-	// rather than every notification failing verification in production.
-	key, err := hex.DecodeString(strings.TrimSpace(m.cfg.HMACKey))
-	if err != nil {
-		return fmt.Errorf("adyen: HMACKey is not hexadecimal: %w", err)
-	}
-	m.hmacKey = key
-
-	m.cfg.BaseURL = strings.TrimRight(m.cfg.BaseURL, "/")
+	m.app = app
+	// Config-configured stores start switched on; a store with nothing in
+	// Config starts idle and waits for the panel.
+	inCode := m.complete(&m.cfg)
+	app.RegisterPlugin(gocommerce.PluginDef{
+		Key: PluginKey, Title: "Adyen", Category: "payments", DefaultEnabled: inCode,
+		Description: "Card and local payments through Adyen's Checkout API, with the HMAC-signed notification marking orders paid.",
+		Docs:        "https://docs.adyen.com/online-payments/",
+		Fields: []gocommerce.PluginField{
+			{Key: "api_key", Label: "API key", Kind: "secret", Required: !inCode, Help: "An API credential's key, sent as X-API-Key."},
+			{Key: "merchant_account", Label: "Merchant account", Kind: "text", Required: !inCode},
+			{Key: "hmac_key", Label: "Webhook HMAC key", Kind: "secret", Required: !inCode, Help: "Hex, as generated for the webhook in the Customer Area."},
+			{Key: "base_url", Label: "Checkout API base URL", Kind: "url", Required: !inCode, Help: "Including the version segment: https://checkout-test.adyen.com/v71 for test, your own prefixed host for live."},
+			{Key: "return_url", Label: "Return URL", Kind: "url", Help: "Where the shopper lands after paying, when the checkout did not say."},
+		},
+	})
+	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
 		m.client = &http.Client{Timeout: 20 * time.Second}
@@ -169,8 +223,11 @@ func (m *Module) DisplayName() string { return "Adyen" }
 
 // Initiate creates a payment link and sends the shopper to it.
 func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts gocommerce.PayOptions) (gocommerce.PaymentIntent, error) {
+	if !m.refresh(ctx) {
+		return gocommerce.PaymentIntent{}, errNotConfigured
+	}
 	body := map[string]any{
-		"merchantAccount": m.cfg.MerchantAccount,
+		"merchantAccount": m.conf().MerchantAccount,
 		"amount": map[string]any{
 			// Minor units both sides, so there is nothing to round.
 			"currency": strings.ToUpper(order.Total.Currency),
@@ -181,7 +238,7 @@ func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts goc
 		"reference":   order.Number,
 		"description": "Order " + order.Number,
 	}
-	if returnURL := firstNonEmpty(opts.ReturnURL, m.cfg.ReturnURL); returnURL != "" {
+	if returnURL := firstNonEmpty(opts.ReturnURL, m.conf().ReturnURL); returnURL != "" {
 		body["returnUrl"] = returnURL
 	}
 	if order.Email != "" {
@@ -223,6 +280,9 @@ func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts goc
 
 // Refund implements gocommerce.Refunder.
 func (m *Module) Refund(ctx context.Context, order *gocommerce.Order, amountMinor int64) error {
+	if !m.refresh(ctx) {
+		return errNotConfigured
+	}
 	_, err := m.RefundWithReference(ctx, order, amountMinor)
 	return err
 }
@@ -235,12 +295,15 @@ func (m *Module) Refund(ctx context.Context, order *gocommerce.Order, amountMino
 // to refund against, and says so rather than posting to a URL built from a
 // link id.
 func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Order, amountMinor int64) (string, error) {
+	if !m.refresh(ctx) {
+		return "", errNotConfigured
+	}
 	if order.PaymentReference == "" {
 		return "", errors.New("adyen: this order has no payment reference to refund")
 	}
 
 	body := map[string]any{
-		"merchantAccount": m.cfg.MerchantAccount,
+		"merchantAccount": m.conf().MerchantAccount,
 		"amount": map[string]any{
 			"currency": strings.ToUpper(order.Total.Currency),
 			"value":    amountMinor,
@@ -283,6 +346,12 @@ type notificationItem struct {
 }
 
 func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
+	// A notification for a provider nobody has set up cannot be verified,
+	// and an unverifiable notification is refused.
+	if !m.refresh(r.Context()) {
+		http.Error(w, "payment method not set up", http.StatusServiceUnavailable)
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxWebhookBytes))
 	if err != nil {
 		http.Error(w, "could not read body", http.StatusBadRequest)
@@ -307,7 +376,7 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	// Every item is verified before any of them is acted on. A batch with one
 	// forged item in it is a forged batch.
 	for _, wrapper := range batch.NotificationItems {
-		if err := verifyItem(wrapper.Item, m.hmacKey); err != nil {
+		if err := verifyItem(wrapper.Item, m.conf().hmacBytes); err != nil {
 			m.log.Warn("rejected an Adyen notification", "error", err,
 				"psp_reference", wrapper.Item.PSPReference)
 			http.Error(w, "invalid signature", http.StatusBadRequest)
@@ -457,11 +526,11 @@ func (m *Module) do(ctx context.Context, method, path string, body any, out any)
 		reader = bytes.NewReader(encoded)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, m.cfg.BaseURL+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, m.conf().BaseURL+path, reader)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("X-API-Key", m.cfg.APIKey)
+	req.Header.Set("X-API-Key", m.conf().APIKey)
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

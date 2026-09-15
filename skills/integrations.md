@@ -200,6 +200,64 @@ say the channel does not deliver, and the moment the key is typed in the
 next message goes out. `ext/notify-sendgrid` and `ext/notify-msg91` are the
 worked examples.
 
+## Providers install idle: the panel sets them up
+
+A payment gateway or a carrier module registers whatever Config it was
+given — including none — and says whether it is ready (D59). Its
+credentials come from a plugin whose fields mirror Config by tag, and the
+engine asks `Configured` before every pick: an unready gateway is left out
+of `Payments.Methods()` and refused at checkout as if unknown, an unready
+carrier is refused on the ship dialog, and the settings mark it
+`configured: false` so the Payment methods and Shipping providers screens
+show it as Inactive with an Activate button.
+
+```go
+type Config struct {
+    APIKey string `plugin:"api_key"`
+    From   Address                  // nested structs are walked
+}
+type Address struct {
+    Line1 string `plugin:"from_line1"`
+}
+
+const PluginKey = "payments-acme"
+
+func (m *Module) Register(app *gocommerce.App) error {
+    m.app = app
+    inCode := m.complete(&m.cfg)
+    app.RegisterPlugin(gocommerce.PluginDef{
+        Key: PluginKey, Title: "Acme Pay", Category: "payments", DefaultEnabled: inCode,
+        Fields: []gocommerce.PluginField{
+            {Key: "api_key", Label: "API key", Kind: "secret", Required: !inCode},
+            {Key: "from_line1", Label: "From: address", Kind: "text"},
+        },
+    })
+    app.RegisterPayment(m)
+    return nil
+}
+
+// Before each use: Config with the panel's settings laid over it.
+func (m *Module) refresh(ctx context.Context) bool {
+    c := m.cfg
+    on, _ := m.app.Plugins().Enabled(ctx, PluginKey)
+    if on {
+        _ = m.app.Plugins().Fill(ctx, PluginKey, &c)
+    }
+    m.live.Store(&c)             // atomic.Pointer[Config]; readers use m.conf()
+    return on && m.complete(&c)
+}
+func (m *Module) Configured(ctx context.Context) bool { return m.refresh(ctx) }
+```
+
+`Fill` sets a string field from text, secret, select, url or textarea, a
+bool from bool, an integer or float from number; a stored value wins, an
+untyped field keeps Config's value, and a field's Default applies where both
+are empty. `Initiate`, `Ship`, `Refund` and the webhook handler each call
+`refresh` first and return "not set up" when it says no — the engine has
+already refused the pick, so this is the belt to its braces. The eight
+gateway and eleven carrier modules are the worked examples; `-gateways`
+and `-carriers` install them all idle.
+
 ## Where a module lives, and what it may not do
 
 A module that adds **no third-party dependency** belongs in `ext/`. Every

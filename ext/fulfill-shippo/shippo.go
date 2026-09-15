@@ -48,6 +48,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/misiki/gocommerce/core"
@@ -66,43 +67,45 @@ const (
 // store's own ship-from address is configuration, not something the engine
 // holds: an order knows where it is going, never where it came from.
 type Address struct {
-	Name    string
+	Name    string `plugin:"from_name"`
 	Company string
-	Street1 string
+	Street1 string `plugin:"from_street1"`
 	Street2 string
-	City    string
-	State   string
-	Zip     string
-	Country string
-	Phone   string
+	City    string `plugin:"from_city"`
+	State   string `plugin:"from_state"`
+	Zip     string `plugin:"from_zip"`
+	Country string `plugin:"from_country"`
+	Phone   string `plugin:"from_phone"`
 	Email   string
 }
 
 // Config configures the module.
 type Config struct {
 	// APIKey is a Shippo API token, live or test. Required.
-	APIKey string
+	APIKey string `plugin:"api_key"`
 	// CarrierAccount is the object id of the carrier account to buy from.
 	// Required: an instant purchase has to name the account being charged.
-	CarrierAccount string
+	CarrierAccount string `plugin:"carrier_account"`
 	// ServicelevelToken is the service to buy — "usps_priority",
 	// "ups_ground", and so on. Required as the default; a shipment can
 	// override it with Meta["servicelevel_token"].
-	ServicelevelToken string
+	ServicelevelToken string `plugin:"servicelevel_token"`
 	// From is where parcels are sent from. Required.
 	From Address
 	// LabelFileType is Shippo's label format: PDF_4x6, PNG, ZPLII and the
 	// rest. Empty leaves the account's own default alone.
-	LabelFileType string
+	LabelFileType string `plugin:"label_file_type"`
 	// DefaultWeightGrams is the last resort, per unit, for a parcel the engine
 	// could not weigh. A fully weighed catalogue never reaches it.
-	DefaultWeightGrams int
+	DefaultWeightGrams int `plugin:"default_weight_grams"`
 	// DefaultLengthMM and friends are the box used when the engine has no
 	// unambiguous size — which is any parcel holding more than a single unit.
 	// See gocommerce.Parcel.
-	DefaultLengthMM, DefaultWidthMM, DefaultHeightMM int
+	DefaultLengthMM int
+	DefaultWidthMM  int
+	DefaultHeightMM int
 	// BaseURL overrides the endpoint, for tests.
-	BaseURL string
+	BaseURL string `plugin:"base_url"`
 	// Client overrides the HTTP client.
 	Client *http.Client
 }
@@ -110,12 +113,74 @@ type Config struct {
 // Module is the Shippo fulfillment provider.
 type Module struct {
 	cfg    Config
+	live   atomic.Pointer[Config]
+	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
 }
 
 // New constructs the module.
 func New(cfg Config) *Module { return &Module{cfg: cfg} }
+
+// PluginKey is the plugin this module registers, where the panel keeps its
+// credentials. Config is the environment's fallback for each field; a value
+// typed into the panel wins.
+const PluginKey = "shipping-shippo"
+
+var errNotConfigured = errors.New("shippo: not set up — activate and configure it under Settings")
+
+// conf is the effective configuration: the last one refresh computed, or
+// Config alone before the first use.
+func (m *Module) conf() *Config {
+	if c := m.live.Load(); c != nil {
+		return c
+	}
+	return &m.cfg
+}
+
+// refresh recomputes the effective configuration — Config with the plugin's
+// settings laid over it — and reports whether the provider can work: switched
+// on, with every required field filled. Called before each use, so a key
+// typed into the panel a moment ago counts without a restart.
+func (m *Module) refresh(ctx context.Context) bool {
+	c := m.cfg
+	on := false
+	if m.app != nil {
+		on, _ = m.app.Plugins().Enabled(ctx, PluginKey)
+		if on {
+			_ = m.app.Plugins().Fill(ctx, PluginKey, &c)
+		}
+	}
+	m.finish(&c)
+	m.live.Store(&c)
+	return on && m.complete(&c)
+}
+
+// Configured implements gocommerce.Configurable.
+func (m *Module) Configured(ctx context.Context) bool { return m.refresh(ctx) }
+
+// complete is whether a configuration has everything the provider needs.
+func (m *Module) complete(c *Config) bool {
+	return strings.TrimSpace(c.APIKey) != "" &&
+		strings.TrimSpace(c.CarrierAccount) != "" &&
+		strings.TrimSpace(c.ServicelevelToken) != "" &&
+		strings.TrimSpace(c.From.Street1) != "" &&
+		strings.TrimSpace(c.From.Country) != ""
+}
+
+// finish fills a configuration's defaults.
+func (m *Module) finish(c *Config) {
+	if c.BaseURL == "" {
+		c.BaseURL = defaultBaseURL
+	}
+	c.BaseURL = strings.TrimRight(c.BaseURL, "/")
+	if c.DefaultWeightGrams <= 0 {
+		c.DefaultWeightGrams = 500
+	}
+	if c.DefaultLengthMM <= 0 {
+		c.DefaultLengthMM, c.DefaultWidthMM, c.DefaultHeightMM = 150, 150, 100
+	}
+}
 
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "fulfill-shippo" }
@@ -126,26 +191,31 @@ func (m *Module) Migrations() []gocommerce.Migration { return nil }
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
-	switch {
-	case strings.TrimSpace(m.cfg.APIKey) == "":
-		return errors.New("shippo: APIKey is required")
-	case strings.TrimSpace(m.cfg.CarrierAccount) == "":
-		return errors.New("shippo: CarrierAccount is required — an instant label purchase has to name the account being charged")
-	case strings.TrimSpace(m.cfg.ServicelevelToken) == "":
-		return errors.New("shippo: ServicelevelToken is required — the engine will not choose a service on your behalf")
-	case strings.TrimSpace(m.cfg.From.Street1) == "", strings.TrimSpace(m.cfg.From.Country) == "":
-		return errors.New("shippo: From needs at least a street and a country — an order knows where it is going, never where it came from")
-	}
-	if m.cfg.BaseURL == "" {
-		m.cfg.BaseURL = defaultBaseURL
-	}
-	m.cfg.BaseURL = strings.TrimRight(m.cfg.BaseURL, "/")
-	if m.cfg.DefaultWeightGrams <= 0 {
-		m.cfg.DefaultWeightGrams = 500
-	}
-	if m.cfg.DefaultLengthMM <= 0 {
-		m.cfg.DefaultLengthMM, m.cfg.DefaultWidthMM, m.cfg.DefaultHeightMM = 150, 150, 100
-	}
+	m.app = app
+	// Config-configured stores start switched on; a store with nothing in
+	// Config starts idle and waits for the panel.
+	inCode := m.complete(&m.cfg)
+	app.RegisterPlugin(gocommerce.PluginDef{
+		Key: PluginKey, Title: "Shippo", Category: "shipping", DefaultEnabled: inCode,
+		Description: "Multi-carrier labels through Shippo: an instant purchase on the carrier account and service you name.",
+		Docs:        "https://docs.goshippo.com/",
+		Fields: []gocommerce.PluginField{
+			{Key: "api_key", Label: "API token", Kind: "secret", Required: !inCode, Help: "Live or test."},
+			{Key: "carrier_account", Label: "Carrier account", Kind: "text", Required: !inCode, Help: "The object id of the carrier account to buy from."},
+			{Key: "servicelevel_token", Label: "Service level", Kind: "text", Required: !inCode, Help: "usps_priority, ups_ground and the rest; a shipment can override it."},
+			{Key: "from_name", Label: "From: name", Kind: "text"},
+			{Key: "from_street1", Label: "From: street", Kind: "text", Required: !inCode, Help: "Where parcels are sent from."},
+			{Key: "from_city", Label: "From: city", Kind: "text"},
+			{Key: "from_state", Label: "From: state", Kind: "text"},
+			{Key: "from_zip", Label: "From: ZIP", Kind: "text"},
+			{Key: "from_country", Label: "From: country (ISO 2)", Kind: "text", Required: !inCode},
+			{Key: "from_phone", Label: "From: phone", Kind: "text"},
+			{Key: "label_file_type", Label: "Label format", Kind: "text", Help: "PDF_4x6, PNG, ZPLII; empty leaves the account's default."},
+			{Key: "default_weight_grams", Label: "Default weight (grams)", Kind: "number", Help: "Per unit, for a variant with no weight recorded.", Default: 500},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production."},
+		},
+	})
+	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
 		m.client = &http.Client{Timeout: 30 * time.Second}
@@ -159,13 +229,19 @@ func (m *Module) Register(app *gocommerce.App) error {
 // Code implements gocommerce.FulfillmentProvider.
 func (m *Module) Code() string { return "shippo" }
 
+// DisplayName implements gocommerce.Named.
+func (m *Module) DisplayName() string { return "Shippo" }
+
 // Ship buys a label and returns its tracking number.
 //
 // It runs before the engine opens its transaction, so a carrier having a slow
 // minute never holds a lock on the orders table.
 func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommerce.ShipRequest) (gocommerce.Shipment, error) {
-	service := firstNonEmpty(req.Meta["servicelevel_token"], m.cfg.ServicelevelToken)
-	account := firstNonEmpty(req.Meta["carrier_account"], m.cfg.CarrierAccount)
+	if !m.refresh(ctx) {
+		return gocommerce.Shipment{}, errNotConfigured
+	}
+	service := firstNonEmpty(req.Meta["servicelevel_token"], m.conf().ServicelevelToken)
+	account := firstNonEmpty(req.Meta["carrier_account"], m.conf().CarrierAccount)
 
 	body := map[string]any{
 		"carrier_account":    account,
@@ -176,13 +252,13 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 		"async":    false,
 		"metadata": "Order " + order.Number,
 		"shipment": map[string]any{
-			"address_from": addressBody(m.cfg.From),
+			"address_from": addressBody(m.conf().From),
 			"address_to":   m.toAddress(order),
 			"parcels":      []any{m.parcelBody(req)},
 		},
 	}
-	if m.cfg.LabelFileType != "" {
-		body["label_file_type"] = m.cfg.LabelFileType
+	if m.conf().LabelFileType != "" {
+		body["label_file_type"] = m.conf().LabelFileType
 	}
 
 	var out struct {
@@ -266,15 +342,15 @@ func (m *Module) parcelBody(req gocommerce.ShipRequest) map[string]any {
 		units += line.Quantity
 	}
 
-	weight := m.cfg.DefaultWeightGrams * max(units, 1)
+	weight := m.conf().DefaultWeightGrams * max(units, 1)
 	if req.Parcel.Measured && req.Parcel.WeightGrams > 0 {
 		weight = req.Parcel.WeightGrams
 	}
 
 	return map[string]any{
-		"length":        side(req.Parcel.Dimensions.Length, m.cfg.DefaultLengthMM),
-		"width":         side(req.Parcel.Dimensions.Width, m.cfg.DefaultWidthMM),
-		"height":        side(req.Parcel.Dimensions.Height, m.cfg.DefaultHeightMM),
+		"length":        side(req.Parcel.Dimensions.Length, m.conf().DefaultLengthMM),
+		"width":         side(req.Parcel.Dimensions.Width, m.conf().DefaultWidthMM),
+		"height":        side(req.Parcel.Dimensions.Height, m.conf().DefaultHeightMM),
 		"distance_unit": "mm",
 		"weight":        weight,
 		"mass_unit":     "g",
@@ -313,11 +389,11 @@ func (m *Module) post(ctx context.Context, path string, payload any, out any) er
 	if err != nil {
 		return fmt.Errorf("shippo: could not encode the request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.cfg.BaseURL+path, bytes.NewReader(encoded))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.conf().BaseURL+path, bytes.NewReader(encoded))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "ShippoToken "+m.cfg.APIKey)
+	req.Header.Set("Authorization", "ShippoToken "+m.conf().APIKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("SHIPPO-API-VERSION", apiVersion)
 

@@ -47,6 +47,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	gocommerce "github.com/misiki/gocommerce/core"
@@ -73,16 +74,16 @@ const (
 type Config struct {
 	// APIKey is the Paddle API key. Required. It needs transaction.write to
 	// create a transaction and adjustment.write to refund one.
-	APIKey string
+	APIKey string `plugin:"api_key"`
 	// WebhookSecret is the notification destination's signing secret.
 	// Required: without it any caller could mark orders paid.
-	WebhookSecret string
+	WebhookSecret string `plugin:"webhook_secret"`
 	// Sandbox points the module at sandbox-api.paddle.com. Paddle issues
 	// separate keys for the two, so this is a deliberate flag rather than
 	// something inferred from the key.
-	Sandbox bool
+	Sandbox bool `plugin:"sandbox"`
 	// BaseURL overrides the endpoint outright, for tests.
-	BaseURL string
+	BaseURL string `plugin:"base_url"`
 	// WebhookTolerance overrides how old a signed payload may be. Zero takes
 	// defaultTolerance.
 	WebhookTolerance time.Duration
@@ -93,6 +94,8 @@ type Config struct {
 // Module is the Paddle payment provider.
 type Module struct {
 	cfg    Config
+	live   atomic.Pointer[Config]
+	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
 	db     *sql.DB
@@ -101,6 +104,62 @@ type Module struct {
 
 // New builds the module. Register it with gocommerce.New.
 func New(cfg Config) *Module { return &Module{cfg: cfg} }
+
+// PluginKey is the plugin this module registers, where the panel keeps its
+// credentials. Config is the environment's fallback for each field; a value
+// typed into the panel wins.
+const PluginKey = "payments-paddle"
+
+var errNotConfigured = errors.New("paddle: not set up — activate and configure it under Settings")
+
+// conf is the effective configuration: the last one refresh computed, or
+// Config alone before the first use.
+func (m *Module) conf() *Config {
+	if c := m.live.Load(); c != nil {
+		return c
+	}
+	return &m.cfg
+}
+
+// refresh recomputes the effective configuration — Config with the plugin's
+// settings laid over it — and reports whether the provider can work: switched
+// on, with every required field filled. Called before each use, so a key
+// typed into the panel a moment ago counts without a restart.
+func (m *Module) refresh(ctx context.Context) bool {
+	c := m.cfg
+	on := false
+	if m.app != nil {
+		on, _ = m.app.Plugins().Enabled(ctx, PluginKey)
+		if on {
+			_ = m.app.Plugins().Fill(ctx, PluginKey, &c)
+		}
+	}
+	m.finish(&c)
+	m.live.Store(&c)
+	return on && m.complete(&c)
+}
+
+// Configured implements gocommerce.Configurable.
+func (m *Module) Configured(ctx context.Context) bool { return m.refresh(ctx) }
+
+// complete is whether a configuration has everything the provider needs.
+func (m *Module) complete(c *Config) bool {
+	return strings.TrimSpace(c.APIKey) != "" &&
+		strings.TrimSpace(c.WebhookSecret) != ""
+}
+
+// finish fills a configuration's defaults.
+func (m *Module) finish(c *Config) {
+	if c.BaseURL == "" {
+		c.BaseURL = liveBaseURL
+		if c.Sandbox {
+			c.BaseURL = sandboxBaseURL
+		}
+	}
+	if c.WebhookTolerance <= 0 {
+		c.WebhookTolerance = defaultTolerance
+	}
+}
 
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "payments-paddle" }
@@ -127,21 +186,22 @@ func (m *Module) Migrations() []gocommerce.Migration {
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
-	if strings.TrimSpace(m.cfg.APIKey) == "" {
-		return errors.New("paddle: APIKey is required")
-	}
-	if strings.TrimSpace(m.cfg.WebhookSecret) == "" {
-		return errors.New("paddle: WebhookSecret is required — without it, anyone could mark orders paid")
-	}
-	if m.cfg.BaseURL == "" {
-		m.cfg.BaseURL = liveBaseURL
-		if m.cfg.Sandbox {
-			m.cfg.BaseURL = sandboxBaseURL
-		}
-	}
-	if m.cfg.WebhookTolerance <= 0 {
-		m.cfg.WebhookTolerance = defaultTolerance
-	}
+	m.app = app
+	// Config-configured stores start switched on; a store with nothing in
+	// Config starts idle and waits for the panel.
+	inCode := m.complete(&m.cfg)
+	app.RegisterPlugin(gocommerce.PluginDef{
+		Key: PluginKey, Title: "Paddle", Category: "payments", DefaultEnabled: inCode,
+		Description: "Transactions through Paddle Billing as merchant of record, with its signed notification marking orders paid.",
+		Docs:        "https://developer.paddle.com/",
+		Fields: []gocommerce.PluginField{
+			{Key: "api_key", Label: "API key", Kind: "secret", Required: !inCode, Help: "Needs transaction.write and adjustment.write."},
+			{Key: "webhook_secret", Label: "Notification signing secret", Kind: "secret", Required: !inCode},
+			{Key: "sandbox", Label: "Sandbox", Kind: "bool", Help: "Points at sandbox-api.paddle.com; Paddle issues separate keys for the two."},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Overrides both hosts; for tests."},
+		},
+	})
+	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
 		m.client = &http.Client{Timeout: 20 * time.Second}
@@ -170,6 +230,9 @@ func (m *Module) DisplayName() string { return "Paddle" }
 // carrying the order total is the honest summary: Paddle collects what the
 // engine says the order costs, and the order keeps the breakdown.
 func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts gocommerce.PayOptions) (gocommerce.PaymentIntent, error) {
+	if !m.refresh(ctx) {
+		return gocommerce.PaymentIntent{}, errNotConfigured
+	}
 	custom := map[string]string{
 		"order_id":     strconv.FormatInt(order.ID, 10),
 		"order_number": order.Number,
@@ -237,6 +300,9 @@ func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts goc
 
 // Refund implements gocommerce.Refunder.
 func (m *Module) Refund(ctx context.Context, order *gocommerce.Order, amountMinor int64) error {
+	if !m.refresh(ctx) {
+		return errNotConfigured
+	}
 	_, err := m.RefundWithReference(ctx, order, amountMinor)
 	return err
 }
@@ -255,6 +321,9 @@ func (m *Module) Refund(ctx context.Context, order *gocommerce.Order, amountMino
 // refunding (D36) — letting the two disagree is how a partial refund becomes a
 // full one.
 func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Order, amountMinor int64) (string, error) {
+	if !m.refresh(ctx) {
+		return "", errNotConfigured
+	}
 	if order.PaymentReference == "" {
 		return "", errors.New("paddle: this order has no payment reference to refund")
 	}
@@ -309,13 +378,19 @@ func (m *Module) Webhook() http.Handler {
 }
 
 func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
+	// A notification for a provider nobody has set up cannot be verified,
+	// and an unverifiable notification is refused.
+	if !m.refresh(r.Context()) {
+		http.Error(w, "payment method not set up", http.StatusServiceUnavailable)
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxWebhookBytes))
 	if err != nil {
 		http.Error(w, "could not read body", http.StatusBadRequest)
 		return
 	}
 	if err := verifySignature(body, r.Header.Get("Paddle-Signature"),
-		m.cfg.WebhookSecret, time.Now(), m.cfg.WebhookTolerance); err != nil {
+		m.conf().WebhookSecret, time.Now(), m.conf().WebhookTolerance); err != nil {
 		m.log.Warn("rejected a Paddle webhook", "error", err)
 		http.Error(w, "invalid signature", http.StatusBadRequest)
 		return
@@ -471,11 +546,11 @@ func (m *Module) do(ctx context.Context, method, path string, body any, out any)
 		reader = bytes.NewReader(encoded)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, m.cfg.BaseURL+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, m.conf().BaseURL+path, reader)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+m.cfg.APIKey)
+	req.Header.Set("Authorization", "Bearer "+m.conf().APIKey)
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

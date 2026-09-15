@@ -54,6 +54,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/misiki/gocommerce/core"
@@ -70,21 +71,21 @@ const (
 // Config configures the module.
 type Config struct {
 	// APIKey is a Veeqo API key, sent as the x-api-key header. Required.
-	APIKey string
+	APIKey string `plugin:"api_key"`
 	// CarrierID is Veeqo's numeric id for the carrier that took the parcel.
 	// Defaults to 3, which is Veeqo's "Other" — right for a parcel booked
 	// outside Veeqo, and worth setting when the store always uses one carrier.
-	CarrierID int
+	CarrierID int `plugin:"carrier_id"`
 	// NotifyCustomer lets Veeqo send its own shipping email. Off by default:
 	// the engine already notifies on order.shipped, and two emails about one
 	// parcel is how a shop looks disorganised.
-	NotifyCustomer bool
+	NotifyCustomer bool `plugin:"notify_customer"`
 	// UpdateRemoteOrder asks Veeqo to push the shipment on to whichever sales
 	// channel the order came from. Off by default, because this store is that
 	// channel — and a round trip back into the engine is the loop nobody wants.
-	UpdateRemoteOrder bool
+	UpdateRemoteOrder bool `plugin:"update_remote_order"`
 	// BaseURL overrides the endpoint, for tests.
-	BaseURL string
+	BaseURL string `plugin:"base_url"`
 	// Client overrides the HTTP client.
 	Client *http.Client
 }
@@ -92,12 +93,67 @@ type Config struct {
 // Module is the Veeqo fulfillment provider.
 type Module struct {
 	cfg    Config
+	live   atomic.Pointer[Config]
+	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
 }
 
 // New constructs the module.
 func New(cfg Config) *Module { return &Module{cfg: cfg} }
+
+// PluginKey is the plugin this module registers, where the panel keeps its
+// credentials. Config is the environment's fallback for each field; a value
+// typed into the panel wins.
+const PluginKey = "shipping-veeqo"
+
+var errNotConfigured = errors.New("veeqo: not set up — activate and configure it under Settings")
+
+// conf is the effective configuration: the last one refresh computed, or
+// Config alone before the first use.
+func (m *Module) conf() *Config {
+	if c := m.live.Load(); c != nil {
+		return c
+	}
+	return &m.cfg
+}
+
+// refresh recomputes the effective configuration — Config with the plugin's
+// settings laid over it — and reports whether the provider can work: switched
+// on, with every required field filled. Called before each use, so a key
+// typed into the panel a moment ago counts without a restart.
+func (m *Module) refresh(ctx context.Context) bool {
+	c := m.cfg
+	on := false
+	if m.app != nil {
+		on, _ = m.app.Plugins().Enabled(ctx, PluginKey)
+		if on {
+			_ = m.app.Plugins().Fill(ctx, PluginKey, &c)
+		}
+	}
+	m.finish(&c)
+	m.live.Store(&c)
+	return on && m.complete(&c)
+}
+
+// Configured implements gocommerce.Configurable.
+func (m *Module) Configured(ctx context.Context) bool { return m.refresh(ctx) }
+
+// complete is whether a configuration has everything the provider needs.
+func (m *Module) complete(c *Config) bool {
+	return strings.TrimSpace(c.APIKey) != ""
+}
+
+// finish fills a configuration's defaults.
+func (m *Module) finish(c *Config) {
+	if c.BaseURL == "" {
+		c.BaseURL = defaultBaseURL
+	}
+	c.BaseURL = strings.TrimRight(c.BaseURL, "/")
+	if c.CarrierID <= 0 {
+		c.CarrierID = carrierOther
+	}
+}
 
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "fulfill-veeqo" }
@@ -108,16 +164,23 @@ func (m *Module) Migrations() []gocommerce.Migration { return nil }
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
-	if strings.TrimSpace(m.cfg.APIKey) == "" {
-		return errors.New("veeqo: APIKey is required")
-	}
-	if m.cfg.BaseURL == "" {
-		m.cfg.BaseURL = defaultBaseURL
-	}
-	m.cfg.BaseURL = strings.TrimRight(m.cfg.BaseURL, "/")
-	if m.cfg.CarrierID <= 0 {
-		m.cfg.CarrierID = carrierOther
-	}
+	m.app = app
+	// Config-configured stores start switched on; a store with nothing in
+	// Config starts idle and waits for the panel.
+	inCode := m.complete(&m.cfg)
+	app.RegisterPlugin(gocommerce.PluginDef{
+		Key: PluginKey, Title: "Veeqo", Category: "shipping", DefaultEnabled: inCode,
+		Description: "Tells Veeqo a parcel went out, so its stock and channels follow. Labels are bought elsewhere.",
+		Docs:        "https://developers.veeqo.com/",
+		Fields: []gocommerce.PluginField{
+			{Key: "api_key", Label: "API key", Kind: "secret", Required: !inCode, Help: "Sent as the x-api-key header."},
+			{Key: "carrier_id", Label: "Carrier ID", Kind: "number", Help: "Veeqo's numeric id for the carrier; 3 is Other.", Default: 3},
+			{Key: "notify_customer", Label: "Let Veeqo email the customer", Kind: "bool", Help: "The engine already writes on order.shipped; two emails about one parcel reads as disorganised."},
+			{Key: "update_remote_order", Label: "Push the shipment to the sales channel", Kind: "bool", Help: "This store is that channel; off by default."},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production."},
+		},
+	})
+	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
 		m.client = &http.Client{Timeout: 30 * time.Second}
@@ -131,11 +194,17 @@ func (m *Module) Register(app *gocommerce.App) error {
 // Code implements gocommerce.FulfillmentProvider.
 func (m *Module) Code() string { return "veeqo" }
 
+// DisplayName implements gocommerce.Named.
+func (m *Module) DisplayName() string { return "Veeqo" }
+
 // Ship records the shipment against the Veeqo order.
 //
 // It runs before the engine opens its transaction, so Veeqo having a slow
 // minute never holds a lock on the orders table.
 func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommerce.ShipRequest) (gocommerce.Shipment, error) {
+	if !m.refresh(ctx) {
+		return gocommerce.Shipment{}, errNotConfigured
+	}
 	tracking := strings.TrimSpace(req.Tracking)
 	if tracking == "" {
 		return gocommerce.Shipment{}, errors.New(
@@ -147,7 +216,7 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 		return gocommerce.Shipment{}, err
 	}
 
-	carrierID := m.cfg.CarrierID
+	carrierID := m.conf().CarrierID
 	if raw := req.Meta["carrier_id"]; raw != "" {
 		if parsed, convErr := strconv.Atoi(raw); convErr == nil && parsed > 0 {
 			carrierID = parsed
@@ -160,8 +229,8 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 		"shipment": map[string]any{
 			"tracking_number_attributes": map[string]any{"tracking_number": tracking},
 			"carrier_id":                 carrierID,
-			"notify_customer":            m.cfg.NotifyCustomer,
-			"update_remote_order":        m.cfg.UpdateRemoteOrder,
+			"notify_customer":            m.conf().NotifyCustomer,
+			"update_remote_order":        m.conf().UpdateRemoteOrder,
 		},
 	}
 
@@ -308,11 +377,11 @@ func (m *Module) do(ctx context.Context, method, path string, payload any, out a
 		}
 		reader = bytes.NewReader(encoded)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, m.cfg.BaseURL+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, m.conf().BaseURL+path, reader)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("x-api-key", m.cfg.APIKey)
+	req.Header.Set("x-api-key", m.conf().APIKey)
 	req.Header.Set("Accept", "application/json")
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")

@@ -51,6 +51,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/misiki/gocommerce/core"
@@ -65,15 +66,15 @@ const (
 // because the store's own ship-from address is configuration, not something
 // the engine holds: an order knows where it is going, never where it came from.
 type Address struct {
-	Name          string
+	Name          string `plugin:"from_name"`
 	CompanyName   string
-	Phone         string
-	AddressLine1  string
+	Phone         string `plugin:"from_phone"`
+	AddressLine1  string `plugin:"from_address_line1"`
 	AddressLine2  string
-	CityLocality  string
-	StateProvince string
-	PostalCode    string
-	CountryCode   string
+	CityLocality  string `plugin:"from_city_locality"`
+	StateProvince string `plugin:"from_state_province"`
+	PostalCode    string `plugin:"from_postal_code"`
+	CountryCode   string `plugin:"from_country_code"`
 	// Residential is ShipStation's address_residential_indicator. Leave it
 	// alone and the carrier decides, which is usually right and occasionally
 	// expensive.
@@ -84,22 +85,24 @@ type Address struct {
 type Config struct {
 	// APIKey is a ShipStation V2 API key, sent as the API-Key header.
 	// Required.
-	APIKey string
+	APIKey string `plugin:"api_key"`
 	// ServiceCode is the service to buy — "usps_priority_mail",
 	// "ups_ground", and so on. Required as the default; a shipment can
 	// override it with Meta["service_code"].
-	ServiceCode string
+	ServiceCode string `plugin:"service_code"`
 	// From is where parcels are sent from. Required.
 	From Address
 	// DefaultWeightGrams is the last resort, per unit, for a parcel the engine
 	// could not weigh. A fully weighed catalogue never reaches it.
-	DefaultWeightGrams int
+	DefaultWeightGrams int `plugin:"default_weight_grams"`
 	// DefaultLengthMM and friends are the box used when the engine has no
 	// unambiguous size — which is any parcel holding more than a single unit.
 	// See gocommerce.Parcel.
-	DefaultLengthMM, DefaultWidthMM, DefaultHeightMM int
+	DefaultLengthMM int
+	DefaultWidthMM  int
+	DefaultHeightMM int
 	// BaseURL overrides the endpoint, for tests.
-	BaseURL string
+	BaseURL string `plugin:"base_url"`
 	// Client overrides the HTTP client.
 	Client *http.Client
 }
@@ -107,12 +110,73 @@ type Config struct {
 // Module is the ShipStation fulfillment provider.
 type Module struct {
 	cfg    Config
+	live   atomic.Pointer[Config]
+	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
 }
 
 // New constructs the module.
 func New(cfg Config) *Module { return &Module{cfg: cfg} }
+
+// PluginKey is the plugin this module registers, where the panel keeps its
+// credentials. Config is the environment's fallback for each field; a value
+// typed into the panel wins.
+const PluginKey = "shipping-shipstation"
+
+var errNotConfigured = errors.New("shipstation: not set up — activate and configure it under Settings")
+
+// conf is the effective configuration: the last one refresh computed, or
+// Config alone before the first use.
+func (m *Module) conf() *Config {
+	if c := m.live.Load(); c != nil {
+		return c
+	}
+	return &m.cfg
+}
+
+// refresh recomputes the effective configuration — Config with the plugin's
+// settings laid over it — and reports whether the provider can work: switched
+// on, with every required field filled. Called before each use, so a key
+// typed into the panel a moment ago counts without a restart.
+func (m *Module) refresh(ctx context.Context) bool {
+	c := m.cfg
+	on := false
+	if m.app != nil {
+		on, _ = m.app.Plugins().Enabled(ctx, PluginKey)
+		if on {
+			_ = m.app.Plugins().Fill(ctx, PluginKey, &c)
+		}
+	}
+	m.finish(&c)
+	m.live.Store(&c)
+	return on && m.complete(&c)
+}
+
+// Configured implements gocommerce.Configurable.
+func (m *Module) Configured(ctx context.Context) bool { return m.refresh(ctx) }
+
+// complete is whether a configuration has everything the provider needs.
+func (m *Module) complete(c *Config) bool {
+	return strings.TrimSpace(c.APIKey) != "" &&
+		strings.TrimSpace(c.ServiceCode) != "" &&
+		strings.TrimSpace(c.From.AddressLine1) != "" &&
+		strings.TrimSpace(c.From.CountryCode) != ""
+}
+
+// finish fills a configuration's defaults.
+func (m *Module) finish(c *Config) {
+	if c.BaseURL == "" {
+		c.BaseURL = defaultBaseURL
+	}
+	c.BaseURL = strings.TrimRight(c.BaseURL, "/")
+	if c.DefaultWeightGrams <= 0 {
+		c.DefaultWeightGrams = 500
+	}
+	if c.DefaultLengthMM <= 0 {
+		c.DefaultLengthMM, c.DefaultWidthMM, c.DefaultHeightMM = 150, 150, 100
+	}
+}
 
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "fulfill-shipstation" }
@@ -123,24 +187,29 @@ func (m *Module) Migrations() []gocommerce.Migration { return nil }
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
-	switch {
-	case strings.TrimSpace(m.cfg.APIKey) == "":
-		return errors.New("shipstation: APIKey is required")
-	case strings.TrimSpace(m.cfg.ServiceCode) == "":
-		return errors.New("shipstation: ServiceCode is required — the engine will not choose a service on your behalf")
-	case strings.TrimSpace(m.cfg.From.AddressLine1) == "", strings.TrimSpace(m.cfg.From.CountryCode) == "":
-		return errors.New("shipstation: From needs at least an address line and a country code — an order knows where it is going, never where it came from")
-	}
-	if m.cfg.BaseURL == "" {
-		m.cfg.BaseURL = defaultBaseURL
-	}
-	m.cfg.BaseURL = strings.TrimRight(m.cfg.BaseURL, "/")
-	if m.cfg.DefaultWeightGrams <= 0 {
-		m.cfg.DefaultWeightGrams = 500
-	}
-	if m.cfg.DefaultLengthMM <= 0 {
-		m.cfg.DefaultLengthMM, m.cfg.DefaultWidthMM, m.cfg.DefaultHeightMM = 150, 150, 100
-	}
+	m.app = app
+	// Config-configured stores start switched on; a store with nothing in
+	// Config starts idle and waits for the panel.
+	inCode := m.complete(&m.cfg)
+	app.RegisterPlugin(gocommerce.PluginDef{
+		Key: PluginKey, Title: "ShipStation", Category: "shipping", DefaultEnabled: inCode,
+		Description: "Multi-carrier labels through ShipStation's V2 API, on the service you name.",
+		Docs:        "https://docs.shipstation.com/",
+		Fields: []gocommerce.PluginField{
+			{Key: "api_key", Label: "API key", Kind: "secret", Required: !inCode, Help: "A V2 API key, sent as the API-Key header."},
+			{Key: "service_code", Label: "Service code", Kind: "text", Required: !inCode, Help: "usps_priority_mail, ups_ground and the rest; a shipment can override it."},
+			{Key: "from_name", Label: "From: name", Kind: "text"},
+			{Key: "from_address_line1", Label: "From: address line 1", Kind: "text", Required: !inCode, Help: "Where parcels are sent from."},
+			{Key: "from_city_locality", Label: "From: city", Kind: "text"},
+			{Key: "from_state_province", Label: "From: state", Kind: "text"},
+			{Key: "from_postal_code", Label: "From: postal code", Kind: "text"},
+			{Key: "from_country_code", Label: "From: country (ISO 2)", Kind: "text", Required: !inCode},
+			{Key: "from_phone", Label: "From: phone", Kind: "text"},
+			{Key: "default_weight_grams", Label: "Default weight (grams)", Kind: "number", Help: "Per unit, for a variant with no weight recorded.", Default: 500},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production."},
+		},
+	})
+	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
 		m.client = &http.Client{Timeout: 30 * time.Second}
@@ -154,16 +223,22 @@ func (m *Module) Register(app *gocommerce.App) error {
 // Code implements gocommerce.FulfillmentProvider.
 func (m *Module) Code() string { return "shipstation" }
 
+// DisplayName implements gocommerce.Named.
+func (m *Module) DisplayName() string { return "ShipStation" }
+
 // Ship buys a label and returns its tracking number.
 //
 // It runs before the engine opens its transaction, so a carrier having a slow
 // minute never holds a lock on the orders table.
 func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommerce.ShipRequest) (gocommerce.Shipment, error) {
-	service := firstNonEmpty(req.Meta["service_code"], m.cfg.ServiceCode)
+	if !m.refresh(ctx) {
+		return gocommerce.Shipment{}, errNotConfigured
+	}
+	service := firstNonEmpty(req.Meta["service_code"], m.conf().ServiceCode)
 
 	shipment := map[string]any{
 		"service_code": service,
-		"ship_from":    addressBody(m.cfg.From),
+		"ship_from":    addressBody(m.conf().From),
 		"ship_to":      m.toAddress(order),
 		"packages":     []any{m.packageBody(req)},
 		// ShipStation's own handle on this parcel. A second parcel for the
@@ -255,7 +330,7 @@ func (m *Module) packageBody(req gocommerce.ShipRequest) map[string]any {
 		units += line.Quantity
 	}
 
-	grams := m.cfg.DefaultWeightGrams * max(units, 1)
+	grams := m.conf().DefaultWeightGrams * max(units, 1)
 	if req.Parcel.Measured && req.Parcel.WeightGrams > 0 {
 		grams = req.Parcel.WeightGrams
 	}
@@ -263,9 +338,9 @@ func (m *Module) packageBody(req gocommerce.ShipRequest) map[string]any {
 	return map[string]any{
 		"weight": map[string]any{"value": grams, "unit": "gram"},
 		"dimensions": map[string]any{
-			"length": centimetres(req.Parcel.Dimensions.Length, m.cfg.DefaultLengthMM),
-			"width":  centimetres(req.Parcel.Dimensions.Width, m.cfg.DefaultWidthMM),
-			"height": centimetres(req.Parcel.Dimensions.Height, m.cfg.DefaultHeightMM),
+			"length": centimetres(req.Parcel.Dimensions.Length, m.conf().DefaultLengthMM),
+			"width":  centimetres(req.Parcel.Dimensions.Width, m.conf().DefaultWidthMM),
+			"height": centimetres(req.Parcel.Dimensions.Height, m.conf().DefaultHeightMM),
 			"unit":   "centimeter",
 		},
 	}
@@ -311,11 +386,11 @@ func (m *Module) post(ctx context.Context, path string, payload any, out any) er
 	if err != nil {
 		return fmt.Errorf("shipstation: could not encode the request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.cfg.BaseURL+path, bytes.NewReader(encoded))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.conf().BaseURL+path, bytes.NewReader(encoded))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("API-Key", m.cfg.APIKey)
+	req.Header.Set("API-Key", m.conf().APIKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 

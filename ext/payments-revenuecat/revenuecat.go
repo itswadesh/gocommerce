@@ -73,6 +73,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"context"
@@ -92,23 +93,25 @@ const (
 type Config struct {
 	// LinkToken is the Web Purchase Link's token — the path segment in
 	// https://pay.rev.cat/<token>. Required.
-	LinkToken string
+	LinkToken string `plugin:"link_token"`
 	// WebhookAuthorization is the exact value RevenueCat is configured to send
 	// in the Authorization header. Required: without it any caller could mark
 	// orders paid.
-	WebhookAuthorization string
+	WebhookAuthorization string `plugin:"webhook_authorization"`
 	// SigningSecret enables HMAC verification on top of the shared header, if
 	// the webhook has signing switched on in RevenueCat. Optional, and worth
 	// switching on: the header alone is a bearer secret that every delivery
 	// repeats.
-	SigningSecret string
+	SigningSecret string `plugin:"signing_secret"`
 	// BaseURL overrides the purchase-link host, for tests.
-	BaseURL string
+	BaseURL string `plugin:"base_url"`
 }
 
 // Module is the RevenueCat payment provider.
 type Module struct {
 	cfg    Config
+	live   atomic.Pointer[Config]
+	app    *gocommerce.App
 	log    *slog.Logger
 	db     *sql.DB
 	pay    *gocommerce.Payments
@@ -117,6 +120,57 @@ type Module struct {
 
 // New builds the module. Register it with gocommerce.New.
 func New(cfg Config) *Module { return &Module{cfg: cfg} }
+
+// PluginKey is the plugin this module registers, where the panel keeps its
+// credentials. Config is the environment's fallback for each field; a value
+// typed into the panel wins.
+const PluginKey = "payments-revenuecat"
+
+var errNotConfigured = errors.New("revenuecat: not set up — activate and configure it under Settings")
+
+// conf is the effective configuration: the last one refresh computed, or
+// Config alone before the first use.
+func (m *Module) conf() *Config {
+	if c := m.live.Load(); c != nil {
+		return c
+	}
+	return &m.cfg
+}
+
+// refresh recomputes the effective configuration — Config with the plugin's
+// settings laid over it — and reports whether the provider can work: switched
+// on, with every required field filled. Called before each use, so a key
+// typed into the panel a moment ago counts without a restart.
+func (m *Module) refresh(ctx context.Context) bool {
+	c := m.cfg
+	on := false
+	if m.app != nil {
+		on, _ = m.app.Plugins().Enabled(ctx, PluginKey)
+		if on {
+			_ = m.app.Plugins().Fill(ctx, PluginKey, &c)
+		}
+	}
+	m.finish(&c)
+	m.live.Store(&c)
+	return on && m.complete(&c)
+}
+
+// Configured implements gocommerce.Configurable.
+func (m *Module) Configured(ctx context.Context) bool { return m.refresh(ctx) }
+
+// complete is whether a configuration has everything the provider needs.
+func (m *Module) complete(c *Config) bool {
+	return strings.TrimSpace(c.LinkToken) != "" &&
+		strings.TrimSpace(c.WebhookAuthorization) != ""
+}
+
+// finish fills a configuration's defaults.
+func (m *Module) finish(c *Config) {
+	if c.BaseURL == "" {
+		c.BaseURL = defaultBaseURL
+	}
+	c.BaseURL = strings.TrimRight(c.BaseURL, "/")
+}
 
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "payments-revenuecat" }
@@ -143,16 +197,22 @@ func (m *Module) Migrations() []gocommerce.Migration {
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
-	switch {
-	case strings.TrimSpace(m.cfg.LinkToken) == "":
-		return errors.New("revenuecat: LinkToken is required")
-	case strings.TrimSpace(m.cfg.WebhookAuthorization) == "":
-		return errors.New("revenuecat: WebhookAuthorization is required — without it, anyone could mark orders paid")
-	}
-	if m.cfg.BaseURL == "" {
-		m.cfg.BaseURL = defaultBaseURL
-	}
-	m.cfg.BaseURL = strings.TrimRight(m.cfg.BaseURL, "/")
+	m.app = app
+	// Config-configured stores start switched on; a store with nothing in
+	// Config starts idle and waits for the panel.
+	inCode := m.complete(&m.cfg)
+	app.RegisterPlugin(gocommerce.PluginDef{
+		Key: PluginKey, Title: "RevenueCat", Category: "payments", DefaultEnabled: inCode,
+		Description: "A RevenueCat Web Purchase Link as the checkout, with its webhook marking orders paid.",
+		Docs:        "https://www.revenuecat.com/docs/",
+		Fields: []gocommerce.PluginField{
+			{Key: "link_token", Label: "Web Purchase Link token", Kind: "text", Required: !inCode, Help: "The path segment in https://pay.rev.cat/<token>."},
+			{Key: "webhook_authorization", Label: "Webhook Authorization header", Kind: "secret", Required: !inCode, Help: "Exactly what RevenueCat is configured to send."},
+			{Key: "signing_secret", Label: "Webhook signing secret", Kind: "secret", Help: "Adds HMAC verification when the webhook has signing on. Worth it."},
+			{Key: "base_url", Label: "Purchase link host", Kind: "url", Help: "Empty for production."},
+		},
+	})
+	m.finish(&m.cfg)
 	m.log = app.Log()
 	m.db = app.DB()
 	m.pay = app.Pay()
@@ -170,7 +230,10 @@ func (m *Module) DisplayName() string { return "RevenueCat" }
 
 // Initiate builds the shopper's purchase link. No network call: the link is a
 // URL, and RevenueCat learns about the order when the webhook arrives.
-func (m *Module) Initiate(_ context.Context, order *gocommerce.Order, opts gocommerce.PayOptions) (gocommerce.PaymentIntent, error) {
+func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts gocommerce.PayOptions) (gocommerce.PaymentIntent, error) {
+	if !m.refresh(ctx) {
+		return gocommerce.PaymentIntent{}, errNotConfigured
+	}
 	if order.Address.Line1 != "" || order.Address.PostalCode != "" {
 		// Not fatal — a store may collect an address for its own records — but
 		// worth saying once per order, because RevenueCat will not carry it and
@@ -179,7 +242,7 @@ func (m *Module) Initiate(_ context.Context, order *gocommerce.Order, opts gocom
 			"order_id", order.ID, "order_number", order.Number)
 	}
 
-	link := m.cfg.BaseURL + "/" + url.PathEscape(m.cfg.LinkToken) + "/" + url.PathEscape(order.Number)
+	link := m.conf().BaseURL + "/" + url.PathEscape(m.conf().LinkToken) + "/" + url.PathEscape(order.Number)
 	query := url.Values{}
 	if order.Email != "" {
 		query.Set("email", order.Email)
@@ -210,6 +273,12 @@ func (m *Module) Initiate(_ context.Context, order *gocommerce.Order, opts gocom
 func (m *Module) Webhook() http.Handler { return http.HandlerFunc(m.handleWebhook) }
 
 func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
+	// A notification for a provider nobody has set up cannot be verified,
+	// and an unverifiable notification is refused.
+	if !m.refresh(r.Context()) {
+		http.Error(w, "payment method not set up", http.StatusServiceUnavailable)
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxWebhookBytes))
 	if err != nil {
 		http.Error(w, "could not read body", http.StatusBadRequest)
@@ -220,14 +289,14 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	// constant-time compare so a wrong value cannot be found a byte at a time.
 	if subtle.ConstantTimeCompare(
 		[]byte(r.Header.Get("Authorization")),
-		[]byte(m.cfg.WebhookAuthorization)) != 1 {
+		[]byte(m.conf().WebhookAuthorization)) != 1 {
 		m.log.Warn("rejected a RevenueCat webhook", "error", "Authorization did not match")
 		http.Error(w, "invalid authorization", http.StatusBadRequest)
 		return
 	}
-	if m.cfg.SigningSecret != "" {
+	if m.conf().SigningSecret != "" {
 		if err := verifySignature(body,
-			r.Header.Get(signatureHeader), m.cfg.SigningSecret, time.Now()); err != nil {
+			r.Header.Get(signatureHeader), m.conf().SigningSecret, time.Now()); err != nil {
 			m.log.Warn("rejected a RevenueCat webhook", "error", err)
 			http.Error(w, "invalid signature", http.StatusBadRequest)
 			return

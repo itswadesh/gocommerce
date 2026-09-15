@@ -10,12 +10,12 @@
  * The shape is Shopify's: a short list of sections in Shopify's order — Home,
  * Orders, Products, Customers, Discounts, Content, Settings — each with its
  * own screens beneath it, shown only while the section is open. Twenty-five
- * screens in one flat column had stopped reading as a menu; seven sections
- * that unfold is what an operator who has used Shopify already knows. Two
- * items are ours rather than Shopify's, and deliberately: Notifications sits
- * in the main list because the person with a shopper on the phone must find
- * "did she get it" without opening Settings, and Plugins is Shopify's "Apps"
- * under the name this store uses for them.
+ * screens in one flat column had stopped reading as a menu; sections that
+ * unfold are what an operator who has used Shopify already knows. A few items
+ * are ours rather than Shopify's, and deliberately: Notifications sits in the
+ * main list because the person with a shopper on the phone must find "did she
+ * get it" without opening Settings; Reports and Jobs because an owner asked
+ * for them by name; Plugins is Shopify's "Apps" under the name this store uses.
  *
  * Each entry names the right that makes the screen worth showing. A staff
  * operator has no business on a settings page they would be refused from, and
@@ -43,6 +43,7 @@
 
 import { can } from "$lib/session.svelte.js";
 import { hasModule } from "$lib/modules.svelte.js";
+import { moduleScreens } from "$lib/screens.svelte.js";
 
 export const NAV = [
     {
@@ -51,7 +52,7 @@ export const NAV = [
         icon: "ri-home-5-line",
         exact: true,
         accent: "indigo",
-        keywords: "dashboard overview sales reports revenue analytics",
+        keywords: "dashboard overview sales revenue analytics",
     },
     {
         href: "/orders",
@@ -61,8 +62,7 @@ export const NAV = [
         accent: "amber",
         keywords: "sales fulfilment shipments refunds returns",
         children: [
-            // Shopify's word for a basket that never became an order.
-            { href: "/carts", label: "Abandoned checkouts", right: "orders.read", keywords: "carts baskets" },
+            { href: "/carts", label: "Abandoned carts", right: "orders.read", keywords: "checkouts baskets" },
             { href: "/invoices", label: "Invoices", right: "orders.read", module: "invoices", keywords: "pdf tax invoice" },
         ],
     },
@@ -79,7 +79,7 @@ export const NAV = [
             { href: "/inventory", label: "Inventory", right: "inventory.read", keywords: "stock levels ledger" },
             // A price list is a rule about what somebody pays, worked in as
             // often as a promotion is, not vocabulary configured once.
-            { href: "/pricing", label: "Price lists", right: "discounts.read", keywords: "trade wholesale b2b customer groups quantity breaks tiers" },
+            { href: "/pricing", label: "Price lists", right: "discounts.read", keywords: "trade wholesale b2b quantity breaks tiers" },
             { href: "/reviews", label: "Reviews", right: "catalog.read", module: "reviews", keywords: "ratings moderation" },
         ],
     },
@@ -91,6 +91,7 @@ export const NAV = [
         accent: "teal",
         keywords: "buyers shoppers",
         children: [
+            { href: "/customers/groups", label: "Groups", right: "discounts.read", keywords: "customer groups wholesale trade segments" },
             { href: "/accounts", label: "Accounts", right: "customers.read", module: "identity", keywords: "logins passwords sessions" },
             // Both are the customers talking: the form and the signup box.
             { href: "/contact", label: "Contact messages", right: "customers.read", module: "contact", keywords: "inbox enquiries" },
@@ -124,19 +125,42 @@ export const NAV = [
     },
     // Shopify's Content: the words and pictures a storefront is made of that
     // are not products. The section lands on Files, which every store has;
-    // Pages and Menus join when their modules are installed.
+    // the rest join when their modules are installed.
     {
         href: "/media",
         label: "Content",
         icon: "ri-layout-line",
         right: "catalog.read",
         accent: "blue",
-        keywords: "media files pages menus cms",
+        keywords: "media files pages menus cms feeds sitemap",
         children: [
             { href: "/media", label: "Files", right: "catalog.read", keywords: "media images pictures uploads" },
             { href: "/cms", label: "Pages", right: "catalog.read", module: "cms", keywords: "content copy about" },
             { href: "/menus", label: "Menus", right: "catalog.read", module: "navigation", keywords: "navigation header footer links" },
+            { href: "/feeds", label: "Feeds", right: "store.operate", module: "feeds", keywords: "google merchant meta catalogue feed" },
+            { href: "/sitemap", label: "Sitemap", right: "store.operate", module: "sitemaps", keywords: "sitemap.xml search console" },
         ],
+    },
+    // "How much did we sell" has its answer on the dashboard, and the full
+    // report — the by-period table, the whole best-seller list — is here.
+    {
+        href: "/reports",
+        label: "Reports",
+        icon: "ri-line-chart-line",
+        right: "orders.read",
+        accent: "rose",
+        keywords: "sales revenue analytics best sellers",
+    },
+    // What the store is doing in the background: imports in progress, events
+    // waiting to go out, deliveries that failed. One screen, because "is it
+    // still running" is one question.
+    {
+        href: "/jobs",
+        label: "Jobs",
+        icon: "ri-loader-4-line",
+        right: "store.operate",
+        accent: "cyan",
+        keywords: "background imports outbox events queue",
     },
     // What this binary can do that is switched on from the panel: storefront
     // extras, widgets, search, marketing. Shopify's "Apps", under the name
@@ -148,14 +172,14 @@ export const NAV = [
         icon: "ri-puzzle-line",
         right: "store.operate",
         accent: "violet",
-        keywords: "apps plugins integrations widgets search klaviyo meilisearch feeds sitemap",
+        keywords: "apps plugins integrations widgets search klaviyo meilisearch",
     },
     // Settings has no right of its own: the section is a shell, and every
     // screen inside it carries its own gate. Hiding the whole section from
     // an operator who may reach one of them is a worse lie than showing a
     // section with one item in it. Its children are the store's rules —
-    // where it ships, what it taxes, where its stock is — which is where
-    // Shopify keeps them too.
+    // how it is paid, where it ships, what it taxes, where its stock is,
+    // what it tells the outside world — which is where Shopify keeps them.
     // `health` is a field rather than an href comparison in the template,
     // so the badge's owner is declared beside the link it rides on.
     {
@@ -164,12 +188,30 @@ export const NAV = [
         icon: "ri-settings-3-line",
         accent: "orange",
         health: true,
-        keywords: "store team roles data diagnostics audit webhooks",
+        keywords: "store team roles data diagnostics audit",
+        // Everything the settings sub-sidebar used to hold, in the order it
+        // held it: the store itself, then how it is paid and how it ships,
+        // then the platform underneath. The sub-sidebar is gone — one
+        // navigation is enough, and two was a menu inside a menu.
         children: [
+            { href: "/settings", label: "Store", exact: true, keywords: "currency languages version providers" },
+            { href: "/settings/superusers", label: "Team", right: "team.read", keywords: "operators staff invitations" },
+            { href: "/settings/roles", label: "Roles", right: "roles.write", keywords: "permissions rights" },
+            { href: "/settings/account", label: "Your account", keywords: "password profile sessions" },
+            { href: "/settings/payments", label: "Payment methods", right: "store.operate", keywords: "gateways stripe razorpay cod checkout" },
             { href: "/shipping", label: "Shipping and delivery", right: "store.operate", keywords: "zones rates methods" },
-            { href: "/shipping/providers", label: "Shipping providers", right: "store.operate", keywords: "carriers fulfilment delhivery" },
+            { href: "/shipping/providers", label: "Shipping providers", right: "store.operate", keywords: "carriers aggregators delhivery shiprocket" },
             { href: "/taxes", label: "Taxes", right: "taxes.read", keywords: "vat gst rates" },
             { href: "/locations", label: "Locations", right: "locations.read", keywords: "warehouse store pickup" },
+            { href: "/channels", label: "Channels", right: "store.operate", keywords: "storefronts selling" },
+            { href: "/settings/attributes", label: "Attribute dictionary", right: "catalog.read", keywords: "fields taxonomy vocabulary" },
+            // The store as a running system rather than as a shop.
+            { href: "/settings/diagnostics", label: "Diagnostics", right: "store.operate", health: true, keywords: "health checks doctor" },
+            { href: "/settings/events", label: "Event log", right: "store.operate", keywords: "outbox execution history dead letters" },
+            { href: "/settings/webhooks", label: "Webhooks", right: "store.operate", module: "webhooks", keywords: "endpoints deliveries integrations" },
+            { href: "/settings/audit", label: "Audit trail", right: "store.operate", keywords: "who did what history" },
+            { href: "/settings/agent", label: "Agent activity", right: "store.operate", module: "mcp", keywords: "mcp ai tools" },
+            { href: "/data", label: "Import / export", right: "data.export", keywords: "csv shopify import export" },
         ],
     },
 ];
@@ -192,7 +234,40 @@ export const NAV = [
  */
 export function visibleNav(items = NAV) {
     const reachable = (item) => (!item.module || hasModule(item.module)) && (!item.right || can(item.right));
-    return items.filter((item) => reachable(item) || (item.children ?? []).some(reachable));
+    return withModuleScreens(items)
+        .filter((item) => reachable(item) || (item.children ?? []).some(reachable))
+        .map((item) =>
+            item.children ? { ...item, children: item.children.filter(reachable) } : item,
+        );
+}
+
+/**
+ * The nav with each module's own screens folded into Settings.
+ *
+ * A module may mount an admin screen and announce it at GET /api/admin/screens;
+ * the settings sub-sidebar used to be the only thing that asked, so when it
+ * went the entries needed somewhere to live. Settings is where they were, and
+ * a module screen is configuration more often than it is daily work.
+ */
+function withModuleScreens(items) {
+    const extra = moduleScreens();
+    if (!extra.length || items !== NAV) return items;
+    return items.map((item) =>
+        item.href === "/settings"
+            ? {
+                  ...item,
+                  children: [
+                      ...item.children,
+                      ...extra.map((s) => ({
+                          href: `/x/${s.slug}`,
+                          label: s.title,
+                          right: s.right,
+                          keywords: s.module ?? "",
+                      })),
+                  ],
+              }
+            : item,
+    );
 }
 
 /**
@@ -205,8 +280,10 @@ export function flatNav(items = NAV) {
     const out = [];
     for (const item of visibleNav(items)) {
         if (reachable(item)) out.push(item);
+        // visibleNav has already dropped the children this operator cannot
+        // reach, so every one left belongs in the palette.
         for (const child of item.children ?? []) {
-            if (reachable(child)) out.push({ ...child, icon: item.icon, accent: item.accent });
+            out.push({ ...child, icon: item.icon, accent: item.accent });
         }
     }
     return out;

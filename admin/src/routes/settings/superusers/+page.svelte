@@ -23,7 +23,6 @@
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
-    import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
 
     /*
      * team.read is the sidebar's gate on this screen; team.write is what every
@@ -504,7 +503,6 @@
 />
 
 <div class="page page-superusers shopify-skin">
-    <SettingsSidebar />
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">

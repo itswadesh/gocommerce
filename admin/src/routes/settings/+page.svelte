@@ -18,7 +18,6 @@
      */
     import { settings, loadSettings } from "$lib/settings.svelte.js";
     import { formatMoney, pluralize } from "$lib/format.js";
-    import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
 
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
@@ -96,7 +95,6 @@
 <svelte:head><title>Store settings · GoCommerce</title></svelte:head>
 
 <div class="page page-settings shopify-skin">
-    <SettingsSidebar />
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">

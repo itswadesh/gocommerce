@@ -14,6 +14,7 @@
     import { auth, events, getToken, can, session } from "$lib/api.js";
     import { clearSettings, loadSettings } from "$lib/settings.svelte.js";
     import { forgetModules, loadModules } from "$lib/modules.svelte.js";
+    import { forgetScreens, loadScreens } from "$lib/screens.svelte.js";
     import { health } from "$lib/health.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
     import { NAV, visibleNav as allowedNav } from "$lib/nav.js";
@@ -175,6 +176,32 @@
         return isActive(item) || childrenOf(item).some(isActive);
     }
 
+    /*
+     * An open section brings its own screens into view.
+     *
+     * Settings unfolds sixteen of them, which is taller than the rail on a
+     * laptop, so the last — Import / export — sat below the fold of a list
+     * that scrolls, and an operator who does not think to scroll a sidebar
+     * reads that as "it is not there". The whole group is scrolled into view
+     * when it opens, by the smallest amount that works, so nothing moves when
+     * the group already fits.
+     */
+    function revealSection(node) {
+        const reveal = () => {
+            const nav = node.closest(".app-sidebar-nav, .app-drawer");
+            if (!nav) return;
+            const below = node.getBoundingClientRect().bottom - nav.getBoundingClientRect().bottom;
+            if (below > 0) nav.scrollTop += below + 8;
+        };
+        // Watched rather than measured once: the group grows after it mounts,
+        // because the screens a module contributes arrive from the API a
+        // moment later, and a single frame's measurement would scroll by what
+        // was needed then and leave the newest rows below the fold.
+        const observer = new ResizeObserver(reveal);
+        observer.observe(node);
+        return { destroy: () => observer.disconnect() };
+    }
+
     $effect(() => {
         if (!getToken()) {
             ready = true;
@@ -195,6 +222,7 @@
                 // just rejected is four 401s on the commonest path there is —
                 // come back the next morning, session expired, sign in again.
                 loadModules();
+                loadScreens();
             })
             .catch((err) => {
                 if (err.isAuth) {
@@ -287,6 +315,8 @@
         // so the previous answer is dropped before a new one is asked for.
         forgetModules();
         loadModules();
+        forgetScreens();
+        loadScreens();
         toast.success("Signed in");
     }
 
@@ -297,6 +327,7 @@
         await auth.logout();
         clearSettings();
         forgetModules();
+        forgetScreens();
         toast.info("Signed out");
     }
 
@@ -376,7 +407,7 @@
                  open: the list stays one line per screen the rest of the
                  time, which is what keeps it readable at twenty items. -->
             {#if item.children && sectionOpen(item)}
-                <div class="app-nav-sub">
+                <div class="app-nav-sub" use:revealSection>
                     {#each childrenOf(item) as child (child.href)}
                         <a
                             href="{base}{child.href}"
@@ -384,6 +415,11 @@
                             class:active={lit?.href === child.href}
                         >
                             {child.label}
+                            <!-- The dot rides the screen the failing check is
+                                 actually on, not only the section above it. -->
+                            {#if child.health && navAlert.show}
+                                <span class="app-nav-dot" title={navAlert.label}></span>
+                            {/if}
                         </a>
                     {/each}
                 </div>

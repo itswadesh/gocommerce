@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -479,6 +481,124 @@ func (p *Plugins) Settings(ctx context.Context, key string) (map[string]any, err
 		}
 	}
 	return out, nil
+}
+
+// Fill copies a plugin's stored settings onto a module's Config, field by
+// field, wherever the operator typed a value: a struct field tagged
+// `plugin:"api_key"` takes the setting called api_key. Config's own value
+// stands where nothing was typed, and a field's Default applies where both
+// are empty. Nested structs are walked; pointers, slices and maps are left
+// alone. A string field takes text, secret, select, url or textarea; a bool
+// field takes bool; an integer or float field takes number, or numeric text.
+//
+// This is the whole of what a provider module needs to be set up from the
+// panel: tag its Config, declare the fields, call Fill before each use.
+func (p *Plugins) Fill(ctx context.Context, key string, dst any) error {
+	def, ok := p.def(key)
+	if !ok {
+		return NotFoundf("no plugin is called %q", key)
+	}
+	rv := reflect.ValueOf(dst)
+	if rv.Kind() != reflect.Pointer || rv.Elem().Kind() != reflect.Struct {
+		return fmt.Errorf("plugins: Fill wants a pointer to a struct, got %T", dst)
+	}
+	r, err := p.row(ctx, p.app.db, key)
+	if err != nil {
+		return err
+	}
+	defaults := map[string]any{}
+	for _, f := range def.Fields {
+		if f.Default != nil {
+			defaults[f.Key] = f.Default
+		}
+	}
+	return fillStruct(rv.Elem(), r.settings, defaults)
+}
+
+func fillStruct(v reflect.Value, settings, defaults map[string]any) error {
+	t := v.Type()
+	for i := 0; i < v.NumField(); i++ {
+		field, fv := t.Field(i), v.Field(i)
+		if !fv.CanSet() {
+			continue
+		}
+		key := field.Tag.Get("plugin")
+		if key == "" {
+			if fv.Kind() == reflect.Struct {
+				if err := fillStruct(fv, settings, defaults); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		val, present := settings[key]
+		if !present || val == nil || val == "" {
+			d, has := defaults[key]
+			if !has || !fv.IsZero() {
+				continue
+			}
+			val = d
+		}
+		if err := assignSetting(fv, val); err != nil {
+			return Validationf("plugin setting %q: %v", key, err)
+		}
+	}
+	return nil
+}
+
+func assignSetting(fv reflect.Value, val any) error {
+	switch fv.Kind() {
+	case reflect.String:
+		s, ok := val.(string)
+		if !ok {
+			s = fmt.Sprint(val)
+		}
+		fv.SetString(strings.TrimSpace(s))
+	case reflect.Bool:
+		switch b := val.(type) {
+		case bool:
+			fv.SetBool(b)
+		case string:
+			fv.SetBool(b == "true" || b == "1" || b == "yes" || b == "on")
+		default:
+			return fmt.Errorf("want true or false, got %T", val)
+		}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		switch n := val.(type) {
+		case float64:
+			fv.SetInt(int64(n))
+		case int:
+			fv.SetInt(int64(n))
+		case int64:
+			fv.SetInt(n)
+		case string:
+			parsed, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+			if err != nil {
+				return fmt.Errorf("want a number, got %q", n)
+			}
+			fv.SetInt(int64(parsed))
+		default:
+			return fmt.Errorf("want a number, got %T", val)
+		}
+	case reflect.Float32, reflect.Float64:
+		switch n := val.(type) {
+		case float64:
+			fv.SetFloat(n)
+		case int:
+			fv.SetFloat(float64(n))
+		case string:
+			parsed, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+			if err != nil {
+				return fmt.Errorf("want a number, got %q", n)
+			}
+			fv.SetFloat(parsed)
+		default:
+			return fmt.Errorf("want a number, got %T", val)
+		}
+	default:
+		return fmt.Errorf("a %s field cannot be set from the panel", fv.Kind())
+	}
+	return nil
 }
 
 // String is one setting as text, "" when unset; the shape most modules want.

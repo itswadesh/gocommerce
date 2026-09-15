@@ -1,0 +1,1 @@
+import{t as p}from"./DHxEWhEQ.js";import{aw as r,A as i}from"./CFOMTg-U.js";function A(t,s,y,f){var l=t[r];if(i||l!==s){var e=p(s);(!i||e!==t.getAttribute("style"))&&(e==null?t.removeAttribute("style"):t.style.cssText=e),t[r]=s}return f}export{A as s};

@@ -83,24 +83,6 @@ func TestVerifyItem(t *testing.T) {
 	}
 }
 
-func TestRegisterRequiresConfiguration(t *testing.T) {
-	t.Parallel()
-
-	for _, cfg := range []Config{
-		{},
-		{APIKey: "k"},
-		{APIKey: "k", MerchantAccount: "m"},
-		{APIKey: "k", MerchantAccount: "m", HMACKey: testHMACKey}, // no BaseURL
-		// A key that is not hexadecimal must be refused at boot rather than
-		// silently failing every notification in production.
-		{APIKey: "k", MerchantAccount: "m", HMACKey: "not-hex", BaseURL: "https://x.test/v71"},
-	} {
-		if err := New(cfg).Register(nil); err == nil {
-			t.Errorf("Register accepted an unusable config: %+v", cfg)
-		}
-	}
-}
-
 // stubAdyen stands in for the Checkout API.
 func stubAdyen(t *testing.T) *httptest.Server {
 	t.Helper()
@@ -363,4 +345,51 @@ func postItems(t *testing.T, app *gocommerce.App, items ...notificationItem) *ht
 	rec := httptest.NewRecorder()
 	app.Handler().ServeHTTP(rec, req)
 	return rec
+}
+
+// TestInstalledIdleUntilConfigured: with nothing in Config the module still
+// registers — the panel lists it — but the settings say it is not set up and
+// nothing can be sent through it, until its fields are typed into the plugin.
+func TestInstalledIdleUntilConfigured(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	ctx := context.Background()
+
+	var info *gocommerce.ProviderInfo
+	for _, p := range app.Settings().PaymentMethods {
+		if p.Code == "adyen" {
+			p := p
+			info = &p
+		}
+	}
+	if info == nil {
+		t.Fatal("an idle module should still be listed in the settings")
+	}
+	if info.Configured {
+		t.Fatalf("configured = %v before anything was typed in", info.Configured)
+	}
+	for _, code := range app.Pay().Methods() {
+		if code == "adyen" {
+			t.Fatal("an idle gateway must not be offered at checkout")
+		}
+	}
+	if _, err := app.Order().Checkout(ctx, "adyen", gocommerce.CheckoutInput{}, ""); err == nil || !strings.Contains(err.Error(), "no payment method") {
+		t.Fatalf("checkout through an idle gateway = %v, want it refused as unknown", err)
+	}
+
+	on := true
+	if _, err := app.Plugins().Update(ctx, PluginKey, gocommerce.PluginPatch{Enabled: &on, Settings: map[string]any{"api_key": "k-1", "merchant_account": "AcmeECOM", "hmac_key": "0a0b0c", "base_url": "https://checkout-test.adyen.com/v71"}}); err != nil {
+		t.Fatalf("configure from the panel: %v", err)
+	}
+	for _, p := range app.Settings().PaymentMethods {
+		if p.Code == "adyen" && !p.Configured {
+			t.Fatal("configured from the panel, the settings should say so")
+		}
+	}
+	offered := false
+	for _, code := range app.Pay().Methods() {
+		offered = offered || code == "adyen"
+	}
+	if !offered {
+		t.Fatal("configured from the panel, the gateway should be offered")
+	}
 }

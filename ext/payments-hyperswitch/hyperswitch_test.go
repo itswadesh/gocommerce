@@ -69,20 +69,6 @@ func TestVerifySignature(t *testing.T) {
 	}
 }
 
-func TestRegisterRequiresConfiguration(t *testing.T) {
-	t.Parallel()
-
-	for _, cfg := range []Config{
-		{},
-		{APIKey: "k"},
-		{ResponseHashKey: "s"},
-	} {
-		if err := New(cfg).Register(nil); err == nil {
-			t.Errorf("Register accepted an incomplete config: %+v", cfg)
-		}
-	}
-}
-
 // stubHyperswitch stands in for the router.
 func stubHyperswitch(t *testing.T) *httptest.Server {
 	t.Helper()
@@ -293,4 +279,51 @@ func postWebhook(t *testing.T, app *gocommerce.App, body, signature string) *htt
 	rec := httptest.NewRecorder()
 	app.Handler().ServeHTTP(rec, req)
 	return rec
+}
+
+// TestInstalledIdleUntilConfigured: with nothing in Config the module still
+// registers — the panel lists it — but the settings say it is not set up and
+// nothing can be sent through it, until its fields are typed into the plugin.
+func TestInstalledIdleUntilConfigured(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	ctx := context.Background()
+
+	var info *gocommerce.ProviderInfo
+	for _, p := range app.Settings().PaymentMethods {
+		if p.Code == "hyperswitch" {
+			p := p
+			info = &p
+		}
+	}
+	if info == nil {
+		t.Fatal("an idle module should still be listed in the settings")
+	}
+	if info.Configured {
+		t.Fatalf("configured = %v before anything was typed in", info.Configured)
+	}
+	for _, code := range app.Pay().Methods() {
+		if code == "hyperswitch" {
+			t.Fatal("an idle gateway must not be offered at checkout")
+		}
+	}
+	if _, err := app.Order().Checkout(ctx, "hyperswitch", gocommerce.CheckoutInput{}, ""); err == nil || !strings.Contains(err.Error(), "no payment method") {
+		t.Fatalf("checkout through an idle gateway = %v, want it refused as unknown", err)
+	}
+
+	on := true
+	if _, err := app.Plugins().Update(ctx, PluginKey, gocommerce.PluginPatch{Enabled: &on, Settings: map[string]any{"api_key": "k-1", "response_hash_key": "h-1"}}); err != nil {
+		t.Fatalf("configure from the panel: %v", err)
+	}
+	for _, p := range app.Settings().PaymentMethods {
+		if p.Code == "hyperswitch" && !p.Configured {
+			t.Fatal("configured from the panel, the settings should say so")
+		}
+	}
+	offered := false
+	for _, code := range app.Pay().Methods() {
+		offered = offered || code == "hyperswitch"
+	}
+	if !offered {
+		t.Fatal("configured from the panel, the gateway should be offered")
+	}
 }

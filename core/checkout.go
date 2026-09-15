@@ -74,6 +74,12 @@ func (s *Orders) Checkout(ctx context.Context, code string, in CheckoutInput, id
 	if !ok {
 		return nil, NotFoundf("no payment method named %q", code)
 	}
+	if !configured(ctx, provider) {
+		// Installed but not set up: to a shopper that is the same as not
+		// installed, and the same answer keeps a storefront from learning
+		// which it was.
+		return nil, NotFoundf("no payment method named %q", code)
+	}
 	if err := validateCheckoutInput(&in); err != nil {
 		return nil, err
 	}
@@ -743,7 +749,7 @@ func (s *Orders) Create(ctx context.Context, in NewOrderInput) (*CheckoutResult,
 	if code == "" {
 		code = CodeCOD
 	}
-	if _, ok := s.app.payments.provider(code); !ok {
+	if provider, ok := s.app.payments.provider(code); !ok || !configured(ctx, provider) {
 		return nil, NotFoundf("no payment method named %q", code)
 	}
 

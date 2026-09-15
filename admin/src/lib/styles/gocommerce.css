@@ -1790,8 +1790,31 @@ button.media-check {
     border: 1px solid var(--surfaceAlt3Color);
     border-radius: var(--borderRadius);
 }
+/* Cards stacked down a page are spaced by this margin. */
 .shopify-skin .card + .card {
     margin-top: var(--spacing);
+}
+
+/*
+ * A grid of cards, for the screens that lay them out in rows: Plugins,
+ * Payment methods, Shipping providers, and the provider halves of Setup
+ * Email and Setup SMS.
+ *
+ * The margin above is the stack's gap and the grid has its own, so inside
+ * a grid it is not spacing but an offset: every card after the first
+ * started --spacing lower than the one beside it, and a row of cards that
+ * do not share a top edge reads as a rendering fault. Zeroed here rather
+ * than in each component, because three of them had written the same
+ * `margin: 0` already and it lost to the sibling rule every time.
+ */
+.shopify-skin .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: var(--smSpacing);
+}
+.shopify-skin .card-grid > .card,
+.shopify-skin .card-grid > .card + .card {
+    margin: 0;
 }
 .shopify-skin .grid.product-columns {
     --gridGap: var(--spacing);
@@ -1832,8 +1855,23 @@ button.media-check {
  * row and its input each give back a few pixels, which is where most of the
  * height of a form this long actually goes.
  */
-.shopify-skin .field-help {
-    margin-top: 4px;
+/*
+ * The hint under a field is part of that field, and it was reading as loose
+ * text between two boxes: flush to the container edge while the label and the
+ * value inside the box are indented by --inputPadding, and 4px below the box
+ * with nothing under it, so the next field crowded it.
+ *
+ * Indenting it to the field's own text column ties it to the box it explains,
+ * and a few pixels under it keep the next control off its last line. The gap
+ * between fields is still the next field's own margin, not this.
+ */
+/* `.modal` too: a drawer is rendered at the body, outside the page that
+   carries `.shopify-skin`, so a rule written for the skin alone reaches
+   every form on a screen and none inside a drawer. */
+.shopify-skin .field-help,
+.modal .field-help {
+    margin: 6px 0 4px;
+    padding: 0 var(--inputPadding);
 }
 
 /*
@@ -3153,6 +3191,29 @@ button.media-check {
     white-space: normal !important;
     overflow-wrap: anywhere;
 }
+/* Everything stacked under a name wraps inside the column. The name-id cell
+   is nowrap (table.css), and a description that inherits it cannot wrap, so
+   it walked straight into the Subject column beside it. The name itself
+   keeps its ellipsis; the rest takes the line breaks it needs. */
+.table .row-name-stacked > :not(.txt-ellipsis) {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+/* With the name no longer forcing its column wide, table.css's 190px for
+   the name-id column was honoured to the letter and the Product column
+   shrank to it at laptop width while Status and Price spread out. The name
+   is the column that should take whatever is left. */
+.page-products .table :is(th, td).col-field-name-id {
+    width: 100%;
+}
+/* And Status is a pill, not a 180px field: PocketBase's select column
+   reserves that for a dropdown this cell never holds. */
+.page-products .table :is(th, td).col-field-type-select {
+    width: 1%;
+    min-width: 0;
+    white-space: nowrap;
+}
 
 /*
  * The destructive control is invisible at rest.
@@ -3632,8 +3693,8 @@ button.media-check {
     font-weight: 600;
     line-height: 16px;
     text-align: center;
-    color: var(--baseColor);
-    background: var(--txtPrimaryColor);
+    color: #1f1300;
+    background: #fbbf24;
     box-shadow: 0 0 0 2px var(--baseColor);
 }
 
@@ -3789,7 +3850,9 @@ button.media-check {
     padding-left: 25px;
 }
 .app-nav-sublink {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 8px;
     padding: 4px 10px;
     border-radius: 6px;
     font-size: 12.5px;

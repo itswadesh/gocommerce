@@ -2,7 +2,6 @@
     import { api, apiErrorFrom, can, getToken, query, request } from "$lib/api.js";
     import { formatDate } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
-    import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
     import CategoryPicker from "$lib/components/CategoryPicker.svelte";
     import DirtyGuard from "$lib/components/DirtyGuard.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
@@ -275,7 +274,6 @@
     <NoAccess anyOf={["data.export", "data.import"]} what="import and export" />
 {:else}
 <div class="page page-data shopify-skin">
-    <SettingsSidebar />
 
     <div class="page-content tw:bg-background tw:text-foreground">
         <header class="page-header">

@@ -25,7 +25,6 @@
     import { toast } from "$lib/toast.svelte.js";
     import DirtyGuard from "$lib/components/DirtyGuard.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
-    import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
 
     let loading = $state(true);
     let matrix = $state(null);
@@ -292,7 +291,6 @@
 />
 
 <div class="page page-roles shopify-skin">
-    <SettingsSidebar />
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">

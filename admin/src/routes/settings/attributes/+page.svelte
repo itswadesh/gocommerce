@@ -18,7 +18,6 @@
     import { api, can } from "$lib/api.js";
     import { rowKey } from "$lib/rowkey.js";
     import { toast } from "$lib/toast.svelte.js";
-    import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import TokenInput from "$lib/components/TokenInput.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
@@ -156,7 +155,6 @@
 <svelte:head><title>Attribute dictionary · GoCommerce</title></svelte:head>
 
 <div class="page page-attributes shopify-skin">
-    <SettingsSidebar />
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">

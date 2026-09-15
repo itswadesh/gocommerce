@@ -84,19 +84,6 @@ func TestVerifySignature(t *testing.T) {
 	}
 }
 
-func TestRegisterRequiresSecrets(t *testing.T) {
-	t.Parallel()
-
-	if err := New(Config{WebhookSecret: "x"}).Register(nil); err == nil {
-		t.Error("a missing SecretKey should be refused")
-	}
-	// A webhook with no signing secret would let anyone mark orders paid, so
-	// booting without one must fail rather than warn.
-	if err := New(Config{SecretKey: "sk_test"}).Register(nil); err == nil {
-		t.Error("a missing WebhookSecret should be refused")
-	}
-}
-
 // stubStripe stands in for Stripe's API.
 func stubStripe(t *testing.T) *httptest.Server {
 	t.Helper()
@@ -282,4 +269,51 @@ func postWebhook(t *testing.T, app *gocommerce.App, body, signature string) *htt
 	rec := httptest.NewRecorder()
 	app.Handler().ServeHTTP(rec, req)
 	return rec
+}
+
+// TestInstalledIdleUntilConfigured: with nothing in Config the module still
+// registers — the panel lists it — but the settings say it is not set up and
+// nothing can be sent through it, until its fields are typed into the plugin.
+func TestInstalledIdleUntilConfigured(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	ctx := context.Background()
+
+	var info *gocommerce.ProviderInfo
+	for _, p := range app.Settings().PaymentMethods {
+		if p.Code == "stripe" {
+			p := p
+			info = &p
+		}
+	}
+	if info == nil {
+		t.Fatal("an idle module should still be listed in the settings")
+	}
+	if info.Configured {
+		t.Fatalf("configured = %v before anything was typed in", info.Configured)
+	}
+	for _, code := range app.Pay().Methods() {
+		if code == "stripe" {
+			t.Fatal("an idle gateway must not be offered at checkout")
+		}
+	}
+	if _, err := app.Order().Checkout(ctx, "stripe", gocommerce.CheckoutInput{}, ""); err == nil || !strings.Contains(err.Error(), "no payment method") {
+		t.Fatalf("checkout through an idle gateway = %v, want it refused as unknown", err)
+	}
+
+	on := true
+	if _, err := app.Plugins().Update(ctx, PluginKey, gocommerce.PluginPatch{Enabled: &on, Settings: map[string]any{"secret_key": "sk_test_1", "webhook_secret": "whsec_1"}}); err != nil {
+		t.Fatalf("configure from the panel: %v", err)
+	}
+	for _, p := range app.Settings().PaymentMethods {
+		if p.Code == "stripe" && !p.Configured {
+			t.Fatal("configured from the panel, the settings should say so")
+		}
+	}
+	offered := false
+	for _, code := range app.Pay().Methods() {
+		offered = offered || code == "stripe"
+	}
+	if !offered {
+		t.Fatal("configured from the panel, the gateway should be offered")
+	}
 }

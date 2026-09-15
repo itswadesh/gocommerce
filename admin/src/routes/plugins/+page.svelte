@@ -55,10 +55,12 @@
         chat: "Chat",
         search: "Search",
         notifications: "Email and SMS",
+        payments: "Payment methods",
+        shipping: "Shipping providers",
         operations: "Operations",
         integration: "Integrations",
     };
-    const CATEGORY_ORDER = ["storefront", "marketing", "search", "notifications", "integration", "analytics", "chat", "operations"];
+    const CATEGORY_ORDER = ["storefront", "marketing", "search", "notifications", "payments", "shipping", "integration", "analytics", "chat", "operations"];
 
     const shown = $derived.by(() => {
         const needle = search.trim().toLowerCase();
@@ -175,10 +177,10 @@
                 {:else}
                     {#each groups as [category, items] (category)}
                         <h6 class="section-title">{CATEGORY_LABEL[category] ?? category}</h6>
-                        <div class="plugin-grid m-b-base">
+                        <div class="card-grid plugin-grid m-b-base">
                             {#each items as p (p.key)}
                                 {@const st = stateOf(p)}
-                                <section class="card plugin-card">
+                                <section class="card plugin-card" class:active={p.enabled && p.configured}>
                                     <div class="flex gap-10">
                                         <div class="flex-fill">
                                             <div class="plugin-title">{p.title}</div>
@@ -225,16 +227,18 @@
 <PluginSettingsDrawer plugin={editing} onclose={() => (editing = null)} onsaved={saved} />
 
 <style>
-    .plugin-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-        gap: var(--smSpacing);
-    }
     .plugin-card {
         display: flex;
         flex-direction: column;
         min-width: 0;
         margin: 0;
+    }
+    /* Switched on and set up reads at a glance: a green edge and a whisper
+       of green ground. Switched on but waiting for a value keeps the plain
+       card and its warning chip — green would say "working". */
+    .plugin-card.active {
+        border-color: var(--successColor);
+        background: rgba(34, 169, 109, 0.07);
     }
     .plugin-title {
         font-weight: 600;

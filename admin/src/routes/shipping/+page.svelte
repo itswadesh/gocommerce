@@ -372,23 +372,28 @@
             <div class="field m-t-sm">
                 <label for="zone-countries">Countries</label>
                 <input id="zone-countries" type="text" placeholder="IN, LK" bind:value={zoneForm.countries} />
-                <div class="txt-hint txt-sm m-t-5">
-                    ISO codes, separated by commas. Leave empty for the zone that covers anywhere
-                    no other zone names.
-                </div>
+            </div>
+            <div class="field-help">
+                ISO codes, separated by commas. Leave empty for the zone that covers anywhere
+                no other zone names.
             </div>
             <div class="field m-t-sm">
                 <label for="zone-states">States</label>
                 <input id="zone-states" type="text" placeholder="KA, MH" bind:value={zoneForm.states} />
-                <div class="txt-hint txt-sm m-t-5">
-                    Optional, and only useful with a country above. A zone naming a state beats one
-                    that names only the country.
-                </div>
             </div>
-            <button type="submit" class="btn" disabled={saving} class:loading={saving}>
-                {zoneForm.id ? "Save zone" : "Add zone"}
-            </button>
+            <div class="field-help">
+                Optional, and only useful with a country above. A zone naming a state beats one
+                that names only the country.
+            </div>
         </form>
+        {#snippet footer()}
+            <button type="button" class="btn transparent m-r-auto" onclick={() => (zoneOpen = false)}>
+                <span class="txt">Cancel</span>
+            </button>
+            <button type="button" class="btn" disabled={saving} class:loading={saving} onclick={saveZone}>
+                <span class="txt">{zoneForm.id ? "Save zone" : "Add zone"}</span>
+            </button>
+        {/snippet}
     </Drawer>
 
     <Drawer
@@ -406,16 +411,16 @@
             <div class="field">
                 <label for="rate-name">Name</label>
                 <input id="rate-name" type="text" placeholder="Standard" bind:value={rateForm.name} required />
-                <div class="txt-hint txt-sm m-t-5">What the shopper sees at checkout.</div>
             </div>
+            <div class="field-help">What the shopper sees at checkout.</div>
             <div class="field m-t-sm">
                 <label for="rate-price">Price, in minor units</label>
                 <input id="rate-price" type="number" min="0" step="1" placeholder="4900" bind:value={rateForm.price} required />
-                <div class="txt-hint txt-sm m-t-5">
-                    Whole minor units, never a decimal — 4900 is 49.00. Zero is free delivery.
-                </div>
             </div>
-            <div class="fields">
+            <div class="field-help">
+                Whole minor units, never a decimal — 4900 is 49.00. Zero is free delivery.
+            </div>
+            <div class="fields m-t-sm">
                 <div class="field">
                     <label for="rate-min">Baskets from</label>
                     <input id="rate-min" type="number" min="0" step="1" placeholder="0" bind:value={rateForm.min} />
@@ -425,16 +430,21 @@
                     <input id="rate-max" type="number" min="0" step="1" placeholder="no ceiling" bind:value={rateForm.max} />
                 </div>
             </div>
-            <div class="txt-hint txt-sm m-b-base">
+            <div class="field-help">
                 A method is a name and a range of basket values, which is how one method covers
                 “Standard 49, free over 2000”: add it twice, once from 0 up to 200000, once from
                 200000 with no ceiling. Two bands of the same name that overlap are refused,
                 because a shopper offered one method at two prices cannot choose between them.
             </div>
-            <button type="submit" class="btn" disabled={saving} class:loading={saving}>
-                {rateForm.id ? "Save method" : "Add method"}
-            </button>
         </form>
+        {#snippet footer()}
+            <button type="button" class="btn transparent m-r-auto" onclick={() => (rateOpen = false)}>
+                <span class="txt">Cancel</span>
+            </button>
+            <button type="button" class="btn" disabled={saving} class:loading={saving} onclick={saveRate}>
+                <span class="txt">{rateForm.id ? "Save method" : "Add method"}</span>
+            </button>
+        {/snippet}
     </Drawer>
 
     <Confirm

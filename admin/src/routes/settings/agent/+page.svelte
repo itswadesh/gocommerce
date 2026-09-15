@@ -28,7 +28,6 @@
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
-    import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
 
     /* The starting page size, not the only one: `limit` is a listState key, so
        an operator can change it and the choice rides in the URL with the rest of
@@ -134,7 +133,6 @@
     <NoAccess right="store.operate" what="the agent audit" />
 {:else}
     <div class="page page-agent shopify-skin">
-        <SettingsSidebar />
 
         <div class="page-content full-height tw:bg-background tw:text-foreground">
             <header class="page-header">

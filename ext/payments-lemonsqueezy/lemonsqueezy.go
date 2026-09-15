@@ -53,6 +53,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	gocommerce "github.com/misiki/gocommerce/core"
@@ -69,17 +70,17 @@ const (
 // Config configures the module.
 type Config struct {
 	// APIKey is a Lemon Squeezy API key. Required.
-	APIKey string
+	APIKey string `plugin:"api_key"`
 	// WebhookSecret is the signing secret of the webhook. Required: without it
 	// any caller could mark orders paid.
-	WebhookSecret string
+	WebhookSecret string `plugin:"webhook_secret"`
 	// StoreID and VariantID name the placeholder catalogue item every checkout
 	// is created against. Both required — see the package comment for why they
 	// exist at all.
-	StoreID   string
-	VariantID string
+	StoreID   string `plugin:"store_id"`
+	VariantID string `plugin:"variant_id"`
 	// BaseURL overrides the endpoint, for tests.
-	BaseURL string
+	BaseURL string `plugin:"base_url"`
 	// Client overrides the HTTP client.
 	Client *http.Client
 }
@@ -87,6 +88,8 @@ type Config struct {
 // Module is the Lemon Squeezy payment provider.
 type Module struct {
 	cfg    Config
+	live   atomic.Pointer[Config]
+	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
 	db     *sql.DB
@@ -95,6 +98,58 @@ type Module struct {
 
 // New builds the module. Register it with gocommerce.New.
 func New(cfg Config) *Module { return &Module{cfg: cfg} }
+
+// PluginKey is the plugin this module registers, where the panel keeps its
+// credentials. Config is the environment's fallback for each field; a value
+// typed into the panel wins.
+const PluginKey = "payments-lemonsqueezy"
+
+var errNotConfigured = errors.New("lemonsqueezy: not set up — activate and configure it under Settings")
+
+// conf is the effective configuration: the last one refresh computed, or
+// Config alone before the first use.
+func (m *Module) conf() *Config {
+	if c := m.live.Load(); c != nil {
+		return c
+	}
+	return &m.cfg
+}
+
+// refresh recomputes the effective configuration — Config with the plugin's
+// settings laid over it — and reports whether the provider can work: switched
+// on, with every required field filled. Called before each use, so a key
+// typed into the panel a moment ago counts without a restart.
+func (m *Module) refresh(ctx context.Context) bool {
+	c := m.cfg
+	on := false
+	if m.app != nil {
+		on, _ = m.app.Plugins().Enabled(ctx, PluginKey)
+		if on {
+			_ = m.app.Plugins().Fill(ctx, PluginKey, &c)
+		}
+	}
+	m.finish(&c)
+	m.live.Store(&c)
+	return on && m.complete(&c)
+}
+
+// Configured implements gocommerce.Configurable.
+func (m *Module) Configured(ctx context.Context) bool { return m.refresh(ctx) }
+
+// complete is whether a configuration has everything the provider needs.
+func (m *Module) complete(c *Config) bool {
+	return strings.TrimSpace(c.APIKey) != "" &&
+		strings.TrimSpace(c.WebhookSecret) != "" &&
+		strings.TrimSpace(c.StoreID) != "" &&
+		strings.TrimSpace(c.VariantID) != ""
+}
+
+// finish fills a configuration's defaults.
+func (m *Module) finish(c *Config) {
+	if c.BaseURL == "" {
+		c.BaseURL = defaultBaseURL
+	}
+}
 
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "payments-lemonsqueezy" }
@@ -120,22 +175,23 @@ func (m *Module) Migrations() []gocommerce.Migration {
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
-	for name, value := range map[string]string{
-		"APIKey":        m.cfg.APIKey,
-		"WebhookSecret": m.cfg.WebhookSecret,
-		"StoreID":       m.cfg.StoreID,
-		"VariantID":     m.cfg.VariantID,
-	} {
-		if strings.TrimSpace(value) == "" {
-			if name == "WebhookSecret" {
-				return errors.New("lemonsqueezy: WebhookSecret is required — without it, anyone could mark orders paid")
-			}
-			return fmt.Errorf("lemonsqueezy: %s is required", name)
-		}
-	}
-	if m.cfg.BaseURL == "" {
-		m.cfg.BaseURL = defaultBaseURL
-	}
+	m.app = app
+	// Config-configured stores start switched on; a store with nothing in
+	// Config starts idle and waits for the panel.
+	inCode := m.complete(&m.cfg)
+	app.RegisterPlugin(gocommerce.PluginDef{
+		Key: PluginKey, Title: "Lemon Squeezy", Category: "payments", DefaultEnabled: inCode,
+		Description: "Checkouts through Lemon Squeezy as merchant of record, each created against one placeholder variant.",
+		Docs:        "https://docs.lemonsqueezy.com/api",
+		Fields: []gocommerce.PluginField{
+			{Key: "api_key", Label: "API key", Kind: "secret", Required: !inCode},
+			{Key: "webhook_secret", Label: "Webhook signing secret", Kind: "secret", Required: !inCode},
+			{Key: "store_id", Label: "Store ID", Kind: "text", Required: !inCode},
+			{Key: "variant_id", Label: "Placeholder variant ID", Kind: "text", Required: !inCode, Help: "The catalogue item every checkout is created against."},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production."},
+		},
+	})
+	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
 		m.client = &http.Client{Timeout: 20 * time.Second}
@@ -156,6 +212,9 @@ func (m *Module) DisplayName() string { return "Lemon Squeezy" }
 
 // Initiate creates a checkout and sends the shopper to its hosted page.
 func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts gocommerce.PayOptions) (gocommerce.PaymentIntent, error) {
+	if !m.refresh(ctx) {
+		return gocommerce.PaymentIntent{}, errNotConfigured
+	}
 	custom := map[string]string{
 		"order_id":     strconv.FormatInt(order.ID, 10),
 		"order_number": order.Number,
@@ -183,8 +242,8 @@ func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts goc
 			"checkout_data": checkoutData,
 		},
 		"relationships": map[string]any{
-			"store":   resource("stores", m.cfg.StoreID),
-			"variant": resource("variants", m.cfg.VariantID),
+			"store":   resource("stores", m.conf().StoreID),
+			"variant": resource("variants", m.conf().VariantID),
 		},
 	}}
 
@@ -220,6 +279,9 @@ func resource(kind, id string) map[string]any {
 
 // Refund implements gocommerce.Refunder.
 func (m *Module) Refund(ctx context.Context, order *gocommerce.Order, amountMinor int64) error {
+	if !m.refresh(ctx) {
+		return errNotConfigured
+	}
 	_, err := m.RefundWithReference(ctx, order, amountMinor)
 	return err
 }
@@ -231,6 +293,9 @@ func (m *Module) Refund(ctx context.Context, order *gocommerce.Order, amountMino
 // refund before that webhook has arrived has nothing to refund against, and
 // says so rather than posting to a URL built from a checkout id.
 func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Order, amountMinor int64) (string, error) {
+	if !m.refresh(ctx) {
+		return "", errNotConfigured
+	}
 	if order.PaymentReference == "" {
 		return "", errors.New("lemonsqueezy: this order has no payment reference to refund")
 	}
@@ -260,12 +325,18 @@ func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Orde
 func (m *Module) Webhook() http.Handler { return http.HandlerFunc(m.handleWebhook) }
 
 func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
+	// A notification for a provider nobody has set up cannot be verified,
+	// and an unverifiable notification is refused.
+	if !m.refresh(r.Context()) {
+		http.Error(w, "payment method not set up", http.StatusServiceUnavailable)
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxWebhookBytes))
 	if err != nil {
 		http.Error(w, "could not read body", http.StatusBadRequest)
 		return
 	}
-	if err := verifySignature(body, r.Header.Get("X-Signature"), m.cfg.WebhookSecret); err != nil {
+	if err := verifySignature(body, r.Header.Get("X-Signature"), m.conf().WebhookSecret); err != nil {
 		m.log.Warn("rejected a Lemon Squeezy webhook", "error", err)
 		http.Error(w, "invalid signature", http.StatusBadRequest)
 		return
@@ -384,11 +455,11 @@ func (m *Module) do(ctx context.Context, method, path string, body any, out any)
 		reader = bytes.NewReader(encoded)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, m.cfg.BaseURL+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, m.conf().BaseURL+path, reader)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+m.cfg.APIKey)
+	req.Header.Set("Authorization", "Bearer "+m.conf().APIKey)
 	req.Header.Set("Accept", mediaType)
 	if body != nil {
 		req.Header.Set("Content-Type", mediaType)

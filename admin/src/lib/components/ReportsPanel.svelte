@@ -29,14 +29,17 @@
     /* embedded: rendered inside the dashboard rather than as a page of its
        own — no page chrome, no NoAccess (the dashboard decides what an
        operator may see), a section heading in place of the title. */
-    let { embedded = false } = $props();
+    /* tiles: the four money tiles above the chart. The dashboard draws its
+       own tile row and asks for the report through onreport instead, so the
+       figure is fetched once and shown once. */
+    let { embedded = false, tiles = true, onreport = null } = $props();
 
     /* The starting size of the best-seller table, not the only one: `limit` is
        a listState key below, so a ten-row top list can be opened out to a
        hundred and the choice rides in the URL with the window and the grain.
        liststate only serialises keys it was declared with, so a size that is
        not in the defaults above cannot reach the request at all. */
-    const PER_PAGE = 10;
+    const PER_PAGE = embedded ? 5 : 10;
 
     /*
      * The operator's own zone, so "today" means their today rather than UTC's.
@@ -114,6 +117,7 @@
                 ),
             ]);
             report = sales;
+            onreport?.(sales);
             top = best.data ?? [];
             topMeta = best.meta ?? null;
         } catch (err) {
@@ -374,11 +378,16 @@
          tabular number, small muted subline, and never a title bar.
          DESIGN.md §7, but on `bg-card` rather than the `bg-background` its
          example prints, so the tiles lift off the page in dark. §2. -->
-    <div class="tw:mb-6 tw:grid tw:grid-cols-2 tw:gap-4 tw:lg:grid-cols-4">
+    {#if tiles}
+    <div class="tw:grid tw:grid-cols-2 tw:gap-4 tw:lg:grid-cols-4 {embedded ? 'tw:mb-3' : 'tw:mb-6'}">
         {#each cards as card (card.label)}
-            <!-- A figure is a fact, not somewhere to go: no link, no hover. -->
+            <!-- A figure is a fact, not somewhere to go: no link, no hover.
+                 On the dashboard the tile is the dashboard's own compact
+                 one, so the two rows of figures read as one set. -->
             <div
-                class="tw:flex tw:min-h-[110px] tw:flex-col tw:justify-between tw:rounded-xl tw:border tw:bg-card tw:p-4 tw:sm:min-h-[130px] tw:sm:p-5"
+                class="tw:flex tw:flex-col tw:justify-between tw:rounded-xl tw:border tw:bg-card {embedded
+                    ? 'tw:min-h-[84px] tw:p-4'
+                    : 'tw:min-h-[110px] tw:p-4 tw:sm:min-h-[130px] tw:sm:p-5'}"
             >
                 <span class="tw:text-xs tw:font-medium tw:tracking-wide tw:text-muted-foreground tw:uppercase">
                     {card.label}
@@ -391,7 +400,7 @@
                              390px phone leave about 125px of inner width,
                              and a five-figure amount does not fit that at
                              3xl. -->
-                        <div class="tw:text-2xl tw:font-bold tw:tracking-tight tw:tabular-nums tw:sm:text-3xl">
+                        <div class="tw:font-bold tw:tracking-tight tw:tabular-nums {embedded ? 'tw:text-xl tw:sm:text-2xl' : 'tw:text-2xl tw:sm:text-3xl'}">
                             {card.value ?? "—"}
                         </div>
                     {/if}
@@ -404,11 +413,12 @@
     {#if totals && (totals.excluded.cancelled.orders || totals.excluded.pending.orders)}
         <!-- What stops an operator asking why this disagrees with the Orders
              list: it disagrees on purpose, and by exactly this much. -->
-        <p class="tw:mb-6 tw:text-xs tw:text-muted-foreground">
+        <p class="tw:text-xs tw:text-muted-foreground {embedded ? 'tw:mb-3' : 'tw:mb-6'}">
             Not counted: {totals.excluded.cancelled.orders} cancelled, and
             {totals.excluded.pending.orders} still in checkout worth
             {formatMoney(totals.excluded.pending.total)}.
         </p>
+    {/if}
     {/if}
 
     {#if currencies.length > 1}
@@ -433,6 +443,7 @@
         {loading}
     />
 
+    {#if !embedded}
     <h2 class="tw:mt-2 tw:mb-3 tw:text-sm tw:font-semibold">By {grain}</h2>
 
     <div class="page-table-wrapper tw:rounded-xl tw:border">
@@ -530,8 +541,9 @@
             </tbody>
         </table>
     </div>
+    {/if}
 
-    <h2 class="tw:mt-8 tw:mb-3 tw:flex tw:flex-wrap tw:items-center tw:gap-2 tw:text-sm tw:font-semibold">
+    <h2 class="tw:mb-3 tw:flex tw:flex-wrap tw:items-center tw:gap-2 tw:text-sm tw:font-semibold {embedded ? 'tw:mt-4' : 'tw:mt-8'}">
         Best sellers
         <button
             type="button"
@@ -647,19 +659,17 @@
         </div>
         {@render body()}
         <div class="reports-embedded-foot tw:text-xs tw:text-muted-foreground">
-            <Pager
-                meta={topMeta}
-                {loading}
-                noun="product"
-                {perPage}
-                onpage={(n) => list.setPage(n)}
-                onperpage={(n) => list.set({ limit: n })}
-            />
-            <div class="flex-fill"></div>
             <span class="txt txt-hint">
                 Confirmed, partly shipped, shipped and delivered orders placed {windowWords}
                 {#if report}· times in {report.time_zone}{/if}
             </span>
+            <div class="flex-fill"></div>
+            <a
+                href="{base}/reports"
+                class="tw:text-xs tw:text-muted-foreground tw:no-underline tw:transition-colors tw:hover:text-foreground"
+            >
+                full report <span aria-hidden="true">→</span>
+            </a>
         </div>
     </section>
 {:else}
@@ -731,7 +741,7 @@
         align-items: center;
         justify-content: space-between;
         gap: 8px 12px;
-        margin-bottom: 12px;
+        margin-bottom: 8px;
     }
     .reports-controls {
         display: flex;
@@ -739,14 +749,18 @@
         align-items: center;
         gap: 8px;
     }
+    /* PocketBase's .field is a block; here each is one control in a row. */
     .reports-controls :global(.field) {
         margin: 0;
+        width: auto;
+        min-width: 150px;
+        flex: 0 0 auto;
     }
     .reports-embedded-foot {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
         gap: 8px 16px;
-        padding-top: 12px;
+        padding-top: 8px;
     }
 </style>

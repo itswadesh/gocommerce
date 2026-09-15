@@ -72,6 +72,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/misiki/gocommerce/core"
@@ -96,12 +97,12 @@ const (
 type Address struct {
 	FirstName        string
 	LastName         string
-	Firm             string
-	StreetAddress    string
-	SecondaryAddress string
-	City             string
-	State            string
-	ZIPCode          string
+	Firm             string `plugin:"from_firm"`
+	StreetAddress    string `plugin:"from_street_address"`
+	SecondaryAddress string `plugin:"from_secondary_address"`
+	City             string `plugin:"from_city"`
+	State            string `plugin:"from_state"`
+	ZIPCode          string `plugin:"from_zip_code"`
 	ZIPPlus4         string
 	Phone            string
 }
@@ -110,40 +111,45 @@ type Address struct {
 type Config struct {
 	// ClientID and ClientSecret are the consumer key and secret of a USPS
 	// developer application. Required.
-	ClientID, ClientSecret string
+	ClientID     string `plugin:"client_id"`
+	ClientSecret string `plugin:"client_secret"`
 	// CRID, MID and AccountNumber identify who is paying. All three come from
 	// the Business Customer Gateway, and all three are required: the payment
 	// authorization call is what mints the second token, and it will not mint
 	// one for an incomplete set.
-	CRID, MID, AccountNumber string
+	CRID          string `plugin:"crid"`
+	MID           string `plugin:"mid"`
+	AccountNumber string `plugin:"account_number"`
 	// ManifestMID is the MID that manifests the shipment. Defaults to MID,
 	// which is right for a store with one mailer id.
-	ManifestMID string
+	ManifestMID string `plugin:"manifest_mid"`
 	// AccountType is the payment account behind the label. "EPS" — Enterprise
 	// Payment System — is the only one most stores have, and the default.
-	AccountType string
+	AccountType string `plugin:"account_type"`
 	// From is where parcels are posted from. Required.
 	From Address
 	// MailClass is the service to buy: USPS_GROUND_ADVANTAGE, PRIORITY_MAIL,
 	// PRIORITY_MAIL_EXPRESS and the rest. Required as the default; a shipment
 	// can override it with Meta["mail_class"].
-	MailClass string
+	MailClass string `plugin:"mail_class"`
 	// RateIndicator is the rate band. "SP" — single piece — is what an
 	// ordinary retail parcel is, and the default.
-	RateIndicator string
+	RateIndicator string `plugin:"rate_indicator"`
 	// ProcessingCategory is how the item runs through the network:
 	// MACHINABLE, IRREGULAR, NON_MACHINABLE, LETTERS, FLATS. Defaults to
 	// MACHINABLE.
-	ProcessingCategory string
+	ProcessingCategory string `plugin:"processing_category"`
 	// DefaultWeightGrams is the last resort, per unit, for a parcel the engine
 	// could not weigh. A fully weighed catalogue never reaches it.
-	DefaultWeightGrams int
+	DefaultWeightGrams int `plugin:"default_weight_grams"`
 	// DefaultLengthMM and friends are the box used when the engine has no
 	// unambiguous size — which is any parcel holding more than a single unit.
 	// See gocommerce.Parcel.
-	DefaultLengthMM, DefaultWidthMM, DefaultHeightMM int
+	DefaultLengthMM int
+	DefaultWidthMM  int
+	DefaultHeightMM int
 	// BaseURL overrides the endpoint, for tests.
-	BaseURL string
+	BaseURL string `plugin:"base_url"`
 	// Client overrides the HTTP client.
 	Client *http.Client
 }
@@ -151,6 +157,8 @@ type Config struct {
 // Module is the USPS fulfillment provider.
 type Module struct {
 	cfg    Config
+	live   atomic.Pointer[Config]
+	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
 	db     *sql.DB
@@ -164,6 +172,81 @@ type Module struct {
 
 // New constructs the module.
 func New(cfg Config) *Module { return &Module{cfg: cfg} }
+
+// PluginKey is the plugin this module registers, where the panel keeps its
+// credentials. Config is the environment's fallback for each field; a value
+// typed into the panel wins.
+const PluginKey = "shipping-usps"
+
+var errNotConfigured = errors.New("usps: not set up — activate and configure it under Settings")
+
+// conf is the effective configuration: the last one refresh computed, or
+// Config alone before the first use.
+func (m *Module) conf() *Config {
+	if c := m.live.Load(); c != nil {
+		return c
+	}
+	return &m.cfg
+}
+
+// refresh recomputes the effective configuration — Config with the plugin's
+// settings laid over it — and reports whether the provider can work: switched
+// on, with every required field filled. Called before each use, so a key
+// typed into the panel a moment ago counts without a restart.
+func (m *Module) refresh(ctx context.Context) bool {
+	c := m.cfg
+	on := false
+	if m.app != nil {
+		on, _ = m.app.Plugins().Enabled(ctx, PluginKey)
+		if on {
+			_ = m.app.Plugins().Fill(ctx, PluginKey, &c)
+		}
+	}
+	m.finish(&c)
+	m.live.Store(&c)
+	return on && m.complete(&c)
+}
+
+// Configured implements gocommerce.Configurable.
+func (m *Module) Configured(ctx context.Context) bool { return m.refresh(ctx) }
+
+// complete is whether a configuration has everything the provider needs.
+func (m *Module) complete(c *Config) bool {
+	return strings.TrimSpace(c.ClientID) != "" &&
+		strings.TrimSpace(c.ClientSecret) != "" &&
+		strings.TrimSpace(c.CRID) != "" &&
+		strings.TrimSpace(c.MID) != "" &&
+		strings.TrimSpace(c.AccountNumber) != "" &&
+		strings.TrimSpace(c.MailClass) != "" &&
+		strings.TrimSpace(c.From.StreetAddress) != "" &&
+		strings.TrimSpace(c.From.ZIPCode) != ""
+}
+
+// finish fills a configuration's defaults.
+func (m *Module) finish(c *Config) {
+	if c.BaseURL == "" {
+		c.BaseURL = defaultBaseURL
+	}
+	c.BaseURL = strings.TrimRight(c.BaseURL, "/")
+	if c.ManifestMID == "" {
+		c.ManifestMID = c.MID
+	}
+	if c.AccountType == "" {
+		c.AccountType = "EPS"
+	}
+	if c.RateIndicator == "" {
+		c.RateIndicator = "SP"
+	}
+	if c.ProcessingCategory == "" {
+		c.ProcessingCategory = "MACHINABLE"
+	}
+	if c.DefaultWeightGrams <= 0 {
+		c.DefaultWeightGrams = 500
+	}
+	if c.DefaultLengthMM <= 0 {
+		c.DefaultLengthMM, c.DefaultWidthMM, c.DefaultHeightMM = 230, 150, 50
+	}
+}
 
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "fulfill-usps" }
@@ -190,44 +273,36 @@ func (m *Module) Migrations() []gocommerce.Migration {
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
-	for name, value := range map[string]string{
-		"ClientID":      m.cfg.ClientID,
-		"ClientSecret":  m.cfg.ClientSecret,
-		"CRID":          m.cfg.CRID,
-		"MID":           m.cfg.MID,
-		"AccountNumber": m.cfg.AccountNumber,
-		"MailClass":     m.cfg.MailClass,
-	} {
-		if strings.TrimSpace(value) == "" {
-			return fmt.Errorf("usps: %s is required", name)
-		}
-	}
-	if strings.TrimSpace(m.cfg.From.StreetAddress) == "" || strings.TrimSpace(m.cfg.From.ZIPCode) == "" {
-		return errors.New("usps: From needs at least a street address and a ZIP code — an order knows where it is going, never where it came from")
-	}
-
-	if m.cfg.BaseURL == "" {
-		m.cfg.BaseURL = defaultBaseURL
-	}
-	m.cfg.BaseURL = strings.TrimRight(m.cfg.BaseURL, "/")
-	if m.cfg.ManifestMID == "" {
-		m.cfg.ManifestMID = m.cfg.MID
-	}
-	if m.cfg.AccountType == "" {
-		m.cfg.AccountType = "EPS"
-	}
-	if m.cfg.RateIndicator == "" {
-		m.cfg.RateIndicator = "SP"
-	}
-	if m.cfg.ProcessingCategory == "" {
-		m.cfg.ProcessingCategory = "MACHINABLE"
-	}
-	if m.cfg.DefaultWeightGrams <= 0 {
-		m.cfg.DefaultWeightGrams = 500
-	}
-	if m.cfg.DefaultLengthMM <= 0 {
-		m.cfg.DefaultLengthMM, m.cfg.DefaultWidthMM, m.cfg.DefaultHeightMM = 230, 150, 50
-	}
+	m.app = app
+	// Config-configured stores start switched on; a store with nothing in
+	// Config starts idle and waits for the panel.
+	inCode := m.complete(&m.cfg)
+	app.RegisterPlugin(gocommerce.PluginDef{
+		Key: PluginKey, Title: "USPS", Category: "shipping", DefaultEnabled: inCode,
+		Description: "USPS labels bought directly through the USPS APIs and served to print, on an Enterprise Payment account.",
+		Docs:        "https://developer.usps.com/",
+		Fields: []gocommerce.PluginField{
+			{Key: "client_id", Label: "Client ID", Kind: "text", Required: !inCode, Help: "The consumer key of a USPS developer application."},
+			{Key: "client_secret", Label: "Client secret", Kind: "secret", Required: !inCode},
+			{Key: "crid", Label: "CRID", Kind: "text", Required: !inCode, Help: "From the Business Customer Gateway."},
+			{Key: "mid", Label: "MID", Kind: "text", Required: !inCode, Help: "From the Business Customer Gateway."},
+			{Key: "account_number", Label: "Payment account number", Kind: "text", Required: !inCode},
+			{Key: "manifest_mid", Label: "Manifest MID", Kind: "text", Help: "Defaults to the MID."},
+			{Key: "account_type", Label: "Account type", Kind: "text", Help: "EPS, for nearly every store.", Default: "EPS"},
+			{Key: "mail_class", Label: "Mail class", Kind: "text", Required: !inCode, Help: "USPS_GROUND_ADVANTAGE, PRIORITY_MAIL, PRIORITY_MAIL_EXPRESS; a shipment can override it."},
+			{Key: "rate_indicator", Label: "Rate indicator", Kind: "text", Help: "SP, single piece, for an ordinary retail parcel.", Default: "SP"},
+			{Key: "processing_category", Label: "Processing category", Kind: "text", Help: "MACHINABLE, IRREGULAR, NON_MACHINABLE, LETTERS, FLATS.", Default: "MACHINABLE"},
+			{Key: "from_street_address", Label: "From: street address", Kind: "text", Required: !inCode, Help: "Where parcels are posted from."},
+			{Key: "from_secondary_address", Label: "From: unit, suite", Kind: "text"},
+			{Key: "from_city", Label: "From: city", Kind: "text"},
+			{Key: "from_state", Label: "From: state", Kind: "text"},
+			{Key: "from_zip_code", Label: "From: ZIP code", Kind: "text", Required: !inCode},
+			{Key: "from_firm", Label: "From: firm", Kind: "text"},
+			{Key: "default_weight_grams", Label: "Default weight (grams)", Kind: "number", Help: "Per unit, for a variant with no weight recorded.", Default: 500},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production."},
+		},
+	})
+	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
 		m.client = &http.Client{Timeout: 45 * time.Second}
@@ -247,14 +322,20 @@ func (m *Module) Register(app *gocommerce.App) error {
 // Code implements gocommerce.FulfillmentProvider.
 func (m *Module) Code() string { return "usps" }
 
+// DisplayName implements gocommerce.Named.
+func (m *Module) DisplayName() string { return "USPS" }
+
 // Ship buys a label and returns its tracking number.
 //
 // It runs before the engine opens its transaction, so USPS having a slow minute
 // never holds a lock on the orders table.
 func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommerce.ShipRequest) (gocommerce.Shipment, error) {
+	if !m.refresh(ctx) {
+		return gocommerce.Shipment{}, errNotConfigured
+	}
 	body := map[string]any{
 		"imageInfo":          map[string]any{"imageType": "PDF", "labelType": "4X6LABEL"},
-		"fromAddress":        addressBody(m.cfg.From),
+		"fromAddress":        addressBody(m.conf().From),
 		"toAddress":          toAddress(order),
 		"packageDescription": m.packageBody(order, req),
 	}
@@ -416,23 +497,23 @@ func (m *Module) packageBody(order *gocommerce.Order, req gocommerce.ShipRequest
 		units += line.Quantity
 	}
 
-	grams := m.cfg.DefaultWeightGrams * max(units, 1)
+	grams := m.conf().DefaultWeightGrams * max(units, 1)
 	if req.Parcel.Measured && req.Parcel.WeightGrams > 0 {
 		grams = req.Parcel.WeightGrams
 	}
 
 	return map[string]any{
-		"mailClass":                    firstNonEmpty(req.Meta["mail_class"], m.cfg.MailClass),
-		"rateIndicator":                firstNonEmpty(req.Meta["rate_indicator"], m.cfg.RateIndicator),
-		"processingCategory":           m.cfg.ProcessingCategory,
+		"mailClass":                    firstNonEmpty(req.Meta["mail_class"], m.conf().MailClass),
+		"rateIndicator":                firstNonEmpty(req.Meta["rate_indicator"], m.conf().RateIndicator),
+		"processingCategory":           m.conf().ProcessingCategory,
 		"destinationEntryFacilityType": "NONE",
 		"mailingDate":                  time.Now().UTC().Format("2006-01-02"),
 		"weightUOM":                    "lb",
 		"weight":                       pounds(grams),
 		"dimensionsUOM":                "in",
-		"length":                       inches(req.Parcel.Dimensions.Length, m.cfg.DefaultLengthMM),
-		"width":                        inches(req.Parcel.Dimensions.Width, m.cfg.DefaultWidthMM),
-		"height":                       inches(req.Parcel.Dimensions.Height, m.cfg.DefaultHeightMM),
+		"length":                       inches(req.Parcel.Dimensions.Length, m.conf().DefaultLengthMM),
+		"width":                        inches(req.Parcel.Dimensions.Width, m.conf().DefaultWidthMM),
+		"height":                       inches(req.Parcel.Dimensions.Height, m.conf().DefaultHeightMM),
 	}
 }
 
@@ -468,8 +549,8 @@ func (m *Module) bearerToken(ctx context.Context) (string, error) {
 		ExpiresIn   int    `json:"expires_in"`
 	}
 	if err := m.call(ctx, http.MethodPost, "/oauth2/v3/token", map[string]any{
-		"client_id":     m.cfg.ClientID,
-		"client_secret": m.cfg.ClientSecret,
+		"client_id":     m.conf().ClientID,
+		"client_secret": m.conf().ClientSecret,
 		"grant_type":    "client_credentials",
 	}, nil, &out); err != nil {
 		return "", err
@@ -505,11 +586,11 @@ func (m *Module) paymentToken(ctx context.Context) (string, error) {
 	role := func(name string) map[string]any {
 		return map[string]any{
 			"roleName":      name,
-			"CRID":          m.cfg.CRID,
-			"MID":           m.cfg.MID,
-			"manifestMID":   m.cfg.ManifestMID,
-			"accountType":   m.cfg.AccountType,
-			"accountNumber": m.cfg.AccountNumber,
+			"CRID":          m.conf().CRID,
+			"MID":           m.conf().MID,
+			"manifestMID":   m.conf().ManifestMID,
+			"accountType":   m.conf().AccountType,
+			"accountNumber": m.conf().AccountNumber,
 		}
 	}
 
@@ -550,7 +631,7 @@ func (m *Module) call(ctx context.Context, method, path string, payload any,
 	if err != nil {
 		return fmt.Errorf("usps: could not encode the request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, m.cfg.BaseURL+path, bytes.NewReader(encoded))
+	req, err := http.NewRequestWithContext(ctx, method, m.conf().BaseURL+path, bytes.NewReader(encoded))
 	if err != nil {
 		return err
 	}

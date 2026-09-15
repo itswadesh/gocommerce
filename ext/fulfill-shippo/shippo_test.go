@@ -1,9 +1,11 @@
 package shippo
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 
@@ -112,25 +114,6 @@ func newApp(t *testing.T, cfg Config) (*gocommerce.App, *stub) {
 		}
 	}
 	return gctest.New(t, New(cfg)), st
-}
-
-func TestRegisterRequiresConfiguration(t *testing.T) {
-	t.Parallel()
-
-	from := Address{Street1: "1 A St", Country: "US"}
-	for _, cfg := range []Config{
-		{},
-		{APIKey: "k"},
-		{APIKey: "k", CarrierAccount: "a"},
-		{APIKey: "k", CarrierAccount: "a", ServicelevelToken: "usps_priority"}, // no From
-		{APIKey: "k", CarrierAccount: "a", ServicelevelToken: "usps_priority",
-			From: Address{Street1: "1 A St"}}, // no country
-		{APIKey: "k", CarrierAccount: "a", From: from}, // no service level
-	} {
-		if err := New(cfg).Register(nil); err == nil {
-			t.Errorf("Register accepted an incomplete config: %+v", cfg)
-		}
-	}
 }
 
 // The module's reason to exist: a measured variant reaches the carrier as its
@@ -279,4 +262,41 @@ func TestCarrierFor(t *testing.T) {
 			t.Errorf("carrierFor(%q) = %q, want %q", token, got, want)
 		}
 	}
+}
+
+// TestInstalledIdleUntilConfigured: with nothing in Config the module still
+// registers — the panel lists it — but the settings say it is not set up and
+// nothing can be sent through it, until its fields are typed into the plugin.
+func TestInstalledIdleUntilConfigured(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	ctx := context.Background()
+
+	var info *gocommerce.ProviderInfo
+	for _, p := range app.Settings().FulfillmentProviders {
+		if p.Code == "shippo" {
+			p := p
+			info = &p
+		}
+	}
+	if info == nil {
+		t.Fatal("an idle module should still be listed in the settings")
+	}
+	if info.Configured {
+		t.Fatalf("configured = %v before anything was typed in", info.Configured)
+	}
+	result := gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
+	if _, err := app.Ship().Create(ctx, result.Order.ID, "shippo", gocommerce.ShipRequest{Tracking: "T-1"}); err == nil || !strings.Contains(err.Error(), "not set up") {
+		t.Fatalf("shipping through an idle provider = %v, want a refusal that says it is not set up", err)
+	}
+
+	on := true
+	if _, err := app.Plugins().Update(ctx, PluginKey, gocommerce.PluginPatch{Enabled: &on, Settings: map[string]any{"api_key": "k-1", "carrier_account": "ca-1", "servicelevel_token": "usps_priority", "from_street1": "1 Ship St", "from_country": "US"}}); err != nil {
+		t.Fatalf("configure from the panel: %v", err)
+	}
+	for _, p := range app.Settings().FulfillmentProviders {
+		if p.Code == "shippo" && !p.Configured {
+			t.Fatal("configured from the panel, the settings should say so")
+		}
+	}
+
 }

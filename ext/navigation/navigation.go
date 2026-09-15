@@ -113,6 +113,32 @@ CREATE TABLE navigation_items (
 );
 CREATE INDEX navigation_items_menu_idx ON navigation_items (menu_id, parent_id, position);
 `,
+	}, {
+		// A store has a header and a footer from day one, as a Shopify store
+		// has a main menu and a footer menu: a storefront can ask for them by
+		// handle before anyone has opened the Menus screen. Only where none
+		// exist — a store that already built its own keeps them.
+		ID: "0002_default_menus",
+		SQL: `
+INSERT INTO navigation_menus (handle, title)
+SELECT 'header', 'Header'
+WHERE NOT EXISTS (SELECT 1 FROM navigation_menus WHERE handle = 'header');
+INSERT INTO navigation_menus (handle, title)
+SELECT 'footer', 'Footer'
+WHERE NOT EXISTS (SELECT 1 FROM navigation_menus WHERE handle = 'footer');
+INSERT INTO navigation_items (menu_id, title, kind, target, position)
+SELECT m.id, v.title, v.kind, v.target, v.position
+FROM navigation_menus m
+JOIN (VALUES ('Home', 'home', '', 0), ('Shop', 'url', '/products', 1), ('Contact', 'url', '/contact', 2))
+    AS v (title, kind, target, position) ON true
+WHERE m.handle = 'header' AND NOT EXISTS (SELECT 1 FROM navigation_items i WHERE i.menu_id = m.id);
+INSERT INTO navigation_items (menu_id, title, kind, target, position)
+SELECT m.id, v.title, v.kind, v.target, v.position
+FROM navigation_menus m
+JOIN (VALUES ('Search', 'url', '/search', 0), ('Contact us', 'url', '/contact', 1), ('Privacy policy', 'url', '/pages/privacy', 2))
+    AS v (title, kind, target, position) ON true
+WHERE m.handle = 'footer' AND NOT EXISTS (SELECT 1 FROM navigation_items i WHERE i.menu_id = m.id);
+`,
 	}}
 }
 

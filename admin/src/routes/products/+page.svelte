@@ -14,6 +14,7 @@
      */
     import { untrack } from "svelte";
     import { base } from "$app/paths";
+    import { page } from "$app/state";
     import { goto } from "$app/navigation";
     import { api, can, query, request } from "$lib/api.js";
     import { rowKey } from "$lib/rowkey.js";
@@ -464,6 +465,17 @@
         errors = {};
         createOpen = true;
     }
+
+    /* /products?new=1 — the Home screen's Add product — lands with the
+       drawer already open. Once: the parameter is a request, not a state. */
+    let openedFromURL = false;
+    $effect(() => {
+        if (openedFromURL || !writable) return;
+        if (page.url.searchParams.get("new") === "1") {
+            openedFromURL = true;
+            openCreate();
+        }
+    });
 
     /**
      * A row click opens the product. The title is also a real link, which is

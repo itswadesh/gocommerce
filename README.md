@@ -101,6 +101,8 @@ graph):
 | `payments-revenuecat` | Web Billing purchase links; digital goods, no refund API |
 | `notify-sendgrid` | The store's email through SendGrid — the key from the environment or from Notifications › Setup Email, the wording from the panel |
 | `notify-msg91` | The store's SMS through MSG91's DLT templates — the key and the template ids from the environment or from Notifications › Setup SMS |
+
+Every gateway and carrier module installs idle: `-gateways` and `-carriers` put all of them in the binary with nothing in Config, and Settings › Payment methods and Settings › Shipping providers switch each one on and take its keys. A store that prefers the environment wires the module itself with a Config.
 | `fulfill-shiprocket` | Booking shipments and waybills, India |
 | `fulfill-delhivery` | Manifesting parcels with Delhivery |
 | `fulfill-nimbuspost` | NimbusPost's courier aggregation |

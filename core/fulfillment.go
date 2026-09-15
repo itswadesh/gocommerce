@@ -50,6 +50,9 @@ func (f *Fulfillments) Create(ctx context.Context, orderID int64, providerCode s
 	if !ok {
 		return nil, NotFoundf("no fulfillment provider named %q", providerCode)
 	}
+	if !configured(ctx, provider) {
+		return nil, Conflictf("fulfillment provider %q is not set up — activate and configure it under Settings › Shipping providers", providerCode)
+	}
 
 	order, err := f.app.orders.Get(ctx, orderID)
 	if err != nil {

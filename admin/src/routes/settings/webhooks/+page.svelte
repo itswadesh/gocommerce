@@ -33,7 +33,6 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
-    import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
 
     /* Display only, and a copy of the module's own maxAttempts. The API reports
        what a row has spent, not the budget it was given — "3" alone says
@@ -192,7 +191,6 @@
     <NoAccess right="store.operate" what="webhooks" />
 {:else}
     <div class="page page-webhooks shopify-skin">
-        <SettingsSidebar />
 
         <div class="page-content full-height tw:bg-background tw:text-foreground">
             <header class="page-header">

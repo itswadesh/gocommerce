@@ -14895,6 +14895,10 @@
             "type": "string",
             "description": "Which module installed it. \"core\" is a built-in.",
             "example": "core"
+          },
+          "configured": {
+            "type": "boolean",
+            "description": "Whether the provider can be used right now. False for a module installed idle whose key has not been typed into the Plugins screen yet; such a provider is listed here and offered nowhere."
           }
         }
       },

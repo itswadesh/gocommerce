@@ -1,6 +1,7 @@
 package nimbuspost
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -94,20 +95,6 @@ func newApp(t *testing.T, cfg Config, shape func(*stub)) (*gocommerce.App, *stub
 		cfg.WarehouseName = "Primary"
 	}
 	return gctest.New(t, New(cfg)), st
-}
-
-func TestRegisterRequiresConfiguration(t *testing.T) {
-	t.Parallel()
-
-	for _, cfg := range []Config{
-		{},
-		{Email: "a@b.test"},
-		{Email: "a@b.test", Password: "p"},
-	} {
-		if err := New(cfg).Register(nil); err == nil {
-			t.Errorf("Register accepted an incomplete config: %+v", cfg)
-		}
-	}
 }
 
 // The module's reason to exist, and the aggregator part of it: the carrier is
@@ -272,4 +259,41 @@ func TestMessage(t *testing.T) {
 			t.Errorf("message(%q) = %q, want %q", tc.raw, got, tc.want)
 		}
 	}
+}
+
+// TestInstalledIdleUntilConfigured: with nothing in Config the module still
+// registers — the panel lists it — but the settings say it is not set up and
+// nothing can be sent through it, until its fields are typed into the plugin.
+func TestInstalledIdleUntilConfigured(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	ctx := context.Background()
+
+	var info *gocommerce.ProviderInfo
+	for _, p := range app.Settings().FulfillmentProviders {
+		if p.Code == "nimbuspost" {
+			p := p
+			info = &p
+		}
+	}
+	if info == nil {
+		t.Fatal("an idle module should still be listed in the settings")
+	}
+	if info.Configured {
+		t.Fatalf("configured = %v before anything was typed in", info.Configured)
+	}
+	result := gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
+	if _, err := app.Ship().Create(ctx, result.Order.ID, "nimbuspost", gocommerce.ShipRequest{Tracking: "T-1"}); err == nil || !strings.Contains(err.Error(), "not set up") {
+		t.Fatalf("shipping through an idle provider = %v, want a refusal that says it is not set up", err)
+	}
+
+	on := true
+	if _, err := app.Plugins().Update(ctx, PluginKey, gocommerce.PluginPatch{Enabled: &on, Settings: map[string]any{"email": "ops@example.com", "password": "pw", "warehouse_name": "Main"}}); err != nil {
+		t.Fatalf("configure from the panel: %v", err)
+	}
+	for _, p := range app.Settings().FulfillmentProviders {
+		if p.Code == "nimbuspost" && !p.Configured {
+			t.Fatal("configured from the panel, the settings should say so")
+		}
+	}
+
 }

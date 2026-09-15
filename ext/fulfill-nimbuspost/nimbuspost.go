@@ -45,6 +45,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/misiki/gocommerce/core"
@@ -63,32 +64,35 @@ const (
 type Config struct {
 	// Email and Password are the NimbusPost account's credentials. Required:
 	// the API has no long-lived key, only a login that mints a token.
-	Email, Password string
+	Email    string `plugin:"email"`
+	Password string `plugin:"password"`
 	// WarehouseName is the nickname of the pickup warehouse registered with
 	// NimbusPost. Required — the carrier has to collect the parcel somewhere.
-	WarehouseName string
+	WarehouseName string `plugin:"warehouse_name"`
 	// Pickup is the pickup address sent with each shipment. NimbusPost matches
 	// the warehouse by name; these fields are what gets printed, and leaving
 	// them empty leans on whatever the dashboard holds.
-	PickupName    string
-	PickupAddress string
-	PickupCity    string
-	PickupState   string
-	PickupPincode string
-	PickupPhone   string
+	PickupName    string `plugin:"pickup_name"`
+	PickupAddress string `plugin:"pickup_address"`
+	PickupCity    string `plugin:"pickup_city"`
+	PickupState   string `plugin:"pickup_state"`
+	PickupPincode string `plugin:"pickup_pincode"`
+	PickupPhone   string `plugin:"pickup_phone"`
 	// AutoPickup asks NimbusPost to raise the pickup request with the courier
 	// as part of booking. Off by default, because scheduling a van is a
 	// decision about somebody's afternoon.
-	AutoPickup bool
+	AutoPickup bool `plugin:"auto_pickup"`
 	// DefaultWeightGrams is the last resort, per unit, for a parcel the engine
 	// could not weigh. A fully weighed catalogue never reaches it.
-	DefaultWeightGrams int
+	DefaultWeightGrams int `plugin:"default_weight_grams"`
 	// DefaultLengthCM and friends are the box used when the engine has no
 	// unambiguous size — which is any parcel holding more than a single unit.
 	// See gocommerce.Parcel.
-	DefaultLengthCM, DefaultBreadthCM, DefaultHeightCM float64
+	DefaultLengthCM  float64
+	DefaultBreadthCM float64
+	DefaultHeightCM  float64
 	// BaseURL overrides the endpoint, for tests.
-	BaseURL string
+	BaseURL string `plugin:"base_url"`
 	// Client overrides the HTTP client.
 	Client *http.Client
 }
@@ -96,6 +100,8 @@ type Config struct {
 // Module is the NimbusPost fulfillment provider.
 type Module struct {
 	cfg    Config
+	live   atomic.Pointer[Config]
+	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
 
@@ -107,6 +113,64 @@ type Module struct {
 // New constructs the module.
 func New(cfg Config) *Module { return &Module{cfg: cfg} }
 
+// PluginKey is the plugin this module registers, where the panel keeps its
+// credentials. Config is the environment's fallback for each field; a value
+// typed into the panel wins.
+const PluginKey = "shipping-nimbuspost"
+
+var errNotConfigured = errors.New("nimbuspost: not set up — activate and configure it under Settings")
+
+// conf is the effective configuration: the last one refresh computed, or
+// Config alone before the first use.
+func (m *Module) conf() *Config {
+	if c := m.live.Load(); c != nil {
+		return c
+	}
+	return &m.cfg
+}
+
+// refresh recomputes the effective configuration — Config with the plugin's
+// settings laid over it — and reports whether the provider can work: switched
+// on, with every required field filled. Called before each use, so a key
+// typed into the panel a moment ago counts without a restart.
+func (m *Module) refresh(ctx context.Context) bool {
+	c := m.cfg
+	on := false
+	if m.app != nil {
+		on, _ = m.app.Plugins().Enabled(ctx, PluginKey)
+		if on {
+			_ = m.app.Plugins().Fill(ctx, PluginKey, &c)
+		}
+	}
+	m.finish(&c)
+	m.live.Store(&c)
+	return on && m.complete(&c)
+}
+
+// Configured implements gocommerce.Configurable.
+func (m *Module) Configured(ctx context.Context) bool { return m.refresh(ctx) }
+
+// complete is whether a configuration has everything the provider needs.
+func (m *Module) complete(c *Config) bool {
+	return strings.TrimSpace(c.Email) != "" &&
+		strings.TrimSpace(c.Password) != "" &&
+		strings.TrimSpace(c.WarehouseName) != ""
+}
+
+// finish fills a configuration's defaults.
+func (m *Module) finish(c *Config) {
+	if c.BaseURL == "" {
+		c.BaseURL = defaultBaseURL
+	}
+	c.BaseURL = strings.TrimRight(c.BaseURL, "/")
+	if c.DefaultWeightGrams <= 0 {
+		c.DefaultWeightGrams = 500
+	}
+	if c.DefaultLengthCM <= 0 {
+		c.DefaultLengthCM, c.DefaultBreadthCM, c.DefaultHeightCM = 15, 15, 10
+	}
+}
+
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "fulfill-nimbuspost" }
 
@@ -116,24 +180,30 @@ func (m *Module) Migrations() []gocommerce.Migration { return nil }
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
-	switch {
-	case strings.TrimSpace(m.cfg.Email) == "":
-		return errors.New("nimbuspost: Email is required")
-	case strings.TrimSpace(m.cfg.Password) == "":
-		return errors.New("nimbuspost: Password is required")
-	case strings.TrimSpace(m.cfg.WarehouseName) == "":
-		return errors.New("nimbuspost: WarehouseName is required — the carrier has to collect the parcel somewhere, and the name must match the warehouse registered with NimbusPost")
-	}
-	if m.cfg.BaseURL == "" {
-		m.cfg.BaseURL = defaultBaseURL
-	}
-	m.cfg.BaseURL = strings.TrimRight(m.cfg.BaseURL, "/")
-	if m.cfg.DefaultWeightGrams <= 0 {
-		m.cfg.DefaultWeightGrams = 500
-	}
-	if m.cfg.DefaultLengthCM <= 0 {
-		m.cfg.DefaultLengthCM, m.cfg.DefaultBreadthCM, m.cfg.DefaultHeightCM = 15, 15, 10
-	}
+	m.app = app
+	// Config-configured stores start switched on; a store with nothing in
+	// Config starts idle and waits for the panel.
+	inCode := m.complete(&m.cfg)
+	app.RegisterPlugin(gocommerce.PluginDef{
+		Key: PluginKey, Title: "NimbusPost", Category: "shipping", DefaultEnabled: inCode,
+		Description: "NimbusPost's courier aggregation, India: one login books across the couriers it holds.",
+		Docs:        "https://documentation.nimbuspost.com/",
+		Fields: []gocommerce.PluginField{
+			{Key: "email", Label: "Account email", Kind: "text", Required: !inCode, Help: "The API user's login."},
+			{Key: "password", Label: "Account password", Kind: "secret", Required: !inCode, Help: "The API has no long-lived key, only a login that mints a token."},
+			{Key: "warehouse_name", Label: "Warehouse name", Kind: "text", Required: !inCode, Help: "The pickup warehouse registered with NimbusPost, matched exactly."},
+			{Key: "pickup_name", Label: "Pickup: name", Kind: "text"},
+			{Key: "pickup_address", Label: "Pickup: address", Kind: "text"},
+			{Key: "pickup_city", Label: "Pickup: city", Kind: "text"},
+			{Key: "pickup_state", Label: "Pickup: state", Kind: "text"},
+			{Key: "pickup_pincode", Label: "Pickup: pincode", Kind: "text"},
+			{Key: "pickup_phone", Label: "Pickup: phone", Kind: "text"},
+			{Key: "auto_pickup", Label: "Raise the pickup request while booking", Kind: "bool", Help: "Scheduling a van is a decision about somebody's afternoon; off by default."},
+			{Key: "default_weight_grams", Label: "Default weight (grams)", Kind: "number", Help: "Per unit, for a variant with no weight recorded.", Default: 500},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production."},
+		},
+	})
+	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
 		m.client = &http.Client{Timeout: 30 * time.Second}
@@ -147,11 +217,17 @@ func (m *Module) Register(app *gocommerce.App) error {
 // Code implements gocommerce.FulfillmentProvider.
 func (m *Module) Code() string { return "nimbuspost" }
 
+// DisplayName implements gocommerce.Named.
+func (m *Module) DisplayName() string { return "NimbusPost" }
+
 // Ship books the shipment and returns the waybill the chosen courier assigned.
 //
 // It runs before the engine opens its transaction, so a carrier having a slow
 // minute never holds a lock on the orders table.
 func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommerce.ShipRequest) (gocommerce.Shipment, error) {
+	if !m.refresh(ctx) {
+		return gocommerce.Shipment{}, errNotConfigured
+	}
 	var out struct {
 		Data struct {
 			OrderID     json.Number `json:"order_id"`
@@ -224,7 +300,7 @@ func (m *Module) shipmentBody(order *gocommerce.Order, req gocommerce.ShipReques
 	}
 
 	autoPickup := "no"
-	if m.cfg.AutoPickup {
+	if m.conf().AutoPickup {
 		autoPickup = "yes"
 	}
 
@@ -233,9 +309,9 @@ func (m *Module) shipmentBody(order *gocommerce.Order, req gocommerce.ShipReques
 		"payment_type":        paymentType,
 		"order_amount":        float64(valueMinor) / 100,
 		"package_weight":      m.weight(req, units),
-		"package_length":      m.side(req.Parcel.Dimensions.Length, m.cfg.DefaultLengthCM),
-		"package_breadth":     m.side(req.Parcel.Dimensions.Width, m.cfg.DefaultBreadthCM),
-		"package_height":      m.side(req.Parcel.Dimensions.Height, m.cfg.DefaultHeightCM),
+		"package_length":      m.side(req.Parcel.Dimensions.Length, m.conf().DefaultLengthCM),
+		"package_breadth":     m.side(req.Parcel.Dimensions.Width, m.conf().DefaultBreadthCM),
+		"package_height":      m.side(req.Parcel.Dimensions.Height, m.conf().DefaultHeightCM),
 		"request_auto_pickup": autoPickup,
 		"consignee": map[string]any{
 			"name":      firstNonEmpty(addr.Name, order.Name, "Customer"),
@@ -247,13 +323,13 @@ func (m *Module) shipmentBody(order *gocommerce.Order, req gocommerce.ShipReques
 			"phone":     firstNonEmpty(addr.Phone, order.Phone),
 		},
 		"pickup": map[string]any{
-			"warehouse_name": m.cfg.WarehouseName,
-			"name":           firstNonEmpty(m.cfg.PickupName, m.cfg.WarehouseName),
-			"address":        m.cfg.PickupAddress,
-			"city":           m.cfg.PickupCity,
-			"state":          m.cfg.PickupState,
-			"pincode":        m.cfg.PickupPincode,
-			"phone":          m.cfg.PickupPhone,
+			"warehouse_name": m.conf().WarehouseName,
+			"name":           firstNonEmpty(m.conf().PickupName, m.conf().WarehouseName),
+			"address":        m.conf().PickupAddress,
+			"city":           m.conf().PickupCity,
+			"state":          m.conf().PickupState,
+			"pincode":        m.conf().PickupPincode,
+			"phone":          m.conf().PickupPhone,
 		},
 		"order_items": items,
 	}
@@ -275,7 +351,7 @@ func (m *Module) weight(req gocommerce.ShipRequest, units int) int {
 	if req.Parcel.Measured && req.Parcel.WeightGrams > 0 {
 		return req.Parcel.WeightGrams
 	}
-	return m.cfg.DefaultWeightGrams * max(units, 1)
+	return m.conf().DefaultWeightGrams * max(units, 1)
 }
 
 // side converts a millimetre side to centimetres, keeping the tenth.
@@ -332,13 +408,13 @@ func (m *Module) authToken(ctx context.Context) (string, error) {
 	}
 
 	encoded, err := json.Marshal(map[string]string{
-		"email": m.cfg.Email, "password": m.cfg.Password,
+		"email": m.conf().Email, "password": m.conf().Password,
 	})
 	if err != nil {
 		return "", err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		m.cfg.BaseURL+"/users/login", bytes.NewReader(encoded))
+		m.conf().BaseURL+"/users/login", bytes.NewReader(encoded))
 	if err != nil {
 		return "", err
 	}
@@ -380,7 +456,7 @@ func (m *Module) post(ctx context.Context, path string, payload any, out any) er
 		return fmt.Errorf("nimbuspost: could not encode the request: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		m.cfg.BaseURL+path, bytes.NewReader(encoded))
+		m.conf().BaseURL+path, bytes.NewReader(encoded))
 	if err != nil {
 		return err
 	}

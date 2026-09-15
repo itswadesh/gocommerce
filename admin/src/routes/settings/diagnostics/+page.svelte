@@ -23,7 +23,6 @@
     import { health } from "$lib/health.svelte.js";
     import { relativeTime, pluralize } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
-    import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
 
     /* base.css has exactly these label variants; nothing here invents one. */
@@ -98,7 +97,6 @@
 <svelte:head><title>Diagnostics · GoCommerce</title></svelte:head>
 
 <div class="page page-diagnostics shopify-skin">
-    <SettingsSidebar />
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">

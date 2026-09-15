@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 
@@ -194,4 +195,41 @@ func TestOperatorMetaWins(t *testing.T) {
 	if got.Breadth != 20 {
 		t.Errorf("breadth = %v cm, want 20 from the variant", got.Breadth)
 	}
+}
+
+// TestInstalledIdleUntilConfigured: with nothing in Config the module still
+// registers — the panel lists it — but the settings say it is not set up and
+// nothing can be sent through it, until its fields are typed into the plugin.
+func TestInstalledIdleUntilConfigured(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	ctx := context.Background()
+
+	var info *gocommerce.ProviderInfo
+	for _, p := range app.Settings().FulfillmentProviders {
+		if p.Code == "shiprocket" {
+			p := p
+			info = &p
+		}
+	}
+	if info == nil {
+		t.Fatal("an idle module should still be listed in the settings")
+	}
+	if info.Configured {
+		t.Fatalf("configured = %v before anything was typed in", info.Configured)
+	}
+	result := gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
+	if _, err := app.Ship().Create(ctx, result.Order.ID, "shiprocket", gocommerce.ShipRequest{Tracking: "T-1"}); err == nil || !strings.Contains(err.Error(), "not set up") {
+		t.Fatalf("shipping through an idle provider = %v, want a refusal that says it is not set up", err)
+	}
+
+	on := true
+	if _, err := app.Plugins().Update(ctx, PluginKey, gocommerce.PluginPatch{Enabled: &on, Settings: map[string]any{"email": "api@example.com", "password": "pw", "pickup_location": "Primary"}}); err != nil {
+		t.Fatalf("configure from the panel: %v", err)
+	}
+	for _, p := range app.Settings().FulfillmentProviders {
+		if p.Code == "shiprocket" && !p.Configured {
+			t.Fatal("configured from the panel, the settings should say so")
+		}
+	}
+
 }

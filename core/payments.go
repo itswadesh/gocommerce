@@ -28,14 +28,29 @@ func (p *Payments) provider(code string) (PaymentProvider, bool) {
 	return pr, ok
 }
 
-// Methods lists the payment codes this store accepts.
-func (p *Payments) Methods() []string {
+// installed lists every registered payment code, ready or not.
+func (p *Payments) installed() []string {
 	codes := make([]string, 0, len(p.providers))
 	for code := range p.providers {
 		codes = append(codes, code)
 	}
 	sort.Strings(codes)
 	return codes
+}
+
+// Methods lists the payment codes this store accepts: the installed ones
+// that are set up. A gateway installed idle — its key not yet typed into
+// the Plugins screen — is not offered, because offering it would send a
+// shopper into a checkout that cannot complete.
+func (p *Payments) Methods() []string {
+	ctx := context.Background()
+	out := make([]string, 0, len(p.providers))
+	for _, code := range p.installed() {
+		if configured(ctx, p.providers[code]) {
+			out = append(out, code)
+		}
+	}
+	return out
 }
 
 // PaymentMethod is one installed method as a storefront should show it: the
@@ -372,6 +387,9 @@ func (p *Payments) Refund(ctx context.Context, orderID int64, in RefundRequest, 
 	provider, ok := p.provider(o.PaymentProvider)
 	if !ok {
 		return nil, Conflictf("payment method %q is not installed in this build, so it cannot refund", o.PaymentProvider)
+	}
+	if !configured(ctx, provider) {
+		return nil, Conflictf("payment method %q is not set up, so it cannot refund — activate and configure it under Settings › Payments", o.PaymentProvider)
 	}
 	refunder, ok := provider.(Refunder)
 	if !ok {

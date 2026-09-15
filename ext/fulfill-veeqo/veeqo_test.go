@@ -1,6 +1,7 @@
 package veeqo
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -90,13 +91,6 @@ func shipOrder(t *testing.T, app *gocommerce.App, sku string, req gocommerce.Shi
 	result := gctest.Buy(t, app, gocommerce.CodeCOD, product.DefaultVariant().ID, 1)
 	order, err := app.Ship().Create(t.Context(), result.Order.ID, "veeqo", req)
 	return order, result.Order.Number, err
-}
-
-func TestRegisterRequiresAKey(t *testing.T) {
-	t.Parallel()
-	if err := New(Config{}).Register(nil); err == nil {
-		t.Error("Register accepted an empty config")
-	}
 }
 
 // The module's reason to exist: Veeqo learns a parcel went out, against the
@@ -251,4 +245,41 @@ func TestCarrierFor(t *testing.T) {
 			t.Errorf("carrierFor(%v) = %q, want %q", tc.names, got, tc.want)
 		}
 	}
+}
+
+// TestInstalledIdleUntilConfigured: with nothing in Config the module still
+// registers — the panel lists it — but the settings say it is not set up and
+// nothing can be sent through it, until its fields are typed into the plugin.
+func TestInstalledIdleUntilConfigured(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	ctx := context.Background()
+
+	var info *gocommerce.ProviderInfo
+	for _, p := range app.Settings().FulfillmentProviders {
+		if p.Code == "veeqo" {
+			p := p
+			info = &p
+		}
+	}
+	if info == nil {
+		t.Fatal("an idle module should still be listed in the settings")
+	}
+	if info.Configured {
+		t.Fatalf("configured = %v before anything was typed in", info.Configured)
+	}
+	result := gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
+	if _, err := app.Ship().Create(ctx, result.Order.ID, "veeqo", gocommerce.ShipRequest{Tracking: "T-1"}); err == nil || !strings.Contains(err.Error(), "not set up") {
+		t.Fatalf("shipping through an idle provider = %v, want a refusal that says it is not set up", err)
+	}
+
+	on := true
+	if _, err := app.Plugins().Update(ctx, PluginKey, gocommerce.PluginPatch{Enabled: &on, Settings: map[string]any{"api_key": "k-1"}}); err != nil {
+		t.Fatalf("configure from the panel: %v", err)
+	}
+	for _, p := range app.Settings().FulfillmentProviders {
+		if p.Code == "veeqo" && !p.Configured {
+			t.Fatal("configured from the panel, the settings should say so")
+		}
+	}
+
 }

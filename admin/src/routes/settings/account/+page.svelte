@@ -17,7 +17,6 @@
     import { toast } from "$lib/toast.svelte.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import DirtyGuard from "$lib/components/DirtyGuard.svelte";
-    import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
 
     let loading = $state(true);
     let me = $state(null);
@@ -139,7 +138,6 @@
 />
 
 <div class="page page-account shopify-skin">
-    <SettingsSidebar />
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">

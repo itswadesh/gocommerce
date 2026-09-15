@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/misiki/gocommerce/core"
@@ -41,15 +42,16 @@ const (
 // Config configures the module.
 type Config struct {
 	// KeyID and KeySecret are the API credentials. Required.
-	KeyID, KeySecret string
+	KeyID     string `plugin:"key_id"`
+	KeySecret string `plugin:"key_secret"`
 	// WebhookSecret signs the webhook. Required: without it any caller could
 	// mark orders paid.
-	WebhookSecret string
+	WebhookSecret string `plugin:"webhook_secret"`
 	// Hosted uses Razorpay's hosted checkout page and returns a redirect
 	// intent instead of data for the in-page widget.
-	Hosted bool
+	Hosted bool `plugin:"hosted"`
 	// BaseURL overrides the endpoint, for tests.
-	BaseURL string
+	BaseURL string `plugin:"base_url"`
 	// Client overrides the HTTP client.
 	Client *http.Client
 }
@@ -57,6 +59,8 @@ type Config struct {
 // Module is the Razorpay payment provider.
 type Module struct {
 	cfg    Config
+	live   atomic.Pointer[Config]
+	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
 	db     *sql.DB
@@ -65,6 +69,57 @@ type Module struct {
 
 // New constructs the module.
 func New(cfg Config) *Module { return &Module{cfg: cfg} }
+
+// PluginKey is the plugin this module registers, where the panel keeps its
+// credentials. Config is the environment's fallback for each field; a value
+// typed into the panel wins.
+const PluginKey = "payments-razorpay"
+
+var errNotConfigured = errors.New("razorpay: not set up — activate and configure it under Settings")
+
+// conf is the effective configuration: the last one refresh computed, or
+// Config alone before the first use.
+func (m *Module) conf() *Config {
+	if c := m.live.Load(); c != nil {
+		return c
+	}
+	return &m.cfg
+}
+
+// refresh recomputes the effective configuration — Config with the plugin's
+// settings laid over it — and reports whether the provider can work: switched
+// on, with every required field filled. Called before each use, so a key
+// typed into the panel a moment ago counts without a restart.
+func (m *Module) refresh(ctx context.Context) bool {
+	c := m.cfg
+	on := false
+	if m.app != nil {
+		on, _ = m.app.Plugins().Enabled(ctx, PluginKey)
+		if on {
+			_ = m.app.Plugins().Fill(ctx, PluginKey, &c)
+		}
+	}
+	m.finish(&c)
+	m.live.Store(&c)
+	return on && m.complete(&c)
+}
+
+// Configured implements gocommerce.Configurable.
+func (m *Module) Configured(ctx context.Context) bool { return m.refresh(ctx) }
+
+// complete is whether a configuration has everything the provider needs.
+func (m *Module) complete(c *Config) bool {
+	return strings.TrimSpace(c.KeyID) != "" &&
+		strings.TrimSpace(c.KeySecret) != "" &&
+		strings.TrimSpace(c.WebhookSecret) != ""
+}
+
+// finish fills a configuration's defaults.
+func (m *Module) finish(c *Config) {
+	if c.BaseURL == "" {
+		c.BaseURL = defaultBaseURL
+	}
+}
 
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "payments-razorpay" }
@@ -85,17 +140,23 @@ func (m *Module) Migrations() []gocommerce.Migration {
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
-	switch {
-	case strings.TrimSpace(m.cfg.KeyID) == "":
-		return errors.New("razorpay: KeyID is required")
-	case strings.TrimSpace(m.cfg.KeySecret) == "":
-		return errors.New("razorpay: KeySecret is required")
-	case strings.TrimSpace(m.cfg.WebhookSecret) == "":
-		return errors.New("razorpay: WebhookSecret is required — without it, anyone could mark orders paid")
-	}
-	if m.cfg.BaseURL == "" {
-		m.cfg.BaseURL = defaultBaseURL
-	}
+	m.app = app
+	// Config-configured stores start switched on; a store with nothing in
+	// Config starts idle and waits for the panel.
+	inCode := m.complete(&m.cfg)
+	app.RegisterPlugin(gocommerce.PluginDef{
+		Key: PluginKey, Title: "Razorpay", Category: "payments", DefaultEnabled: inCode,
+		Description: "Cards, UPI and netbanking through Razorpay, India, with its signed webhook marking orders paid.",
+		Docs:        "https://razorpay.com/docs/api/",
+		Fields: []gocommerce.PluginField{
+			{Key: "key_id", Label: "Key ID", Kind: "text", Required: !inCode},
+			{Key: "key_secret", Label: "Key secret", Kind: "secret", Required: !inCode},
+			{Key: "webhook_secret", Label: "Webhook secret", Kind: "secret", Required: !inCode},
+			{Key: "hosted", Label: "Use the hosted checkout page", Kind: "bool", Help: "A redirect instead of the in-page widget."},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production."},
+		},
+	})
+	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
 		m.client = &http.Client{Timeout: 20 * time.Second}
@@ -111,8 +172,14 @@ func (m *Module) Register(app *gocommerce.App) error {
 // Code implements gocommerce.PaymentProvider.
 func (m *Module) Code() string { return "razorpay" }
 
+// DisplayName implements gocommerce.Named.
+func (m *Module) DisplayName() string { return "Razorpay" }
+
 // Initiate creates a Razorpay order for the checkout to be completed against.
 func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts gocommerce.PayOptions) (gocommerce.PaymentIntent, error) {
+	if !m.refresh(ctx) {
+		return gocommerce.PaymentIntent{}, errNotConfigured
+	}
 	payload := map[string]any{
 		"amount":   order.Total.AmountMinor,
 		"currency": strings.ToUpper(order.Total.Currency),
@@ -138,12 +205,12 @@ func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts goc
 		Reference: created.ID,
 		ClientData: map[string]string{
 			"razorpay_order_id": created.ID,
-			"key_id":            m.cfg.KeyID,
+			"key_id":            m.conf().KeyID,
 			"amount":            strconv.FormatInt(created.Amount, 10),
 			"currency":          created.Currency,
 		},
 	}
-	if m.cfg.Hosted {
+	if m.conf().Hosted {
 		// The hosted page needs somewhere to send the shopper back to.
 		intent.Kind = gocommerce.IntentRedirect
 		if opts.ReturnURL != "" {
@@ -157,6 +224,9 @@ func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts goc
 
 // Refund implements gocommerce.Refunder.
 func (m *Module) Refund(ctx context.Context, order *gocommerce.Order, amountMinor int64) error {
+	if !m.refresh(ctx) {
+		return errNotConfigured
+	}
 	_, err := m.RefundWithReference(ctx, order, amountMinor)
 	return err
 }
@@ -166,6 +236,9 @@ func (m *Module) Refund(ctx context.Context, order *gocommerce.Order, amountMino
 // It is what somebody reconciles against a bank statement, and the engine
 // records it on the refund row.
 func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Order, amountMinor int64) (string, error) {
+	if !m.refresh(ctx) {
+		return "", errNotConfigured
+	}
 	paymentID, err := m.paymentIDFor(ctx, order.ID)
 	if err != nil {
 		return "", err
@@ -208,12 +281,18 @@ func (m *Module) paymentIDFor(ctx context.Context, orderID int64) (string, error
 func (m *Module) Webhook() http.Handler { return http.HandlerFunc(m.handleWebhook) }
 
 func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
+	// A notification for a provider nobody has set up cannot be verified,
+	// and an unverifiable notification is refused.
+	if !m.refresh(r.Context()) {
+		http.Error(w, "payment method not set up", http.StatusServiceUnavailable)
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxWebhookBytes))
 	if err != nil {
 		http.Error(w, "could not read body", http.StatusBadRequest)
 		return
 	}
-	if !validSignature(body, r.Header.Get("X-Razorpay-Signature"), m.cfg.WebhookSecret) {
+	if !validSignature(body, r.Header.Get("X-Razorpay-Signature"), m.conf().WebhookSecret) {
 		m.log.Warn("rejected a Razorpay webhook with an invalid signature")
 		http.Error(w, "invalid signature", http.StatusBadRequest)
 		return
@@ -304,11 +383,11 @@ func (m *Module) post(ctx context.Context, path string, payload any, out any) er
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.cfg.BaseURL+path, bytes.NewReader(encoded))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.conf().BaseURL+path, bytes.NewReader(encoded))
 	if err != nil {
 		return err
 	}
-	req.SetBasicAuth(m.cfg.KeyID, m.cfg.KeySecret)
+	req.SetBasicAuth(m.conf().KeyID, m.conf().KeySecret)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := m.client.Do(req)

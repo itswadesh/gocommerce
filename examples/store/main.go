@@ -25,6 +25,17 @@ import (
 	"github.com/misiki/gocommerce/ext/cms"
 	"github.com/misiki/gocommerce/ext/contact"
 	"github.com/misiki/gocommerce/ext/feeds"
+	delhivery "github.com/misiki/gocommerce/ext/fulfill-delhivery"
+	easyship "github.com/misiki/gocommerce/ext/fulfill-easyship"
+	indiapost "github.com/misiki/gocommerce/ext/fulfill-indiapost"
+	nimbuspost "github.com/misiki/gocommerce/ext/fulfill-nimbuspost"
+	onfleet "github.com/misiki/gocommerce/ext/fulfill-onfleet"
+	shippit "github.com/misiki/gocommerce/ext/fulfill-shippit"
+	shippo "github.com/misiki/gocommerce/ext/fulfill-shippo"
+	shiprocket "github.com/misiki/gocommerce/ext/fulfill-shiprocket"
+	shipstation "github.com/misiki/gocommerce/ext/fulfill-shipstation"
+	usps "github.com/misiki/gocommerce/ext/fulfill-usps"
+	veeqo "github.com/misiki/gocommerce/ext/fulfill-veeqo"
 	"github.com/misiki/gocommerce/ext/identity"
 	amazon "github.com/misiki/gocommerce/ext/import-amazon"
 	"github.com/misiki/gocommerce/ext/invoices"
@@ -34,6 +45,13 @@ import (
 	"github.com/misiki/gocommerce/ext/newsletter"
 	msg91 "github.com/misiki/gocommerce/ext/notify-msg91"
 	sendgrid "github.com/misiki/gocommerce/ext/notify-sendgrid"
+	adyen "github.com/misiki/gocommerce/ext/payments-adyen"
+	helcim "github.com/misiki/gocommerce/ext/payments-helcim"
+	hyperswitch "github.com/misiki/gocommerce/ext/payments-hyperswitch"
+	lemonsqueezy "github.com/misiki/gocommerce/ext/payments-lemonsqueezy"
+	paddle "github.com/misiki/gocommerce/ext/payments-paddle"
+	razorpay "github.com/misiki/gocommerce/ext/payments-razorpay"
+	revenuecat "github.com/misiki/gocommerce/ext/payments-revenuecat"
 	stripe "github.com/misiki/gocommerce/ext/payments-stripe"
 	"github.com/misiki/gocommerce/ext/reviews"
 	meilisearch "github.com/misiki/gocommerce/ext/search-meilisearch"
@@ -126,6 +144,20 @@ func main() {
 			FromName: os.Getenv("SENDGRID_FROM_NAME"),
 		}),
 		msg91.New(msg91.Config{AuthKey: os.Getenv("MSG91_AUTH_KEY")}),
+	)
+
+	// Every gateway and carrier, installed idle: each is a card on Payment
+	// methods or Shipping providers, switched on and given its keys from
+	// there. Stripe keeps its environment fallback below, the way it always
+	// had one; the rest wait for the panel.
+	modules = append(modules,
+		razorpay.New(razorpay.Config{}), adyen.New(adyen.Config{}), paddle.New(paddle.Config{}),
+		lemonsqueezy.New(lemonsqueezy.Config{}), helcim.New(helcim.Config{}), hyperswitch.New(hyperswitch.Config{}),
+		revenuecat.New(revenuecat.Config{}),
+		shiprocket.New(shiprocket.Config{}), delhivery.New(delhivery.Config{}), nimbuspost.New(nimbuspost.Config{}),
+		indiapost.New(indiapost.Config{}), shippo.New(shippo.Config{}), shipstation.New(shipstation.Config{}),
+		easyship.New(easyship.Config{}), shippit.New(shippit.Config{}), usps.New(usps.Config{}),
+		onfleet.New(onfleet.Config{}), veeqo.New(veeqo.Config{}),
 	)
 
 	app, err := gocommerce.New(gocommerce.Config{

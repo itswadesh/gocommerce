@@ -58,6 +58,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	gocommerce "github.com/misiki/gocommerce/core"
@@ -71,24 +72,24 @@ const (
 // Config configures the module.
 type Config struct {
 	// APIKey is the merchant API key, sent as the `api-key` header. Required.
-	APIKey string
+	APIKey string `plugin:"api_key"`
 	// ResponseHashKey is the business profile's payment response hash key,
 	// which is what signs outgoing webhooks. Required: without it any caller
 	// could mark orders paid.
-	ResponseHashKey string
+	ResponseHashKey string `plugin:"response_hash_key"`
 	// ProfileID names the business profile to charge against. Optional, and
 	// only mandatory in Hyperswitch itself when the merchant has more than one
 	// profile — in which case leaving it empty is a 400 at the first checkout.
-	ProfileID string
+	ProfileID string `plugin:"profile_id"`
 	// ReturnURL is where the shopper lands after paying, when the checkout
 	// request did not carry one of its own. Hyperswitch requires a return URL
 	// for a payment link, so one of the two has to be set.
-	ReturnURL string
+	ReturnURL string `plugin:"return_url"`
 	// SessionExpirySeconds bounds how long the hosted link stays payable.
 	// Zero leaves Hyperswitch's own default alone.
-	SessionExpirySeconds int
+	SessionExpirySeconds int `plugin:"session_expiry_seconds"`
 	// BaseURL overrides the endpoint: the sandbox, or a self-hosted router.
-	BaseURL string
+	BaseURL string `plugin:"base_url"`
 	// Client overrides the HTTP client.
 	Client *http.Client
 }
@@ -96,6 +97,8 @@ type Config struct {
 // Module is the Hyperswitch payment provider.
 type Module struct {
 	cfg    Config
+	live   atomic.Pointer[Config]
+	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
 	db     *sql.DB
@@ -104,6 +107,57 @@ type Module struct {
 
 // New builds the module. Register it with gocommerce.New.
 func New(cfg Config) *Module { return &Module{cfg: cfg} }
+
+// PluginKey is the plugin this module registers, where the panel keeps its
+// credentials. Config is the environment's fallback for each field; a value
+// typed into the panel wins.
+const PluginKey = "payments-hyperswitch"
+
+var errNotConfigured = errors.New("hyperswitch: not set up — activate and configure it under Settings")
+
+// conf is the effective configuration: the last one refresh computed, or
+// Config alone before the first use.
+func (m *Module) conf() *Config {
+	if c := m.live.Load(); c != nil {
+		return c
+	}
+	return &m.cfg
+}
+
+// refresh recomputes the effective configuration — Config with the plugin's
+// settings laid over it — and reports whether the provider can work: switched
+// on, with every required field filled. Called before each use, so a key
+// typed into the panel a moment ago counts without a restart.
+func (m *Module) refresh(ctx context.Context) bool {
+	c := m.cfg
+	on := false
+	if m.app != nil {
+		on, _ = m.app.Plugins().Enabled(ctx, PluginKey)
+		if on {
+			_ = m.app.Plugins().Fill(ctx, PluginKey, &c)
+		}
+	}
+	m.finish(&c)
+	m.live.Store(&c)
+	return on && m.complete(&c)
+}
+
+// Configured implements gocommerce.Configurable.
+func (m *Module) Configured(ctx context.Context) bool { return m.refresh(ctx) }
+
+// complete is whether a configuration has everything the provider needs.
+func (m *Module) complete(c *Config) bool {
+	return strings.TrimSpace(c.APIKey) != "" &&
+		strings.TrimSpace(c.ResponseHashKey) != ""
+}
+
+// finish fills a configuration's defaults.
+func (m *Module) finish(c *Config) {
+	if c.BaseURL == "" {
+		c.BaseURL = defaultBaseURL
+	}
+	c.BaseURL = strings.TrimRight(c.BaseURL, "/")
+}
 
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "payments-hyperswitch" }
@@ -130,16 +184,24 @@ func (m *Module) Migrations() []gocommerce.Migration {
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
-	if strings.TrimSpace(m.cfg.APIKey) == "" {
-		return errors.New("hyperswitch: APIKey is required")
-	}
-	if strings.TrimSpace(m.cfg.ResponseHashKey) == "" {
-		return errors.New("hyperswitch: ResponseHashKey is required — without it, anyone could mark orders paid")
-	}
-	if m.cfg.BaseURL == "" {
-		m.cfg.BaseURL = defaultBaseURL
-	}
-	m.cfg.BaseURL = strings.TrimRight(m.cfg.BaseURL, "/")
+	m.app = app
+	// Config-configured stores start switched on; a store with nothing in
+	// Config starts idle and waits for the panel.
+	inCode := m.complete(&m.cfg)
+	app.RegisterPlugin(gocommerce.PluginDef{
+		Key: PluginKey, Title: "Hyperswitch", Category: "payments", DefaultEnabled: inCode,
+		Description: "Payment links through Hyperswitch, the open-source payments router, with its signed webhook marking orders paid.",
+		Docs:        "https://docs.hyperswitch.io/",
+		Fields: []gocommerce.PluginField{
+			{Key: "api_key", Label: "API key", Kind: "secret", Required: !inCode, Help: "The merchant API key."},
+			{Key: "response_hash_key", Label: "Payment response hash key", Kind: "secret", Required: !inCode, Help: "The business profile's key that signs outgoing webhooks."},
+			{Key: "profile_id", Label: "Profile ID", Kind: "text", Help: "Only needed when the merchant has more than one business profile."},
+			{Key: "return_url", Label: "Return URL", Kind: "url", Help: "Where the shopper lands after paying; required for a payment link unless the checkout sends one."},
+			{Key: "session_expiry_seconds", Label: "Link expiry (seconds)", Kind: "number", Help: "Empty leaves Hyperswitch's default."},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "The sandbox, or a self-hosted router."},
+		},
+	})
+	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
 		m.client = &http.Client{Timeout: 20 * time.Second}
@@ -160,9 +222,12 @@ func (m *Module) DisplayName() string { return "Hyperswitch" }
 
 // Initiate creates a payment with a hosted link and sends the shopper to it.
 func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts gocommerce.PayOptions) (gocommerce.PaymentIntent, error) {
+	if !m.refresh(ctx) {
+		return gocommerce.PaymentIntent{}, errNotConfigured
+	}
 	returnURL := opts.ReturnURL
 	if returnURL == "" {
-		returnURL = m.cfg.ReturnURL
+		returnURL = m.conf().ReturnURL
 	}
 	if returnURL == "" {
 		return gocommerce.PaymentIntent{}, errors.New(
@@ -197,11 +262,11 @@ func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts goc
 	if order.Name != "" {
 		body["name"] = order.Name
 	}
-	if m.cfg.ProfileID != "" {
-		body["profile_id"] = m.cfg.ProfileID
+	if m.conf().ProfileID != "" {
+		body["profile_id"] = m.conf().ProfileID
 	}
-	if m.cfg.SessionExpirySeconds > 0 {
-		body["session_expiry"] = m.cfg.SessionExpirySeconds
+	if m.conf().SessionExpirySeconds > 0 {
+		body["session_expiry"] = m.conf().SessionExpirySeconds
 	}
 
 	var out struct {
@@ -238,12 +303,18 @@ func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts goc
 
 // Refund implements gocommerce.Refunder.
 func (m *Module) Refund(ctx context.Context, order *gocommerce.Order, amountMinor int64) error {
+	if !m.refresh(ctx) {
+		return errNotConfigured
+	}
 	_, err := m.RefundWithReference(ctx, order, amountMinor)
 	return err
 }
 
 // RefundWithReference implements gocommerce.ReferencedRefunder.
 func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Order, amountMinor int64) (string, error) {
+	if !m.refresh(ctx) {
+		return "", errNotConfigured
+	}
 	if order.PaymentReference == "" {
 		return "", errors.New("hyperswitch: this order has no payment reference to refund")
 	}
@@ -276,12 +347,18 @@ func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Orde
 func (m *Module) Webhook() http.Handler { return http.HandlerFunc(m.handleWebhook) }
 
 func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
+	// A notification for a provider nobody has set up cannot be verified,
+	// and an unverifiable notification is refused.
+	if !m.refresh(r.Context()) {
+		http.Error(w, "payment method not set up", http.StatusServiceUnavailable)
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxWebhookBytes))
 	if err != nil {
 		http.Error(w, "could not read body", http.StatusBadRequest)
 		return
 	}
-	if err := verifySignature(body, r.Header.Get(signatureHeader), m.cfg.ResponseHashKey); err != nil {
+	if err := verifySignature(body, r.Header.Get(signatureHeader), m.conf().ResponseHashKey); err != nil {
 		m.log.Warn("rejected a Hyperswitch webhook", "error", err)
 		http.Error(w, "invalid signature", http.StatusBadRequest)
 		return
@@ -417,11 +494,11 @@ func (m *Module) do(ctx context.Context, method, path string, body any, out any)
 		reader = bytes.NewReader(encoded)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, m.cfg.BaseURL+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, m.conf().BaseURL+path, reader)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("api-key", m.cfg.APIKey)
+	req.Header.Set("api-key", m.conf().APIKey)
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

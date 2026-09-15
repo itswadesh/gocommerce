@@ -48,6 +48,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/misiki/gocommerce/core"
@@ -63,19 +64,19 @@ type Config struct {
 	// APIKey is an Onfleet API key. It is sent as the username of an HTTP
 	// Basic credential with an empty password, which is how Onfleet
 	// authenticates. Required.
-	APIKey string
+	APIKey string `plugin:"api_key"`
 	// AutoAssign asks Onfleet to pick a driver as the task is created. Off by
 	// default: assigning somebody's next two hours is a decision, and a store
 	// that dispatches by hand would not want it made for them.
-	AutoAssign bool
+	AutoAssign bool `plugin:"auto_assign"`
 	// TeamID scopes auto-assignment to one team. Only meaningful with
 	// AutoAssign.
-	TeamID string
+	TeamID string `plugin:"team_id"`
 	// ServiceTimeMinutes is how long the driver is expected to be at the door.
 	// Zero leaves Onfleet's own default alone.
-	ServiceTimeMinutes int
+	ServiceTimeMinutes int `plugin:"service_time_minutes"`
 	// BaseURL overrides the endpoint, for tests.
-	BaseURL string
+	BaseURL string `plugin:"base_url"`
 	// Client overrides the HTTP client.
 	Client *http.Client
 }
@@ -83,12 +84,64 @@ type Config struct {
 // Module is the Onfleet fulfillment provider.
 type Module struct {
 	cfg    Config
+	live   atomic.Pointer[Config]
+	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
 }
 
 // New constructs the module.
 func New(cfg Config) *Module { return &Module{cfg: cfg} }
+
+// PluginKey is the plugin this module registers, where the panel keeps its
+// credentials. Config is the environment's fallback for each field; a value
+// typed into the panel wins.
+const PluginKey = "shipping-onfleet"
+
+var errNotConfigured = errors.New("onfleet: not set up — activate and configure it under Settings")
+
+// conf is the effective configuration: the last one refresh computed, or
+// Config alone before the first use.
+func (m *Module) conf() *Config {
+	if c := m.live.Load(); c != nil {
+		return c
+	}
+	return &m.cfg
+}
+
+// refresh recomputes the effective configuration — Config with the plugin's
+// settings laid over it — and reports whether the provider can work: switched
+// on, with every required field filled. Called before each use, so a key
+// typed into the panel a moment ago counts without a restart.
+func (m *Module) refresh(ctx context.Context) bool {
+	c := m.cfg
+	on := false
+	if m.app != nil {
+		on, _ = m.app.Plugins().Enabled(ctx, PluginKey)
+		if on {
+			_ = m.app.Plugins().Fill(ctx, PluginKey, &c)
+		}
+	}
+	m.finish(&c)
+	m.live.Store(&c)
+	return on && m.complete(&c)
+}
+
+// Configured implements gocommerce.Configurable.
+func (m *Module) Configured(ctx context.Context) bool { return m.refresh(ctx) }
+
+// complete is whether a configuration has everything the provider needs.
+func (m *Module) complete(c *Config) bool {
+	return strings.TrimSpace(c.APIKey) != ""
+}
+
+// finish fills a configuration's defaults.
+func (m *Module) finish(c *Config) {
+	if c.BaseURL == "" {
+		c.BaseURL = defaultBaseURL
+	}
+	c.BaseURL = strings.TrimRight(c.BaseURL, "/")
+}
 
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "fulfill-onfleet" }
@@ -99,13 +152,23 @@ func (m *Module) Migrations() []gocommerce.Migration { return nil }
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
-	if strings.TrimSpace(m.cfg.APIKey) == "" {
-		return errors.New("onfleet: APIKey is required")
-	}
-	if m.cfg.BaseURL == "" {
-		m.cfg.BaseURL = defaultBaseURL
-	}
-	m.cfg.BaseURL = strings.TrimRight(m.cfg.BaseURL, "/")
+	m.app = app
+	// Config-configured stores start switched on; a store with nothing in
+	// Config starts idle and waits for the panel.
+	inCode := m.complete(&m.cfg)
+	app.RegisterPlugin(gocommerce.PluginDef{
+		Key: PluginKey, Title: "Onfleet", Category: "shipping", DefaultEnabled: inCode,
+		Description: "Dispatches your own drivers through Onfleet: every shipment becomes a delivery task.",
+		Docs:        "https://docs.onfleet.com/",
+		Fields: []gocommerce.PluginField{
+			{Key: "api_key", Label: "API key", Kind: "secret", Required: !inCode, Help: "From Onfleet's dashboard, under API & Webhooks."},
+			{Key: "auto_assign", Label: "Auto-assign a driver", Kind: "bool", Help: "Assigning somebody's next two hours is a decision; off by default."},
+			{Key: "team_id", Label: "Team ID", Kind: "text", Help: "Scopes auto-assignment to one team."},
+			{Key: "service_time_minutes", Label: "Service time (minutes)", Kind: "number", Help: "How long the driver is expected at the door; empty leaves Onfleet's default."},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production."},
+		},
+	})
+	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
 		m.client = &http.Client{Timeout: 30 * time.Second}
@@ -119,11 +182,17 @@ func (m *Module) Register(app *gocommerce.App) error {
 // Code implements gocommerce.FulfillmentProvider.
 func (m *Module) Code() string { return "onfleet" }
 
+// DisplayName implements gocommerce.Named.
+func (m *Module) DisplayName() string { return "Onfleet" }
+
 // Ship creates the delivery task.
 //
 // It runs before the engine opens its transaction, so Onfleet having a slow
 // minute never holds a lock on the orders table.
 func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommerce.ShipRequest) (gocommerce.Shipment, error) {
+	if !m.refresh(ctx) {
+		return gocommerce.Shipment{}, errNotConfigured
+	}
 	var out struct {
 		ID          string `json:"id"`
 		ShortID     string `json:"shortId"`
@@ -213,15 +282,15 @@ func (m *Module) taskBody(order *gocommerce.Order, req gocommerce.ShipRequest) m
 		},
 		"quantity": units,
 	}
-	if m.cfg.AutoAssign {
+	if m.conf().AutoAssign {
 		assign := map[string]any{"mode": "distance"}
-		if m.cfg.TeamID != "" {
-			assign["team"] = m.cfg.TeamID
+		if m.conf().TeamID != "" {
+			assign["team"] = m.conf().TeamID
 		}
 		body["autoAssign"] = assign
 	}
-	if m.cfg.ServiceTimeMinutes > 0 {
-		body["serviceTime"] = m.cfg.ServiceTimeMinutes
+	if m.conf().ServiceTimeMinutes > 0 {
+		body["serviceTime"] = m.conf().ServiceTimeMinutes
 	}
 	return body
 }
@@ -239,14 +308,14 @@ func (m *Module) post(ctx context.Context, path string, payload any, out any) er
 	if err != nil {
 		return fmt.Errorf("onfleet: could not encode the request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.cfg.BaseURL+path, bytes.NewReader(encoded))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.conf().BaseURL+path, bytes.NewReader(encoded))
 	if err != nil {
 		return err
 	}
 	// The API key is the username and the password is empty, which is what
 	// Onfleet documents — not a bearer token.
 	req.Header.Set("Authorization", "Basic "+
-		base64.StdEncoding.EncodeToString([]byte(m.cfg.APIKey+":")))
+		base64.StdEncoding.EncodeToString([]byte(m.conf().APIKey+":")))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := m.client.Do(req)

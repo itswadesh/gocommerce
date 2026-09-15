@@ -47,6 +47,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"sync/atomic"
 
 	"github.com/misiki/gocommerce/core"
 )
@@ -62,17 +63,66 @@ type Config struct {
 	// AcceptAnyNumber turns off the S10 check. India Post has products that
 	// number differently, and a store shipping one should be able to record
 	// the number it was given rather than argue with this module.
-	AcceptAnyNumber bool
+	AcceptAnyNumber bool `plugin:"accept_any_number"`
 }
 
 // Module is the India Post fulfillment provider.
 type Module struct {
-	cfg Config
-	log *slog.Logger
+	cfg  Config
+	live atomic.Pointer[Config]
+	app  *gocommerce.App
+	log  *slog.Logger
 }
 
 // New constructs the module.
 func New(cfg Config) *Module { return &Module{cfg: cfg} }
+
+// PluginKey is the plugin this module registers, where the panel keeps its
+// credentials. Config is the environment's fallback for each field; a value
+// typed into the panel wins.
+const PluginKey = "shipping-india-post"
+
+var errNotConfigured = errors.New("indiapost: not set up — activate and configure it under Settings")
+
+// conf is the effective configuration: the last one refresh computed, or
+// Config alone before the first use.
+func (m *Module) conf() *Config {
+	if c := m.live.Load(); c != nil {
+		return c
+	}
+	return &m.cfg
+}
+
+// refresh recomputes the effective configuration — Config with the plugin's
+// settings laid over it — and reports whether the provider can work: switched
+// on, with every required field filled. Called before each use, so a key
+// typed into the panel a moment ago counts without a restart.
+func (m *Module) refresh(ctx context.Context) bool {
+	c := m.cfg
+	on := false
+	if m.app != nil {
+		on, _ = m.app.Plugins().Enabled(ctx, PluginKey)
+		if on {
+			_ = m.app.Plugins().Fill(ctx, PluginKey, &c)
+		}
+	}
+	m.finish(&c)
+	m.live.Store(&c)
+	return on && m.complete(&c)
+}
+
+// Configured implements gocommerce.Configurable.
+func (m *Module) Configured(ctx context.Context) bool { return m.refresh(ctx) }
+
+// complete is whether a configuration has everything the provider needs.
+func (m *Module) complete(c *Config) bool {
+	return true
+}
+
+// finish fills a configuration's defaults.
+func (m *Module) finish(c *Config) {
+
+}
 
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "fulfill-indiapost" }
@@ -83,6 +133,19 @@ func (m *Module) Migrations() []gocommerce.Migration { return nil }
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
+	m.app = app
+	// Config-configured stores start switched on; a store with nothing in
+	// Config starts idle and waits for the panel.
+	inCode := m.complete(&m.cfg)
+	app.RegisterPlugin(gocommerce.PluginDef{
+		Key: PluginKey, Title: "India Post", Category: "shipping", DefaultEnabled: inCode,
+		Description: "Records a consignment handed to India Post at the counter or booked in the Department of Posts portal. Nothing is booked from here.",
+		Docs:        "https://www.indiapost.gov.in/",
+		Fields: []gocommerce.PluginField{
+			{Key: "accept_any_number", Label: "Accept any consignment number", Kind: "bool", Help: "Off, the number must be a 13-character S10 barcode."},
+		},
+	})
+	m.finish(&m.cfg)
 	m.log = app.Log()
 	app.RegisterFulfillment(m)
 	return nil
@@ -91,14 +154,20 @@ func (m *Module) Register(app *gocommerce.App) error {
 // Code implements gocommerce.FulfillmentProvider.
 func (m *Module) Code() string { return "india-post" }
 
+// DisplayName implements gocommerce.Named.
+func (m *Module) DisplayName() string { return "India Post" }
+
 // Ship records a booking somebody else made.
-func (m *Module) Ship(_ context.Context, order *gocommerce.Order, req gocommerce.ShipRequest) (gocommerce.Shipment, error) {
+func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommerce.ShipRequest) (gocommerce.Shipment, error) {
+	if !m.refresh(ctx) {
+		return gocommerce.Shipment{}, errNotConfigured
+	}
 	tracking := normalize(req.Tracking)
 	if tracking == "" {
 		return gocommerce.Shipment{}, errors.New(
 			"india-post: a consignment number is required — this provider records a booking made at the counter or in the Department of Posts portal, it does not make one")
 	}
-	if !m.cfg.AcceptAnyNumber && !s10.MatchString(tracking) {
+	if !m.conf().AcceptAnyNumber && !s10.MatchString(tracking) {
 		// Caught here rather than a week later, when the customer follows a
 		// link that goes nowhere and reads it as a lost parcel.
 		return gocommerce.Shipment{}, fmt.Errorf(

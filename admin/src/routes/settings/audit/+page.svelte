@@ -29,7 +29,6 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
-    import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
     import AuditChanges from "$lib/components/AuditChanges.svelte";
 
     /* The starting page size, not the only one: `limit` is a listState key, so
@@ -236,7 +235,6 @@
 <svelte:head><title>Audit trail · GoCommerce</title></svelte:head>
 
 <div class="page page-audit shopify-skin">
-    <SettingsSidebar />
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">

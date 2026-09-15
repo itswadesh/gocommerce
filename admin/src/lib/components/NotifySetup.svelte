@@ -170,7 +170,7 @@
                 one is active every message is written to the log and nobody receives it.
             </p>
 
-            <div class="provider-grid m-b-lg">
+            <div class="card-grid provider-grid m-b-lg">
                 {#each providers as provider (provider.module + "/" + provider.name)}
                     <section class="card provider-card">
                         <div class="flex gap-10">
@@ -188,6 +188,14 @@
                             </div>
                             <span class="label {provider.state.cls}">{provider.state.label}</span>
                         </div>
+                        {#if provider.name === "log"}
+                            <p class="provider-description">
+                                Every message the store sends is written here first, whatever else
+                                carries it. With no provider active, this is where they stop — and
+                                the Notifications screen shows each one as logged.
+                            </p>
+                            <div class="txt-hint txt-sm m-t-sm">Always on. Nothing to set up.</div>
+                        {/if}
                         {#if provider.plugin}
                             <p class="provider-description">{provider.plugin.description}</p>
                             <div class="flex gap-10 m-t-sm">
@@ -340,11 +348,6 @@
 </Drawer>
 
 <style>
-    .provider-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-        gap: var(--smSpacing);
-    }
     .provider-card {
         display: flex;
         flex-direction: column;

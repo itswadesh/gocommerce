@@ -54,6 +54,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	gocommerce "github.com/misiki/gocommerce/core"
@@ -72,34 +73,91 @@ const (
 type Config struct {
 	// APIToken is a Helcim API access token, sent as the `api-token` header.
 	// Required.
-	APIToken string
+	APIToken string `plugin:"api_token"`
 	// VerifierToken is the webhook verifier token from Helcim's settings,
 	// base64 as Helcim shows it. Required: without it any caller could mark
 	// orders paid.
-	VerifierToken string
+	VerifierToken string `plugin:"verifier_token"`
+	// verifierBytes is VerifierToken decoded, filled by finish.
+	verifierBytes []byte
 	// ServerIP is sent as the `ipAddress` of a refund. Helcim requires the
 	// field on every payment call; on a refund there is no shopper making the
 	// request, so this is the machine that is. Defaults to 127.0.0.1.
-	ServerIP string
+	ServerIP string `plugin:"server_ip"`
 	// BaseURL overrides the endpoint, for tests.
-	BaseURL string
+	BaseURL string `plugin:"base_url"`
 	// Client overrides the HTTP client.
 	Client *http.Client
 }
 
 // Module is the Helcim payment provider.
 type Module struct {
-	cfg      Config
-	verifier []byte
-	client   *http.Client
-	log      *slog.Logger
-	db       *sql.DB
-	pay      *gocommerce.Payments
-	orders   *gocommerce.Orders
+	cfg    Config
+	live   atomic.Pointer[Config]
+	app    *gocommerce.App
+	client *http.Client
+	log    *slog.Logger
+	db     *sql.DB
+	pay    *gocommerce.Payments
+	orders *gocommerce.Orders
 }
 
 // New builds the module. Register it with gocommerce.New.
 func New(cfg Config) *Module { return &Module{cfg: cfg} }
+
+// PluginKey is the plugin this module registers, where the panel keeps its
+// credentials. Config is the environment's fallback for each field; a value
+// typed into the panel wins.
+const PluginKey = "payments-helcim"
+
+var errNotConfigured = errors.New("helcim: not set up — activate and configure it under Settings")
+
+// conf is the effective configuration: the last one refresh computed, or
+// Config alone before the first use.
+func (m *Module) conf() *Config {
+	if c := m.live.Load(); c != nil {
+		return c
+	}
+	return &m.cfg
+}
+
+// refresh recomputes the effective configuration — Config with the plugin's
+// settings laid over it — and reports whether the provider can work: switched
+// on, with every required field filled. Called before each use, so a key
+// typed into the panel a moment ago counts without a restart.
+func (m *Module) refresh(ctx context.Context) bool {
+	c := m.cfg
+	on := false
+	if m.app != nil {
+		on, _ = m.app.Plugins().Enabled(ctx, PluginKey)
+		if on {
+			_ = m.app.Plugins().Fill(ctx, PluginKey, &c)
+		}
+	}
+	m.finish(&c)
+	m.live.Store(&c)
+	return on && m.complete(&c)
+}
+
+// Configured implements gocommerce.Configurable.
+func (m *Module) Configured(ctx context.Context) bool { return m.refresh(ctx) }
+
+// complete is whether a configuration has everything the provider needs.
+func (m *Module) complete(c *Config) bool {
+	return strings.TrimSpace(c.APIToken) != "" &&
+		strings.TrimSpace(c.VerifierToken) != ""
+}
+
+// finish fills a configuration's defaults.
+func (m *Module) finish(c *Config) {
+	// Base64 as Helcim shows it, bytes in the HMAC; one that does not decode
+	// leaves the provider unconfigured.
+	c.verifierBytes, _ = base64.StdEncoding.DecodeString(strings.TrimSpace(c.VerifierToken))
+	if c.BaseURL == "" {
+		c.BaseURL = defaultBaseURL
+	}
+	c.BaseURL = strings.TrimRight(c.BaseURL, "/")
+}
 
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "payments-helcim" }
@@ -125,25 +183,22 @@ func (m *Module) Migrations() []gocommerce.Migration {
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
-	switch {
-	case strings.TrimSpace(m.cfg.APIToken) == "":
-		return errors.New("helcim: APIToken is required")
-	case strings.TrimSpace(m.cfg.VerifierToken) == "":
-		return errors.New("helcim: VerifierToken is required — without it, anyone could mark orders paid")
-	}
-
-	// Decoded once at boot, so a mistyped token stops the store starting
-	// rather than failing every webhook in production.
-	verifier, err := base64.StdEncoding.DecodeString(strings.TrimSpace(m.cfg.VerifierToken))
-	if err != nil {
-		return fmt.Errorf("helcim: VerifierToken is not base64: %w", err)
-	}
-	m.verifier = verifier
-
-	if m.cfg.BaseURL == "" {
-		m.cfg.BaseURL = defaultBaseURL
-	}
-	m.cfg.BaseURL = strings.TrimRight(m.cfg.BaseURL, "/")
+	m.app = app
+	// Config-configured stores start switched on; a store with nothing in
+	// Config starts idle and waits for the panel.
+	inCode := m.complete(&m.cfg)
+	app.RegisterPlugin(gocommerce.PluginDef{
+		Key: PluginKey, Title: "Helcim", Category: "payments", DefaultEnabled: inCode,
+		Description: "Card payments through Helcim's HelcimPay.js, with the verified webhook marking orders paid.",
+		Docs:        "https://devdocs.helcim.com/",
+		Fields: []gocommerce.PluginField{
+			{Key: "api_token", Label: "API token", Kind: "secret", Required: !inCode, Help: "Sent as the api-token header."},
+			{Key: "verifier_token", Label: "Webhook verifier token", Kind: "secret", Required: !inCode, Help: "Base64, as Helcim shows it."},
+			{Key: "server_ip", Label: "Server IP for refunds", Kind: "text", Help: "Helcim wants an ipAddress on every payment call; a refund has no shopper, so this is the machine's.", Default: "127.0.0.1"},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production."},
+		},
+	})
+	m.finish(&m.cfg)
 	if strings.TrimSpace(m.cfg.ServerIP) == "" {
 		m.cfg.ServerIP = "127.0.0.1"
 	}
@@ -168,6 +223,9 @@ func (m *Module) DisplayName() string { return "Helcim" }
 
 // Initiate opens a HelcimPay.js checkout session.
 func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts gocommerce.PayOptions) (gocommerce.PaymentIntent, error) {
+	if !m.refresh(ctx) {
+		return gocommerce.PaymentIntent{}, errNotConfigured
+	}
 	body := map[string]any{
 		"paymentType": "purchase",
 		"amount":      decimal(order.Total.AmountMinor),
@@ -204,12 +262,18 @@ func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts goc
 
 // Refund implements gocommerce.Refunder.
 func (m *Module) Refund(ctx context.Context, order *gocommerce.Order, amountMinor int64) error {
+	if !m.refresh(ctx) {
+		return errNotConfigured
+	}
 	_, err := m.RefundWithReference(ctx, order, amountMinor)
 	return err
 }
 
 // RefundWithReference implements gocommerce.ReferencedRefunder.
 func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Order, amountMinor int64) (string, error) {
+	if !m.refresh(ctx) {
+		return "", errNotConfigured
+	}
 	// The payment reference is Helcim's transaction id, which the webhook wrote
 	// when the sale settled — not the checkout token Initiate returned.
 	original, err := strconv.ParseInt(strings.TrimSpace(order.PaymentReference), 10, 64)
@@ -222,7 +286,7 @@ func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Orde
 	body := map[string]any{
 		"originalTransactionId": original,
 		"amount":                decimal(amountMinor),
-		"ipAddress":             m.cfg.ServerIP,
+		"ipAddress":             m.conf().ServerIP,
 		"ecommerce":             true,
 	}
 
@@ -247,6 +311,12 @@ func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Orde
 func (m *Module) Webhook() http.Handler { return http.HandlerFunc(m.handleWebhook) }
 
 func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
+	// A notification for a provider nobody has set up cannot be verified,
+	// and an unverifiable notification is refused.
+	if !m.refresh(r.Context()) {
+		http.Error(w, "payment method not set up", http.StatusServiceUnavailable)
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxWebhookBytes))
 	if err != nil {
 		http.Error(w, "could not read body", http.StatusBadRequest)
@@ -256,7 +326,7 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		r.Header.Get("webhook-id"),
 		r.Header.Get("webhook-timestamp"),
 		r.Header.Get("webhook-signature"),
-		m.verifier, time.Now()); err != nil {
+		m.conf().verifierBytes, time.Now()); err != nil {
 		m.log.Warn("rejected a Helcim webhook", "error", err)
 		http.Error(w, "invalid signature", http.StatusBadRequest)
 		return
@@ -459,11 +529,11 @@ func (m *Module) do(ctx context.Context, method, path string, body any, idempote
 		reader = bytes.NewReader(encoded)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, m.cfg.BaseURL+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, m.conf().BaseURL+path, reader)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("api-token", m.cfg.APIToken)
+	req.Header.Set("api-token", m.conf().APIToken)
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

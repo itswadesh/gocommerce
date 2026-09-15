@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/misiki/gocommerce/core"
@@ -42,20 +43,23 @@ const (
 // Config configures the module.
 type Config struct {
 	// Email and Password are the Shiprocket API user's credentials. Required.
-	Email, Password string
+	Email    string `plugin:"email"`
+	Password string `plugin:"password"`
 	// PickupLocation is the nickname of the pickup address registered in
 	// Shiprocket. Required â€” the carrier has to collect the parcel somewhere.
-	PickupLocation string
+	PickupLocation string `plugin:"pickup_location"`
 	// DefaultWeightKg is the last resort, per unit, for a parcel the engine
 	// could not weigh â€” one holding a variant with no weight recorded. A
 	// catalogue that is fully weighed never reaches it.
-	DefaultWeightKg float64
+	DefaultWeightKg float64 `plugin:"default_weight_kg"`
 	// DefaultLengthCm and friends are the last resort for a parcel the engine
 	// has no unambiguous size for, which is any parcel holding more than a
 	// single unit. See gocommerce.Parcel.
-	DefaultLengthCm, DefaultBreadthCm, DefaultHeightCm float64
+	DefaultLengthCm  float64
+	DefaultBreadthCm float64
+	DefaultHeightCm  float64
 	// BaseURL overrides the endpoint, for tests.
-	BaseURL string
+	BaseURL string `plugin:"base_url"`
 	// Client overrides the HTTP client.
 	Client *http.Client
 }
@@ -63,6 +67,8 @@ type Config struct {
 // Module is the Shiprocket fulfillment provider.
 type Module struct {
 	cfg    Config
+	live   atomic.Pointer[Config]
+	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
 
@@ -74,6 +80,63 @@ type Module struct {
 // New constructs the module.
 func New(cfg Config) *Module { return &Module{cfg: cfg} }
 
+// PluginKey is the plugin this module registers, where the panel keeps its
+// credentials. Config is the environment's fallback for each field; a value
+// typed into the panel wins.
+const PluginKey = "shipping-shiprocket"
+
+var errNotConfigured = errors.New("shiprocket: not set up — activate and configure it under Settings")
+
+// conf is the effective configuration: the last one refresh computed, or
+// Config alone before the first use.
+func (m *Module) conf() *Config {
+	if c := m.live.Load(); c != nil {
+		return c
+	}
+	return &m.cfg
+}
+
+// refresh recomputes the effective configuration — Config with the plugin's
+// settings laid over it — and reports whether the provider can work: switched
+// on, with every required field filled. Called before each use, so a key
+// typed into the panel a moment ago counts without a restart.
+func (m *Module) refresh(ctx context.Context) bool {
+	c := m.cfg
+	on := false
+	if m.app != nil {
+		on, _ = m.app.Plugins().Enabled(ctx, PluginKey)
+		if on {
+			_ = m.app.Plugins().Fill(ctx, PluginKey, &c)
+		}
+	}
+	m.finish(&c)
+	m.live.Store(&c)
+	return on && m.complete(&c)
+}
+
+// Configured implements gocommerce.Configurable.
+func (m *Module) Configured(ctx context.Context) bool { return m.refresh(ctx) }
+
+// complete is whether a configuration has everything the provider needs.
+func (m *Module) complete(c *Config) bool {
+	return strings.TrimSpace(c.Email) != "" &&
+		strings.TrimSpace(c.Password) != "" &&
+		strings.TrimSpace(c.PickupLocation) != ""
+}
+
+// finish fills a configuration's defaults.
+func (m *Module) finish(c *Config) {
+	if c.BaseURL == "" {
+		c.BaseURL = defaultBaseURL
+	}
+	if c.DefaultWeightKg <= 0 {
+		c.DefaultWeightKg = 0.5
+	}
+	if c.DefaultLengthCm <= 0 {
+		c.DefaultLengthCm, c.DefaultBreadthCm, c.DefaultHeightCm = 15, 15, 10
+	}
+}
+
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "fulfill-shiprocket" }
 
@@ -83,23 +146,23 @@ func (m *Module) Migrations() []gocommerce.Migration { return nil }
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
-	switch {
-	case strings.TrimSpace(m.cfg.Email) == "":
-		return errors.New("shiprocket: Email is required")
-	case strings.TrimSpace(m.cfg.Password) == "":
-		return errors.New("shiprocket: Password is required")
-	case strings.TrimSpace(m.cfg.PickupLocation) == "":
-		return errors.New("shiprocket: PickupLocation is required â€” the carrier has to collect the parcel somewhere")
-	}
-	if m.cfg.BaseURL == "" {
-		m.cfg.BaseURL = defaultBaseURL
-	}
-	if m.cfg.DefaultWeightKg <= 0 {
-		m.cfg.DefaultWeightKg = 0.5
-	}
-	if m.cfg.DefaultLengthCm <= 0 {
-		m.cfg.DefaultLengthCm, m.cfg.DefaultBreadthCm, m.cfg.DefaultHeightCm = 15, 15, 10
-	}
+	m.app = app
+	// Config-configured stores start switched on; a store with nothing in
+	// Config starts idle and waits for the panel.
+	inCode := m.complete(&m.cfg)
+	app.RegisterPlugin(gocommerce.PluginDef{
+		Key: PluginKey, Title: "Shiprocket", Category: "shipping", DefaultEnabled: inCode,
+		Description: "Books shipments and waybills through Shiprocket, India's aggregator: one login across its couriers.",
+		Docs:        "https://apidocs.shiprocket.in/",
+		Fields: []gocommerce.PluginField{
+			{Key: "email", Label: "API user email", Kind: "text", Required: !inCode, Help: "The API user's login, not the account owner's."},
+			{Key: "password", Label: "API user password", Kind: "secret", Required: !inCode},
+			{Key: "pickup_location", Label: "Pickup location", Kind: "text", Required: !inCode, Help: "The pickup address nickname registered in Shiprocket."},
+			{Key: "default_weight_kg", Label: "Default weight (kg)", Kind: "number", Help: "Per unit, for a variant with no weight recorded.", Default: 0.5},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production."},
+		},
+	})
+	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
 		m.client = &http.Client{Timeout: 30 * time.Second}
@@ -113,11 +176,17 @@ func (m *Module) Register(app *gocommerce.App) error {
 // Code implements gocommerce.FulfillmentProvider.
 func (m *Module) Code() string { return "shiprocket" }
 
+// DisplayName implements gocommerce.Named.
+func (m *Module) DisplayName() string { return "Shiprocket" }
+
 // Ship creates the order in Shiprocket and assigns a waybill.
 //
 // It runs before the engine opens its transaction, so a carrier having a slow
 // minute never holds a lock on the orders table.
 func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommerce.ShipRequest) (gocommerce.Shipment, error) {
+	if !m.refresh(ctx) {
+		return gocommerce.Shipment{}, errNotConfigured
+	}
 	shipmentID, err := m.createOrder(ctx, order, req)
 	if err != nil {
 		return gocommerce.Shipment{}, err
@@ -190,7 +259,7 @@ func (m *Module) createOrder(ctx context.Context, order *gocommerce.Order, req g
 	payload := map[string]any{
 		"order_id":              externalID,
 		"order_date":            order.CreatedAt.UTC().Format("2006-01-02 15:04"),
-		"pickup_location":       m.cfg.PickupLocation,
+		"pickup_location":       m.conf().PickupLocation,
 		"billing_customer_name": first,
 		"billing_last_name":     last,
 		"billing_address":       addr.Line1,
@@ -211,9 +280,9 @@ func (m *Module) createOrder(ctx context.Context, order *gocommerce.Order, req g
 		// figure comes before the default because a catalogue somebody took
 		// the trouble to weigh should not be overruled by a guess â€” which is
 		// exactly what this module used to do.
-		"length":  m.dimension(req.Meta, "length_cm", centimetres(req.Parcel.Dimensions.Length, m.cfg.DefaultLengthCm)),
-		"breadth": m.dimension(req.Meta, "breadth_cm", centimetres(req.Parcel.Dimensions.Width, m.cfg.DefaultBreadthCm)),
-		"height":  m.dimension(req.Meta, "height_cm", centimetres(req.Parcel.Dimensions.Height, m.cfg.DefaultHeightCm)),
+		"length":  m.dimension(req.Meta, "length_cm", centimetres(req.Parcel.Dimensions.Length, m.conf().DefaultLengthCm)),
+		"breadth": m.dimension(req.Meta, "breadth_cm", centimetres(req.Parcel.Dimensions.Width, m.conf().DefaultBreadthCm)),
+		"height":  m.dimension(req.Meta, "height_cm", centimetres(req.Parcel.Dimensions.Height, m.conf().DefaultHeightCm)),
 		"weight":  m.dimension(req.Meta, "weight_kg", m.weight(req.Parcel, units)),
 	}
 
@@ -296,7 +365,7 @@ func (m *Module) weight(parcel gocommerce.Parcel, units int) float64 {
 	// Rounded to the gram, which is all the precision a weight ever has here.
 	// Without it, 0.4 kg three times is 1.2000000000000002 on the wire â€” not
 	// wrong, but not something to put in front of a carrier either.
-	return math.Round(m.cfg.DefaultWeightKg*float64(max(units, 1))*1000) / 1000
+	return math.Round(m.conf().DefaultWeightKg*float64(max(units, 1))*1000) / 1000
 }
 
 // centimetres converts one of the engine's millimetre sides, falling back when
@@ -328,13 +397,13 @@ func (m *Module) authToken(ctx context.Context) (string, error) {
 		return m.token, nil
 	}
 
-	payload := map[string]string{"email": m.cfg.Email, "password": m.cfg.Password}
+	payload := map[string]string{"email": m.conf().Email, "password": m.conf().Password}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		m.cfg.BaseURL+"/v1/external/auth/login", bytes.NewReader(encoded))
+		m.conf().BaseURL+"/v1/external/auth/login", bytes.NewReader(encoded))
 	if err != nil {
 		return "", err
 	}
@@ -369,7 +438,7 @@ func (m *Module) post(ctx context.Context, path string, payload any, out any) er
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.cfg.BaseURL+path, bytes.NewReader(encoded))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.conf().BaseURL+path, bytes.NewReader(encoded))
 	if err != nil {
 		return err
 	}

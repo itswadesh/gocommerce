@@ -1,6 +1,9 @@
 package gocommerce
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // ProviderInfo is one installed provider, as an operator should see it: the
 // code the API speaks, the label a human reads, and the module that put it
@@ -12,6 +15,11 @@ type ProviderInfo struct {
 	Name string `json:"name"`
 	// Module is "core" for a built-in, otherwise the module that registered it.
 	Module string `json:"module"`
+	// Configured is whether the provider can be used right now. False for a
+	// module installed idle whose key has not been typed into the Plugins
+	// screen yet; such a provider is listed here and nowhere a shopper or an
+	// operator could pick it.
+	Configured bool `json:"configured"`
 }
 
 // StoreSettings is what this store is configured as.
@@ -161,13 +169,16 @@ func (a *App) NotifierChannels() []NotifierChannelInfo {
 // hot-reloadable provider would break, so it is written down rather than left
 // to be inferred from the absence of a mutex.
 func (a *App) paymentInfo() []ProviderInfo {
-	codes := a.payments.Methods()
+	// installed rather than Methods: the settings list every gateway this
+	// build carries, ready or not, which is what a screen that sets them up
+	// needs; Methods is the shopper's list and leaves the idle ones out.
+	codes := a.payments.installed()
 	out := make([]ProviderInfo, 0, len(codes))
 	for _, code := range codes {
 		// No fallback for a missing owner: the provider and its owner are
 		// written on adjacent lines in RegisterPayment, so a blank module is a
 		// wiring bug and inventing "core" for it would hide one.
-		info := ProviderInfo{Code: code, Name: code, Module: a.paymentOwners[code]}
+		info := ProviderInfo{Code: code, Name: code, Module: a.paymentOwners[code], Configured: configured(context.Background(), a.payments.providers[code])}
 		if named, ok := a.payments.providers[code].(Named); ok && named.DisplayName() != "" {
 			info.Name = named.DisplayName()
 		}
@@ -185,7 +196,7 @@ func (a *App) fulfillmentInfo() []ProviderInfo {
 	codes := a.fulfillment.Providers()
 	out := make([]ProviderInfo, 0, len(codes))
 	for _, code := range codes {
-		info := ProviderInfo{Code: code, Name: code, Module: a.fulfillmentOwners[code]}
+		info := ProviderInfo{Code: code, Name: code, Module: a.fulfillmentOwners[code], Configured: configured(context.Background(), a.fulfillment.providers[code])}
 		if named, ok := a.fulfillment.providers[code].(Named); ok && named.DisplayName() != "" {
 			info.Name = named.DisplayName()
 		}

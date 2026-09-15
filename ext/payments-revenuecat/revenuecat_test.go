@@ -23,20 +23,6 @@ const (
 	testLinkToken     = "abcd1234"
 )
 
-func TestRegisterRequiresConfiguration(t *testing.T) {
-	t.Parallel()
-
-	for _, cfg := range []Config{
-		{},
-		{LinkToken: testLinkToken},
-		{WebhookAuthorization: testAuthorization},
-	} {
-		if err := New(cfg).Register(nil); err == nil {
-			t.Errorf("Register accepted an incomplete config: %+v", cfg)
-		}
-	}
-}
-
 // TestMinorUnits is why the exponent table exists: a hundredth is not the minor
 // unit of every currency, and RevenueCat reports a float.
 func TestMinorUnits(t *testing.T) {
@@ -300,4 +286,51 @@ func postWebhook(t *testing.T, app *gocommerce.App, body, authorization string, 
 	rec := httptest.NewRecorder()
 	app.Handler().ServeHTTP(rec, req)
 	return rec
+}
+
+// TestInstalledIdleUntilConfigured: with nothing in Config the module still
+// registers — the panel lists it — but the settings say it is not set up and
+// nothing can be sent through it, until its fields are typed into the plugin.
+func TestInstalledIdleUntilConfigured(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	ctx := context.Background()
+
+	var info *gocommerce.ProviderInfo
+	for _, p := range app.Settings().PaymentMethods {
+		if p.Code == "revenuecat" {
+			p := p
+			info = &p
+		}
+	}
+	if info == nil {
+		t.Fatal("an idle module should still be listed in the settings")
+	}
+	if info.Configured {
+		t.Fatalf("configured = %v before anything was typed in", info.Configured)
+	}
+	for _, code := range app.Pay().Methods() {
+		if code == "revenuecat" {
+			t.Fatal("an idle gateway must not be offered at checkout")
+		}
+	}
+	if _, err := app.Order().Checkout(ctx, "revenuecat", gocommerce.CheckoutInput{}, ""); err == nil || !strings.Contains(err.Error(), "no payment method") {
+		t.Fatalf("checkout through an idle gateway = %v, want it refused as unknown", err)
+	}
+
+	on := true
+	if _, err := app.Plugins().Update(ctx, PluginKey, gocommerce.PluginPatch{Enabled: &on, Settings: map[string]any{"link_token": "tok", "webhook_authorization": "Bearer x"}}); err != nil {
+		t.Fatalf("configure from the panel: %v", err)
+	}
+	for _, p := range app.Settings().PaymentMethods {
+		if p.Code == "revenuecat" && !p.Configured {
+			t.Fatal("configured from the panel, the settings should say so")
+		}
+	}
+	offered := false
+	for _, code := range app.Pay().Methods() {
+		offered = offered || code == "revenuecat"
+	}
+	if !offered {
+		t.Fatal("configured from the panel, the gateway should be offered")
+	}
 }

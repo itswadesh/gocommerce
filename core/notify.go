@@ -22,17 +22,13 @@ type notifierSet struct {
 // ConfigurableNotifier is a backend whose credentials come from the Plugins
 // screen rather than from Config. Until an operator has filled them in it is
 // installed but cannot send, and the funnel, the settings and the doctor all
-// treat it as absent — so "delivering" keeps meaning what it says.
-type ConfigurableNotifier interface {
-	Configured(ctx context.Context) bool
-}
+// treat it as absent — so "delivering" keeps meaning what it says. The same
+// interface serves payment and fulfilment providers; see providers.go.
+type ConfigurableNotifier = Configurable
 
 // ready is whether a backend would actually carry a message right now.
 func ready(ctx context.Context, n Notifier) bool {
-	if c, ok := n.(ConfigurableNotifier); ok {
-		return c.Configured(ctx)
-	}
-	return true
+	return configured(ctx, n)
 }
 
 // notifierEntry is a backend and the module that installed it. The module is

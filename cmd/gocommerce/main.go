@@ -19,15 +19,36 @@ import (
 	"time"
 
 	"github.com/misiki/gocommerce/core"
+	"github.com/misiki/gocommerce/ext/cms"
 	"github.com/misiki/gocommerce/ext/contact"
 	"github.com/misiki/gocommerce/ext/feeds"
+	delhivery "github.com/misiki/gocommerce/ext/fulfill-delhivery"
+	easyship "github.com/misiki/gocommerce/ext/fulfill-easyship"
+	indiapost "github.com/misiki/gocommerce/ext/fulfill-indiapost"
+	nimbuspost "github.com/misiki/gocommerce/ext/fulfill-nimbuspost"
+	onfleet "github.com/misiki/gocommerce/ext/fulfill-onfleet"
+	shippit "github.com/misiki/gocommerce/ext/fulfill-shippit"
+	shippo "github.com/misiki/gocommerce/ext/fulfill-shippo"
+	shiprocket "github.com/misiki/gocommerce/ext/fulfill-shiprocket"
+	shipstation "github.com/misiki/gocommerce/ext/fulfill-shipstation"
+	usps "github.com/misiki/gocommerce/ext/fulfill-usps"
+	veeqo "github.com/misiki/gocommerce/ext/fulfill-veeqo"
 	"github.com/misiki/gocommerce/ext/identity"
 	amazon "github.com/misiki/gocommerce/ext/import-amazon"
+	"github.com/misiki/gocommerce/ext/invoices"
 	"github.com/misiki/gocommerce/ext/klaviyo"
 	"github.com/misiki/gocommerce/ext/navigation"
 	"github.com/misiki/gocommerce/ext/newsletter"
 	msg91 "github.com/misiki/gocommerce/ext/notify-msg91"
 	sendgrid "github.com/misiki/gocommerce/ext/notify-sendgrid"
+	adyen "github.com/misiki/gocommerce/ext/payments-adyen"
+	helcim "github.com/misiki/gocommerce/ext/payments-helcim"
+	hyperswitch "github.com/misiki/gocommerce/ext/payments-hyperswitch"
+	lemonsqueezy "github.com/misiki/gocommerce/ext/payments-lemonsqueezy"
+	paddle "github.com/misiki/gocommerce/ext/payments-paddle"
+	razorpay "github.com/misiki/gocommerce/ext/payments-razorpay"
+	revenuecat "github.com/misiki/gocommerce/ext/payments-revenuecat"
+	stripe "github.com/misiki/gocommerce/ext/payments-stripe"
 	"github.com/misiki/gocommerce/ext/reviews"
 	meilisearch "github.com/misiki/gocommerce/ext/search-meilisearch"
 	"github.com/misiki/gocommerce/ext/sitemaps"
@@ -118,6 +139,10 @@ environment:
 		withNews     = fs.Bool("newsletter", false, "install the newsletter module: the storefront's signup box and its list")
 		withSendgrid = fs.Bool("sendgrid", false, "install the SendGrid module: the store's emails through SendGrid (SENDGRID_API_KEY, SENDGRID_FROM, or Notifications › Setup Email)")
 		withMsg91    = fs.Bool("msg91", false, "install the MSG91 module: the store's SMS through MSG91 (MSG91_AUTH_KEY, or Notifications › Setup SMS)")
+		withGateways = fs.Bool("gateways", false, "install every payment gateway module idle — Stripe, Razorpay, Adyen, Paddle, Lemon Squeezy, Helcim, Hyperswitch, RevenueCat — each switched on and given its keys under Settings › Payment methods")
+		withCarriers = fs.Bool("carriers", false, "install every carrier module idle — Shiprocket, Delhivery, NimbusPost, India Post, Shippo, ShipStation, Easyship, Shippit, USPS, Onfleet, Veeqo — each switched on and given its keys under Settings › Shipping providers")
+		withInvoices = fs.Bool("invoices", false, "install the invoices module: a numbered invoice per paid order (INVOICES_SELLER_NAME, INVOICES_SELLER_ADDRESS, INVOICES_TAX_ID)")
+		withCMS      = fs.Bool("cms", false, "install the cms module: content pages at /x/cms/pages/{slug}, edited on the Pages screen")
 		withAmazon   = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or IMPORT_AMAZON_LLM_URL + IMPORT_AMAZON_LLM_MODEL for a local model rewrite the copy; IMPORT_AMAZON_HEADED=1 shows the browser)")
 	)
 	if err := fs.Parse(args); err != nil {
@@ -226,6 +251,36 @@ environment:
 	}
 	if *withMsg91 {
 		modules = append(modules, msg91.New(msg91.Config{AuthKey: os.Getenv("MSG91_AUTH_KEY")}))
+	}
+	// Gateways and carriers install idle: nothing in Config, everything on
+	// the Payment methods and Shipping providers screens. A store that
+	// prefers the environment wires the module itself in its own main().
+	if *withGateways {
+		modules = append(modules,
+			stripe.New(stripe.Config{}), razorpay.New(razorpay.Config{}), adyen.New(adyen.Config{}),
+			paddle.New(paddle.Config{}), lemonsqueezy.New(lemonsqueezy.Config{}), helcim.New(helcim.Config{}),
+			hyperswitch.New(hyperswitch.Config{}), revenuecat.New(revenuecat.Config{}),
+		)
+	}
+	if *withCarriers {
+		modules = append(modules,
+			shiprocket.New(shiprocket.Config{}), delhivery.New(delhivery.Config{}), nimbuspost.New(nimbuspost.Config{}),
+			indiapost.New(indiapost.Config{}), shippo.New(shippo.Config{}), shipstation.New(shipstation.Config{}),
+			easyship.New(easyship.Config{}), shippit.New(shippit.Config{}), usps.New(usps.Config{}),
+			onfleet.New(onfleet.Config{}), veeqo.New(veeqo.Config{}),
+		)
+	}
+	if *withInvoices {
+		seller := os.Getenv("INVOICES_SELLER_NAME")
+		if seller == "" {
+			seller = "This store"
+		}
+		modules = append(modules, invoices.New(invoices.Config{
+			SellerName: seller, SellerAddress: os.Getenv("INVOICES_SELLER_ADDRESS"), TaxID: os.Getenv("INVOICES_TAX_ID"),
+		}))
+	}
+	if *withCMS {
+		modules = append(modules, cms.New(cms.Config{}))
 	}
 	if *withAmazon {
 		modules = append(modules, amazon.New(amazon.Config{
