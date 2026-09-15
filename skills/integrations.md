@@ -121,7 +121,7 @@ than parsing `Accept-Language` again.
 
 ## Plugins: a switch and its settings
 
-A plugin is a feature an operator switches on from Settings → Plugins rather
+A plugin is a feature an operator switches on from the Plugins screen rather
 than from a config file (D57). It is a descriptor plus one row: the
 descriptor says what the plugin is called and what settings it takes, the
 row says whether it is on and what the values are. Core ships the

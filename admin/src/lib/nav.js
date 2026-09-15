@@ -121,6 +121,18 @@ export const NAV = [
         accent: "fuchsia",
         keywords: "abandoned baskets",
     },
+    // What the store told its shoppers, and whether it arrived. Beside Carts
+    // and Orders because that is the conversation it belongs to: an operator
+    // with a shopper on the phone wants the confirmation email's fate next to
+    // the order, not under Settings with the outbox.
+    {
+        href: "/notifications",
+        label: "Notifications",
+        icon: "ri-notification-3-line",
+        right: "orders.read",
+        accent: "amber",
+        keywords: "email sms confirmation sent failed resend",
+    },
     {
         href: "/discounts",
         label: "Discounts",
@@ -196,6 +208,19 @@ export const NAV = [
         right: "locations.read",
         accent: "cyan",
         keywords: "warehouse store pickup",
+    },
+    // What this binary can do that is switched on from the panel: storefront
+    // extras, widgets, search, marketing. In the main nav rather than under
+    // Settings because switching a feature on is a thing a store does often
+    // and expects to find at a glance. store.operate, as webhooks are — pasting
+    // an analytics key is operating the store, not selling.
+    {
+        href: "/plugins",
+        label: "Plugins",
+        icon: "ri-puzzle-line",
+        right: "store.operate",
+        accent: "violet",
+        keywords: "plugins integrations widgets search klaviyo meilisearch feeds sitemap",
     },
     // Settings has no right of its own: the section is a shell, and every
     // screen inside it carries its own gate. Hiding the whole section from

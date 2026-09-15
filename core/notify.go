@@ -14,6 +14,9 @@ type notifierSet struct {
 	mu        sync.RWMutex
 	byChannel map[string][]notifierEntry
 	log       *slog.Logger
+	// record is the notification log's hook, called after every delivery
+	// with what the backends said. Nil in a set built without an App.
+	record func(ctx context.Context, note Notification, outcome notificationOutcome, err error)
 }
 
 // notifierEntry is a backend and the module that installed it. The module is
@@ -94,17 +97,33 @@ func (n *notifierSet) describe(channel string) NotifierChannelInfo {
 // earlier one failed, so a broken vendor does not silence the others; the
 // aggregated error asks the outbox to retry the whole event.
 func (n *notifierSet) send(ctx context.Context, note Notification) error {
+	return n.sendFrom(ctx, note, nil)
+}
+
+// sendFrom is send with the row a resend points back at.
+func (n *notifierSet) sendFrom(ctx context.Context, note Notification, resendOf *int64) error {
 	targets := n.forChannel(note.Channel)
-	if len(targets) == 0 {
-		return nil
-	}
+	outcome := notificationOutcome{resendOf: resendOf}
 	var failures []error
 	for _, target := range targets {
-		if err := target.notifier.Notify(ctx, note); err != nil {
+		err := target.notifier.Notify(ctx, note)
+		if _, isLog := target.notifier.(logNotifier); isLog {
+			// The log is where a message goes when nothing else will carry
+			// it; it is not a backend the row should claim delivered.
+			continue
+		}
+		outcome.backends = append(outcome.backends, target.module)
+		if err != nil {
 			failures = append(failures, err)
+		} else {
+			outcome.delivered = true
 		}
 	}
-	return errors.Join(failures...)
+	err := errors.Join(failures...)
+	if n.record != nil {
+		n.record(ctx, note, outcome, err)
+	}
+	return err
 }
 
 // logNotifier is the built-in backend: it writes the message to the log and

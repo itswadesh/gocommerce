@@ -8458,6 +8458,181 @@
         }
       }
     },
+    "/api/admin/notifications": {
+      "get": {
+        "tags": [
+          "admin:orders"
+        ],
+        "summary": "What the store told its shoppers",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Every notification the store sent — or tried to, or only logged — newest first. Filter by channel, status, event, or search by recipient or order number. Needs orders.read: a notification is an order's communication.",
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "email",
+                "sms"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "sent",
+                "logged",
+                "failed"
+              ]
+            }
+          },
+          {
+            "name": "event",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "A recipient fragment, or an order number."
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of notifications.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NotificationRecord"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/notifications/{id}": {
+      "get": {
+        "tags": [
+          "admin:orders"
+        ],
+        "summary": "One notification",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The notification.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/NotificationRecord"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/notifications/{id}/resend": {
+      "post": {
+        "tags": [
+          "admin:orders"
+        ],
+        "summary": "Send a notification again",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Delivers the recorded message again through whatever backends the store has now — the one that failed last week may be fixed, and one that only reached the log may have an email module behind it today. The new attempt is its own row, pointing at this one, and is what comes back. Needs orders.write.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The notification.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/NotificationRecord"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/plugins": {
       "get": {
         "tags": [
@@ -15878,6 +16053,68 @@
           "settings": {
             "type": "object",
             "additionalProperties": true
+          }
+        }
+      },
+      "NotificationRecord": {
+        "type": "object",
+        "description": "One message the store sent a shopper, as it remembers sending it.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "event": {
+            "type": "string",
+            "example": "order.created"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "sms"
+            ]
+          },
+          "to": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string"
+          },
+          "order_number": {
+            "type": "string"
+          },
+          "backend": {
+            "type": "string",
+            "description": "The module that carried it; empty when only the log did."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "logged",
+              "failed"
+            ],
+            "description": "`logged` is a store with no delivery backend for the channel: the message went to the server log and nowhere else."
+          },
+          "error": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "The template variables, kept so the message can be sent again as it was."
+          },
+          "resend_of": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The row this is a resend of."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }

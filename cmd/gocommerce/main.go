@@ -175,7 +175,7 @@ environment:
 		modules = append(modules, webhooks.New(webhooks.Config{}))
 	}
 	// The four below are plugins as much as modules: installed here, but
-	// switched on and configured from Settings → Plugins, with the
+	// switched on and configured from the Plugins screen, with the
 	// environment as the fallback for a store that prefers it.
 	if *withSearch {
 		modules = append(modules, meilisearch.New(meilisearch.Config{

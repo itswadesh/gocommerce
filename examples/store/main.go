@@ -52,7 +52,7 @@ func main() {
 		cms.New(cms.Config{}),
 
 		// Plugins: installed here, switched on and configured from
-		// Settings → Plugins. The environment is the fallback.
+		// the Plugins screen. The environment is the fallback.
 		meilisearch.New(meilisearch.Config{
 			Host: os.Getenv("MEILI_HOST"), APIKey: os.Getenv("MEILI_API_KEY"), SearchKey: os.Getenv("MEILI_SEARCH_KEY"),
 		}),

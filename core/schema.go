@@ -47,6 +47,7 @@ func coreMigrations() []Migration {
 		{ID: "0036_variant_pictures", SQL: migration0036VariantPictures},
 		{ID: "0037_requires_shipping", SQL: migration0037RequiresShipping},
 		{ID: "0038_plugins", SQL: migration0038Plugins},
+		{ID: "0039_notifications", SQL: migration0039Notifications},
 	}
 }
 
@@ -1944,4 +1945,33 @@ CREATE TABLE plugins (
     settings   jsonb       NOT NULL DEFAULT '{}',
     updated_at timestamptz NOT NULL DEFAULT now()
 );
+`
+
+// M39 — what the store told its shoppers.
+//
+// One row per delivery, written at the funnel every notification passes
+// through, after the backends have answered: the event, the channel, the
+// recipient, the backend that carried it, and whether it went. The question
+// that brings an operator here is "did she get her confirmation", and until
+// now the only answer was a log line on a server the operator cannot read.
+// `data` keeps the template variables so a message can be sent again as it
+// was; `resend_of` ties the second attempt to the first.
+const migration0039Notifications = `
+CREATE TABLE notifications (
+    id           bigserial   PRIMARY KEY,
+    event        text        NOT NULL,
+    channel      text        NOT NULL,
+    recipient    text        NOT NULL,
+    language     text        NOT NULL DEFAULT '',
+    order_number text        NOT NULL DEFAULT '',
+    backend      text        NOT NULL DEFAULT '',
+    status       text        NOT NULL CHECK (status IN ('sent', 'logged', 'failed')),
+    error        text        NOT NULL DEFAULT '',
+    data         jsonb       NOT NULL DEFAULT '{}',
+    resend_of    bigint      REFERENCES notifications (id) ON DELETE SET NULL,
+    created_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX notifications_created_idx ON notifications (id DESC);
+CREATE INDEX notifications_order_idx   ON notifications (order_number) WHERE order_number <> '';
+CREATE INDEX notifications_status_idx  ON notifications (status, id DESC);
 `

@@ -282,6 +282,35 @@ all, so the card shows none. And an entry with no actor is one the trail did not
 record: everything that happened before migration 0020 ran, and the engine's own
 sweeps.
 
+## How to see what the shopper was told
+
+Every message the store sends — the confirmation email, the shipping SMS —
+leaves a row in `notifications` (M39), written at the one funnel every
+delivery passes through after the backends have answered. A row says which
+event, which channel, to whom, through which module, and one of three
+outcomes: `sent` (a real backend took it), `logged` (no delivery backend is
+installed for the channel, so it went to the server log and nowhere else),
+or `failed` (a backend refused it; the error is on the row).
+
+```go
+rows, total, err := app.Notifications().List(ctx, gocommerce.NotificationQuery{
+    Search: order.Number, Status: gocommerce.NotificationFailed,
+})
+again, err := app.Notifications().Resend(ctx, rows[0].ID)
+```
+
+```http
+GET  /api/admin/notifications?q=1001&channel=email&status=failed   # orders.read
+GET  /api/admin/notifications/{id}
+POST /api/admin/notifications/{id}/resend                         # orders.write
+```
+
+Resend delivers the recorded message again through whatever backends the
+store has *now* — the vendor that was down may be up, and a channel that only
+reached the log may have a module behind it today — and the new attempt is
+its own row, pointing at the first. The panel's Notifications screen, in the
+main nav beside Carts, is this list with a Resend button.
+
 ## How to correct an order
 
 ```go

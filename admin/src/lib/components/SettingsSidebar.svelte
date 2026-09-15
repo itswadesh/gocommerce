@@ -71,12 +71,6 @@
               right: "store.operate" },
             { href: "/settings/agent", label: "Agent activity", icon: "ri-robot-2-line",
               right: "store.operate", module: "mcp" },
-            // What this binary can do that is switched on from the panel:
-            // storefront extras, widgets, search, marketing. Same right as
-            // webhooks, for the same reason — pasting an analytics key is
-            // operating the store, not selling.
-            { href: "/settings/plugins", label: "Plugins", icon: "ri-puzzle-line",
-              right: "store.operate" },
         ],
         // Storefronts sit under Settings rather than the main nav: a store
         // configures them once and then works in the screens they scope, the

@@ -252,22 +252,23 @@ type App struct {
 	// Domain services. They are concrete types rather than interfaces: they
 	// are not replaceable, and inventing an interface for something with one
 	// implementation buys nothing but indirection.
-	catalog     *Catalog
-	inventory   *Inventory
-	carts       *Carts
-	orders      *Orders
-	payments    *Payments
-	fulfillment *Fulfillments
-	transfer    *Transfer
-	plugins     *Plugins
-	superusers  *Superusers
-	roles       *RoleRights
-	media       *Media
-	discounts   *Discounts
-	locations   *Locations
-	invitations *Invitations
-	taxes       *Taxes
-	shipping    *Shipping
+	catalog       *Catalog
+	inventory     *Inventory
+	carts         *Carts
+	orders        *Orders
+	payments      *Payments
+	fulfillment   *Fulfillments
+	transfer      *Transfer
+	plugins       *Plugins
+	notifications *Notifications
+	superusers    *Superusers
+	roles         *RoleRights
+	media         *Media
+	discounts     *Discounts
+	locations     *Locations
+	invitations   *Invitations
+	taxes         *Taxes
+	shipping      *Shipping
 	// reports is a reading of the orders: it owns no table and writes nothing,
 	// so it has no ordering constraint against anything built here.
 	reports *Reports
@@ -446,6 +447,8 @@ func (a *App) buildServices() {
 	a.fulfillment = &Fulfillments{app: a, providers: map[string]FulfillmentProvider{}}
 	a.transfer = &Transfer{app: a}
 	a.plugins = newPlugins(a)
+	a.notifications = &Notifications{app: a}
+	a.notifier.record = a.notifications.record
 	// Before superusers: identity resolves rights through it on every scan.
 	a.roles = &RoleRights{app: a}
 	a.superusers = newSuperusers(a)

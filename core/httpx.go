@@ -472,6 +472,7 @@ func (a *App) mountCoreRoutes() {
 	a.mountReportRoutes()
 	a.mountTransferRoutes()
 	a.mountPluginRoutes()
+	a.mountNotificationRoutes()
 	// The store's own operations after the commerce surfaces, before the
 	// panel's file server: everything above is the shop, this is the machine
 	// the shop runs on.
