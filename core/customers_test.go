@@ -317,7 +317,7 @@ func TestTheCustomerExportRouteIsGatedAndStreams(t *testing.T) {
 func exportedCustomers(t *testing.T, app *App, q CustomerQuery) map[string]map[string]string {
 	t.Helper()
 	var buf bytes.Buffer
-	if err := app.transfer.ExportCustomers(context.Background(), &buf, q); err != nil {
+	if err := app.transfer.ExportCustomers(context.Background(), &buf, q, ExportOptions{}); err != nil {
 		t.Fatalf("export customers: %v", err)
 	}
 	records, err := csv.NewReader(&buf).ReadAll()

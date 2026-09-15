@@ -102,12 +102,17 @@ type Variant struct {
 	// Taxable is whether tax applies to this variant. True for almost
 	// everything, and the safe default to be wrong about: tax charged in error
 	// is refundable, tax not charged is not.
-	Taxable       bool     `json:"taxable"`
-	Options       []string `json:"options"`
-	Label         string   `json:"label"`
-	StockOnHand   int      `json:"stock_on_hand"`
-	StockReserved int      `json:"stock_reserved"`
-	Available     int      `json:"available"`
+	Taxable bool `json:"taxable"`
+	// RequiresShipping is whether the thing is sent at all. False for a
+	// download, a service or a gift card: nothing is charged to send it and
+	// the checkout asks for no delivery option when the basket holds nothing
+	// else.
+	RequiresShipping bool     `json:"requires_shipping"`
+	Options          []string `json:"options"`
+	Label            string   `json:"label"`
+	StockOnHand      int      `json:"stock_on_hand"`
+	StockReserved    int      `json:"stock_reserved"`
+	Available        int      `json:"available"`
 	// AtLocation is this variant's holding at one particular place. It is filled
 	// in only by the reads that are *about* a place — a location's stock listing
 	// and the low-stock report for one shop — and is absent everywhere else,
@@ -216,6 +221,7 @@ type VariantInput struct {
 	CompareAtPriceMinor *int64   `json:"compare_at_price_minor"`
 	CostMinor           *int64   `json:"cost_minor"`
 	Taxable             *bool    `json:"taxable"`
+	RequiresShipping    *bool    `json:"requires_shipping"`
 	Options             []string `json:"options"`
 	StockOnHand         *int     `json:"stock_on_hand"`
 	TrackInventory      *bool    `json:"track_inventory"`
@@ -279,15 +285,16 @@ type VariantPatch struct {
 	// CostMinor is a NullableAmount because an emptied cost box means "nobody
 	// has recorded one", and a plain pointer cannot tell that from a patch that
 	// never mentioned cost at all.
-	CostMinor       NullableAmount `json:"cost_minor"`
-	Taxable         *bool          `json:"taxable"`
-	TrackInventory  *bool          `json:"track_inventory"`
-	ContinueSelling *bool          `json:"continue_selling"`
-	Active          *bool          `json:"active"`
-	OriginCountry   *string        `json:"origin_country"`
-	HSCode          *string        `json:"hs_code"`
-	WeightGrams     *int           `json:"weight_grams"`
-	WeightUnit      *string        `json:"weight_unit"`
+	CostMinor        NullableAmount `json:"cost_minor"`
+	Taxable          *bool          `json:"taxable"`
+	RequiresShipping *bool          `json:"requires_shipping"`
+	TrackInventory   *bool          `json:"track_inventory"`
+	ContinueSelling  *bool          `json:"continue_selling"`
+	Active           *bool          `json:"active"`
+	OriginCountry    *string        `json:"origin_country"`
+	HSCode           *string        `json:"hs_code"`
+	WeightGrams      *int           `json:"weight_grams"`
+	WeightUnit       *string        `json:"weight_unit"`
 	// WeightValue is the weight in WeightUnit. Sending both it and the unit is
 	// the form's shape; sending WeightGrams is the API's. Both are accepted,
 	// and WeightValue wins, because a client that computed grams itself and
@@ -541,15 +548,15 @@ func (c *Catalog) insertVariant(ctx context.Context, tx *sql.Tx, productID int64
 	var id int64
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO variants (product_id, sku, barcode, price_minor, compare_at_price_minor,
-		                      cost_minor, taxable, track_inventory,
+		                      cost_minor, taxable, requires_shipping, track_inventory,
 		                      continue_selling, active, origin_country, hs_code,
 		                      weight_grams, weight_unit,
 		                      length_mm, width_mm, height_mm, dimension_unit,
 		                      position, option_key, metadata)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
 		RETURNING id`,
 		productID, strings.TrimSpace(in.SKU), nullString(in.Barcode), in.PriceMinor,
-		in.CompareAtPriceMinor, in.CostMinor, boolOr(in.Taxable, true),
+		in.CompareAtPriceMinor, in.CostMinor, boolOr(in.Taxable, true), boolOr(in.RequiresShipping, true),
 		boolOr(in.TrackInventory, true), boolOr(in.ContinueSelling, false),
 		boolOr(in.Active, true), origin, hs,
 		grams, unit,
@@ -910,6 +917,9 @@ func (c *Catalog) UpdateVariant(ctx context.Context, id int64, patch VariantPatc
 	}
 	if patch.Taxable != nil {
 		add("taxable", *patch.Taxable)
+	}
+	if patch.RequiresShipping != nil {
+		add("requires_shipping", *patch.RequiresShipping)
 	}
 	if patch.TrackInventory != nil {
 		add("track_inventory", *patch.TrackInventory)
@@ -1485,7 +1495,7 @@ const (
 )
 
 const variantColumns = `v.id, v.product_id, v.sku, coalesce(v.barcode, ''), v.price_minor,
-	v.compare_at_price_minor, v.cost_minor, v.taxable, ` + variantOnHand + `, ` + variantReserved + `,
+	v.compare_at_price_minor, v.cost_minor, v.taxable, v.requires_shipping, ` + variantOnHand + `, ` + variantReserved + `,
 	v.track_inventory, v.continue_selling, v.active, v.origin_country, v.hs_code,
 	v.weight_grams, v.weight_unit,
 	v.length_mm, v.width_mm, v.height_mm, v.dimension_unit,
@@ -1521,7 +1531,7 @@ func (c *Catalog) selectVariants(ctx context.Context, where, orderBy, page strin
 		var weight sql.NullInt64
 		var length, width, height sql.NullInt64
 		if err := rows.Scan(&v.ID, &v.ProductID, &v.SKU, &v.Barcode, &v.Price.AmountMinor,
-			&compareAt, &cost, &v.Taxable, &v.StockOnHand, &v.StockReserved,
+			&compareAt, &cost, &v.Taxable, &v.RequiresShipping, &v.StockOnHand, &v.StockReserved,
 			&v.TrackInventory, &v.ContinueSelling, &v.Active, &v.OriginCountry, &v.HSCode,
 			&weight, &v.WeightUnit,
 			&length, &width, &height, &v.DimensionUnit,

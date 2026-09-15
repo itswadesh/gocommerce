@@ -1131,6 +1131,12 @@ func TestTheVocabularyIsReachable(t *testing.T) {
 		t.Fatalf("cancel: %v", err)
 	}
 
+	// A plugin switched on with a setting is the newest word in the vocabulary.
+	switchedOn := true
+	if _, err := app.Plugins().Update(ctx, "hello-bar", PluginPatch{Enabled: &switchedOn, Settings: map[string]any{"message": "Hi"}}); err != nil {
+		t.Fatalf("plugin update: %v", err)
+	}
+
 	// pending names the actions whose call sites live in files this change does
 	// not own: the guarded admin-placed-order write in checkout.go, bulk import
 	// in transfer.go, the options service, invitations and role sets. Each one

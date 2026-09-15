@@ -19,8 +19,12 @@ import (
 	"time"
 
 	"github.com/misiki/gocommerce/core"
+	"github.com/misiki/gocommerce/ext/feeds"
 	"github.com/misiki/gocommerce/ext/identity"
 	amazon "github.com/misiki/gocommerce/ext/import-amazon"
+	"github.com/misiki/gocommerce/ext/klaviyo"
+	meilisearch "github.com/misiki/gocommerce/ext/search-meilisearch"
+	"github.com/misiki/gocommerce/ext/sitemaps"
 	webhooks "github.com/misiki/gocommerce/ext/webhooks"
 )
 
@@ -98,6 +102,10 @@ environment:
 		mediaDir     = fs.String("media-dir", "", "directory for uploaded media (default $GOCOMMERCE_MEDIA_DIR; empty disables uploads)")
 		withIdentity = fs.Bool("identity", false, "install the identity module: shopper accounts under /x/identity/ (guest checkout stays)")
 		withWebhooks = fs.Bool("webhooks", false, "install the webhooks module: POST this store's events to endpoints you register")
+		withSearch   = fs.Bool("meilisearch", false, "install the meilisearch module: a search index kept in step with the catalogue (MEILI_HOST, MEILI_API_KEY, MEILI_SEARCH_KEY, or the Plugins screen)")
+		withKlaviyo  = fs.Bool("klaviyo", false, "install the klaviyo module: orders and abandoned carts as Klaviyo events (KLAVIYO_PRIVATE_KEY, KLAVIYO_PUBLIC_KEY, or the Plugins screen)")
+		withFeeds    = fs.Bool("feeds", false, "install the feeds module: Google Merchant and Meta catalogue feeds at /x/feeds/ (STOREFRONT_URL, or the Plugins screen)")
+		withSitemaps = fs.Bool("sitemaps", false, "install the sitemaps module: the storefront's sitemap at /x/sitemaps/sitemap.xml (STOREFRONT_URL, or the Plugins screen)")
 		withAmazon   = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or IMPORT_AMAZON_LLM_URL + IMPORT_AMAZON_LLM_MODEL for a local model rewrite the copy; IMPORT_AMAZON_HEADED=1 shows the browser)")
 	)
 	if err := fs.Parse(args); err != nil {
@@ -165,6 +173,25 @@ environment:
 	}
 	if *withWebhooks {
 		modules = append(modules, webhooks.New(webhooks.Config{}))
+	}
+	// The four below are plugins as much as modules: installed here, but
+	// switched on and configured from Settings → Plugins, with the
+	// environment as the fallback for a store that prefers it.
+	if *withSearch {
+		modules = append(modules, meilisearch.New(meilisearch.Config{
+			Host: os.Getenv("MEILI_HOST"), APIKey: os.Getenv("MEILI_API_KEY"), SearchKey: os.Getenv("MEILI_SEARCH_KEY"),
+		}))
+	}
+	if *withKlaviyo {
+		modules = append(modules, klaviyo.New(klaviyo.Config{
+			PrivateKey: os.Getenv("KLAVIYO_PRIVATE_KEY"), PublicKey: os.Getenv("KLAVIYO_PUBLIC_KEY"),
+		}))
+	}
+	if *withFeeds {
+		modules = append(modules, feeds.New(feeds.Config{StorefrontURL: os.Getenv("STOREFRONT_URL")}))
+	}
+	if *withSitemaps {
+		modules = append(modules, sitemaps.New(sitemaps.Config{StorefrontURL: os.Getenv("STOREFRONT_URL")}))
 	}
 	if *withAmazon {
 		modules = append(modules, amazon.New(amazon.Config{

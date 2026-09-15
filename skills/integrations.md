@@ -119,6 +119,46 @@ returns a validation error for malformed input. Never write a bare
 Read the negotiated language with `gocommerce.Language(r.Context())` rather
 than parsing `Accept-Language` again.
 
+## Plugins: a switch and its settings
+
+A plugin is a feature an operator switches on from Settings → Plugins rather
+than from a config file (D57). It is a descriptor plus one row: the
+descriptor says what the plugin is called and what settings it takes, the
+row says whether it is on and what the values are. Core ships the
+descriptors for storefront features that are only settings a storefront
+reads; a module registers its own from `Register`:
+
+```go
+app.RegisterPlugin(gocommerce.PluginDef{
+    Key: "klaviyo", Title: "Klaviyo", Category: "marketing",
+    Description:    "…",
+    DefaultEnabled: cfg.PrivateKey != "",
+    Fields: []gocommerce.PluginField{
+        {Key: "private_key", Label: "Private API key", Kind: "secret", Required: cfg.PrivateKey == ""},
+        {Key: "public_key", Label: "Public API key", Kind: "text", Public: true},
+    },
+})
+```
+
+Then, wherever the module acts:
+
+```go
+enabled, _ := app.Plugins().Enabled(ctx, "klaviyo")   // the switch
+settings, _ := app.Plugins().Settings(ctx, "klaviyo") // unmasked, defaults filled in
+key := app.Plugins().String(ctx, "klaviyo", "private_key")
+```
+
+Rules that keep it honest: a `secret` field is masked on every read and
+never public, whatever `Public` says; a `Public` field is handed to the
+storefront through `GET /api/plugins`; the screen's value wins over the
+module's `Config`, which stays as the fallback for an environment-first
+store; `DefaultEnabled` is the state before an operator touches it, so a
+module given its key by the environment is on without a click. Every
+change lands in the audit trail as `plugin.update`.
+
+What a plugin is not: code that arrives at runtime. The Plugins screen
+lists what this binary can do; adding to it is adding a module.
+
 ## Where a module lives, and what it may not do
 
 A module that adds **no third-party dependency** belongs in `ext/`. Every

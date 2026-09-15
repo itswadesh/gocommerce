@@ -1,0 +1,34 @@
+{
+  "paths": {
+    "/api/admin/x/klaviyo/status": {
+      "get": {
+        "tags": ["admin:klaviyo"],
+        "summary": "Whether Klaviyo is on, and how delivery is going",
+        "security": [{"adminToken": []}],
+        "description": "Delivery is best effort: an event Klaviyo did not take after two tries is counted here and logged, never retried through the outbox, because the outbox re-runs a whole event for every subscriber (D51). Klaviyo de-duplicates on the event id, so the retry that does happen is harmless.",
+        "responses": {
+          "200": {"description": "The subscriber's state.", "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {"data": {"$ref": "#/components/schemas/KlaviyoStatus"}}
+          }}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "KlaviyoStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {"type": "boolean"},
+          "configured": {"type": "boolean"},
+          "sent": {"type": "integer", "description": "Events Klaviyo accepted since the store started."},
+          "failed": {"type": "integer"},
+          "last_sent": {"type": "string", "format": "date-time"},
+          "last_error": {"type": "string"}
+        }
+      }
+    }
+  }
+}

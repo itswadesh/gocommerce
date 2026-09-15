@@ -26,10 +26,37 @@
     let importing = $state(false);
     let dryRun = $state(true);
     let fireEvents = $state(false);
+    // Overwrite is Shopify's own switch, with the opposite default: a
+    // re-import of an edited export is what most files here are, and it
+    // has to update what it finds.
+    let overwrite = $state(true);
     let kind = $state("products");
     let csv = $state("");
     let result = $state(null);
     let fileInput;
+
+    /*
+     * One dialect for every file that leaves. The store's own layout carries
+     * everything; Shopify's is the same model in Shopify's column names, so
+     * the file opens in every tool built for it and imports into a Shopify
+     * store unchanged. On the way in the engine reads the dialect off the
+     * header, so there is no switch to get wrong; the line under the
+     * textarea says what it saw.
+     */
+    let exportFormat = $state("gocommerce");
+    const formats = [
+        { value: "gocommerce", label: "GoCommerce CSV" },
+        { value: "shopify", label: "Shopify CSV" },
+    ];
+    const detected = $derived.by(() => {
+        const header = csv.trimStart().split(/\r?\n/, 1)[0]?.toLowerCase() ?? "";
+        if (!header) return "";
+        const has = (name) => header.split(",").some((h) => h.replace(/^"|"$/g, "").trim() === name);
+        if (kind === "products") return has("handle") ? "shopify" : has("product_slug") ? "gocommerce" : "";
+        if (kind === "orders") return has("lineitem quantity") ? "shopify" : has("number") ? "gocommerce" : "";
+        if (kind === "inventory") return has("on hand") || has("handle") ? "shopify" : has("sku") ? "gocommerce" : "";
+        return "";
+    });
 
     // The export filters, and the two vocabularies they need. The category
     // control is a CategoryPicker rather than a Select on purpose: this is the
@@ -77,14 +104,19 @@
         }
     }
 
+    // The file is named for what it holds and the dialect it is in, so two
+    // on one desk can be told apart.
+    const fileName = (kind) => (exportFormat === "shopify" ? `${kind}-shopify.csv` : `${kind}.csv`);
+
     function exportProducts() {
         const suffix = query({
             q: exportQ,
             status: exportStatus,
             category_id: exportCategory,
             collection_id: exportCollection,
+            format: exportFormat,
         });
-        download("/api/admin/export/admin-products" + suffix, "products.csv");
+        download("/api/admin/export/admin-products" + suffix, fileName("products"));
     }
 
     function exportOrders() {
@@ -92,8 +124,17 @@
             status: exportOrderStatus,
             from: exportOrderFrom,
             to: exportOrderTo,
+            format: exportFormat,
         });
-        download("/api/admin/export/admin-orders" + suffix, "orders.csv");
+        download("/api/admin/export/admin-orders" + suffix, fileName("orders"));
+    }
+
+    function exportCustomers() {
+        download("/api/admin/export/admin-customers" + query({ format: exportFormat }), fileName("customers"));
+    }
+
+    function exportInventory() {
+        download("/api/admin/export/admin-inventory" + query({ format: exportFormat }), fileName("inventory"));
     }
 
     /* The window in words, so the exclusive bound is stated in the form a
@@ -195,6 +236,7 @@
             const params = new URLSearchParams();
             if (dryRun) params.set("dry_run", "1");
             if (kind === "orders" && fireEvents) params.set("fire_events", "1");
+            if (kind === "products" && !overwrite) params.set("overwrite", "0");
             const suffix = params.toString() ? "?" + params.toString() : "";
 
             result = await request("POST", `/api/admin/import/${kind}${suffix}`, {
@@ -257,6 +299,21 @@
                 <code>+</code>, <code>-</code> or <code>@</code> are escaped so opening the
                 file cannot run them; importing strips the escape again, so the round trip is
                 lossless.
+            </div>
+
+            <div class="field" style="max-width: 320px">
+                <label for="export-format">Layout</label>
+                <Select id="export-format" bind:value={exportFormat} options={formats} />
+            </div>
+            <div class="field-help m-b-base">
+                {#if exportFormat === "shopify"}
+                    Shopify's own column names — Handle, Variant SKU, Image Src and the rest —
+                    so the file opens in every tool built for them and imports into a Shopify
+                    store as it is. Prices are decimals in the store's currency.
+                {:else}
+                    The store's own layout: every field, prices in minor units, one stock
+                    column per location, and pictures as URLs.
+                {/if}
             </div>
 
             <h6 class="section-title">
@@ -335,6 +392,14 @@
                     <i class="ri-price-tag-3-line" aria-hidden="true"></i>
                     <span class="txt">Products CSV</span>
                 </button>
+                <button type="button" class="btn secondary" onclick={exportInventory}>
+                    <i class="ri-archive-line" aria-hidden="true"></i>
+                    <span class="txt">Inventory CSV</span>
+                </button>
+            </div>
+            <div class="field-help m-b-base">
+                The inventory file is the stock-take's shape: every variant's count at every
+                location, and nothing else. Edit the counts and import it back.
             </div>
 
             <!--
@@ -399,6 +464,15 @@
                     <i class="ri-shopping-bag-3-line" aria-hidden="true"></i>
                     <span class="txt">Orders CSV</span>
                 </button>
+                <button type="button" class="btn secondary" onclick={exportCustomers}>
+                    <i class="ri-user-3-line" aria-hidden="true"></i>
+                    <span class="txt">Customers CSV</span>
+                </button>
+            </div>
+            <div class="field-help m-t-sm">
+                Customers are a reading of the orders — one row per person, with what they
+                have spent — so the file leaves but does not come back: there is no customer
+                to import into.
             </div>
             {/if}
 
@@ -510,9 +584,14 @@
                     bind:value={kind}
                     options={[
                         { value: "products", label: "Products and variants" },
+                        { value: "inventory", label: "Inventory counts" },
                         { value: "orders", label: "Historical orders" },
                     ]}
                 />
+            </div>
+            <div class="field-help">
+                Either layout: the store's own, or a file exported from Shopify, as it is. The
+                engine reads which off the first line.
             </div>
 
             <div class="flex gap-20 flex-wrap m-t-base">
@@ -520,6 +599,12 @@
                     <input type="checkbox" id="dry-run" class="switch" bind:checked={dryRun} />
                     <label for="dry-run">Dry run</label>
                 </div>
+                {#if kind === "products"}
+                    <div class="field">
+                        <input type="checkbox" id="overwrite" class="switch" bind:checked={overwrite} />
+                        <label for="overwrite">Update products that already exist</label>
+                    </div>
+                {/if}
                 {#if kind === "orders"}
                     <div class="field">
                         <input
@@ -538,6 +623,16 @@
                     <p>
                         A dry run validates the whole file and rolls back, reporting what it
                         <em>would</em> have done. Worth doing first, always.
+                    </p>
+                </div>
+            {/if}
+
+            {#if kind === "products" && !overwrite}
+                <div class="alert info m-t-base">
+                    <p>
+                        A product the store already has — same slug, or Handle — is left
+                        exactly as it is, and only the new ones are created. That is how a
+                        second catalogue is loaded beside the first without touching it.
                     </p>
                 </div>
             {/if}
@@ -561,6 +656,18 @@
                     placeholder="Paste CSV here, or choose a file"
                     bind:value={csv}
                 ></textarea>
+                {#if csv.trim()}
+                    <div class="field-help">
+                        {#if detected === "shopify"}
+                            Looks like a Shopify file.
+                        {:else if detected === "gocommerce"}
+                            Looks like the store's own layout.
+                        {:else}
+                            The first line does not look like either layout; the import will say
+                            which column it is missing.
+                        {/if}
+                    </div>
+                {/if}
             </div>
 
             <input

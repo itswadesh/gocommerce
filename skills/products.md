@@ -117,6 +117,52 @@ same filters — a reconciliation exports the rows a screen is showing rather
 than the whole catalogue. A bad filter on the export is a 400 in the envelope,
 because it is parsed before the first CSV header is written.
 
+### CSV in two dialects
+
+The product file is one model in two layouts (D56). The store's own is the
+default; `?format=shopify` writes Shopify's product export column for column
+— Handle, Title, Body (HTML), Vendor, Product Category, Type, Tags, Published,
+Option1 Name … Option3 Value, Variant SKU, Variant Grams, Variant Inventory
+Tracker/Qty/Policy, Variant Price, Variant Compare At Price, Variant Taxable,
+Variant Barcode, Image Src, Image Position, Image Alt Text, SEO Title, SEO
+Description, Variant Image, Variant Weight Unit, Cost per item, Status — so
+a file goes either way between the two stores without an edit.
+
+```http
+GET  /api/admin/export/admin-products?format=shopify
+POST /api/admin/import/products                 # the header says which dialect
+POST /api/admin/import/products?overwrite=false # create only what is new
+```
+
+On the way in the dialect is read off the header (a Shopify file has a
+`Handle` column). A Shopify row is translated into the store's own columns
+(`shopifyProductReader` in `transfer_shopify.go`) and then the one importer
+runs, so the stock rules in [inventory.md](inventory.md) hold for both.
+What the translation decides: `Title / Default Title` is no options; a blank
+Variant SKU becomes the handle, numbered when the product has options;
+prices are decimals in the store's currency; Variant Inventory Qty lands at
+the default location; Product Category is matched to the tree by its full
+path (`Apparel & Accessories > Clothing`) or slug, and a miss is a row note,
+not a refusal.
+
+The store's own layout carries the same fields — `vendor`, `product_type`,
+`tags` (comma-separated), `category` (the full name), `seo_title`,
+`seo_description`, `cost_minor`, `taxable`, `weight_unit` — and pictures as
+URLs: `images` and `image_alts` on a product's first row (`|`-separated),
+`variant_images` on each variant's row. Pictures are **linked**, never
+downloaded: a URL the media library already holds is reused, a new one
+becomes a linked item, and site-relative URLs leave an export as absolute
+addresses under the request's host so the file means the same thing
+elsewhere. A file that names `images` replaces the product's list in that
+order; one that names only `variant_images` adds them to it.
+
+Two rules make either file safe to hand-edit. **A column the file does not
+have says nothing about that field**: a price list updates prices and leaves
+barcodes, options and customs codes as they were (the variant upsert is a
+select-then-update of the columns present). And `overwrite=false` leaves a
+product the store already has — by slug or Handle — exactly as it is, which
+is how a second catalogue is loaded beside the first.
+
 Both pagination coordinates work everywhere `Page(r)` is used, and **`page` wins
 when a request sends both** — it is the more specific intent, and honouring the
 offset instead would quietly serve a different window than the one asked for.

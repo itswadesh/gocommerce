@@ -45,6 +45,8 @@ func coreMigrations() []Migration {
 		{ID: "0034_customer_groups_and_price_lists", SQL: migration0034Pricing},
 		{ID: "0035_channels", SQL: migration0035Channels},
 		{ID: "0036_variant_pictures", SQL: migration0036VariantPictures},
+		{ID: "0037_requires_shipping", SQL: migration0037RequiresShipping},
+		{ID: "0038_plugins", SQL: migration0038Plugins},
 	}
 }
 
@@ -1913,4 +1915,33 @@ INSERT INTO variant_media (variant_id, media_id)
 DROP INDEX product_media_variant_key;
 DROP INDEX product_media_variant_idx;
 ALTER TABLE product_media DROP COLUMN variant_id;
+`
+
+// M37 — whether a thing is sent at all.
+//
+// A download, a service or a gift card is sold like anything else and never
+// leaves a shelf. Until now the checkout could not tell, so a basket of
+// nothing but downloads paid postage and was refused where no zone covered
+// the address. The flag sits on the variant, for M10's reason: a product can
+// sell a printed edition beside the PDF. It defaults to true, which is what
+// every existing variant is, and Shopify's column of the same meaning
+// (Variant Requires Shipping) now has a home in both directions.
+const migration0037RequiresShipping = `
+ALTER TABLE variants ADD COLUMN requires_shipping boolean NOT NULL DEFAULT true;
+`
+
+// M38 — plugins: the switch and the settings, one row each.
+//
+// A plugin's descriptor — its name, its fields — lives in code, in core for
+// the storefront features that are nothing but settings and in the module
+// that implements the rest. The row is only what an operator decided: on or
+// off, and the values. No row means the descriptor's default, so a store
+// that has never opened the page behaves as it did before the page existed.
+const migration0038Plugins = `
+CREATE TABLE plugins (
+    key        text        PRIMARY KEY,
+    enabled    boolean     NOT NULL DEFAULT false,
+    settings   jsonb       NOT NULL DEFAULT '{}',
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
 `

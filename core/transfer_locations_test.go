@@ -15,7 +15,7 @@ import (
 func exportCSV(t *testing.T, app *App) string {
 	t.Helper()
 	var buf bytes.Buffer
-	if err := app.Data().ExportProducts(context.Background(), &buf, ProductQuery{}); err != nil {
+	if err := app.Data().ExportProducts(context.Background(), &buf, ProductQuery{}, ExportOptions{}); err != nil {
 		t.Fatalf("export: %v", err)
 	}
 	return buf.String()
@@ -137,7 +137,7 @@ func TestASplitFileRoundTrips(t *testing.T) {
 	if _, err := app.Stock().Move(ctx, vid, shop.ID, def.ID, 6, ""); err != nil {
 		t.Fatalf("flatten: %v", err)
 	}
-	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(csv), false); err != nil {
+	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(csv), ImportOptions{}); err != nil {
 		t.Fatalf("import: %v", err)
 	}
 
@@ -168,7 +168,7 @@ func TestABareStockColumnStillMeansTheDefault(t *testing.T) {
 
 	old := "product_slug,product_title,product_status,sku,price_minor,stock_on_hand\n" +
 		"test-csv-old,Test CSV-OLD,active,CSV-OLD,1000,11\n"
-	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(old), false); err != nil {
+	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(old), ImportOptions{}); err != nil {
 		t.Fatalf("import: %v", err)
 	}
 
@@ -196,7 +196,7 @@ func TestAnAbsentColumnSaysNothingAboutThatLocation(t *testing.T) {
 	// so must a row whose cell is blank.
 	partial := "product_slug,sku,price_minor,stock_on_hand:shop\n" +
 		"test-csv-part,CSV-PART,1000,2\n"
-	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(partial), false); err != nil {
+	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(partial), ImportOptions{}); err != nil {
 		t.Fatalf("import: %v", err)
 	}
 	if onHand, _ := stockAt(t, app, vid, shop.ID); onHand != 2 {
@@ -208,7 +208,7 @@ func TestAnAbsentColumnSaysNothingAboutThatLocation(t *testing.T) {
 
 	blank := "product_slug,sku,price_minor,stock_on_hand:shop\n" +
 		"test-csv-part,CSV-PART,1000,\n"
-	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(blank), false); err != nil {
+	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(blank), ImportOptions{}); err != nil {
 		t.Fatalf("import a blank cell: %v", err)
 	}
 	if onHand, _ := stockAt(t, app, vid, shop.ID); onHand != 2 {
@@ -226,7 +226,7 @@ func TestAMisspeltLocationFailsTheWholeFile(t *testing.T) {
 	bad := "product_slug,sku,price_minor,stock_on_hand:warehowse\n" +
 		"test-csv-typo,CSV-TYPO,1000,4\n"
 
-	_, err := app.Data().ImportProducts(ctx, strings.NewReader(bad), false)
+	_, err := app.Data().ImportProducts(ctx, strings.NewReader(bad), ImportOptions{})
 	if err == nil {
 		t.Fatal("imported a file naming a location that does not exist")
 	}
@@ -246,7 +246,7 @@ func TestBothStockColumnFormsAtOnceIsRefused(t *testing.T) {
 	bad := "product_slug,sku,price_minor,stock_on_hand,stock_on_hand:shop\n" +
 		"test-csv-both,CSV-BOTH,1000,4,5\n"
 
-	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(bad), false); err == nil {
+	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(bad), ImportOptions{}); err == nil {
 		t.Fatal("imported a file carrying both stock column forms")
 	}
 }
@@ -263,7 +263,7 @@ func TestAnImportCannotDropStockBelowWhatIsReserved(t *testing.T) {
 
 	file := "product_slug,sku,price_minor,stock_on_hand\n" +
 		"test-csv-held,CSV-HELD,1000,1\n"
-	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(file), false); err != nil {
+	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(file), ImportOptions{}); err != nil {
 		t.Fatalf("import: %v", err)
 	}
 
@@ -296,7 +296,7 @@ func TestARoundTripDoesNotWriteOffAnOversell(t *testing.T) {
 	}
 
 	csv := exportCSV(t, app)
-	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(csv), false); err != nil {
+	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(csv), ImportOptions{}); err != nil {
 		t.Fatalf("import: %v", err)
 	}
 
@@ -310,7 +310,7 @@ func TestARoundTripDoesNotWriteOffAnOversell(t *testing.T) {
 	qid := q.DefaultVariant().ID
 	file := "product_slug,sku,price_minor,stock_on_hand\n" +
 		"test-csv-floor,CSV-FLOOR,1000,-3\n"
-	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(file), false); err != nil {
+	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(file), ImportOptions{}); err != nil {
 		t.Fatalf("import a negative for a tracked variant: %v", err)
 	}
 	if onHand, _ := variantStock(t, app, qid); onHand != 0 {
@@ -342,7 +342,7 @@ func TestExportFiltersAfterStockColumns(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := app.Data().ExportProducts(ctx, &buf, ProductQuery{Status: ProductActive}); err != nil {
+	if err := app.Data().ExportProducts(ctx, &buf, ProductQuery{Status: ProductActive}, ExportOptions{}); err != nil {
 		t.Fatalf("export: %v", err)
 	}
 	csv := buf.String()
@@ -380,7 +380,7 @@ func TestAClosedLocationCannotBeStockedFromACSV(t *testing.T) {
 
 	raising := "product_slug,sku,price_minor,stock_on_hand:shut\n" +
 		"test-csv-closed,CSV-CLOSED,1000,40\n"
-	res, err := app.Data().ImportProducts(ctx, strings.NewReader(raising), false)
+	res, err := app.Data().ImportProducts(ctx, strings.NewReader(raising), ImportOptions{})
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}
@@ -395,7 +395,7 @@ func TestAClosedLocationCannotBeStockedFromACSV(t *testing.T) {
 	// unedited export looks like, and it has to keep importing.
 	zeros := "product_slug,sku,price_minor,stock_on_hand:shut\n" +
 		"test-csv-closed,CSV-CLOSED,1000,0\n"
-	res, err = app.Data().ImportProducts(ctx, strings.NewReader(zeros), false)
+	res, err = app.Data().ImportProducts(ctx, strings.NewReader(zeros), ImportOptions{})
 	if err != nil {
 		t.Fatalf("import zeros: %v", err)
 	}

@@ -105,7 +105,7 @@ type Config struct {
 	OpenAIAPIKey    string
 	LLMBaseURL      string
 	// Model names the model at whichever door is open. Defaults to
-	// claude-sonnet-5, gemini-2.0-flash and gpt-4o-mini for the three
+	// claude-sonnet-5, gemini-3.6-flash and gpt-4o-mini for the three
 	// services; a local server has no sensible default, so name the one you
 	// pulled.
 	Model string
@@ -721,12 +721,13 @@ func (m *Module) createProduct(ctx context.Context, l *Listing, rw *rewrite, opt
 	// product per ASIN can see the duplicate in the metadata and delete it.
 	var product *gocommerce.Product
 	var err error
+	next := 2
 	for attempt := 1; ; attempt++ {
 		product, err = m.app.Products().CreateProduct(ctx, in)
 		if err == nil {
 			break
 		}
-		if attempt >= 6 {
+		if attempt >= 50 {
 			return nil, warnings, err
 		}
 		msg := strings.ToLower(err.Error())
@@ -737,7 +738,18 @@ func (m *Module) createProduct(ctx context.Context, l *Listing, rw *rewrite, opt
 				in.Slug += "-" + strconv.Itoa(attempt)
 			}
 		case strings.Contains(msg, "sku"):
-			suffix := "-" + strconv.Itoa(attempt+1)
+			// The next suffix nobody has, found by asking rather than by
+			// counting attempts: a listing imported a dozen times has a dozen
+			// taken, and a loop that gave up at six refused the thirteenth.
+			base := skuBase(firstNonEmpty(in.SKU, l.ASIN))
+			if len(in.Variants) > 0 {
+				base = skuBase(in.Variants[0].SKU)
+			}
+			suffix, ok := m.freeSKUSuffix(ctx, base, next)
+			if !ok {
+				return nil, warnings, err
+			}
+			next = suffixNumber(suffix) + 1
 			if in.SKU != "" {
 				in.SKU = skuBase(in.SKU) + suffix
 			}
@@ -807,6 +819,25 @@ func usefulSpecs(specs []Spec) []Spec {
 		out = append(out, s)
 	}
 	return out
+}
+
+// freeSKUSuffix is the first "-N" from n upwards that base does not yet
+// carry in the catalogue. It probes the one SKU; a sibling that is taken
+// anyway sends the caller round again with the next number.
+func (m *Module) freeSKUSuffix(ctx context.Context, base string, from int) (string, bool) {
+	for n := from; n < from+1000; n++ {
+		suffix := "-" + strconv.Itoa(n)
+		if _, err := m.app.Products().GetVariantBySKU(ctx, base+suffix); errors.Is(err, gocommerce.ErrNotFound) {
+			return suffix, true
+		}
+	}
+	return "", false
+}
+
+// suffixNumber is the N of "-N".
+func suffixNumber(suffix string) int {
+	n, _ := strconv.Atoi(strings.TrimPrefix(suffix, "-"))
+	return n
 }
 
 // skuBase is the ASIN a SKU began as, before any "-2" a retry added.

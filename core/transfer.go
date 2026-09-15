@@ -24,11 +24,19 @@ import (
 // The stock column is the one that is not fixed. A spreadsheet has one cell per
 // variant per column and stock has a place now, so the header carries the place:
 // see stockColumnPrefix.
+//
+// The same model has a second dialect, Shopify's, in transfer_shopify.go:
+// every column here has a home there and back, so a file goes either way
+// between the two stores without an edit. Pictures are URLs — `images` is
+// the product's, `|`-separated and on its first row, with `image_alts`
+// beside them; `variant_images` is a variant's own.
 var productCSVHeader = []string{
 	"product_slug", "product_title", "product_description", "product_status",
-	"sku", "barcode", "variant_options", "price_minor", "compare_at_price_minor",
+	"vendor", "product_type", "tags", "category", "seo_title", "seo_description",
+	"sku", "barcode", "variant_options", "price_minor", "compare_at_price_minor", "cost_minor", "taxable", "requires_shipping",
 	"stock_on_hand", "track_inventory", "continue_selling", "active",
-	"weight_grams", "origin_country", "hs_code", "metadata",
+	"weight_grams", "weight_unit", "origin_country", "hs_code",
+	"images", "image_alts", "variant_images", "metadata",
 }
 
 // stockColumnPrefix names a location inside a column heading:
@@ -210,6 +218,8 @@ type ImportResult struct {
 	Errors   []RowError `json:"errors"`
 	DryRun   bool       `json:"dry_run"`
 	Duration string     `json:"duration,omitempty"`
+	// Format is the dialect the file turned out to be in.
+	Format Format `json:"format,omitempty"`
 }
 
 // RowError names the line so an operator can go and fix it.
@@ -228,111 +238,17 @@ func (a *App) Data() *Transfer { return a.transfer }
 
 // ------------------------------------------------------------------ export
 
-// ExportProducts streams the catalog as CSV, one row per variant.
-//
-// It takes the same ProductQuery the admin listing does, through the same
-// builder, so an operator can export exactly the rows a screen is showing
-// them. There is no paging: a listing takes a window, an export takes
-// everything that matched.
-func (t *Transfer) ExportProducts(ctx context.Context, out io.Writer, q ProductQuery) error {
-	w := csv.NewWriter(out)
-	defer w.Flush()
-
-	stockCols, err := t.productStockColumns(ctx)
-	if err != nil {
-		return err
-	}
-	if err := w.Write(productHeaderFor(stockCols)); err != nil {
-		return err
-	}
-
-	// One scalar subquery per location rather than a join or a pre-loaded map:
-	// the export streams, and holding a row per variant per location in memory
-	// would cost about what the catalog itself costs.
-	stockSelect := ""
-	args := make([]any, 0, len(stockCols))
-	for _, c := range stockCols {
-		args = append(args, c.locationID)
-		stockSelect += fmt.Sprintf(
-			"coalesce((SELECT vs.on_hand FROM variant_stock vs"+
-				" WHERE vs.variant_id = v.id AND vs.location_id = $%d), 0), ", len(args))
-	}
-
-	// The filters are numbered after the per-location arguments above, which
-	// is why productFilters takes the slice rather than starting at $1.
-	join, where, args := productFilters(q, args)
-
-	// The ORDER BY does not move with the filters: ImportProducts requires a
-	// product's variant rows to be contiguous, so this order is the importer's
-	// contract rather than a display choice.
-	rows, err := t.app.db.QueryContext(ctx, `
-		SELECT p.slug, p.title, p.description, p.status,
-		       v.sku, coalesce(v.barcode, ''),
-		       coalesce((
-		           SELECT string_agg(o.name || '=' || pov.value, '|' ORDER BY o.position, o.id)
-		           FROM variant_option_values vov
-		           JOIN product_option_values pov ON pov.id = vov.option_value_id
-		           JOIN product_options o ON o.id = pov.option_id
-		           WHERE vov.variant_id = v.id
-		       ), ''),
-		       v.price_minor, v.compare_at_price_minor, `+stockSelect+`
-		       v.track_inventory, v.continue_selling, v.active,
-		       v.weight_grams, v.origin_country, v.hs_code, v.metadata
-		FROM variants v
-		JOIN products p ON p.id = v.product_id`+join+`
-		WHERE `+strings.Join(where, " AND ")+`
-		ORDER BY p.id, v.position, v.id`, args...)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var slug, title, desc, status, sku, barcode, options string
-		var price int64
-		var compareAt, weight sql.NullInt64
-		stock := make([]int, len(stockCols))
-		var tracks, oversell, active bool
-		var origin, hs string
-		var meta []byte
-		dest := []any{&slug, &title, &desc, &status, &sku, &barcode, &options,
-			&price, &compareAt}
-		for i := range stock {
-			dest = append(dest, &stock[i])
-		}
-		dest = append(dest, &tracks, &oversell, &active, &weight, &origin, &hs, &meta)
-		if err := rows.Scan(dest...); err != nil {
-			return err
-		}
-		record := []string{
-			slug, title, desc, status, sku, barcode, options,
-			strconv.FormatInt(price, 10), nullIntString(compareAt),
-		}
-		for _, n := range stock {
-			record = append(record, strconv.Itoa(n))
-		}
-		record = append(record,
-			strconv.FormatBool(tracks), strconv.FormatBool(oversell),
-			strconv.FormatBool(active),
-			nullIntString(weight), origin, hs, string(meta),
-		)
-		if err := w.Write(escapeRecord(record)); err != nil {
-			return err
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	w.Flush()
-	return w.Error()
-}
-
 // ExportOrders streams orders as CSV, one row per order line, with the order's
-// own columns repeated. That shape is what an accountant's pivot table wants.
-func (t *Transfer) ExportOrders(ctx context.Context, out io.Writer, q OrderQuery) error {
+// own columns repeated in the store's layout and on the first line only in
+// Shopify's. That shape is what an accountant's pivot table wants.
+func (t *Transfer) ExportOrders(ctx context.Context, out io.Writer, q OrderQuery, opts ExportOptions) error {
 	w := csv.NewWriter(out)
 	defer w.Flush()
-	if err := w.Write(orderCSVHeader); err != nil {
+	header := orderCSVHeader
+	if opts.Format == FormatShopify {
+		header = shopifyOrderHeader
+	}
+	if err := w.Write(header); err != nil {
 		return err
 	}
 
@@ -358,9 +274,11 @@ func (t *Transfer) ExportOrders(ctx context.Context, out io.Writer, q OrderQuery
 	}
 
 	rows, err := t.app.db.QueryContext(ctx, `
-		SELECT o.number, o.created_at, o.status, o.payment_status, o.payment_provider,
-		       o.currency, o.email, coalesce(o.phone, ''), coalesce(o.name, ''), o.address,
-		       o.subtotal_minor, o.shipping_minor, o.discount_minor, o.total_minor, o.lang,
+		SELECT o.id, o.number, o.created_at, o.updated_at, o.status, o.payment_status, o.payment_provider,
+		       coalesce(o.payment_reference, ''), o.currency, o.email, coalesce(o.phone, ''), coalesce(o.name, ''), o.address,
+		       o.subtotal_minor, o.shipping_minor, o.discount_minor, o.tax_minor, o.total_minor, o.refunded_minor,
+		       o.lang, o.shipping_method,
+		       coalesce((SELECT d.code FROM order_discounts d WHERE d.order_id = o.id ORDER BY d.id LIMIT 1), ''),
 		       l.sku, l.title, l.variant_label, l.quantity, l.unit_price_minor, l.total_minor
 		FROM orders o
 		JOIN order_lines l ON l.order_id = o.id
@@ -371,30 +289,34 @@ func (t *Transfer) ExportOrders(ctx context.Context, out io.Writer, q OrderQuery
 	}
 	defer rows.Close()
 
+	var lastOrder int64
 	for rows.Next() {
-		var number, status, payStatus, provider, currency, email, phone, name, lang string
-		var createdAt time.Time
+		var l exportOrderLine
 		var addrRaw []byte
-		var subtotal, shipping, discount, total, unitPrice, lineTotal int64
-		var sku, title, label string
-		var qty int
-		if err := rows.Scan(&number, &createdAt, &status, &payStatus, &provider,
-			&currency, &email, &phone, &name, &addrRaw,
-			&subtotal, &shipping, &discount, &total, &lang,
-			&sku, &title, &label, &qty, &unitPrice, &lineTotal); err != nil {
+		if err := rows.Scan(&l.id, &l.number, &l.createdAt, &l.updatedAt, &l.status, &l.payStatus, &l.provider,
+			&l.reference, &l.currency, &l.email, &l.phone, &l.name, &addrRaw,
+			&l.subtotal, &l.shipping, &l.discount, &l.tax, &l.total, &l.refunded,
+			&l.lang, &l.shippingMethod, &l.discountCode,
+			&l.sku, &l.title, &l.label, &l.qty, &l.unitPrice, &l.lineTotal); err != nil {
 			return err
 		}
-		var addr Address
-		_ = json.Unmarshal(addrRaw, &addr)
+		_ = json.Unmarshal(addrRaw, &l.addr)
+		first := l.id != lastOrder
+		lastOrder = l.id
 
-		record := []string{
-			number, createdAt.UTC().Format(time.RFC3339), status, payStatus, provider,
-			currency, email, phone, name,
-			addr.Line1, addr.Line2, addr.City, addr.State, addr.PostalCode, addr.Country,
-			strconv.FormatInt(subtotal, 10), strconv.FormatInt(shipping, 10),
-			strconv.FormatInt(discount, 10), strconv.FormatInt(total, 10), lang,
-			sku, title, label, strconv.Itoa(qty),
-			strconv.FormatInt(unitPrice, 10), strconv.FormatInt(lineTotal, 10),
+		var record []string
+		if opts.Format == FormatShopify {
+			record = shopifyOrderRow(l, first, currencyExponent(l.currency))
+		} else {
+			record = []string{
+				l.number, l.createdAt.UTC().Format(time.RFC3339), l.status, l.payStatus, l.provider,
+				l.currency, l.email, l.phone, l.name,
+				l.addr.Line1, l.addr.Line2, l.addr.City, l.addr.State, l.addr.PostalCode, l.addr.Country,
+				strconv.FormatInt(l.subtotal, 10), strconv.FormatInt(l.shipping, 10),
+				strconv.FormatInt(l.discount, 10), strconv.FormatInt(l.total, 10), l.lang,
+				l.sku, l.title, l.label, strconv.Itoa(l.qty),
+				strconv.FormatInt(l.unitPrice, 10), strconv.FormatInt(l.lineTotal, 10),
+			}
 		}
 		if err := w.Write(escapeRecord(record)); err != nil {
 			return err
@@ -416,10 +338,14 @@ func (t *Transfer) ExportOrders(ctx context.Context, out io.Writer, q OrderQuery
 // listing's own function — so the figure in the file and the figure on the
 // screen cannot come to differ, which is the failure this shape exists to
 // prevent (ExportOrders says the same thing about its search).
-func (t *Transfer) ExportCustomers(ctx context.Context, out io.Writer, q CustomerQuery) error {
+func (t *Transfer) ExportCustomers(ctx context.Context, out io.Writer, q CustomerQuery, opts ExportOptions) error {
 	w := csv.NewWriter(out)
 	defer w.Flush()
-	if err := w.Write(customerCSVHeader); err != nil {
+	header := customerCSVHeader
+	if opts.Format == FormatShopify {
+		header = shopifyCustomerHeader
+	}
+	if err := w.Write(header); err != nil {
 		return err
 	}
 
@@ -454,23 +380,24 @@ func (t *Transfer) ExportCustomers(ctx context.Context, out io.Writer, q Custome
 
 	currency := t.app.cfg.Currency
 	for rows.Next() {
-		var email, name, phone string
-		var orderCount int
-		var spent int64
-		var first, last time.Time
+		var c exportCustomer
 		var addrRaw []byte
-		if err := rows.Scan(&email, &orderCount, &spent, &first, &last,
-			&name, &phone, &addrRaw); err != nil {
+		if err := rows.Scan(&c.email, &c.orders, &c.spent, &c.first, &c.last,
+			&c.name, &c.phone, &addrRaw); err != nil {
 			return err
 		}
-		var addr Address
-		_ = json.Unmarshal(addrRaw, &addr)
+		_ = json.Unmarshal(addrRaw, &c.addr)
 
-		record := []string{
-			email, name, phone,
-			addr.Line1, addr.Line2, addr.City, addr.State, addr.PostalCode, addr.Country,
-			strconv.Itoa(orderCount), strconv.FormatInt(spent, 10), currency,
-			first.UTC().Format(time.RFC3339), last.UTC().Format(time.RFC3339),
+		var record []string
+		if opts.Format == FormatShopify {
+			record = shopifyCustomerRow(c, currencyExponent(currency))
+		} else {
+			record = []string{
+				c.email, c.name, c.phone,
+				c.addr.Line1, c.addr.Line2, c.addr.City, c.addr.State, c.addr.PostalCode, c.addr.Country,
+				strconv.Itoa(c.orders), strconv.FormatInt(c.spent, 10), currency,
+				c.first.UTC().Format(time.RFC3339), c.last.UTC().Format(time.RFC3339),
+			}
 		}
 		if err := w.Write(escapeRecord(record)); err != nil {
 			return err
@@ -485,382 +412,14 @@ func (t *Transfer) ExportCustomers(ctx context.Context, out io.Writer, q Custome
 
 // ------------------------------------------------------------------ import
 
-// ImportProducts upserts products and variants from CSV, keyed on SKU.
-//
-// Rows for one product must be contiguous, which is what export produces and
-// what lets this stream a large file instead of holding it in memory. Each
-// product is one transaction, so a failure leaves neither a half-built product
-// nor a poisoned import.
-func (t *Transfer) ImportProducts(ctx context.Context, in io.Reader, dryRun bool) (*ImportResult, error) {
-	// Labelled once, here, so every movement the file causes says so — the
-	// helpers below reach the ledger through importProductGroup's own InTx and
-	// have no other way to know they are an import.
-	ctx = withStockSource(ctx, sourceImport)
-
-	start := time.Now()
-	r := csv.NewReader(in)
-	r.FieldsPerRecord = -1
-
-	header, err := r.Read()
-	if err != nil {
-		return nil, Validationf("could not read the CSV header: %v", err)
-	}
-	cols := indexColumns(header)
-	for _, required := range []string{"product_slug", "sku", "price_minor"} {
-		if _, ok := cols[required]; !ok {
-			return nil, Validationf("the CSV is missing the required column %q", required)
-		}
-	}
-	stockCols, err := t.resolveStockColumns(ctx, header)
-	if err != nil {
-		return nil, err
-	}
-
-	result := &ImportResult{DryRun: dryRun}
-	var group []csvRow
-	var groupSlug string
-
-	flush := func() {
-		if len(group) == 0 {
-			return
-		}
-		t.importProductGroup(ctx, group, stockCols, dryRun, result)
-		group = nil
-	}
-
-	line := 1
-	for {
-		record, err := r.Read()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		line++
-		if err != nil {
-			result.Errors = append(result.Errors, RowError{Line: line, Message: err.Error()})
-			continue
-		}
-		row := csvRow{line: line, cols: cols, values: unescapeRecord(record)}
-		slug := row.get("product_slug")
-		if slug == "" {
-			result.Errors = append(result.Errors, RowError{Line: line, Message: "product_slug is empty"})
-			continue
-		}
-		if slug != groupSlug {
-			flush()
-			groupSlug = slug
-		}
-		group = append(group, row)
-	}
-	flush()
-
-	result.Duration = time.Since(start).String()
-	return result, nil
-}
-
-// importProductGroup writes one product and its variants in one transaction.
-func (t *Transfer) importProductGroup(ctx context.Context, rows []csvRow, stockCols []stockColumn, dryRun bool, result *ImportResult) {
-	first := rows[0]
-	slug := first.get("product_slug")
-	var created bool
-
-	err := InTx(ctx, t.app.db, func(tx *sql.Tx) error {
-		var productID int64
-		created = false
-		err := tx.QueryRowContext(ctx, `SELECT id FROM products WHERE slug = $1`, slug).Scan(&productID)
-		switch {
-		case errors.Is(err, sql.ErrNoRows):
-			title := first.get("product_title")
-			if title == "" {
-				title = slug
-			}
-			status := first.get("product_status")
-			if !validProductStatus(status) {
-				status = ProductDraft
-			}
-			if err := tx.QueryRowContext(ctx, `
-				INSERT INTO products (slug, title, description, status, currency)
-				VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-				slug, title, first.get("product_description"), status,
-				t.app.cfg.Currency).Scan(&productID); err != nil {
-				return translateCatalogErr(err)
-			}
-			created = true
-		case err != nil:
-			return err
-		default:
-			sets, args := []string{}, []any{}
-			if v := first.get("product_title"); v != "" {
-				args = append(args, v)
-				sets = append(sets, fmt.Sprintf("title = $%d", len(args)))
-			}
-			if v := first.get("product_description"); v != "" {
-				args = append(args, v)
-				sets = append(sets, fmt.Sprintf("description = $%d", len(args)))
-			}
-			if v := first.get("product_status"); validProductStatus(v) {
-				args = append(args, v)
-				sets = append(sets, fmt.Sprintf("status = $%d", len(args)))
-			}
-			if len(sets) > 0 {
-				args = append(args, productID)
-				if _, err := tx.ExecContext(ctx,
-					"UPDATE products SET "+strings.Join(sets, ", ")+", updated_at = now()"+
-						fmt.Sprintf(" WHERE id = $%d", len(args)), args...); err != nil {
-					return translateCatalogErr(err)
-				}
-			}
-		}
-
-		for _, row := range rows {
-			if err := t.importVariantRow(ctx, tx, productID, row, stockCols, result); err != nil {
-				return err
-			}
-		}
-		if dryRun {
-			// Everything above proved the file would apply; rolling back is
-			// what makes it a rehearsal rather than a change.
-			return errDryRun
-		}
-		return nil
-	})
-
-	// Counters are updated only after the transaction resolves, so the report
-	// describes what is in the database rather than what was attempted.
-	switch {
-	case err == nil, errors.Is(err, errDryRun):
-		if created {
-			result.Created++
-		} else {
-			result.Updated++
-		}
-	default:
-		result.Errors = append(result.Errors, RowError{Line: first.line, Message: err.Error()})
-		result.Skipped += len(rows)
-	}
-}
-
-var errDryRun = errors.New("dry run")
-
-// importVariantRow upserts one variant, creating any option values it names.
-func (t *Transfer) importVariantRow(ctx context.Context, tx *sql.Tx, productID int64, row csvRow, stockCols []stockColumn, result *ImportResult) error {
-	sku := row.get("sku")
-	if sku == "" {
-		return fmt.Errorf("line %d: sku is empty", row.line)
-	}
-	price, err := row.int64("price_minor")
-	if err != nil {
-		return fmt.Errorf("line %d: %v", row.line, err)
-	}
-
-	valueIDs, err := t.ensureOptions(ctx, tx, productID, row.get("variant_options"))
-	if err != nil {
-		return fmt.Errorf("line %d: %v", row.line, err)
-	}
-	key := optionKey(valueIDs)
-
-	tracks := row.boolDefault("track_inventory", true)
-	oversell := row.boolDefault("continue_selling", false)
-	active := row.boolDefault("active", true)
-	compareAt := row.nullInt64("compare_at_price_minor")
-	weight := row.nullInt64("weight_grams")
-	// Validated here rather than left to the CHECK, so a mistyped cell is a row
-	// error naming its line instead of a constraint violation that takes the
-	// whole file down.
-	origin, err := normalizeOriginCountry(row.get("origin_country"))
-	if err != nil {
-		return fmt.Errorf("line %d: %v", row.line, err)
-	}
-	hs, err := normalizeHSCode(row.get("hs_code"))
-	if err != nil {
-		return fmt.Errorf("line %d: %v", row.line, err)
-	}
-	meta := row.get("metadata")
-	if strings.TrimSpace(meta) == "" {
-		meta = "{}"
-	}
-
-	var variantID int64
-	err = tx.QueryRowContext(ctx, `
-		INSERT INTO variants (product_id, sku, barcode, price_minor, compare_at_price_minor,
-		                      track_inventory, continue_selling, active,
-		                      weight_grams, origin_country, hs_code, option_key, metadata)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-		ON CONFLICT (sku) DO UPDATE SET
-		    product_id = EXCLUDED.product_id,
-		    barcode = EXCLUDED.barcode,
-		    price_minor = EXCLUDED.price_minor,
-		    compare_at_price_minor = EXCLUDED.compare_at_price_minor,
-		    track_inventory = EXCLUDED.track_inventory,
-		    continue_selling = EXCLUDED.continue_selling,
-		    active = EXCLUDED.active,
-		    weight_grams = EXCLUDED.weight_grams,
-		    origin_country = EXCLUDED.origin_country,
-		    hs_code = EXCLUDED.hs_code,
-		    option_key = EXCLUDED.option_key,
-		    metadata = EXCLUDED.metadata,
-		    updated_at = now()
-		RETURNING id`,
-		productID, sku, nullString(row.get("barcode")), price, compareAt,
-		tracks, oversell, active, weight, origin, hs, key, meta).Scan(&variantID)
-	if err != nil {
-		return translateCatalogErr(err)
-	}
-
-	// The variant needs somewhere to be even when the file says nothing about
-	// stock, so that ByLocation and the reservation picker have a row to find.
-	def, err := defaultLocationID(ctx, tx)
-	if err != nil {
-		return err
-	}
-	if err := ensureStockRow(ctx, tx, variantID, def); err != nil {
-		return err
-	}
-
-	for _, c := range stockCols {
-		// An empty cell is not a zero. Stock is only set where the file
-		// actually says a number, because an import that reran must not
-		// silently undo sales that happened since it was exported — and because
-		// a file listing two of five locations is saying nothing about the
-		// other three.
-		if !row.has(c.name) {
-			continue
-		}
-		qty, err := row.intDefault(c.name, 0)
-		if err != nil {
-			return fmt.Errorf("line %d: %v", row.line, err)
-		}
-		if err := ensureStockRow(ctx, tx, variantID, c.locationID); err != nil {
-			return err
-		}
-		// The pre-read the clamp below makes necessary: what the file asked for
-		// and what the shelf got routinely differ, so the delta cannot be
-		// derived from the parameter. It is arithmetic only — the condition
-		// that decides stays in the UPDATE — and it takes the lock that
-		// statement takes anyway.
-		var before stockBalance
-		if err := tx.QueryRowContext(ctx,
-			`SELECT on_hand, reserved FROM variant_stock
-			 WHERE variant_id = $1 AND location_id = $2 FOR UPDATE`,
-			variantID, c.locationID).Scan(&before.OnHand, &before.Reserved); err != nil {
-			return err
-		}
-		// A closed location may be counted down to zero — that is how one is
-		// cleared, and it is what keeps an unedited export->import round trip of a
-		// closed shelf's zeros passing — but never up (D44). Compared against the
-		// figure just read under FOR UPDATE, so the classification cannot change
-		// under the statement below. The code rather than the name, because the
-		// code is what the header cell says and what the operator has to edit.
-		if !c.active && qty > before.OnHand {
-			return fmt.Errorf("line %d: %s is closed; stock moves out of a closed location, never into it",
-				row.line, c.code)
-		}
-		// The floor is reserved, for the reason SetOnHand refuses outright: a
-		// count taken on the shop floor does not know about the order that came
-		// in while it was being taken, and dropping below what is promised would
-		// oversell it. The file loses, the reservation wins.
-		//
-		// Except for a variant that sells past zero, where a negative count is
-		// not a mistake — it is a debt to a customer who has already ordered.
-		// Flooring it would let an export-edit-import round trip quietly write
-		// that debt off, which is the one thing a round trip must never do. The
-		// condition is reserveStock's, and M12's, deliberately.
-		var after stockBalance
-		if err := tx.QueryRowContext(ctx,
-			`UPDATE variant_stock vs
-			 SET on_hand = CASE WHEN v.continue_selling
-			                    THEN $3 ELSE greatest($3, vs.reserved) END,
-			     updated_at = now()
-			 FROM variants v
-			 WHERE v.id = vs.variant_id
-			   AND vs.variant_id = $1 AND vs.location_id = $2
-			 RETURNING vs.on_hand, vs.reserved`,
-			variantID, c.locationID, qty).Scan(&after.OnHand, &after.Reserved); err != nil {
-			return translateCatalogErr(err)
-		}
-		// No reason string: kind='import' with source='import' is the whole
-		// explanation, and the CSV has no field for one. A re-run of an
-		// unchanged file writes nothing, because the delta is zero and import
-		// is not the stock-take exception.
-		if _, err := recordMovement(ctx, tx, variantID, c.locationID, MovementImport,
-			stockBalance{
-				OnHand:   after.OnHand - before.OnHand,
-				Reserved: after.Reserved - before.Reserved,
-			}, after, stockRef{}); err != nil {
-			return err
-		}
-	}
-
-	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM variant_option_values WHERE variant_id = $1`, variantID); err != nil {
-		return err
-	}
-	for _, id := range valueIDs {
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO variant_option_values (variant_id, option_value_id) VALUES ($1, $2)`,
-			variantID, id); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// ensureOptions parses "Size=M|Color=Black", creating any option or value the
-// product does not have yet, and returns the value ids.
-func (t *Transfer) ensureOptions(ctx context.Context, tx *sql.Tx, productID int64, spec string) ([]int64, error) {
-	spec = strings.TrimSpace(spec)
-	if spec == "" {
-		return nil, nil
-	}
-	var ids []int64
-	for _, pair := range strings.Split(spec, "|") {
-		name, value, ok := strings.Cut(pair, "=")
-		name, value = strings.TrimSpace(name), strings.TrimSpace(value)
-		if !ok || name == "" || value == "" {
-			return nil, fmt.Errorf("variant_options entry %q must look like Name=Value", pair)
-		}
-
-		var optionID int64
-		err := tx.QueryRowContext(ctx,
-			`SELECT id FROM product_options WHERE product_id = $1 AND name = $2`,
-			productID, name).Scan(&optionID)
-		if errors.Is(err, sql.ErrNoRows) {
-			if err := tx.QueryRowContext(ctx, `
-				INSERT INTO product_options (product_id, name, position)
-				VALUES ($1, $2, (SELECT coalesce(max(position) + 1, 0)
-				                 FROM product_options WHERE product_id = $1))
-				RETURNING id`, productID, name).Scan(&optionID); err != nil {
-				return nil, translateCatalogErr(err)
-			}
-		} else if err != nil {
-			return nil, err
-		}
-
-		var valueID int64
-		err = tx.QueryRowContext(ctx,
-			`SELECT id FROM product_option_values WHERE option_id = $1 AND value = $2`,
-			optionID, value).Scan(&valueID)
-		if errors.Is(err, sql.ErrNoRows) {
-			if err := tx.QueryRowContext(ctx, `
-				INSERT INTO product_option_values (option_id, value, position)
-				VALUES ($1, $2, (SELECT coalesce(max(position) + 1, 0)
-				                 FROM product_option_values WHERE option_id = $1))
-				RETURNING id`, optionID, value).Scan(&valueID); err != nil {
-				return nil, translateCatalogErr(err)
-			}
-		} else if err != nil {
-			return nil, err
-		}
-		ids = append(ids, valueID)
-	}
-	return ids, nil
-}
-
-// ImportOrders loads historical orders, for a migration from another platform.
+// ImportOrders loads historical orders, for a migration from another
+// platform — in the store's own layout or Shopify's, whichever the header
+// announces.
 //
 // It does not touch inventory — the stock movements happened on the old system
 // — and it fires no events unless asked, because importing five thousand
 // orders must not send five thousand confirmation emails.
-func (t *Transfer) ImportOrders(ctx context.Context, in io.Reader, dryRun, fireEvents bool) (*ImportResult, error) {
+func (t *Transfer) ImportOrders(ctx context.Context, in io.Reader, opts ImportOptions) (*ImportResult, error) {
 	start := time.Now()
 	r := csv.NewReader(in)
 	r.FieldsPerRecord = -1
@@ -870,13 +429,29 @@ func (t *Transfer) ImportOrders(ctx context.Context, in io.Reader, dryRun, fireE
 		return nil, Validationf("could not read the CSV header: %v", err)
 	}
 	cols := indexColumns(header)
-	for _, required := range []string{"number", "email", "sku", "quantity", "unit_price_minor"} {
-		if _, ok := cols[required]; !ok {
-			return nil, Validationf("the CSV is missing the required column %q", required)
+	format := opts.Format
+	if format == "" {
+		format = detectOrderFormat(cols)
+	}
+	var translate *shopifyOrderReader
+	switch format {
+	case FormatShopify:
+		for _, required := range []string{"name", "lineitem quantity", "lineitem price"} {
+			if _, ok := cols[required]; !ok {
+				return nil, Validationf("a Shopify orders file needs the column %q", required)
+			}
+		}
+		translate = newShopifyOrderReader(cols, t.app.cfg.Currency)
+		cols = translate.out
+	default:
+		for _, required := range []string{"number", "email", "sku", "quantity", "unit_price_minor"} {
+			if _, ok := cols[required]; !ok {
+				return nil, Validationf("the CSV is missing the required column %q", required)
+			}
 		}
 	}
 
-	result := &ImportResult{DryRun: dryRun}
+	result := &ImportResult{DryRun: opts.DryRun, Format: format}
 	var group []csvRow
 	var groupNumber string
 
@@ -884,7 +459,7 @@ func (t *Transfer) ImportOrders(ctx context.Context, in io.Reader, dryRun, fireE
 		if len(group) == 0 {
 			return
 		}
-		t.importOrderGroup(ctx, group, dryRun, fireEvents, result)
+		t.importOrderGroup(ctx, group, opts.DryRun, opts.FireEvents, result)
 		group = nil
 	}
 
@@ -900,6 +475,12 @@ func (t *Transfer) ImportOrders(ctx context.Context, in io.Reader, dryRun, fireE
 			continue
 		}
 		row := csvRow{line: line, cols: cols, values: unescapeRecord(record)}
+		if translate != nil {
+			if row, err = translate.row(line, unescapeRecord(record)); err != nil {
+				result.Errors = append(result.Errors, RowError{Line: line, Message: err.Error()})
+				continue
+			}
+		}
 		number := row.get("number")
 		if number == "" {
 			result.Errors = append(result.Errors, RowError{Line: line, Message: "number is empty"})

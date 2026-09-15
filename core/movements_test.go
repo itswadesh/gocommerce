@@ -465,7 +465,7 @@ func TestAStockTakeThatConfirmsTheCountIsRecorded(t *testing.T) {
 	}
 	unchanged := "product_slug,sku,price_minor,stock_on_hand\n" +
 		"test-ledger-zero,LEDGER-ZERO,300,6\n"
-	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(unchanged), false); err != nil {
+	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(unchanged), ImportOptions{}); err != nil {
 		t.Fatalf("import: %v", err)
 	}
 	if after := len(movementsOf(t, app, vid)); after != before {
@@ -507,7 +507,7 @@ func TestAnImportRecordsWhatItWroteNotWhatItAsked(t *testing.T) {
 
 	csv := "product_slug,sku,price_minor,stock_on_hand\n" +
 		"test-ledger-csv,LEDGER-CSV,800,1\n"
-	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(csv), false); err != nil {
+	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(csv), ImportOptions{}); err != nil {
 		t.Fatalf("import: %v", err)
 	}
 
@@ -525,7 +525,7 @@ func TestAnImportRecordsWhatItWroteNotWhatItAsked(t *testing.T) {
 
 	// A re-run of the same file changes nothing and records nothing.
 	before := len(movementsOf(t, app, vid))
-	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(csv), false); err != nil {
+	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(csv), ImportOptions{}); err != nil {
 		t.Fatalf("re-import: %v", err)
 	}
 	if after := len(movementsOf(t, app, vid)); after != before {

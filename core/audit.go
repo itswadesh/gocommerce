@@ -58,6 +58,7 @@ const (
 	// like a role: taxonomy_attributes has no id of its own, because the
 	// handle is what a category's metadata names.
 	AuditEntityTaxonomyAttribute = "taxonomy_attribute"
+	AuditEntityPlugin            = "plugin"
 )
 
 // AuditEntityTypes is the catalogue, in the panel's display order. The database
@@ -75,6 +76,7 @@ var AuditEntityTypes = []string{
 	AuditEntityInvitation,
 	AuditEntityRole,
 	AuditEntityTaxonomyAttribute,
+	AuditEntityPlugin,
 }
 
 // The action vocabulary, `<record>.<verb>`, declared here and nowhere else.
@@ -158,6 +160,9 @@ const (
 	AuditDiscountUpdate = "discount.update"
 	AuditDiscountDelete = "discount.delete"
 
+	// AuditPluginUpdate is a plugin switched, or its settings changed.
+	AuditPluginUpdate = "plugin.update"
+
 	AuditTaxRateCreate = "tax_rate.create"
 	AuditTaxRateUpdate = "tax_rate.update"
 	AuditTaxRateDelete = "tax_rate.delete"
@@ -225,6 +230,8 @@ var AllAuditActions = []string{
 	AuditRoleSet, AuditRoleReset,
 
 	AuditOrderImport,
+
+	AuditPluginUpdate,
 }
 
 // AuditChanges is what a row says actually moved.

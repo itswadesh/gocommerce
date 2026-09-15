@@ -1316,8 +1316,8 @@
                     Pictures
                 </h6>
                 <div class="field">
+                    <input id="import-background" type="checkbox" class="switch" bind:checked={importForm.background} />
                     <label for="import-background">New background</label>
-                    <input id="import-background" type="checkbox" bind:checked={importForm.background} />
                 </div>
                 <div class="field-help">
                     A plain white background becomes a soft grey gradient with a shadow under the
@@ -1325,16 +1325,16 @@
                     left as they are.
                 </div>
                 <div class="field m-t-sm">
+                    <input id="import-brighten" type="checkbox" class="switch" bind:checked={importForm.brighten} />
                     <label for="import-brighten">Lift the lighting a little</label>
-                    <input id="import-brighten" type="checkbox" bind:checked={importForm.brighten} />
                 </div>
                 <div class="field m-t-sm">
+                    <input id="import-tilt" type="checkbox" class="switch" bind:checked={importForm.tilt} />
                     <label for="import-tilt">Turn it three degrees</label>
-                    <input id="import-tilt" type="checkbox" bind:checked={importForm.tilt} />
                 </div>
                 <div class="field m-t-sm">
+                    <input id="import-mirror" type="checkbox" class="switch" bind:checked={importForm.mirror} />
                     <label for="import-mirror">Mirror left to right</label>
-                    <input id="import-mirror" type="checkbox" bind:checked={importForm.mirror} />
                 </div>
                 <div class="field-help">
                     Background, lighting and orientation change; the product itself does not — no

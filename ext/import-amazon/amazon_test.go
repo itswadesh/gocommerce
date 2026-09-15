@@ -921,6 +921,22 @@ func TestImportingTwiceDoesNotCollideOnTheSlug(t *testing.T) {
 	if a.Slug == b.Slug || !strings.HasSuffix(b.Slug, "b0parent01") {
 		t.Errorf("slugs = %q / %q, want the second to carry the ASIN", a.Slug, b.Slug)
 	}
+	// And a dozen times: every SKU suffix is found by asking the catalogue,
+	// not by counting to six.
+	seen := map[string]bool{}
+	for i := 0; i < 10; i++ {
+		job := h.wait(t, h.start(t, map[string]any{"url": url}).ID)
+		if job.Status != StatusDone {
+			t.Fatalf("import %d: %s: %s", i+3, job.Status, job.Message)
+		}
+		p, _ := h.app.Products().GetProduct(context.Background(), *job.ProductID)
+		for _, v := range p.Variants {
+			if seen[v.SKU] {
+				t.Errorf("SKU %s given twice", v.SKU)
+			}
+			seen[v.SKU] = true
+		}
+	}
 }
 
 // With a cap, the colours come first: a listing's pictures follow its

@@ -248,9 +248,22 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		// other in a circle.
 		shipping := s.app.cfg.FlatShippingMinor
 		shippingMethod := ""
+		// A basket with nothing to send — downloads, services, gift cards —
+		// costs nothing to send and needs no delivery option, wherever the
+		// address is. One physical line and the whole basket is a parcel.
+		physical := false
+		for _, l := range lines {
+			if l.RequiresShipping {
+				physical = true
+				break
+			}
+		}
 		rated, err := s.app.shipping.configured(ctx, tx)
 		if err != nil {
 			return err
+		}
+		if !physical {
+			shipping, rated = 0, false
 		}
 		if rated {
 			quotes, err := s.app.shipping.quote(ctx, tx, ShippingQuery{
@@ -527,17 +540,18 @@ func (s *Orders) refreshCartPrices(ctx context.Context, cartToken string) {
 // ------------------------------------------------------------------ helpers
 
 type checkoutLine struct {
-	VariantID     int64
-	ProductID     int64
-	SKU           string
-	Title         string
-	Label         string
-	Quantity      int
-	SnapshotPrice int64
-	CurrentPrice  int64
-	Available     int
-	Active        bool
-	Taxable       bool
+	VariantID        int64
+	ProductID        int64
+	SKU              string
+	Title            string
+	Label            string
+	Quantity         int
+	SnapshotPrice    int64
+	CurrentPrice     int64
+	Available        int
+	Active           bool
+	Taxable          bool
+	RequiresShipping bool
 	// LocationID is filled in when the line's stock is reserved, not when it is
 	// read: it is the answer to "where did these come from", and there is no
 	// answer until something has actually been taken.
@@ -583,7 +597,7 @@ func loadCheckoutLines(ctx context.Context, tx *sql.Tx, cartID int64) ([]checkou
 		SELECT l.variant_id, v.product_id, v.sku, p.title, l.quantity,
 		       l.unit_price_minor,
 		       `+effectivePriceSQL("v.id", "l.quantity", "c.email", "c.channel_id", "v.price_minor")+`,
-		       v.active, v.taxable,
+		       v.active, v.taxable, v.requires_shipping,
 		       CASE WHEN v.track_inventory AND NOT v.continue_selling
 		            THEN coalesce((SELECT sum(vs.on_hand - vs.reserved) FROM variant_stock vs WHERE vs.variant_id = v.id), 0) ELSE -1 END,
 		       coalesce((
@@ -608,7 +622,7 @@ func loadCheckoutLines(ctx context.Context, tx *sql.Tx, cartID int64) ([]checkou
 	for rows.Next() {
 		var l checkoutLine
 		if err := rows.Scan(&l.VariantID, &l.ProductID, &l.SKU, &l.Title, &l.Quantity,
-			&l.SnapshotPrice, &l.CurrentPrice, &l.Active, &l.Taxable, &l.Available,
+			&l.SnapshotPrice, &l.CurrentPrice, &l.Active, &l.Taxable, &l.RequiresShipping, &l.Available,
 			&l.Label); err != nil {
 			return nil, err
 		}

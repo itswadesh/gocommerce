@@ -72,7 +72,7 @@ func importReportOrders(t *testing.T, app *App, orders ...reportOrder) {
 			o.currency, o.createdAt.Format(time.RFC3339), o.shipping, o.discount, total)
 	}
 
-	result, err := app.Data().ImportOrders(context.Background(), strings.NewReader(b.String()), false, false)
+	result, err := app.Data().ImportOrders(context.Background(), strings.NewReader(b.String()), ImportOptions{})
 	if err != nil {
 		t.Fatalf("import orders: %v", err)
 	}

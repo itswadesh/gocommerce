@@ -1,0 +1,28 @@
+{
+  "paths": {
+    "/x/feeds/google.xml": {
+      "get": {
+        "tags": ["feeds"],
+        "summary": "The catalogue as a Google Merchant Center feed",
+        "description": "RSS 2.0 with the g: namespace, one item per active variant: g:id (the SKU), g:title, g:description, g:link (the storefront's product page, with ?variant= for a variant), g:image_link, g:availability, g:price and g:sale_price in the store's currency, g:brand, g:condition, g:gtin, g:mpn, g:item_group_id, g:google_product_category and g:shipping_weight. Generated on request; cacheable for fifteen minutes. 404 while the plugin is off, 409 until the storefront URL is set.",
+        "responses": {
+          "200": {"description": "The feed.", "content": {"application/rss+xml": {"schema": {"type": "string"}}}},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"}
+        }
+      }
+    },
+    "/x/feeds/meta.csv": {
+      "get": {
+        "tags": ["feeds"],
+        "summary": "The catalogue as a Meta (Facebook and Instagram) catalogue CSV",
+        "description": "Meta's catalogue columns — id, title, description, availability, condition, price, sale_price, link, image_link, brand, item_group_id, gtin, mpn, google_product_category, quantity_to_sell_on_facebook — one row per active variant. The same rules as the Google feed.",
+        "responses": {
+          "200": {"description": "The feed.", "content": {"text/csv": {"schema": {"type": "string"}}}},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"}
+        }
+      }
+    }
+  }
+}

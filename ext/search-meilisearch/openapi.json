@@ -1,0 +1,85 @@
+{
+  "paths": {
+    "/x/meilisearch/search": {
+      "get": {
+        "tags": ["meilisearch"],
+        "summary": "Search the catalogue through the store's Meilisearch index",
+        "description": "The storefront's search box. The store forwards the query to Meilisearch with its search-only key, so the storefront never holds one; a storefront that wants to talk to Meilisearch directly reads the host and search key from GET /api/plugins instead. Hits are the index's product documents: id, slug, title, description (plain text), vendor, product_type, tags, category, image, currency, price_minor, price_max_minor, in_stock, skus, options, updated_at. `filter` and `sort` are passed through in Meilisearch's own syntax (`in_stock = true`, `price_minor:asc`). 404 while the plugin is off.",
+        "parameters": [
+          {"name": "q", "in": "query", "schema": {"type": "string"}},
+          {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 20, "maximum": 100}},
+          {"name": "offset", "in": "query", "schema": {"type": "integer", "default": 0}},
+          {"name": "filter", "in": "query", "schema": {"type": "string"}, "description": "A Meilisearch filter expression over vendor, product_type, tags, category, in_stock, price_minor and options."},
+          {"name": "sort", "in": "query", "schema": {"type": "string"}, "description": "Comma-separated Meilisearch sort rules over price_minor, updated_at and title."}
+        ],
+        "responses": {
+          "200": {"description": "The hits.", "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {"data": {"$ref": "#/components/schemas/MeilisearchResult"}}
+          }}}},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/api/admin/x/meilisearch/status": {
+      "get": {
+        "tags": ["admin:meilisearch"],
+        "summary": "Whether the index is on, configured and in step",
+        "security": [{"adminToken": []}],
+        "responses": {
+          "200": {"description": "The sync's state.", "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {"data": {"$ref": "#/components/schemas/MeilisearchStatus"}}
+          }}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"}
+        }
+      }
+    },
+    "/api/admin/x/meilisearch/reindex": {
+      "post": {
+        "tags": ["admin:meilisearch"],
+        "summary": "Rebuild the index from the catalogue",
+        "security": [{"adminToken": []}],
+        "description": "Creates the index if it is missing, sets what is searched, filtered and sorted on, pushes every active product and removes every document the catalogue no longer has. The worker does the same every twenty polls; this is for right now. 409 while a sync is already running or the plugin is not configured.",
+        "responses": {
+          "200": {"description": "What was written and removed.", "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {"data": {"type": "object", "properties": {"indexed": {"type": "integer"}, "removed": {"type": "integer"}}}}
+          }}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "409": {"$ref": "#/components/responses/Conflict"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "MeilisearchResult": {
+        "type": "object",
+        "properties": {
+          "hits": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+          "query": {"type": "string"},
+          "total": {"type": "integer", "description": "Meilisearch's estimate."},
+          "limit": {"type": "integer"},
+          "offset": {"type": "integer"},
+          "processing_ms": {"type": "integer"},
+          "configured": {"type": "boolean"}
+        }
+      },
+      "MeilisearchStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {"type": "boolean"},
+          "configured": {"type": "boolean"},
+          "host": {"type": "string"},
+          "index": {"type": "string"},
+          "syncing": {"type": "boolean"},
+          "last_sync": {"type": "string", "format": "date-time"},
+          "indexed": {"type": "integer", "description": "Documents written since the store started."},
+          "removed": {"type": "integer"},
+          "last_error": {"type": "string"}
+        }
+      }
+    }
+  }
+}

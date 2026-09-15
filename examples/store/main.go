@@ -23,12 +23,16 @@ import (
 	"github.com/misiki/gocommerce/core"
 
 	"github.com/misiki/gocommerce/ext/cms"
+	"github.com/misiki/gocommerce/ext/feeds"
 	"github.com/misiki/gocommerce/ext/identity"
 	amazon "github.com/misiki/gocommerce/ext/import-amazon"
 	"github.com/misiki/gocommerce/ext/invoices"
+	"github.com/misiki/gocommerce/ext/klaviyo"
 	"github.com/misiki/gocommerce/ext/mcp"
 	sendgrid "github.com/misiki/gocommerce/ext/notify-sendgrid"
 	stripe "github.com/misiki/gocommerce/ext/payments-stripe"
+	meilisearch "github.com/misiki/gocommerce/ext/search-meilisearch"
+	"github.com/misiki/gocommerce/ext/sitemaps"
 )
 
 func main() {
@@ -46,6 +50,17 @@ func main() {
 
 		// Content pages, served at /x/cms/pages/{slug}.
 		cms.New(cms.Config{}),
+
+		// Plugins: installed here, switched on and configured from
+		// Settings → Plugins. The environment is the fallback.
+		meilisearch.New(meilisearch.Config{
+			Host: os.Getenv("MEILI_HOST"), APIKey: os.Getenv("MEILI_API_KEY"), SearchKey: os.Getenv("MEILI_SEARCH_KEY"),
+		}),
+		klaviyo.New(klaviyo.Config{
+			PrivateKey: os.Getenv("KLAVIYO_PRIVATE_KEY"), PublicKey: os.Getenv("KLAVIYO_PUBLIC_KEY"),
+		}),
+		feeds.New(feeds.Config{StorefrontURL: os.Getenv("STOREFRONT_URL")}),
+		sitemaps.New(sitemaps.Config{StorefrontURL: os.Getenv("STOREFRONT_URL")}),
 
 		// The store as tools for an AI agent, at /api/admin/x/mcp. The admin
 		// token is the agent's credential, and every change it makes is

@@ -39,7 +39,7 @@ const (
 	defaultOpenAIURL   = "https://api.openai.com/v1"
 	defaultOpenAIModel = "gpt-4o-mini"
 	defaultGeminiURL   = "https://generativelanguage.googleapis.com/v1beta/openai"
-	defaultGeminiModel = "gemini-2.0-flash"
+	defaultGeminiModel = "gemini-3.6-flash"
 
 	providerAnthropic = "anthropic"
 	providerGemini    = "gemini"
@@ -207,14 +207,24 @@ func (o *optimizer) post(ctx context.Context, path string, body any, headers map
 		return nil, fmt.Errorf("%s: read the response: %w", o.provider, err)
 	}
 	if resp.StatusCode >= 300 {
-		var fail struct {
+		// The three services agree on {"error": {"message": …}}; Gemini wraps
+		// its in a one-element array, which is why the array is tried too.
+		type failure struct {
 			Error struct {
 				Type    string `json:"type"`
+				Status  string `json:"status"`
 				Message string `json:"message"`
 			} `json:"error"`
 		}
-		if json.Unmarshal(payload, &fail) == nil && fail.Error.Message != "" {
-			return nil, fmt.Errorf("%s: %s (%s)", o.provider, fail.Error.Message, fail.Error.Type)
+		var fail failure
+		if json.Unmarshal(payload, &fail) != nil || fail.Error.Message == "" {
+			var list []failure
+			if json.Unmarshal(payload, &list) == nil && len(list) > 0 {
+				fail = list[0]
+			}
+		}
+		if fail.Error.Message != "" {
+			return nil, fmt.Errorf("%s: %s (%s)", o.provider, fail.Error.Message, firstNonEmpty(fail.Error.Type, fail.Error.Status))
 		}
 		return nil, fmt.Errorf("%s: %s", o.provider, resp.Status)
 	}

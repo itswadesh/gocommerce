@@ -307,6 +307,27 @@ Three rules make the format safe to hand-edit:
 Mixing `stock_on_hand` and `stock_on_hand:<code>` in one file is refused: there
 is no way to tell which one a row means.
 
+### The inventory file
+
+For the day the count is the only thing changing, there is a file that is
+nothing but counts: one row per variant per location, whether or not the
+shelf has a row yet.
+
+```http
+GET  /api/admin/export/admin-inventory                 # sku,product_title,variant_label,location,on_hand,reserved,available
+GET  /api/admin/export/admin-inventory?format=shopify  # Handle,Title,Option1 Name … SKU,HS Code,COO,Location,Incoming,Unavailable,Committed,Available,On hand
+POST /api/admin/import/inventory                       # the header says which dialect
+```
+
+The store's own layout names the location by code, blank for the default;
+Shopify's names it by name, and its `Committed` is what is reserved here.
+On import, `on_hand` (`On hand`) is the count, and when it is blank
+`available` (`Available`) is read against what is reserved at that location
+right now. Each row is its own transaction under the rules above — a count
+cannot drop below what is reserved, a closed location takes nothing in —
+and a row naming a SKU or location the store does not have is a row error,
+not a failed file. Shopify's `not stocked` leaves the row alone.
+
 ## How to find what is running out
 
 ```go

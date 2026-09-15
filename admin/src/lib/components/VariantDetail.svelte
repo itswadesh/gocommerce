@@ -262,6 +262,17 @@
                 <input id="vd-taxable" type="checkbox" bind:checked={form.taxable} />
                 <label for="vd-taxable">Charge tax on this variant</label>
             </div>
+            <div class="field m-t-sm">
+                <input
+                    id="vd-requires-shipping"
+                    type="checkbox"
+                    bind:checked={form.requires_shipping}
+                />
+                <label for="vd-requires-shipping">This is a physical product</label>
+            </div>
+            <div class="field-help">
+                Off for a download or a service: nothing is charged to send it.
+            </div>
 
             <hr class="m-t-base m-b-base" />
 

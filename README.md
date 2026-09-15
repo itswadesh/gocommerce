@@ -119,6 +119,10 @@ graph):
 | `cart-recovery` | Chases an abandoned basket with a link back to it |
 | `import-amazon` | A product, its variations and pictures from an Amazon URL, through a real Chrome; copy rewritten by Claude |
 | `mcp` | The store as tools for an AI agent, with an audit trail |
+| `search-meilisearch` | A Meilisearch index kept in step with the catalogue, and the storefront's search through it |
+| `klaviyo` | Orders and abandoned carts as Klaviyo events, under the metric names its flows know |
+| `feeds` | Google Merchant Center and Meta catalogue feeds, generated from the live catalogue |
+| `sitemaps` | The storefront's sitemap: products, collections and content pages |
 
 A module that ships an admin surface also ships its panel screen: install
 `cms`, `invoices`, `identity` or `mcp` and the screen appears in the
@@ -204,9 +208,10 @@ curl -X POST localhost:8080/api/checkout/cod \
 
 One executable serves both the API and a full admin panel. Run the binary,
 open `http://localhost:8080/`, and you have a dashboard, product and order
-management, inventory, CSV import/export, settings and an events screen for
-what the outbox could not deliver — with no separate process, no Node.js on
-the server and no configuration beyond a database URL.
+management, inventory, CSV import/export (in the store's own layout or
+Shopify's, so a Shopify export imports as it is), settings and an events
+screen for what the outbox could not deliver — with no separate process, no
+Node.js on the server and no configuration beyond a database URL.
 
 The panel owns the root, because the API is namespaced under `/api` (plus
 `/health`, `/doc`, and a module's `/x/`) and nothing else wants that URL. The

@@ -1,0 +1,51 @@
+{
+  "paths": {
+    "/x/sitemaps/sitemap.xml": {
+      "get": {
+        "tags": ["sitemaps"],
+        "summary": "The sitemap index",
+        "description": "Points at the products, collections and — when the cms module is installed — pages sitemaps, by this store's own address. A storefront serves /sitemap.xml by proxying or redirecting here. 404 while the plugin is off, 409 until the storefront URL is set.",
+        "responses": {
+          "200": {"description": "The index.", "content": {"application/xml": {"schema": {"type": "string"}}}},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"}
+        }
+      }
+    },
+    "/x/sitemaps/products.xml": {
+      "get": {
+        "tags": ["sitemaps"],
+        "summary": "Every active product's page",
+        "description": "One <url> per active product at the storefront's product path, with lastmod from the product's last change.",
+        "responses": {
+          "200": {"description": "The urlset.", "content": {"application/xml": {"schema": {"type": "string"}}}},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"}
+        }
+      }
+    },
+    "/x/sitemaps/collections.xml": {
+      "get": {
+        "tags": ["sitemaps"],
+        "summary": "Every active collection's page",
+        "responses": {
+          "200": {"description": "The urlset.", "content": {"application/xml": {"schema": {"type": "string"}}}},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"}
+        }
+      }
+    },
+    "/x/sitemaps/pages.xml": {
+      "get": {
+        "tags": ["sitemaps"],
+        "summary": "Every published content page",
+        "description": "Only when the cms module is installed; a page published in several languages is one address.",
+        "responses": {
+          "200": {"description": "The urlset.", "content": {"application/xml": {"schema": {"type": "string"}}}},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"}
+        }
+      }
+    }
+  }
+}

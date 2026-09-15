@@ -422,6 +422,7 @@
             compare_at: "",
             cost: "",
             taxable: true,
+            requires_shipping: true,
             track_inventory: true,
             continue_selling: false,
             origin_country: "",
@@ -501,6 +502,7 @@
                 : "",
             cost: variant?.cost ? fromMinor(variant.cost.amount_minor, code) : "",
             taxable: variant?.taxable ?? true,
+            requires_shipping: variant?.requires_shipping ?? true,
             track_inventory: variant?.track_inventory ?? true,
             continue_selling: variant?.continue_selling ?? false,
             origin_country: variant?.origin_country ?? "",
@@ -519,6 +521,8 @@
         "barcode",
         "price",
         "compare_at",
+        "taxable",
+        "requires_shipping",
         "track_inventory",
         "continue_selling",
         "origin_country",
@@ -741,6 +745,7 @@
                 compare_at_price_minor: v.compare_at_price?.amount_minor ?? null,
                 cost_minor: v.cost?.amount_minor ?? null,
                 taxable: v.taxable,
+                requires_shipping: v.requires_shipping,
                 options: [...(v.options ?? [])],
                 track_inventory: v.track_inventory,
                 continue_selling: v.continue_selling,
@@ -949,6 +954,9 @@
                         form.cost.trim() === "" ? null : toMinor(form.cost, currency);
                 }
                 if (form.taxable !== snapshot.taxable) body.taxable = form.taxable;
+                if (form.requires_shipping !== snapshot.requires_shipping) {
+                    body.requires_shipping = form.requires_shipping;
+                }
                 // The two switches commit themselves, so these are normally
                 // already equal — they stay as the backstop for a toggle whose
                 // own save was refused and left the form ahead of the record.
@@ -1541,172 +1549,6 @@
 
                     </section>
                     {/if}
-                    {#if !hasOptions}
-                    <section class="card">
-                    <h6 class="section-title">
-                        <i class="ri-truck-line" aria-hidden="true"></i>
-                        Shipping
-                    </h6>
-
-                        <!--
-                            Weight, its unit and the tariff number on one row.
-                            All three are short — a number, a word and six
-                            digits — and the row is what a shipping label needs
-                            read off in one go.
-                        -->
-                        <div class="fields">
-                            <div class="field">
-                                <label for="weight">Weight</label>
-                                <input
-                                    id="weight"
-                                    type="number"
-                                    min="0"
-                                    step="any"
-                                    bind:value={form.weight}
-                                />
-                            </div>
-                            <div class="delimiter"></div>
-                            <!-- No label: the options name themselves, and the
-                                 half is read as part of the number beside it. -->
-                            <div class="field">
-                                <Select
-                                    id="weight-unit"
-                                    ariaLabel="Weight unit"
-                                    bind:value={form.weight_unit}
-                                    onchange={onWeightUnitChange}
-                                    options={[
-                                        { value: "g", label: "Grams (g)" },
-                                        { value: "kg", label: "Kilograms (kg)" },
-                                        { value: "oz", label: "Ounces (oz)" },
-                                        { value: "lb", label: "Pounds (lb)" },
-                                    ]}
-                                />
-                            </div>
-                            <div class="delimiter"></div>
-                            <div class="field">
-                                <label for="hs-code">HS code</label>
-                                <input
-                                    id="hs-code"
-                                    type="text"
-                                    inputmode="numeric"
-                                    placeholder="6109.10"
-                                    bind:value={form.hs_code}
-                                />
-                            </div>
-                        </div>
-                        <div class="field-help">
-                            The record holds whole grams; the unit is how you read them back,
-                            exactly as a currency code is. Both are sent as typed and converted by
-                            the engine, so switching units here shows the same mass in the new
-                            unit rather than relabelling the figure. The tariff number is stored as
-                            digits, so 6109.10 and 610910 are the same code.
-                        </div>
-
-                        <!--
-                            The parcel: three sides and the unit they were
-                            measured in, on one row for the reason the weight
-                            row above is one — this is what gets read off a tape
-                            in a single pass, and splitting it would make three
-                            numbers look like three unrelated settings.
-
-                            One unit for all three, because a box is measured in
-                            a single unit by whoever holds the tape. Three unit
-                            pickers would make "30 × 20 × 45" a sentence nobody
-                            can read without three more lookups.
-                        -->
-                        <div class="fields m-t-sm">
-                            <div class="field">
-                                <label for="length">Length</label>
-                                <input
-                                    id="length"
-                                    type="number"
-                                    min="0"
-                                    step="any"
-                                    placeholder="—"
-                                    bind:value={form.length}
-                                />
-                            </div>
-                            <div class="delimiter"></div>
-                            <div class="field">
-                                <label for="width">Width</label>
-                                <input
-                                    id="width"
-                                    type="number"
-                                    min="0"
-                                    step="any"
-                                    placeholder="—"
-                                    bind:value={form.width}
-                                />
-                            </div>
-                            <div class="delimiter"></div>
-                            <div class="field">
-                                <label for="height">Height</label>
-                                <input
-                                    id="height"
-                                    type="number"
-                                    min="0"
-                                    step="any"
-                                    placeholder="—"
-                                    bind:value={form.height}
-                                />
-                            </div>
-                            <div class="delimiter"></div>
-                            <!-- No label, for the reason the weight unit has
-                                 none: the options name themselves. -->
-                            <div class="field">
-                                <Select
-                                    id="dimension-unit"
-                                    ariaLabel="Dimension unit"
-                                    bind:value={form.dimension_unit}
-                                    onchange={onDimensionUnitChange}
-                                    options={[
-                                        { value: "mm", label: "Millimetres (mm)" },
-                                        { value: "cm", label: "Centimetres (cm)" },
-                                        { value: "m", label: "Metres (m)" },
-                                        { value: "in", label: "Inches (in)" },
-                                    ]}
-                                />
-                            </div>
-                        </div>
-                        <div class="field-help">
-                            For a carrier that prices by parcel size as well as weight. An empty
-                            box means that side has not been measured, which is not the same as a
-                            side of zero — a zero-height parcel is something a carrier will quote
-                            for. Stored in whole millimetres and read back in the unit you chose,
-                            the same way the weight above is.
-                        </div>
-
-                        <!-- The country keeps the row below to itself: it is the
-                             one control here that is a name rather than a
-                             figure, and squeezed into the row above its list
-                             becomes too narrow to read a country out of.
-
-                             A row to itself is not the same as the whole card,
-                             though. At full width the trigger and its list ran
-                             747px to hold "Andorra", which reads as a panel
-                             that has lost track of what it is asking for — and
-                             leaves every name stranded at the left edge of a
-                             very wide row. Wide enough for the longest country,
-                             and no wider. -->
-                        <div class="field m-t-sm origin-field">
-                            <label for="origin-country">Country of origin</label>
-                            <!-- A list, not a two-letter box: nobody knows the
-                                 codes, and Select reveals its own search once
-                                 the options pass its threshold. -->
-                            <Select
-                                id="origin-country"
-                                placeholder="Not recorded"
-                                bind:value={form.origin_country}
-                                options={originCountryOptions}
-                            />
-                        </div>
-                        <div class="field-help">
-                            For the customs form on a cross-border parcel, and fine left empty.
-                            Stored as its two-letter code.
-                        </div>
-
-                    </section>
-                    {/if}
 
                     <!-- Its own card, outside the Shipping guard above: the
                          options editor and the variant table are the one part
@@ -1797,212 +1639,7 @@
                         fields: a card that only ever says "nothing here" is a
                         card that teaches operators to scroll past it.
                     -->
-                    {#if categoryFields.length}
-                    <section class="card">
-                    <!-- No icon and no rule, which is the one heading on this page
-                         that departs from PocketBase's: Shopify's card is a plain
-                         line of text with the category at the far end, and a rule
-                         between the two would read as a separator between a title
-                         and its own subject. -->
-                    <h6 class="section-title cat-meta-title">
-                        Category metafields
-                        <span class="label cat-meta-scope">
-                            {categoryChain[categoryChain.length - 1]?.title}
-                            {#if categoryChain.length > 1}
-                                <span class="txt-hint">
-                                    in {categoryChain[categoryChain.length - 2].title}
-                                </span>
-                            {/if}
-                        </span>
-                    </h6>
 
-                    {#if filledFields.length}
-                        <div class="cat-meta-rows">
-                            {#each filledFields as field (field.key)}
-                                <div class="cat-meta-row">
-                                    <span class="cat-meta-label">{field.label}</span>
-                                    <TokenInput
-                                        bind:values={form.category_meta[field.key]}
-                                        options={field.choices}
-                                        emptyText={field.choices.length
-                                            ? "Nothing left to choose"
-                                            : "This field has no set choices — type your own."}
-                                    />
-                                </div>
-                            {/each}
-                        </div>
-                    {/if}
-
-                    {#if unfilledFields.length}
-                        <!-- The footer strip is recessed, as Shopify has it, so
-                             the chips read as things you could add rather than
-                             as answers already given. -->
-                        <div class="cat-meta-add">
-                            {#each unfilledFields as field (field.key)}
-                                <button
-                                    type="button"
-                                    class="cat-meta-chip"
-                                    onclick={() => openField(field.key)}
-                                >
-                                    <i class="ri-add-line" aria-hidden="true"></i>
-                                    <span class="txt">{field.label}</span>
-                                </button>
-                            {/each}
-                        </div>
-                    {/if}
-                    </section>
-                    {/if}
-
-                    <section class="card">
-                    <h6 class="section-title">
-                        <i class="ri-price-tag-2-line" aria-hidden="true"></i>
-                        Product metafields
-                    </h6>
-
-                    {#if form.metafields.length}
-                        <div class="metafields m-b-sm">
-                            {#each form.metafields as field, i (i)}
-                                <div class="metafield-row">
-                                    <div class="field">
-                                        <label for="mf-key-{i}">Name</label>
-                                        <input
-                                            id="mf-key-{i}"
-                                            type="text"
-                                            placeholder="care_instructions"
-                                            bind:value={field.key}
-                                        />
-                                    </div>
-                                    <div class="field">
-                                        <label for="mf-value-{i}">Value</label>
-                                        <input
-                                            id="mf-value-{i}"
-                                            type="text"
-                                            bind:value={field.value}
-                                        />
-                                    </div>
-                                    <button
-                                        type="button"
-                                        class="btn circle sm transparent secondary"
-                                        aria-label="Remove {field.key || 'this metafield'}"
-                                        title="Remove"
-                                        onclick={() => removeMetafield(i)}
-                                    >
-                                        <i class="ri-close-line" aria-hidden="true"></i>
-                                    </button>
-                                </div>
-                            {/each}
-                        </div>
-                    {/if}
-
-                    {#if duplicateMetafield}
-                        <div class="field-help error">
-                            Two metafields are called “{duplicateMetafield}”. Only the last would
-                            be saved, so rename one first.
-                        </div>
-                    {/if}
-
-                    <button type="button" class="btn sm secondary" onclick={addMetafield}>
-                        <i class="ri-add-line" aria-hidden="true"></i>
-                        <span class="txt">Add metafield</span>
-                    </button>
-
-                    <div class="field-help">
-                        Your own fields, for a storefront or an integration to read. Stored under
-                        <code>metadata.custom</code>.
-                    </div>
-
-                    </section>
-                    <section class="card">
-                    <!--
-                        Shopify's shape: the listing as it would read, and the
-                        fields that produce it behind an Edit button. Most
-                        visits to this card are to check the preview rather than
-                        to change it, and three boxes open by default is three
-                        boxes of noise for everyone who came to look.
-                    -->
-                    <h6 class="section-title">
-                        <i class="ri-search-eye-line" aria-hidden="true"></i>
-                        Search engine listing
-                        <!-- `.section-title` puts its rule last, so a button in
-                             the markup lands beside the caption; `.seo-edit`
-                             orders it after the rule instead. -->
-                        <button
-                            type="button"
-                            class="btn sm transparent seo-edit"
-                            aria-expanded={seoOpen}
-                            onclick={() => (seoOpen = !seoOpen)}
-                        >
-                            <span class="txt">{seoOpen ? "Done" : "Edit"}</span>
-                        </button>
-                    </h6>
-
-                    {#if form.title || form.seo_title || form.seo_description}
-                        <!-- A result page's own order: the url, the link, the
-                             sentence under it. -->
-                        <div class="seo-preview">
-                            <div class="seo-preview-url">{previewHost}/{form.slug}</div>
-                            <div class="seo-preview-title">
-                                {form.seo_title || form.title}
-                            </div>
-                            <div class="seo-preview-description">
-                                {form.seo_description ||
-                                    "No meta description yet — a search engine will pick a sentence out of the page instead."}
-                            </div>
-                        </div>
-                    {:else}
-                        <p class="seo-preview-empty">
-                            Add a title and description to see how this product might appear in a
-                            search engine listing.
-                        </p>
-                    {/if}
-
-                    {#if seoOpen}
-                        <div class="seo-fields">
-                            <div class="field">
-                                <label for="seo-title">Page title</label>
-                                <input
-                                    id="seo-title"
-                                    type="text"
-                                    placeholder={form.title}
-                                    bind:value={form.seo_title}
-                                />
-                            </div>
-                            <div class="field-help">
-                                {form.seo_title.length} of {SEO_TITLE_LIMIT} characters used. Empty
-                                uses the product title.
-                            </div>
-
-                            <div class="field m-t-sm">
-                                <label for="seo-description">Description</label>
-                                <textarea
-                                    id="seo-description"
-                                    rows="3"
-                                    bind:value={form.seo_description}
-                                ></textarea>
-                            </div>
-                            <div class="field-help">
-                                {form.seo_description.length} of {SEO_DESCRIPTION_LIMIT} characters used.
-                            </div>
-
-                            <!--
-                                Prefixed the way Shopify prefixes it, with the store's
-                                host and nothing after it. The storefront chooses its
-                                own paths, so printing /products/ here would show the
-                                operator a url that may not exist.
-                            -->
-                            <div class="field m-t-sm">
-                                <label for="slug">URL handle</label>
-                                <div class="seo-handle-row">
-                                    <span class="seo-handle-prefix">{previewHost}/</span>
-                                    <input id="slug" type="text" bind:value={form.slug} />
-                                </div>
-                            </div>
-                            <div class="field-help">
-                                Emptying the box keeps the current handle.
-                            </div>
-                        </div>
-                    {/if}
-                    </section>
                 </div>
 
                 <div class="col-lg-4">
@@ -2274,6 +1911,397 @@
                     <div class="field-help">
                         Enter or a comma adds a tag.
                     </div>
+                    </section>
+                    {#if !hasOptions}
+                    <section class="card">
+                    <h6 class="section-title">
+                        <i class="ri-truck-line" aria-hidden="true"></i>
+                        Shipping
+                    </h6>
+                        <!--
+                            Shopify's card, control for control: whether the
+                            thing is sent at all, then its weight, then what
+                            customs wants to know. The parcel's sides stay,
+                            last, because ten carrier modules price by them.
+                        -->
+                        <div class="field">
+                            <input
+                                id="requires-shipping"
+                                type="checkbox"
+                                bind:checked={form.requires_shipping}
+                            />
+                            <label for="requires-shipping">This is a physical product</label>
+                        </div>
+                        <div class="field-help">
+                            Off for a download, a service or a gift card: nothing is charged to
+                            send it, and a basket with nothing else in it is not asked where to
+                            deliver.
+                        </div>
+                        {#if form.requires_shipping}
+                            <div class="fields m-t-sm">
+                                <div class="field">
+                                    <label for="weight">Weight</label>
+                                    <input
+                                        id="weight"
+                                        type="number"
+                                        min="0"
+                                        step="any"
+                                        bind:value={form.weight}
+                                    />
+                                </div>
+                                <div class="delimiter"></div>
+                                <!-- No label: the options name themselves, and the
+                                     half is read as part of the number beside it. -->
+                                <div class="field">
+                                    <Select
+                                        id="weight-unit"
+                                        ariaLabel="Weight unit"
+                                        bind:value={form.weight_unit}
+                                        onchange={onWeightUnitChange}
+                                        options={[
+                                            { value: "lb", label: "lb" },
+                                            { value: "oz", label: "oz" },
+                                            { value: "kg", label: "kg" },
+                                            { value: "g", label: "g" },
+                                        ]}
+                                    />
+                                </div>
+                            </div>
+                            <div class="field-help">
+                                Used to calculate shipping rates at checkout and label prices
+                                during fulfillment. The record holds whole grams; the unit is how
+                                you read them back, so switching it shows the same mass in the new
+                                unit rather than relabelling the figure.
+                            </div>
+
+                            <h6 class="section-title m-t-base">Customs information</h6>
+                            <div class="field-help m-b-sm">
+                                Customs authorities use this to calculate duties when shipping
+                                internationally. Shown on printed customs forms.
+                            </div>
+    <!-- The country keeps the row below to itself: it is the
+                                 one control here that is a name rather than a
+                                 figure, and squeezed into the row above its list
+                                 becomes too narrow to read a country out of.
+
+                                 A row to itself is not the same as the whole card,
+                                 though. At full width the trigger and its list ran
+                                 747px to hold "Andorra", which reads as a panel
+                                 that has lost track of what it is asking for — and
+                                 leaves every name stranded at the left edge of a
+                                 very wide row. Wide enough for the longest country,
+                                 and no wider. -->
+                            <div class="field m-t-sm origin-field">
+                                <label for="origin-country">Country/Region of origin</label>
+                                <!-- A list, not a two-letter box: nobody knows the
+                                     codes, and Select reveals its own search once
+                                     the options pass its threshold. -->
+                                <Select
+                                    id="origin-country"
+                                    placeholder="Not recorded"
+                                    bind:value={form.origin_country}
+                                    options={originCountryOptions}
+                                />
+                            </div>
+                            <div class="field-help">
+                                For the customs form on a cross-border parcel, and fine left empty.
+                                Stored as its two-letter code.
+                            </div>
+                            <div class="field m-t-sm">
+                                <label for="hs-code">Harmonized System (HS) code</label>
+                                <input
+                                    id="hs-code"
+                                    type="text"
+                                    inputmode="numeric"
+                                    placeholder="6109.10"
+                                    bind:value={form.hs_code}
+                                />
+                            </div>
+                            <div class="field-help">
+                                Six digits, stored as digits: 6109.10 and 610910 are the same code.
+                            </div>
+
+                            <h6 class="section-title m-t-base">Package dimensions</h6>
+    <!--
+                                The parcel: three sides and the unit they were
+                                measured in, on one row for the reason the weight
+                                row above is one — this is what gets read off a tape
+                                in a single pass, and splitting it would make three
+                                numbers look like three unrelated settings.
+
+                                One unit for all three, because a box is measured in
+                                a single unit by whoever holds the tape. Three unit
+                                pickers would make "30 × 20 × 45" a sentence nobody
+                                can read without three more lookups.
+                            -->
+                            <div class="fields m-t-sm">
+                                <div class="field">
+                                    <label for="length">Length</label>
+                                    <input
+                                        id="length"
+                                        type="number"
+                                        min="0"
+                                        step="any"
+                                        placeholder="—"
+                                        bind:value={form.length}
+                                    />
+                                </div>
+                                <div class="delimiter"></div>
+                                <div class="field">
+                                    <label for="width">Width</label>
+                                    <input
+                                        id="width"
+                                        type="number"
+                                        min="0"
+                                        step="any"
+                                        placeholder="—"
+                                        bind:value={form.width}
+                                    />
+                                </div>
+                                <div class="delimiter"></div>
+                                <div class="field">
+                                    <label for="height">Height</label>
+                                    <input
+                                        id="height"
+                                        type="number"
+                                        min="0"
+                                        step="any"
+                                        placeholder="—"
+                                        bind:value={form.height}
+                                    />
+                                </div>
+                                <div class="delimiter"></div>
+                                <!-- No label, for the reason the weight unit has
+                                     none: the options name themselves. -->
+                                <div class="field">
+                                    <Select
+                                        id="dimension-unit"
+                                        ariaLabel="Dimension unit"
+                                        bind:value={form.dimension_unit}
+                                        onchange={onDimensionUnitChange}
+                                        options={[
+                                            { value: "mm", label: "Millimetres (mm)" },
+                                            { value: "cm", label: "Centimetres (cm)" },
+                                            { value: "m", label: "Metres (m)" },
+                                            { value: "in", label: "Inches (in)" },
+                                        ]}
+                                    />
+                                </div>
+                            </div>
+                            <div class="field-help">
+                                For a carrier that prices by parcel size as well as weight. An empty
+                                box means that side has not been measured, which is not the same as a
+                                side of zero — a zero-height parcel is something a carrier will quote
+                                for. Stored in whole millimetres and read back in the unit you chose,
+                                the same way the weight above is.
+                            </div>
+                        {/if}
+                    </section>
+                    {/if}
+                    <section class="card">
+                    <!--
+                        Shopify's shape: the listing as it would read, and the
+                        fields that produce it behind an Edit button. Most
+                        visits to this card are to check the preview rather than
+                        to change it, and three boxes open by default is three
+                        boxes of noise for everyone who came to look.
+                    -->
+                    <h6 class="section-title">
+                        <i class="ri-search-eye-line" aria-hidden="true"></i>
+                        Search engine listing
+                        <!-- `.section-title` puts its rule last, so a button in
+                             the markup lands beside the caption; `.seo-edit`
+                             orders it after the rule instead. -->
+                        <button
+                            type="button"
+                            class="btn sm transparent seo-edit"
+                            aria-expanded={seoOpen}
+                            onclick={() => (seoOpen = !seoOpen)}
+                        >
+                            <span class="txt">{seoOpen ? "Done" : "Edit"}</span>
+                        </button>
+                    </h6>
+
+                    {#if form.title || form.seo_title || form.seo_description}
+                        <!-- A result page's own order: the url, the link, the
+                             sentence under it. -->
+                        <div class="seo-preview">
+                            <div class="seo-preview-url">{previewHost}/{form.slug}</div>
+                            <div class="seo-preview-title">
+                                {form.seo_title || form.title}
+                            </div>
+                            <div class="seo-preview-description">
+                                {form.seo_description ||
+                                    "No meta description yet — a search engine will pick a sentence out of the page instead."}
+                            </div>
+                        </div>
+                    {:else}
+                        <p class="seo-preview-empty">
+                            Add a title and description to see how this product might appear in a
+                            search engine listing.
+                        </p>
+                    {/if}
+
+                    {#if seoOpen}
+                        <div class="seo-fields">
+                            <div class="field">
+                                <label for="seo-title">Page title</label>
+                                <input
+                                    id="seo-title"
+                                    type="text"
+                                    placeholder={form.title}
+                                    bind:value={form.seo_title}
+                                />
+                            </div>
+                            <div class="field-help">
+                                {form.seo_title.length} of {SEO_TITLE_LIMIT} characters used. Empty
+                                uses the product title.
+                            </div>
+
+                            <div class="field m-t-sm">
+                                <label for="seo-description">Description</label>
+                                <textarea
+                                    id="seo-description"
+                                    rows="3"
+                                    bind:value={form.seo_description}
+                                ></textarea>
+                            </div>
+                            <div class="field-help">
+                                {form.seo_description.length} of {SEO_DESCRIPTION_LIMIT} characters used.
+                            </div>
+
+                            <!--
+                                Prefixed the way Shopify prefixes it, with the store's
+                                host and nothing after it. The storefront chooses its
+                                own paths, so printing /products/ here would show the
+                                operator a url that may not exist.
+                            -->
+                            <div class="field m-t-sm">
+                                <label for="slug">URL handle</label>
+                                <div class="seo-handle-row">
+                                    <span class="seo-handle-prefix">{previewHost}/</span>
+                                    <input id="slug" type="text" bind:value={form.slug} />
+                                </div>
+                            </div>
+                            <div class="field-help">
+                                Emptying the box keeps the current handle.
+                            </div>
+                        </div>
+                    {/if}
+                    </section>
+                    {#if categoryFields.length}
+                    <section class="card">
+                    <!-- No icon and no rule, which is the one heading on this page
+                         that departs from PocketBase's: Shopify's card is a plain
+                         line of text with the category at the far end, and a rule
+                         between the two would read as a separator between a title
+                         and its own subject. -->
+                    <h6 class="section-title cat-meta-title">
+                        Category metafields
+                        <span class="label cat-meta-scope">
+                            {categoryChain[categoryChain.length - 1]?.title}
+                            {#if categoryChain.length > 1}
+                                <span class="txt-hint">
+                                    in {categoryChain[categoryChain.length - 2].title}
+                                </span>
+                            {/if}
+                        </span>
+                    </h6>
+
+                    {#if filledFields.length}
+                        <div class="cat-meta-rows">
+                            {#each filledFields as field (field.key)}
+                                <div class="cat-meta-row">
+                                    <span class="cat-meta-label">{field.label}</span>
+                                    <TokenInput
+                                        bind:values={form.category_meta[field.key]}
+                                        options={field.choices}
+                                        emptyText={field.choices.length
+                                            ? "Nothing left to choose"
+                                            : "This field has no set choices — type your own."}
+                                    />
+                                </div>
+                            {/each}
+                        </div>
+                    {/if}
+
+                    {#if unfilledFields.length}
+                        <!-- The footer strip is recessed, as Shopify has it, so
+                             the chips read as things you could add rather than
+                             as answers already given. -->
+                        <div class="cat-meta-add">
+                            {#each unfilledFields as field (field.key)}
+                                <button
+                                    type="button"
+                                    class="cat-meta-chip"
+                                    onclick={() => openField(field.key)}
+                                >
+                                    <i class="ri-add-line" aria-hidden="true"></i>
+                                    <span class="txt">{field.label}</span>
+                                </button>
+                            {/each}
+                        </div>
+                    {/if}
+                    </section>
+                    {/if}
+                    <section class="card">
+                    <h6 class="section-title">
+                        <i class="ri-price-tag-2-line" aria-hidden="true"></i>
+                        Product metafields
+                    </h6>
+
+                    {#if form.metafields.length}
+                        <div class="metafields m-b-sm">
+                            {#each form.metafields as field, i (i)}
+                                <div class="metafield-row">
+                                    <div class="field">
+                                        <label for="mf-key-{i}">Name</label>
+                                        <input
+                                            id="mf-key-{i}"
+                                            type="text"
+                                            placeholder="care_instructions"
+                                            bind:value={field.key}
+                                        />
+                                    </div>
+                                    <div class="field">
+                                        <label for="mf-value-{i}">Value</label>
+                                        <input
+                                            id="mf-value-{i}"
+                                            type="text"
+                                            bind:value={field.value}
+                                        />
+                                    </div>
+                                    <button
+                                        type="button"
+                                        class="btn circle sm transparent secondary"
+                                        aria-label="Remove {field.key || 'this metafield'}"
+                                        title="Remove"
+                                        onclick={() => removeMetafield(i)}
+                                    >
+                                        <i class="ri-close-line" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                            {/each}
+                        </div>
+                    {/if}
+
+                    {#if duplicateMetafield}
+                        <div class="field-help error">
+                            Two metafields are called “{duplicateMetafield}”. Only the last would
+                            be saved, so rename one first.
+                        </div>
+                    {/if}
+
+                    <button type="button" class="btn sm secondary" onclick={addMetafield}>
+                        <i class="ri-add-line" aria-hidden="true"></i>
+                        <span class="txt">Add metafield</span>
+                    </button>
+
+                    <div class="field-help">
+                        Your own fields, for a storefront or an integration to read. Stored under
+                        <code>metadata.custom</code>.
+                    </div>
+
                     </section>
                 </div>
             </div>

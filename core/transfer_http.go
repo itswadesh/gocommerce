@@ -22,6 +22,39 @@ func (a *App) mountTransferRoutes() {
 	// import — a customer is a reading of the orders and has no table to be
 	// written back into.
 	a.HandleAdminFunc("GET /api/admin/export/admin-customers", a.handleExportCustomers, RightDataExport)
+	// The stock-take's file: every count at every location, and the counts
+	// back. The product file carries stock too; this one is for the day the
+	// count is the only thing changing.
+	a.HandleAdminFunc("GET /api/admin/export/admin-inventory", a.handleExportInventory, RightDataExport)
+	a.HandleAdminFunc("POST /api/admin/import/inventory", a.handleImportInventory, RightDataImport)
+}
+
+func (a *App) handleExportInventory(w http.ResponseWriter, r *http.Request) {
+	opts, err := exportOptionsFrom(r)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", exportFilename("inventory", opts.Format))
+	if err := a.transfer.ExportInventory(r.Context(), w, opts); err != nil {
+		a.log.Error("inventory export failed midway", "error", err)
+	}
+}
+
+func (a *App) handleImportInventory(w http.ResponseWriter, r *http.Request) {
+	opts, err := importOptionsFrom(r)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	body := limitedBody(w, r, maxUploadBytes)
+	result, err := a.transfer.ImportInventory(r.Context(), body, opts)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, result)
 }
 
 func (a *App) handleExportProducts(w http.ResponseWriter, r *http.Request) {
@@ -33,10 +66,14 @@ func (a *App) handleExportProducts(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	opts, err := exportOptionsFrom(r)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition",
-		fmt.Sprintf(`attachment; filename="products-%s.csv"`, time.Now().UTC().Format("2006-01-02")))
-	if err := a.transfer.ExportProducts(r.Context(), w, query); err != nil {
+	w.Header().Set("Content-Disposition", exportFilename("products", opts.Format))
+	if err := a.transfer.ExportProducts(r.Context(), w, query, opts); err != nil {
 		// The response has already begun, so the status line is spent. Log it
 		// and let the truncated file be the signal — pretending it succeeded
 		// would be worse.
@@ -56,10 +93,14 @@ func (a *App) handleExportOrders(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	opts, err := exportOptionsFrom(r)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition",
-		fmt.Sprintf(`attachment; filename="orders-%s.csv"`, time.Now().UTC().Format("2006-01-02")))
-	if err := a.transfer.ExportOrders(r.Context(), w, query); err != nil {
+	w.Header().Set("Content-Disposition", exportFilename("orders", opts.Format))
+	if err := a.transfer.ExportOrders(r.Context(), w, query, opts); err != nil {
 		a.log.Error("order export failed midway", "error", err)
 	}
 }
@@ -74,17 +115,26 @@ func (a *App) handleExportCustomers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	query := CustomerQuery{Search: r.URL.Query().Get("q"), Sort: sortBy}
+	opts, err := exportOptionsFrom(r)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition",
-		fmt.Sprintf(`attachment; filename="customers-%s.csv"`, time.Now().UTC().Format("2006-01-02")))
-	if err := a.transfer.ExportCustomers(r.Context(), w, query); err != nil {
+	w.Header().Set("Content-Disposition", exportFilename("customers", opts.Format))
+	if err := a.transfer.ExportCustomers(r.Context(), w, query, opts); err != nil {
 		a.log.Error("customer export failed midway", "error", err)
 	}
 }
 
 func (a *App) handleImportProducts(w http.ResponseWriter, r *http.Request) {
+	opts, err := importOptionsFrom(r)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
 	body := limitedBody(w, r, maxUploadBytes)
-	result, err := a.transfer.ImportProducts(r.Context(), body, boolParam(r, "dry_run"))
+	result, err := a.transfer.ImportProducts(r.Context(), body, opts)
 	if err != nil {
 		RespondError(w, r, err)
 		return
@@ -92,12 +142,73 @@ func (a *App) handleImportProducts(w http.ResponseWriter, r *http.Request) {
 	Respond(w, http.StatusOK, result)
 }
 
+// importOptionsFrom reads the switches every import shares. `format` is
+// optional — the header says which dialect a file is in — and `overwrite`
+// is only ever sent to turn the default off.
+func importOptionsFrom(r *http.Request) (ImportOptions, error) {
+	q := r.URL.Query()
+	format, err := ParseFormat(q.Get("format"))
+	if err != nil {
+		return ImportOptions{}, err
+	}
+	opts := ImportOptions{DryRun: boolParam(r, "dry_run"), FireEvents: boolParam(r, "fire_events")}
+	if q.Get("format") != "" {
+		opts.Format = format
+	}
+	if q.Get("overwrite") != "" {
+		overwrite := boolParam(r, "overwrite")
+		opts.Overwrite = &overwrite
+	}
+	return opts, nil
+}
+
+// exportOptionsFrom reads the dialect, and where the store is: picture URLs
+// leave as absolute addresses so the file means the same thing elsewhere.
+func exportOptionsFrom(r *http.Request) (ExportOptions, error) {
+	format, err := ParseFormat(r.URL.Query().Get("format"))
+	if err != nil {
+		return ExportOptions{}, err
+	}
+	return ExportOptions{Format: format, BaseURL: requestBaseURL(r)}, nil
+}
+
+// requestBaseURL is the address the request came to, as a proxy in front
+// reports it, or empty when nothing said.
+func requestBaseURL(r *http.Request) string {
+	host := r.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = r.Host
+	}
+	if host == "" {
+		return ""
+	}
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	return scheme + "://" + host
+}
+
+// exportFilename names the download by what it holds and the dialect it is
+// in, so two files on one desk can be told apart.
+func exportFilename(kind string, format Format) string {
+	name := kind
+	if format == FormatShopify {
+		name += "-shopify"
+	}
+	return fmt.Sprintf(`attachment; filename="%s-%s.csv"`, name, time.Now().UTC().Format("2006-01-02"))
+}
+
 func (a *App) handleImportOrders(w http.ResponseWriter, r *http.Request) {
-	body := limitedBody(w, r, maxUploadBytes)
 	// Events are off unless explicitly asked for: importing history must not
 	// email five thousand people about orders they placed last year.
-	result, err := a.transfer.ImportOrders(r.Context(), body,
-		boolParam(r, "dry_run"), boolParam(r, "fire_events"))
+	opts, err := importOptionsFrom(r)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	body := limitedBody(w, r, maxUploadBytes)
+	result, err := a.transfer.ImportOrders(r.Context(), body, opts)
 	if err != nil {
 		RespondError(w, r, err)
 		return

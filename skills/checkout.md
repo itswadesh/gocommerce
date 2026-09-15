@@ -104,6 +104,11 @@ verbs that put a code on a cart — `PUT` and `DELETE /api/carts/{token}/discoun
 — now answer 409 on a cart that has already been checked out, where they used to
 write a row nothing would read.
 
+A basket in which no line `requires_shipping` — downloads, services, gift
+cards — is charged nothing to send and is not asked for a delivery option,
+wherever the address is; the flat number and the rates below apply the moment
+one physical line is in it.
+
 ## How to check out over HTTP
 
 ```http

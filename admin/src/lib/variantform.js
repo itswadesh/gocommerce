@@ -124,6 +124,7 @@ export function variantShape(variant, currency) {
             : "",
         cost: variant?.cost ? fromMinor(variant.cost.amount_minor, currency) : "",
         taxable: variant?.taxable ?? true,
+        requires_shipping: variant?.requires_shipping ?? true,
         track_inventory: variant?.track_inventory ?? true,
         continue_selling: variant?.continue_selling ?? false,
         active: variant?.active ?? true,
@@ -206,6 +207,9 @@ export function variantPatch(form, snapshot, currency, locale, metadata = {}) {
         body.cost_minor = text("cost") === "" ? null : toMinor(form.cost, currency, locale);
     }
     if (form.taxable !== snapshot.taxable) body.taxable = form.taxable;
+    if (form.requires_shipping !== snapshot.requires_shipping) {
+        body.requires_shipping = form.requires_shipping;
+    }
     if (form.track_inventory !== snapshot.track_inventory) {
         body.track_inventory = form.track_inventory;
     }

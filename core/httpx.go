@@ -471,6 +471,7 @@ func (a *App) mountCoreRoutes() {
 	// Beside the orders, because a report is a reading of them.
 	a.mountReportRoutes()
 	a.mountTransferRoutes()
+	a.mountPluginRoutes()
 	// The store's own operations after the commerce surfaces, before the
 	// panel's file server: everything above is the shop, this is the machine
 	// the shop runs on.

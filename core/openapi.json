@@ -4749,7 +4749,7 @@
             "adminToken": []
           }
         ],
-        "description": "One row per variant. Cells beginning with =, +, - or @ are prefixed with an apostrophe, because a spreadsheet executes those on open; import strips exactly one back, so the round trip stays lossless. It takes the same filters as the admin product listing — q, status, vendor, product_type, tag, category_id and collection_id — so a reconciliation can export exactly the rows a screen is showing. There is no paging: an export streams every row that matched. Row order stays p.id, v.position, v.id whatever the filters are, because the importer requires a product's variant rows to be contiguous.",
+        "description": "One row per variant. Cells beginning with =, +, - or @ are prefixed with an apostrophe, because a spreadsheet executes those on open; import strips exactly one back, so the round trip stays lossless. It takes the same filters as the admin product listing — q, status, vendor, product_type, tag, category_id and collection_id — so a reconciliation can export exactly the rows a screen is showing. There is no paging: an export streams every row that matched. Row order stays p.id, v.position, v.id whatever the filters are, because the importer requires a product's variant rows to be contiguous.\n\nTwo dialects, one model: `format=shopify` writes Shopify's product export column for column (Handle, Title, Body (HTML), Option1 Name … Variant Price, Image Src, Variant Image, Cost per item, Status), with prices as decimals in the store's currency, one row per variant and a row of nothing but a picture for each one past the last variant. The store's own layout carries the same fields — vendor, product_type, tags, category, seo_title, seo_description, cost_minor, taxable, weight_unit — plus `images`, `image_alts` and `variant_images`, which are picture URLs; site-relative ones leave as absolute addresses under the request's own host.",
         "responses": {
           "200": {
             "description": "A CSV file.",
@@ -4831,6 +4831,9 @@
               "format": "int64"
             },
             "description": "Restrict to one collection's members, and order them the way that collection was curated rather than newest-first. An unparseable value is an error rather than a silently ignored filter. A collection nobody has is an empty page, not a 404. If a sort parameter is ever added to this listing, sending it together with collection_id must be a validation error rather than a silent override: a collection's order is the curation (D40)."
+          },
+          {
+            "$ref": "#/components/parameters/Format"
           }
         ]
       }
@@ -4846,10 +4849,16 @@
             "adminToken": []
           }
         ],
-        "description": "Upserts by SKU. Rows for one product must be contiguous — which is what export produces — so a large file streams instead of being held in memory. A bad row is reported with its line number and never aborts the file.\n\nA `stock_on_hand:<code>` cell that raises the count at a closed location fails that row, naming the code: stock moves out of a closed location, never into it. A cell at or below the current count is accepted, so an unedited export of a closed location's zeros still imports.",
+        "description": "Upserts by SKU. Rows for one product must be contiguous — which is what export produces — so a large file streams instead of being held in memory. A bad row is reported with its line number and never aborts the file.\n\nA `stock_on_hand:<code>` cell that raises the count at a closed location fails that row, naming the code: stock moves out of a closed location, never into it. A cell at or below the current count is accepted, so an unedited export of a closed location's zeros still imports.\n\nThe dialect is read off the header — a Shopify file has a Handle column — unless `format` says. A column the file does not have says nothing about that field, so a price list updates prices and leaves everything else as it was. Pictures are linked by URL: `images` (or Image Src rows) replace the product's list in the file's order, `variant_images` (Variant Image) set a variant's own, and a URL the media library already holds is reused. In Shopify's dialect a blank Variant SKU is given the handle, numbered when the product has options; Variant Inventory Qty lands at the default location; Product Category is matched to the store's tree by its full path.",
         "parameters": [
           {
             "$ref": "#/components/parameters/DryRun"
+          },
+          {
+            "$ref": "#/components/parameters/Format"
+          },
+          {
+            "$ref": "#/components/parameters/Overwrite"
           }
         ],
         "requestBody": {
@@ -4886,7 +4895,7 @@
             "adminToken": []
           }
         ],
-        "description": "One row per order line, with the order's columns repeated — the shape an accountant's pivot table wants.",
+        "description": "One row per order line, with the order's columns repeated — the shape an accountant's pivot table wants.\n\n`format=shopify` writes Shopify's orders export column for column — Name (`#` and the number), Financial Status, Fulfillment Status, decimal amounts, Lineitem columns, billing and shipping blocks — with the order's own columns on its first line only, as Shopify writes them. Columns this store has no value for (risk level, employee, note attributes) are present and blank.",
         "parameters": [
           {
             "name": "status",
@@ -4900,6 +4909,9 @@
           },
           {
             "$ref": "#/components/parameters/To"
+          },
+          {
+            "$ref": "#/components/parameters/Format"
           }
         ],
         "responses": {
@@ -4930,7 +4942,7 @@
             "adminToken": []
           }
         ],
-        "description": "One row per person — the mailing list a shop actually asks this screen for. A customer is a reading of the orders and not a table (see GET /api/admin/customers), so the columns are the same aggregates the listing shows: name, phone and address from that person's most recent order, orders not cancelled, and lifetime spend as `spent_minor` plus `currency` rather than a formatted amount. `q` and `sort` are the listing's own, so a file taken off a filtered screen is the rows on that screen. There is no matching import: there is no customer record to write back into.",
+        "description": "One row per person — the mailing list a shop actually asks this screen for. A customer is a reading of the orders and not a table (see GET /api/admin/customers), so the columns are the same aggregates the listing shows: name, phone and address from that person's most recent order, orders not cancelled, and lifetime spend as `spent_minor` plus `currency` rather than a formatted amount. `q` and `sort` are the listing's own, so a file taken off a filtered screen is the rows on that screen. There is no matching import: there is no customer record to write back into.\n\n`format=shopify` writes Shopify's customers export column for column, the name split at its last space into First Name and Last Name, Total Spent as a decimal, and `no` in every consent column, because nothing here has recorded a consent.",
         "parameters": [
           {
             "name": "q",
@@ -4957,6 +4969,9 @@
           },
           {
             "$ref": "#/components/parameters/SortOrder"
+          },
+          {
+            "$ref": "#/components/parameters/Format"
           }
         ],
         "responses": {
@@ -4979,6 +4994,86 @@
         }
       }
     },
+    "/api/admin/export/admin-inventory": {
+      "get": {
+        "tags": [
+          "admin:data"
+        ],
+        "summary": "Export every count at every location as CSV",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "The stock-take's file: one row per variant per location, whether or not the shelf has a row yet, so there is a cell for the empty one. The store's own layout is `sku, product_title, variant_label, location, on_hand, reserved, available`, the location by code. `format=shopify` writes Shopify's inventory export column for column — Handle, Title, the option columns, SKU, HS Code, COO, Location (the location's name), Incoming, Unavailable, Committed (what is reserved here), Available, On hand.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Format"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A CSV file.",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/import/inventory": {
+      "post": {
+        "tags": [
+          "admin:data"
+        ],
+        "summary": "Set counts from a CSV",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "One row per variant per location, each in its own transaction, keyed by SKU and location — the code in the store's own layout (blank for the default), the name or the code in Shopify's. `on_hand` (On hand) is the count; when it is blank, `available` (Available) is read against what is reserved there right now. The rules are the product file's: a count cannot drop below what is reserved, a closed location takes nothing in, and a row naming a SKU or location the store does not have is a row error, not a failed file. Shopify's `not stocked` leaves the row alone.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DryRun"
+          },
+          {
+            "$ref": "#/components/parameters/Format"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "text/csv": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ImportResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
     "/api/admin/import/orders": {
       "post": {
         "tags": [
@@ -4990,7 +5085,7 @@
             "adminToken": []
           }
         ],
-        "description": "For migrating from another platform. It does not touch inventory — those stock movements happened on the old system — and it fires no events unless `fire_events` is set, because importing five thousand orders must not send five thousand confirmation emails. An order whose number already exists is skipped, so re-importing an export is a no-op.",
+        "description": "For migrating from another platform. It does not touch inventory — those stock movements happened on the old system — and it fires no events unless `fire_events` is set, because importing five thousand orders must not send five thousand confirmation emails. An order whose number already exists is skipped, so re-importing an export is a no-op.\n\nShopify's orders export is read as it is — the dialect is recognised by its Name and Lineitem columns — so a store moving here brings its history unchanged: `#1001` becomes order 1001, Financial Status becomes the payment status, a fulfilled order arrives shipped, a Cancelled at makes it cancelled, amounts are read as decimals in the file's currency, and the shipping address is used, or the billing one when there is only that.",
         "parameters": [
           {
             "$ref": "#/components/parameters/DryRun"
@@ -5002,6 +5097,9 @@
               "type": "boolean",
               "default": false
             }
+          },
+          {
+            "$ref": "#/components/parameters/Format"
           }
         ],
         "requestBody": {
@@ -8219,6 +8317,176 @@
         }
       }
     },
+    "/api/admin/plugins": {
+      "get": {
+        "tags": [
+          "admin:settings"
+        ],
+        "summary": "List plugins",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Every plugin this binary can run — core's storefront features and the ones modules registered — with its state. Secrets are masked. Needs store.operate.",
+        "responses": {
+          "200": {
+            "description": "The plugins.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Plugin"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/plugins/{key}": {
+      "get": {
+        "tags": [
+          "admin:settings"
+        ],
+        "summary": "Read one plugin",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The plugin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Plugin"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "admin:settings"
+        ],
+        "summary": "Switch a plugin, or change its settings",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Settings are merged over what is stored and validated against the plugin's fields: an unknown field, a select outside its options or a URL that is not absolute is a 400 naming the field. A secret sent as its mask is kept. Audited as plugin.update.",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The plugin as it now is.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Plugin"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/plugins": {
+      "get": {
+        "tags": [
+          "store"
+        ],
+        "summary": "The plugins a storefront should render",
+        "description": "Every enabled plugin with its public settings — the hello bar's message, the chat widget's key, the analytics tag — and nothing else. A storefront reads this once per page and renders what it finds.",
+        "responses": {
+          "200": {
+            "description": "Enabled plugins.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PluginPublic"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/me": {
       "get": {
         "tags": [
@@ -10820,6 +11088,28 @@
           "type": "string",
           "format": "uuid"
         }
+      },
+      "Format": {
+        "name": "format",
+        "in": "query",
+        "description": "The CSV dialect: `gocommerce` (the store's own, the default) or `shopify` — Shopify's own column names, so a file goes either way between the two stores without an edit.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "gocommerce",
+            "shopify"
+          ],
+          "default": "gocommerce"
+        }
+      },
+      "Overwrite": {
+        "name": "overwrite",
+        "in": "query",
+        "description": "Whether a product the store already has — by slug, or Handle in Shopify's dialect — is updated from the file. On by default, because a re-import of an edited export is the common case; send `false` to leave existing products alone and create only the new ones, which is what loading a second catalogue beside the first needs.",
+        "schema": {
+          "type": "boolean",
+          "default": true
+        }
       }
     },
     "responses": {
@@ -11663,6 +11953,10 @@
             "type": "string",
             "description": "The same parcel rendered for display, so a client that only shows it need not know that an inch is 25.4 mm. A side nobody measured reads as an em dash rather than being hidden, so a half-finished parcel says which side is missing.",
             "example": "30 × 20 × 45 cm"
+          },
+          "requires_shipping": {
+            "type": "boolean",
+            "description": "Whether the thing is sent at all. False for a download, a service or a gift card: nothing is charged to send it, and a basket holding nothing else is asked for no delivery option. Shopify's Variant Requires Shipping."
           }
         }
       },
@@ -11960,6 +12254,11 @@
             ],
             "default": "mm",
             "description": "How the sides should be read, exactly as `weight_unit` says how a mass should be read. The millimetres are the fact; the unit is presentation, kept so an operator who typed 30 cm sees 30 cm again and not 300 mm. One unit covers all three sides, because a box is measured in a single unit by whoever holds the tape."
+          },
+          "requires_shipping": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether the thing is sent at all. False for a download, a service or a gift card: nothing is charged to send it, and a basket holding nothing else is asked for no delivery option. Shopify's Variant Requires Shipping."
           }
         }
       },
@@ -12642,6 +12941,14 @@
                 }
               }
             }
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "gocommerce",
+              "shopify"
+            ],
+            "description": "The dialect the file turned out to be in."
           }
         }
       },
@@ -15449,6 +15756,128 @@
                 }
               }
             }
+          }
+        }
+      },
+      "PluginField": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "textarea",
+              "secret",
+              "number",
+              "bool",
+              "select",
+              "url"
+            ]
+          },
+          "help": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "public": {
+            "type": "boolean",
+            "description": "Handed to the storefront through GET /api/plugins. A secret never is."
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "default": {}
+        }
+      },
+      "Plugin": {
+        "type": "object",
+        "description": "A feature an operator switches on from the panel: its descriptor, whether it is on, and its settings with every secret masked.",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginField"
+            }
+          },
+          "builtin": {
+            "type": "boolean",
+            "description": "Shipped by core: settings a storefront reads, with no code behind them."
+          },
+          "module": {
+            "type": "string",
+            "description": "The module that registered it, for the rest."
+          },
+          "default_enabled": {
+            "type": "boolean"
+          },
+          "docs": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "settings": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Stored values; a secret reads as `••••••••`, and sending that back keeps it."
+          },
+          "configured": {
+            "type": "boolean",
+            "description": "Every required field has a value."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PluginPatch": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "settings": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Merged over what is stored. An empty value clears a field; the mask keeps a secret."
+          }
+        }
+      },
+      "PluginPublic": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "settings": {
+            "type": "object",
+            "additionalProperties": true
           }
         }
       }

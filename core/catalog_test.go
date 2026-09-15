@@ -192,7 +192,7 @@ func TestProductCSVCarriesCustomsAndOversell(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := app.Data().ExportProducts(ctx, &buf, ProductQuery{}); err != nil {
+	if err := app.Data().ExportProducts(ctx, &buf, ProductQuery{}, ExportOptions{}); err != nil {
 		t.Fatalf("export: %v", err)
 	}
 	csv := buf.String()
@@ -210,7 +210,7 @@ func TestProductCSVCarriesCustomsAndOversell(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
-	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(csv), false); err != nil {
+	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(csv), ImportOptions{}); err != nil {
 		t.Fatalf("import: %v", err)
 	}
 	back, err := app.Products().GetVariantBySKU(ctx, "CSV-CUSTOMS-1")
@@ -226,16 +226,16 @@ func TestProductCSVCarriesCustomsAndOversell(t *testing.T) {
 	// about fields it does not carry — that is what keying by column name buys.
 	old := "product_slug,product_title,product_status,sku,price_minor\n" +
 		"csv-tee,CSV tee,active,CSV-CUSTOMS-1,2500\n"
-	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(old), false); err != nil {
+	if _, err := app.Data().ImportProducts(ctx, strings.NewReader(old), ImportOptions{}); err != nil {
 		t.Fatalf("import an older file: %v", err)
 	}
 	after, err := app.Products().GetVariantBySKU(ctx, "CSV-CUSTOMS-1")
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}
-	if after.OriginCountry != "" {
-		t.Errorf("origin = %q after a file without the column; an absent column is a default, "+
-			"and the default is empty", after.OriginCountry)
+	if after.OriginCountry != "PT" || after.HSCode != "610910" {
+		t.Errorf("origin = %q, hs = %q after a file without the columns; an absent column says "+
+			"nothing, so a price list must not strip the customs paperwork", after.OriginCountry, after.HSCode)
 	}
 }
 
@@ -349,7 +349,7 @@ func TestExportProductsHonoursFilters(t *testing.T) {
 	export := func(q ProductQuery) string {
 		t.Helper()
 		var buf bytes.Buffer
-		if err := app.Data().ExportProducts(ctx, &buf, q); err != nil {
+		if err := app.Data().ExportProducts(ctx, &buf, q, ExportOptions{}); err != nil {
 			t.Fatalf("export: %v", err)
 		}
 		return buf.String()

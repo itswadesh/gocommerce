@@ -26,6 +26,17 @@ two counts are sums across the variant's [locations](inventory.md);
 `Variant.InStock(qty)` is the sellability test, always true for a variant that
 does not track inventory.
 
+### Whether it is sent at all
+
+`requires_shipping` (M37) is Shopify's "This is a physical product": true by
+default, false for a download, a service or a gift card. It sits on the
+variant, for the reason cost and tax do — a product can sell a printed
+edition beside the PDF. The checkout charges nothing to send a basket in
+which no line requires shipping and asks it for no delivery option, wherever
+the address is; one physical line and the whole basket is a parcel again.
+The CSV carries it as `requires_shipping`, Shopify's as `Variant Requires
+Shipping`.
+
 ## Invariants
 
 - **`variants.option_key` is what makes uniqueness a database guarantee.** The

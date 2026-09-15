@@ -169,7 +169,7 @@ func TestExportOrdersHonoursTheSameSearch(t *testing.T) {
 	var buf bytes.Buffer
 	if err := app.transfer.ExportOrders(context.Background(), &buf, OrderQuery{
 		Search: wanted.Number,
-	}); err != nil {
+	}, ExportOptions{}); err != nil {
 		t.Fatalf("export: %v", err)
 	}
 	csv := buf.String()
@@ -183,7 +183,7 @@ func TestExportOrdersHonoursTheSameSearch(t *testing.T) {
 	buf.Reset()
 	if err := app.transfer.ExportOrders(context.Background(), &buf, OrderQuery{
 		Search: "elsewhere.test",
-	}); err != nil {
+	}, ExportOptions{}); err != nil {
 		t.Fatalf("export by email fragment: %v", err)
 	}
 	if !strings.Contains(buf.String(), other.Number) || strings.Contains(buf.String(), wanted.Number) {
