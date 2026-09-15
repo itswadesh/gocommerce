@@ -54,6 +54,10 @@ const PROBES = {
     // Not a screen: a drawer on the products page. Probed all the same, so the
     // "Import from Amazon" button only appears in a binary that can answer it.
     "import-amazon": { path: "/api/admin/x/import-amazon/jobs", right: "catalog.write" },
+    navigation: { path: "/api/admin/x/navigation/menus", right: "catalog.read" },
+    reviews: { path: "/api/admin/x/reviews?limit=1", right: "catalog.read" },
+    contact: { path: "/api/admin/x/contact/messages?limit=1", right: "customers.read" },
+    newsletter: { path: "/api/admin/x/newsletter/subscriptions?limit=1", right: "customers.read" },
 };
 
 /* `$state`, so hasModule() read inside a `$derived` re-runs when the answer

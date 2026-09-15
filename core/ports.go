@@ -287,6 +287,18 @@ func (a *App) RegisterNotifier(channel string, n Notifier) {
 	a.log.Info("notifier registered", "channel", channel, "module", a.ownerName())
 }
 
+// RegisterNotifyTemplate declares the default wording of a message a module
+// sends, from its Register. The engine's own messages are already in the
+// catalogue; a module adds the events it introduces — a password reset, a
+// contact-form announcement — so an operator can reword them from the panel
+// like any other. An event already registered on that channel is a
+// registration error: two owners of one message would have no right winner.
+func (a *App) RegisterNotifyTemplate(t NotifyTemplate) {
+	if err := a.notifyTemplates.register(t); err != nil {
+		a.regErrf("module %q: notification template: %v", a.ownerName(), err)
+	}
+}
+
 // Notify delivers one notification on one channel, to every backend registered
 // for it, and is how a module tells a shopper something the engine will not
 // tell them itself.

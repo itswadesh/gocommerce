@@ -7,17 +7,13 @@
         orderStatusLabel,
     } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
+    import ReportsPanel from "$lib/components/ReportsPanel.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
-
-    // The reader's own zone, so "the last 30 days" ends at their midnight
-    // rather than UTC's.
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     let loading = $state(true);
     let recent = $state([]);
     let lowStock = $state([]);
     let counts = $state({ orders: 0, products: 0, pending: 0, unpaid: 0 });
-    let revenue = $state(null);
 
     /*
      * What this operator may actually read.
@@ -47,11 +43,12 @@
     async function load() {
         loading = true;
         try {
-            // Six small reads rather than one bespoke dashboard endpoint: the
+            // Five small reads rather than one bespoke dashboard endpoint: the
             // panel uses the same API everything else does, and an endpoint
             // that exists only for this screen would be one more thing to keep
-            // in step with it.
-            const [orders, products, pending, unpaid, stock, sales] = await Promise.all([
+            // in step with it. The sales figures are the Reports panel's own
+            // reads, below.
+            const [orders, products, pending, unpaid, stock] = await Promise.all([
                 mayOrders ? api.get("/api/admin/orders" + query({ limit: 8 })) : null,
                 mayCatalog ? api.get("/api/admin/products" + query({ limit: 1 })) : null,
                 mayOrders
@@ -63,14 +60,6 @@
                 mayStock
                     ? api.get("/api/admin/inventory/low-stock" + query({ threshold: 5, limit: 6 }))
                     : null,
-                // Revenue is the engine's own arithmetic over a whole window,
-                // not a sum over the eight rows above it. The figure beside
-                // "Recent orders" used to describe those eight and was read as
-                // the store's revenue — on a store with nine orders it was
-                // simply wrong, and it counted a refunded order at full value.
-                mayOrders
-                    ? api.get("/api/admin/reports/sales" + query({ group_by: "month", tz }))
-                    : null,
             ]);
 
             recent = orders?.data ?? [];
@@ -81,11 +70,6 @@
                 unpaid: unpaid?.meta.total ?? 0,
             };
             lowStock = stock?.data ?? [];
-
-            // The first currency block, which is the store's own: the report
-            // never sums across currencies, and a store holding two gets the
-            // whole picture on /reports rather than a wrong single number here.
-            revenue = sales?.currencies[0]?.totals.net ?? null;
         } catch (err) {
             toast.error(err);
         } finally {
@@ -218,32 +202,23 @@
         {/if}
 
         {#if mayOrders}
+            <!-- What the store sold: the Reports screen itself, embedded. The
+                 sidebar's Reports item used to lead here alone; an owner asks
+                 "how much did we sell" before "which orders", so the answer
+                 sits above the list rather than a click away. -->
+            <ReportsPanel embedded />
+
             <section class="tw:rounded-xl tw:border tw:bg-card">
                 <div class="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2 tw:border-b tw:px-4 tw:py-4 tw:sm:px-5">
-                    <h2 class="tw:text-sm tw:font-semibold">
-                        Recent orders
-                        {#if revenue}
-                            <span class="tw:font-normal tw:text-muted-foreground">
-                                · {formatMoney(revenue)} net in the last 30 days
-                            </span>
-                        {/if}
-                    </h2>
+                    <h2 class="tw:text-sm tw:font-semibold">Recent orders</h2>
                     <!-- Secondary navigation is a text link with an arrow, not a
                          button. DESIGN.md §7. -->
-                    <div class="tw:flex tw:items-center tw:gap-4">
-                        <a
-                            href="{base}/reports"
-                            class="tw:text-xs tw:text-muted-foreground tw:no-underline tw:transition-colors tw:hover:text-foreground"
-                        >
-                            reports
-                        </a>
-                        <a
-                            href="{base}/orders"
-                            class="tw:text-xs tw:text-muted-foreground tw:no-underline tw:transition-colors tw:hover:text-foreground"
-                        >
-                            all orders <span aria-hidden="true">→</span>
-                        </a>
-                    </div>
+                    <a
+                        href="{base}/orders"
+                        class="tw:text-xs tw:text-muted-foreground tw:no-underline tw:transition-colors tw:hover:text-foreground"
+                    >
+                        all orders <span aria-hidden="true">→</span>
+                    </a>
                 </div>
 
                 <div class="tw:divide-y">

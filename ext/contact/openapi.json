@@ -1,0 +1,90 @@
+{
+  "paths": {
+    "/x/contact/messages": {
+      "post": {
+        "tags": ["contact"],
+        "summary": "Send the store a message",
+        "description": "The storefront's contact form. A name, an email and a message are required; a subject, a phone and an order number are welcome. `website` is a honeypot — a field no person sees — and a filled one is accepted and dropped. The operator is told by email at the address the Plugins screen holds, and that announcement lands in Notifications. 404 while the plugin is off.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ContactMessageInput"}}}},
+        "responses": {
+          "201": {"description": "Received.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"status": {"type": "string"}}}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/api/admin/x/contact/messages": {
+      "get": {
+        "tags": ["admin:contact"], "summary": "The inbox", "security": [{"adminToken": []}],
+        "description": "Newest first. Needs customers.read.",
+        "parameters": [
+          {"name": "status", "in": "query", "schema": {"type": "string", "enum": ["new", "replied", "archived"]}},
+          {"name": "q", "in": "query", "schema": {"type": "string"}, "description": "A name, email or subject fragment, or an order number."},
+          {"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/PageNumber"}, {"$ref": "#/components/parameters/Offset"}
+        ],
+        "responses": {
+          "200": {"description": "A page of messages.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/ContactMessage"}}, "meta": {"$ref": "#/components/schemas/ListMeta"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"}
+        }
+      }
+    },
+    "/api/admin/x/contact/messages/{id}": {
+      "get": {
+        "tags": ["admin:contact"], "summary": "One message", "security": [{"adminToken": []}],
+        "parameters": [{"$ref": "#/components/parameters/PathID"}],
+        "responses": {
+          "200": {"description": "The message.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/ContactMessage"}}}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      },
+      "patch": {
+        "tags": ["admin:contact"], "summary": "Mark a message replied or archived, or note something on it", "security": [{"adminToken": []}],
+        "description": "Replying happens in the operator's own mail; this records what was done. Needs store.operate.",
+        "parameters": [{"$ref": "#/components/parameters/PathID"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string", "enum": ["new", "replied", "archived"]}, "notes": {"type": "string"}}}}}},
+        "responses": {
+          "200": {"description": "The message.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/ContactMessage"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      },
+      "delete": {
+        "tags": ["admin:contact"], "summary": "Delete a message", "security": [{"adminToken": []}],
+        "parameters": [{"$ref": "#/components/parameters/PathID"}],
+        "responses": {
+          "204": {"description": "Deleted."},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ContactMessageInput": {
+        "type": "object",
+        "required": ["name", "email", "body"],
+        "properties": {
+          "name": {"type": "string"}, "email": {"type": "string"}, "phone": {"type": "string"},
+          "subject": {"type": "string"}, "body": {"type": "string", "maxLength": 5000}, "order_number": {"type": "string"},
+          "website": {"type": "string", "description": "Honeypot. Leave empty."}
+        }
+      },
+      "ContactMessage": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer", "format": "int64"},
+          "name": {"type": "string"}, "email": {"type": "string"}, "phone": {"type": "string"},
+          "subject": {"type": "string"}, "body": {"type": "string"}, "order_number": {"type": "string"},
+          "status": {"type": "string", "enum": ["new", "replied", "archived"]},
+          "notes": {"type": "string", "description": "The operator's own, never shown to the shopper."},
+          "created_at": {"type": "string", "format": "date-time"},
+          "updated_at": {"type": "string", "format": "date-time"}
+        }
+      }
+    }
+  }
+}

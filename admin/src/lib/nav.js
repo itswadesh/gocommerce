@@ -40,16 +40,9 @@ export const NAV = [
         accent: "indigo",
         keywords: "home overview",
     },
-    // "How much did we sell" is the second thing an owner opens, and until
-    // recently the panel could not answer it.
-    {
-        href: "/reports",
-        label: "Reports",
-        icon: "ri-line-chart-line",
-        right: "orders.read",
-        accent: "rose",
-        keywords: "sales revenue analytics",
-    },
+    // "How much did we sell" is the second thing an owner opens, so its
+    // answer is on the dashboard now rather than a screen of its own.
+    // /reports still exists for a bookmark; it is just not a nav item.
     {
         href: "/products",
         label: "Products",
@@ -76,6 +69,16 @@ export const NAV = [
         accent: "blue",
         keywords: "taxonomy tree",
     },
+    // The storefront's menus link the catalogue, so they sit with it.
+    {
+        href: "/menus",
+        label: "Menus",
+        icon: "ri-menu-2-line",
+        right: "catalog.read",
+        module: "navigation",
+        accent: "teal",
+        keywords: "navigation header footer links",
+    },
     // A page is catalog copy that happens not to carry a price, which is
     // why it takes catalog.read and sits beside the rest of the catalog.
     {
@@ -88,6 +91,16 @@ export const NAV = [
         keywords: "cms content copy",
     },
     // Blue, with Pages: both are the catalog's content rather than the goods.
+    // What shoppers said about the catalogue, moderated before it shows.
+    {
+        href: "/reviews",
+        label: "Reviews",
+        icon: "ri-star-line",
+        right: "catalog.read",
+        module: "reviews",
+        accent: "amber",
+        keywords: "ratings moderation",
+    },
     {
         href: "/media",
         label: "Media",
@@ -132,6 +145,13 @@ export const NAV = [
         right: "orders.read",
         accent: "amber",
         keywords: "email sms confirmation sent failed resend",
+        // Where the messages come from and what they say, beneath the log
+        // of what went, as Litekart arranges it. Children render only under
+        // an active parent, and each carries its own right.
+        children: [
+            { href: "/notifications/email", label: "Setup Email", right: "store.operate", keywords: "sendgrid provider templates" },
+            { href: "/notifications/sms", label: "Setup SMS", right: "store.operate", keywords: "msg91 provider templates" },
+        ],
     },
     {
         href: "/discounts",
@@ -184,6 +204,26 @@ export const NAV = [
     },
     // Teal, with Customers: both are people. The two lists overlap without
     // being the same list, and both screens say so themselves.
+    // Messages from the storefront's form, and the newsletter list: both are
+    // the customers talking, so they sit beside Customers.
+    {
+        href: "/contact",
+        label: "Contact",
+        icon: "ri-mail-open-line",
+        right: "customers.read",
+        module: "contact",
+        accent: "sky",
+        keywords: "messages inbox enquiries",
+    },
+    {
+        href: "/newsletter",
+        label: "Newsletter",
+        icon: "ri-mail-check-line",
+        right: "customers.read",
+        module: "newsletter",
+        accent: "rose",
+        keywords: "subscribers signups mailing list",
+    },
     {
         href: "/accounts",
         label: "Accounts",

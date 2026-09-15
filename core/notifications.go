@@ -33,8 +33,11 @@ const (
 
 // NotificationRecord is one message as the store remembers sending it.
 type NotificationRecord struct {
-	ID          int64             `json:"id"`
-	Event       string            `json:"event"`
+	ID    int64  `json:"id"`
+	Event string `json:"event"`
+	// Title is what the event's template calls the message ("Order shipped"),
+	// filled on read; "" for an event nobody registered wording for.
+	Title       string            `json:"title,omitempty"`
 	Channel     string            `json:"channel"`
 	To          string            `json:"to"`
 	Language    string            `json:"language,omitempty"`
@@ -153,6 +156,7 @@ func (s *Notifications) List(ctx context.Context, q NotificationQuery) ([]*Notif
 		if err != nil {
 			return nil, 0, err
 		}
+		rec.Title = s.app.notifyTemplates.title(rec.Channel, rec.Event)
 		out = append(out, rec)
 	}
 	return out, total, rows.Err()
@@ -168,7 +172,12 @@ func (s *Notifications) Get(ctx context.Context, id int64) (*NotificationRecord,
 	if !rows.Next() {
 		return nil, NotFoundf("notification %d does not exist", id)
 	}
-	return scanNotification(rows)
+	rec, err := scanNotification(rows)
+	if err != nil {
+		return nil, err
+	}
+	rec.Title = s.app.notifyTemplates.title(rec.Channel, rec.Event)
+	return rec, nil
 }
 
 // Resend delivers a recorded message again, through whatever backends the
@@ -192,6 +201,7 @@ func (s *Notifications) Resend(ctx context.Context, id int64) (*NotificationReco
 		}
 		return nil, err
 	}
+	latest.Title = s.app.notifyTemplates.title(latest.Channel, latest.Event)
 	return &latest, nil
 }
 

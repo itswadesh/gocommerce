@@ -59,6 +59,9 @@ const (
 	// handle is what a category's metadata names.
 	AuditEntityTaxonomyAttribute = "taxonomy_attribute"
 	AuditEntityPlugin            = "plugin"
+	// AuditEntityNotificationTemplate is the wording of one message, keyed
+	// "channel/event".
+	AuditEntityNotificationTemplate = "notification_template"
 )
 
 // AuditEntityTypes is the catalogue, in the panel's display order. The database
@@ -77,6 +80,7 @@ var AuditEntityTypes = []string{
 	AuditEntityRole,
 	AuditEntityTaxonomyAttribute,
 	AuditEntityPlugin,
+	AuditEntityNotificationTemplate,
 }
 
 // The action vocabulary, `<record>.<verb>`, declared here and nowhere else.
@@ -162,6 +166,9 @@ const (
 
 	// AuditPluginUpdate is a plugin switched, or its settings changed.
 	AuditPluginUpdate = "plugin.update"
+	// AuditNotificationTemplateUpdate is a message's wording edited, or its
+	// default restored.
+	AuditNotificationTemplateUpdate = "notification_template.update"
 
 	AuditTaxRateCreate = "tax_rate.create"
 	AuditTaxRateUpdate = "tax_rate.update"
@@ -231,7 +238,7 @@ var AllAuditActions = []string{
 
 	AuditOrderImport,
 
-	AuditPluginUpdate,
+	AuditPluginUpdate, AuditNotificationTemplateUpdate,
 }
 
 // AuditChanges is what a row says actually moved.

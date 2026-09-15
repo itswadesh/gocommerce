@@ -1,22 +1,22 @@
 <script>
     /**
-     * Notifications: what the store told its shoppers, and whether it went.
+     * Notification history: what the store told its shoppers, and whether
+     * it went.
      *
      * The question that brings an operator here is one question — "did she
      * get her confirmation" — usually with the shopper on the phone. So the
-     * list leads with the recipient and the order, says plainly which of
-     * three things happened (sent, only logged because nothing delivers on
-     * that channel, or refused by the backend with its error), and offers
-     * one repair: send it again, through whatever the store has now.
+     * list is laid out the way Litekart's is: who it went to, on which
+     * channel, which message, whether it succeeded, and when — plus the
+     * order it concerned and one repair, send it again through whatever the
+     * store has now.
      *
-     * It sits in the main nav beside Carts and Orders rather than under
-     * Settings with the outbox, because it is part of the conversation with
-     * a customer, not a diagnostic of the platform.
+     * Where the messages come from and what they say is under Setup Email
+     * and Setup SMS, the two screens beneath this one in the navigation.
      */
     import { base } from "$app/paths";
     import { api, can, query, request } from "$lib/api.js";
     import { listState } from "$lib/liststate.svelte.js";
-    import { formatDate, relativeTime } from "$lib/format.js";
+    import { formatDate } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
@@ -77,7 +77,7 @@
             if (again.status === "failed") {
                 toast.warning(`Sent again and refused: ${again.error}`);
             } else if (again.status === "logged") {
-                toast.info("Sent again — to the log only; this store has no delivery backend for " + row.channel);
+                toast.info("Sent again — to the log only; nothing delivers " + row.channel + " yet. See Setup " + (row.channel === "sms" ? "SMS" : "Email") + ".");
             } else {
                 toast.success(`Sent again to ${row.to}`);
             }
@@ -89,15 +89,19 @@
         }
     }
 
-    function statusClass(status) {
-        if (status === "sent") return "label-success";
-        if (status === "failed") return "label-danger";
-        return "";
+    /* Litekart's vocabulary: a green "success", a red "failed", and for a
+       message nothing carried, "logged" — the state that explains why the
+       shopper has nothing in their inbox. */
+    function outcome(row) {
+        if (row.status === "sent") return { label: "success", cls: "label-success", dot: "dot-success" };
+        if (row.status === "failed") return { label: "failed", cls: "label-danger", dot: "dot-danger" };
+        return { label: "logged", cls: "", dot: "" };
     }
-    function statusLabel(status) {
-        if (status === "sent") return "Sent";
-        if (status === "failed") return "Failed";
-        return "Logged only";
+
+    /* What the message is called: the template's title, or the raw event for
+       one nobody registered wording for. */
+    function subject(row) {
+        return row.title || row.event;
     }
 
     const emptyMessage = $derived.by(() => {
@@ -106,16 +110,29 @@
     });
 </script>
 
-<svelte:head><title>Notifications · GoCommerce</title></svelte:head>
+<svelte:head><title>Notification History · GoCommerce</title></svelte:head>
 
 <div class="page page-notifications shopify-skin">
     <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
             <nav class="breadcrumbs">
-                <div class="tw:text-2xl tw:font-semibold tw:tracking-tight">Notifications</div>
+                <div class="tw:text-2xl tw:font-semibold tw:tracking-tight">Notification History</div>
             </nav>
 
             {#if readable}
+                <div class="inline-flex gap-sm">
+                    <button
+                        type="button"
+                        class="btn circle transparent secondary"
+                        title="Refresh"
+                        aria-label="Refresh"
+                        disabled={loading}
+                        onclick={() => load()}
+                    >
+                        <i class="ri-refresh-line" aria-hidden="true"></i>
+                    </button>
+                </div>
+
                 <form class="fields searchbar" onsubmit={submitSearch}>
                     <div class="field">
                         <input
@@ -141,19 +158,6 @@
                     {/if}
                 </form>
 
-                <div class="inline-flex gap-sm">
-                    <button
-                        type="button"
-                        class="btn circle transparent secondary"
-                        title="Refresh"
-                        aria-label="Refresh"
-                        disabled={loading}
-                        onclick={() => load()}
-                    >
-                        <i class="ri-refresh-line" aria-hidden="true"></i>
-                    </button>
-                </div>
-
                 <div class="page-header-primary-btns">
                     <div class="field">
                         <Select
@@ -175,7 +179,7 @@
                             value={list.params.status}
                             options={[
                                 { value: "", label: "Any outcome" },
-                                { value: "sent", label: "Sent" },
+                                { value: "sent", label: "Success" },
                                 { value: "failed", label: "Failed" },
                                 { value: "logged", label: "Logged only" },
                             ]}
@@ -193,56 +197,58 @@
                 <table class="table responsive-table">
                     <thead class="sticky">
                         <tr>
-                            <th class="col-field-name-id">To</th>
-                            <th class="col-field-type-select min-width">Event</th>
-                            <th class="col-field-type-select min-width">Order</th>
+                            <th class="col-field-name-id">Email</th>
+                            <th class="col-field-type-text">Phone</th>
+                            <th class="col-field-type-text">Subject</th>
                             <th class="col-field-type-select min-width">Status</th>
-                            <th class="col-field-type-text">Backend / error</th>
-                            <th class="col-field-type-date min-width">When</th>
+                            <th class="col-field-type-date min-width">Created At</th>
                             <th class="col-meta min-width"></th>
                         </tr>
                     </thead>
                     <tbody>
                         {#each rows as row (row.id)}
+                            {@const o = outcome(row)}
                             <tr>
-                                <td class="col-field-name-id" data-name="To">
-                                    <div class="row-name">
-                                        <span class="txt-bold txt-ellipsis">{row.to}</span>
-                                        <span class="txt-hint txt-sm row-handle">
-                                            {row.resend_of ? `${row.channel} · resend of #${row.resend_of}` : row.channel}
-                                        </span>
-                                    </div>
-                                </td>
-                                <td class="col-field-type-select min-width" data-name="Event">
-                                    <span class="txt-code txt-sm">{row.event}</span>
-                                </td>
-                                <td class="col-field-type-select min-width" data-name="Order">
-                                    {#if row.order_number}
-                                        <a
-                                            href="{base}/orders{query({ q: row.order_number })}"
-                                            class="txt-code"
-                                            style="white-space: nowrap"
-                                        >
-                                            {row.order_number}
-                                        </a>
+                                <td class="col-field-name-id" data-name="Email">
+                                    {#if row.channel === "email"}
+                                        <span class="txt-ellipsis" title={row.to}>{row.to}</span>
                                     {:else}
                                         <span class="txt-hint">—</span>
                                     {/if}
                                 </td>
-                                <td class="col-field-type-select min-width" data-name="Status">
-                                    <span class="label {statusClass(row.status)}">{statusLabel(row.status)}</span>
-                                </td>
-                                <td class="col-field-type-text" data-name="Backend / error" title={row.error || row.backend}>
-                                    {#if row.error}
-                                        <span class="txt-danger txt-sm txt-ellipsis">{row.error}</span>
-                                    {:else if row.backend}
-                                        <span class="txt-hint txt-sm">{row.backend}</span>
+                                <td class="col-field-type-text" data-name="Phone">
+                                    {#if row.channel === "sms"}
+                                        <span class="txt-code">{row.to}</span>
                                     {:else}
-                                        <span class="txt-hint txt-sm">no delivery backend — the log only</span>
+                                        <span class="txt-hint">—</span>
                                     {/if}
                                 </td>
-                                <td class="col-field-type-date min-width txt-hint" data-name="When" title={formatDate(row.created_at)}>
-                                    {relativeTime(row.created_at)}
+                                <td class="col-field-type-text" data-name="Subject" title={row.error || row.backend || ""}>
+                                    <div class="row-name row-name-stacked">
+                                        <span class="txt-ellipsis">{subject(row)}</span>
+                                        <span class="txt-hint txt-sm txt-ellipsis">
+                                            {#if row.order_number}
+                                                <a href="{base}/orders{query({ q: row.order_number })}" class="txt-code">{row.order_number}</a>
+                                                ·
+                                            {/if}
+                                            {#if row.error}
+                                                <span class="txt-danger">{row.error}</span>
+                                            {:else if row.backend}
+                                                via {row.backend}
+                                            {:else}
+                                                no delivery backend — the log only
+                                            {/if}
+                                            {#if row.resend_of}
+                                                · resend of #{row.resend_of}
+                                            {/if}
+                                        </span>
+                                    </div>
+                                </td>
+                                <td class="col-field-type-select min-width" data-name="Status">
+                                    <span class="label {o.cls} outcome"><span class="outcome-dot {o.dot}" aria-hidden="true"></span>{o.label}</span>
+                                </td>
+                                <td class="col-field-type-date min-width txt-hint" data-name="Created At">
+                                    <span class="txt-nowrap">{formatDate(row.created_at)}</span>
                                 </td>
                                 <td class="col-meta min-width">
                                     {#if writable}
@@ -264,11 +270,11 @@
 
                         {#if loading && !rows.length}
                             {#each Array(6) as _, i (i)}
-                                <tr><td colspan="7"><span class="skeleton-loader"></span></td></tr>
+                                <tr><td colspan="6"><span class="skeleton-loader"></span></td></tr>
                             {/each}
                         {:else if !rows.length}
                             <tr>
-                                <td colspan="7" class="txt-center txt-hint p-base">{emptyMessage}</td>
+                                <td colspan="6" class="txt-center txt-hint p-base">{emptyMessage}</td>
                             </tr>
                         {/if}
                     </tbody>
@@ -290,3 +296,26 @@
         {/if}
     </div>
 </div>
+
+<style>
+    .outcome {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .outcome-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--txtHintColor);
+    }
+    .dot-success {
+        background: var(--successColor);
+    }
+    .dot-danger {
+        background: var(--dangerColor);
+    }
+    .txt-nowrap {
+        white-space: nowrap;
+    }
+</style>

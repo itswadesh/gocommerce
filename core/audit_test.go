@@ -1136,6 +1136,10 @@ func TestTheVocabularyIsReachable(t *testing.T) {
 	if _, err := app.Plugins().Update(ctx, "hello-bar", PluginPatch{Enabled: &switchedOn, Settings: map[string]any{"message": "Hi"}}); err != nil {
 		t.Fatalf("plugin update: %v", err)
 	}
+	// And a message reworded.
+	if _, err := app.NotifyTemplates().Set(ctx, ChannelEmail, EventOrderCreated, "Order {{.order_number}}", "Thanks, {{.customer_name}}."); err != nil {
+		t.Fatalf("template update: %v", err)
+	}
 
 	// pending names the actions whose call sites live in files this change does
 	// not own: the guarded admin-placed-order write in checkout.go, bulk import

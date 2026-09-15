@@ -1,0 +1,112 @@
+{
+  "paths": {
+    "/x/newsletter/subscribe": {
+      "post": {
+        "tags": ["newsletter"],
+        "summary": "Sign an address up",
+        "description": "The storefront's signup box. The same address twice is a quiet yes; an address that had unsubscribed is subscribed again. `website` is a honeypot — a field no person sees — and a filled one is accepted and dropped. The answer carries only a status, never the row. 404 while the plugin is off.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/NewsletterSubscribeInput"}}}},
+        "responses": {
+          "201": {"description": "Subscribed.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"status": {"type": "string"}}}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/x/newsletter/unsubscribe": {
+      "get": {
+        "tags": ["newsletter"],
+        "summary": "Unsubscribe by the link's token",
+        "parameters": [{"name": "token", "in": "query", "required": true, "schema": {"type": "string"}}],
+        "responses": {
+          "200": {"description": "Unsubscribed — the same answer for a link clicked twice or a token nobody has.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"status": {"type": "string"}}}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"}
+        }
+      },
+      "post": {
+        "tags": ["newsletter"],
+        "summary": "Unsubscribe by the link's token",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"token": {"type": "string"}}}}}},
+        "responses": {
+          "200": {"description": "Unsubscribed.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"status": {"type": "string"}}}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"}
+        }
+      }
+    },
+    "/api/admin/x/newsletter/subscriptions": {
+      "get": {
+        "tags": ["admin:newsletter"], "summary": "The list", "security": [{"adminToken": []}],
+        "description": "Newest first. Needs customers.read.",
+        "parameters": [
+          {"name": "q", "in": "query", "schema": {"type": "string"}, "description": "An email or name fragment."},
+          {"name": "status", "in": "query", "schema": {"type": "string", "enum": ["subscribed", "unsubscribed"]}},
+          {"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/PageNumber"}, {"$ref": "#/components/parameters/Offset"}
+        ],
+        "responses": {
+          "200": {"description": "A page of subscriptions.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/NewsletterSubscription"}}, "meta": {"$ref": "#/components/schemas/ListMeta"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"}
+        }
+      },
+      "post": {
+        "tags": ["admin:newsletter"], "summary": "Add an address by hand", "security": [{"adminToken": []}],
+        "description": "A customer who asked at the counter. Source defaults to `admin`. Needs store.operate.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/NewsletterSubscribeInput"}}}},
+        "responses": {
+          "201": {"description": "The subscription.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/NewsletterSubscription"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"}
+        }
+      }
+    },
+    "/api/admin/x/newsletter/subscriptions.csv": {
+      "get": {
+        "tags": ["admin:newsletter"], "summary": "The list as CSV, for the tool that sends the mail", "security": [{"adminToken": []}],
+        "description": "email, name, source, status, subscribed_at, unsubscribed_at — the subscribed addresses unless `status` says otherwise. Needs data.export.",
+        "parameters": [{"name": "status", "in": "query", "schema": {"type": "string", "enum": ["subscribed", "unsubscribed"], "default": "subscribed"}}],
+        "responses": {
+          "200": {"description": "A CSV file.", "content": {"text/csv": {"schema": {"type": "string"}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"}
+        }
+      }
+    },
+    "/api/admin/x/newsletter/subscriptions/{id}": {
+      "delete": {
+        "tags": ["admin:newsletter"], "summary": "Remove an address entirely", "security": [{"adminToken": []}],
+        "description": "For a request to be forgotten. Unsubscribing keeps the row so the address is not signed up again by a form; this removes it. Needs store.operate.",
+        "parameters": [{"$ref": "#/components/parameters/PathID"}],
+        "responses": {
+          "204": {"description": "Removed."},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "NewsletterSubscribeInput": {
+        "type": "object",
+        "required": ["email"],
+        "properties": {
+          "email": {"type": "string"},
+          "name": {"type": "string"},
+          "source": {"type": "string", "description": "Where the signup came from: footer, checkout, popup."},
+          "website": {"type": "string", "description": "Honeypot. Leave empty."}
+        }
+      },
+      "NewsletterSubscription": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer", "format": "int64"},
+          "email": {"type": "string"},
+          "name": {"type": "string"},
+          "source": {"type": "string"},
+          "status": {"type": "string", "enum": ["subscribed", "unsubscribed"]},
+          "created_at": {"type": "string", "format": "date-time"},
+          "unsubscribed_at": {"type": "string", "format": "date-time"}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,125 @@
+{
+  "paths": {
+    "/x/navigation/menus": {
+      "get": {
+        "tags": ["navigation"],
+        "summary": "The menus this store has",
+        "responses": {
+          "200": {"description": "Handles and titles.", "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {"data": {"type": "array", "items": {"type": "object", "properties": {"handle": {"type": "string"}, "title": {"type": "string"}}}}}
+          }}}}
+        }
+      }
+    },
+    "/x/navigation/menus/{handle}": {
+      "get": {
+        "tags": ["navigation"],
+        "summary": "One menu as a tree, every item resolved to a storefront path",
+        "description": "Items point at things by handle — a product's slug, a collection's, a category's, a page's — and `url` is that handle put through the path the Plugins screen holds for the kind, so a storefront renders the tree without knowing what each item is. `kind` and `target` travel too for one that wants to.",
+        "parameters": [{"name": "handle", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {
+          "200": {"description": "The menu.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/NavigationMenu"}}}}}},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/api/admin/x/navigation/menus": {
+      "get": {
+        "tags": ["admin:navigation"], "summary": "List menus", "security": [{"adminToken": []}],
+        "responses": {
+          "200": {"description": "Every menu, with how many items it holds.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/NavigationMenu"}}, "meta": {"$ref": "#/components/schemas/ListMeta"}}}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"}
+        }
+      },
+      "post": {
+        "tags": ["admin:navigation"], "summary": "Create a menu", "security": [{"adminToken": []}],
+        "description": "A handle is derived from the title when none is sent. Needs catalog.write.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/NavigationMenuInput"}}}},
+        "responses": {
+          "201": {"description": "The menu.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/NavigationMenu"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "409": {"$ref": "#/components/responses/Conflict"}
+        }
+      }
+    },
+    "/api/admin/x/navigation/menus/{id}": {
+      "get": {
+        "tags": ["admin:navigation"], "summary": "One menu with its tree", "security": [{"adminToken": []}],
+        "parameters": [{"$ref": "#/components/parameters/PathID"}],
+        "responses": {
+          "200": {"description": "The menu.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/NavigationMenu"}}}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      },
+      "patch": {
+        "tags": ["admin:navigation"], "summary": "Rename a menu or change its handle", "security": [{"adminToken": []}],
+        "parameters": [{"$ref": "#/components/parameters/PathID"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/NavigationMenuInput"}}}},
+        "responses": {
+          "200": {"description": "The menu.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/NavigationMenu"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"}
+        }
+      },
+      "delete": {
+        "tags": ["admin:navigation"], "summary": "Delete a menu and its items", "security": [{"adminToken": []}],
+        "parameters": [{"$ref": "#/components/parameters/PathID"}],
+        "responses": {
+          "204": {"description": "Deleted."},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/api/admin/x/navigation/menus/{id}/items": {
+      "put": {
+        "tags": ["admin:navigation"], "summary": "Replace a menu's whole tree", "security": [{"adminToken": []}],
+        "description": "The tree as the editor holds it, in one transaction: ids are not kept, because an item is its title, kind and target in a place. At most four levels deep. Every item needs a title, and a link unless it is the home page: a URL for `url`, the handle of the thing for the rest.",
+        "parameters": [{"$ref": "#/components/parameters/PathID"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"items": {"type": "array", "items": {"$ref": "#/components/schemas/NavigationItem"}}}}}}},
+        "responses": {
+          "200": {"description": "The menu as saved.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/NavigationMenu"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "NavigationMenuInput": {
+        "type": "object",
+        "properties": {"handle": {"type": "string", "description": "Lowercase letters, digits and single dashes; derived from the title when absent."}, "title": {"type": "string"}}
+      },
+      "NavigationItem": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer", "format": "int64"},
+          "title": {"type": "string"},
+          "kind": {"type": "string", "enum": ["url", "home", "product", "collection", "category", "page"]},
+          "target": {"type": "string", "description": "A URL for `url`; the handle of the thing for the rest; nothing for `home`."},
+          "url": {"type": "string", "description": "The storefront path, resolved from the kind and target."},
+          "children": {"type": "array", "items": {"$ref": "#/components/schemas/NavigationItem"}}
+        }
+      },
+      "NavigationMenu": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer", "format": "int64"},
+          "handle": {"type": "string"},
+          "title": {"type": "string"},
+          "items": {"type": "array", "items": {"$ref": "#/components/schemas/NavigationItem"}},
+          "item_count": {"type": "integer"},
+          "created_at": {"type": "string", "format": "date-time"},
+          "updated_at": {"type": "string", "format": "date-time"}
+        }
+      }
+    }
+  }
+}

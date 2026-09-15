@@ -19,10 +19,16 @@ import (
 	"time"
 
 	"github.com/misiki/gocommerce/core"
+	"github.com/misiki/gocommerce/ext/contact"
 	"github.com/misiki/gocommerce/ext/feeds"
 	"github.com/misiki/gocommerce/ext/identity"
 	amazon "github.com/misiki/gocommerce/ext/import-amazon"
 	"github.com/misiki/gocommerce/ext/klaviyo"
+	"github.com/misiki/gocommerce/ext/navigation"
+	"github.com/misiki/gocommerce/ext/newsletter"
+	msg91 "github.com/misiki/gocommerce/ext/notify-msg91"
+	sendgrid "github.com/misiki/gocommerce/ext/notify-sendgrid"
+	"github.com/misiki/gocommerce/ext/reviews"
 	meilisearch "github.com/misiki/gocommerce/ext/search-meilisearch"
 	"github.com/misiki/gocommerce/ext/sitemaps"
 	webhooks "github.com/misiki/gocommerce/ext/webhooks"
@@ -106,6 +112,12 @@ environment:
 		withKlaviyo  = fs.Bool("klaviyo", false, "install the klaviyo module: orders and abandoned carts as Klaviyo events (KLAVIYO_PRIVATE_KEY, KLAVIYO_PUBLIC_KEY, or the Plugins screen)")
 		withFeeds    = fs.Bool("feeds", false, "install the feeds module: Google Merchant and Meta catalogue feeds at /x/feeds/ (STOREFRONT_URL, or the Plugins screen)")
 		withSitemaps = fs.Bool("sitemaps", false, "install the sitemaps module: the storefront's sitemap at /x/sitemaps/sitemap.xml (STOREFRONT_URL, or the Plugins screen)")
+		withMenus    = fs.Bool("menus", false, "install the navigation module: the storefront's menus, edited from the Menus screen")
+		withReviews  = fs.Bool("reviews", false, "install the reviews module: product ratings and reviews, moderated from the Reviews screen")
+		withContact  = fs.Bool("contact", false, "install the contact module: the storefront's contact form and its inbox (CONTACT_EMAIL, or the Plugins screen)")
+		withNews     = fs.Bool("newsletter", false, "install the newsletter module: the storefront's signup box and its list")
+		withSendgrid = fs.Bool("sendgrid", false, "install the SendGrid module: the store's emails through SendGrid (SENDGRID_API_KEY, SENDGRID_FROM, or Notifications › Setup Email)")
+		withMsg91    = fs.Bool("msg91", false, "install the MSG91 module: the store's SMS through MSG91 (MSG91_AUTH_KEY, or Notifications › Setup SMS)")
 		withAmazon   = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or IMPORT_AMAZON_LLM_URL + IMPORT_AMAZON_LLM_MODEL for a local model rewrite the copy; IMPORT_AMAZON_HEADED=1 shows the browser)")
 	)
 	if err := fs.Parse(args); err != nil {
@@ -192,6 +204,28 @@ environment:
 	}
 	if *withSitemaps {
 		modules = append(modules, sitemaps.New(sitemaps.Config{StorefrontURL: os.Getenv("STOREFRONT_URL")}))
+	}
+	if *withMenus {
+		modules = append(modules, navigation.New(navigation.Config{}))
+	}
+	if *withReviews {
+		modules = append(modules, reviews.New(reviews.Config{}))
+	}
+	if *withContact {
+		modules = append(modules, contact.New(contact.Config{NotifyEmail: os.Getenv("CONTACT_EMAIL")}))
+	}
+	if *withNews {
+		modules = append(modules, newsletter.New(newsletter.Config{}))
+	}
+	// The delivery backends. With nothing in the environment they are
+	// installed idle and wait for the Setup Email / Setup SMS screens.
+	if *withSendgrid {
+		modules = append(modules, sendgrid.New(sendgrid.Config{
+			APIKey: os.Getenv("SENDGRID_API_KEY"), From: os.Getenv("SENDGRID_FROM"), FromName: os.Getenv("SENDGRID_FROM_NAME"),
+		}))
+	}
+	if *withMsg91 {
+		modules = append(modules, msg91.New(msg91.Config{AuthKey: os.Getenv("MSG91_AUTH_KEY")}))
 	}
 	if *withAmazon {
 		modules = append(modules, amazon.New(amazon.Config{

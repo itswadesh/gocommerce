@@ -6,6 +6,14 @@
 // for it would put SendGrid's transitive tree into the dependency graph of
 // every store that installs this module.
 //
+// The key and the sender come from Config, or — when Config has none — from
+// the "email-sendgrid" plugin, which the panel edits under Notifications ›
+// Setup Email. Installed with neither, the module is idle: the engine keeps
+// writing every message to the log until an operator fills the form in, and
+// the settings and the doctor say so. The wording is not the module's at all:
+// it asks the engine's notification templates for the effective subject and
+// body at send time, so what the operator edits in the panel is what goes out.
+//
 //	app, err := gocommerce.New(cfg,
 //	    sendgrid.New(sendgrid.Config{
 //	        APIKey: os.Getenv("SENDGRID_API_KEY"),
@@ -18,7 +26,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,20 +38,26 @@ import (
 
 const defaultBaseURL = "https://api.sendgrid.com"
 
-// Config configures the module.
+// PluginKey is the plugin the module registers, where the panel keeps the key
+// and the sender.
+const PluginKey = "email-sendgrid"
+
+// Config configures the module. Every field is optional: what it does not
+// carry, the plugin's settings can.
 type Config struct {
-	// APIKey is a SendGrid API key with Mail Send permission. Required.
+	// APIKey is a SendGrid API key with Mail Send permission.
 	APIKey string
-	// From is the sender address. Required.
+	// From is the sender address.
 	From string
 	// FromName is the sender's display name.
 	FromName string
 	// ReplyTo is optional.
 	ReplyTo string
-	// Subjects overrides the built-in subject line for an event, keyed by
-	// event name. Templates receive the notification's Data map.
+	// Subjects overrides the engine's default subject line for an event,
+	// keyed by event name, for a store that keeps its wording in code. A
+	// subject the operator edited in the panel wins over it.
 	Subjects map[string]string
-	// Bodies overrides the built-in plain-text body for an event.
+	// Bodies overrides the engine's default plain-text body for an event.
 	Bodies map[string]string
 	// BaseURL overrides the SendGrid endpoint, for tests.
 	BaseURL string
@@ -54,11 +67,10 @@ type Config struct {
 
 // Module is the SendGrid notifier.
 type Module struct {
-	cfg      Config
-	client   *http.Client
-	log      interface{ Error(string, ...any) }
-	subjects map[string]*template.Template
-	bodies   map[string]*template.Template
+	cfg    Config
+	app    *gocommerce.App
+	client *http.Client
+	log    interface{ Error(string, ...any) }
 }
 
 // New constructs the module.
@@ -67,17 +79,16 @@ func New(cfg Config) *Module { return &Module{cfg: cfg} }
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "notify-sendgrid" }
 
+// DisplayName implements gocommerce.Named: what the settings and the Setup
+// Email screen call this backend.
+func (m *Module) DisplayName() string { return "SendGrid" }
+
 // Migrations implements gocommerce.Module. Sending email owns no state.
 func (m *Module) Migrations() []gocommerce.Migration { return nil }
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
-	if strings.TrimSpace(m.cfg.APIKey) == "" {
-		return errors.New("sendgrid: APIKey is required")
-	}
-	if strings.TrimSpace(m.cfg.From) == "" {
-		return errors.New("sendgrid: From is required")
-	}
+	m.app = app
 	if m.cfg.BaseURL == "" {
 		m.cfg.BaseURL = defaultBaseURL
 	}
@@ -87,129 +98,74 @@ func (m *Module) Register(app *gocommerce.App) error {
 	}
 	m.log = app.Log()
 
-	if err := m.compileTemplates(); err != nil {
-		return err
+	// An override that does not parse is refused at boot, not on the first
+	// sale: the wording is code here, and code fails early.
+	for event, text := range m.cfg.Subjects {
+		if _, err := template.New("subject:" + event).Parse(text); err != nil {
+			return fmt.Errorf("sendgrid: subject template for %s: %w", event, err)
+		}
 	}
+	for event, text := range m.cfg.Bodies {
+		if _, err := template.New("body:" + event).Parse(text); err != nil {
+			return fmt.Errorf("sendgrid: body template for %s: %w", event, err)
+		}
+	}
+
+	// Config-configured stores start switched on, so installing the module
+	// with a key in the environment sends mail the way it always has; the
+	// switch is still theirs to turn off. A store with nothing in Config
+	// starts off and needs both required fields before anything goes out.
+	inCode := strings.TrimSpace(m.cfg.APIKey) != "" && strings.TrimSpace(m.cfg.From) != ""
+	help := ""
+	if inCode {
+		help = " Set in code for this store; leave empty to keep that."
+	}
+	app.RegisterPlugin(gocommerce.PluginDef{
+		Key: PluginKey, Title: "SendGrid", Category: "notifications", DefaultEnabled: inCode,
+		Description: "Sends the store's emails — order confirmations, shipping notices, password resets — through SendGrid. The wording of each message is edited under Notifications › Setup Email.",
+		Docs:        "https://www.twilio.com/docs/sendgrid/for-developers/sending-email/api-getting-started",
+		Fields: []gocommerce.PluginField{
+			{Key: "api_key", Label: "API key", Kind: "secret", Required: !inCode, Help: "A SendGrid API key with Mail Send permission." + help},
+			{Key: "from", Label: "From address", Kind: "text", Required: !inCode, Help: "A sender SendGrid has verified." + help},
+			{Key: "from_name", Label: "From name", Kind: "text", Help: "The name beside the address in the inbox."},
+			{Key: "reply_to", Label: "Reply-to address", Kind: "text", Help: "Where a shopper's reply lands; empty means the from address."},
+		},
+	})
 	app.RegisterNotifier(gocommerce.ChannelEmail, m)
 	return nil
 }
 
-// compileTemplates prepares the copy. Templates live here rather than in the
-// engine because wording and branding are the store's business: the engine
-// hands over values, not opinions about how to phrase them.
-func (m *Module) compileTemplates() error {
-	m.subjects = map[string]*template.Template{}
-	m.bodies = map[string]*template.Template{}
-
-	merge := func(defaults, overrides map[string]string, into map[string]*template.Template, kind string) error {
-		combined := map[string]string{}
-		for k, v := range defaults {
-			combined[k] = v
-		}
-		for k, v := range overrides {
-			combined[k] = v
-		}
-		for event, text := range combined {
-			tpl, err := template.New(kind + ":" + event).Parse(text)
-			if err != nil {
-				return fmt.Errorf("sendgrid: %s template for %s: %w", kind, event, err)
-			}
-			into[event] = tpl
-		}
-		return nil
-	}
-
-	if err := merge(defaultSubjects, m.cfg.Subjects, m.subjects, "subject"); err != nil {
-		return err
-	}
-	return merge(defaultBodies, m.cfg.Bodies, m.bodies, "body")
+// sender is the effective credentials: the plugin's value for a field where
+// the operator typed one, Config's otherwise.
+type sender struct {
+	apiKey, from, fromName, replyTo string
 }
 
-var defaultSubjects = map[string]string{
-	gocommerce.EventOrderCreated:   "Order {{.order_number}} confirmed",
-	gocommerce.EventOrderPaid:      "Payment received for order {{.order_number}}",
-	gocommerce.EventOrderShipped:   "Order {{.order_number}} is on its way",
-	gocommerce.EventOrderDelivered: "Order {{.order_number}} was delivered",
-	gocommerce.EventOrderCancelled: "Order {{.order_number}} was cancelled",
-	gocommerce.EventOrderRefunded:  "Refund issued for order {{.order_number}}",
-	gocommerce.EventOrderReturned:  "We have your return from order {{.order_number}}",
-
-	// Sent by the identity module. The event name is spelled out rather than
-	// imported so a store without accounts does not link the module.
-	"identity.password_reset": "Reset your password",
+func (m *Module) sender(ctx context.Context) (sender, bool) {
+	on, err := m.app.Plugins().Enabled(ctx, PluginKey)
+	if err != nil || !on {
+		return sender{}, false
+	}
+	pick := func(field, fallback string) string {
+		if v := strings.TrimSpace(m.app.Plugins().String(ctx, PluginKey, field)); v != "" {
+			return v
+		}
+		return strings.TrimSpace(fallback)
+	}
+	s := sender{
+		apiKey:   pick("api_key", m.cfg.APIKey),
+		from:     pick("from", m.cfg.From),
+		fromName: pick("from_name", m.cfg.FromName),
+		replyTo:  pick("reply_to", m.cfg.ReplyTo),
+	}
+	return s, s.apiKey != "" && s.from != ""
 }
 
-var defaultBodies = map[string]string{
-	gocommerce.EventOrderCreated: `Hello {{.customer_name}},
-
-Thanks for your order {{.order_number}}.
-
-{{.items_summary}}
-
-We'll email you again when it ships.`,
-
-	gocommerce.EventOrderPaid: `Hello {{.customer_name}},
-
-We've received your payment for order {{.order_number}}.
-
-{{.items_summary}}`,
-
-	// The parcel's own contents when the event carries them, and the whole
-	// order otherwise — which is what an event written before shipments named
-	// their contents, and redelivered since, still says.
-	gocommerce.EventOrderShipped: `Hello {{.customer_name}},
-
-Order {{.order_number}} has shipped.
-{{if .tracking}}Tracking number: {{.tracking}}{{end}}
-
-{{if .shipment_items_summary}}{{.shipment_items_summary}}{{else}}{{.items_summary}}{{end}}
-{{if .shipment_is_partial}}The rest of your order will follow separately.{{end}}`,
-
-	gocommerce.EventOrderDelivered: `Hello {{.customer_name}},
-
-Order {{.order_number}} has been delivered. We hope you like it.`,
-
-	gocommerce.EventOrderCancelled: `Hello {{.customer_name}},
-
-Order {{.order_number}} has been cancelled.
-{{if .reason}}Reason: {{.reason}}{{end}}`,
-
-	// Required rather than optional: Notify below skips an event with no
-	// template without erroring, so shipping order.refunded with no body here
-	// would leave the customer told nothing — which is the gap this event
-	// exists to close. The amounts are minor units, which is what the engine
-	// hands every notifier; a store that wants them formatted overrides the
-	// template, because how a currency is written is the reader's business.
-	gocommerce.EventOrderRefunded: `Hello {{.customer_name}},
-
-We have refunded {{.refund_amount_minor}} ({{.currency}}) on order {{.order_number}}.
-{{if .reason}}Reason: {{.reason}}{{end}}
-{{if ne .refund_remaining_minor "0"}}The rest of the order stands.{{end}}`,
-
-	// Required for the reason order.refunded's body is: a notifier with no
-	// template sends nothing, and a customer who posts a parcel back and hears
-	// silence rings the shop. There is deliberately no order.unreturned body —
-	// withdrawing a return is the store correcting its own record, and telling
-	// the customer their return has been un-received would be news about
-	// somebody else's paperwork. The money is a separate message, because it is
-	// a separate decision.
-	gocommerce.EventOrderReturned: `Hello {{.customer_name}},
-
-We have received your return of {{.return_units}} item(s) from order {{.order_number}}.
-{{if .reason}}Reason: {{.reason}}{{end}}
-
-We will be in touch about anything owed to you.`,
-
-	"identity.password_reset": `Hello {{.customer_name}},
-
-Somebody asked to reset the password for {{.customer_email}}. If that was you,
-{{if .reset_url}}open this link within {{.expires_in_minutes}} minutes:
-
-{{.reset_url}}{{else}}use this code within {{.expires_in_minutes}} minutes:
-
-{{.reset_token}}{{end}}
-
-If it was not you, nothing has changed and you can ignore this message.`,
+// Configured implements gocommerce.ConfigurableNotifier: switched on, with a
+// key and a sender to send from.
+func (m *Module) Configured(ctx context.Context) bool {
+	_, ok := m.sender(ctx)
+	return ok
 }
 
 // Notify implements gocommerce.Notifier.
@@ -217,32 +173,41 @@ func (m *Module) Notify(ctx context.Context, n gocommerce.Notification) error {
 	if n.Channel != gocommerce.ChannelEmail || n.To == "" {
 		return nil
 	}
-	subjectTpl, ok := m.subjects[n.Event]
+	s, ok := m.sender(ctx)
 	if !ok {
-		// An event with no template is not an error: a store may add events
+		// The funnel skips an unconfigured backend before it gets here;
+		// this is what keeps a direct call honest too.
+		return nil
+	}
+	tpl, ok, err := m.app.NotifyTemplates().Get(ctx, gocommerce.ChannelEmail, n.Event)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		// An event with no wording is not an error: a store may add events
 		// this module has never heard of.
 		return nil
 	}
-	subject, err := render(subjectTpl, n.Data)
+	subjectText, bodyText := tpl.Subject, tpl.Body
+	if !tpl.Customized {
+		// Code's override applies only where the operator has not spoken:
+		// the panel is the nearer hand.
+		if text, ok := m.cfg.Subjects[n.Event]; ok {
+			subjectText = text
+		}
+		if text, ok := m.cfg.Bodies[n.Event]; ok {
+			bodyText = text
+		}
+	}
+	subject, err := gocommerce.RenderNotifyText(subjectText, n.Data)
 	if err != nil {
-		return err
+		return fmt.Errorf("sendgrid: %s subject: %w", n.Event, err)
 	}
-	body, err := render(m.bodies[n.Event], n.Data)
+	body, err := gocommerce.RenderNotifyText(bodyText, n.Data)
 	if err != nil {
-		return err
+		return fmt.Errorf("sendgrid: %s body: %w", n.Event, err)
 	}
-	return m.send(ctx, n.To, subject, body)
-}
-
-func render(tpl *template.Template, data map[string]string) (string, error) {
-	if tpl == nil {
-		return "", nil
-	}
-	var buf bytes.Buffer
-	if err := tpl.Execute(&buf, data); err != nil {
-		return "", err
-	}
-	return buf.String(), nil
+	return m.send(ctx, s, n.To, subject, body)
 }
 
 type mailPayload struct {
@@ -267,15 +232,15 @@ type mailContent struct {
 	Value string `json:"value"`
 }
 
-func (m *Module) send(ctx context.Context, to, subject, body string) error {
+func (m *Module) send(ctx context.Context, s sender, to, subject, body string) error {
 	payload := mailPayload{
 		Personalizations: []personalization{{To: []emailAddress{{Email: to}}}},
-		From:             emailAddress{Email: m.cfg.From, Name: m.cfg.FromName},
+		From:             emailAddress{Email: s.from, Name: s.fromName},
 		Subject:          subject,
 		Content:          []mailContent{{Type: "text/plain", Value: body}},
 	}
-	if m.cfg.ReplyTo != "" {
-		payload.ReplyTo = &emailAddress{Email: m.cfg.ReplyTo}
+	if s.replyTo != "" {
+		payload.ReplyTo = &emailAddress{Email: s.replyTo}
 	}
 
 	encoded, err := json.Marshal(payload)
@@ -287,7 +252,7 @@ func (m *Module) send(ctx context.Context, to, subject, body string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+m.cfg.APIKey)
+	req.Header.Set("Authorization", "Bearer "+s.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := m.client.Do(req)

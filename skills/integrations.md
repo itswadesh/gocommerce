@@ -159,6 +159,47 @@ change lands in the audit trail as `plugin.update`.
 What a plugin is not: code that arrives at runtime. The Plugins screen
 lists what this binary can do; adding to it is adding a module.
 
+## Notification templates: the words are the store's
+
+A notifier module carries messages; it does not own their wording (D58).
+The engine keeps a catalogue of every message on every channel — the order
+events, the operator password reset — with a default subject and body, and
+an operator rewords any of them under Notifications › Setup Email / Setup
+SMS. A module that introduces an event registers its wording from
+`Register`, and asks for the effective text when it sends:
+
+```go
+app.RegisterNotifyTemplate(gocommerce.NotifyTemplate{
+    Channel: gocommerce.ChannelEmail, Event: "contact.message", Title: "Contact form message",
+    Description: "To the store's own address when someone writes through the contact form.",
+    Variables:   []string{"from_name", "from_email", "subject", "body"},
+    Subject:     "New message from {{.from_name}}",
+    Body:        "{{.from_name}} <{{.from_email}}> wrote:\n\n{{.body}}",
+})
+
+// In Notify:
+tpl, ok, err := app.NotifyTemplates().Get(ctx, gocommerce.ChannelEmail, n.Event)
+if err != nil || !ok {
+    return err // !ok: nobody registered wording for this event — nothing to say
+}
+subject, _ := gocommerce.RenderNotifyText(tpl.Subject, n.Data)
+body, _ := gocommerce.RenderNotifyText(tpl.Body, n.Data)
+```
+
+`Render` does both steps in one call. A stored row overrides the default
+and a delete restores it, so the default in code is never lost; both texts
+are parsed when saved, so a typo is refused on the screen rather than on
+the next sale. A provider that sends its own pre-approved templates (MSG91's
+DLT flows) ignores the body and takes its template ids from its plugin
+settings instead.
+
+A backend whose key comes from the Plugins screen implements
+`ConfigurableNotifier` — `Configured(ctx) bool` — and the engine treats an
+unready backend as absent: the funnel skips it, the settings and the doctor
+say the channel does not deliver, and the moment the key is typed in the
+next message goes out. `ext/notify-sendgrid` and `ext/notify-msg91` are the
+worked examples.
+
 ## Where a module lives, and what it may not do
 
 A module that adds **no third-party dependency** belongs in `ext/`. Every

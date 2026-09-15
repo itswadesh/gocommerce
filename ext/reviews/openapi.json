@@ -1,0 +1,112 @@
+{
+  "paths": {
+    "/x/reviews": {
+      "get": {
+        "tags": ["reviews"],
+        "summary": "A product's approved reviews, with the numbers",
+        "description": "Approved reviews only, newest first, without the reviewer's email. `summary` is the count, the average to one decimal, and how many gave each rating. 404 while the plugin is off.",
+        "parameters": [
+          {"name": "product_id", "in": "query", "required": true, "schema": {"type": "integer", "format": "int64"}},
+          {"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/PageNumber"}, {"$ref": "#/components/parameters/Offset"}
+        ],
+        "responses": {
+          "200": {"description": "The reviews and their summary.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {
+            "reviews": {"type": "array", "items": {"$ref": "#/components/schemas/PublicReview"}},
+            "summary": {"$ref": "#/components/schemas/ReviewSummary"},
+            "meta": {"type": "object", "properties": {"total": {"type": "integer"}, "limit": {"type": "integer"}, "offset": {"type": "integer"}}}
+          }}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      },
+      "post": {
+        "tags": ["reviews"],
+        "summary": "Post a review",
+        "description": "A rating from 1 to 5, a name, an email and a few words, for a product that exists. It waits for moderation unless the Plugins screen approves on sight, and is marked verified when the email has bought the product; the Plugins screen can make that a condition. `website` is a honeypot — a field no person sees. 404 while the plugin is off.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReviewInput"}}}},
+        "responses": {
+          "201": {"description": "Received, with the status it landed in.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"status": {"type": "string"}, "verified": {"type": "boolean"}}}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/api/admin/x/reviews": {
+      "get": {
+        "tags": ["admin:reviews"], "summary": "Every review, for moderation", "security": [{"adminToken": []}],
+        "description": "Newest first, with the product's title and the reviewer's email. Needs catalog.read.",
+        "parameters": [
+          {"name": "status", "in": "query", "schema": {"type": "string", "enum": ["pending", "approved", "rejected"]}},
+          {"name": "product_id", "in": "query", "schema": {"type": "integer", "format": "int64"}},
+          {"name": "q", "in": "query", "schema": {"type": "string"}, "description": "A name, email, title or body fragment."},
+          {"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/PageNumber"}, {"$ref": "#/components/parameters/Offset"}
+        ],
+        "responses": {
+          "200": {"description": "A page of reviews.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/Review"}}, "meta": {"$ref": "#/components/schemas/ListMeta"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"}
+        }
+      }
+    },
+    "/api/admin/x/reviews/{id}": {
+      "patch": {
+        "tags": ["admin:reviews"], "summary": "Approve or reject a review, or reply under it", "security": [{"adminToken": []}],
+        "parameters": [{"$ref": "#/components/parameters/PathID"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string", "enum": ["pending", "approved", "rejected"]}, "reply": {"type": "string", "description": "The store's public answer under the review; empty removes it."}}}}}},
+        "responses": {
+          "200": {"description": "The review.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/Review"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      },
+      "delete": {
+        "tags": ["admin:reviews"], "summary": "Delete a review", "security": [{"adminToken": []}],
+        "parameters": [{"$ref": "#/components/parameters/PathID"}],
+        "responses": {
+          "204": {"description": "Deleted."},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ReviewInput": {
+        "type": "object",
+        "required": ["product_id", "name", "email", "rating", "body"],
+        "properties": {
+          "product_id": {"type": "integer", "format": "int64"}, "name": {"type": "string"}, "email": {"type": "string"},
+          "rating": {"type": "integer", "minimum": 1, "maximum": 5}, "title": {"type": "string"}, "body": {"type": "string", "maxLength": 4000},
+          "website": {"type": "string", "description": "Honeypot. Leave empty."}
+        }
+      },
+      "PublicReview": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer", "format": "int64"}, "name": {"type": "string"}, "rating": {"type": "integer"},
+          "title": {"type": "string"}, "body": {"type": "string"}, "verified": {"type": "boolean", "description": "The email bought the product."},
+          "reply": {"type": "string"}, "created_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "Review": {
+        "allOf": [
+          {"$ref": "#/components/schemas/PublicReview"},
+          {"type": "object", "properties": {
+            "product_id": {"type": "integer", "format": "int64"}, "product": {"type": "string"}, "email": {"type": "string"},
+            "status": {"type": "string", "enum": ["pending", "approved", "rejected"]}, "updated_at": {"type": "string", "format": "date-time"}
+          }}
+        ]
+      },
+      "ReviewSummary": {
+        "type": "object",
+        "properties": {
+          "product_id": {"type": "integer", "format": "int64"}, "count": {"type": "integer"},
+          "average": {"type": "number", "description": "To one decimal; 0 with no reviews."},
+          "distribution": {"type": "object", "additionalProperties": {"type": "integer"}, "description": "How many gave each rating, 1 to 5."}
+        }
+      }
+    }
+  }
+}

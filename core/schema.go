@@ -48,6 +48,7 @@ func coreMigrations() []Migration {
 		{ID: "0037_requires_shipping", SQL: migration0037RequiresShipping},
 		{ID: "0038_plugins", SQL: migration0038Plugins},
 		{ID: "0039_notifications", SQL: migration0039Notifications},
+		{ID: "0040_notification_templates", SQL: migration0040NotificationTemplates},
 	}
 }
 
@@ -1974,4 +1975,23 @@ CREATE TABLE notifications (
 CREATE INDEX notifications_created_idx ON notifications (id DESC);
 CREATE INDEX notifications_order_idx   ON notifications (order_number) WHERE order_number <> '';
 CREATE INDEX notifications_status_idx  ON notifications (status, id DESC);
+`
+
+// M40 — the wording of what the store sends.
+//
+// The catalogue of messages and their default subject and body live in code
+// (core for the engine's events, a module for its own). This table holds only
+// what an operator changed: one row per message they reworded, keyed by the
+// channel and the event. No row means the default, and a delete restores it —
+// which is the property that makes the editor safe to hand to anyone with
+// store.operate.
+const migration0040NotificationTemplates = `
+CREATE TABLE notification_templates (
+    channel    text        NOT NULL,
+    event      text        NOT NULL,
+    subject    text        NOT NULL DEFAULT '',
+    body       text        NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (channel, event)
+);
 `

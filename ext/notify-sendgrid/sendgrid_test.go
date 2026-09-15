@@ -16,6 +16,7 @@ import (
 // captured is one message the stub SendGrid received.
 type captured struct {
 	To      string
+	From    string
 	Subject string
 	Body    string
 }
@@ -32,7 +33,7 @@ func (s *stub) handler(w http.ResponseWriter, r *http.Request) {
 	_ = json.Unmarshal(body, &payload)
 
 	s.mu.Lock()
-	msg := captured{Subject: payload.Subject}
+	msg := captured{Subject: payload.Subject, From: payload.From.Email}
 	if len(payload.Personalizations) > 0 && len(payload.Personalizations[0].To) > 0 {
 		msg.To = payload.Personalizations[0].To[0].Email
 	}
@@ -57,13 +58,110 @@ func (s *stub) all() []captured {
 	return out
 }
 
-func TestRegisterRequiresConfig(t *testing.T) {
-	t.Parallel()
-	if err := New(Config{From: "a@b.com"}).Register(nil); err == nil {
-		t.Error("a missing APIKey should be refused")
+// TestUnconfiguredWaitsForThePanel: installed with nothing in Config, the
+// module is idle — the settings say email does not deliver, an order sends
+// nothing — until the key and the sender are typed into its plugin, at
+// which point the next event goes out. No restart in between.
+func TestUnconfiguredWaitsForThePanel(t *testing.T) {
+	s := &stub{}
+	server := gctest.StubHTTP(t, s.handler)
+	app := gctest.New(t, New(Config{BaseURL: server.URL}))
+	ctx := context.Background()
+
+	email := channel(app, gocommerce.ChannelEmail)
+	if email.Delivers {
+		t.Fatal("an unconfigured SendGrid should not count as delivering")
 	}
-	if err := New(Config{APIKey: "k"}).Register(nil); err == nil {
-		t.Error("a missing From address should be refused")
+	if len(email.Backends) != 2 || email.Backends[1].Name != "SendGrid" || email.Backends[1].Delivers {
+		t.Fatalf("backends = %+v, want the log and an idle SendGrid", email.Backends)
+	}
+
+	result := gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
+	gctest.DrainOutbox(t, app)
+	if n := len(s.all()); n != 0 {
+		t.Fatalf("messages sent before configuration = %d, want 0", n)
+	}
+	rows, _, err := app.Notifications().List(ctx, gocommerce.NotificationQuery{Channel: gocommerce.ChannelEmail})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Status != gocommerce.NotificationLogged {
+		t.Fatalf("log = %+v, want one row that only reached the log", rows)
+	}
+
+	on := true
+	if _, err := app.Plugins().Update(ctx, PluginKey, gocommerce.PluginPatch{
+		Enabled: &on, Settings: map[string]any{"api_key": "SG.panel", "from": "shop@example.com", "from_name": "The Shop"},
+	}); err != nil {
+		t.Fatalf("configure from the panel: %v", err)
+	}
+	if !channel(app, gocommerce.ChannelEmail).Delivers {
+		t.Fatal("configured from the panel, email should deliver")
+	}
+
+	if _, err := app.Ship().Create(ctx, result.Order.ID, gocommerce.ProviderManual, gocommerce.ShipRequest{Tracking: "T-1"}); err != nil {
+		t.Fatalf("ship: %v", err)
+	}
+	gctest.DrainOutbox(t, app)
+	messages := s.all()
+	if len(messages) != 1 {
+		t.Fatalf("messages after configuration = %d, want 1", len(messages))
+	}
+	if !strings.Contains(messages[0].Subject, "on its way") {
+		t.Errorf("subject = %q, want the shipping notice", messages[0].Subject)
+	}
+	if messages[0].From != "shop@example.com" {
+		t.Errorf("from = %q, want the address typed into the panel", messages[0].From)
+	}
+}
+
+func channel(app *gocommerce.App, name string) gocommerce.NotifierChannelInfo {
+	for _, c := range app.Settings().NotifierChannels {
+		if c.Channel == name {
+			return c
+		}
+	}
+	return gocommerce.NotifierChannelInfo{}
+}
+
+// TestPanelWordingWins: what the operator typed under Setup Email is what
+// goes out, over both the engine's default and a Config override.
+func TestPanelWordingWins(t *testing.T) {
+	s := &stub{}
+	server := gctest.StubHTTP(t, s.handler)
+	app := gctest.New(t, New(Config{
+		APIKey: "SG.test", From: "orders@example.com", BaseURL: server.URL,
+		Subjects: map[string]string{gocommerce.EventOrderCreated: "Code says {{.order_number}}"},
+	}))
+	ctx := context.Background()
+	if _, err := app.NotifyTemplates().Set(ctx, gocommerce.ChannelEmail, gocommerce.EventOrderCreated,
+		"Panel says {{.order_number}}", "Namaste {{.customer_name}}"); err != nil {
+		t.Fatalf("reword: %v", err)
+	}
+
+	result := gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
+	gctest.DrainOutbox(t, app)
+	messages := s.all()
+	if len(messages) != 1 {
+		t.Fatalf("messages = %d, want 1", len(messages))
+	}
+	if want := "Panel says " + result.Order.Number; messages[0].Subject != want {
+		t.Errorf("subject = %q, want %q", messages[0].Subject, want)
+	}
+	if !strings.HasPrefix(messages[0].Body, "Namaste GC Test") {
+		t.Errorf("body = %q, want the panel's wording", messages[0].Body)
+	}
+
+	// Restored, the Config override is next in line.
+	if _, err := app.NotifyTemplates().Reset(ctx, gocommerce.ChannelEmail, gocommerce.EventOrderCreated); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	second := gctest.CreateProduct(t, app, "GCTEST-second", 500, 5)
+	gctest.Buy(t, app, gocommerce.CodeCOD, second.Variants[0].ID, 1)
+	gctest.DrainOutbox(t, app)
+	messages = s.all()
+	if len(messages) != 2 || !strings.HasPrefix(messages[1].Subject, "Code says") {
+		t.Fatalf("after the reset the subject should be code's override, got %+v", messages)
 	}
 }
 

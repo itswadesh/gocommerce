@@ -19,6 +19,22 @@ type notifierSet struct {
 	record func(ctx context.Context, note Notification, outcome notificationOutcome, err error)
 }
 
+// ConfigurableNotifier is a backend whose credentials come from the Plugins
+// screen rather than from Config. Until an operator has filled them in it is
+// installed but cannot send, and the funnel, the settings and the doctor all
+// treat it as absent — so "delivering" keeps meaning what it says.
+type ConfigurableNotifier interface {
+	Configured(ctx context.Context) bool
+}
+
+// ready is whether a backend would actually carry a message right now.
+func ready(ctx context.Context, n Notifier) bool {
+	if c, ok := n.(ConfigurableNotifier); ok {
+		return c.Configured(ctx)
+	}
+	return true
+}
+
 // notifierEntry is a backend and the module that installed it. The module is
 // carried because the question an operator asks about a channel is not "how
 // many backends" but "who is sending my order confirmations", and a Notifier
@@ -53,10 +69,13 @@ func (n *notifierSet) forChannel(channel string) []notifierEntry {
 // panel needs to know whether an email is really coming, not whether a line
 // will be written to a log they cannot read.
 func (n *notifierSet) delivers(channel string) bool {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-	for _, e := range n.byChannel[channel] {
-		if _, isLog := e.notifier.(logNotifier); !isLog {
+	// Snapshot, then ask: Configured reads the plugins table, and a module's
+	// code is not something to run under this lock.
+	for _, e := range n.forChannel(channel) {
+		if _, isLog := e.notifier.(logNotifier); isLog {
+			continue
+		}
+		if ready(context.Background(), e.notifier) {
 			return true
 		}
 	}
@@ -82,8 +101,8 @@ func (n *notifierSet) describe(channel string) NotifierChannelInfo {
 			// does, and what it does is the whole point of this row.
 			b.Name = "log"
 		} else {
-			b.Delivers = true
-			info.Delivers = true
+			b.Delivers = ready(context.Background(), e.notifier)
+			info.Delivers = info.Delivers || b.Delivers
 			if named, ok := e.notifier.(Named); ok && named.DisplayName() != "" {
 				b.Name = named.DisplayName()
 			}
@@ -106,12 +125,18 @@ func (n *notifierSet) sendFrom(ctx context.Context, note Notification, resendOf 
 	outcome := notificationOutcome{resendOf: resendOf}
 	var failures []error
 	for _, target := range targets {
-		err := target.notifier.Notify(ctx, note)
 		if _, isLog := target.notifier.(logNotifier); isLog {
 			// The log is where a message goes when nothing else will carry
 			// it; it is not a backend the row should claim delivered.
+			_ = target.notifier.Notify(ctx, note)
 			continue
 		}
+		if !ready(ctx, target.notifier) {
+			// Installed, not yet configured: not a backend, so not a row
+			// that says "sent" about a message nobody carried.
+			continue
+		}
+		err := target.notifier.Notify(ctx, note)
 		outcome.backends = append(outcome.backends, target.module)
 		if err != nil {
 			failures = append(failures, err)

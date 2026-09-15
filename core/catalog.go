@@ -48,6 +48,9 @@ type Product struct {
 	// Filled in on every read and never stored, so a listing can show what a
 	// product looks like without a request per row.
 	ImageURL string `json:"image_url,omitempty"`
+	// MediaCount is how many pictures the product has, for a listing that
+	// shows the lead one and wants to say there are more.
+	MediaCount int `json:"media_count,omitempty"`
 
 	Options  []ProductOption `json:"options"`
 	Variants []Variant       `json:"variants"`
@@ -1370,6 +1373,7 @@ func (c *Catalog) loadProductChildren(ctx context.Context, products []*Product) 
 		p.Collections = []ProductCollection{}
 		p.Category = nil
 		p.ImageURL = ""
+		p.MediaCount = 0
 	}
 
 	// The lead picture, for the whole page in one query. DISTINCT ON takes the
@@ -1396,6 +1400,28 @@ func (c *Catalog) loadProductChildren(ctx context.Context, products []*Product) 
 		}
 	}
 	if err := leadRows.Err(); err != nil {
+		return err
+	}
+	countRows, err := c.app.db.QueryContext(ctx, `
+		SELECT pm.product_id, count(*)
+		FROM product_media pm JOIN media m ON m.id = pm.media_id
+		WHERE pm.product_id = ANY($1::bigint[]) AND m.kind = 'image'
+		GROUP BY pm.product_id`, int64Array(ids))
+	if err != nil {
+		return err
+	}
+	defer countRows.Close()
+	for countRows.Next() {
+		var productID int64
+		var n int
+		if err := countRows.Scan(&productID, &n); err != nil {
+			return err
+		}
+		if p := byID[productID]; p != nil {
+			p.MediaCount = n
+		}
+	}
+	if err := countRows.Err(); err != nil {
 		return err
 	}
 

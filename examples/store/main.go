@@ -23,14 +23,19 @@ import (
 	"github.com/misiki/gocommerce/core"
 
 	"github.com/misiki/gocommerce/ext/cms"
+	"github.com/misiki/gocommerce/ext/contact"
 	"github.com/misiki/gocommerce/ext/feeds"
 	"github.com/misiki/gocommerce/ext/identity"
 	amazon "github.com/misiki/gocommerce/ext/import-amazon"
 	"github.com/misiki/gocommerce/ext/invoices"
 	"github.com/misiki/gocommerce/ext/klaviyo"
 	"github.com/misiki/gocommerce/ext/mcp"
+	"github.com/misiki/gocommerce/ext/navigation"
+	"github.com/misiki/gocommerce/ext/newsletter"
+	msg91 "github.com/misiki/gocommerce/ext/notify-msg91"
 	sendgrid "github.com/misiki/gocommerce/ext/notify-sendgrid"
 	stripe "github.com/misiki/gocommerce/ext/payments-stripe"
+	"github.com/misiki/gocommerce/ext/reviews"
 	meilisearch "github.com/misiki/gocommerce/ext/search-meilisearch"
 	"github.com/misiki/gocommerce/ext/sitemaps"
 )
@@ -61,6 +66,13 @@ func main() {
 		}),
 		feeds.New(feeds.Config{StorefrontURL: os.Getenv("STOREFRONT_URL")}),
 		sitemaps.New(sitemaps.Config{StorefrontURL: os.Getenv("STOREFRONT_URL")}),
+
+		// The storefront's own content: its menus, its reviews, its contact
+		// form and its newsletter list, each with a screen in the panel.
+		navigation.New(navigation.Config{}),
+		reviews.New(reviews.Config{}),
+		contact.New(contact.Config{NotifyEmail: os.Getenv("CONTACT_EMAIL")}),
+		newsletter.New(newsletter.Config{}),
 
 		// The store as tools for an AI agent, at /api/admin/x/mcp. The admin
 		// token is the agent's credential, and every change it makes is
@@ -103,15 +115,18 @@ func main() {
 		}))
 	}
 
-	// Real order emails, if configured. Without it the engine still emits the
-	// notifications — they just go to the log instead of a shopper.
-	if key := os.Getenv("SENDGRID_API_KEY"); key != "" {
-		modules = append(modules, sendgrid.New(sendgrid.Config{
-			APIKey:   key,
-			From:     "orders@example.com",
-			FromName: "Example Ltd",
-		}))
-	}
+	// Real order emails and texts. With nothing in the environment both are
+	// installed idle: the engine still emits every notification — to the log
+	// — until the key and the sender are typed into Notifications › Setup
+	// Email or Setup SMS, at which point they start going to shoppers.
+	modules = append(modules,
+		sendgrid.New(sendgrid.Config{
+			APIKey:   os.Getenv("SENDGRID_API_KEY"),
+			From:     os.Getenv("SENDGRID_FROM"),
+			FromName: os.Getenv("SENDGRID_FROM_NAME"),
+		}),
+		msg91.New(msg91.Config{AuthKey: os.Getenv("MSG91_AUTH_KEY")}),
+	)
 
 	app, err := gocommerce.New(gocommerce.Config{
 		DBURL:  mustEnv("DATABASE_URL"),

@@ -1024,8 +1024,15 @@
                                         {:else}
                                             <i class="ri-image-line" aria-hidden="true"></i>
                                         {/if}
+                                        <!-- How many pictures there are, floating on the
+                                             corner, when the lead one is not the only one. -->
+                                        {#if product.media_count > 1}
+                                            <span class="row-thumb-count" title="{product.media_count} pictures">
+                                                {product.media_count}
+                                            </span>
+                                        {/if}
                                     </div>
-                                    <div class="row-name">
+                                    <div class="row-name row-name-stacked">
                                         <a
                                             class="txt-bold txt-ellipsis"
                                             href="{base}/products/{product.id}"

@@ -99,8 +99,8 @@ graph):
 | `payments-hyperswitch` | One integration in front of many gateways |
 | `payments-helcim` | HelcimPay.js in-page checkout, North America |
 | `payments-revenuecat` | Web Billing purchase links; digital goods, no refund API |
-| `notify-sendgrid` | Order email, templates you own |
-| `notify-msg91` | Order SMS via DLT templates |
+| `notify-sendgrid` | The store's email through SendGrid — the key from the environment or from Notifications › Setup Email, the wording from the panel |
+| `notify-msg91` | The store's SMS through MSG91's DLT templates — the key and the template ids from the environment or from Notifications › Setup SMS |
 | `fulfill-shiprocket` | Booking shipments and waybills, India |
 | `fulfill-delhivery` | Manifesting parcels with Delhivery |
 | `fulfill-nimbuspost` | NimbusPost's courier aggregation |
@@ -123,6 +123,10 @@ graph):
 | `klaviyo` | Orders and abandoned carts as Klaviyo events, under the metric names its flows know |
 | `feeds` | Google Merchant Center and Meta catalogue feeds, generated from the live catalogue |
 | `sitemaps` | The storefront's sitemap: products, collections and content pages |
+| `navigation` | The storefront's menus — trees of links to products, collections, categories and pages — edited from the panel |
+| `reviews` | Product ratings and reviews, verified against the store's own orders, moderated from the panel |
+| `contact` | The storefront's contact form and the inbox behind it |
+| `newsletter` | The storefront's signup box, its list, and its unsubscribe link |
 
 A module that ships an admin surface also ships its panel screen: install
 `cms`, `invoices`, `identity` or `mcp` and the screen appears in the

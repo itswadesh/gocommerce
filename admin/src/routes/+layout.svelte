@@ -353,6 +353,22 @@
                     <span class="app-nav-dot" title={navAlert.label}></span>
                 {/if}
             </a>
+            <!-- A section's own screens, shown only while the section is
+                 open: the list stays one line per screen the rest of the
+                 time, which is what keeps it readable at twenty items. -->
+            {#if item.children && isActive(item)}
+                <div class="app-nav-sub">
+                    {#each allowedNav(item.children) as child (child.href)}
+                        <a
+                            href="{base}{child.href}"
+                            class="app-nav-sublink"
+                            class:active={isActive(child)}
+                        >
+                            {child.label}
+                        </a>
+                    {/each}
+                </div>
+            {/if}
         {/each}
     </nav>
 {/snippet}

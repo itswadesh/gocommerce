@@ -3132,6 +3132,27 @@ button.media-check {
 .row-handle {
     flex: 0 0 auto;
 }
+/* The products list stacks the handle under the name rather than beside
+   it: a slug read under its title is a slug; beside it, it is noise. */
+/* A grid with a minmax(0, 1fr) track rather than a column flex: a flex item
+   set nowrap hands the cell its whole title as min-content, and the table
+   grew 600px past its wrapper; the track floors the contribution at zero, so
+   the column takes what is left and the title ellipsizes inside it. */
+.row-name-stacked {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 1px;
+}
+/* The handle wraps rather than widening the column: one long slug set
+   nowrap pushed the table past its wrapper, and the sticky last column then
+   floated over Status. `.table .txt-code` below says nowrap for codes in
+   cells; a slug under its title is the exception, so this outranks it. */
+.table .row-name-stacked > .row-handle {
+    max-width: 100%;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+}
 
 /*
  * The destructive control is invisible at rest.
@@ -3595,6 +3616,26 @@ button.media-check {
     height: 100%;
     object-fit: cover;
 }
+.row-thumb {
+    position: relative;
+    overflow: visible;
+}
+/* How many pictures a product has, floating on the thumbnail's corner. */
+.row-thumb-count {
+    position: absolute;
+    top: -7px;
+    right: -7px;
+    min-width: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 16px;
+    text-align: center;
+    color: var(--baseColor);
+    background: var(--txtPrimaryColor);
+    box-shadow: 0 0 0 2px var(--baseColor);
+}
 
 /*
  * Two compact tables in a drawer, sharing a box and nothing else.
@@ -3729,6 +3770,42 @@ button.media-check {
     display: flex;
     flex-direction: column;
     gap: 2px;
+    /* The list is longer than a laptop is tall now — twenty screens and
+       their sub-items — so it scrolls on its own between the search above
+       and the account below, rather than pushing the account off the
+       bottom of a 100vh rail. */
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+/* A section's own screens, indented under it while it is open. */
+.app-nav-sub {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin: 0 0 2px;
+    padding-left: 25px;
+}
+.app-nav-sublink {
+    display: block;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    line-height: 18px;
+    text-decoration: none;
+    color: var(--surfaceTxtHintColor);
+    transition: background var(--animationSpeed), color var(--animationSpeed);
+}
+.app-nav-sublink:hover,
+.app-nav-sublink:focus-visible {
+    background: var(--surfaceAlt1Color);
+    color: var(--surfaceTxtColor);
+}
+.app-nav-sublink.active {
+    color: var(--surfaceTxtColor);
+    font-weight: 600;
 }
 
 /*
@@ -5048,4 +5125,17 @@ kbd + kbd {
         background: none !important;
         color: #000 !important;
     }
+}
+
+/* --------------------------------------------------------------------------
+ * Codes in tables are one word
+ * -------------------------------------------------------------------------- */
+
+/* `.txt-code` is PocketBase's pre-wrap monospace, meant for a block of
+   text. In a table cell it let an order number break at its hyphen — or at
+   the whitespace the template leaves around it — so "GC-2026-000012" was
+   arriving on two lines in a narrow column. A code is one word. */
+.table .txt-code {
+    /* !important because base.css sets pre-wrap with one. */
+    white-space: nowrap !important;
 }

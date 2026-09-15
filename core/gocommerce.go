@@ -261,14 +261,17 @@ type App struct {
 	transfer      *Transfer
 	plugins       *Plugins
 	notifications *Notifications
-	superusers    *Superusers
-	roles         *RoleRights
-	media         *Media
-	discounts     *Discounts
-	locations     *Locations
-	invitations   *Invitations
-	taxes         *Taxes
-	shipping      *Shipping
+	// notifyTemplates is the wording of every message, engine and module
+	// alike, with the operator's edits over the defaults.
+	notifyTemplates *NotifyTemplates
+	superusers      *Superusers
+	roles           *RoleRights
+	media           *Media
+	discounts       *Discounts
+	locations       *Locations
+	invitations     *Invitations
+	taxes           *Taxes
+	shipping        *Shipping
 	// reports is a reading of the orders: it owns no table and writes nothing,
 	// so it has no ordering constraint against anything built here.
 	reports *Reports
@@ -448,6 +451,7 @@ func (a *App) buildServices() {
 	a.transfer = &Transfer{app: a}
 	a.plugins = newPlugins(a)
 	a.notifications = &Notifications{app: a}
+	a.notifyTemplates = newNotifyTemplates(a)
 	a.notifier.record = a.notifications.record
 	// Before superusers: identity resolves rights through it on every scan.
 	a.roles = &RoleRights{app: a}

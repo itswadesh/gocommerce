@@ -248,6 +248,25 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	m.db = app.DB()
 	m.mountRoutes(app)
+	// The reset email's default wording, so the operator can reword it from
+	// the panel like the order emails. The absence of reset_url is
+	// meaningful: without a ResetURL the code stands in for the link.
+	app.RegisterNotifyTemplate(gocommerce.NotifyTemplate{
+		Channel: gocommerce.ChannelEmail, Event: EventPasswordReset, Title: "Password reset",
+		Description: "To a shopper who asked to reset their password.",
+		Variables:   []string{"customer_name", "customer_email", "reset_url", "reset_token", "expires_in_minutes"},
+		Subject:     "Reset your password",
+		Body: `Hello {{.customer_name}},
+
+Somebody asked to reset the password for {{.customer_email}}. If that was you,
+{{if .reset_url}}open this link within {{.expires_in_minutes}} minutes:
+
+{{.reset_url}}{{else}}use this code within {{.expires_in_minutes}} minutes:
+
+{{.reset_token}}{{end}}
+
+If it was not you, nothing has changed and you can ignore this message.`,
+	})
 	return nil
 }
 

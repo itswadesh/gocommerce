@@ -11078,6 +11078,208 @@
           }
         }
       }
+    },
+    "/api/admin/notifications/templates": {
+      "get": {
+        "tags": [
+          "admin:settings"
+        ],
+        "summary": "The wording of what the store sends",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Every message the store can send — the engine's order events and the ones modules add — with its effective subject and body: the operator's wording where one is stored, the default otherwise. Needs store.operate.",
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "email",
+                "sms"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The messages, in registration order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NotifyTemplate"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/notifications/templates/{channel}/{event}": {
+      "put": {
+        "tags": [
+          "admin:settings"
+        ],
+        "summary": "Reword one message",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Stores the operator's subject and body for one message. Both are Go text/template over the event's data and are parsed before they are stored, so a typo is refused here rather than on the next sale. Needs store.operate; audited as notification_template.update.",
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "email",
+                "sms"
+              ]
+            }
+          },
+          {
+            "name": "event",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The event name, e.g. order.shipped."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "body"
+                ],
+                "properties": {
+                  "subject": {
+                    "type": "string",
+                    "description": "Required for email; ignored for SMS."
+                  },
+                  "body": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The message, now customized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/NotifyTemplate"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin:settings"
+        ],
+        "summary": "Restore a message's default wording",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Drops the operator's wording; the default in code stands again. Needs store.operate.",
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "email",
+                "sms"
+              ]
+            }
+          },
+          {
+            "name": "event",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The event name, e.g. order.shipped."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The message, back to its default.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/NotifyTemplate"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -16068,6 +16270,10 @@
             "type": "string",
             "example": "order.created"
           },
+          "title": {
+            "type": "string",
+            "description": "What the event's template calls the message; absent for an event with no wording."
+          },
           "channel": {
             "type": "string",
             "enum": [
@@ -16113,6 +16319,53 @@
             "description": "The row this is a resend of."
           },
           "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NotifyTemplate": {
+        "type": "object",
+        "description": "The wording of one message on one channel: the default from code, or the operator's own.",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "sms"
+            ]
+          },
+          "event": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "description": "What the message is called on the screen."
+          },
+          "description": {
+            "type": "string",
+            "description": "When it goes out."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Go text/template; empty for SMS."
+          },
+          "body": {
+            "type": "string",
+            "description": "Go text/template over the event's flat string data."
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The data keys the event carries, for the editor."
+          },
+          "customized": {
+            "type": "boolean",
+            "description": "Whether a stored row overrides the default."
+          },
+          "updated_at": {
             "type": "string",
             "format": "date-time"
           }

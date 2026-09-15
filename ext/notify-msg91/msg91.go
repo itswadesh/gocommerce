@@ -3,7 +3,12 @@
 // India requires SMS content to be pre-registered as a DLT template, so this
 // module sends a template id and its variables rather than free text — the
 // wording lives in your MSG91 account, which is where the regulator expects
-// to find it.
+// to find it. The engine's SMS templates are therefore not what this module
+// sends; the template id for each event is.
+//
+// The key and the ids come from Config, or — when Config has none — from the
+// "sms-msg91" plugin, which the panel edits under Notifications › Setup SMS.
+// Installed with neither, the module is idle and the settings say so.
 //
 //	app, err := gocommerce.New(cfg,
 //	    msg91.New(msg91.Config{
@@ -19,7 +24,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -32,9 +36,14 @@ import (
 
 const defaultBaseURL = "https://control.msg91.com"
 
-// Config configures the module.
+// PluginKey is the plugin the module registers, where the panel keeps the key
+// and the template ids.
+const PluginKey = "sms-msg91"
+
+// Config configures the module. Every field is optional: what it does not
+// carry, the plugin's settings can.
 type Config struct {
-	// AuthKey is the MSG91 authentication key. Required.
+	// AuthKey is the MSG91 authentication key.
 	AuthKey string
 	// Templates maps an event name to a DLT-approved flow template id. An
 	// event with no template is not sent — which is the usual case, since
@@ -52,6 +61,7 @@ type Config struct {
 // Module is the MSG91 notifier.
 type Module struct {
 	cfg    Config
+	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
 }
@@ -62,17 +72,28 @@ func New(cfg Config) *Module { return &Module{cfg: cfg} }
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "notify-msg91" }
 
+// DisplayName implements gocommerce.Named.
+func (m *Module) DisplayName() string { return "MSG91" }
+
 // Migrations implements gocommerce.Module. Sending SMS owns no state.
 func (m *Module) Migrations() []gocommerce.Migration { return nil }
 
+// eventFields is the plugin field for each event's template id, in the
+// order the Setup SMS screen lists them.
+var eventFields = []struct {
+	event, key, label string
+}{
+	{gocommerce.EventOrderCreated, "template_order_placed", "Order placed"},
+	{gocommerce.EventOrderPaid, "template_payment_received", "Payment received"},
+	{gocommerce.EventOrderShipped, "template_order_shipped", "Order shipped"},
+	{gocommerce.EventOrderDelivered, "template_order_delivered", "Order delivered"},
+	{gocommerce.EventOrderCancelled, "template_order_cancelled", "Order cancelled"},
+	{gocommerce.EventOrderRefunded, "template_refund_issued", "Refund issued"},
+}
+
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
-	if strings.TrimSpace(m.cfg.AuthKey) == "" {
-		return errors.New("msg91: AuthKey is required")
-	}
-	if len(m.cfg.Templates) == 0 {
-		return errors.New("msg91: at least one event Template id is required, or the module would send nothing")
-	}
+	m.app = app
 	if m.cfg.BaseURL == "" {
 		m.cfg.BaseURL = defaultBaseURL
 	}
@@ -82,8 +103,60 @@ func (m *Module) Register(app *gocommerce.App) error {
 	}
 	m.log = app.Log()
 
+	inCode := strings.TrimSpace(m.cfg.AuthKey) != ""
+	fields := []gocommerce.PluginField{
+		{Key: "auth_key", Label: "Auth key", Kind: "secret", Required: !inCode, Help: "From the MSG91 dashboard, under Authkey."},
+		{Key: "country_code", Label: "Default country code", Kind: "text", Default: "91", Help: "Prefixed to a number that has none; MSG91 needs it."},
+	}
+	for _, f := range eventFields {
+		fields = append(fields, gocommerce.PluginField{
+			Key: f.key, Label: f.label + " template ID", Kind: "text",
+			Help: "The DLT-approved flow template for this event. Empty sends nothing for it.",
+		})
+	}
+	app.RegisterPlugin(gocommerce.PluginDef{
+		Key: PluginKey, Title: "MSG91", Category: "notifications", DefaultEnabled: inCode,
+		Description: "Texts shoppers about their orders through MSG91's DLT flow templates. The wording is registered with MSG91; each event below names the template that carries it.",
+		Docs:        "https://docs.msg91.com/sms/send-sms",
+		Fields:      fields,
+	})
 	app.RegisterNotifier(gocommerce.ChannelSMS, m)
 	return nil
+}
+
+func (m *Module) enabled(ctx context.Context) bool {
+	on, err := m.app.Plugins().Enabled(ctx, PluginKey)
+	return err == nil && on
+}
+
+func (m *Module) setting(ctx context.Context, field, fallback string) string {
+	if v := strings.TrimSpace(m.app.Plugins().String(ctx, PluginKey, field)); v != "" {
+		return v
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func (m *Module) authKey(ctx context.Context) string {
+	if !m.enabled(ctx) {
+		return ""
+	}
+	return m.setting(ctx, "auth_key", m.cfg.AuthKey)
+}
+
+func (m *Module) templateID(ctx context.Context, event string) string {
+	for _, f := range eventFields {
+		if f.event == event {
+			return m.setting(ctx, f.key, m.cfg.Templates[event])
+		}
+	}
+	return strings.TrimSpace(m.cfg.Templates[event])
+}
+
+// Configured implements gocommerce.ConfigurableNotifier: switched on, with a
+// key. Which events have a template is a separate question, answered per
+// message.
+func (m *Module) Configured(ctx context.Context) bool {
+	return m.authKey(ctx) != ""
 }
 
 // Notify implements gocommerce.Notifier.
@@ -91,16 +164,16 @@ func (m *Module) Notify(ctx context.Context, n gocommerce.Notification) error {
 	if n.Channel != gocommerce.ChannelSMS || n.To == "" {
 		return nil
 	}
-	templateID, ok := m.cfg.Templates[n.Event]
-	if !ok {
-		// No template registered for this event: nothing to send, and not a
-		// failure. Most stores text about shipping and nothing else.
+	key := m.authKey(ctx)
+	if key == "" {
+		return nil
+	}
+	templateID := m.templateID(ctx, n.Event)
+	if templateID == "" {
 		return nil
 	}
 
-	recipient := map[string]string{"mobiles": m.normalizeNumber(n.To)}
-	// The notification's flat data becomes the template's variables directly,
-	// so adding a variable to a DLT template needs no code change here.
+	recipient := map[string]string{"mobiles": m.normalizeNumber(ctx, n.To)}
 	for k, v := range n.Data {
 		recipient[k] = v
 	}
@@ -109,12 +182,10 @@ func (m *Module) Notify(ctx context.Context, n gocommerce.Notification) error {
 		"template_id": templateID,
 		"recipients":  []map[string]string{recipient},
 	}
-	return m.post(ctx, "/api/v5/flow/", payload)
+	return m.post(ctx, key, "/api/v5/flow/", payload)
 }
 
-// normalizeNumber strips formatting and applies the default country code,
-// because MSG91 rejects a number without one.
-func (m *Module) normalizeNumber(raw string) string {
+func (m *Module) normalizeNumber(ctx context.Context, raw string) string {
 	var digits strings.Builder
 	for _, r := range raw {
 		if r >= '0' && r <= '9' {
@@ -122,19 +193,17 @@ func (m *Module) normalizeNumber(raw string) string {
 		}
 	}
 	number := digits.String()
-	cc := m.cfg.DefaultCountryCode
+	cc := m.setting(ctx, "country_code", m.cfg.DefaultCountryCode)
 	if cc == "" || strings.HasPrefix(number, cc) {
 		return number
 	}
-	// A 10-digit number is a local one that needs the prefix; anything longer
-	// probably already carries a country code of its own.
 	if len(number) == 10 {
 		return cc + number
 	}
 	return number
 }
 
-func (m *Module) post(ctx context.Context, path string, payload any) error {
+func (m *Module) post(ctx context.Context, key, path string, payload any) error {
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -143,7 +212,7 @@ func (m *Module) post(ctx context.Context, path string, payload any) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("authkey", m.cfg.AuthKey)
+	req.Header.Set("authkey", key)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := m.client.Do(req)
@@ -154,8 +223,7 @@ func (m *Module) post(ctx context.Context, path string, payload any) error {
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		// MSG91 answers 200 with {"type":"error"} for some rejections, so the
-		// status code alone is not the whole answer.
+		// MSG91 answers 200 to a rejected message too, with type "error".
 		var result struct {
 			Type    string `json:"type"`
 			Message string `json:"message"`
