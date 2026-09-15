@@ -18,7 +18,6 @@
     import Confirm from "$lib/components/Confirm.svelte";
     import DirtyGuard from "$lib/components/DirtyGuard.svelte";
     import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     let loading = $state(true);
     let me = $state(null);
@@ -285,7 +284,6 @@
             <span class="txt">
                 {#if me}Signed in as {me.email}{/if}
             </span>
-            <ThemeToggle />
         </footer>
     </div>
 </div>

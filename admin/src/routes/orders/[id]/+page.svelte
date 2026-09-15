@@ -48,7 +48,6 @@
     import ReturnDialog from "$lib/components/ReturnDialog.svelte";
     import Select from "$lib/components/Select.svelte";
     import ShipDialog from "$lib/components/ShipDialog.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
     import VariantPicker from "$lib/components/VariantPicker.svelte";
 
     const orderId = $derived(route.params.id);
@@ -1858,7 +1857,6 @@
                         </span>
                     {/if}
                     <div class="flex-fill"></div>
-                    <ThemeToggle />
                 </footer>
             {/if}
         </div>

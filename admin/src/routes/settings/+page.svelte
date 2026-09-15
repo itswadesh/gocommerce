@@ -356,6 +356,18 @@
                     {/if}
 
                     <div class="col-12">
+                        <!-- The one personal preference on a page of store facts. It
+                             used to sit in every screen's footer; a switch flipped
+                             twice a year does not earn thirty copies of itself. -->
+                        <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Appearance</h2>
+                        <div class="flex flex-wrap gap-10 m-b-10" style="align-items: center">
+                            <ThemeToggle />
+                            <span class="txt-hint txt-sm">
+                                Light or dark, for this browser. Until you choose, the panel
+                                follows the system setting.
+                            </span>
+                        </div>
+
                         <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Media</h2>
                         <div class="field-help">
                             {#if settings.mediaUploadsEnabled}
@@ -392,7 +404,6 @@
 
         <footer class="page-footer tw:text-xs tw:text-muted-foreground">
             <span class="txt">GoCommerce {store?.version ?? ""}</span>
-            <ThemeToggle />
         </footer>
     </div>
 </div>

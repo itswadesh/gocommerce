@@ -25,7 +25,6 @@
     import { listState } from "$lib/liststate.svelte.js";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
     import { formatDate } from "$lib/format.js";
 
     const PER_PAGE = 50;
@@ -302,7 +301,6 @@
                     onperpage={(n) => list.set({ limit: n })}
                 />
                 <div class="flex-fill"></div>
-                <ThemeToggle />
             </footer>
         {/if}
     </div>

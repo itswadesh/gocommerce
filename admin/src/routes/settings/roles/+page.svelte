@@ -26,7 +26,6 @@
     import DirtyGuard from "$lib/components/DirtyGuard.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     let loading = $state(true);
     let matrix = $state(null);
@@ -478,7 +477,6 @@
         {/if}
 
         <footer class="page-footer tw:text-xs tw:text-muted-foreground">
-            <ThemeToggle />
         </footer>
     </div>
 </div>

@@ -3807,6 +3807,11 @@ button.media-check {
     color: var(--surfaceTxtColor);
     font-weight: 600;
 }
+/* A section that is open but not itself the screen: named in full colour,
+   like a heading, without the active ground the screen's own row takes. */
+.app-nav-link.open:not(.active) {
+    color: var(--surfaceTxtColor);
+}
 
 /*
  * A link is a 13px row with a tinted icon. At rest the text is the hint grey

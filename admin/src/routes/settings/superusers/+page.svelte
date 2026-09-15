@@ -24,7 +24,6 @@
     import Select from "$lib/components/Select.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
     import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     /*
      * team.read is the sidebar's gate on this screen; team.write is what every
@@ -882,7 +881,6 @@
                         ? " · "
                         : ""}{signedIn} signed in{/if}
             </span>
-            <ThemeToggle />
         </footer>
     </div>
 </div>

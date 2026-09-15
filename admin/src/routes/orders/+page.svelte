@@ -29,7 +29,6 @@
     import OrderPlaced from "$lib/components/OrderPlaced.svelte";
     import VariantPicker from "$lib/components/VariantPicker.svelte";
     import { COUNTRIES } from "$lib/countries.js";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     /* The starting page size, not the only one: it is a listState key below, so
        an operator can change it and the choice rides in the URL with the rest of
@@ -1091,7 +1090,6 @@
                 onperpage={(n) => list.set({ limit: n })}
             />
             <div class="flex-fill"></div>
-            <ThemeToggle />
         </footer>
     </div>
 </div>

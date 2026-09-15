@@ -18,7 +18,6 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     const PER_PAGE = 25;
     const readable = $derived(can("catalog.read"));
@@ -235,7 +234,6 @@
             <footer class="page-footer tw:text-xs tw:text-muted-foreground">
                 <Pager {meta} {loading} noun="review" {perPage} onpage={(n) => list.setPage(n)} onperpage={(n) => list.set({ limit: n })} />
                 <div class="flex-fill"></div>
-                <ThemeToggle />
             </footer>
         {/if}
     </div>

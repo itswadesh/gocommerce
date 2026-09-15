@@ -21,7 +21,6 @@
     import RecordHistory from "$lib/components/RecordHistory.svelte";
     import Select from "$lib/components/Select.svelte";
     import StockHistory from "$lib/components/StockHistory.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
     import { COUNTRIES } from "$lib/countries.js";
 
     const STOCK_PER_PAGE = 25;
@@ -846,7 +845,6 @@
                 {pluralize(totalUnits, "unit")}. Orders are filled from the first one, top to
                 bottom, that can cover the line.
             </span>
-            <ThemeToggle />
         </footer>
     </div>
 </div>

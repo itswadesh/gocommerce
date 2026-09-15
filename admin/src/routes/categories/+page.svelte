@@ -33,7 +33,6 @@
     import CategoryMove from "$lib/components/CategoryMove.svelte";
     import RecordHistory from "$lib/components/RecordHistory.svelte";
     import Pager from "$lib/components/Pager.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     /* A page of matches rather than the default fifty: this is the screen the
        tree belongs to, not a dropdown, so it can afford to show more of an
@@ -1149,7 +1148,6 @@
                     {/if}
                 </span>
             {/if}
-            <ThemeToggle />
         </footer>
     </div>
 </div>

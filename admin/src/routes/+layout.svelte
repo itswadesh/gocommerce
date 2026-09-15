@@ -158,6 +158,23 @@
         return item.exact ? path === item.href : path.startsWith(item.href);
     }
 
+    /* A section unfolds while it or any of its screens is open. Its own row
+       lights up only when it is the screen — when a child is, the child does,
+       and two highlighted rows would say two places at once. The longest
+       matching child wins, so /notifications/email lights Setup Email and
+       not the section, and /shipping/providers lights Providers and not
+       Shipping and delivery. */
+    function childrenOf(item) {
+        return item.children ? allowedNav(item.children) : [];
+    }
+    function activeChild(item) {
+        const kids = childrenOf(item).filter(isActive);
+        return kids.sort((a, b) => b.href.length - a.href.length)[0] ?? null;
+    }
+    function sectionOpen(item) {
+        return isActive(item) || childrenOf(item).some(isActive);
+    }
+
     $effect(() => {
         if (!getToken()) {
             ready = true;
@@ -340,10 +357,12 @@
 {#snippet navLinks()}
     <nav class="app-sidebar-nav">
         {#each visibleNav as item (item.href)}
+            {@const lit = activeChild(item)}
             <a
                 href="{base}{item.href}"
                 class="app-nav-link nav-{item.accent}"
-                class:active={isActive(item)}
+                class:active={isActive(item) && !lit}
+                class:open={sectionOpen(item)}
             >
                 <i class={item.icon} aria-hidden="true"></i>
                 <span class="txt">{item.label}</span>
@@ -356,13 +375,13 @@
             <!-- A section's own screens, shown only while the section is
                  open: the list stays one line per screen the rest of the
                  time, which is what keeps it readable at twenty items. -->
-            {#if item.children && isActive(item)}
+            {#if item.children && sectionOpen(item)}
                 <div class="app-nav-sub">
-                    {#each allowedNav(item.children) as child (child.href)}
+                    {#each childrenOf(item) as child (child.href)}
                         <a
                             href="{base}{child.href}"
                             class="app-nav-sublink"
-                            class:active={isActive(child)}
+                            class:active={lit?.href === child.href}
                         >
                             {child.label}
                         </a>

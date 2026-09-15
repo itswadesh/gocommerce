@@ -28,7 +28,6 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import SortHeader from "$lib/components/SortHeader.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     /* The starting page size, not the only one: `limit` is a listState key, so
        an operator can change it and the choice rides in the URL with the rest of
@@ -462,7 +461,6 @@
                 A cancelled order is still an order but not a sale, and money only counts once it
                 has arrived — so the two figures rarely match.
             </span>
-            <ThemeToggle />
         </footer>
     </div>
 </div>

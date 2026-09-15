@@ -20,7 +20,6 @@
     import RichText from "$lib/components/RichText.svelte";
     import SaveBar from "$lib/components/SaveBar.svelte";
     import Select from "$lib/components/Select.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     const pageId = $derived(route.params.id);
     const readable = $derived(can("catalog.read"));
@@ -374,7 +373,6 @@
                 <footer class="page-footer">
                     <span class="txt txt-hint">Page #{record.id}</span>
                     <div class="flex-fill"></div>
-                    <ThemeToggle />
                 </footer>
             {/if}
         </div>

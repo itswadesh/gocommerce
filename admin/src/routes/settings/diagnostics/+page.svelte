@@ -24,7 +24,6 @@
     import { relativeTime, pluralize } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
 
     /* base.css has exactly these label variants; nothing here invents one. */
@@ -221,7 +220,6 @@
             {#if health.report}
                 <span class="txt">Checked {relativeTime(health.report.at)}</span>
             {/if}
-            <ThemeToggle />
         </footer>
     </div>
 </div>

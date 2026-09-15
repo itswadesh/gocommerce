@@ -7,6 +7,16 @@
  * copies of it is exactly how one of them comes to be missing a screen that
  * shipped six months ago.
  *
+ * The shape is Shopify's: a short list of sections in Shopify's order — Home,
+ * Orders, Products, Customers, Discounts, Content, Settings — each with its
+ * own screens beneath it, shown only while the section is open. Twenty-five
+ * screens in one flat column had stopped reading as a menu; seven sections
+ * that unfold is what an operator who has used Shopify already knows. Two
+ * items are ours rather than Shopify's, and deliberately: Notifications sits
+ * in the main list because the person with a shopper on the phone must find
+ * "did she get it" without opening Settings, and Plugins is Shopify's "Apps"
+ * under the name this store uses for them.
+ *
  * Each entry names the right that makes the screen worth showing. A staff
  * operator has no business on a settings page they would be refused from, and
  * an item that leads only to a 403 is worse than no item. The engine is still
@@ -17,12 +27,15 @@
  * binary was not built with is hidden for the same reason an item leading to a
  * 403 is: the link would lead somewhere that does not exist.
  *
+ * `children` are a section's own screens. Each carries its own right and
+ * module, and is filtered like a top-level item; a section whose own screen is
+ * hidden still shows when any child survives, because the section is the way
+ * to the child. Children have no icon of their own — the section's is theirs.
+ *
  * `accent` is the item's own colour, as the B2B Leads sidebar does it: the icon
  * is always tinted and the active row takes the matching soft ground. The
  * values live in gocommerce.css, so light and dark can differ; here they are
- * only names. Several items deliberately share one — Invoices with Orders,
- * Accounts with Customers — because a second accent would say the two are
- * unrelated things.
+ * only names.
  *
  * `keywords` are for the palette alone: what an operator might type that is not
  * the label. Nothing draws them.
@@ -34,80 +47,11 @@ import { hasModule } from "$lib/modules.svelte.js";
 export const NAV = [
     {
         href: "/",
-        label: "Dashboard",
-        icon: "ri-dashboard-line",
+        label: "Home",
+        icon: "ri-home-5-line",
         exact: true,
         accent: "indigo",
-        keywords: "home overview",
-    },
-    // "How much did we sell" is the second thing an owner opens, so its
-    // answer is on the dashboard now rather than a screen of its own.
-    // /reports still exists for a bookmark; it is just not a nav item.
-    {
-        href: "/products",
-        label: "Products",
-        icon: "ri-price-tag-3-line",
-        right: "catalog.read",
-        accent: "sky",
-        keywords: "catalog catalogue variants sku",
-    },
-    // Sky, with Products: a collection is a way of arranging products, not a
-    // thing of its own.
-    {
-        href: "/collections",
-        label: "Collections",
-        icon: "ri-stack-line",
-        right: "catalog.read",
-        accent: "sky",
-        keywords: "merchandising curated",
-    },
-    {
-        href: "/categories",
-        label: "Categories",
-        icon: "ri-node-tree",
-        right: "catalog.read",
-        accent: "blue",
-        keywords: "taxonomy tree",
-    },
-    // The storefront's menus link the catalogue, so they sit with it.
-    {
-        href: "/menus",
-        label: "Menus",
-        icon: "ri-menu-2-line",
-        right: "catalog.read",
-        module: "navigation",
-        accent: "teal",
-        keywords: "navigation header footer links",
-    },
-    // A page is catalog copy that happens not to carry a price, which is
-    // why it takes catalog.read and sits beside the rest of the catalog.
-    {
-        href: "/cms",
-        label: "Pages",
-        icon: "ri-pages-line",
-        right: "catalog.read",
-        module: "cms",
-        accent: "blue",
-        keywords: "cms content copy",
-    },
-    // Blue, with Pages: both are the catalog's content rather than the goods.
-    // What shoppers said about the catalogue, moderated before it shows.
-    {
-        href: "/reviews",
-        label: "Reviews",
-        icon: "ri-star-line",
-        right: "catalog.read",
-        module: "reviews",
-        accent: "amber",
-        keywords: "ratings moderation",
-    },
-    {
-        href: "/media",
-        label: "Media",
-        icon: "ri-image-2-line",
-        right: "catalog.read",
-        accent: "blue",
-        keywords: "images files photos library uploads",
+        keywords: "dashboard overview sales reports revenue analytics",
     },
     {
         href: "/orders",
@@ -115,42 +59,42 @@ export const NAV = [
         icon: "ri-shopping-bag-3-line",
         right: "orders.read",
         accent: "amber",
-        keywords: "sales fulfilment shipping",
-    },
-    {
-        href: "/invoices",
-        label: "Invoices",
-        icon: "ri-file-list-3-line",
-        right: "orders.read",
-        module: "invoices",
-        accent: "amber",
-        keywords: "billing documents",
-    },
-    {
-        href: "/carts",
-        label: "Carts",
-        icon: "ri-shopping-cart-2-line",
-        right: "orders.read",
-        accent: "fuchsia",
-        keywords: "abandoned baskets",
-    },
-    // What the store told its shoppers, and whether it arrived. Beside Carts
-    // and Orders because that is the conversation it belongs to: an operator
-    // with a shopper on the phone wants the confirmation email's fate next to
-    // the order, not under Settings with the outbox.
-    {
-        href: "/notifications",
-        label: "Notifications",
-        icon: "ri-notification-3-line",
-        right: "orders.read",
-        accent: "amber",
-        keywords: "email sms confirmation sent failed resend",
-        // Where the messages come from and what they say, beneath the log
-        // of what went, as Litekart arranges it. Children render only under
-        // an active parent, and each carries its own right.
+        keywords: "sales fulfilment shipments refunds returns",
         children: [
-            { href: "/notifications/email", label: "Setup Email", right: "store.operate", keywords: "sendgrid provider templates" },
-            { href: "/notifications/sms", label: "Setup SMS", right: "store.operate", keywords: "msg91 provider templates" },
+            // Shopify's word for a basket that never became an order.
+            { href: "/carts", label: "Abandoned checkouts", right: "orders.read", keywords: "carts baskets" },
+            { href: "/invoices", label: "Invoices", right: "orders.read", module: "invoices", keywords: "pdf tax invoice" },
+        ],
+    },
+    {
+        href: "/products",
+        label: "Products",
+        icon: "ri-price-tag-3-line",
+        right: "catalog.read",
+        accent: "sky",
+        keywords: "catalog catalogue variants sku",
+        children: [
+            { href: "/collections", label: "Collections", right: "catalog.read", keywords: "curated lists" },
+            { href: "/categories", label: "Categories", right: "catalog.read", keywords: "taxonomy tree attributes" },
+            { href: "/inventory", label: "Inventory", right: "inventory.read", keywords: "stock levels ledger" },
+            // A price list is a rule about what somebody pays, worked in as
+            // often as a promotion is, not vocabulary configured once.
+            { href: "/pricing", label: "Price lists", right: "discounts.read", keywords: "trade wholesale b2b customer groups quantity breaks tiers" },
+            { href: "/reviews", label: "Reviews", right: "catalog.read", module: "reviews", keywords: "ratings moderation" },
+        ],
+    },
+    {
+        href: "/customers",
+        label: "Customers",
+        icon: "ri-user-3-line",
+        right: "customers.read",
+        accent: "teal",
+        keywords: "buyers shoppers",
+        children: [
+            { href: "/accounts", label: "Accounts", right: "customers.read", module: "identity", keywords: "logins passwords sessions" },
+            // Both are the customers talking: the form and the signup box.
+            { href: "/contact", label: "Contact messages", right: "customers.read", module: "contact", keywords: "inbox enquiries" },
+            { href: "/newsletter", label: "Newsletter", right: "customers.read", module: "newsletter", keywords: "subscribers signups mailing list" },
         ],
     },
     {
@@ -161,111 +105,57 @@ export const NAV = [
         accent: "rose",
         keywords: "codes promotions coupons",
     },
+    // What the store told its shoppers, and whether it arrived. In the main
+    // list rather than under Settings: an operator with a shopper on the
+    // phone wants the confirmation email's fate next to the orders, not
+    // behind a settings page. Beneath it, where the messages come from and
+    // what they say, as Litekart arranges it.
     {
-        // Beside Discounts rather than under Settings, and behind the same
-        // right: a price list is a rule about what somebody pays, worked in as
-        // often as a promotion is, not vocabulary configured once.
-        href: "/pricing",
-        label: "Price lists",
-        icon: "ri-funds-box-line",
-        right: "discounts.read",
+        href: "/notifications",
+        label: "Notifications",
+        icon: "ri-notification-3-line",
+        right: "orders.read",
         accent: "amber",
-        keywords: "trade wholesale b2b customer groups quantity breaks tiers",
+        keywords: "email sms confirmation sent failed resend",
+        children: [
+            { href: "/notifications/email", label: "Setup Email", right: "store.operate", keywords: "sendgrid provider templates" },
+            { href: "/notifications/sms", label: "Setup SMS", right: "store.operate", keywords: "msg91 provider templates" },
+        ],
     },
+    // Shopify's Content: the words and pictures a storefront is made of that
+    // are not products. The section lands on Files, which every store has;
+    // Pages and Menus join when their modules are installed.
     {
-        href: "/taxes",
-        label: "Tax",
-        icon: "ri-percent-line",
-        right: "taxes.read",
-        accent: "violet",
-        keywords: "vat rates",
-    },
-    {
-        href: "/shipping",
-        label: "Shipping",
-        icon: "ri-truck-line",
-        // store.operate rather than a right of its own: core/rights.go is a
-        // closed catalogue, and what a store charges to deliver is the same
-        // kind of decision as the outbox screen behind D49.
-        right: "store.operate",
-        // Violet, the same as Tax, and deliberately: both are money added to an
-        // order that is not the goods, and a second colour would say they are
-        // unrelated.
-        accent: "violet",
-        keywords: "delivery rates zones postage courier",
-    },
-    {
-        href: "/customers",
-        label: "Customers",
-        icon: "ri-user-3-line",
-        right: "customers.read",
-        accent: "teal",
-        keywords: "people buyers email",
-    },
-    // Teal, with Customers: both are people. The two lists overlap without
-    // being the same list, and both screens say so themselves.
-    // Messages from the storefront's form, and the newsletter list: both are
-    // the customers talking, so they sit beside Customers.
-    {
-        href: "/contact",
-        label: "Contact",
-        icon: "ri-mail-open-line",
-        right: "customers.read",
-        module: "contact",
-        accent: "sky",
-        keywords: "messages inbox enquiries",
-    },
-    {
-        href: "/newsletter",
-        label: "Newsletter",
-        icon: "ri-mail-check-line",
-        right: "customers.read",
-        module: "newsletter",
-        accent: "rose",
-        keywords: "subscribers signups mailing list",
-    },
-    {
-        href: "/accounts",
-        label: "Accounts",
-        icon: "ri-account-circle-line",
-        right: "customers.read",
-        module: "identity",
-        accent: "teal",
-        keywords: "sign-in identity logins",
-    },
-    {
-        href: "/inventory",
-        label: "Inventory",
-        icon: "ri-archive-2-line",
-        right: "inventory.read",
-        accent: "emerald",
-        keywords: "stock low levels",
-    },
-    {
-        href: "/locations",
-        label: "Locations",
-        icon: "ri-map-pin-line",
-        right: "locations.read",
-        accent: "cyan",
-        keywords: "warehouse store pickup",
+        href: "/media",
+        label: "Content",
+        icon: "ri-layout-line",
+        right: "catalog.read",
+        accent: "blue",
+        keywords: "media files pages menus cms",
+        children: [
+            { href: "/media", label: "Files", right: "catalog.read", keywords: "media images pictures uploads" },
+            { href: "/cms", label: "Pages", right: "catalog.read", module: "cms", keywords: "content copy about" },
+            { href: "/menus", label: "Menus", right: "catalog.read", module: "navigation", keywords: "navigation header footer links" },
+        ],
     },
     // What this binary can do that is switched on from the panel: storefront
-    // extras, widgets, search, marketing. In the main nav rather than under
-    // Settings because switching a feature on is a thing a store does often
-    // and expects to find at a glance. store.operate, as webhooks are — pasting
-    // an analytics key is operating the store, not selling.
+    // extras, widgets, search, marketing. Shopify's "Apps", under the name
+    // this store uses. store.operate, as webhooks are — pasting an analytics
+    // key is operating the store, not selling.
     {
         href: "/plugins",
         label: "Plugins",
         icon: "ri-puzzle-line",
         right: "store.operate",
         accent: "violet",
-        keywords: "plugins integrations widgets search klaviyo meilisearch feeds sitemap",
+        keywords: "apps plugins integrations widgets search klaviyo meilisearch feeds sitemap",
     },
     // Settings has no right of its own: the section is a shell, and every
     // screen inside it carries its own gate. Hiding the whole section from
     // an operator who may reach one of them is a worse lie than showing a
-    // section with one item in it.
+    // section with one item in it. Its children are the store's rules —
+    // where it ships, what it taxes, where its stock is — which is where
+    // Shopify keeps them too.
     // `health` is a field rather than an href comparison in the template,
     // so the badge's owner is declared beside the link it rides on.
     {
@@ -274,7 +164,13 @@ export const NAV = [
         icon: "ri-settings-3-line",
         accent: "orange",
         health: true,
-        keywords: "store team roles data diagnostics audit",
+        keywords: "store team roles data diagnostics audit webhooks",
+        children: [
+            { href: "/shipping", label: "Shipping and delivery", right: "store.operate", keywords: "zones rates methods" },
+            { href: "/shipping/providers", label: "Shipping providers", right: "store.operate", keywords: "carriers fulfilment delhivery" },
+            { href: "/taxes", label: "Taxes", right: "taxes.read", keywords: "vat gst rates" },
+            { href: "/locations", label: "Locations", right: "locations.read", keywords: "warehouse store pickup" },
+        ],
     },
 ];
 
@@ -290,9 +186,28 @@ export const NAV = [
  * orders.read and customers.read would short-circuit before `hasModule` was
  * ever read, no dependency would be registered, and the module answer arriving
  * would change nothing on screen.
+ *
+ * A section is kept when it is reachable itself or when any of its children
+ * is: the section is the way to the child.
  */
 export function visibleNav(items = NAV) {
-    return items.filter(
-        (item) => (!item.module || hasModule(item.module)) && (!item.right || can(item.right)),
-    );
+    const reachable = (item) => (!item.module || hasModule(item.module)) && (!item.right || can(item.right));
+    return items.filter((item) => reachable(item) || (item.children ?? []).some(reachable));
+}
+
+/**
+ * Every reachable screen, sections and their children in one flat list, for
+ * the palette: "go to Collections" must work whether or not Products is open.
+ * A child borrows its section's icon and accent, since it has none of its own.
+ */
+export function flatNav(items = NAV) {
+    const reachable = (item) => (!item.module || hasModule(item.module)) && (!item.right || can(item.right));
+    const out = [];
+    for (const item of visibleNav(items)) {
+        if (reachable(item)) out.push(item);
+        for (const child of item.children ?? []) {
+            if (reachable(child)) out.push({ ...child, icon: item.icon, accent: item.accent });
+        }
+    }
+    return out;
 }

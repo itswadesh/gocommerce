@@ -20,7 +20,6 @@
     import Drawer from "$lib/components/Drawer.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginSettingsDrawer from "$lib/components/PluginSettingsDrawer.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     /** @type {{ channel: "email" | "sms" }} */
     let { channel } = $props();
@@ -294,7 +293,6 @@
             <footer class="page-footer tw:text-xs tw:text-muted-foreground">
                 <span class="txt txt-hint">What was sent, and whether it went, is under Notifications.</span>
                 <div class="flex-fill"></div>
-                <ThemeToggle />
             </footer>
         {/if}
     </div>

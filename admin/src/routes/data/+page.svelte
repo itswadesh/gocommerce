@@ -8,7 +8,6 @@
     import Confirm from "$lib/components/Confirm.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Select from "$lib/components/Select.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     /*
      * Two rights, two halves, and the engine cuts them apart: the export routes
@@ -772,7 +771,6 @@
 
         <footer class="page-footer tw:text-xs tw:text-muted-foreground">
             <span class="txt">CSV in, CSV out — the same shape both ways</span>
-            <ThemeToggle />
         </footer>
 
         <Confirm

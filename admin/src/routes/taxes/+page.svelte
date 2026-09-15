@@ -30,7 +30,6 @@
     import RecordHistory from "$lib/components/RecordHistory.svelte";
     import Select from "$lib/components/Select.svelte";
     import SortHeader from "$lib/components/SortHeader.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     let loading = $state(true);
     let rates = $state([]);
@@ -781,7 +780,6 @@
             {#if filter && rates.length}
                 <span class="txt-hint">{visible.length} of {rates.length} match</span>
             {/if}
-            <ThemeToggle />
         </footer>
     </div>
 </div>

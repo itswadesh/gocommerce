@@ -20,7 +20,6 @@
     import { toast } from "$lib/toast.svelte.js";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginSettingsDrawer from "$lib/components/PluginSettingsDrawer.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     const allowed = $derived(can("store.operate"));
 
@@ -220,10 +219,6 @@
             </div>
         {/if}
 
-        <footer class="page-footer tw:text-xs tw:text-muted-foreground">
-            <div class="flex-fill"></div>
-            <ThemeToggle />
-        </footer>
     </div>
 </div>
 

@@ -34,7 +34,6 @@
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
     import SettingsSidebar from "$lib/components/SettingsSidebar.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     /* Display only, and a copy of the module's own maxAttempts. The API reports
        what a row has spent, not the budget it was given — "3" alone says
@@ -456,7 +455,6 @@
                         onperpage={(n) => list.set({ limit: n })}
                     />
                     <div class="flex-fill"></div>
-                    <ThemeToggle />
                 </footer>
             {/if}
         </div>

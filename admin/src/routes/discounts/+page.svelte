@@ -37,7 +37,6 @@
     import VariantSearch from "$lib/components/VariantSearch.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
     import { fieldText } from "$lib/fieldtext.js";
 
     /* The starting page size, not the only one: `limit` is a listState key, so
@@ -910,7 +909,6 @@
                 onperpage={(n) => list.set({ limit: n })}
             />
             <div class="flex-fill"></div>
-            <ThemeToggle />
         </footer>
     </div>
 </div>

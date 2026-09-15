@@ -25,7 +25,6 @@
     import Pager from "$lib/components/Pager.svelte";
     import SalesChart from "$lib/components/SalesChart.svelte";
     import Select from "$lib/components/Select.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     /* embedded: rendered inside the dashboard rather than as a page of its
        own — no page chrome, no NoAccess (the dashboard decides what an
@@ -712,7 +711,6 @@
                 Confirmed, partly shipped, shipped and delivered orders placed {windowWords}
                 {#if report}· times in {report.time_zone}{/if}
             </span>
-            <ThemeToggle />
         </footer>
     </div>
 </div>

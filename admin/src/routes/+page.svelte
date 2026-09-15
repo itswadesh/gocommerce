@@ -8,7 +8,6 @@
     } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import ReportsPanel from "$lib/components/ReportsPanel.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     let loading = $state(true);
     let recent = $state([]);
@@ -362,7 +361,6 @@
 
         <footer class="tw:flex tw:items-center tw:justify-between tw:gap-4 tw:border-t tw:pt-4 tw:text-xs tw:text-muted-foreground">
             <span>Live counts, read straight from the API</span>
-            <ThemeToggle />
         </footer>
     </div>
 </div>

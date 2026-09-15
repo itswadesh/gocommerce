@@ -38,7 +38,7 @@
     import { portal } from "$lib/portal.js";
     import { trapFocus } from "$lib/focus.js";
     import { formatMoney } from "$lib/format.js";
-    import { NAV, visibleNav } from "$lib/nav.js";
+    import { NAV, flatNav } from "$lib/nav.js";
 
     let { open = $bindable(false) } = $props();
 
@@ -168,7 +168,7 @@
      */
     const destinations = $derived.by(() => {
         const wanted = trimmed.toLowerCase();
-        return visibleNav(NAV)
+        return flatNav(NAV)
             .filter(
                 (item) =>
                     !wanted ||

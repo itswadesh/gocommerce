@@ -18,7 +18,6 @@
     import MoveStock from "$lib/components/MoveStock.svelte";
     import { findVariants } from "$lib/components/VariantSearch.svelte";
 
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
     const PER_PAGE = 25;
     const DEFAULT_THRESHOLD = 5;
 
@@ -888,7 +887,6 @@
                 {/if}
             </span>
             <div class="flex-fill"></div>
-            <ThemeToggle />
         </footer>
     </div>
 </div>

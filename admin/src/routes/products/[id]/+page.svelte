@@ -46,7 +46,6 @@
     import MediaZone from "$lib/components/MediaZone.svelte";
     import VariantMatrix from "$lib/components/VariantMatrix.svelte";
     import RecordHistory from "$lib/components/RecordHistory.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     const SEO_TITLE_LIMIT = 60;
     const SEO_DESCRIPTION_LIMIT = 155;
@@ -2317,7 +2316,6 @@
                     …
                 {/if}
             </span>
-            <ThemeToggle />
         </footer>
     </div>
 </div>

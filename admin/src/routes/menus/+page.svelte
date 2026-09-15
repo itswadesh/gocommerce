@@ -18,7 +18,6 @@
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Select from "$lib/components/Select.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     const readable = $derived(can("catalog.read"));
     const writable = $derived(can("catalog.write"));
@@ -361,10 +360,6 @@
             </div>
         {/if}
 
-        <footer class="page-footer">
-            <div class="flex-fill"></div>
-            <ThemeToggle />
-        </footer>
     </div>
 </div>
 
