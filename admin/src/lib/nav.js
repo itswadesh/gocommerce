@@ -64,6 +64,10 @@ export const NAV = [
         children: [
             { href: "/carts", label: "Abandoned carts", right: "orders.read", keywords: "checkouts baskets" },
             { href: "/invoices", label: "Invoices", right: "orders.read", module: "invoices", keywords: "pdf tax invoice" },
+            // What each gateway took and what it is owed. Under Orders
+            // because that is the money it counts, and an owner reconciling
+            // a statement is already looking at orders.
+            { href: "/payouts", label: "Payouts", right: "orders.read", keywords: "settlements gateways collected refunded reconcile" },
         ],
     },
     {
@@ -96,6 +100,9 @@ export const NAV = [
             // Both are the customers talking: the form and the signup box.
             { href: "/contact", label: "Contact messages", right: "customers.read", module: "contact", keywords: "inbox enquiries" },
             { href: "/newsletter", label: "Newsletter", right: "customers.read", module: "newsletter", keywords: "subscribers signups mailing list" },
+            // What shoppers wanted and did not buy: the shop's side of it is
+            // a demand signal, which is why it sits with the customers.
+            { href: "/wishlists", label: "Wishlists", right: "customers.read", module: "wishlist", keywords: "saved wanted restock notify" },
         ],
     },
     {
@@ -139,6 +146,7 @@ export const NAV = [
             { href: "/menus", label: "Menus", right: "catalog.read", module: "navigation", keywords: "navigation header footer links" },
             { href: "/feeds", label: "Feeds", right: "store.operate", module: "feeds", keywords: "google merchant meta catalogue feed" },
             { href: "/sitemap", label: "Sitemap", right: "store.operate", module: "sitemaps", keywords: "sitemap.xml search console" },
+            { href: "/faq", label: "FAQ", right: "catalog.read", module: "faq", keywords: "questions answers help support" },
         ],
     },
     // "How much did we sell" has its answer on the dashboard, and the full

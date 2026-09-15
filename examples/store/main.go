@@ -24,6 +24,7 @@ import (
 
 	"github.com/misiki/gocommerce/ext/cms"
 	"github.com/misiki/gocommerce/ext/contact"
+	"github.com/misiki/gocommerce/ext/faq"
 	"github.com/misiki/gocommerce/ext/feeds"
 	delhivery "github.com/misiki/gocommerce/ext/fulfill-delhivery"
 	easyship "github.com/misiki/gocommerce/ext/fulfill-easyship"
@@ -56,6 +57,7 @@ import (
 	"github.com/misiki/gocommerce/ext/reviews"
 	meilisearch "github.com/misiki/gocommerce/ext/search-meilisearch"
 	"github.com/misiki/gocommerce/ext/sitemaps"
+	"github.com/misiki/gocommerce/ext/wishlist"
 )
 
 func main() {
@@ -91,6 +93,8 @@ func main() {
 		reviews.New(reviews.Config{}),
 		contact.New(contact.Config{NotifyEmail: os.Getenv("CONTACT_EMAIL")}),
 		newsletter.New(newsletter.Config{}),
+		faq.New(faq.Config{}),
+		wishlist.New(wishlist.Config{}),
 
 		// The store as tools for an AI agent, at /api/admin/x/mcp. The admin
 		// token is the agent's credential, and every change it makes is

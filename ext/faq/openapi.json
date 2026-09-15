@@ -1,0 +1,144 @@
+{
+  "paths": {
+    "/x/faq": {
+      "get": {
+        "tags": ["faq"],
+        "summary": "The shop's questions and answers",
+        "description": "Published entries only, grouped into the sections the shop named and in the order it arranged them — not alphabetical, which would reorder a page somebody wrote deliberately. `heading` and `blurb` come from the plugin's public settings. 404 while the plugin is off.",
+        "responses": {
+          "200": {
+            "description": "The page.",
+            "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {
+              "heading": {"type": "string"},
+              "blurb": {"type": "string"},
+              "sections": {"type": "array", "items": {"$ref": "#/components/schemas/FAQSection"}}
+            }}}}}}
+          },
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/api/admin/x/faq": {
+      "get": {
+        "tags": ["faq"],
+        "summary": "Every entry, draft and published",
+        "security": [{"adminToken": []}],
+        "description": "The whole list in the order it reads, unpaged: an FAQ is tens of rows, and a page boundary through a hand-made order would hide the shape of it. Needs catalog.read.",
+        "responses": {
+          "200": {
+            "description": "The entries.",
+            "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/FAQEntry"}}}}}}
+          },
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      },
+      "post": {
+        "tags": ["faq"],
+        "summary": "Add a question",
+        "security": [{"adminToken": []}],
+        "description": "Lands last in its section, which is where a new question belongs until somebody moves it. Needs catalog.write.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FAQEntryInput"}}}},
+        "responses": {
+          "201": {"description": "The entry.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/FAQEntry"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      }
+    },
+    "/api/admin/x/faq/order": {
+      "put": {
+        "tags": ["faq"],
+        "summary": "Reorder the whole list",
+        "security": [{"adminToken": []}],
+        "description": "Every entry's id and the section it now belongs to, in the order it should read. The position is counted from the order sent, so the request carries the sequence and never the arithmetic. It must name every entry the store holds: a half-applied order is worse than a refused one. Needs catalog.write.",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"type": "object", "required": ["entries"], "properties": {
+            "entries": {"type": "array", "items": {"type": "object", "required": ["id"], "properties": {
+              "id": {"type": "integer", "format": "int64"},
+              "section": {"type": "string"}
+            }}}
+          }}}}
+        },
+        "responses": {
+          "200": {"description": "The entries, in their new order.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/FAQEntry"}}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      }
+    },
+    "/api/admin/x/faq/{id}": {
+      "patch": {
+        "tags": ["faq"],
+        "summary": "Rewrite an entry",
+        "security": [{"adminToken": []}],
+        "description": "Replaces the question, the answer, the section and whether it is published. Needs catalog.write.",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer", "format": "int64"}}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FAQEntryInput"}}}},
+        "responses": {
+          "200": {"description": "The entry.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/FAQEntry"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      },
+      "delete": {
+        "tags": ["faq"],
+        "summary": "Remove an entry",
+        "security": [{"adminToken": []}],
+        "description": "Gone for good. Unpublishing it instead keeps the wording. Needs catalog.write.",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer", "format": "int64"}}],
+        "responses": {
+          "200": {"description": "Deleted.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"status": {"type": "string"}}}}}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "FAQEntry": {
+        "type": "object",
+        "description": "One question and its answer, as an operator sees it.",
+        "properties": {
+          "id": {"type": "integer", "format": "int64"},
+          "question": {"type": "string"},
+          "answer": {"type": "string"},
+          "section": {"type": "string", "description": "The group it appears under; empty is the ungrouped set, which a storefront shows first."},
+          "position": {"type": "integer", "description": "Its place within its section."},
+          "published": {"type": "boolean", "description": "False is a draft: the storefront does not see it."},
+          "created_at": {"type": "string", "format": "date-time"},
+          "updated_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "FAQEntryInput": {
+        "type": "object",
+        "required": ["question", "answer"],
+        "properties": {
+          "question": {"type": "string", "maxLength": 300},
+          "answer": {"type": "string", "maxLength": 8000},
+          "section": {"type": "string"},
+          "published": {"type": "boolean", "description": "Defaults to true — a question written is usually a question to answer."}
+        }
+      },
+      "FAQSection": {
+        "type": "object",
+        "description": "One group of entries as the storefront reads it.",
+        "properties": {
+          "section": {"type": "string"},
+          "entries": {"type": "array", "items": {"type": "object", "properties": {
+            "id": {"type": "integer", "format": "int64"},
+            "question": {"type": "string"},
+            "answer": {"type": "string"}
+          }}}
+        }
+      }
+    }
+  }
+}

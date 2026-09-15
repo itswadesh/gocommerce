@@ -21,6 +21,7 @@ import (
 	"github.com/misiki/gocommerce/core"
 	"github.com/misiki/gocommerce/ext/cms"
 	"github.com/misiki/gocommerce/ext/contact"
+	"github.com/misiki/gocommerce/ext/faq"
 	"github.com/misiki/gocommerce/ext/feeds"
 	delhivery "github.com/misiki/gocommerce/ext/fulfill-delhivery"
 	easyship "github.com/misiki/gocommerce/ext/fulfill-easyship"
@@ -53,6 +54,7 @@ import (
 	meilisearch "github.com/misiki/gocommerce/ext/search-meilisearch"
 	"github.com/misiki/gocommerce/ext/sitemaps"
 	webhooks "github.com/misiki/gocommerce/ext/webhooks"
+	"github.com/misiki/gocommerce/ext/wishlist"
 )
 
 func main() {
@@ -143,6 +145,8 @@ environment:
 		withCarriers = fs.Bool("carriers", false, "install every carrier module idle — Shiprocket, Delhivery, NimbusPost, India Post, Shippo, ShipStation, Easyship, Shippit, USPS, Onfleet, Veeqo — each switched on and given its keys under Settings › Shipping providers")
 		withInvoices = fs.Bool("invoices", false, "install the invoices module: a numbered invoice per paid order (INVOICES_SELLER_NAME, INVOICES_SELLER_ADDRESS, INVOICES_TAX_ID)")
 		withCMS      = fs.Bool("cms", false, "install the cms module: content pages at /x/cms/pages/{slug}, edited on the Pages screen")
+		withFAQ      = fs.Bool("faq", false, "install the faq module: the shop's questions and answers at /x/faq, edited on the FAQ screen")
+		withWishlist = fs.Bool("wishlist", false, "install the wishlist module: shoppers save products, and the Wishlists screen shows what is wanted most")
 		withAmazon   = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or IMPORT_AMAZON_LLM_URL + IMPORT_AMAZON_LLM_MODEL for a local model rewrite the copy; IMPORT_AMAZON_HEADED=1 shows the browser)")
 	)
 	if err := fs.Parse(args); err != nil {
@@ -281,6 +285,12 @@ environment:
 	}
 	if *withCMS {
 		modules = append(modules, cms.New(cms.Config{}))
+	}
+	if *withFAQ {
+		modules = append(modules, faq.New(faq.Config{}))
+	}
+	if *withWishlist {
+		modules = append(modules, wishlist.New(wishlist.Config{}))
 	}
 	if *withAmazon {
 		modules = append(modules, amazon.New(amazon.Config{

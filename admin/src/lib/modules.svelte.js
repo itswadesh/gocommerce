@@ -58,6 +58,8 @@ const PROBES = {
     reviews: { path: "/api/admin/x/reviews?limit=1", right: "catalog.read" },
     contact: { path: "/api/admin/x/contact/messages?limit=1", right: "customers.read" },
     newsletter: { path: "/api/admin/x/newsletter/subscriptions?limit=1", right: "customers.read" },
+    faq: { path: "/api/admin/x/faq", right: "catalog.read" },
+    wishlist: { path: "/api/admin/x/wishlist/lists?limit=1", right: "customers.read" },
     // Plugin-only modules have no admin routes of their own; the plugin's
     // row is the proof they are installed.
     feeds: { path: "/api/admin/plugins/product-feeds", right: "store.operate" },

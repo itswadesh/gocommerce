@@ -11280,6 +11280,57 @@
           }
         }
       }
+    },
+    "/api/admin/reports/payouts": {
+      "get": {
+        "tags": [
+          "admin:reports"
+        ],
+        "summary": "What each payment method took, and what went back",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Per currency, per payment method: the paid sales it charged, what was refunded on exactly those orders, the net, and what it is still owed. A sale is an order whose stock has left the shelf, the same definition the sales report uses, so the two agree. This is the store's own ledger counted by the day the order was placed — not a settlement statement: the engine does not know when a gateway paid out, what it withheld in fees, or which orders it grouped into one transfer, so the difference from a bank statement is fees and settlement lag. Needs orders.read.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ReportFrom"
+          },
+          {
+            "$ref": "#/components/parameters/ReportTo"
+          },
+          {
+            "$ref": "#/components/parameters/ReportTimeZone"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The window, by method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PayoutsReport"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -16372,6 +16423,89 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "PayoutsReport": {
+        "type": "object",
+        "description": "What each payment method collected, refunded and is owed over a window.",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Inclusive."
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Exclusive."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "The zone the window's edges were cut in."
+          },
+          "currencies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CurrencyPayouts"
+            }
+          }
+        }
+      },
+      "CurrencyPayouts": {
+        "type": "object",
+        "description": "One currency's methods and their sum. Nothing is added across two currencies.",
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "methods": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MethodPayout"
+            }
+          },
+          "totals": {
+            "$ref": "#/components/schemas/MethodPayout"
+          }
+        }
+      },
+      "MethodPayout": {
+        "type": "object",
+        "description": "One payment method's share of the window.",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "What the checkout URL speaks. Empty on the totals row."
+          },
+          "name": {
+            "type": "string"
+          },
+          "installed": {
+            "type": "boolean",
+            "description": "False for a method that took money once and is no longer in this binary. The row still counts — the money was still taken."
+          },
+          "orders": {
+            "type": "integer",
+            "description": "Paid sales charged through it."
+          },
+          "collected": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "refunded": {
+            "$ref": "#/components/schemas/Money",
+            "description": "Refunded on exactly those orders."
+          },
+          "net": {
+            "$ref": "#/components/schemas/Money",
+            "description": "Collected less refunded — the figure to compare with a bank statement."
+          },
+          "outstanding_orders": {
+            "type": "integer"
+          },
+          "outstanding": {
+            "$ref": "#/components/schemas/Money",
+            "description": "Sold and not yet paid. On cash on delivery, money in transit; on a card gateway, usually a failure worth looking at."
           }
         }
       }

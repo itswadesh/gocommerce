@@ -13,6 +13,29 @@ import "net/http"
 func (a *App) mountReportRoutes() {
 	a.HandleAdminFunc("GET /api/admin/reports/sales", a.handleSalesReport, RightOrdersRead)
 	a.HandleAdminFunc("GET /api/admin/reports/top-products", a.handleTopProducts, RightOrdersRead)
+	a.HandleAdminFunc("GET /api/admin/reports/payouts", a.handlePayoutsReport, RightOrdersRead)
+}
+
+func (a *App) handlePayoutsReport(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	query := PayoutsQuery{TimeZone: q.Get("tz")}
+
+	var err error
+	if query.From, err = parseReportBound(q.Get("from")); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	if query.To, err = parseReportBound(q.Get("to")); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+
+	report, err := a.reports.Payouts(r.Context(), query)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, report)
 }
 
 func (a *App) handleSalesReport(w http.ResponseWriter, r *http.Request) {

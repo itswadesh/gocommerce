@@ -38,10 +38,10 @@ var builtinPlugins = []PluginDef{
 		Key: "guest-checkout", Title: "Guest checkout", Category: "storefront", DefaultEnabled: true,
 		Description: "Let a shopper check out without an account. Off, the storefront asks them to sign in first.",
 	},
-	{
-		Key: "wishlist", Title: "Wishlist", Category: "storefront",
-		Description: "A heart on every product, and a page of the ones a shopper saved for later.",
-	},
+	// No "wishlist" here any more. It was a switch with nothing behind it —
+	// core has no table to save a product into — and ext/wishlist now
+	// implements the feature under the same key, so a store that had the
+	// placeholder switched on keeps its switch and gains what it promised.
 	{
 		Key: "recent-purchase-popup", Title: "Recent purchase popup", Category: "marketing",
 		Description: "A small note that somebody just bought something, for the social proof of it.",

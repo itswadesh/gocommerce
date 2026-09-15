@@ -1,0 +1,175 @@
+{
+  "paths": {
+    "/x/wishlist": {
+      "post": {
+        "tags": ["wishlist"],
+        "summary": "Start a wishlist",
+        "description": "Mints a token the storefront keeps, the way a cart token works — a guest saves something before there is an account to save it to. The body is optional; an email may be given now or later. 404 while the plugin is off.",
+        "requestBody": {"required": false, "content": {"application/json": {"schema": {"type": "object", "properties": {"email": {"type": "string", "format": "email"}}}}}},
+        "responses": {
+          "201": {"description": "The new list and its token.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/Wishlist"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/x/wishlist/{token}": {
+      "parameters": [{"name": "token", "in": "path", "required": true, "schema": {"type": "string"}}],
+      "get": {
+        "tags": ["wishlist"],
+        "summary": "One shopper's list",
+        "description": "The saved products, newest first, each with the price and what is available this minute — a wishlist is where \"notify me\" lives, so whether it is in stock is the point. A product deleted since it was saved comes back marked `deleted`.",
+        "responses": {
+          "200": {"description": "The list.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/Wishlist"}}}}}},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      },
+      "patch": {
+        "tags": ["wishlist"],
+        "summary": "Say who this list belongs to",
+        "description": "Sets or clears the email, so the shop can write when something wished for is back in stock. An empty string clears it.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"email": {"type": "string", "format": "email"}}}}}},
+        "responses": {
+          "200": {"description": "The list.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/Wishlist"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/x/wishlist/{token}/items": {
+      "post": {
+        "tags": ["wishlist"],
+        "summary": "Save a product",
+        "description": "A product, and optionally the variant the shopper had chosen. Saving the same thing twice is what somebody does when they forget they already did: it is not an error and not a second row. A list holds at most 200 products.",
+        "parameters": [{"name": "token", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"type": "object", "required": ["product_id"], "properties": {
+            "product_id": {"type": "integer", "format": "int64"},
+            "variant_id": {"type": "integer", "format": "int64", "nullable": true, "description": "Must belong to the product."}
+          }}}}
+        },
+        "responses": {
+          "201": {"description": "The list, with the new item on it.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/Wishlist"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"}
+        }
+      }
+    },
+    "/x/wishlist/{token}/items/{id}": {
+      "delete": {
+        "tags": ["wishlist"],
+        "summary": "Take something off the list",
+        "parameters": [
+          {"name": "token", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "integer", "format": "int64"}}
+        ],
+        "responses": {
+          "200": {"description": "The list, without it.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/Wishlist"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/api/admin/x/wishlist/wanted": {
+      "get": {
+        "tags": ["wishlist"],
+        "summary": "What shoppers want most",
+        "security": [{"adminToken": []}],
+        "description": "Products ranked by how many lists hold them, with what is available and how many of those lists gave an email — which is how many people a restock notice could actually reach. `out_of_stock=1` narrows it to the ones the store has run out of, which is the question this screen exists to answer. Needs customers.read: it is shopper data counted.",
+        "parameters": [
+          {"name": "out_of_stock", "in": "query", "schema": {"type": "string", "enum": ["1"]}},
+          {"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/PageNumber"}, {"$ref": "#/components/parameters/Offset"}
+        ],
+        "responses": {
+          "200": {"description": "The ranking.", "content": {"application/json": {"schema": {"type": "object", "properties": {
+            "data": {"type": "array", "items": {"$ref": "#/components/schemas/WishlistWanted"}},
+            "meta": {"$ref": "#/components/schemas/ListMeta"}
+          }}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      }
+    },
+    "/api/admin/x/wishlist/lists": {
+      "get": {
+        "tags": ["wishlist"],
+        "summary": "The lists themselves",
+        "security": [{"adminToken": []}],
+        "description": "Every list with how much is on it, newest touched first. The token is never returned: it is the shopper's own credential, and a screen that printed it would hand every operator the key to somebody's list. Needs customers.read.",
+        "parameters": [
+          {"name": "q", "in": "query", "schema": {"type": "string"}, "description": "Matches the email."},
+          {"name": "with_email", "in": "query", "schema": {"type": "string", "enum": ["1"]}, "description": "Only the lists the shop could write to."},
+          {"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/PageNumber"}, {"$ref": "#/components/parameters/Offset"}
+        ],
+        "responses": {
+          "200": {"description": "The lists.", "content": {"application/json": {"schema": {"type": "object", "properties": {
+            "data": {"type": "array", "items": {"$ref": "#/components/schemas/WishlistSummary"}},
+            "meta": {"$ref": "#/components/schemas/ListMeta"}
+          }}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Wishlist": {
+        "type": "object",
+        "description": "One shopper's list, as the storefront sees it.",
+        "properties": {
+          "id": {"type": "integer", "format": "int64"},
+          "token": {"type": "string", "description": "The credential the storefront keeps. Never returned to an operator."},
+          "email": {"type": "string"},
+          "items": {"type": "array", "items": {"$ref": "#/components/schemas/WishlistItem"}},
+          "created_at": {"type": "string", "format": "date-time"},
+          "updated_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "WishlistItem": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer", "format": "int64"},
+          "product_id": {"type": "integer", "format": "int64"},
+          "variant_id": {"type": "integer", "format": "int64", "nullable": true},
+          "title": {"type": "string"},
+          "slug": {"type": "string"},
+          "sku": {"type": "string"},
+          "price": {"$ref": "#/components/schemas/Money"},
+          "available": {"type": "integer", "description": "What the store could sell this minute."},
+          "in_stock": {"type": "boolean"},
+          "deleted": {"type": "boolean", "description": "The product has been deleted since it was saved."},
+          "created_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "WishlistWanted": {
+        "type": "object",
+        "description": "One product and how many people want it.",
+        "properties": {
+          "product_id": {"type": "integer", "format": "int64"},
+          "title": {"type": "string"},
+          "slug": {"type": "string"},
+          "status": {"type": "string"},
+          "lists": {"type": "integer", "description": "How many lists hold it."},
+          "waiting": {"type": "integer", "description": "How many of those gave an email."},
+          "available": {"type": "integer"},
+          "in_stock": {"type": "boolean"},
+          "price": {"$ref": "#/components/schemas/Money"}
+        }
+      },
+      "WishlistSummary": {
+        "type": "object",
+        "description": "One list as an operator sees it: no token.",
+        "properties": {
+          "id": {"type": "integer", "format": "int64"},
+          "email": {"type": "string"},
+          "items": {"type": "integer"},
+          "created_at": {"type": "string", "format": "date-time"},
+          "updated_at": {"type": "string", "format": "date-time"}
+        }
+      }
+    }
+  }
+}

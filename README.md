@@ -129,6 +129,8 @@ Every gateway and carrier module installs idle: `-gateways` and `-carriers` put 
 | `reviews` | Product ratings and reviews, verified against the store's own orders, moderated from the panel |
 | `contact` | The storefront's contact form and the inbox behind it |
 | `newsletter` | The storefront's signup box, its list, and its unsubscribe link |
+| `faq` | The questions a shop is asked often, grouped and ordered by hand, served at `/x/faq` |
+| `wishlist` | Shoppers save products; the panel ranks what is wanted most and what of it is out of stock |
 
 A module that ships an admin surface also ships its panel screen: install
 `cms`, `invoices`, `identity` or `mcp` and the screen appears in the
