@@ -11823,7 +11823,7 @@
           "admin:settings"
         ],
         "summary": "Mint an API key",
-        "description": "Requires apikeys.write, which only owner carries by default: a role that can mint a key can mint one carrying more rights than itself. The response is the only time the secret exists outside the holder — it is hashed on the way in and cannot be recovered, so a lost key is revoked and replaced rather than looked up.",
+        "description": "Requires apikeys.write, which only owner carries by default: a role that can mint a key can mint one carrying more rights than itself. The secret comes back here and can be read again later through /api/admin/api-keys/{id}/secret, which is gated the same way.",
         "security": [
           {
             "adminToken": []
@@ -12467,6 +12467,64 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/api-keys/{id}/secret": {
+      "get": {
+        "tags": [
+          "admin:settings"
+        ],
+        "summary": "Read a key back",
+        "description": "Requires apikeys.write rather than apikeys.read: knowing a key exists is a smaller thing than being able to use it, so seeing the credential is a separate and narrower act than opening the list. Every read is logged. A key issued before the engine kept a copy answers 409 saying so, rather than returning a blank.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "secret": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       }

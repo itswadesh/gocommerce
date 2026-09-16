@@ -72,6 +72,18 @@ ORDER BY units DESC`;
         loading = true;
         try {
             saved = await request("GET", "/api/admin/reports/custom");
+            // Open something, so the screen arrives on the work rather than on
+            // a paragraph about the work. The most recently changed report is
+            // the one somebody coming back is most likely after; with none
+            // saved, a blank editor holding the example is more use than an
+            // explanation of what a report is.
+            if (!editing && !sql) {
+                const newest = [...saved].sort((a, b) =>
+                    String(b.updated_at).localeCompare(String(a.updated_at)),
+                )[0];
+                if (newest) open(newest);
+                else if (writable) blank();
+            }
         } catch (err) {
             toast.error(err);
         } finally {
@@ -86,6 +98,12 @@ ORDER BY units DESC`;
         sql = report?.sql ?? "";
         result = null;
         error = "";
+        // A saved report runs on open. Somebody choosing "Orders by status"
+        // wants the orders by status, not a query box with a Run button under
+        // it — and the answer is what gives this screen something to show at
+        // rest. It is a read inside a read-only transaction, so opening one
+        // costs a select and can change nothing.
+        if (report?.id) run();
     }
 
     function blank() {
@@ -249,18 +267,13 @@ ORDER BY units DESC`;
                 <!-- The query and what it returned. -->
                 <section class="card feed-card rpt-work">
                     {#if !editing && !sql}
-                        <h2 class="feed-card-title">Pick a report, or write one</h2>
-                        <p class="txt-hint txt-sm feed-card-sub">
-                            {#if writable}
-                                A report is a single SELECT. It runs inside a read-only transaction
-                                with a fifteen-second limit, so it cannot change anything — but it
-                                can read any table in this store, which is why saving one is a
-                                decision about what everybody who can read reports may see.
-                            {:else}
-                                Choose one on the left to run it. Writing a new one needs
-                                reports.write, which is an owner's.
-                            {/if}
-                        </p>
+                        <div class="wh-empty">
+                            <i class="ri-terminal-box-line" aria-hidden="true"></i>
+                            <p>
+                                Nothing saved yet, and writing one needs reports.write — an
+                                owner's. Anything they save here, you will be able to run.
+                            </p>
+                        </div>
                     {:else}
                         <div class="rpt-fields">
                             <div class="field">
@@ -291,15 +304,17 @@ ORDER BY units DESC`;
                             <textarea
                                 id="rpt-sql"
                                 class="txt-code rpt-sql"
-                                rows="12"
+                                rows="8"
                                 spellcheck="false"
                                 readonly={!writable}
                                 bind:value={sql}
                             ></textarea>
                         </div>
                         <div class="field-help">
-                            SELECT only, one statement. It can read every table, so treat a saved
-                            report as something you have published.
+                            SELECT only, one statement, inside a read-only transaction with a
+                            fifteen-second limit — it cannot change anything. It <em>can</em> read
+                            every table in this store, so treat a saved report as something you
+                            have published to everybody who can read reports.
                         </div>
 
                         <div class="feed-form-actions">

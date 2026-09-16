@@ -250,15 +250,37 @@
                     </div>
                 {/if}
 
-                <div class="wrapper m-b-base">
-                    <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Endpoints</h2>
+                <section class="card feed-card">
+                    <div class="feed-card-head">
+                        <div>
+                            <h2 class="feed-card-title">Endpoints</h2>
+                            <p class="txt-hint txt-sm feed-card-sub">
+                                Where this store POSTs the events an endpoint names. Each delivery is
+                                signed, and a failed one is retried on a backoff until it is
+                                delivered or given up on.
+                            </p>
+                        </div>
+                    </div>
 
                     {#if loading && !endpoints.length}
                         <div class="block txt-center p-base"><span class="loader"></span></div>
                     {:else if !endpoints.length}
-                        <div class="block txt-center p-base txt-hint">
-                            No endpoint yet. Add one and every event it names will be POSTed to it,
-                            signed, with retries.
+                        <!-- The empty state carries the action. The Add button
+                             is in the page header, which is where somebody who
+                             has used the screen looks and not where somebody
+                             reading "no endpoint yet" does. -->
+                        <div class="wh-empty">
+                            <i class="ri-send-plane-line" aria-hidden="true"></i>
+                            <p>
+                                No endpoint yet. Add one and every event it names will be POSTed to
+                                it, signed, with retries.
+                            </p>
+                            {#if writable}
+                                <button type="button" class="btn sm" onclick={() => (addOpen = true)}>
+                                    <i class="ri-add-line" aria-hidden="true"></i>
+                                    <span class="txt">Add endpoint</span>
+                                </button>
+                            {/if}
                         </div>
                     {:else}
                         <div class="table-scroll">
@@ -348,12 +370,25 @@
                             </table>
                         </div>
                     {/if}
-                </div>
+                </section>
 
-                <div class="wrapper">
-                    <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Deliveries</h2>
+                <section class="card feed-card">
+                    <div class="feed-card-head">
+                        <div>
+                            <h2 class="feed-card-title">Deliveries</h2>
+                            <p class="txt-hint txt-sm feed-card-sub">
+                                Every attempt, with the answer it got. "Still trying" is the one to
+                                watch: those are events the other end has not accepted yet.
+                            </p>
+                        </div>
+                    </div>
 
-                    <div class="fields m-b-sm">
+                    <!-- Sized to their content rather than to the column. Two
+                         dropdowns holding "Still trying" and an endpoint name
+                         do not need four hundred pixels each, and at that width
+                         they read as the subject of the screen instead of as a
+                         filter on it. -->
+                    <div class="wh-filters">
                         <div class="field">
                             <Select
                                 id="delivery-state"
@@ -382,8 +417,13 @@
                     {#if loading && !deliveries.length}
                         <div class="block txt-center p-base"><span class="loader"></span></div>
                     {:else if !deliveries.length}
-                        <div class="block txt-center p-base txt-hint">
-                            Nothing here. With the filter on “Still trying”, that is the good answer.
+                        <div class="wh-empty">
+                            <i class="ri-check-line" aria-hidden="true"></i>
+                            <p>
+                                {list.params.state === "pending"
+                                    ? "Nothing still trying. That is the answer you want."
+                                    : "No deliveries match this filter."}
+                            </p>
                         </div>
                     {:else}
                         <div class="table-scroll">
@@ -440,7 +480,7 @@
                             </table>
                         </div>
                     {/if}
-                </div>
+                </section>
 
                 <footer class="page-footer tw:text-xs tw:text-muted-foreground">
                     <Pager

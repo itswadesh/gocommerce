@@ -9,12 +9,18 @@
      * hand out: a key for a shipping partner that reads orders and cannot
      * refund them.
      *
-     * The screen is built around the one fact that shapes everything else: the
-     * secret exists once. It is shown on the row it was made on, with a copy
-     * button and a warning, and it is gone on the next load — because the
-     * engine hashed it and never kept it. Pretending otherwise with a "reveal"
-     * button would be a lie the first operator to press it discovers at the
-     * worst moment.
+     * The key can be copied at any time, not only on the load it was made on.
+     * It was hashed and thrown away at first, which is what GitHub and Stripe
+     * do and is the stricter thing — but it was also stricter than anything
+     * else in this engine, where a live Stripe key and every other plugin
+     * credential are stored and merely masked. It bought a property the rest
+     * of the system does not have and cost an operator their key the moment
+     * they navigated away.
+     *
+     * Reading one is still a deliberate act rather than a side effect of
+     * opening the screen: the listing carries nothing usable, and Copy fetches
+     * the secret through a route gated on apikeys.write and logged. Knowing a
+     * key exists and being able to use it are different things.
      */
     import { can, request } from "$lib/api.js";
     import { formatDate } from "$lib/format.js";
@@ -30,6 +36,7 @@
     let loading = $state(true);
     let creating = $state(false);
     let revoking = $state(null);
+    let copying = $state(null);
     let confirmKey = $state(null);
     let confirmOpen = $state(false);
 
@@ -95,6 +102,20 @@
         }
     }
 
+    /* Fetched on the click rather than held in the page: a secret that is in
+       the DOM from load is one that is in every screenshot of this screen. */
+    async function copyKey(key) {
+        copying = key.id;
+        try {
+            const out = await request("GET", `/api/admin/api-keys/${key.id}/secret`);
+            await copy(out.secret);
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            copying = null;
+        }
+    }
+
     async function copy(text) {
         try {
             await navigator.clipboard.writeText(text);
@@ -131,11 +152,11 @@
             <!-- The secret, on the one load it exists. -->
             {#if minted}
                 <section class="card feed-card key-minted">
-                    <h2 class="feed-card-title">Copy this now</h2>
+                    <h2 class="feed-card-title">{minted.name} is ready</h2>
                     <p class="txt-hint txt-sm feed-card-sub">
-                        This is the only time <strong>{minted.name}</strong> can be read. The engine
-                        stored a hash of it and cannot show it again — if it is lost, revoke the key
-                        and make another.
+                        Copy it into whatever is going to use it. You can come back for it later —
+                        Copy on its row fetches it again — but anything holding a key it cannot use
+                        is a call somebody makes at three in the morning.
                     </p>
                     <div class="key-secret">
                         <code class="txt-code">{minted.secret}</code>
@@ -177,8 +198,8 @@
                                 bind:value={name}
                             />
                             <div class="field-help">
-                                It is how you will recognise the key later; the secret is not
-                                recoverable and this is all the list can show.
+                                It is how you will recognise the key in the list, and in the log
+                                line written whenever somebody copies it.
                             </div>
                         </div>
                         <div class="field">
@@ -236,7 +257,20 @@
                                 <div class="txt-code key-prefix">{k.prefix}…</div>
                                 <div><span class="label">{k.role}</span></div>
                                 <div class="txt-hint txt-sm">{lastSeen(k)}</div>
-                                <div class="txt-right">
+                                <div class="txt-right key-actions">
+                                    {#if writable}
+                                        <button
+                                            type="button"
+                                            class="btn sm transparent secondary"
+                                            class:loading={copying === k.id}
+                                            disabled={copying === k.id}
+                                            title="Copy {k.name} to the clipboard"
+                                            onclick={() => copyKey(k)}
+                                        >
+                                            <i class="ri-file-copy-line" aria-hidden="true"></i>
+                                            <span class="txt">Copy</span>
+                                        </button>
+                                    {/if}
                                     {#if writable && !k.revoked_at}
                                         <button
                                             type="button"

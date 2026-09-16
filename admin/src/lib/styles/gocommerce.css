@@ -6103,6 +6103,13 @@ kbd + kbd {
 .shopify-skin .key-prefix {
     color: var(--surfaceTxtHintColor);
 }
+/* Two buttons on a row need a gap, and the row is right-aligned so they end
+   where the eye already is after reading across. */
+.shopify-skin .key-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 4px;
+}
 /* A revoked key is a record, not an option: it stays legible and stops
    competing with the keys that still work. */
 .shopify-skin .key-row.is-revoked {
@@ -6143,9 +6150,27 @@ kbd + kbd {
 }
 /* minmax(0, 1fr) above and min-width here: without both, a wide result table
    pushes the grid rather than scrolling inside its own box, and the whole page
-   gains a horizontal scrollbar. */
+   gains a horizontal scrollbar.
+
+   The screen stops looking unfinished because a saved report runs when it is
+   opened, so the result fills the card. A min-height here did the opposite:
+   it moved the empty space inside the card, where it reads as a broken panel
+   rather than as a short page. */
 .shopify-skin .rpt-work {
     min-width: 0;
+}
+/* Both cards start at the same line. They are grid siblings with different
+   content, and align-items: start alone left the taller one sixteen pixels
+   lower where the eye reads it as a mistake. */
+.shopify-skin .rpt-layout > .card {
+    align-self: start;
+    margin-top: 0;
+}
+
+/* A saved report has to look pressable at rest, not only under the cursor: a
+   list of plain text with a hover state is a list nobody tries to click. */
+.shopify-skin .rpt-saved li + li {
+    margin-top: 2px;
 }
 
 .shopify-skin .rpt-saved {
@@ -6166,7 +6191,7 @@ kbd + kbd {
     width: 100%;
     min-width: 0;
     padding: 8px 10px;
-    border: 0;
+    border: 1px solid var(--surfaceAlt2Color);
     border-radius: var(--borderRadius);
     background: none;
     font: inherit;
@@ -6271,6 +6296,61 @@ kbd + kbd {
     .shopify-skin .rpt-del {
         opacity: 1;
     }
+}
+
+/* -------------------------------------------------------------- webhooks */
+
+/*
+ * The webhooks screen was the last one still laid out in `.wrapper` — the
+ * 840px centred reading column, which is right for a page of prose and wrong
+ * for two tables. On a wide window the content sat in the middle with a
+ * hundred and sixty pixels of nothing either side, and the two delivery
+ * filters stretched to fill half of it each. It uses the card vocabulary the
+ * other settings screens use instead.
+ */
+
+/* Filters sized to what they hold. A dropdown containing "Still trying" does
+   not need four hundred pixels, and at that width it reads as the subject of
+   the screen rather than as a filter on it. */
+.shopify-skin .wh-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: var(--smSpacing) 0;
+}
+.shopify-skin .wh-filters .field {
+    flex: 0 1 220px;
+    margin: 0;
+}
+
+/*
+ * An empty state with an anchor.
+ *
+ * A line of centred grey text floating on the page background says "something
+ * is missing" without saying whether it is the data or the screen. A bordered
+ * box with an icon says the screen is fine and there is nothing in it yet,
+ * which is the distinction somebody arriving at an empty Webhooks page is
+ * actually trying to make.
+ */
+.shopify-skin .wh-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin-top: var(--smSpacing);
+    padding: var(--spacing);
+    border: 1px dashed var(--surfaceAlt3Color);
+    border-radius: var(--borderRadius);
+    text-align: center;
+    color: var(--surfaceTxtHintColor);
+}
+.shopify-skin .wh-empty i {
+    font-size: 1.6rem;
+    color: var(--surfaceTxtDisabledColor);
+}
+.shopify-skin .wh-empty p {
+    margin: 0;
+    max-width: 60ch;
 }
 
 /* --------- @media print — KEEP LAST ---------

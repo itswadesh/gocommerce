@@ -319,15 +319,27 @@ says what acted without inventing somebody who did.
 ```
 POST   /api/admin/api-keys      apikeys.write   mints one, returns the secret ONCE
 GET    /api/admin/api-keys      apikeys.read    every key, revoked ones last
+GET    /api/admin/api-keys/{id}/secret
+                                apikeys.write   the key itself, logged
 DELETE /api/admin/api-keys/{id} apikeys.write   revokes, keeping the row
 ```
 
-- **The secret is not stored.** A key is `gck_<prefix>_<secret>`; the prefix is
-  kept in plain text and indexed so a presented key resolves in one lookup and
-  the panel can say which key is which, and a SHA-256 of the whole string is
-  kept beside it. SHA-256 rather than bcrypt because this is machine-generated
+- **A key is `gck_<prefix>_<secret>`.** The prefix is kept in plain text and
+  indexed so a presented key resolves in one lookup and the panel can say which
+  key is which; a SHA-256 of the whole string is kept beside it and is what
+  authenticates. SHA-256 rather than bcrypt because this is machine-generated
   randomness with no dictionary to slow down, and it is checked on every
-  request. A lost key is revoked and replaced; there is nothing to look up.
+  request.
+- **The key itself is kept too** (M46), so it can be copied again later.
+  M44 hashed it and threw it away, which is what GitHub and Stripe do and is
+  the stricter thing — and also stricter than anything else here, since a live
+  Stripe key and every other plugin credential are stored recoverably in
+  `plugins` and merely masked on the way out. It bought a property the rest of
+  the system does not have and cost an operator their key the moment they
+  navigated away. Reading it is `GET /api/admin/api-keys/{id}/secret`, gated on
+  `apikeys.write` rather than `apikeys.read` — knowing a key exists is smaller
+  than being able to use it — and every read is logged. Keys issued before M46
+  have nothing stored and answer 409 saying so.
 - **Only owner may mint.** `apikeys.write` is deliberately not manager's: a role
   that can mint a key can mint one carrying more rights than itself, so granting
   it to manager would quietly be granting manager everything.

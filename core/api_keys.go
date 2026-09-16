@@ -117,10 +117,10 @@ func (k *APIKeys) Create(ctx context.Context, in APIKeyInput, by *Superuser) (*A
 	}
 	var out APIKey
 	err = k.app.db.QueryRowContext(ctx, `
-		INSERT INTO api_keys (name, prefix, token_hash, role, created_by)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO api_keys (name, prefix, token_hash, secret, role, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, name, prefix, role, created_at, created_by`,
-		name, prefix, hashAPIKey(presented), role, createdBy,
+		name, prefix, hashAPIKey(presented), presented, role, createdBy,
 	).Scan(&out.ID, &out.Name, &out.Prefix, &out.Role, &out.CreatedAt, &out.CreatedBy)
 	if err != nil {
 		return nil, "", Internalf(err, "save the key")
@@ -182,6 +182,33 @@ func (k *APIKeys) Revoke(ctx context.Context, id int64, by *Superuser) error {
 	}
 	k.app.log.Info("api key revoked", "id", id)
 	return nil
+}
+
+// Secret returns the key itself, for an operator who needs it again.
+//
+// A separate call rather than a field on the listing, and behind
+// apikeys.write rather than apikeys.read: opening the screen should not put a
+// credential on it, and knowing a key exists is a smaller thing than being
+// able to use it. Every read is logged, because "who took a copy of this" is a
+// question somebody asks after an incident.
+//
+// A key issued before M46 has nothing stored and says so, rather than
+// returning an empty string the screen would render as a blank box.
+func (k *APIKeys) Secret(ctx context.Context, id int64) (string, error) {
+	var secret, name string
+	err := k.app.db.QueryRowContext(ctx,
+		`SELECT secret, name FROM api_keys WHERE id = $1`, id).Scan(&secret, &name)
+	if err == sql.ErrNoRows {
+		return "", NotFoundf("no such API key")
+	}
+	if err != nil {
+		return "", Internalf(err, "read the key")
+	}
+	if secret == "" {
+		return "", Conflictf("this key was issued before the engine kept a copy, so it cannot be shown again; revoke it and make another")
+	}
+	k.app.log.Info("api key secret read", "id", id, "name", name)
+	return secret, nil
 }
 
 // Resolve authenticates a presented key.
@@ -308,6 +335,9 @@ func (a *App) mountAPIKeyRoutes() {
 	a.HandleAdminFunc("GET /api/admin/api-keys", a.handleListAPIKeys, RightAPIKeysRead)
 	a.HandleAdminFunc("POST /api/admin/api-keys", a.handleCreateAPIKey, RightAPIKeysWrite)
 	a.HandleAdminFunc("DELETE /api/admin/api-keys/{id}", a.handleRevokeAPIKey, RightAPIKeysWrite)
+	// apikeys.write, not apikeys.read: seeing the credential is a different act
+	// from knowing the key exists.
+	a.HandleAdminFunc("GET /api/admin/api-keys/{id}/secret", a.handleReadAPIKeySecret, RightAPIKeysWrite)
 }
 
 func (a *App) handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
@@ -339,6 +369,22 @@ func (a *App) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	Respond(w, http.StatusCreated, createdAPIKey{APIKey: key, Secret: secret})
+}
+
+func (a *App) handleReadAPIKeySecret(w http.ResponseWriter, r *http.Request) {
+	id, err := pathInt64(r, "id")
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	secret, err := a.apiKeys.Secret(r.Context(), id)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, struct {
+		Secret string `json:"secret"`
+	}{Secret: secret})
 }
 
 func (a *App) handleRevokeAPIKey(w http.ResponseWriter, r *http.Request) {

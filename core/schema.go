@@ -54,6 +54,7 @@ func coreMigrations() []Migration {
 		{ID: "0043_store_clock", SQL: migration0043StoreClock},
 		{ID: "0044_api_keys", SQL: migration0044APIKeys},
 		{ID: "0045_custom_reports", SQL: migration0045CustomReports},
+		{ID: "0046_api_key_secret", SQL: migration0046APIKeySecret},
 	}
 }
 
@@ -2148,4 +2149,26 @@ CREATE TABLE custom_reports (
     created_by  bigint      REFERENCES superusers (id) ON DELETE SET NULL,
     updated_by  bigint      REFERENCES superusers (id) ON DELETE SET NULL
 );
+`
+
+// M46 — keep the key, not only its hash.
+//
+// M44 hashed the secret and threw it away, which is what GitHub and Stripe
+// do and is the stricter thing. It was also stricter than anything else in
+// this engine: a live Stripe secret key, a SendGrid key and every other
+// plugin credential are stored recoverably in `plugins` and merely masked on
+// the way out. So hashing this one bought a property the rest of the system
+// does not have, while costing an operator their key the moment they
+// navigated away from the screen that made it.
+//
+// token_hash stays and is still what authenticates. This column is only for
+// showing the operator the key again, behind apikeys.write — knowing a key
+// exists and seeing the credential are different acts, and only the second
+// one is owner-shaped.
+//
+// Keys issued before this ran have ” here and cannot be recovered, which is
+// the truth about them; the screen says so rather than showing a blank box.
+const migration0046APIKeySecret = `
+ALTER TABLE api_keys
+    ADD COLUMN secret text NOT NULL DEFAULT '';
 `
