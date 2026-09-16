@@ -120,6 +120,81 @@ export const settings = {
 };
 
 /**
+ * The shop's own details: what it is called, where it is, and which clock it
+ * keeps. A second reactive holder beside `settings` rather than a field on it,
+ * because the two answer different questions — settings are what the binary was
+ * started with and cannot change, this is what the store has said about itself
+ * and changes on a form.
+ *
+ * `GET /api/admin/store` carries no right, for the reason the route says: a
+ * shop's own address is not a secret from its own staff, and several screens
+ * want it.
+ */
+const pf = $state({ data: {}, loaded: false, loading: false, error: null });
+let profileInflight = null;
+
+export const profile = {
+    /** What a customer calls the shop. */
+    get name() {
+        return pf.data.name || "";
+    },
+    /**
+     * The clock the shop keeps, as an IANA name, or "" when it has said none.
+     *
+     * A caller falls back to the reader's own zone rather than to UTC: a store
+     * that has not answered is better served by the reader's today than by a
+     * clock neither of them keeps.
+     */
+    get timezone() {
+        return pf.data.timezone || "";
+    },
+    /** Which language a customer is written to in by default, or "". */
+    get language() {
+        return pf.data.language || "";
+    },
+    get all() {
+        return pf.data;
+    },
+    get loaded() {
+        return pf.loaded;
+    },
+};
+
+/** loadProfile fetches the profile and never throws, for loadSettings' reason. */
+export async function loadProfile({ force = false } = {}) {
+    if (profileInflight) return profileInflight;
+    if (pf.loaded && !force) return pf.data;
+
+    pf.loading = true;
+    profileInflight = (async () => {
+        try {
+            pf.data = (await api.get("/api/admin/store")) ?? {};
+            pf.loaded = true;
+            pf.error = null;
+        } catch (err) {
+            pf.error = err;
+        } finally {
+            pf.loading = false;
+            profileInflight = null;
+        }
+        return pf.data;
+    })();
+    return profileInflight;
+}
+
+/** The idempotent form, safe from any screen's mount effect. */
+export function ensureProfile() {
+    return loadProfile();
+}
+
+/** Called by the shell on sign-out, for clearSettings' reason. */
+export function clearProfile() {
+    pf.data = {};
+    pf.loaded = false;
+    pf.error = null;
+}
+
+/**
  * loadSettings fetches the settings and never throws.
  *
  * It swallows the failure on purpose: this call is made on behalf of the shell,

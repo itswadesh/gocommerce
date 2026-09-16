@@ -64,7 +64,10 @@ func (m *Module) Register(app *gocommerce.App) error {
 		DefaultEnabled: m.cfg.StorefrontURL != "",
 		Docs:           "https://www.sitemaps.org/protocol.html",
 		Fields: []gocommerce.PluginField{
-			{Key: "storefront_url", Label: "Storefront URL", Kind: "url", Required: m.cfg.StorefrontURL == "", Public: true, Help: "https://shop.example"},
+			// No Help: it was a bare example URL, which sat under the real one an
+			// operator had already typed and read as a second, contradictory
+			// address. The label and the url kind say what the box takes.
+			{Key: "storefront_url", Label: "Storefront URL", Kind: "url", Required: m.cfg.StorefrontURL == "", Public: true},
 			{Key: "product_path", Label: "Product page path", Kind: "text", Default: "/products/{slug}"},
 			{Key: "collection_path", Label: "Collection page path", Kind: "text", Default: "/collections/{slug}"},
 			{Key: "page_path", Label: "Content page path", Kind: "text", Default: "/pages/{slug}"},

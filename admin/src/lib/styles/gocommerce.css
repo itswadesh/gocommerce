@@ -5565,7 +5565,11 @@ kbd + kbd {
     font-size: 1.3rem;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
-    color: var(--warningColor);
+    /* The warning hue is built to sit under white text on a button, so as text
+       on a card it measured 3.03:1. Mixed towards the ink — the colour that is
+       by definition readable on this ground — it keeps the hue and clears AA
+       in both themes. */
+    color: color-mix(in srgb, var(--warningColor), var(--surfaceTxtColor) 40%);
 }
 .shopify-skin .feed-health-clear {
     display: flex;
@@ -5628,7 +5632,7 @@ kbd + kbd {
 .shopify-skin .feed-link-url {
     min-width: 0;
     overflow-wrap: anywhere;
-    color: var(--primaryColor);
+    color: var(--gcLinkColor);
 }
 .shopify-skin .feed-link-actions {
     display: flex;
@@ -5661,10 +5665,10 @@ kbd + kbd {
 }
 .shopify-skin .feed-tab.on {
     color: var(--surfaceTxtColor);
-    border-bottom-color: var(--primaryColor);
+    border-bottom-color: var(--gcLinkColor);
 }
 .shopify-skin .feed-tab:focus-visible {
-    outline: 2px solid var(--primaryColor);
+    outline: 2px solid var(--gcLinkColor);
     outline-offset: -2px;
 }
 
@@ -5713,8 +5717,11 @@ kbd + kbd {
     font-size: var(--smFontSize);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
-    color: #fff;
-    background: var(--warningColor);
+    /* White on the warning hue is 3.03:1. The pair the "all clear" line uses
+       reads properly and says the same thing: a pale ground of the hue, with
+       the theme's own ink on it. */
+    color: var(--surfaceTxtColor);
+    background: var(--surfaceWarningColor);
 }
 .shopify-skin .feed-reject-count.none {
     color: var(--surfaceTxtHintColor);
@@ -5977,7 +5984,7 @@ kbd + kbd {
 .shopify-skin .map-url a {
     min-width: 0;
     overflow-wrap: anywhere;
-    color: var(--primaryColor);
+    color: var(--gcLinkColor);
 }
 /* The copy button only appears on hover or focus: five of them down the
    column is five buttons competing with the addresses they belong to. */
@@ -6206,7 +6213,7 @@ kbd + kbd {
     background: var(--surfaceAlt2Color);
 }
 .shopify-skin .rpt-saved-item:focus-visible {
-    outline: 2px solid var(--primaryColor);
+    outline: 2px solid var(--gcLinkColor);
     outline-offset: -2px;
 }
 /* The delete button is quiet until the row is wanted: a column of bins down a
@@ -6351,6 +6358,91 @@ kbd + kbd {
 .shopify-skin .wh-empty p {
     margin: 0;
     max-width: 60ch;
+}
+
+/* ------------------------------------------------- dashboard density */
+
+/*
+ * The sales chart is shorter on the dashboard than it was at /reports.
+ *
+ * It is the only place it renders now, and there it is one band of six rather
+ * than the subject of the page. A hundred and eighty pixels of bars was the
+ * right call when the chart WAS the screen; on a dashboard it pushed the
+ * best-seller table — the thing an owner scrolls for — off the bottom of a
+ * 1100px window. The bars keep their proportions to each other, which is the
+ * only thing the chart is read for.
+ */
+.shopify-skin .reports-embedded .report-chart {
+    height: 140px;
+    padding: 10px var(--smSpacing);
+}
+/* The legend and the axis are one line each and were carrying a full spacing
+   step above and below. */
+.shopify-skin .reports-embedded .report-legend {
+    margin-bottom: 6px;
+}
+.shopify-skin .reports-embedded .report-axis {
+    margin-top: 2px;
+}
+
+/* ------------------------------------------------------------- links */
+
+/*
+ * A link colour, because the panel had none.
+ *
+ * base.css says `a { color: inherit }`, so every link here takes the colour of
+ * the text around it and anything wanting a link had to pick a token. The
+ * nearest-looking ones are both wrong in dark: --primaryColor is #121212, the
+ * colour of a button, and --accentColor stays #1055c9 in both themes, which is
+ * about 2:1 on a dark card. The sitemap's addresses were painted with the
+ * first and came out at 1.16:1 — near-black on dark grey, invisible.
+ *
+ * Taking the accent unchanged is not enough either: this repository's dev
+ * store has an olive accent, #89a24c, which is 2.86:1 on white. So the link is
+ * the accent mixed towards --surfaceTxtColor — the token that is by definition
+ * readable on --surfaceColor — which means the mix always moves towards the
+ * legible end of whichever theme is on, whatever hue the store picked. One
+ * declaration covers both themes because the token it mixes with flips.
+ */
+:root,
+[data-color-scheme="dark"] {
+    --gcLinkColor: color-mix(in srgb, var(--accentColor), var(--surfaceTxtColor) 45%);
+}
+
+/*
+ * The required-field asterisk, which is PocketBase's .txt-danger and therefore
+ * --dangerColor: #bb303e in dark, 2.5:1 on a card. The token is right where it
+ * is used as a button's ground and wrong as text, so this lifts the text
+ * utility alone and leaves every filled danger button as it was.
+ */
+[data-color-scheme="dark"] .txt-danger {
+    /* !important because base.css sets .txt-danger with one. Overriding the
+       utility rather than --dangerColor leaves every filled danger button as
+       it was, which is where that token is right. */
+    color: color-mix(in srgb, var(--dangerColor), white 35%) !important;
+}
+
+/*
+ * Muted text, a step darker in the light theme.
+ *
+ * Both muted tokens are tuned for a white card and fall just short on the
+ * page's own grey ground: the breadcrumb's first crumb, the pager's "Rows" and
+ * "Showing 1-25 of 271", a card's hint lines and the Reports intro all
+ * measured between 4.0 and 4.36 against #f1f1f1 — under AA by a hair,
+ * everywhere, which is the kind of miss that is never noticed and never fixed.
+ *
+ * Darkening the tokens rather than the elements is what makes it one fix
+ * instead of a dozen, and it is why the first attempt here — a rule on the
+ * breadcrumb alone — was wrong. The step is small enough that nothing reads as
+ * changed: on a white card these go from 4.92:1 to about 5.7:1, and against
+ * the page ground from 4.36:1 to about 4.96:1.
+ *
+ * Light only. The dark theme measured clean, and its hint is derived from the
+ * ink rather than fixed, so it moves with the theme already.
+ */
+:root:not([data-color-scheme="dark"]) {
+    --surfaceTxtHintColor: #5f686e;
+    --muted-foreground: oklch(49% 0 0);
 }
 
 /* --------- @media print — KEEP LAST ---------

@@ -151,7 +151,7 @@
         <!-- Full bleed, with the gutters every other screen has (20px on a
              phone, PocketBase's 30px above it), so the title and the first
              card line up with the tables on either side of a sidebar click. -->
-        <div class="tw:flex tw:w-full tw:min-w-0 tw:flex-col tw:gap-4 tw:p-5 tw:sm:p-[30px]">
+        <div class="tw:flex tw:w-full tw:min-w-0 tw:flex-col tw:gap-3 tw:p-4 tw:sm:px-6 tw:sm:py-5">
         <!-- Who you are and the one thing most owners open the panel to do.
              The title is the only large type on the screen. DESIGN.md §3. -->
         <header class="tw:flex tw:flex-wrap tw:items-start tw:justify-between tw:gap-4">
@@ -179,11 +179,11 @@
             <!-- One column on a phone, two on a tablet, four on a desktop. The
                  tile: uppercase muted label, big number, small muted subline,
                  never a title bar. -->
-            <div class="tw:grid tw:grid-cols-1 tw:gap-4 tw:sm:grid-cols-2 tw:lg:grid-cols-4">
+            <div class="tw:grid tw:grid-cols-1 tw:gap-3 tw:sm:grid-cols-2 tw:lg:grid-cols-4">
                 {#each cards as card (card.label)}
                     <a
                         href="{base}{card.href}"
-                        class="tw:flex tw:min-h-[84px] tw:flex-col tw:text-foreground tw:no-underline tw:justify-between tw:rounded-xl tw:border tw:bg-card tw:p-4 tw:transition-colors tw:hover:bg-accent tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:focus-visible:ring-offset-2 tw:focus-visible:ring-offset-background tw:focus-visible:outline-none"
+                        class="tw:flex tw:min-h-[68px] tw:flex-col tw:text-foreground tw:no-underline tw:justify-between tw:gap-1 tw:rounded-xl tw:border tw:bg-card tw:px-4 tw:py-3 tw:transition-colors tw:hover:bg-accent tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:focus-visible:ring-offset-2 tw:focus-visible:ring-offset-background tw:focus-visible:outline-none"
                     >
                         <span class="tw:text-xs tw:font-medium tw:tracking-wide tw:text-muted-foreground tw:uppercase">
                             {card.label}
@@ -192,9 +192,9 @@
                             {#if loading}
                                 <div class="tw:h-8 tw:w-16 tw:animate-pulse tw:rounded-md tw:bg-muted"></div>
                             {:else}
-                                <div class="tw:text-2xl tw:font-bold tw:tracking-tight tw:tabular-nums">{card.value}</div>
+                                <div class="tw:text-xl tw:font-bold tw:tracking-tight tw:tabular-nums">{card.value}</div>
                             {/if}
-                            <p class="tw:mt-1 tw:text-xs tw:text-muted-foreground">{card.hint}</p>
+                            <p class="tw:text-xs tw:text-muted-foreground">{card.hint}</p>
                         </div>
                     </a>
                 {/each}
@@ -205,7 +205,7 @@
             <!-- The latest orders, two columns wide from 1024px as Litekart
                  draws them: ten orders in the height of five. -->
             <section class="tw:rounded-xl tw:border tw:bg-card">
-                <div class="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2 tw:border-b tw:px-4 tw:py-3 tw:sm:px-5">
+                <div class="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2 tw:border-b tw:px-4 tw:py-2 tw:sm:px-5">
                     <h2 class="tw:text-sm tw:font-semibold">Orders</h2>
                     <!-- Secondary navigation is a text link with an arrow, not a
                          button. DESIGN.md §7. -->
@@ -224,15 +224,19 @@
                              answers Enter without a key handler of its own. -->
                         <a
                             href="{base}/orders/{order.id}"
-                            class="recent-row tw:flex tw:items-center tw:gap-3 tw:px-4 tw:py-2 tw:text-foreground tw:no-underline tw:transition-colors tw:hover:bg-muted/50 tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:focus-visible:ring-inset tw:focus-visible:outline-none tw:sm:px-5"
+                            class="recent-row tw:flex tw:items-center tw:gap-3 tw:px-4 tw:py-1.5 tw:text-foreground tw:no-underline tw:transition-colors tw:hover:bg-muted/50 tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:focus-visible:ring-inset tw:focus-visible:outline-none tw:sm:px-5"
                         >
-                            <div class="tw:min-w-0 tw:flex-1">
-                                <div class="tw:flex tw:items-center tw:gap-2">
-                                    <span class="tw:size-1.5 tw:shrink-0 tw:rounded-full {dotFor(order.status)}" aria-hidden="true"></span>
-                                    <span class="tw:truncate tw:font-mono tw:text-sm tw:font-semibold">{order.number}</span>
-                                    <span class="tw:truncate tw:text-xs tw:text-muted-foreground">{order.name || order.email}</span>
-                                </div>
-                                <p class="tw:truncate tw:pl-3.5 tw:text-xs tw:text-muted-foreground">{relativeTime(order.created_at)}</p>
+                            <div class="tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-2">
+                                <span class="tw:size-1.5 tw:shrink-0 tw:rounded-full {dotFor(order.status)}" aria-hidden="true"></span>
+                                <span class="tw:shrink-0 tw:font-mono tw:text-sm tw:font-semibold">{order.number}</span>
+                                <span class="tw:truncate tw:text-xs tw:text-muted-foreground">{order.name || order.email}</span>
+                                <!-- The time sits with the row rather than under
+                                     it, and is the first thing to go when the
+                                     column is narrow: which order and whose it
+                                     is both outrank "yesterday". -->
+                                <span class="tw:ml-auto tw:hidden tw:shrink-0 tw:text-xs tw:text-muted-foreground tw:xl:inline">
+                                    {relativeTime(order.created_at)}
+                                </span>
                             </div>
                             <span class="tw:shrink-0 tw:text-sm tw:font-medium tw:tabular-nums">{formatMoney(order.total)}</span>
                             <!-- Status is never the dot alone; the word is always
@@ -268,7 +272,7 @@
 
         {#if mayStock}
             <section class="tw:rounded-xl tw:border tw:bg-card">
-                <div class="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2 tw:border-b tw:px-4 tw:py-3 tw:sm:px-5">
+                <div class="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2 tw:border-b tw:px-4 tw:py-2 tw:sm:px-5">
                     <h2 class="tw:text-sm tw:font-semibold">Running low</h2>
                     <a
                         href="{base}/inventory"
@@ -280,10 +284,14 @@
 
                 <div class="tw:divide-y">
                     {#each lowStock as variant (variant.id)}
-                        <div class="tw:flex tw:flex-col tw:gap-2 tw:px-4 tw:py-2 tw:sm:flex-row tw:sm:items-center tw:sm:gap-4 tw:sm:px-5">
-                            <div class="tw:min-w-0 tw:flex-1">
-                                <div class="tw:truncate tw:font-mono tw:text-sm tw:font-semibold">{variant.sku}</div>
-                                <p class="tw:truncate tw:text-xs tw:text-muted-foreground">{variant.label || "—"}</p>
+                        <div class="tw:flex tw:flex-col tw:gap-1 tw:px-4 tw:py-1.5 tw:sm:flex-row tw:sm:items-center tw:sm:gap-4 tw:sm:px-5">
+                            <!-- SKU and variant on one line where there is room
+                                 for them, the way the order rows above read.
+                                 Stacked they cost twenty pixels a row to put
+                                 "XL / Moss" under its own SKU. -->
+                            <div class="tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-2">
+                                <span class="tw:shrink-0 tw:font-mono tw:text-sm tw:font-semibold">{variant.sku}</span>
+                                <span class="tw:truncate tw:text-xs tw:text-muted-foreground">{variant.label || "—"}</span>
                             </div>
                             <!-- The three numbers keep their labels on a phone,
                                  where a bare row of digits says nothing, and

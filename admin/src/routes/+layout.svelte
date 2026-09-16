@@ -12,7 +12,7 @@
     import { base } from "$app/paths";
     import { page } from "$app/state";
     import { auth, events, getToken, can, session } from "$lib/api.js";
-    import { clearSettings, loadSettings } from "$lib/settings.svelte.js";
+    import { clearProfile, clearSettings, loadProfile, loadSettings } from "$lib/settings.svelte.js";
     import { forgetModules, loadModules } from "$lib/modules.svelte.js";
     import { forgetScreens, loadScreens } from "$lib/screens.svelte.js";
     import { health } from "$lib/health.svelte.js";
@@ -215,6 +215,7 @@
         // is asked here, once, rather than by each screen that needs it.
         // Nothing in the shell waits on the answer.
         loadSettings();
+        loadProfile();
         auth.refresh()
             .then(() => {
                 // After the refresh rather than beside it: a stored token is a
@@ -229,6 +230,8 @@
                     // api.js has already ended the session; the cached settings
                     // would be the previous operator's answer.
                     clearSettings();
+        clearProfile();
+                    clearProfile();
                     return;
                 }
                 // A store that cannot be reached is not a credential that has
@@ -311,6 +314,7 @@
         // auth.login has already written the session; the shell only reacts to
         // it. Forced, because the boot attempt ran with no token — or failed.
         loadSettings({ force: true });
+        loadProfile({ force: true });
         // A new sign-in may be a different operator against a different store,
         // so the previous answer is dropped before a new one is asked for.
         forgetModules();

@@ -67,7 +67,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 		DefaultEnabled: m.cfg.StorefrontURL != "",
 		Docs:           "https://support.google.com/merchants/answer/7052112",
 		Fields: []gocommerce.PluginField{
-			{Key: "storefront_url", Label: "Storefront URL", Kind: "url", Required: m.cfg.StorefrontURL == "", Public: true, Help: "Where product pages live: https://shop.example"},
+			{Key: "storefront_url", Label: "Storefront URL", Kind: "url", Required: m.cfg.StorefrontURL == "", Public: true, Help: "Where product pages live, without a path."},
 			{Key: "product_path", Label: "Product page path", Kind: "text", Default: "/products/{slug}", Help: "{slug} is replaced by the product's slug."},
 			{Key: "brand", Label: "Brand when a product has no vendor", Kind: "text"},
 			{Key: "google_product_category", Label: "Default Google product category", Kind: "text", Help: "Used when a product has no category of its own."},

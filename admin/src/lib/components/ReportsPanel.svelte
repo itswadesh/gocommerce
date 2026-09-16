@@ -19,6 +19,7 @@
     import { base } from "$app/paths";
     import { api, apiErrorFrom, can, getToken, query } from "$lib/api.js";
     import { listState } from "$lib/liststate.svelte.js";
+    import { ensureProfile, profile } from "$lib/settings.svelte.js";
     import { formatMoney, pluralize } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import NoAccess from "$lib/components/NoAccess.svelte";
@@ -42,11 +43,25 @@
     const PER_PAGE = embedded ? 5 : 10;
 
     /*
-     * The operator's own zone, so "today" means their today rather than UTC's.
-     * The engine cuts both the buckets and the window's own edges in it, which
-     * is what keeps the first and last bar honest.
+     * Which clock the day is cut on.
+     *
+     * The store's own, when it has said one (Settings › Store), because a shop
+     * closes its day where the shop is: an operator in Berlin looking at an
+     * Auckland store should see Auckland's Tuesday, and the two of them
+     * comparing figures should be comparing the same ones.
+     *
+     * The browser's zone is the fallback rather than UTC, because a store that
+     * has said nothing is better served by the reader's today than by a clock
+     * neither of them keeps. The engine cuts both the buckets and the window's
+     * own edges in it, which is what keeps the first and last bar honest.
      */
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const tz = $derived(profile.timezone || browserTz);
+
+    // The shell loads it, but a deep link lands here first.
+    $effect(() => {
+        ensureProfile();
+    });
 
     /* The window, the grain, the currency and the best-seller page live in the
        URL: a report nobody can send to their accountant is half a report. */
