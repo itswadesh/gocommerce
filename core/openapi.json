@@ -11483,6 +11483,253 @@
           }
         }
       }
+    },
+    "/api/admin/store": {
+      "get": {
+        "tags": [
+          "admin:settings"
+        ],
+        "summary": "The store's own name, address and contact details",
+        "description": "What the shop calls itself on the documents a buyer keeps: an invoice, a packing slip, the foot of an email. Carries no right, for the same reason GET /api/admin/settings does not — a shop's own address is not a secret from its own staff, and several screens need it. Every field is a string and every one may be empty; a store that has never filled this in gets blanks rather than a 404.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The store profile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "description": "The trading name — what a customer would call the shop."
+                        },
+                        "legal_name": {
+                          "type": "string",
+                          "description": "The registered entity, when it differs from the trading name. Most places require it on an invoice."
+                        },
+                        "email": {
+                          "type": "string",
+                          "description": "Where a buyer writes to."
+                        },
+                        "phone": {
+                          "type": "string",
+                          "description": "Where a buyer calls."
+                        },
+                        "address_line1": {
+                          "type": "string",
+                          "description": "Street address."
+                        },
+                        "address_line2": {
+                          "type": "string",
+                          "description": "Second address line, if there is one."
+                        },
+                        "city": {
+                          "type": "string",
+                          "description": "Town or city."
+                        },
+                        "state": {
+                          "type": "string",
+                          "description": "State, province or region."
+                        },
+                        "postal_code": {
+                          "type": "string",
+                          "description": "Postcode or ZIP."
+                        },
+                        "country": {
+                          "type": "string",
+                          "description": "ISO 3166-1 alpha-2 country code, as everywhere else on this API."
+                        },
+                        "tax_id": {
+                          "type": "string",
+                          "description": "VAT, GST or equivalent registration number."
+                        },
+                        "support_url": {
+                          "type": "string",
+                          "description": "Where a buyer is sent for help — the foot of an email links to it."
+                        },
+                        "updated_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "When the profile was last changed."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "admin:settings"
+        ],
+        "summary": "Change the store's name, address and contact details",
+        "description": "Requires store.write: this is the shop's legal identity, and it is what appears on documents a buyer keeps. Fields not named are left as they are. Each is capped at 200 characters and trimmed; the country is an ISO 3166-1 alpha-2 code.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "The trading name — what a customer would call the shop."
+                  },
+                  "legal_name": {
+                    "type": "string",
+                    "description": "The registered entity, when it differs from the trading name. Most places require it on an invoice."
+                  },
+                  "email": {
+                    "type": "string",
+                    "description": "Where a buyer writes to."
+                  },
+                  "phone": {
+                    "type": "string",
+                    "description": "Where a buyer calls."
+                  },
+                  "address_line1": {
+                    "type": "string",
+                    "description": "Street address."
+                  },
+                  "address_line2": {
+                    "type": "string",
+                    "description": "Second address line, if there is one."
+                  },
+                  "city": {
+                    "type": "string",
+                    "description": "Town or city."
+                  },
+                  "state": {
+                    "type": "string",
+                    "description": "State, province or region."
+                  },
+                  "postal_code": {
+                    "type": "string",
+                    "description": "Postcode or ZIP."
+                  },
+                  "country": {
+                    "type": "string",
+                    "description": "ISO 3166-1 alpha-2 country code, as everywhere else on this API."
+                  },
+                  "tax_id": {
+                    "type": "string",
+                    "description": "VAT, GST or equivalent registration number."
+                  },
+                  "support_url": {
+                    "type": "string",
+                    "description": "Where a buyer is sent for help — the foot of an email links to it."
+                  },
+                  "updated_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "When the profile was last changed."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The saved profile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "description": "The trading name — what a customer would call the shop."
+                        },
+                        "legal_name": {
+                          "type": "string",
+                          "description": "The registered entity, when it differs from the trading name. Most places require it on an invoice."
+                        },
+                        "email": {
+                          "type": "string",
+                          "description": "Where a buyer writes to."
+                        },
+                        "phone": {
+                          "type": "string",
+                          "description": "Where a buyer calls."
+                        },
+                        "address_line1": {
+                          "type": "string",
+                          "description": "Street address."
+                        },
+                        "address_line2": {
+                          "type": "string",
+                          "description": "Second address line, if there is one."
+                        },
+                        "city": {
+                          "type": "string",
+                          "description": "Town or city."
+                        },
+                        "state": {
+                          "type": "string",
+                          "description": "State, province or region."
+                        },
+                        "postal_code": {
+                          "type": "string",
+                          "description": "Postcode or ZIP."
+                        },
+                        "country": {
+                          "type": "string",
+                          "description": "ISO 3166-1 alpha-2 country code, as everywhere else on this API."
+                        },
+                        "tax_id": {
+                          "type": "string",
+                          "description": "VAT, GST or equivalent registration number."
+                        },
+                        "support_url": {
+                          "type": "string",
+                          "description": "Where a buyer is sent for help — the foot of an email links to it."
+                        },
+                        "updated_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "When the profile was last changed."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
     }
   },
   "components": {

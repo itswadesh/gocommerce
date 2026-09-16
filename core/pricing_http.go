@@ -13,11 +13,11 @@ func (a *App) mountPricingRoutes() {
 	// normally costs. It is also the same person's job — whoever runs the
 	// promotions runs the trade pricing — and core/rights.go stays the closed
 	// catalogue D24 made it rather than growing a twenty-second entry.
-	a.HandleAdminFunc("GET /api/admin/customer-groups", a.handleListCustomerGroups, RightDiscountsRead)
-	a.HandleAdminFunc("POST /api/admin/customer-groups", a.handleCreateCustomerGroup, RightDiscountsWrite)
-	a.HandleAdminFunc("GET /api/admin/customer-groups/{id}", a.handleGetCustomerGroup, RightDiscountsRead)
-	a.HandleAdminFunc("PATCH /api/admin/customer-groups/{id}", a.handleUpdateCustomerGroup, RightDiscountsWrite)
-	a.HandleAdminFunc("DELETE /api/admin/customer-groups/{id}", a.handleDeleteCustomerGroup, RightDiscountsWrite)
+	a.HandleAdminFunc("GET /api/admin/customer-groups", a.handleListCustomerGroups, RightGroupsRead)
+	a.HandleAdminFunc("POST /api/admin/customer-groups", a.handleCreateCustomerGroup, RightGroupsWrite)
+	a.HandleAdminFunc("GET /api/admin/customer-groups/{id}", a.handleGetCustomerGroup, RightGroupsRead)
+	a.HandleAdminFunc("PATCH /api/admin/customer-groups/{id}", a.handleUpdateCustomerGroup, RightGroupsWrite)
+	a.HandleAdminFunc("DELETE /api/admin/customer-groups/{id}", a.handleDeleteCustomerGroup, RightGroupsWrite)
 
 	// The membership *list* is the exception, and it takes customers.read
 	// instead: it answers with the shop's customer addresses, and somebody
@@ -25,17 +25,17 @@ func (a *App) mountPricingRoutes() {
 	// customer list. Adding and removing stay a pricing decision, and need the
 	// address already in hand to make.
 	a.HandleAdminFunc("GET /api/admin/customer-groups/{id}/members", a.handleListGroupMembers, RightCustomersRead)
-	a.HandleAdminFunc("POST /api/admin/customer-groups/{id}/members", a.handleAddGroupMember, RightDiscountsWrite)
-	a.HandleAdminFunc("DELETE /api/admin/customer-groups/{id}/members", a.handleRemoveGroupMember, RightDiscountsWrite)
+	a.HandleAdminFunc("POST /api/admin/customer-groups/{id}/members", a.handleAddGroupMember, RightGroupsWrite)
+	a.HandleAdminFunc("DELETE /api/admin/customer-groups/{id}/members", a.handleRemoveGroupMember, RightGroupsWrite)
 
-	a.HandleAdminFunc("GET /api/admin/price-lists", a.handleListPriceLists, RightDiscountsRead)
-	a.HandleAdminFunc("POST /api/admin/price-lists", a.handleCreatePriceList, RightDiscountsWrite)
-	a.HandleAdminFunc("GET /api/admin/price-lists/{id}", a.handleGetPriceList, RightDiscountsRead)
-	a.HandleAdminFunc("PATCH /api/admin/price-lists/{id}", a.handleUpdatePriceList, RightDiscountsWrite)
-	a.HandleAdminFunc("DELETE /api/admin/price-lists/{id}", a.handleDeletePriceList, RightDiscountsWrite)
-	a.HandleAdminFunc("GET /api/admin/price-lists/{id}/prices", a.handleListPrices, RightDiscountsRead)
-	a.HandleAdminFunc("PUT /api/admin/price-lists/{id}/prices", a.handleSetPrice, RightDiscountsWrite)
-	a.HandleAdminFunc("DELETE /api/admin/price-lists/{id}/prices", a.handleRemovePrice, RightDiscountsWrite)
+	a.HandleAdminFunc("GET /api/admin/price-lists", a.handleListPriceLists, RightPricingRead)
+	a.HandleAdminFunc("POST /api/admin/price-lists", a.handleCreatePriceList, RightPricingWrite)
+	a.HandleAdminFunc("GET /api/admin/price-lists/{id}", a.handleGetPriceList, RightPricingRead)
+	a.HandleAdminFunc("PATCH /api/admin/price-lists/{id}", a.handleUpdatePriceList, RightPricingWrite)
+	a.HandleAdminFunc("DELETE /api/admin/price-lists/{id}", a.handleDeletePriceList, RightPricingWrite)
+	a.HandleAdminFunc("GET /api/admin/price-lists/{id}/prices", a.handleListPrices, RightPricingRead)
+	a.HandleAdminFunc("PUT /api/admin/price-lists/{id}/prices", a.handleSetPrice, RightPricingWrite)
+	a.HandleAdminFunc("DELETE /api/admin/price-lists/{id}/prices", a.handleRemovePrice, RightPricingWrite)
 }
 
 // ------------------------------------------------------------------- groups

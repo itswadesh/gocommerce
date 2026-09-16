@@ -99,6 +99,7 @@ graph):
 | `payments-hyperswitch` | One integration in front of many gateways |
 | `payments-helcim` | HelcimPay.js in-page checkout, North America |
 | `payments-revenuecat` | Web Billing purchase links; digital goods, no refund API |
+| `notify-resend` | The store's email through Resend, and the one to reach for first: an API key is the only required setting, and until a domain is verified it sends from Resend's own onboarding address |
 | `notify-sendgrid` | The store's email through SendGrid — the key from the environment or from Notifications › Setup Email, the wording from the panel |
 | `notify-msg91` | The store's SMS through MSG91's DLT templates — the key and the template ids from the environment or from Notifications › Setup SMS |
 

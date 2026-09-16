@@ -3,11 +3,14 @@
      * PocketBase's settings layout: a `.page-sidebar` of nav groups beside a
      * `.wrapper` of fields.
      *
-     * Every field here is read-only, and deliberately so — a store's currency,
-     * language and installed payment providers are decisions the binary was
-     * started with. Rendering them as disabled fields rather than as prose
-     * says that plainly: this is where the setting lives, and it is not
-     * something to change from a browser while orders are in flight.
+     * Two halves, and the split is the point. The shop's own details — its
+     * name, address, contact and tax registration — are facts about a business
+     * that change when it moves premises, so they are a form. Everything below
+     * them is a start-up decision and is read-only, deliberately: changing the
+     * settlement currency mid-flight would change what every order in flight
+     * means. Rendering those as disabled fields rather than as prose says so
+     * plainly — this is where the setting lives, and it is not something to
+     * change from a browser while orders are in flight.
      *
      * They all arrive on one authenticated route, `GET /api/admin/settings`,
      * which the shell reads once at sign-in. This screen used to scrape the
@@ -17,11 +20,69 @@
      * catalog prices include tax.
      */
     import { settings, loadSettings } from "$lib/settings.svelte.js";
+    import { storeProfile, can } from "$lib/api.js";
     import { formatMoney, pluralize } from "$lib/format.js";
+    import { toast } from "$lib/toast.svelte.js";
 
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     const store = $derived(settings.all);
+
+    /*
+     * The shop's own details, which are the one editable thing on this screen.
+     * Everything else here is a start-up decision; a name and an address are
+     * facts about a business and change without a redeploy.
+     */
+    const editable = $derived(can("store.write"));
+    let profile = $state(null);
+    let draft = $state(null);
+    let saving = $state(false);
+
+    const FIELDS = [
+        { key: "name", label: "Store name", hint: "What a customer calls the shop." },
+        { key: "legal_name", label: "Legal name", hint: "The registered entity, when it differs." },
+        { key: "email", label: "Contact email" },
+        { key: "phone", label: "Phone" },
+        { key: "address_line1", label: "Address" },
+        { key: "address_line2", label: "Address line 2" },
+        { key: "city", label: "City" },
+        { key: "state", label: "State or region" },
+        { key: "postal_code", label: "Postal code" },
+        { key: "country", label: "Country", hint: "Two-letter code, such as GB." },
+        { key: "tax_id", label: "Tax registration", hint: "VAT, GST or equivalent." },
+        { key: "support_url", label: "Support URL" },
+    ];
+
+    $effect(() => {
+        loadProfile();
+    });
+
+    async function loadProfile() {
+        try {
+            profile = await storeProfile.get();
+            draft = { ...profile };
+        } catch (err) {
+            toast.error(err);
+        }
+    }
+
+    const dirty = $derived(
+        !!profile && !!draft && FIELDS.some((f) => (draft[f.key] ?? "") !== (profile[f.key] ?? "")),
+    );
+
+    async function saveProfile() {
+        if (saving || !dirty) return;
+        saving = true;
+        try {
+            profile = await storeProfile.save(draft);
+            draft = { ...profile };
+            toast.success("Store details saved");
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            saving = false;
+        }
+    }
 
     /**
      * The TTLs cross as seconds, which is the one unit that is never ambiguous
@@ -74,12 +135,6 @@
     );
     const silent = $derived(channels.filter((c) => !c.delivers));
 
-    /* Key presence, not length. An empty list is a real answer — a store built
-       from the engine and nothing else — and it has to be told apart from a
-       binary that predates the field, which answers the same way by saying
-       nothing. */
-    const modulesKnown = $derived(Array.isArray(store?.modules));
-
     const CHANNEL_LABEL = { email: "Email", sms: "SMS" };
     const channelName = (code) => CHANNEL_LABEL[code] ?? code;
 
@@ -122,6 +177,48 @@
                     </button>
                 </div>
             {:else}
+                <!-- The shop's own details first, because they are the only
+                     thing on this screen anybody came here to change. What
+                     follows is what the binary was started with. -->
+                {#if draft}
+                    <h2 class="tw:mb-3 tw:text-sm tw:font-semibold">Store details</h2>
+                    <div class="grid m-b-base">
+                        {#each FIELDS as f (f.key)}
+                            <div class="col-md-4">
+                                <div class="field" class:readonly={!editable}>
+                                    <label for="sp-{f.key}">{f.label}</label>
+                                    <input
+                                        id="sp-{f.key}"
+                                        type="text"
+                                        maxlength="200"
+                                        readonly={!editable}
+                                        bind:value={draft[f.key]}
+                                    />
+                                    {#if f.hint}<div class="field-help">{f.hint}</div>{/if}
+                                </div>
+                            </div>
+                        {/each}
+                        <div class="col-12">
+                            {#if editable}
+                                <button
+                                    type="button"
+                                    class="btn sm"
+                                    disabled={saving || !dirty}
+                                    onclick={saveProfile}
+                                >
+                                    <span class="txt">{saving ? "Saving…" : "Save store details"}</span>
+                                </button>
+                            {:else}
+                                <div class="field-help">
+                                    These are the shop's own details, and changing them needs
+                                    store.write.
+                                </div>
+                            {/if}
+                        </div>
+                    </div>
+                {/if}
+
+                <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">How this store was started</h2>
                 <div class="grid">
                     <div class="col-md-4">
                         <div class="field readonly">
@@ -215,37 +312,13 @@
                     </div>
 
                     <div class="col-12">
-                        <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Installed capabilities</h2>
-                        <div class="flex flex-wrap gap-5 m-b-10">
-                            <!-- The name is the provider's own, and the nested
-                                 label is the module that installed it — which is
-                                 the question a store with four gateways has. -->
-                            {#each store?.payment_methods ?? [] as method (method.code)}
-                                <span class="label info" title={method.code}>
-                                    {method.name}
-                                    <span class="label">{method.module}</span>
-                                </span>
-                            {/each}
-                        </div>
-                        <div class="field-help m-b-base">
-                            Each one is a Go module wired into <code>main()</code>. Cash on delivery
-                            is built in because it needs no third party; adding Stripe is one import
-                            and one argument, and changes no engine code.
-                        </div>
-
-                        <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Shipping</h2>
-                        <div class="flex flex-wrap gap-5 m-b-10">
-                            {#each store?.fulfillment_providers ?? [] as provider (provider.code)}
-                                <span class="label info" title={provider.code}>
-                                    {provider.name}
-                                    <span class="label">{provider.module}</span>
-                                </span>
-                            {/each}
-                        </div>
-                        <div class="field-help m-b-base">
-                            The same arrangement on the shipping side: manual fulfilment is built
-                            in, and a carrier module joins this list by registering a provider.
-                        </div>
+                        <!-- The payment methods and the carriers used to be
+                             listed here as chips. They have had screens of
+                             their own since Settings › Payment methods and
+                             Settings › Shipping providers arrived, where each
+                             one is switched on and given its keys — so this was
+                             a second, read-only copy of a list the operator
+                             goes somewhere else to act on. -->
 
                         <!-- Only when the store reported its channels. The
                              engine always reports both, so an empty list is a
@@ -301,32 +374,12 @@
                         {/if}
                     </div>
 
-                    {#if modulesKnown}
-                        <div class="col-12">
-                            <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Modules</h2>
-                            <!-- What this binary was actually built with. Until
-                                 the engine served this list the panel learned it
-                                 by probing one admin route per module on every
-                                 sign-in, and no screen said it out loud. -->
-                            {#if settings.modules.length}
-                                <div class="flex flex-wrap gap-5 m-b-10">
-                                    {#each settings.modules as name (name)}
-                                        <span class="label">{name}</span>
-                                    {/each}
-                                </div>
-                            {:else}
-                                <div class="field-help m-b-10">
-                                    This store is the engine and nothing else. Every screen you
-                                    can reach is core.
-                                </div>
-                            {/if}
-                            <div class="field-help">
-                                A store is its own Go program that composes the engine with the
-                                modules it needs, in the order shown — which is the order their
-                                migrations ran in. Changing the list is a redeploy, not a setting.
-                            </div>
-                        </div>
-                    {/if}
+                    <!-- The list of Go modules this binary was built with used
+                         to sit here. Nothing on this screen could act on it —
+                         the text said so itself, that changing it is a redeploy
+                         — and Plugins names what is installed in words a
+                         shopkeeper uses. Diagnostics identifies the build when
+                         that is the actual question. -->
 
                     {#if settings.languages.length > 1}
                         <div class="col-12">
@@ -366,17 +419,17 @@
                             </span>
                         </div>
 
-                        <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Media</h2>
-                        <div class="field-help">
-                            {#if settings.mediaUploadsEnabled}
-                                This store has somewhere to put a file, so the library takes
-                                uploads as well as URLs.
-                            {:else}
+                        <!-- Only when uploads are off. Working is the ordinary
+                             case and needs no sentence; the warning explains a
+                             missing upload control, which is a real question. -->
+                        {#if !settings.mediaUploadsEnabled}
+                            <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Media</h2>
+                            <div class="field-help">
                                 No media backend is configured, so the library records files by URL
                                 and offers no upload control. That is a supported way to run —
                                 point the store at a directory or a media store to change it.
-                            {/if}
-                        </div>
+                            </div>
+                        {/if}
                     </div>
 
                     <div class="col-12">

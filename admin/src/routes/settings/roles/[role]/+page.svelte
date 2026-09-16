@@ -307,8 +307,12 @@
 
             <section class="card role-card">
                 <div class="role-card-head">
+                    <!-- "Roles" is a link, not a caption. It sits where a
+                         breadcrumb sits and reads like one, so it was being
+                         clicked and doing nothing. -->
                     <h2 class="role-title">
-                        <span class="txt-hint">Roles /</span>
+                        <a class="role-title-up" href="{base}/settings/roles">Roles</a>
+                        <span class="role-title-sep" aria-hidden="true">/</span>
                         {label}
                     </h2>
                     <a class="role-back" href="{base}/settings/roles">

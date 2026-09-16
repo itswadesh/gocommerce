@@ -18,8 +18,8 @@ import (
 // has not happened yet, and orders.read already exposes every order's email,
 // phone and address, which is strictly more than a cart carries.
 func (a *App) mountAdminCartRoutes() {
-	a.HandleAdminFunc("GET /api/admin/carts", a.handleAdminListCarts, RightOrdersRead)
-	a.HandleAdminFunc("GET /api/admin/carts/{id}", a.handleAdminGetCart, RightOrdersRead)
+	a.HandleAdminFunc("GET /api/admin/carts", a.handleAdminListCarts, RightCartsRead)
+	a.HandleAdminFunc("GET /api/admin/carts/{id}", a.handleAdminGetCart, RightCartsRead)
 }
 
 func (a *App) handleAdminListCarts(w http.ResponseWriter, r *http.Request) {

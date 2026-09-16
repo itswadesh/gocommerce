@@ -62,12 +62,12 @@ export const NAV = [
         accent: "amber",
         keywords: "sales fulfilment shipments refunds returns",
         children: [
-            { href: "/carts", label: "Abandoned carts", right: "orders.read", keywords: "checkouts baskets" },
-            { href: "/invoices", label: "Invoices", right: "orders.read", module: "invoices", keywords: "pdf tax invoice" },
+            { href: "/carts", label: "Abandoned carts", right: "carts.read", keywords: "checkouts baskets" },
+            { href: "/invoices", label: "Invoices", right: "invoices.read", module: "invoices", keywords: "pdf tax invoice" },
             // What each gateway took and what it is owed. Under Orders
             // because that is the money it counts, and an owner reconciling
             // a statement is already looking at orders.
-            { href: "/payouts", label: "Payouts", right: "orders.read", keywords: "settlements gateways collected refunded reconcile" },
+            { href: "/payouts", label: "Payouts", right: "payouts.read", keywords: "settlements gateways collected refunded reconcile" },
         ],
     },
     {
@@ -78,13 +78,13 @@ export const NAV = [
         accent: "sky",
         keywords: "catalog catalogue variants sku",
         children: [
-            { href: "/collections", label: "Collections", right: "catalog.read", keywords: "curated lists" },
-            { href: "/categories", label: "Categories", right: "catalog.read", keywords: "taxonomy tree attributes" },
+            { href: "/collections", label: "Collections", right: "collections.read", keywords: "curated lists" },
+            { href: "/categories", label: "Categories", right: "categories.read", keywords: "taxonomy tree attributes" },
             { href: "/inventory", label: "Inventory", right: "inventory.read", keywords: "stock levels ledger" },
             // A price list is a rule about what somebody pays, worked in as
             // often as a promotion is, not vocabulary configured once.
-            { href: "/pricing", label: "Price lists", right: "discounts.read", keywords: "trade wholesale b2b quantity breaks tiers" },
-            { href: "/reviews", label: "Reviews", right: "catalog.read", module: "reviews", keywords: "ratings moderation" },
+            { href: "/pricing", label: "Price lists", right: "pricing.read", keywords: "trade wholesale b2b quantity breaks tiers" },
+            { href: "/reviews", label: "Reviews", right: "reviews.read", module: "reviews", keywords: "ratings moderation" },
         ],
     },
     {
@@ -95,14 +95,14 @@ export const NAV = [
         accent: "teal",
         keywords: "buyers shoppers",
         children: [
-            { href: "/customers/groups", label: "Groups", right: "discounts.read", keywords: "customer groups wholesale trade segments" },
-            { href: "/accounts", label: "Accounts", right: "customers.read", module: "identity", keywords: "logins passwords sessions" },
+            { href: "/customers/groups", label: "Groups", right: "groups.read", keywords: "customer groups wholesale trade segments" },
+            { href: "/accounts", label: "Accounts", right: "accounts.read", module: "identity", keywords: "logins passwords sessions" },
             // Both are the customers talking: the form and the signup box.
-            { href: "/contact", label: "Contact messages", right: "customers.read", module: "contact", keywords: "inbox enquiries" },
-            { href: "/newsletter", label: "Newsletter", right: "customers.read", module: "newsletter", keywords: "subscribers signups mailing list" },
+            { href: "/contact", label: "Contact messages", right: "contact.read", module: "contact", keywords: "inbox enquiries" },
+            { href: "/newsletter", label: "Newsletter", right: "newsletter.read", module: "newsletter", keywords: "subscribers signups mailing list" },
             // What shoppers wanted and did not buy: the shop's side of it is
             // a demand signal, which is why it sits with the customers.
-            { href: "/wishlists", label: "Wishlists", right: "customers.read", module: "wishlist", keywords: "saved wanted restock notify" },
+            { href: "/wishlists", label: "Wishlists", right: "wishlists.read", module: "wishlist", keywords: "saved wanted restock notify" },
         ],
     },
     {
@@ -141,12 +141,12 @@ export const NAV = [
         accent: "blue",
         keywords: "media files pages menus cms feeds sitemap",
         children: [
-            { href: "/media", label: "Files", right: "catalog.read", keywords: "media images pictures uploads" },
-            { href: "/cms", label: "Pages", right: "catalog.read", module: "cms", keywords: "content copy about" },
-            { href: "/menus", label: "Menus", right: "catalog.read", module: "navigation", keywords: "navigation header footer links" },
+            { href: "/media", label: "Files", right: "media.read", keywords: "media images pictures uploads" },
+            { href: "/cms", label: "Pages", right: "pages.read", module: "cms", keywords: "content copy about" },
+            { href: "/menus", label: "Menus", right: "menus.read", module: "navigation", keywords: "navigation header footer links" },
             { href: "/feeds", label: "Feeds", right: "plugins.read", module: "feeds", keywords: "google merchant meta catalogue feed" },
             { href: "/sitemap", label: "Sitemap", right: "plugins.read", module: "sitemaps", keywords: "sitemap.xml search console" },
-            { href: "/faq", label: "FAQ", right: "catalog.read", module: "faq", keywords: "questions answers help support" },
+            { href: "/faq", label: "FAQ", right: "faq.read", module: "faq", keywords: "questions answers help support" },
         ],
     },
     // "How much did we sell" has its answer on the dashboard, and the full
@@ -155,7 +155,7 @@ export const NAV = [
         href: "/reports",
         label: "Reports",
         icon: "ri-line-chart-line",
-        right: "orders.read",
+        right: "reports.read",
         accent: "rose",
         keywords: "sales revenue analytics best sellers",
     },
@@ -212,13 +212,13 @@ export const NAV = [
             { href: "/taxes", label: "Taxes", right: "taxes.read", keywords: "vat gst rates" },
             { href: "/locations", label: "Locations", right: "locations.read", keywords: "warehouse store pickup" },
             { href: "/channels", label: "Channels", right: "channels.read", keywords: "storefronts selling" },
-            { href: "/settings/attributes", label: "Attribute dictionary", right: "catalog.read", keywords: "fields taxonomy vocabulary" },
+            { href: "/settings/attributes", label: "Attribute dictionary", right: "categories.read", keywords: "fields taxonomy vocabulary" },
             // The store as a running system rather than as a shop.
             { href: "/settings/diagnostics", label: "Diagnostics", right: "store.operate", health: true, keywords: "health checks doctor" },
             { href: "/settings/events", label: "Event log", right: "store.operate", keywords: "outbox execution history dead letters" },
-            { href: "/settings/webhooks", label: "Webhooks", right: "store.operate", module: "webhooks", keywords: "endpoints deliveries integrations" },
+            { href: "/settings/webhooks", label: "Webhooks", right: "webhooks.read", module: "webhooks", keywords: "endpoints deliveries integrations" },
             { href: "/settings/audit", label: "Audit trail", right: "store.operate", keywords: "who did what history" },
-            { href: "/settings/agent", label: "Agent activity", right: "store.operate", module: "mcp", keywords: "mcp ai tools" },
+            { href: "/settings/agent", label: "Agent activity", right: "agent.read", module: "mcp", keywords: "mcp ai tools" },
             { href: "/data", label: "Import / export", right: "data.export", keywords: "csv shopify import export" },
         ],
     },

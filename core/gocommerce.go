@@ -260,6 +260,9 @@ type App struct {
 	fulfillment *Fulfillments
 	transfer    *Transfer
 	plugins     *Plugins
+	// profile is the shop as a business — its name, address and tax
+	// registration — as opposed to Config, which is the shop as a process.
+	profile *StoreProfiles
 	// moduleRights are the rights the installed modules declared. Core's live
 	// in AllRights; these travel with whichever module owns the screens they
 	// gate, so a build without that module has neither the routes nor the
@@ -455,6 +458,7 @@ func (a *App) buildServices() {
 	a.fulfillment = &Fulfillments{app: a, providers: map[string]FulfillmentProvider{}}
 	a.transfer = &Transfer{app: a}
 	a.plugins = newPlugins(a)
+	a.profile = &StoreProfiles{app: a}
 	a.notifications = &Notifications{app: a}
 	a.notifyTemplates = newNotifyTemplates(a)
 	a.notifier.record = a.notifications.record

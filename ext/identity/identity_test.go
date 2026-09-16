@@ -503,7 +503,7 @@ func TestEveryRouteIsDocumented(t *testing.T) {
 }
 
 // TestAdminAccountRoutesAreGated proves the asymmetry is deliberate: reading
-// account holders is customers.read, and erasing one needs the store's
+// account holders is accounts.read, and erasing one needs the module's own
 // operating right as well.
 //
 // A session, not gctest.AdminToken: a static admin token carries every right,
@@ -527,7 +527,7 @@ func TestAdminAccountRoutesAreGated(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("staff erasing an account = %d, want 403: %s", rec.Code, rec.Body)
 	}
-	if !strings.Contains(rec.Body.String(), string(gocommerce.RightStoreOperate)) {
+	if !strings.Contains(rec.Body.String(), "accounts.erase") {
 		t.Errorf("the refusal does not name the missing right: %s", rec.Body)
 	}
 

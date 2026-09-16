@@ -770,7 +770,7 @@ func TestAdminCartRoutesRequireOrdersRead(t *testing.T) {
 	staff := signInAs(t, app, "cartstaff@example.com", RoleStaff)
 	narrowed := []Right{}
 	for _, r := range DefaultRightsOf(RoleStaff) {
-		if r != RightOrdersRead {
+		if r != RightCartsRead {
 			narrowed = append(narrowed, r)
 		}
 	}
@@ -781,10 +781,10 @@ func TestAdminCartRoutesRequireOrdersRead(t *testing.T) {
 	for _, target := range []string{"/api/admin/carts", "/api/admin/carts/1"} {
 		rec := do(t, app, http.MethodGet, target, bearer(staff))
 		if rec.Code != http.StatusForbidden {
-			t.Errorf("GET %s without orders.read = %d, want 403", target, rec.Code)
+			t.Errorf("GET %s without carts.read = %d, want 403", target, rec.Code)
 		}
-		if !strings.Contains(rec.Body.String(), string(RightOrdersRead)) {
-			t.Errorf("the refusal does not name orders.read: %s", rec.Body)
+		if !strings.Contains(rec.Body.String(), string(RightCartsRead)) {
+			t.Errorf("the refusal does not name carts.read: %s", rec.Body)
 		}
 	}
 }

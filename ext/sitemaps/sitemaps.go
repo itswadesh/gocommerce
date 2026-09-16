@@ -74,6 +74,9 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.HandleFunc("GET /x/sitemaps/products.xml", m.handleProducts)
 	app.HandleFunc("GET /x/sitemaps/collections.xml", m.handleCollections)
 	app.HandleFunc("GET /x/sitemaps/pages.xml", m.handlePages)
+	// The sheet every sitemap above points at, so a browser shows a table
+	// rather than a wall of angle brackets (stylesheet.go).
+	app.HandleFunc("GET "+stylesheetPath, m.handleStylesheet)
 	return nil
 }
 
@@ -162,7 +165,12 @@ type entry struct {
 func write(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
+	// The declaration, then the stylesheet instruction, then the document.
+	// xml.Header ends in a newline, so the instruction sits on its own line
+	// where a processing instruction belongs — before the root element and
+	// after the declaration, which is the only place it is legal.
 	_, _ = w.Write([]byte(xml.Header))
+	_, _ = w.Write([]byte(stylesheetPI))
 	enc := xml.NewEncoder(w)
 	enc.Indent("", "  ")
 	_ = enc.Encode(v)

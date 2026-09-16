@@ -75,6 +75,10 @@ func (m *Module) Register(app *gocommerce.App) error {
 	})
 	app.HandleFunc("GET /x/feeds/google.xml", m.handleGoogle)
 	app.HandleFunc("GET /x/feeds/meta.csv", m.handleMeta)
+	// The screen's own read, gated on the right that already governs it: the
+	// Feeds page is a plugin page, and this says nothing a plugin page does not
+	// already show.
+	app.HandleAdminFunc("GET /api/admin/x/feeds/status", m.handleStatus, gocommerce.RightPluginsRead)
 	return nil
 }
 

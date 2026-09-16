@@ -11,9 +11,9 @@ import "net/http"
 // there. A store that wants revenue kept from staff re-cuts staff in
 // role_rights, which is what D24 exists for.
 func (a *App) mountReportRoutes() {
-	a.HandleAdminFunc("GET /api/admin/reports/sales", a.handleSalesReport, RightOrdersRead)
-	a.HandleAdminFunc("GET /api/admin/reports/top-products", a.handleTopProducts, RightOrdersRead)
-	a.HandleAdminFunc("GET /api/admin/reports/payouts", a.handlePayoutsReport, RightOrdersRead)
+	a.HandleAdminFunc("GET /api/admin/reports/sales", a.handleSalesReport, RightReportsRead)
+	a.HandleAdminFunc("GET /api/admin/reports/top-products", a.handleTopProducts, RightReportsRead)
+	a.HandleAdminFunc("GET /api/admin/reports/payouts", a.handlePayoutsReport, RightPayoutsRead)
 }
 
 func (a *App) handlePayoutsReport(w http.ResponseWriter, r *http.Request) {

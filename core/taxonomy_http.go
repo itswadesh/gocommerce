@@ -19,11 +19,11 @@ func (a *App) mountTaxonomyRoutes() {
 
 	// The dictionary is catalog vocabulary — what a product may be asked — so
 	// it is read with the catalog and written with it, exactly like categories.
-	a.HandleAdminFunc("GET /api/admin/taxonomy-attributes", a.handleListTaxonomyAttributes, RightCatalogRead)
-	a.HandleAdminFunc("POST /api/admin/taxonomy-attributes", a.handleCreateTaxonomyAttribute, RightCatalogWrite)
-	a.HandleAdminFunc("GET /api/admin/taxonomy-attributes/{handle}", a.handleGetTaxonomyAttribute, RightCatalogRead)
-	a.HandleAdminFunc("PATCH /api/admin/taxonomy-attributes/{handle}", a.handleUpdateTaxonomyAttribute, RightCatalogWrite)
-	a.HandleAdminFunc("DELETE /api/admin/taxonomy-attributes/{handle}", a.handleDeleteTaxonomyAttribute, RightCatalogWrite)
+	a.HandleAdminFunc("GET /api/admin/taxonomy-attributes", a.handleListTaxonomyAttributes, RightCategoriesRead)
+	a.HandleAdminFunc("POST /api/admin/taxonomy-attributes", a.handleCreateTaxonomyAttribute, RightCategoriesWrite)
+	a.HandleAdminFunc("GET /api/admin/taxonomy-attributes/{handle}", a.handleGetTaxonomyAttribute, RightCategoriesRead)
+	a.HandleAdminFunc("PATCH /api/admin/taxonomy-attributes/{handle}", a.handleUpdateTaxonomyAttribute, RightCategoriesWrite)
+	a.HandleAdminFunc("DELETE /api/admin/taxonomy-attributes/{handle}", a.handleDeleteTaxonomyAttribute, RightCategoriesWrite)
 }
 
 // ------------------------------------------------------------------- imports

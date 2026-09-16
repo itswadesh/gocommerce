@@ -2,25 +2,136 @@
   "paths": {
     "/x/feeds/google.xml": {
       "get": {
-        "tags": ["feeds"],
+        "tags": [
+          "feeds"
+        ],
         "summary": "The catalogue as a Google Merchant Center feed",
         "description": "RSS 2.0 with the g: namespace, one item per active variant: g:id (the SKU), g:title, g:description, g:link (the storefront's product page, with ?variant= for a variant), g:image_link, g:availability, g:price and g:sale_price in the store's currency, g:brand, g:condition, g:gtin, g:mpn, g:item_group_id, g:google_product_category and g:shipping_weight. Generated on request; cacheable for fifteen minutes. 404 while the plugin is off, 409 until the storefront URL is set.",
         "responses": {
-          "200": {"description": "The feed.", "content": {"application/rss+xml": {"schema": {"type": "string"}}}},
-          "404": {"$ref": "#/components/responses/NotFound"},
-          "409": {"$ref": "#/components/responses/Conflict"}
+          "200": {
+            "description": "The feed.",
+            "content": {
+              "application/rss+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
         }
       }
     },
     "/x/feeds/meta.csv": {
       "get": {
-        "tags": ["feeds"],
+        "tags": [
+          "feeds"
+        ],
         "summary": "The catalogue as a Meta (Facebook and Instagram) catalogue CSV",
         "description": "Meta's catalogue columns — id, title, description, availability, condition, price, sale_price, link, image_link, brand, item_group_id, gtin, mpn, google_product_category, quantity_to_sell_on_facebook — one row per active variant. The same rules as the Google feed.",
         "responses": {
-          "200": {"description": "The feed.", "content": {"text/csv": {"schema": {"type": "string"}}}},
-          "404": {"$ref": "#/components/responses/NotFound"},
-          "409": {"$ref": "#/components/responses/Conflict"}
+          "200": {
+            "description": "The feed.",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/admin/x/feeds/status": {
+      "get": {
+        "tags": [
+          "feeds"
+        ],
+        "summary": "What the feeds currently hold",
+        "description": "Counts taken over the same catalogue walk the feeds themselves use, so the number on the screen and the number of items in the file cannot disagree. Answers whether the plugin is on and has a storefront URL, how many items and products the feed carries, how many are in and out of stock, and how many items are missing the three things advertising platforms reject them over: a picture, a brand, and an identifier — a GTIN, or a brand and MPN together. Answers 200 with zeroed counts when the plugin is off or has no storefront URL, because the screen renders either way.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The current contents of the feeds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "description": "Whether the plugin is switched on."
+                        },
+                        "configured": {
+                          "type": "boolean",
+                          "description": "Whether the storefront URL is set."
+                        },
+                        "storefront": {
+                          "type": "string",
+                          "description": "Where the feed's product links point."
+                        },
+                        "currency": {
+                          "type": "string",
+                          "description": "The currency every price is quoted in."
+                        },
+                        "items": {
+                          "type": "integer",
+                          "description": "Rows in the feed: one per active variant."
+                        },
+                        "products": {
+                          "type": "integer",
+                          "description": "Distinct products those rows belong to."
+                        },
+                        "in_stock": {
+                          "type": "integer"
+                        },
+                        "out_of_stock": {
+                          "type": "integer"
+                        },
+                        "missing_image": {
+                          "type": "integer",
+                          "description": "Items with no picture."
+                        },
+                        "missing_brand": {
+                          "type": "integer",
+                          "description": "Items whose product has no vendor and no fallback brand."
+                        },
+                        "missing_identifier": {
+                          "type": "integer",
+                          "description": "Items with no GTIN and no brand to pair with their MPN."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     }

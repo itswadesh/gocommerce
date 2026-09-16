@@ -42,16 +42,16 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	// installing this module widened who could see every account's email, name
 	// and phone.
 	app.HandleAdminFunc("GET /api/admin/x/identity/customers", m.handleAdminList,
-		gocommerce.RightCustomersRead)
+		rightAccountsRead)
 	app.HandleAdminFunc("GET /api/admin/x/identity/customers/{id}", m.handleAdminGet,
-		gocommerce.RightCustomersRead)
+		rightAccountsRead)
 	// Erasure is not a read: it takes the account, its sessions, its address
 	// book and its order links. The engine has no customers.write, so the
 	// destructive half carries store.operate as well — rights are all-of, so
 	// whoever may erase an account can also see the one they are erasing, and
 	// by default only an owner holds both.
 	app.HandleAdminFunc("DELETE /api/admin/x/identity/customers/{id}", m.handleAdminDelete,
-		gocommerce.RightCustomersRead, gocommerce.RightStoreOperate)
+		rightAccountsRead, rightAccountsErase)
 }
 
 // ------------------------------------------------------------ the session

@@ -44,6 +44,7 @@
     import CategoryPicker from "$lib/components/CategoryPicker.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
     import MediaZone from "$lib/components/MediaZone.svelte";
+    import SeoPanel from "$lib/components/SeoPanel.svelte";
     import VariantMatrix from "$lib/components/VariantMatrix.svelte";
     import RecordHistory from "$lib/components/RecordHistory.svelte";
 
@@ -362,6 +363,20 @@
     // same function, so their key order matches by construction.
     const dirty = $derived(!!snapshot && JSON.stringify(form) !== JSON.stringify(snapshot));
 
+    /* What the score is measured over. The form and not the product: a number
+       that only moves after Save cannot show you that reordering two words
+       changed it. Pictures come from the media list, which is the only part of
+       this not held in the form. */
+    const seoInput = $derived({
+        title: form.title,
+        seoTitle: form.seo_title,
+        seoDescription: form.seo_description,
+        slug: form.slug,
+        description: form.description,
+        categoryId: form.category_id,
+        images: media,
+    });
+
     const chosenCollections = $derived(
         form.collection_ids
             .map((id) => collections.find((c) => c.id === id))
@@ -407,6 +422,7 @@
             tags: [],
             seo_title: "",
             seo_description: "",
+            focus_keyword: "",
             // null rather than "" — the API's uncategorised is a JSON null,
             // and an empty string here would be sent as one.
             category_id: null,
@@ -484,6 +500,14 @@
             tags: [...(p.tags ?? [])],
             seo_title: p.seo_title ?? "",
             seo_description: p.seo_description ?? "",
+            // Under metadata.seo for the reason metadata.custom is
+            // namespaced: the top level of metadata is where modules keep
+            // their own data, and a bare `focus_keyword` there is a key an
+            // operator's metafield could collide with.
+            focus_keyword:
+                typeof p.metadata?.seo?.focus_keyword === "string"
+                    ? p.metadata.seo.focus_keyword
+                    : "",
             category_id: p.category?.id ?? null,
             collection_ids: (p.collections ?? []).map((c) => c.id),
             category_meta: categoryMetaOf(p),
@@ -907,7 +931,8 @@
             }
             if (
                 JSON.stringify(form.metafields) !== JSON.stringify(snapshot.metafields) ||
-                JSON.stringify(form.category_meta) !== JSON.stringify(snapshot.category_meta)
+                JSON.stringify(form.category_meta) !== JSON.stringify(snapshot.category_meta) ||
+                form.focus_keyword !== snapshot.focus_keyword
             ) {
                 // The patch replaces `metadata` whole, so the rest of it has to
                 // be carried across: writing only `{custom: …}` would delete
@@ -916,6 +941,13 @@
                     ...(product.metadata ?? {}),
                     custom: metafieldsObject(),
                     category: categoryMetaObject(),
+                    // Merged rather than replaced: metadata.seo is this panel's
+                    // namespace but not necessarily only this field's, and a
+                    // future key under it should survive a keyword edit.
+                    seo: {
+                        ...(product.metadata?.seo ?? {}),
+                        focus_keyword: form.focus_keyword.trim(),
+                    },
                 };
             }
             if (Object.keys(patch).length) {
@@ -2188,6 +2220,19 @@
                         </div>
                     {/if}
                     </section>
+
+                    <!-- RankMath's panel, in this panel's vocabulary. Its own
+                         card rather than more rows inside the one above,
+                         because the card above is a preview you glance at and
+                         this is a list you work through. -->
+                    <section class="card">
+                    <h6 class="section-title">
+                        <i class="ri-bar-chart-2-line" aria-hidden="true"></i>
+                        SEO score
+                    </h6>
+                    <SeoPanel input={seoInput} bind:keyword={form.focus_keyword} disabled={!writable} />
+                    </section>
+
                     {#if categoryFields.length}
                     <section class="card">
                     <!-- No icon and no rule, which is the one heading on this page

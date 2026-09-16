@@ -26,6 +26,16 @@ func TestSplittingStoreOperateMovedNoDefaults(t *testing.T) {
 			RightLocationsRead,
 			RightOrdersRead, RightOrdersWrite, RightOrdersFulfill, RightOrdersRefund,
 			RightCustomersRead,
+			// Lifted off catalog.read / catalog.write, which manager held, so
+			// these reach exactly the screens it already reached.
+			RightCollectionsRead, RightCollectionsWrite,
+			RightCategoriesRead, RightCategoriesWrite,
+			RightMediaRead, RightMediaWrite,
+			// Off discounts.read / discounts.write.
+			RightPricingRead, RightPricingWrite,
+			RightGroupsRead, RightGroupsWrite,
+			// Off orders.read.
+			RightReportsRead, RightCartsRead, RightPayoutsRead,
 		},
 		RoleStaff: {
 			RightCatalogRead,
@@ -35,6 +45,13 @@ func TestSplittingStoreOperateMovedNoDefaults(t *testing.T) {
 			RightLocationsRead,
 			RightOrdersRead, RightOrdersWrite, RightOrdersFulfill,
 			RightCustomersRead,
+			// Staff held the read half of each and nothing more.
+			RightCollectionsRead,
+			RightCategoriesRead,
+			RightMediaRead,
+			RightPricingRead,
+			RightGroupsRead,
+			RightReportsRead, RightCartsRead, RightPayoutsRead,
 		},
 	}
 	for role, expected := range want {

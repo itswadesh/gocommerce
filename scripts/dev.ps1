@@ -112,7 +112,7 @@ $serveArgs = @('-addr', "127.0.0.1:$Port", '-admin-token', $Token)
 if ($All) {
     $serveArgs += @(
         '-identity', '-webhooks', '-menus', '-reviews', '-contact', '-newsletter',
-        '-sendgrid', '-msg91', '-invoices', '-cms', '-faq', '-wishlist',
+        '-resend', '-sendgrid', '-msg91', '-invoices', '-cms', '-faq', '-wishlist',
         '-gateways', '-carriers', '-feeds', '-sitemaps'
     )
 } else {

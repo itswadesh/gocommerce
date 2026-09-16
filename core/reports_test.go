@@ -994,7 +994,9 @@ func TestReportRoutesNeedOrdersRead(t *testing.T) {
 	// Re-cut staff to drop orders.read, which is the store's own lever (D24).
 	kept := []Right{}
 	for _, r := range DefaultRightsOf(RoleStaff) {
-		if r != RightOrdersRead {
+		// Reports and payouts each have their own right now: reports is a
+		// shape without the orders behind it, payouts is the reconciliation.
+		if r != RightReportsRead && r != RightPayoutsRead {
 			kept = append(kept, r)
 		}
 	}
@@ -1006,7 +1008,7 @@ func TestReportRoutesNeedOrdersRead(t *testing.T) {
 		if rec.Code != http.StatusForbidden {
 			t.Errorf("%s after the re-cut = %d, want 403", path, rec.Code)
 		}
-		if !strings.Contains(rec.Body.String(), "orders.read") {
+		if !strings.Contains(rec.Body.String(), ".read") {
 			t.Errorf("the refusal does not name the right: %s", rec.Body.String())
 		}
 	}

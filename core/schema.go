@@ -50,6 +50,7 @@ func coreMigrations() []Migration {
 		{ID: "0039_notifications", SQL: migration0039Notifications},
 		{ID: "0040_notification_templates", SQL: migration0040NotificationTemplates},
 		{ID: "0041_role_profiles", SQL: migration0041RoleProfiles},
+		{ID: "0042_store_profile", SQL: migration0042StoreProfile},
 	}
 }
 
@@ -2024,4 +2025,44 @@ CREATE TABLE role_profiles (
     -- about the past and outlives their account.
     updated_by  bigint      REFERENCES superusers (id) ON DELETE SET NULL
 );
+`
+
+// M42 — the shop's own details.
+//
+// Everything on the Store settings screen until now came from the Config the
+// binary was started with: the currency, the languages, the TTLs. Those are
+// start-up decisions and are right to be read-only. The shop's *name* is not
+// one of them, and neither is its address, its contact email or its tax
+// registration — those are facts about a business that change without a
+// redeploy, and they belong on invoices, in emails and at the foot of a
+// storefront.
+//
+// Until this table they lived nowhere. ext/invoices took the seller's name and
+// address from its own module Config, which meant a shop editing its address
+// had to be restarted with new environment variables, and any other module
+// that wanted the same facts had to be given them again.
+//
+// One row, and the CHECK is what keeps it one: a second row would give the
+// store two identities and nothing would say which was current.
+const migration0042StoreProfile = `
+CREATE TABLE store_profile (
+    id           integer     PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    name         text        NOT NULL DEFAULT '',
+    legal_name   text        NOT NULL DEFAULT '',
+    email        text        NOT NULL DEFAULT '',
+    phone        text        NOT NULL DEFAULT '',
+    address_line1 text       NOT NULL DEFAULT '',
+    address_line2 text       NOT NULL DEFAULT '',
+    city         text        NOT NULL DEFAULT '',
+    state        text        NOT NULL DEFAULT '',
+    postal_code  text        NOT NULL DEFAULT '',
+    country      text        NOT NULL DEFAULT '',
+    tax_id       text        NOT NULL DEFAULT '',
+    support_url  text        NOT NULL DEFAULT '',
+    updated_at   timestamptz NOT NULL DEFAULT now(),
+    -- SET NULL for the reason role_rights gives: who changed the shop's
+    -- address is a fact about the past and outlives their account.
+    updated_by   bigint      REFERENCES superusers (id) ON DELETE SET NULL
+);
+INSERT INTO store_profile (id) VALUES (1);
 `

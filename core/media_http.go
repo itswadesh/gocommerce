@@ -9,20 +9,20 @@ import (
 
 // The media library's HTTP surface: upload, list, attach.
 func (a *App) mountMediaRoutes() {
-	a.HandleAdminFunc("GET /api/admin/media", a.handleListMedia, RightCatalogRead)
-	a.HandleAdminFunc("POST /api/admin/media", a.handleUploadMedia, RightCatalogWrite)
-	a.HandleAdminFunc("POST /api/admin/media/link", a.handleLinkMedia, RightCatalogWrite)
-	a.HandleAdminFunc("GET /api/admin/media/{id}", a.handleGetMedia, RightCatalogRead)
-	a.HandleAdminFunc("PATCH /api/admin/media/{id}", a.handleUpdateMedia, RightCatalogWrite)
-	a.HandleAdminFunc("DELETE /api/admin/media/{id}", a.handleDeleteMedia, RightCatalogWrite)
+	a.HandleAdminFunc("GET /api/admin/media", a.handleListMedia, RightMediaRead)
+	a.HandleAdminFunc("POST /api/admin/media", a.handleUploadMedia, RightMediaWrite)
+	a.HandleAdminFunc("POST /api/admin/media/link", a.handleLinkMedia, RightMediaWrite)
+	a.HandleAdminFunc("GET /api/admin/media/{id}", a.handleGetMedia, RightMediaRead)
+	a.HandleAdminFunc("PATCH /api/admin/media/{id}", a.handleUpdateMedia, RightMediaWrite)
+	a.HandleAdminFunc("DELETE /api/admin/media/{id}", a.handleDeleteMedia, RightMediaWrite)
 	// Read before write. PUT replaces the whole ordered list, so without a way
 	// to read the current one a client that attaches a single file silently
 	// discards everything else on the product.
-	a.HandleAdminFunc("GET /api/admin/products/{id}/media", a.handleProductMedia, RightCatalogRead)
-	a.HandleAdminFunc("PUT /api/admin/products/{id}/media", a.handleSetProductMedia, RightCatalogWrite)
+	a.HandleAdminFunc("GET /api/admin/products/{id}/media", a.handleProductMedia, RightMediaRead)
+	a.HandleAdminFunc("PUT /api/admin/products/{id}/media", a.handleSetProductMedia, RightMediaWrite)
 	// A variant nominates one of its product's images; it never owns one, so
 	// this takes a media id rather than a file.
-	a.HandleAdminFunc("PUT /api/admin/variants/{id}/media", a.handleSetVariantMedia, RightCatalogWrite)
+	a.HandleAdminFunc("PUT /api/admin/variants/{id}/media", a.handleSetVariantMedia, RightMediaWrite)
 
 	// Uploaded files are served from the same origin so a storefront can use
 	// them without CORS. Only mounted when this store actually holds files.

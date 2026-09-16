@@ -299,7 +299,7 @@ func TestAgentRoutesRequireStoreOperate(t *testing.T) {
 		if rec.Code != http.StatusForbidden {
 			t.Errorf("%s calling the agent endpoint = %d, want 403: %s", who.name, rec.Code, rec.Body)
 		}
-		if !strings.Contains(rec.Body.String(), string(gocommerce.RightStoreOperate)) {
+		if !strings.Contains(rec.Body.String(), "agent.") {
 			t.Errorf("%s: the refusal does not name the missing right: %s", who.name, rec.Body)
 		}
 		rec = gctest.SessionRequest(t, app, who.token, http.MethodGet, "/api/admin/x/mcp/audit", nil)
@@ -423,7 +423,7 @@ func TestToolRightsAreCheckedPerCall(t *testing.T) {
 	// question this test asks is what the mount does NOT decide.
 	if _, err := app.Roles().Set(ctx, gocommerce.RoleStaff, []gocommerce.Right{
 		gocommerce.RightCatalogRead, gocommerce.RightOrdersRead,
-		gocommerce.RightOrdersWrite, gocommerce.RightStoreOperate,
+		gocommerce.RightOrdersWrite, "agent.dispatch",
 	}, nil); err != nil {
 		t.Fatalf("re-cut staff: %v", err)
 	}
@@ -487,7 +487,7 @@ func TestRefusedMutatingCallIsAudited(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := app.Roles().Set(ctx, gocommerce.RoleStaff, []gocommerce.Right{
-		gocommerce.RightCatalogRead, gocommerce.RightStoreOperate,
+		gocommerce.RightCatalogRead, "agent.dispatch",
 	}, nil); err != nil {
 		t.Fatalf("re-cut staff: %v", err)
 	}

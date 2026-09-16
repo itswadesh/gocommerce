@@ -165,7 +165,54 @@ const (
 	RightNotificationsRead  Right = "notifications.read"
 	RightNotificationsWrite Right = "notifications.write"
 
+	// ------------------------------------------------- one right per screen
+	//
+	// Every one of these was a menu with no right of its own, so it had no row
+	// on the Roles grid — and a screen that cannot be named there can be
+	// neither granted nor withheld. Each is lifted off exactly one existing
+	// right and defaults to the roles that held it, so nobody's access moved.
+
+	// The catalogue's neighbours. Products, collections, categories and the
+	// media library are four screens and were one right; a merchandiser who
+	// curates collections is not automatically the person who edits every
+	// product, and the file library is where somebody uploads a picture
+	// without touching a listing.
+	RightCollectionsRead  Right = "collections.read"
+	RightCollectionsWrite Right = "collections.write"
+	RightCategoriesRead   Right = "categories.read"
+	RightCategoriesWrite  Right = "categories.write"
+	RightMediaRead        Right = "media.read"
+	RightMediaWrite       Right = "media.write"
+
+	// Price lists and customer groups were discounts. They are the same kind
+	// of thing — a rule about what somebody pays — but a trade price list and
+	// a promotional code are run by different people in most shops.
+	RightPricingRead  Right = "pricing.read"
+	RightPricingWrite Right = "pricing.write"
+	RightGroupsRead   Right = "groups.read"
+	RightGroupsWrite  Right = "groups.write"
+
+	// Three readings of the orders, each its own screen. Reports is a shape a
+	// shop shows people who are not allowed to open an order; abandoned carts
+	// are baskets rather than sales; payouts is the reconciliation.
+	RightReportsRead Right = "reports.read"
+	RightCartsRead   Right = "carts.read"
+	RightPayoutsRead Right = "payouts.read"
+
+	// The Jobs screen gets no right of its own on purpose. It has no routes:
+	// it is a reading of the outbox (store.operate) plus whatever the import
+	// and webhook modules are doing, so a jobs.read would gate nothing and
+	// would sit on the grid denying nobody anything.
+
 	// ------------------------------------------------------------- the store
+
+	// RightStoreWrite is the shop as a business: its name, its address, its
+	// contact details and its tax registration. Apart from store.operate
+	// because they are opposite things — this is the shop's identity, which
+	// changes when it moves premises, and that one is the running system.
+	// Reading it carries no right at all: a shop's own name is not a secret
+	// from its own staff, and several screens want it.
+	RightStoreWrite Right = "store.write"
 
 	// RightStoreOperate is the store as a running system rather than as a
 	// shop: the health report, the maintenance passes that act on what it
@@ -215,6 +262,13 @@ var AllRights = []Right{
 	RightChannelsRead, RightChannelsWrite,
 	RightPluginsRead, RightPluginsWrite,
 	RightNotificationsRead, RightNotificationsWrite,
+	RightCollectionsRead, RightCollectionsWrite,
+	RightCategoriesRead, RightCategoriesWrite,
+	RightMediaRead, RightMediaWrite,
+	RightPricingRead, RightPricingWrite,
+	RightGroupsRead, RightGroupsWrite,
+	RightReportsRead, RightCartsRead, RightPayoutsRead,
+	RightStoreWrite,
 }
 
 // The roles. Fixed, and few: a store with three people does not need a
@@ -282,6 +336,15 @@ var roleRights = map[string][]Right{
 		RightLocationsRead,
 		RightOrdersRead, RightOrdersWrite, RightOrdersFulfill, RightOrdersRefund,
 		RightCustomersRead,
+		// Lifted off catalog.read / catalog.write, which manager held.
+		RightCollectionsRead, RightCollectionsWrite,
+		RightCategoriesRead, RightCategoriesWrite,
+		RightMediaRead, RightMediaWrite,
+		// Off discounts.read / discounts.write.
+		RightPricingRead, RightPricingWrite,
+		RightGroupsRead, RightGroupsWrite,
+		// Off orders.read.
+		RightReportsRead, RightCartsRead, RightPayoutsRead,
 	},
 	RoleStaff: {
 		RightCatalogRead,
@@ -291,6 +354,13 @@ var roleRights = map[string][]Right{
 		RightLocationsRead,
 		RightOrdersRead, RightOrdersWrite, RightOrdersFulfill,
 		RightCustomersRead,
+		// Staff held the read half of each of these and nothing more.
+		RightCollectionsRead,
+		RightCategoriesRead,
+		RightMediaRead,
+		RightPricingRead,
+		RightGroupsRead,
+		RightReportsRead, RightCartsRead, RightPayoutsRead,
 	},
 }
 
@@ -372,6 +442,10 @@ var rightsExempt = map[string]bool{
 	"PATCH /api/admin/me":                true,
 	"POST /api/admin/me/revoke-sessions": true,
 	"GET /api/admin/settings":            true,
+	// The shop's own name and address. Exempt for the same reason settings
+	// is: it is not a secret from the shop's own staff, and an invoice, an
+	// email footer and a packing slip all want it.
+	"GET /api/admin/store": true,
 }
 
 // requireRights refuses a request whose operator does not carry every right the

@@ -292,6 +292,18 @@ export const auth = {
  * A change lands on each affected operator's next request. Nothing has to be
  * revoked, and nobody is signed out.
  */
+/**
+ * The shop as a business: what it is called, where it is, how to reach it.
+ *
+ * Apart from `settings`, which is the shop as a process — the currency and the
+ * TTLs the binary was started with, and read-only for good reason. These change
+ * when a shop moves premises, so they are a form.
+ */
+export const storeProfile = {
+    get: () => api.get("/api/admin/store"),
+    save: (profile) => request("PATCH", "/api/admin/store", { body: profile }),
+};
+
 export const roles = {
     matrix: () => api.get("/api/admin/roles"),
     save: (role, rights) => request("PUT", `/api/admin/roles/${role}`, { body: { rights } }),

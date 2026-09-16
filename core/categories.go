@@ -1052,13 +1052,13 @@ func (a *App) mountCategoryRoutes() {
 	a.HandleFunc("GET /api/categories", a.handleListCategories)
 	a.HandleFunc("GET /api/categories/{slug}", a.handleGetCategoryBySlug)
 
-	a.HandleAdminFunc("GET /api/admin/categories", a.handleAdminListCategories, RightCatalogRead)
-	a.HandleAdminFunc("POST /api/admin/categories", a.handleCreateCategory, RightCatalogWrite)
-	a.HandleAdminFunc("GET /api/admin/categories/{id}", a.handleAdminGetCategory, RightCatalogRead)
-	a.HandleAdminFunc("GET /api/admin/categories/{id}/ancestors", a.handleAdminCategoryAncestors, RightCatalogRead)
-	a.HandleAdminFunc("PATCH /api/admin/categories/{id}", a.handleUpdateCategory, RightCatalogWrite)
-	a.HandleAdminFunc("PUT /api/admin/categories/reorder", a.handleReorderCategories, RightCatalogWrite)
-	a.HandleAdminFunc("DELETE /api/admin/categories/{id}", a.handleDeleteCategory, RightCatalogWrite)
+	a.HandleAdminFunc("GET /api/admin/categories", a.handleAdminListCategories, RightCategoriesRead)
+	a.HandleAdminFunc("POST /api/admin/categories", a.handleCreateCategory, RightCategoriesWrite)
+	a.HandleAdminFunc("GET /api/admin/categories/{id}", a.handleAdminGetCategory, RightCategoriesRead)
+	a.HandleAdminFunc("GET /api/admin/categories/{id}/ancestors", a.handleAdminCategoryAncestors, RightCategoriesRead)
+	a.HandleAdminFunc("PATCH /api/admin/categories/{id}", a.handleUpdateCategory, RightCategoriesWrite)
+	a.HandleAdminFunc("PUT /api/admin/categories/reorder", a.handleReorderCategories, RightCategoriesWrite)
+	a.HandleAdminFunc("DELETE /api/admin/categories/{id}", a.handleDeleteCategory, RightCategoriesWrite)
 }
 
 // -------------------------------------------------------------------- public

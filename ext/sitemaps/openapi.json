@@ -2,48 +2,129 @@
   "paths": {
     "/x/sitemaps/sitemap.xml": {
       "get": {
-        "tags": ["sitemaps"],
+        "tags": [
+          "sitemaps"
+        ],
         "summary": "The sitemap index",
         "description": "Points at the products, collections and — when the cms module is installed — pages sitemaps, by this store's own address. A storefront serves /sitemap.xml by proxying or redirecting here. 404 while the plugin is off, 409 until the storefront URL is set.",
         "responses": {
-          "200": {"description": "The index.", "content": {"application/xml": {"schema": {"type": "string"}}}},
-          "404": {"$ref": "#/components/responses/NotFound"},
-          "409": {"$ref": "#/components/responses/Conflict"}
+          "200": {
+            "description": "The index.",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
         }
       }
     },
     "/x/sitemaps/products.xml": {
       "get": {
-        "tags": ["sitemaps"],
+        "tags": [
+          "sitemaps"
+        ],
         "summary": "Every active product's page",
         "description": "One <url> per active product at the storefront's product path, with lastmod from the product's last change.",
         "responses": {
-          "200": {"description": "The urlset.", "content": {"application/xml": {"schema": {"type": "string"}}}},
-          "404": {"$ref": "#/components/responses/NotFound"},
-          "409": {"$ref": "#/components/responses/Conflict"}
+          "200": {
+            "description": "The urlset.",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
         }
       }
     },
     "/x/sitemaps/collections.xml": {
       "get": {
-        "tags": ["sitemaps"],
+        "tags": [
+          "sitemaps"
+        ],
         "summary": "Every active collection's page",
         "responses": {
-          "200": {"description": "The urlset.", "content": {"application/xml": {"schema": {"type": "string"}}}},
-          "404": {"$ref": "#/components/responses/NotFound"},
-          "409": {"$ref": "#/components/responses/Conflict"}
+          "200": {
+            "description": "The urlset.",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
         }
       }
     },
     "/x/sitemaps/pages.xml": {
       "get": {
-        "tags": ["sitemaps"],
+        "tags": [
+          "sitemaps"
+        ],
         "summary": "Every published content page",
         "description": "Only when the cms module is installed; a page published in several languages is one address.",
         "responses": {
-          "200": {"description": "The urlset.", "content": {"application/xml": {"schema": {"type": "string"}}}},
-          "404": {"$ref": "#/components/responses/NotFound"},
-          "409": {"$ref": "#/components/responses/Conflict"}
+          "200": {
+            "description": "The urlset.",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/x/sitemaps/sitemap.xsl": {
+      "get": {
+        "tags": [
+          "sitemaps"
+        ],
+        "summary": "The stylesheet every sitemap points at",
+        "description": "An XSLT 1.0 stylesheet that turns any of the sitemaps above into a readable table when one is opened in a browser: the address, when it last changed, and — on the index — that it points at other sitemaps rather than at pages. Each sitemap carries an `xml-stylesheet` processing instruction naming this file. A crawler ignores that instruction and reads the XML underneath unchanged, so nothing about what is served to search engines is affected. It answers whether or not the sitemap plugin is switched on, because it describes nothing about the store and a 404 here would leave a browser showing raw XML for the moment between enabling the plugin and the first fetch.",
+        "responses": {
+          "200": {
+            "description": "The stylesheet.",
+            "content": {
+              "text/xsl": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
         }
       }
     }

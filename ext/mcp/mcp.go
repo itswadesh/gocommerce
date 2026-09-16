@@ -112,6 +112,7 @@ func (m *Module) Migrations() []gocommerce.Migration {
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
+	m.registerRights(app)
 	m.app = app
 	m.log = app.Log()
 	m.db = app.DB()
@@ -147,8 +148,8 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// context. Without that second half store.operate would be no weaker than
 	// orders.write ∪ orders.fulfill ∪ inventory.write ∪ orders.read for
 	// everybody who holds it, which is why D24 gives it to the owner alone.
-	app.HandleAdminFunc("POST /api/admin/x/mcp", m.handleHTTP, gocommerce.RightStoreOperate)
-	app.HandleAdminFunc("GET /api/admin/x/mcp/audit", m.handleAudit, gocommerce.RightStoreOperate)
+	app.HandleAdminFunc("POST /api/admin/x/mcp", m.handleHTTP, rightAgentDispatch)
+	app.HandleAdminFunc("GET /api/admin/x/mcp/audit", m.handleAudit, rightAgentRead)
 	return nil
 }
 
@@ -441,4 +442,29 @@ func ServeStdio(app *gocommerce.App, m *Module) error {
 		}
 	}
 	return reader.Err()
+}
+
+// The rights this module's surface is gated on.
+//
+// Both were store.operate, and the dispatch endpoint is why that was
+// uncomfortable: it hands an agent the whole domain-tool surface, which is a
+// larger thing than draining an outbox. Reading what the agent did is not, so
+// the two are separate — and both default to nobody, exactly as store.operate
+// did, so this changes nothing about who holds them today.
+const (
+	rightAgentRead     gocommerce.Right = "agent.read"     // was store.operate
+	rightAgentDispatch gocommerce.Right = "agent.dispatch" // was store.operate
+)
+
+func (m *Module) registerRights(app *gocommerce.App) {
+	app.RegisterRight(gocommerce.RightSpec{
+		Right: rightAgentRead,
+		Label: "See what the agent did",
+		Scope: "Every tool call an agent made, and what it changed",
+	})
+	app.RegisterRight(gocommerce.RightSpec{
+		Right: rightAgentDispatch,
+		Label: "Let an agent act",
+		Scope: "The dispatch endpoint — the whole domain-tool surface",
+	})
 }

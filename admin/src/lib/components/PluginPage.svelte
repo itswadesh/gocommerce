@@ -113,32 +113,42 @@
                 </section>
 
                 {#if links.length}
-                    <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Addresses</h2>
-                    <div class="page-table-wrapper tw:rounded-xl tw:border">
-                        <table class="table">
-                            <tbody>
-                                {#each links as link (link.path)}
-                                    <tr>
-                                        <td class="col-field-name-id min-width">
-                                            <div class="row-name row-name-stacked">
-                                                <span class="txt-bold">{link.label}</span>
-                                                {#if link.hint}<span class="txt-hint txt-sm">{link.hint}</span>{/if}
-                                            </div>
-                                        </td>
-                                        <td><a class="txt-code" href={origin + link.path} target="_blank" rel="noreferrer">{origin}{link.path}</a></td>
-                                        <td class="min-width txt-right">
-                                            <button type="button" class="btn sm secondary" onclick={() => copy(origin + link.path)}>
-                                                <i class="ri-file-copy-line" aria-hidden="true"></i>
-                                                <span class="txt">Copy</span>
-                                            </button>
-                                        </td>
-                                    </tr>
-                                {/each}
-                            </tbody>
-                        </table>
+                    <!-- A list rather than a table.
+                         As a table the first cell carried `min-width`, which
+                         in table.css means "shrink to the content" — so the
+                         label column collapsed to about fourteen pixels and
+                         "Google Merchant" wrapped one letter per line. Two or
+                         three addresses are not tabular data anyway: each is a
+                         name, an address and a button. -->
+                    <h2 class="plugin-links-title">Addresses</h2>
+                    <div class="plugin-links">
+                        {#each links as link (link.path)}
+                            <div class="plugin-link">
+                                <div class="plugin-link-name">
+                                    <span class="txt-bold">{link.label}</span>
+                                    {#if link.hint}<span class="txt-hint txt-sm">{link.hint}</span>{/if}
+                                </div>
+                                <a
+                                    class="plugin-link-url txt-code"
+                                    href={origin + link.path}
+                                    target="_blank"
+                                    rel="noreferrer">{origin}{link.path}</a
+                                >
+                                <button
+                                    type="button"
+                                    class="btn sm secondary plugin-link-copy"
+                                    onclick={() => copy(origin + link.path)}
+                                >
+                                    <i class="ri-file-copy-line" aria-hidden="true"></i>
+                                    <span class="txt">Copy</span>
+                                </button>
+                            </div>
+                        {/each}
                     </div>
                     {#if !plugin.enabled || !plugin.configured}
-                        <p class="txt-hint txt-sm m-t-sm">These answer once the plugin is active and set up.</p>
+                        <p class="txt-hint txt-sm m-t-sm">
+                            These answer 404 until the plugin is active and set up.
+                        </p>
                     {/if}
                 {/if}
             {:else if loading}
@@ -163,9 +173,62 @@
         font-weight: 600;
     }
     .plugin-description {
-        margin: var(--xsSpacing) 0 0;
-        color: var(--txtHintColor);
+        /* Literals, not --xsSpacing and --txtHintColor: neither of those is
+           defined anywhere in the panel, so this had no top margin and
+           inherited the primary text colour instead of the hint. */
+        margin: 6px 0 0;
+        color: var(--surfaceTxtHintColor);
         font-size: var(--smFontSize);
         line-height: 1.45;
+    }
+
+    /* The addresses sit in the same column as the card above them, so the page
+       reads as one thing rather than a 640px card beside a full-width table. */
+    .plugin-links-title {
+        max-width: 640px;
+        margin: var(--smSpacing) 0 8px;
+        font-size: var(--smFontSize);
+        font-weight: 600;
+    }
+    .plugin-links {
+        max-width: 640px;
+        border: 1px solid var(--surfaceAlt3Color);
+        border-radius: var(--borderRadius);
+        overflow: hidden;
+    }
+    .plugin-link {
+        display: grid;
+        /* The name takes what it needs and no less; the address takes the
+           rest and wraps inside its own cell rather than forcing the row. */
+        grid-template-columns: minmax(150px, auto) 1fr auto;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--surfaceAlt2Color);
+    }
+    .plugin-link:last-child {
+        border-bottom: 0;
+    }
+    .plugin-link-name {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        min-width: 0;
+    }
+    .plugin-link-url {
+        min-width: 0;
+        word-break: break-all;
+        font-size: var(--smFontSize);
+    }
+
+    @media (max-width: 700px) {
+        /* Three columns will not hold on a phone: the name goes on its own
+           line, the address under it, the button beside the address. */
+        .plugin-link {
+            grid-template-columns: 1fr auto;
+        }
+        .plugin-link-name {
+            grid-column: 1 / -1;
+        }
     }
 </style>

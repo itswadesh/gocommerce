@@ -245,6 +245,7 @@ func (m *Module) Migrations() []gocommerce.Migration {
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
+	m.registerRights(app)
 	m.app = app
 	m.db = app.DB()
 	m.mountRoutes(app)
@@ -1224,4 +1225,31 @@ func (m *Module) Screens() []gocommerce.Screen {
 				"Orders already placed keep their own snapshot of the address they shipped to, so history stays readable.",
 		},
 	}}
+}
+
+// The rights this module's screens are gated on.
+//
+// Reading an account is the personal data customers.read already governs, so
+// accounts.read goes to the roles that held it and installing this module
+// widens nobody. Erasing one is not a read: it takes the account, its
+// sessions, its address book and its order links, so it is its own right and
+// defaults to nobody — rights are all-of, so whoever may erase can still see
+// what they are erasing.
+const (
+	rightAccountsRead  gocommerce.Right = "accounts.read"  // was customers.read
+	rightAccountsErase gocommerce.Right = "accounts.erase" // was store.operate
+)
+
+func (m *Module) registerRights(app *gocommerce.App) {
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightAccountsRead,
+		Label:   "See shopper accounts",
+		Scope:   "Who has signed up — names, emails, addresses",
+		Default: []string{gocommerce.RoleManager, gocommerce.RoleStaff},
+	})
+	app.RegisterRight(gocommerce.RightSpec{
+		Right: rightAccountsErase,
+		Label: "Erase a shopper account",
+		Scope: "The account, its sessions, its address book and its order links",
+	})
 }

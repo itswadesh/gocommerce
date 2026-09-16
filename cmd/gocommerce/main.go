@@ -41,6 +41,7 @@ import (
 	"github.com/misiki/gocommerce/ext/navigation"
 	"github.com/misiki/gocommerce/ext/newsletter"
 	msg91 "github.com/misiki/gocommerce/ext/notify-msg91"
+	resend "github.com/misiki/gocommerce/ext/notify-resend"
 	sendgrid "github.com/misiki/gocommerce/ext/notify-sendgrid"
 	adyen "github.com/misiki/gocommerce/ext/payments-adyen"
 	helcim "github.com/misiki/gocommerce/ext/payments-helcim"
@@ -139,6 +140,7 @@ environment:
 		withReviews  = fs.Bool("reviews", false, "install the reviews module: product ratings and reviews, moderated from the Reviews screen")
 		withContact  = fs.Bool("contact", false, "install the contact module: the storefront's contact form and its inbox (CONTACT_EMAIL, or the Plugins screen)")
 		withNews     = fs.Bool("newsletter", false, "install the newsletter module: the storefront's signup box and its list")
+		withResend   = fs.Bool("resend", false, "install the Resend module: the store's emails through Resend, and the one to reach for first — an API key is the only required setting (RESEND_API_KEY, RESEND_FROM, or Notifications › Setup Email)")
 		withSendgrid = fs.Bool("sendgrid", false, "install the SendGrid module: the store's emails through SendGrid (SENDGRID_API_KEY, SENDGRID_FROM, or Notifications › Setup Email)")
 		withMsg91    = fs.Bool("msg91", false, "install the MSG91 module: the store's SMS through MSG91 (MSG91_AUTH_KEY, or Notifications › Setup SMS)")
 		withGateways = fs.Bool("gateways", false, "install every payment gateway module idle — Stripe, Razorpay, Adyen, Paddle, Lemon Squeezy, Helcim, Hyperswitch, RevenueCat — each switched on and given its keys under Settings › Payment methods")
@@ -248,6 +250,14 @@ environment:
 	}
 	// The delivery backends. With nothing in the environment they are
 	// installed idle and wait for the Setup Email / Setup SMS screens.
+	// Resend first, because it is the one that works with one setting: a key
+	// and nothing else sends, from Resend's own onboarding address, until the
+	// store has a domain of its own to verify.
+	if *withResend {
+		modules = append(modules, resend.New(resend.Config{
+			APIKey: os.Getenv("RESEND_API_KEY"), From: os.Getenv("RESEND_FROM"), FromName: os.Getenv("RESEND_FROM_NAME"),
+		}))
+	}
 	if *withSendgrid {
 		modules = append(modules, sendgrid.New(sendgrid.Config{
 			APIKey: os.Getenv("SENDGRID_API_KEY"), From: os.Getenv("SENDGRID_FROM"), FromName: os.Getenv("SENDGRID_FROM_NAME"),

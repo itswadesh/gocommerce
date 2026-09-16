@@ -63,3 +63,87 @@ func TestSitemapRoutesAreDocumented(t *testing.T) {
 	app := gctest.New(t, New(Config{}))
 	gctest.AssertSpecCoversModuleRoutes(t, app, "sitemaps")
 }
+
+// A sitemap opened in a browser should be readable, which it is not as raw
+// XML. Each response carries a stylesheet instruction and the sheet is served
+// beside it; a crawler ignores the instruction, so the XML underneath is
+// unchanged.
+func TestEverySitemapPointsAtAStylesheetThatIsServed(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	ctx := context.Background()
+	gctest.CreateProduct(t, app, "SM-XSL", 1000, 1)
+
+	on := true
+	if _, err := app.Plugins().Update(ctx, pluginKey, gocommerce.PluginPatch{Enabled: &on, Settings: map[string]any{
+		"storefront_url": "https://shop.example/",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{
+		"/x/sitemaps/sitemap.xml",
+		"/x/sitemaps/products.xml",
+		"/x/sitemaps/collections.xml",
+	} {
+		rec := gctest.Request(t, app, http.MethodGet, path, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s = %d: %s", path, rec.Code, rec.Body)
+		}
+		body := rec.Body.String()
+		if !strings.Contains(body, `<?xml-stylesheet type="text/xsl" href="`+stylesheetPath+`"?>`) {
+			t.Errorf("%s carries no stylesheet instruction:\n%s", path, body[:min(300, len(body))])
+		}
+		// The instruction belongs between the declaration and the root
+		// element, which is the only place it is legal.
+		decl := strings.Index(body, "<?xml ")
+		pi := strings.Index(body, "<?xml-stylesheet")
+		root := strings.Index(body, "<sitemapindex")
+		if root < 0 {
+			root = strings.Index(body, "<urlset")
+		}
+		if !(decl >= 0 && decl < pi && pi < root) {
+			t.Errorf("%s: declaration at %d, instruction at %d, root at %d — wrong order", path, decl, pi, root)
+		}
+		// And the XML itself is untouched, which is what a crawler reads.
+		if !strings.Contains(body, "http://www.sitemaps.org/schemas/sitemap/0.9") {
+			t.Errorf("%s lost its namespace", path)
+		}
+	}
+
+	// The sheet is served, and as XSL rather than as a download.
+	sheet := gctest.Request(t, app, http.MethodGet, stylesheetPath, nil)
+	if sheet.Code != http.StatusOK {
+		t.Fatalf("stylesheet = %d", sheet.Code)
+	}
+	if ct := sheet.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/xsl") {
+		t.Errorf("stylesheet content type = %q", ct)
+	}
+	body := sheet.Body.String()
+	// It handles both shapes: a reader following the index into products.xml
+	// should not land on a differently-styled page.
+	for _, want := range []string{"s:sitemapindex", "s:urlset", "xsl:stylesheet"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the stylesheet has no %s", want)
+		}
+	}
+}
+
+// The sheet answers even while the plugin is off. It describes nothing about
+// the store, and a 404 here would leave a browser showing raw XML for the
+// second between switching the plugin on and the first fetch.
+func TestTheStylesheetIsServedWhetherOrNotTheSitemapIs(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	if rec := gctest.Request(t, app, http.MethodGet, "/x/sitemaps/sitemap.xml", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("the sitemap should be off: %d", rec.Code)
+	}
+	if rec := gctest.Request(t, app, http.MethodGet, stylesheetPath, nil); rec.Code != http.StatusOK {
+		t.Errorf("stylesheet while the sitemap is off = %d, want 200", rec.Code)
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

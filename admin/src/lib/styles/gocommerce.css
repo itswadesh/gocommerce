@@ -5123,78 +5123,6 @@ kbd + kbd {
     padding-bottom: 0;
 }
 
-/* --------- @media print — KEEP LAST ---------
- *
- * Append your section ABOVE this block. These rules carry no `!important`, so a
- * later section's `.page-footer { display: flex }` of equal specificity wins the
- * print cascade by source order alone and the shell reappears on the page.
- */
-@media print {
-    /*
-     * The colour scheme is re-declared rather than inherited. A dark-theme
-     * operator otherwise prints a black rectangle with the ink to match, which
-     * is a real cost in a warehouse and an invisible one in devtools' print
-     * emulation — hence the two-scheme check in the Playwright pass.
-     */
-    :root,
-    [data-color-scheme="dark"] {
-        --baseColor: #fff;
-        --baseAlt1Color: #fff;
-        --baseAlt2Color: #fff;
-        --surfaceColor: #fff;
-        --bodyColor: #fff;
-        --txtPrimaryColor: #000;
-        --txtHintColor: #333;
-        --boxShadow: none;
-    }
-
-    /* The shell is navigation; a printed page has none. */
-    .app-sidebar,
-    .app-topbar,
-    .app-drawer,
-    .app-backdrop,
-    .page-sidebar,
-    .page-header,
-    .page-footer,
-    .bulkbar-wrapper,
-    .toasts-container,
-    .theme-toggle {
-        display: none;
-    }
-
-    /* Flattened: the rounded, shadowed, scrolling surfaces of a window are
-       decoration once the content is on paper, and a fixed height clips it. */
-    .app,
-    .page,
-    .page-content {
-        display: block;
-        height: auto;
-        max-height: none;
-        overflow: visible;
-        margin: 0;
-        padding: 0;
-        border-radius: 0;
-        box-shadow: none;
-        background: #fff;
-    }
-
-    @page {
-        margin: 14mm;
-    }
-
-    /*
-     * A label's meaning is its colour, which a mono printer throws away — so it
-     * becomes an outline instead. `!important` here and nowhere else in the
-     * block: the colour is set by a variant class of higher specificity than
-     * anything a position rule can outrank.
-     */
-    .label {
-        border: 1px solid #000;
-        background: none !important;
-        color: #000 !important;
-    }
-}
-
 /* --------------------------------------------------------------------------
  * Codes in tables are one word
  * -------------------------------------------------------------------------- */
@@ -5318,14 +5246,20 @@ kbd + kbd {
 }
 
 /*
- * The grid scrolls in its own box rather than running the page to four
- * screens: the name, the description and the Save button stay put while the
- * rights move, which is what lets somebody check a dozen rows without losing
- * the control that commits them.
+ * One scroller, and it is the page.
+ *
+ * This box used to scroll on its own, capped at a fraction of the viewport.
+ * Two things were wrong with that. The cap took no account of what sat above
+ * it, so at 900px the grid began at 369 and ran to 945 — its own bottom edge,
+ * and the bottom of its scrollbar, below the fold — and reaching the last row
+ * meant scrolling the page to find the grid and then scrolling the grid. And
+ * the reason given for it was not true: Save sits in the page header, which
+ * scrolls away with everything else, so nothing was being kept in view.
+ *
+ * Full height, and the page scrolls once, the way every other listing here
+ * behaves. The section headings stay sticky and now stick to the page.
  */
 .shopify-skin .perm-grid {
-    max-height: min(64vh, 620px);
-    overflow-y: auto;
     border: 1px solid var(--surfaceAlt3Color);
     border-radius: var(--borderRadius);
 }
@@ -5500,4 +5434,681 @@ kbd + kbd {
 .shopify-skin .role-field input,
 .shopify-skin .role-field textarea {
     width: 100%;
+}
+
+/* The "Roles" in "Roles / Manager" is a way back, not a caption. It was a
+   plain span carrying the hint colour, which made it look exactly like the
+   breadcrumb above it and do nothing when clicked. */
+.shopify-skin .role-title-up {
+    color: var(--surfaceTxtHintColor);
+    text-decoration: none;
+}
+.shopify-skin .role-title-up:hover,
+.shopify-skin .role-title-up:focus-visible {
+    color: var(--surfaceTxtColor);
+    text-decoration: underline;
+}
+.shopify-skin .role-title-sep {
+    color: var(--surfaceTxtHintColor);
+    margin: 0 2px;
+}
+
+/* ------------------------------------------------------------- feeds */
+
+/*
+ * The Feeds screen.
+ *
+ * It is four stacked cards rather than the one-card plugin page it replaces,
+ * because a feed's work is not switching it on — it is finding out what is in
+ * the file and what the platform will refuse. Each card answers one of those,
+ * in the order somebody actually asks them: what is in it, what is wrong with
+ * it, what goes in it, where do I paste it.
+ */
+.shopify-skin .page-feeds .feed-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+/* The chips sit with the title and push the switch to the far edge, so the
+   control that turns the feeds off is never beside the badge saying they are
+   on. */
+.shopify-skin .page-feeds .feed-head-chips {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-left: var(--smSpacing);
+}
+.shopify-skin .page-feeds .page-header-primary-btns {
+    margin-left: auto;
+}
+
+.shopify-skin .feed-card {
+    padding: var(--smSpacing);
+    margin: 0 0 var(--smSpacing);
+}
+.shopify-skin .feed-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--smSpacing);
+}
+.shopify-skin .feed-card-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+}
+.shopify-skin .feed-card-sub {
+    margin: 4px 0 0;
+    max-width: 70ch;
+}
+
+/*
+ * The four figures. A grid that wraps rather than four fixed columns: at phone
+ * width four stat blocks side by side give each about seventy pixels, which is
+ * narrower than the word "Availability".
+ */
+.shopify-skin .feed-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: var(--smSpacing);
+    margin-top: var(--smSpacing);
+    padding: var(--smSpacing);
+    background: var(--surfaceAlt1Color);
+    border-radius: var(--borderRadius);
+}
+.shopify-skin .feed-stat-label {
+    font-size: var(--smFontSize);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--surfaceTxtHintColor);
+}
+.shopify-skin .feed-stat-value {
+    margin-top: 3px;
+    font-size: 1.05rem;
+    font-weight: 600;
+    /* Figures that sit above one another should line up on the digit. */
+    font-variant-numeric: tabular-nums;
+}
+.shopify-skin .feed-stat-note {
+    margin-top: 2px;
+    font-size: var(--smFontSize);
+    color: var(--surfaceTxtHintColor);
+    /* A storefront address can be longer than its column and must not push the
+       grid sideways. */
+    overflow-wrap: anywhere;
+}
+.shopify-skin .feed-foot {
+    margin: var(--smSpacing) 0 0;
+    max-width: 80ch;
+}
+
+/* Health: a count, then what to do about it. The number is the thing being
+   scanned for, so it leads and is the only large figure on the row. */
+.shopify-skin .feed-health {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: var(--smSpacing);
+}
+.shopify-skin .feed-health-row {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    align-items: baseline;
+    gap: var(--smSpacing);
+    padding: 10px 12px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+}
+.shopify-skin .feed-health-count {
+    font-size: 1.3rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--warningColor);
+}
+.shopify-skin .feed-health-clear {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: var(--smSpacing);
+    padding: 10px 12px;
+    border-radius: var(--borderRadius);
+    background: var(--surfaceSuccessColor);
+    color: var(--surfaceTxtColor);
+}
+.shopify-skin .feed-health-clear i {
+    color: var(--successColor);
+    font-size: 1.1rem;
+}
+
+/* The settings, two across on a wide screen and one on a narrow one. */
+.shopify-skin .feed-form {
+    display: grid;
+    /* 400 rather than 280: at the width this card gets, 280 fits three across
+       and leaves the fourth field alone on a row of its own, which reads as a
+       box that got left behind rather than as the end of a list. */
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 0 var(--spacing);
+    margin-top: 4px;
+}
+.shopify-skin .feed-form-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: var(--smSpacing);
+}
+
+/*
+ * One address per row: a name and what it is, the URL, and the buttons. Not a
+ * table — the first cell of a table carries min-width, which in table.css
+ * means "shrink to the content", and that collapsed the label column to about
+ * fourteen pixels once already.
+ */
+.shopify-skin .feed-links {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: var(--smSpacing);
+}
+.shopify-skin .feed-link {
+    display: grid;
+    grid-template-columns: minmax(150px, 210px) 1fr auto;
+    align-items: center;
+    gap: var(--smSpacing);
+    padding: 10px 12px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+}
+.shopify-skin .feed-link-name {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+.shopify-skin .feed-link-url {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--primaryColor);
+}
+.shopify-skin .feed-link-actions {
+    display: flex;
+    gap: 6px;
+}
+
+/* The platform switcher. Underline rather than pills: it changes what is below
+   it, and a row of pills reads as four things you could switch on. */
+.shopify-skin .feed-tabs {
+    display: flex;
+    gap: 2px;
+    flex-wrap: wrap;
+    margin-top: var(--spacing);
+    border-bottom: 1px solid var(--surfaceAlt2Color);
+}
+.shopify-skin .feed-tab {
+    appearance: none;
+    background: none;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    padding: 8px 12px;
+    font: inherit;
+    font-weight: 500;
+    color: var(--surfaceTxtHintColor);
+    cursor: pointer;
+}
+.shopify-skin .feed-tab:hover {
+    color: var(--surfaceTxtColor);
+}
+.shopify-skin .feed-tab.on {
+    color: var(--surfaceTxtColor);
+    border-bottom-color: var(--primaryColor);
+}
+.shopify-skin .feed-tab:focus-visible {
+    outline: 2px solid var(--primaryColor);
+    outline-offset: -2px;
+}
+
+.shopify-skin .feed-guide {
+    padding-top: var(--smSpacing);
+}
+.shopify-skin .feed-guide-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--smSpacing);
+}
+.shopify-skin .feed-guide-title {
+    margin: 0 0 2px;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+.shopify-skin .feed-guide-reads {
+    margin-top: 6px;
+    color: var(--surfaceTxtHintColor);
+}
+.shopify-skin .feed-guide-heading {
+    margin: var(--spacing) 0 6px;
+    font-size: var(--smFontSize);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--surfaceTxtHintColor);
+}
+.shopify-skin .feed-before {
+    margin: 0;
+    padding-left: 18px;
+    max-width: 85ch;
+}
+.shopify-skin .feed-before li {
+    margin-bottom: 4px;
+}
+/* A count beside a rejection reason, so the list reads as this store's own
+   rather than as advice. Muted to grey when there is nothing to fix, because
+   "none" is the useful half of the answer and should not look like an alarm. */
+.shopify-skin .feed-reject-count {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 0 6px;
+    border-radius: 999px;
+    font-size: var(--smFontSize);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: #fff;
+    background: var(--warningColor);
+}
+.shopify-skin .feed-reject-count.none {
+    color: var(--surfaceTxtHintColor);
+    background: var(--surfaceAlt2Color);
+}
+
+/* Numbered because these genuinely are a sequence — step four does not work
+   before step three. */
+.shopify-skin .feed-steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-width: 85ch;
+}
+.shopify-skin .feed-steps li {
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    gap: 10px;
+    align-items: baseline;
+    padding: 5px 0;
+}
+.shopify-skin .feed-step-n {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    background: var(--surfaceAlt2Color);
+    color: var(--surfaceTxtColor);
+    font-size: var(--smFontSize);
+    font-weight: 600;
+    /* Baseline alignment on a grid item with a circular background drags the
+       circle down half a line; this pins it to the text's first line. */
+    align-self: start;
+}
+
+@media (max-width: 700px) {
+    .shopify-skin .feed-link {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+    .shopify-skin .feed-health-row {
+        grid-template-columns: 44px 1fr;
+        gap: 10px;
+    }
+}
+
+/* --------------------------------------------------------- seo score */
+
+/*
+ * The score on the product editor.
+ *
+ * A ring rather than a bar, for one reason: a bar the width of the card reads
+ * as progress through a task that finishes, and this one never does — a
+ * product at 100 can still be rewritten. A dial reads as a gauge, which is
+ * what it is.
+ *
+ * The four band colours are the semantic ones the panel already uses for
+ * danger, warning and success, so a red score here and a red chip elsewhere
+ * mean the same thing. "Getting there" borrows the warning hue rather than
+ * inventing a fourth, because three colours and four bands is on purpose:
+ * nothing about 55 and 75 differs in kind, only in degree.
+ */
+.shopify-skin .seo-score {
+    display: flex;
+    align-items: center;
+    gap: var(--smSpacing);
+}
+.shopify-skin .seo-score-dial {
+    position: relative;
+    width: 60px;
+    height: 60px;
+    flex: 0 0 60px;
+}
+.shopify-skin .seo-score-dial svg {
+    width: 60px;
+    height: 60px;
+    /* Twelve o'clock, not three. */
+    transform: rotate(-90deg);
+}
+.shopify-skin .seo-ring-track {
+    fill: none;
+    stroke: var(--surfaceAlt2Color);
+    stroke-width: 6;
+}
+.shopify-skin .seo-ring-value {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 6;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.25s ease;
+}
+.shopify-skin .seo-score-n {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.05rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--surfaceTxtColor);
+}
+.shopify-skin .seo-score-band {
+    font-weight: 600;
+    color: currentColor;
+}
+/* Three hues over four bands, deliberately: a 55 and a 75 differ in degree,
+   not in kind, and the labels already say which is which. Red is the only one
+   that means stop. */
+.shopify-skin .seo-band-bad {
+    color: var(--dangerColor);
+}
+.shopify-skin .seo-band-ok {
+    color: var(--warningColor);
+}
+.shopify-skin .seo-band-good,
+.shopify-skin .seo-band-great {
+    color: var(--successColor);
+}
+
+.shopify-skin .seo-checks {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.shopify-skin .seo-check {
+    display: grid;
+    grid-template-columns: 18px 1fr;
+    gap: 8px;
+    align-items: baseline;
+    padding: 5px 0;
+}
+.shopify-skin .seo-check i {
+    font-size: 1rem;
+    /* Baseline alignment drags an icon glyph off the first line of a two-line
+       row; this pins it to the top. */
+    align-self: start;
+    line-height: 1.35;
+}
+.shopify-skin .seo-check.is-bad i {
+    color: var(--dangerColor);
+}
+.shopify-skin .seo-check.is-good i {
+    color: var(--successColor);
+}
+.shopify-skin .seo-check.is-good {
+    color: var(--surfaceTxtHintColor);
+}
+/* Waiting is neither a pass nor a failure and must not read as either: no
+   green tick to claim it was measured, no red cross to imply something is
+   wrong with a product that simply has not got there yet. */
+.shopify-skin .seo-check.is-waiting {
+    color: var(--surfaceTxtHintColor);
+}
+.shopify-skin .seo-check.is-waiting i {
+    color: var(--surfaceTxtDisabledColor);
+}
+.shopify-skin .seo-passed-toggle {
+    margin-top: 6px;
+    padding-left: 0;
+}
+.shopify-skin .seo-caveat {
+    margin: var(--smSpacing) 0 0;
+    padding-top: var(--smSpacing);
+    border-top: 1px solid var(--surfaceAlt2Color);
+    max-width: 70ch;
+}
+
+/* ---------------------------------------------------------- sitemap */
+
+/*
+ * The sitemap screen shares the Feeds screen's card, stat, tab and step
+ * vocabulary above; what it adds is the table of files and the bar that fills
+ * while they are read.
+ */
+
+/*
+ * The progress bar.
+ *
+ * It counts files fetched out of files the index names — a true fraction of
+ * real work. There is no honest percentage inside a single generation: the
+ * server builds the whole document and writes it, with nothing in between to
+ * report, so a bar animating through an invented number would be telling the
+ * operator something nobody measured.
+ */
+.shopify-skin .map-progress {
+    margin-top: var(--smSpacing);
+}
+.shopify-skin .map-progress-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--smSpacing);
+    margin-bottom: 6px;
+    font-size: var(--smFontSize);
+    color: var(--surfaceTxtHintColor);
+}
+.shopify-skin .map-progress-pct {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--surfaceTxtColor);
+}
+.shopify-skin .map-progress-track {
+    height: 6px;
+    border-radius: 999px;
+    background: var(--surfaceAlt2Color);
+    overflow: hidden;
+}
+.shopify-skin .map-progress-bar {
+    height: 100%;
+    border-radius: 999px;
+    background: var(--successColor);
+    /* Eased, because each step is a whole file and the jumps are large; the
+       transition is the only thing here that is not a measurement. */
+    transition: width 0.25s ease;
+}
+
+/*
+ * One row per sitemap. A grid rather than a table for the reason the feed
+ * addresses are a grid: the first column of a table carries min-width, which
+ * in table.css means "shrink to the content", and a short word like "Index"
+ * collapses the column the long ones need.
+ */
+.shopify-skin .map-table {
+    margin-top: var(--smSpacing);
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+    overflow: hidden;
+}
+.shopify-skin .map-row {
+    display: grid;
+    grid-template-columns: minmax(90px, 130px) 1fr minmax(110px, auto) 80px 110px;
+    align-items: center;
+    gap: var(--smSpacing);
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--surfaceAlt2Color);
+}
+.shopify-skin .map-row:last-child {
+    border-bottom: 0;
+}
+.shopify-skin .map-head {
+    background: var(--surfaceAlt1Color);
+    font-size: var(--smFontSize);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--surfaceTxtHintColor);
+}
+.shopify-skin .map-row.is-bad {
+    background: var(--surfaceDangerColor);
+}
+.shopify-skin .map-url {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+.shopify-skin .map-url a {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--primaryColor);
+}
+/* The copy button only appears on hover or focus: five of them down the
+   column is five buttons competing with the addresses they belong to. */
+.shopify-skin .map-copy {
+    opacity: 0;
+    padding: 0 4px;
+    flex: 0 0 auto;
+}
+.shopify-skin .map-row:hover .map-copy,
+.shopify-skin .map-copy:focus-visible {
+    opacity: 1;
+}
+
+@media (max-width: 800px) {
+    /* The size and the newest date are the two a phone can lose: the count is
+       the reason anybody opened this. */
+    .shopify-skin .map-row {
+        grid-template-columns: minmax(80px, 100px) 1fr auto;
+        gap: 10px;
+    }
+    .shopify-skin .map-row > :nth-child(4),
+    .shopify-skin .map-row > :nth-child(5) {
+        display: none;
+    }
+}
+
+/* --------- @media print — KEEP LAST ---------
+ *
+ * Append your section ABOVE this block. These rules carry no `!important`, so a
+ * later section's `.page-footer { display: flex }` of equal specificity wins the
+ * print cascade by source order alone and the shell reappears on the page.
+ *
+ * That is not a theoretical hazard: five sections had already been appended
+ * below it, and the block was moved back down here to put the invariant back.
+ */
+@media print {
+    /*
+     * Print is the light theme, whatever is on screen.
+     *
+     * The scheme is re-declared rather than inherited, because a dark-theme
+     * operator otherwise prints a near-blank sheet: the paper is forced white
+     * while the ink stays #ebebeb. Measured on a packing slip, the title, the
+     * item and the quantity all came out at 1.19:1 and the rules at 1:1 —
+     * white on white, with the two outlined status chips floating on an empty
+     * page, because those carry their own black.
+     *
+     * The values are the light theme's own literals from vars.css rather than
+     * anything derived from them. Dark builds its greys with
+     * `color-mix(in srgb, var(--surfaceColor), white N%)`, so setting the
+     * surface to white and stopping there turns every border, rule and table
+     * head white as well — which was the other half of the disappearance. The
+     * families dark aliases straight to the surface ink (--secondaryTxtColor,
+     * --successTxtColor and the rest) follow it through `var()` and need no
+     * line of their own.
+     *
+     * Only tokens something actually reads are listed. This block used to set
+     * --baseAlt1Color, --baseAlt2Color and --bodyColor as well, none of which
+     * is declared anywhere else in the panel or consumed by any rule: a reset
+     * naming a token no rule reads looks like coverage and is not, and it was
+     * what made the real omission hard to see.
+     */
+    :root,
+    [data-color-scheme="dark"] {
+        --surfaceColor: #fff;
+        --surfaceAlt1Color: #f8f9fa;
+        --surfaceAlt2Color: #e4e8ec;
+        --surfaceAlt3Color: #dce0e5;
+        --surfaceAlt4Color: #d3d9df;
+        --surfaceAlt5Color: #ccd4db;
+        --surfaceTxtColor: #25272d;
+        --surfaceTxtHintColor: #687278;
+        --surfaceTxtDisabledColor: #a2a9ae;
+        --baseColor: #fff;
+        --txtPrimaryColor: #000;
+        --txtHintColor: #333;
+        --boxShadow: none;
+    }
+
+    /* The shell is navigation; a printed page has none. */
+    .app-sidebar,
+    .app-topbar,
+    .app-drawer,
+    .app-backdrop,
+    .page-sidebar,
+    .page-header,
+    .page-footer,
+    .bulkbar-wrapper,
+    .toasts-container,
+    .theme-toggle {
+        display: none;
+    }
+
+    /* Flattened: the rounded, shadowed, scrolling surfaces of a window are
+       decoration once the content is on paper, and a fixed height clips it. */
+    .app,
+    .page,
+    .page-content {
+        display: block;
+        height: auto;
+        max-height: none;
+        overflow: visible;
+        margin: 0;
+        padding: 0;
+        border-radius: 0;
+        box-shadow: none;
+        background: #fff;
+    }
+
+    /* On screen the sheet is a piece of paper lying on the panel's background,
+       and its inset and centring are what make it read as one. On paper the
+       page box supplies both, so it keeps neither — the standing comment on
+       .print-sheet already promised this and only @page was delivering it. */
+    .print-sheet {
+        max-width: none;
+        margin: 0;
+        padding: 0;
+    }
+
+    @page {
+        margin: 14mm;
+    }
+
+    /*
+     * A label's meaning is its colour, which a mono printer throws away — so it
+     * becomes an outline instead. `!important` here and nowhere else in the
+     * block: the colour is set by a variant class of higher specificity than
+     * anything a position rule can outrank.
+     */
+    .label {
+        border: 1px solid #000;
+        background: none !important;
+        color: #000 !important;
+    }
 }

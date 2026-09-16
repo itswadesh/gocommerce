@@ -580,17 +580,17 @@ func (a *App) mountCollectionRoutes() {
 	a.HandleFunc("GET /api/collections", a.handleListCollections)
 	a.HandleFunc("GET /api/collections/{slug}", a.handleGetCollectionBySlug)
 
-	a.HandleAdminFunc("GET /api/admin/collections", a.handleAdminListCollections, RightCatalogRead)
-	a.HandleAdminFunc("POST /api/admin/collections", a.handleCreateCollection, RightCatalogWrite)
-	a.HandleAdminFunc("GET /api/admin/collections/{id}", a.handleAdminGetCollection, RightCatalogRead)
-	a.HandleAdminFunc("PATCH /api/admin/collections/{id}", a.handleUpdateCollection, RightCatalogWrite)
-	a.HandleAdminFunc("DELETE /api/admin/collections/{id}", a.handleDeleteCollection, RightCatalogWrite)
-	a.HandleAdminFunc("PUT /api/admin/products/{id}/collections", a.handleSetProductCollections, RightCatalogWrite)
+	a.HandleAdminFunc("GET /api/admin/collections", a.handleAdminListCollections, RightCollectionsRead)
+	a.HandleAdminFunc("POST /api/admin/collections", a.handleCreateCollection, RightCollectionsWrite)
+	a.HandleAdminFunc("GET /api/admin/collections/{id}", a.handleAdminGetCollection, RightCollectionsRead)
+	a.HandleAdminFunc("PATCH /api/admin/collections/{id}", a.handleUpdateCollection, RightCollectionsWrite)
+	a.HandleAdminFunc("DELETE /api/admin/collections/{id}", a.handleDeleteCollection, RightCollectionsWrite)
+	a.HandleAdminFunc("PUT /api/admin/products/{id}/collections", a.handleSetProductCollections, RightCollectionsWrite)
 	// The other axis: what is in one collection, and in what order. Reading it
 	// is catalog.read because it is a product listing; writing it is the
 	// same right that moves a product between collections.
-	a.HandleAdminFunc("GET /api/admin/collections/{id}/products", a.handleAdminListCollectionProducts, RightCatalogRead)
-	a.HandleAdminFunc("PUT /api/admin/collections/{id}/products", a.handleSetCollectionProducts, RightCatalogWrite)
+	a.HandleAdminFunc("GET /api/admin/collections/{id}/products", a.handleAdminListCollectionProducts, RightCollectionsRead)
+	a.HandleAdminFunc("PUT /api/admin/collections/{id}/products", a.handleSetCollectionProducts, RightCollectionsWrite)
 }
 
 // ------------------------------------------------------------------- public

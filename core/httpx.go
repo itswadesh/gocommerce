@@ -471,6 +471,7 @@ func (a *App) mountCoreRoutes() {
 	// Beside the orders, because a report is a reading of them.
 	a.mountReportRoutes()
 	a.mountTransferRoutes()
+	a.mountStoreProfileRoutes()
 	a.mountPluginRoutes()
 	a.mountNotificationRoutes()
 	a.mountNotifyTemplateRoutes()

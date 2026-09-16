@@ -51,6 +51,20 @@ export const RIGHT_ORDER = [
     "plugins.write",
     "notifications.read",
     "notifications.write",
+    "collections.read",
+    "collections.write",
+    "categories.read",
+    "categories.write",
+    "media.read",
+    "media.write",
+    "pricing.read",
+    "pricing.write",
+    "groups.read",
+    "groups.write",
+    "reports.read",
+    "carts.read",
+    "payouts.read",
+    "store.write",
 ];
 
 /** A right reads better as a sentence than as a dotted identifier. */
@@ -84,6 +98,20 @@ export const RIGHT_LABELS = {
     "plugins.write": "Switch integrations on and hold their keys",
     "notifications.read": "See the messages the store sends",
     "notifications.write": "Reword the messages the store sends",
+    "collections.read": "See collections",
+    "collections.write": "Curate collections",
+    "categories.read": "See the category tree",
+    "categories.write": "Edit the category tree",
+    "media.read": "See the file library",
+    "media.write": "Upload and remove files",
+    "pricing.read": "See price lists",
+    "pricing.write": "Edit price lists",
+    "groups.read": "See customer groups",
+    "groups.write": "Edit customer groups",
+    "reports.read": "See the reports",
+    "carts.read": "See abandoned carts",
+    "payouts.read": "See what each gateway owes",
+    "store.write": "Edit the store's name, address and contact details",
 };
 
 /*
@@ -121,6 +149,20 @@ export const RIGHT_SCOPES = {
     "plugins.write": "Their settings — where a gateway's live keys live",
     "notifications.read": "The catalogue of messages the store sends",
     "notifications.write": "Their wording, on every channel",
+    "collections.read": "The curated lists a storefront shows",
+    "collections.write": "Creating them and choosing what is in one",
+    "categories.read": "The tree products are filed under, and its attributes",
+    "categories.write": "Moving, renaming and deleting branches of it",
+    "media.read": "The file library",
+    "media.write": "Uploading, linking and deleting files",
+    "pricing.read": "Trade and wholesale price lists",
+    "pricing.write": "What a group pays, which is money off by another name",
+    "groups.read": "Which customers are grouped together",
+    "groups.write": "Creating groups and moving people between them",
+    "reports.read": "Sales and best sellers — the shape, without the orders",
+    "carts.read": "Baskets nobody came back to",
+    "payouts.read": "What each gateway collected, refunded and still owes",
+    "store.write": "What the store calls itself on an invoice, a slip and a receipt",
 };
 
 /*
@@ -191,6 +233,16 @@ export const RESOURCE_LABELS = {
     // these modules even when a given build does not install them, and a
     // resource with no name falls back to its own key raised, which reads as
     // a bug rather than as a heading.
+    collections: "Collections",
+    categories: "Categories",
+    media: "Files",
+    pricing: "Price lists",
+    groups: "Customer groups",
+    reports: "Reports",
+    carts: "Abandoned carts",
+    payouts: "Payouts",
+    accounts: "Accounts",
+    agent: "Agent",
     reviews: "Reviews",
     pages: "Pages",
     menus: "Menus",
@@ -206,6 +258,8 @@ export const VERB_LABELS = {
     read: "Read",
     write: "Write",
     moderate: "Moderate",
+    erase: "Erase",
+    dispatch: "Dispatch",
     fulfill: "Fulfil",
     refund: "Refund",
     export: "Export",
@@ -238,15 +292,19 @@ export function verbLabel(verb) {
  * because this table has not caught up.
  */
 export const RIGHT_SECTIONS = [
-    { section: "Orders", resources: ["orders", "invoices"] },
-    { section: "Products", resources: ["catalog", "inventory", "reviews"] },
+    { section: "Orders", resources: ["orders", "carts", "invoices", "payouts"] },
+    {
+        section: "Products",
+        resources: ["catalog", "collections", "categories", "inventory", "pricing", "reviews"],
+    },
     {
         section: "Customers",
-        resources: ["customers", "contact", "newsletter", "wishlists"],
+        resources: ["customers", "groups", "accounts", "contact", "newsletter", "wishlists"],
     },
     { section: "Discounts", resources: ["discounts"] },
     { section: "Notifications", resources: ["notifications"] },
-    { section: "Content", resources: ["pages", "menus", "faq"] },
+    { section: "Content", resources: ["media", "pages", "menus", "faq"] },
+    { section: "Reports", resources: ["reports"] },
     { section: "Plugins", resources: ["plugins"] },
     // The big one, and honestly so: Settings is where a store is configured,
     // and eight of these are things only an owner would ordinarily touch.
@@ -261,6 +319,7 @@ export const RIGHT_SECTIONS = [
             "roles",
             "data",
             "webhooks",
+            "agent",
             "store",
         ],
     },
