@@ -5227,74 +5227,232 @@ kbd + kbd {
     margin-top: 0;
 }
 
+
+
+/* ------------------------------------------------------------- roles */
+
 /*
- * Roles: the rights grid.
+ * The permissions grid.
  *
- * A right is a toggle rather than a checkbox because the row is read across,
- * not down: "Orders — Read Write Fulfil Refund" is one sentence, and four
- * checkboxes with four labels beside them is four. The check is the state and
- * the only thing that takes colour; the pill itself stays quiet, because on
- * most rows most rights are not granted and a page of coloured pills says
- * nothing about which ones matter.
+ * A right is a pressable button rather than a checkbox because the row is
+ * read across, not down: "Orders — Read Write Fulfil Refund" is one sentence,
+ * and four checkboxes with four labels beside them is four. The button is
+ * dark and quiet whether or not the role holds the right; only the check and
+ * the word turn green, because on most rows most rights are not granted and a
+ * grid of coloured buttons says nothing about which ones matter.
+ *
+ * The pair below is why this needs tokens rather than literals. Near-black is
+ * right on a white page and invisible on a dark one, so dark mode lifts the
+ * button off its ground instead of sinking it into it.
  */
-.shopify-skin .right-pill {
+:root {
+    --permBtnBg: #0f1115;
+    --permBtnFg: #9199a6;
+    --permBtnOn: #22c55e;
+    --permNameBg: var(--surfaceAlt1Color);
+}
+[data-color-scheme="dark"] {
+    --permBtnBg: var(--surfaceAlt5Color);
+    --permBtnFg: var(--surfaceTxtHintColor);
+    /* A step further from the ground than the light theme needs: dark's
+       surface steps are 2% apart, so the light theme's choice leaves the
+       resource cell invisible against the card behind it. */
+    --permNameBg: var(--surfaceAlt2Color);
+}
+
+.shopify-skin .role-card {
+    padding: var(--baseSpacing);
+}
+.shopify-skin .role-card-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--baseSpacing);
+    margin-bottom: var(--baseSpacing);
+}
+.shopify-skin .role-title {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+.shopify-skin .role-back {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 5px 12px;
-    border: 1px solid var(--baseAlt3Color);
-    border-radius: 999px;
-    background: var(--baseAlt1Color);
-    color: var(--txtHintColor);
+    gap: 2px;
+    color: var(--surfaceTxtHintColor);
     font-size: var(--smFontSize);
-    line-height: 1.4;
+    white-space: nowrap;
+}
+.shopify-skin .role-back:hover {
+    color: var(--surfaceTxtColor);
+}
+/* The two read-only fields keep the form's rhythm without pretending to be
+   editable: same width as a real one, and the cursor says so on hover. */
+.shopify-skin .role-field {
+    max-width: 430px;
+}
+.shopify-skin .role-field input[readonly],
+.shopify-skin .role-field textarea[readonly] {
+    cursor: default;
+    color: var(--surfaceTxtHintColor);
+    /* Painted explicitly, or the two read-only controls inherit the field's
+       fill and the pair reads as one grey slab rather than as a name and a
+       description. */
+    background: var(--surfaceColor);
+    border: 1px solid var(--inputBorderColor);
+}
+.shopify-skin .role-field-help {
+    max-width: 60ch;
+    margin-bottom: var(--baseSpacing);
+}
+.shopify-skin .perm-heading {
+    margin: var(--baseSpacing) 0 var(--xsSpacing);
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+/*
+ * The grid scrolls in its own box rather than running the page to four
+ * screens: the name, the description and the Save button stay put while the
+ * rights move, which is what lets somebody check a dozen rows without losing
+ * the control that commits them.
+ */
+.shopify-skin .perm-grid {
+    max-height: min(64vh, 620px);
+    overflow-y: auto;
+    border: 1px solid var(--surfaceAlt3Color);
+    border-radius: var(--borderRadius);
+}
+.shopify-skin .perm-row {
+    display: grid;
+    /* One name column and four button columns, so the buttons line up down
+       the grid. Four is the widest row the engine has; a resource with fewer
+       verbs fills from the left and leaves the rest empty. */
+    grid-template-columns: minmax(120px, 210px) repeat(var(--perm-cols, 4), minmax(0, 1fr));
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--surfaceAlt2Color);
+}
+.shopify-skin .perm-row:last-child {
+    border-bottom: 0;
+}
+.shopify-skin .perm-name {
+    padding: 6px 11px;
+    border-radius: 5px;
+    background: var(--permNameBg);
+    font-size: var(--smFontSize);
+    font-weight: 600;
+    color: var(--surfaceTxtColor);
+}
+.shopify-skin .perm-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    width: 100%;
+    max-width: 108px;
+    margin: 0 auto;
+    padding: 5px 10px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: var(--permBtnBg);
+    color: var(--permBtnFg);
+    /* 12px: the panel's scale stops at 13px, and a token that does not
+       exist is how --baseAlt1Color came to style nothing for a release. */
+    font-size: 12px;
+    line-height: 1.25;
     cursor: pointer;
     transition:
-        background 0.15s,
+        color 0.15s,
         border-color 0.15s,
-        color 0.15s;
+        filter 0.15s;
 }
-.shopify-skin .right-pill i {
-    font-size: 1.05em;
+.shopify-skin .perm-btn i {
+    font-size: 1.1em;
 }
-.shopify-skin .right-pill:hover:not(:disabled) {
-    border-color: var(--baseAlt3Color);
-    color: var(--txtPrimaryColor);
+.shopify-skin .perm-btn:hover:not(:disabled) {
+    filter: brightness(1.35);
 }
-.shopify-skin .right-pill.on {
-    background: var(--baseColor);
-    border-color: var(--successAltColor, var(--baseAlt3Color));
-    color: var(--txtPrimaryColor);
+.shopify-skin .perm-btn.on,
+.shopify-skin .perm-btn.on i {
+    color: var(--permBtnOn);
 }
-.shopify-skin .right-pill.on i {
-    color: var(--successColor);
+/* Added and taken away are the departure from what the engine ships, marked
+   on the edge rather than by re-colouring the check: the check already says
+   granted or not, and one mark cannot carry two facts. */
+.shopify-skin .perm-btn.added {
+    border-color: var(--permBtnOn);
 }
-/* Added and taken away are the departure from what the engine ships, and they
-   are marked on the edge rather than by re-colouring the check: the check is
-   already saying granted or not, and one mark cannot carry two facts. */
-.shopify-skin .right-pill.added {
-    border-color: var(--successColor);
-}
-.shopify-skin .right-pill.removed {
+.shopify-skin .perm-btn.removed {
     border-style: dashed;
     border-color: var(--dangerColor);
 }
-.shopify-skin .right-pill:disabled,
-.shopify-skin .right-pill.locked {
+/* A locked right is still granted or not, and the check already says which.
+   The lock only removes the press, so it dims a little and changes the
+   cursor — 0.55 washed the dark button out to grey and read as broken. */
+.shopify-skin .perm-btn:disabled,
+.shopify-skin .perm-btn.locked {
     cursor: not-allowed;
-    opacity: 0.75;
+    opacity: 0.82;
 }
-.shopify-skin .right-pill:focus-visible {
+.shopify-skin .perm-btn:focus-visible {
     outline: 2px solid var(--primaryColor);
     outline-offset: 2px;
 }
-/* The grid's own rows: the area name is a fixed narrow column so every row of
-   pills starts on the same line, which is what makes a column readable. */
-.shopify-skin .right-grid td.col-field-name-id {
-    width: 180px;
-    vertical-align: middle;
+.shopify-skin .perm-empty {
+    display: block;
 }
+
+/*
+ * On a phone the five columns cannot hold. The name goes on its own line and
+ * the buttons wrap under it, which keeps a row one readable unit instead of
+ * five 60px columns.
+ */
+@media (max-width: 700px) {
+    .shopify-skin .perm-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    .shopify-skin .perm-name {
+        flex: 1 0 100%;
+    }
+    .shopify-skin .perm-btn {
+        width: auto;
+        max-width: none;
+        margin: 0;
+        flex: 0 0 auto;
+    }
+    .shopify-skin .perm-empty {
+        display: none;
+    }
+}
+
 /* A row that opens a screen says so on hover, the way the other listings do. */
 .shopify-skin tr.row-handle {
     cursor: pointer;
+}
+
+/*
+ * The roles list shows every right rather than six and a number, so the chips
+ * are sized to make twenty-one of them read as a set instead of a wall: the
+ * panel's `.label` is built for one or two tokens in a cell and stacks up
+ * heavy at this count.
+ */
+.shopify-skin .right-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px 4px;
+    max-width: 70ch;
+}
+.shopify-skin .right-chip {
+    padding: 1px 7px;
+    border-radius: 4px;
+    background: var(--surfaceAlt1Color);
+    color: var(--surfaceTxtHintColor);
+    font-size: 11px;
+    line-height: 17px;
+    white-space: nowrap;
 }

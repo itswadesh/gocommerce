@@ -39,10 +39,11 @@
         staff: "Works the orders, and cannot send money out or change who has access.",
     };
 
-    /* How many chips a row shows before it stops counting them out. Six is
-       what fits on one line at the width this table gets; the rest become a
-       number, the way Litekart's roles list does it. */
-    const CHIP_CAP = 6;
+    /* Every right, not the first six and a number.
+       The engine has twenty-one of them and the names are short, so the whole
+       set wraps into two or three lines at this width — and "+7 more" was
+       hiding exactly the part an operator scans this table for, which is what
+       one role has that another does not. */
 
     $effect(() => {
         load();
@@ -94,8 +95,6 @@
         return x.every((v, i) => v === y[i]);
     }
 
-    const shown = (row) => row.rights.slice(0, CHIP_CAP);
-    const extra = (row) => Math.max(0, row.rights.length - CHIP_CAP);
 
     function open(role) {
         goto(`${base}/settings/roles/${role}`);
@@ -196,13 +195,12 @@
                                     {:else if !row.rights.length}
                                         <span class="txt-hint">Nothing</span>
                                     {:else}
-                                        <div class="token-list flex flex-wrap gap-sm">
-                                            {#each shown(row) as right (right)}
-                                                <span class="label" title={rightLabel(right)}>{right}</span>
+                                        <div class="right-chips">
+                                            {#each row.rights as right (right)}
+                                                <span class="right-chip" title={rightLabel(right)}
+                                                    >{right}</span
+                                                >
                                             {/each}
-                                            {#if extra(row)}
-                                                <span class="label txt-hint">+{extra(row)} more</span>
-                                            {/if}
                                         </div>
                                     {/if}
                                 </td>

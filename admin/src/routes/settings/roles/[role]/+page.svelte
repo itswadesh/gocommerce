@@ -2,19 +2,21 @@
     /**
      * One role, and what it may do.
      *
-     * The rights are drawn as a grid — one row per resource, one pill per verb
-     * — because every right the engine has is `resource.verb`, and the flat
-     * list of dotted names made "what may this role do to orders" mean finding
-     * four rows that happened to share a prefix.
+     * Laid out the way Litekart's role screen is: the name and a description
+     * at the top, then Permissions as a grid of one row per resource with a
+     * button per verb — dark, quiet when the role does not hold it, and a
+     * green check when it does.
      *
-     * Two things about the model shape the page. A role left alone keeps
-     * *tracking* the engine's default rather than freezing a copy of it, so
-     * "using defaults" and "customised" are worth saying out loud and Reset is
-     * a real verb. And a change lands on the affected operator's next request,
-     * so nobody is signed out and nobody should be told to sign in again.
+     * Two things about this engine shape the departures. The roles are fixed
+     * (rights.go): owner, manager and staff, with no renaming, no deleting and
+     * no adding, so Name and Description are the engine's own words rather
+     * than fields — shown in the same place, and read-only rather than absent,
+     * because "what is this role" is the first question the screen answers.
+     * And a role left alone keeps *tracking* the shipped default rather than
+     * freezing a copy of it, which is what makes Reset a real verb.
      *
-     * The grid is built from what the API sends, so a right added to the
-     * engine appears here without this file changing.
+     * Every right is `resource.verb`, so the grid builds itself from what the
+     * API sends and a right added to the engine needs no edit here.
      */
     import { base } from "$app/paths";
     import { page } from "$app/state";
@@ -43,14 +45,33 @@
     };
 
     const label = $derived(ROLE_LABEL[role] ?? role);
+    const blurb = $derived(ROLE_BLURB[role] ?? "");
     const row = $derived(matrix?.roles.find((r) => r.role === role) ?? null);
     const grid = $derived(rightsByResource(matrix?.all_rights ?? []));
     const required = $derived(matrix?.required ?? []);
 
+    /*
+     * How many buttons a row holds: as many as the widest resource has, which
+     * is four today (orders: read, write, fulfil, refund) and is measured
+     * rather than assumed. A fixed four silently dropped anything past it, so
+     * a fifth verb added to the engine would have vanished from the only
+     * screen that grants it — and a right nobody can see is a right nobody
+     * can take away.
+     *
+     * Every row gets the same count so the buttons line up in columns down
+     * the grid; a resource with fewer fills from the left.
+     */
+    const columns = $derived(grid.reduce((most, g) => Math.max(most, g.rights.length), 1));
+    const slots = (group) => {
+        const out = [...group.rights];
+        while (out.length < columns) out.push(null);
+        return out;
+    };
+
     $effect(() => {
         // Named so the effect re-runs when the address changes, which is what
-        // makes the back-and-forward between two roles reload rather than show
-        // the previous one's boxes.
+        // makes moving between two roles reload rather than show the previous
+        // one's buttons.
         role;
         load();
     });
@@ -62,8 +83,6 @@
         }
         loading = true;
         try {
-            // request() already unwraps the {data} envelope, so there is no second
-            // .data to reach through; asking for one silently yields null.
             matrix = await rolesApi.matrix();
             draft = [...(matrix?.roles.find((r) => r.role === role)?.rights ?? [])];
         } catch (err) {
@@ -77,7 +96,7 @@
 
     /*
      * The two locks the API also enforces, mirrored here so nothing looks
-     * clickable that the server would only refuse. Required rights are the
+     * pressable that the server would only refuse. Required rights are the
      * floor every role keeps; roles.write is what got you to this screen, and
      * an operator who saves it away from their own role has no way back short
      * of a static admin token.
@@ -110,7 +129,7 @@
 
     /*
      * The departure from the shipped default, measured against the DRAFT so
-     * the counts move as pills are pressed. Reset is the one control here
+     * the counts move as buttons are pressed. Reset is the one control here
      * that changes several rights at once, so what it would do is named on it
      * rather than left to be discovered.
      */
@@ -119,7 +138,7 @@
     const removed = $derived(defaults.filter((r) => !draft.includes(r)));
     const isDefault = $derived(same(draft, defaults));
 
-    /** How one pill departs from the default: "added", "removed" or "". */
+    /** How one button departs from the default: "added", "removed" or "". */
     function diff(right) {
         if (!row?.configurable) return "";
         const inDraft = has(right);
@@ -129,7 +148,7 @@
         return "";
     }
 
-    function pillTitle(right) {
+    function buttonTitle(right) {
         if (locked(right)) return lockReason(right);
         const scope = rightScope(right);
         switch (diff(right)) {
@@ -179,7 +198,7 @@
     }
 
     function applySaved(set) {
-        if (!set.role) return;
+        if (!set?.role) return;
         matrix.roles = matrix.roles.map((r) => (r.role === set.role ? set : r));
         draft = [...set.rights];
     }
@@ -223,10 +242,6 @@
                 </nav>
 
                 <div class="page-header-primary-btns">
-                    <a class="btn secondary" href="{base}/settings/roles">
-                        <i class="ri-arrow-left-line" aria-hidden="true"></i>
-                        <span class="txt">Roles</span>
-                    </a>
                     {#if row?.configurable}
                         <!-- Both carry an icon, because the page header
                              collapses its buttons to bare circles below
@@ -250,88 +265,95 @@
                 </div>
             </header>
 
-            <p class="txt-hint m-b-base tw:max-w-[80ch]">
-                {ROLE_BLURB[role] ?? ""}
-                {#if row && !row.configurable}
-                    This role is fixed: it carries every right the engine has, and always will.
-                {:else if row}
-                    What the engine ships for it is the starting point. Changes here are this
-                    store's own, and Reset puts the role back on the shipped set.
-                {/if}
-            </p>
-
-            {#if row?.configurable && (added.length || removed.length)}
-                <div class="alert info m-b-base">
-                    <p>
-                        Against what the engine ships for {label}:
-                        {#if added.length}<strong>{added.length} added</strong>{/if}{#if added.length && removed.length},
-                        {/if}{#if removed.length}<strong>{removed.length} taken away</strong>{/if}.
-                        {#if dirty}Not saved yet.{/if}
-                    </p>
+            <section class="card role-card">
+                <div class="role-card-head">
+                    <h2 class="role-title">
+                        <span class="txt-hint">Roles /</span>
+                        {label}
+                    </h2>
+                    <a class="role-back" href="{base}/settings/roles">
+                        <i class="ri-arrow-left-s-line" aria-hidden="true"></i>
+                        <span>Roles</span>
+                    </a>
                 </div>
-            {/if}
 
-            <h6 class="section-title">
-                <i class="ri-shield-keyhole-line" aria-hidden="true"></i>
-                Rights
-            </h6>
+                <!-- Read-only, and that is the engine rather than an
+                     oversight: owner, manager and staff are fixed in
+                     rights.go, so there is no rename and no third field to
+                     store a sentence in. Shown all the same, because "what is
+                     this role" is the first thing the screen has to answer. -->
+                <div class="field role-field">
+                    <label for="role-name">Name</label>
+                    <input id="role-name" type="text" value={label} readonly />
+                </div>
 
-            <!-- One row per resource, one pill per verb. A pill is a toggle:
-                 pressed means the role holds that right, and the check going
-                 green is the only state worth colouring, because "not granted"
-                 is the ordinary case on most rows. -->
-            <div class="page-table-wrapper tw:rounded-xl tw:border">
-                <table class="table responsive-table right-grid">
-                    <tbody>
-                        {#each grid as group (group.key)}
-                            <tr>
-                                <td class="col-field-name-id" data-name="Area">
-                                    <span class="txt-bold">{group.label}</span>
-                                </td>
-                                <!-- No data-name: the stacked phone layout would
-                                     repeat "Rights" above every row of pills, under a
-                                     heading that already says it. -->
-                                <td>
-                                    <div class="flex flex-wrap gap-sm">
-                                        {#each group.rights as item (item.right)}
-                                            <button
-                                                type="button"
-                                                class="right-pill"
-                                                class:on={has(item.right)}
-                                                class:locked={locked(item.right)}
-                                                class:added={diff(item.right) === "added"}
-                                                class:removed={diff(item.right) === "removed"}
-                                                aria-pressed={has(item.right)}
-                                                disabled={locked(item.right)}
-                                                title={pillTitle(item.right)}
-                                                onclick={() => toggle(item.right)}
-                                            >
-                                                <i
-                                                    class={has(item.right)
-                                                        ? "ri-checkbox-circle-fill"
-                                                        : "ri-checkbox-blank-circle-line"}
-                                                    aria-hidden="true"
-                                                ></i>
-                                                <span class="txt">{item.label}</span>
-                                            </button>
-                                        {/each}
-                                    </div>
-                                </td>
-                            </tr>
-                        {/each}
+                <div class="field role-field">
+                    <label for="role-desc">Description</label>
+                    <textarea id="role-desc" rows="3" readonly>{blurb}</textarea>
+                </div>
+                <div class="field-help role-field-help">
+                    The engine fixes these three roles and what each is called. What this store
+                    changes is the rights below.
+                </div>
 
-                        {#if loading && !matrix}
-                            <tr><td colspan="2"><span class="skeleton-loader"></span></td></tr>
-                        {:else if matrix && !row}
-                            <tr>
-                                <td colspan="2" class="txt-center txt-hint p-base">
-                                    This store has no role called “{role}”.
-                                </td>
-                            </tr>
-                        {/if}
-                    </tbody>
-                </table>
-            </div>
+                {#if row?.configurable && (added.length || removed.length)}
+                    <div class="alert info m-b-base">
+                        <p>
+                            Against what the engine ships for {label}:
+                            {#if added.length}<strong>{added.length} added</strong>{/if}{#if added.length && removed.length},
+                            {/if}{#if removed.length}<strong>{removed.length} taken away</strong
+                                >{/if}.
+                            {#if dirty}Not saved yet.{/if}
+                        </p>
+                    </div>
+                {/if}
+
+                <h3 class="perm-heading">Permissions</h3>
+
+                <!-- The column count rides in a custom property so the CSS
+                     does not have to hard-code a number the engine owns. -->
+                <div class="perm-grid" style="--perm-cols: {columns}">
+                    {#each grid as group (group.key)}
+                        <div class="perm-row">
+                            <div class="perm-name">{group.label}</div>
+                            {#each slots(group) as item, i (item ? item.right : "gap-" + i)}
+                                {#if item}
+                                    <button
+                                        type="button"
+                                        class="perm-btn"
+                                        class:on={has(item.right)}
+                                        class:locked={locked(item.right)}
+                                        class:added={diff(item.right) === "added"}
+                                        class:removed={diff(item.right) === "removed"}
+                                        aria-pressed={has(item.right)}
+                                        disabled={locked(item.right)}
+                                        title={buttonTitle(item.right)}
+                                        onclick={() => toggle(item.right)}
+                                    >
+                                        <i
+                                            class={has(item.right)
+                                                ? "ri-checkbox-circle-fill"
+                                                : "ri-checkbox-circle-line"}
+                                            aria-hidden="true"
+                                        ></i>
+                                        <span class="txt">{item.label}</span>
+                                    </button>
+                                {:else}
+                                    <span class="perm-empty" aria-hidden="true"></span>
+                                {/if}
+                            {/each}
+                        </div>
+                    {/each}
+
+                    {#if loading && !matrix}
+                        <div class="p-base"><span class="skeleton-loader"></span></div>
+                    {:else if matrix && !row}
+                        <div class="txt-center txt-hint p-base">
+                            This store has no role called “{role}”.
+                        </div>
+                    {/if}
+                </div>
+            </section>
 
             <footer class="page-footer tw:text-xs tw:text-muted-foreground">
                 <span class="txt txt-hint">
