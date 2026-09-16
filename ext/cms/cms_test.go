@@ -132,9 +132,11 @@ func itoa(v int64) string {
 //
 // It has to use a session: gctest.AdminToken is the static admin credential and
 // carries every right by design, so a route mounted with no rights and a route
-// mounted with all of them look identical through it. Staff carries catalog.read
-// and not catalog.write by default, which is exactly the line being drawn.
-func TestAdminPageRoutesRequireCatalogRights(t *testing.T) {
+// mounted with all of them look identical through it. Staff carries pages.read
+// and not pages.write by default, which is exactly the line being drawn — the
+// module brings both rights itself now rather than borrowing the catalogue's,
+// so a store can hand somebody the storefront's copy without its prices.
+func TestAdminPageRoutesRequireTheirOwnRights(t *testing.T) {
 	app := gctest.New(t, New(Config{}))
 
 	staff := gctest.OperatorToken(t, app, "staff@example.com", gocommerce.RoleStaff)
@@ -149,7 +151,7 @@ func TestAdminPageRoutesRequireCatalogRights(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("staff creating a page = %d, want 403: %s", rec.Code, rec.Body)
 	}
-	if !strings.Contains(rec.Body.String(), string(gocommerce.RightCatalogWrite)) {
+	if !strings.Contains(rec.Body.String(), "pages.write") {
 		t.Errorf("the refusal does not name the missing right: %s", rec.Body)
 	}
 

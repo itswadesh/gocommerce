@@ -142,6 +142,7 @@ CREATE INDEX wishlist_items_product_idx ON wishlist_items (product_id);
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
+	m.registerRights(app)
 	m.app = app
 	m.db = app.DB()
 	app.RegisterPlugin(gocommerce.PluginDef{
@@ -163,8 +164,8 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// A wishlist is a shopper's own data, so it reads with the customers'
 	// right rather than the catalogue's — even the ranking, which is that
 	// data counted.
-	app.HandleAdminFunc("GET /api/admin/x/wishlist/wanted", m.handleWanted, gocommerce.RightCustomersRead)
-	app.HandleAdminFunc("GET /api/admin/x/wishlist/lists", m.handleLists, gocommerce.RightCustomersRead)
+	app.HandleAdminFunc("GET /api/admin/x/wishlist/wanted", m.handleWanted, rightWishlistsRead)
+	app.HandleAdminFunc("GET /api/admin/x/wishlist/lists", m.handleLists, rightWishlistsRead)
 	return nil
 }
 
@@ -578,4 +579,23 @@ func cleanEmail(raw string) (string, error) {
 		return "", gocommerce.Validationf("that does not look like an email address")
 	}
 	return email, nil
+}
+
+// The rights this module's own screens are gated on.
+//
+// They were core's until now — customers.read —
+// which meant the permission could not be given without the thing it was
+// borrowed from, and the screens had no row of their own on the Roles grid.
+// Default names the roles that held the old right, so nobody's access moves.
+const (
+	rightWishlistsRead gocommerce.Right = "wishlists.read" // was customers.read
+)
+
+func (m *Module) registerRights(app *gocommerce.App) {
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightWishlistsRead,
+		Label:   "See what shoppers saved",
+		Scope:   "What is wanted, and how many are waiting for it",
+		Default: []string{gocommerce.RoleManager, gocommerce.RoleStaff},
+	})
 }

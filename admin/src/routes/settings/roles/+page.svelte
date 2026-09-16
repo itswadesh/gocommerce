@@ -17,7 +17,7 @@
     import { base } from "$app/paths";
     import { goto } from "$app/navigation";
     import { roles as rolesApi, can, getRecord } from "$lib/api.js";
-    import { rightLabel } from "$lib/rights.js";
+    import { learnRights, rightLabel } from "$lib/rights.js";
     import { toast } from "$lib/toast.svelte.js";
     import NoAccess from "$lib/components/NoAccess.svelte";
 
@@ -57,6 +57,7 @@
             // request() already unwraps the {data} envelope, so there is no second
             // .data to reach through; asking for one silently yields null.
             matrix = await rolesApi.matrix();
+            learnRights(matrix?.catalogue);
         } catch (err) {
             toast.error(err);
         } finally {

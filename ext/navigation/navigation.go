@@ -146,6 +146,7 @@ var handleRE = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
+	m.registerRights(app)
 	m.app = app
 	m.db = app.DB()
 	app.RegisterPlugin(gocommerce.PluginDef{
@@ -161,14 +162,15 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.HandleFunc("GET /x/navigation/menus", m.handlePublicList)
 	app.HandleFunc("GET /x/navigation/menus/{handle}", m.handlePublicGet)
 
-	// A menu is catalogue copy: it names the things the catalogue sells and
-	// nothing more, so it takes the catalogue's own rights.
-	app.HandleAdminFunc("GET /api/admin/x/navigation/menus", m.handleList, gocommerce.RightCatalogRead)
-	app.HandleAdminFunc("POST /api/admin/x/navigation/menus", m.handleCreate, gocommerce.RightCatalogWrite)
-	app.HandleAdminFunc("GET /api/admin/x/navigation/menus/{id}", m.handleGet, gocommerce.RightCatalogRead)
-	app.HandleAdminFunc("PATCH /api/admin/x/navigation/menus/{id}", m.handleUpdate, gocommerce.RightCatalogWrite)
-	app.HandleAdminFunc("PUT /api/admin/x/navigation/menus/{id}/items", m.handleSetItems, gocommerce.RightCatalogWrite)
-	app.HandleAdminFunc("DELETE /api/admin/x/navigation/menus/{id}", m.handleDelete, gocommerce.RightCatalogWrite)
+	// A menu names the things the catalogue sells, but arranging one is not
+	// editing them: its own rights, so a store can hand the storefront's
+	// navigation to somebody without handing them the products.
+	app.HandleAdminFunc("GET /api/admin/x/navigation/menus", m.handleList, rightMenusRead)
+	app.HandleAdminFunc("POST /api/admin/x/navigation/menus", m.handleCreate, rightMenusWrite)
+	app.HandleAdminFunc("GET /api/admin/x/navigation/menus/{id}", m.handleGet, rightMenusRead)
+	app.HandleAdminFunc("PATCH /api/admin/x/navigation/menus/{id}", m.handleUpdate, rightMenusWrite)
+	app.HandleAdminFunc("PUT /api/admin/x/navigation/menus/{id}/items", m.handleSetItems, rightMenusWrite)
+	app.HandleAdminFunc("DELETE /api/admin/x/navigation/menus/{id}", m.handleDelete, rightMenusWrite)
 	m.mountTransferRoutes(app)
 	return nil
 }
@@ -588,4 +590,30 @@ func (it *Item) MarshalJSON() ([]byte, error) {
 		a.Children = []*Item{}
 	}
 	return json.Marshal(a)
+}
+
+// The rights this module's own screens are gated on.
+//
+// They were core's until now — catalog.read and catalog.write —
+// which meant the permission could not be given without the thing it was
+// borrowed from, and the screens had no row of their own on the Roles grid.
+// Default names the roles that held the old right, so nobody's access moves.
+const (
+	rightMenusRead  gocommerce.Right = "menus.read"  // was catalog.read
+	rightMenusWrite gocommerce.Right = "menus.write" // was catalog.write
+)
+
+func (m *Module) registerRights(app *gocommerce.App) {
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightMenusRead,
+		Label:   "See the storefront menus",
+		Scope:   "The header, the footer and any other menu",
+		Default: []string{gocommerce.RoleManager, gocommerce.RoleStaff},
+	})
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightMenusWrite,
+		Label:   "Arrange the storefront menus",
+		Scope:   "Adding, moving and removing items",
+		Default: []string{gocommerce.RoleManager},
+	})
 }

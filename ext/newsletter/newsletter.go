@@ -94,6 +94,7 @@ CREATE INDEX newsletter_subscriptions_status_idx ON newsletter_subscriptions (st
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
+	m.registerRights(app)
 	m.app = app
 	m.db = app.DB()
 	app.RegisterPlugin(gocommerce.PluginDef{
@@ -111,10 +112,10 @@ func (m *Module) Register(app *gocommerce.App) error {
 
 	// The list is who the store may write to — the customers' right to read,
 	// data.export to walk out with, store.operate to remove.
-	app.HandleAdminFunc("GET /api/admin/x/newsletter/subscriptions", m.handleList, gocommerce.RightCustomersRead)
+	app.HandleAdminFunc("GET /api/admin/x/newsletter/subscriptions", m.handleList, rightNewsletterRead)
 	app.HandleAdminFunc("GET /api/admin/x/newsletter/subscriptions.csv", m.handleExport, gocommerce.RightDataExport)
-	app.HandleAdminFunc("POST /api/admin/x/newsletter/subscriptions", m.handleAdd, gocommerce.RightStoreOperate)
-	app.HandleAdminFunc("DELETE /api/admin/x/newsletter/subscriptions/{id}", m.handleDelete, gocommerce.RightStoreOperate)
+	app.HandleAdminFunc("POST /api/admin/x/newsletter/subscriptions", m.handleAdd, rightNewsletterWrite)
+	app.HandleAdminFunc("DELETE /api/admin/x/newsletter/subscriptions/{id}", m.handleDelete, rightNewsletterWrite)
 	return nil
 }
 
@@ -347,4 +348,30 @@ func (m *Module) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// The rights this module's own screens are gated on.
+//
+// They were core's until now — customers.read and store.operate —
+// which meant the permission could not be given without the thing it was
+// borrowed from, and the screens had no row of their own on the Roles grid.
+// Default names the roles that held the old right, so nobody's access moves.
+const (
+	rightNewsletterRead  gocommerce.Right = "newsletter.read"  // was customers.read
+	rightNewsletterWrite gocommerce.Right = "newsletter.write" // was store.operate
+)
+
+func (m *Module) registerRights(app *gocommerce.App) {
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightNewsletterRead,
+		Label:   "See the newsletter list",
+		Scope:   "Who signed up — personal data",
+		Default: []string{gocommerce.RoleManager, gocommerce.RoleStaff},
+	})
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightNewsletterWrite,
+		Label:   "Edit the newsletter list",
+		Scope:   "Adding and removing subscriptions",
+		Default: []string(nil),
+	})
 }

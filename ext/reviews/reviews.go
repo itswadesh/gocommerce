@@ -130,6 +130,7 @@ CREATE INDEX reviews_status_idx  ON reviews (status, id DESC);
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
+	m.registerRights(app)
 	m.app = app
 	m.db = app.DB()
 	app.RegisterPlugin(gocommerce.PluginDef{
@@ -144,11 +145,12 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.HandleFunc("GET /x/reviews", m.handlePublicList)
 	app.HandleFunc("POST /x/reviews", m.handleSubmit)
 
-	// A review is catalogue copy the store did not write: the catalogue's
-	// rights, because it appears on the product page beside the rest.
-	app.HandleAdminFunc("GET /api/admin/x/reviews", m.handleList, gocommerce.RightCatalogRead)
-	app.HandleAdminFunc("PATCH /api/admin/x/reviews/{id}", m.handleUpdate, gocommerce.RightCatalogWrite)
-	app.HandleAdminFunc("DELETE /api/admin/x/reviews/{id}", m.handleDelete, gocommerce.RightCatalogWrite)
+	// Reviews have their own rights now. They used to take the catalogue's,
+	// which meant nobody could be given moderation without also being given
+	// every price in the shop.
+	app.HandleAdminFunc("GET /api/admin/x/reviews", m.handleList, rightReviewsRead)
+	app.HandleAdminFunc("PATCH /api/admin/x/reviews/{id}", m.handleUpdate, rightReviewsModerate)
+	app.HandleAdminFunc("DELETE /api/admin/x/reviews/{id}", m.handleDelete, rightReviewsModerate)
 	m.mountTransferRoutes(app)
 	return nil
 }
@@ -459,4 +461,30 @@ func (m *Module) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// The rights this module's own screens are gated on.
+//
+// They were core's until now — catalog.read and catalog.write —
+// which meant the permission could not be given without the thing it was
+// borrowed from, and the screens had no row of their own on the Roles grid.
+// Default names the roles that held the old right, so nobody's access moves.
+const (
+	rightReviewsRead     gocommerce.Right = "reviews.read"     // was catalog.read
+	rightReviewsModerate gocommerce.Right = "reviews.moderate" // was catalog.write
+)
+
+func (m *Module) registerRights(app *gocommerce.App) {
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightReviewsRead,
+		Label:   "See reviews",
+		Scope:   "What shoppers said, moderated or not",
+		Default: []string{gocommerce.RoleManager, gocommerce.RoleStaff},
+	})
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightReviewsModerate,
+		Label:   "Moderate reviews",
+		Scope:   "Approving, rejecting, replying and deleting",
+		Default: []string{gocommerce.RoleManager},
+	})
 }

@@ -92,9 +92,13 @@ func (m *Module) Migrations() []gocommerce.Migration {
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
+	// After the configuration check, not before: a module that refuses to
+	// register has no rights to bring, and the test that proves the refusal
+	// passes a nil App.
 	if strings.TrimSpace(m.cfg.SellerName) == "" {
 		return errors.New("invoices: SellerName is required")
 	}
+	m.registerRights(app)
 	if m.cfg.NumberFormat == "" {
 		m.cfg.NumberFormat = "INV-{year}-{seq:05}"
 	}
@@ -113,8 +117,8 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// An invoice is a rendering of a paid order, and its snapshot embeds the
 	// buyer's name, email and address. Whoever may read the order may read it;
 	// whoever may not, may not.
-	app.HandleAdminFunc("GET /api/admin/x/invoices", m.handleList, gocommerce.RightOrdersRead)
-	app.HandleAdminFunc("GET /api/admin/x/invoices/{orderId}", m.handleGet, gocommerce.RightOrdersRead)
+	app.HandleAdminFunc("GET /api/admin/x/invoices", m.handleList, rightInvoicesRead)
+	app.HandleAdminFunc("GET /api/admin/x/invoices/{orderId}", m.handleGet, rightInvoicesRead)
 
 	// Delivery is at-least-once but not guaranteed to have happened before a
 	// crash, and an invoice that was never issued is an accounting hole. So
@@ -385,3 +389,22 @@ const invoiceHTML = `<!doctype html>
 {{if .Config.Footer}}<footer>{{.Config.Footer}}</footer>{{end}}
 </body></html>
 `
+
+// The rights this module's own screens are gated on.
+//
+// They were core's until now — orders.read —
+// which meant the permission could not be given without the thing it was
+// borrowed from, and the screens had no row of their own on the Roles grid.
+// Default names the roles that held the old right, so nobody's access moves.
+const (
+	rightInvoicesRead gocommerce.Right = "invoices.read" // was orders.read
+)
+
+func (m *Module) registerRights(app *gocommerce.App) {
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightInvoicesRead,
+		Label:   "See invoices",
+		Scope:   "The numbered invoice for a paid order",
+		Default: []string{gocommerce.RoleManager, gocommerce.RoleStaff},
+	})
+}

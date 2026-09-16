@@ -132,12 +132,12 @@ export const RIGHT_SCOPES = {
 
 /** rightLabel is the imperative gloss: what holding this right lets you do. */
 export function rightLabel(right) {
-    return RIGHT_LABELS[right] || right;
+    return RIGHT_LABELS[right] || fromServer[right]?.label || right;
 }
 
 /** rightScope is the scope sentence: what the right covers. */
 export function rightScope(right) {
-    return RIGHT_SCOPES[right] || right;
+    return RIGHT_SCOPES[right] || fromServer[right]?.scope || right;
 }
 
 /*
@@ -152,6 +152,25 @@ export function rightScope(right) {
  * falls back to the identifier with its first letter raised, so a resource or
  * a verb added to the engine appears here as a row rather than disappearing.
  */
+/*
+ * Words a module sent with its own rights, keyed by right.
+ *
+ * The tables below cover core, which the panel is built beside and can have a
+ * table for. A module's rights are declared in the module, so the panel cannot
+ * know them ahead of time — the roles matrix carries them and the Roles screen
+ * hands them here before it draws.
+ */
+let fromServer = {};
+
+/** learnRights takes the catalogue the roles matrix sent. */
+export function learnRights(catalogue) {
+    const next = {};
+    for (const entry of catalogue ?? []) {
+        if (entry?.right) next[entry.right] = entry;
+    }
+    fromServer = next;
+}
+
 export const RESOURCE_LABELS = {
     catalog: "Catalog",
     inventory: "Inventory",
@@ -168,11 +187,25 @@ export const RESOURCE_LABELS = {
     channels: "Channels",
     plugins: "Plugins",
     notifications: "Notifications",
+    // Brought by modules. Named here all the same: the panel ships beside
+    // these modules even when a given build does not install them, and a
+    // resource with no name falls back to its own key raised, which reads as
+    // a bug rather than as a heading.
+    reviews: "Reviews",
+    pages: "Pages",
+    menus: "Menus",
+    faq: "FAQ",
+    contact: "Contact messages",
+    newsletter: "Newsletter",
+    wishlists: "Wishlists",
+    invoices: "Invoices",
+    webhooks: "Webhooks",
 };
 
 export const VERB_LABELS = {
     read: "Read",
     write: "Write",
+    moderate: "Moderate",
     fulfill: "Fulfil",
     refund: "Refund",
     export: "Export",
@@ -205,17 +238,31 @@ export function verbLabel(verb) {
  * because this table has not caught up.
  */
 export const RIGHT_SECTIONS = [
-    { section: "Orders", resources: ["orders"] },
-    { section: "Products", resources: ["catalog", "inventory"] },
-    { section: "Customers", resources: ["customers"] },
+    { section: "Orders", resources: ["orders", "invoices"] },
+    { section: "Products", resources: ["catalog", "inventory", "reviews"] },
+    {
+        section: "Customers",
+        resources: ["customers", "contact", "newsletter", "wishlists"],
+    },
     { section: "Discounts", resources: ["discounts"] },
     { section: "Notifications", resources: ["notifications"] },
+    { section: "Content", resources: ["pages", "menus", "faq"] },
     { section: "Plugins", resources: ["plugins"] },
     // The big one, and honestly so: Settings is where a store is configured,
     // and eight of these are things only an owner would ordinarily touch.
     {
         section: "Settings",
-        resources: ["shipping", "channels", "taxes", "locations", "team", "roles", "data", "store"],
+        resources: [
+            "shipping",
+            "channels",
+            "taxes",
+            "locations",
+            "team",
+            "roles",
+            "data",
+            "webhooks",
+            "store",
+        ],
     },
 ];
 

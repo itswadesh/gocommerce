@@ -252,14 +252,19 @@ type App struct {
 	// Domain services. They are concrete types rather than interfaces: they
 	// are not replaceable, and inventing an interface for something with one
 	// implementation buys nothing but indirection.
-	catalog       *Catalog
-	inventory     *Inventory
-	carts         *Carts
-	orders        *Orders
-	payments      *Payments
-	fulfillment   *Fulfillments
-	transfer      *Transfer
-	plugins       *Plugins
+	catalog     *Catalog
+	inventory   *Inventory
+	carts       *Carts
+	orders      *Orders
+	payments    *Payments
+	fulfillment *Fulfillments
+	transfer    *Transfer
+	plugins     *Plugins
+	// moduleRights are the rights the installed modules declared. Core's live
+	// in AllRights; these travel with whichever module owns the screens they
+	// gate, so a build without that module has neither the routes nor the
+	// permission (rights_registry.go).
+	moduleRights  []moduleRight
 	notifications *Notifications
 	// notifyTemplates is the wording of every message, engine and module
 	// alike, with the operator's edits over the defaults.

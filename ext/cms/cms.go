@@ -96,6 +96,7 @@ func (m *Module) Migrations() []gocommerce.Migration {
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
+	m.registerRights(app)
 	m.db = app.DB()
 	m.publishedOnly = true
 	if m.cfg.PublishedOnly != nil {
@@ -110,11 +111,11 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// by the rights that already govern the rest of the store's writing rather
 	// than by a content pair of its own. Naming none would have meant serving
 	// these to any authenticated operator, whatever their role.
-	app.HandleAdminFunc("GET /api/admin/x/cms/pages", m.handleListAdmin, gocommerce.RightCatalogRead)
-	app.HandleAdminFunc("POST /api/admin/x/cms/pages", m.handleCreate, gocommerce.RightCatalogWrite)
-	app.HandleAdminFunc("GET /api/admin/x/cms/pages/{id}", m.handleGetAdmin, gocommerce.RightCatalogRead)
-	app.HandleAdminFunc("PATCH /api/admin/x/cms/pages/{id}", m.handleUpdate, gocommerce.RightCatalogWrite)
-	app.HandleAdminFunc("DELETE /api/admin/x/cms/pages/{id}", m.handleDelete, gocommerce.RightCatalogWrite)
+	app.HandleAdminFunc("GET /api/admin/x/cms/pages", m.handleListAdmin, rightPagesRead)
+	app.HandleAdminFunc("POST /api/admin/x/cms/pages", m.handleCreate, rightPagesWrite)
+	app.HandleAdminFunc("GET /api/admin/x/cms/pages/{id}", m.handleGetAdmin, rightPagesRead)
+	app.HandleAdminFunc("PATCH /api/admin/x/cms/pages/{id}", m.handleUpdate, rightPagesWrite)
+	app.HandleAdminFunc("DELETE /api/admin/x/cms/pages/{id}", m.handleDelete, rightPagesWrite)
 	return nil
 }
 
@@ -501,4 +502,30 @@ func orEmpty(m map[string]string) map[string]string {
 		return map[string]string{}
 	}
 	return m
+}
+
+// The rights this module's own screens are gated on.
+//
+// They were core's until now — catalog.read and catalog.write —
+// which meant the permission could not be given without the thing it was
+// borrowed from, and the screens had no row of their own on the Roles grid.
+// Default names the roles that held the old right, so nobody's access moves.
+const (
+	rightPagesRead  gocommerce.Right = "pages.read"  // was catalog.read
+	rightPagesWrite gocommerce.Right = "pages.write" // was catalog.write
+)
+
+func (m *Module) registerRights(app *gocommerce.App) {
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightPagesRead,
+		Label:   "See content pages",
+		Scope:   "The storefront's written pages",
+		Default: []string{gocommerce.RoleManager, gocommerce.RoleStaff},
+	})
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightPagesWrite,
+		Label:   "Edit content pages",
+		Scope:   "Writing, publishing and deleting them",
+		Default: []string{gocommerce.RoleManager},
+	})
 }

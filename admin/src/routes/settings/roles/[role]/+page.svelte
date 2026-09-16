@@ -25,7 +25,7 @@
     import { base } from "$app/paths";
     import { page } from "$app/state";
     import { roles as rolesApi, auth, can, getRecord } from "$lib/api.js";
-    import { rightScope, rightsByResource, rightsBySection } from "$lib/rights.js";
+    import { learnRights, rightScope, rightsByResource, rightsBySection } from "$lib/rights.js";
     import { toast } from "$lib/toast.svelte.js";
     import DirtyGuard from "$lib/components/DirtyGuard.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
@@ -96,6 +96,9 @@
         loading = true;
         try {
             matrix = await rolesApi.matrix();
+            // A module's rights arrive with their own words; the panel has no
+            // table for a module it was not built beside.
+            learnRights(matrix?.catalogue);
             const mine = matrix?.roles.find((r) => r.role === role);
             draft = [...(mine?.rights ?? [])];
             seedLabel(mine);

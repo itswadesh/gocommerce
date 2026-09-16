@@ -94,6 +94,7 @@ CREATE INDEX faq_entries_order_idx ON faq_entries (section, position, id);
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
+	m.registerRights(app)
 	m.app = app
 	m.db = app.DB()
 
@@ -114,14 +115,14 @@ func (m *Module) Register(app *gocommerce.App) error {
 
 	// An answer is shop copy, like a content page: the catalogue's rights,
 	// because it is written and read alongside the rest of the storefront.
-	app.HandleAdminFunc("GET /api/admin/x/faq", m.handleList, gocommerce.RightCatalogRead)
-	app.HandleAdminFunc("POST /api/admin/x/faq", m.handleCreate, gocommerce.RightCatalogWrite)
-	app.HandleAdminFunc("PATCH /api/admin/x/faq/{id}", m.handleUpdate, gocommerce.RightCatalogWrite)
-	app.HandleAdminFunc("DELETE /api/admin/x/faq/{id}", m.handleDelete, gocommerce.RightCatalogWrite)
+	app.HandleAdminFunc("GET /api/admin/x/faq", m.handleList, rightFAQRead)
+	app.HandleAdminFunc("POST /api/admin/x/faq", m.handleCreate, rightFAQWrite)
+	app.HandleAdminFunc("PATCH /api/admin/x/faq/{id}", m.handleUpdate, rightFAQWrite)
+	app.HandleAdminFunc("DELETE /api/admin/x/faq/{id}", m.handleDelete, rightFAQWrite)
 	// The whole order at once, the way the Menus screen saves a tree: an
 	// FAQ page is reordered by dragging, and one request per moved row
 	// would leave the list half-sorted if the second failed.
-	app.HandleAdminFunc("PUT /api/admin/x/faq/order", m.handleReorder, gocommerce.RightCatalogWrite)
+	app.HandleAdminFunc("PUT /api/admin/x/faq/order", m.handleReorder, rightFAQWrite)
 	return nil
 }
 
@@ -390,4 +391,30 @@ func entryID(r *http.Request) (int64, error) {
 		return 0, gocommerce.Validationf("the id must be a number")
 	}
 	return id, nil
+}
+
+// The rights this module's own screens are gated on.
+//
+// They were core's until now — catalog.read and catalog.write —
+// which meant the permission could not be given without the thing it was
+// borrowed from, and the screens had no row of their own on the Roles grid.
+// Default names the roles that held the old right, so nobody's access moves.
+const (
+	rightFAQRead  gocommerce.Right = "faq.read"  // was catalog.read
+	rightFAQWrite gocommerce.Right = "faq.write" // was catalog.write
+)
+
+func (m *Module) registerRights(app *gocommerce.App) {
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightFAQRead,
+		Label:   "See the FAQ",
+		Scope:   "The questions a storefront answers",
+		Default: []string{gocommerce.RoleManager, gocommerce.RoleStaff},
+	})
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightFAQWrite,
+		Label:   "Edit the FAQ",
+		Scope:   "Writing, ordering and removing entries",
+		Default: []string{gocommerce.RoleManager},
+	})
 }

@@ -111,6 +111,7 @@ CREATE INDEX contact_messages_status_idx ON contact_messages (status, id DESC);
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
+	m.registerRights(app)
 	m.app = app
 	m.db = app.DB()
 	// The announcement's wording, editable from the panel like every other
@@ -140,10 +141,10 @@ Reply to {{.from_email}}, then mark it replied on the Contact screen.`,
 
 	// An inbox is customer correspondence: the customers' right to read,
 	// store.operate to act on.
-	app.HandleAdminFunc("GET /api/admin/x/contact/messages", m.handleList, gocommerce.RightCustomersRead)
-	app.HandleAdminFunc("GET /api/admin/x/contact/messages/{id}", m.handleGet, gocommerce.RightCustomersRead)
-	app.HandleAdminFunc("PATCH /api/admin/x/contact/messages/{id}", m.handleUpdate, gocommerce.RightStoreOperate)
-	app.HandleAdminFunc("DELETE /api/admin/x/contact/messages/{id}", m.handleDelete, gocommerce.RightStoreOperate)
+	app.HandleAdminFunc("GET /api/admin/x/contact/messages", m.handleList, rightContactRead)
+	app.HandleAdminFunc("GET /api/admin/x/contact/messages/{id}", m.handleGet, rightContactRead)
+	app.HandleAdminFunc("PATCH /api/admin/x/contact/messages/{id}", m.handleUpdate, rightContactWrite)
+	app.HandleAdminFunc("DELETE /api/admin/x/contact/messages/{id}", m.handleDelete, rightContactWrite)
 	return nil
 }
 
@@ -363,4 +364,30 @@ func (m *Module) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// The rights this module's own screens are gated on.
+//
+// They were core's until now — customers.read and store.operate —
+// which meant the permission could not be given without the thing it was
+// borrowed from, and the screens had no row of their own on the Roles grid.
+// Default names the roles that held the old right, so nobody's access moves.
+const (
+	rightContactRead  gocommerce.Right = "contact.read"  // was customers.read
+	rightContactWrite gocommerce.Right = "contact.write" // was store.operate
+)
+
+func (m *Module) registerRights(app *gocommerce.App) {
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightContactRead,
+		Label:   "Read the contact inbox",
+		Scope:   "Messages the storefront's form collected — personal data",
+		Default: []string{gocommerce.RoleManager, gocommerce.RoleStaff},
+	})
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightContactWrite,
+		Label:   "Clear the contact inbox",
+		Scope:   "Marking messages handled, and deleting them",
+		Default: []string(nil),
+	})
 }

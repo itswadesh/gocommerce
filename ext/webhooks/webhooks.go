@@ -155,6 +155,7 @@ CREATE INDEX webhook_deliveries_endpoint ON webhook_deliveries (endpoint_id, id 
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
+	m.registerRights(app)
 	if m.cfg.Timeout <= 0 {
 		m.cfg.Timeout = defaultTimeout
 	}
@@ -171,14 +172,14 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// store.operate, the right D49 gave the outbox screen. A webhook endpoint
 	// is the same kind of thing: it is not a part of the catalogue or the
 	// orders, it is how this store is wired to the outside.
-	app.HandleAdminFunc("POST /api/admin/x/webhooks/endpoints", m.handleCreate, gocommerce.RightStoreOperate)
-	app.HandleAdminFunc("GET /api/admin/x/webhooks/endpoints", m.handleList, gocommerce.RightStoreOperate)
-	app.HandleAdminFunc("GET /api/admin/x/webhooks/endpoints/{id}", m.handleGet, gocommerce.RightStoreOperate)
-	app.HandleAdminFunc("PATCH /api/admin/x/webhooks/endpoints/{id}", m.handleUpdate, gocommerce.RightStoreOperate)
-	app.HandleAdminFunc("DELETE /api/admin/x/webhooks/endpoints/{id}", m.handleDelete, gocommerce.RightStoreOperate)
-	app.HandleAdminFunc("POST /api/admin/x/webhooks/endpoints/{id}/rotate-secret", m.handleRotate, gocommerce.RightStoreOperate)
-	app.HandleAdminFunc("GET /api/admin/x/webhooks/deliveries", m.handleDeliveries, gocommerce.RightStoreOperate)
-	app.HandleAdminFunc("POST /api/admin/x/webhooks/deliveries/{id}/retry", m.handleRetry, gocommerce.RightStoreOperate)
+	app.HandleAdminFunc("POST /api/admin/x/webhooks/endpoints", m.handleCreate, rightWebhooksWrite)
+	app.HandleAdminFunc("GET /api/admin/x/webhooks/endpoints", m.handleList, rightWebhooksRead)
+	app.HandleAdminFunc("GET /api/admin/x/webhooks/endpoints/{id}", m.handleGet, rightWebhooksRead)
+	app.HandleAdminFunc("PATCH /api/admin/x/webhooks/endpoints/{id}", m.handleUpdate, rightWebhooksWrite)
+	app.HandleAdminFunc("DELETE /api/admin/x/webhooks/endpoints/{id}", m.handleDelete, rightWebhooksWrite)
+	app.HandleAdminFunc("POST /api/admin/x/webhooks/endpoints/{id}/rotate-secret", m.handleRotate, rightWebhooksWrite)
+	app.HandleAdminFunc("GET /api/admin/x/webhooks/deliveries", m.handleDeliveries, rightWebhooksRead)
+	app.HandleAdminFunc("POST /api/admin/x/webhooks/deliveries/{id}/retry", m.handleRetry, rightWebhooksWrite)
 
 	// The sending is background work, and OnStart is where background work
 	// belongs: it runs once the store is ready to serve, and its context is
@@ -223,4 +224,30 @@ func hint(secret string) string {
 		return secret
 	}
 	return secret[len(secret)-4:]
+}
+
+// The rights this module's own screens are gated on.
+//
+// They were core's until now — store.operate —
+// which meant the permission could not be given without the thing it was
+// borrowed from, and the screens had no row of their own on the Roles grid.
+// Default names the roles that held the old right, so nobody's access moves.
+const (
+	rightWebhooksRead  gocommerce.Right = "webhooks.read"  // was store.operate
+	rightWebhooksWrite gocommerce.Right = "webhooks.write" // was store.operate
+)
+
+func (m *Module) registerRights(app *gocommerce.App) {
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightWebhooksRead,
+		Label:   "See the webhook endpoints",
+		Scope:   "Where this store posts its events, and how those posts went",
+		Default: []string(nil),
+	})
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightWebhooksWrite,
+		Label:   "Change the webhook endpoints",
+		Scope:   "Registering, editing and rotating their secrets",
+		Default: []string(nil),
+	})
 }

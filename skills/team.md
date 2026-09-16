@@ -112,6 +112,56 @@ The table above is the **default**. `roleRights` being a map rather than a set
 of conditionals is what let M19 make the sets configurable by changing one
 lookup instead of finding every place a permission is decided.
 
+## Rights a module brings
+
+`rights.go` says nothing outside it may invent a right. That was written
+when every screen was core's, and it stopped being true the moment a module
+shipped one: reviews, pages, menus, the FAQ, the contact inbox, the
+newsletter list, wishlists, invoices and webhooks each added a surface an
+operator can be kept out of, and each borrowed the nearest right that
+already existed.
+
+The cost was that a permission could not be given without the thing it was
+borrowed from — moderating reviews meant the whole catalogue, reading the
+newsletter meant the outbox — and none of those screens had a row on the
+Roles grid at all, because the grid draws rights and they had none.
+
+So a module declares its own, from `Register`, beside its plugin and its
+routes:
+
+```go
+app.RegisterRight(gocommerce.RightSpec{
+    Right:   "reviews.moderate",
+    Label:   "Moderate reviews",
+    Scope:   "Approving, rejecting, replying and deleting",
+    Default: []string{gocommerce.RoleManager},
+})
+```
+
+The rule `rights.go` states survives in the form that mattered: a right is
+declared in exactly one place, by the code that owns the routes it gates.
+What a module may not do is widen an existing role — `Default` names the
+roles that carry it before the store says otherwise, and the safe value is
+exactly the roles that held the right it was lifted off. Anything wider
+hands every store on upgrade a permission nobody granted.
+
+Three things follow, and each was a bug before it was a rule:
+
+- **Owner carries every right this build has**, not every right core knows
+  about. A module right owner did not hold would be a screen the owner is
+  refused from in their own store.
+- **A stored grant is intersected with the build, not with core.** Filtering
+  against `AllRights` dropped a module's right on the way out of the table,
+  so the store saved the permission, reported it saved, and refused the
+  screen anyway.
+- **A right from a module this binary lacks is refused** rather than stored.
+  The row would gate nothing and would come back as a checkbox for a screen
+  that does not exist.
+
+`Label` and `Scope` travel with the right because the panel cannot have a
+table for a module it was never built beside; the roles matrix carries them
+in `catalogue` and the Roles screen reads them from there.
+
 ## Renaming a role
 
 The set of roles is fixed and the *key* of each is an identifier — `owner`, `manager` and `staff` are written on every superuser row and in

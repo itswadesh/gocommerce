@@ -75,6 +75,10 @@ type RoleMatrix struct {
 	// checked and locked rather than letting somebody save a set the API will
 	// only refuse.
 	Required []Right `json:"required"`
+	// Catalogue is the module-declared half with its words. Core's labels
+	// live in the panel, which can have a table for rights it was built
+	// beside; it cannot have one for a module it has never heard of.
+	Catalogue []RightCatalogue `json:"catalogue,omitempty"`
 }
 
 // Matrix returns the store's effective role/right matrix.
@@ -88,11 +92,15 @@ func (r *RoleRights) Matrix(ctx context.Context) (*RoleMatrix, error) {
 		return nil, err
 	}
 	out := &RoleMatrix{
-		AllRights: append([]Right(nil), AllRights...),
+		// This build's rights, not core's: a module brings its own, and a grid
+		// drawn from core alone leaves that module's screens with no row and so
+		// no way to grant or withhold them.
+		AllRights: r.app.Rights(),
 		Required:  append([]Right(nil), RequiredRights...),
+		Catalogue: r.app.RightsCatalogue(),
 	}
 	for _, role := range Roles {
-		def := DefaultRightsOf(role)
+		def := r.app.defaultRightsOf(role)
 		label := profileOf(role, labels)
 		row := RoleSet{
 			Role: role, Rights: def, Default: def,
@@ -120,7 +128,7 @@ func (r *RoleRights) Of(ctx context.Context, role string) ([]Right, error) {
 	// resolving it without reading anything means a store whose role_rights is
 	// unreadable can still be signed into by the person who can fix it.
 	if !RoleConfigurable(role) {
-		return DefaultRightsOf(role), nil
+		return r.app.defaultRightsOf(role), nil
 	}
 	all, err := r.All(ctx)
 	if err != nil {
@@ -142,7 +150,10 @@ func (r *RoleRights) All(ctx context.Context) (map[string][]Right, error) {
 			out[role] = set
 			continue
 		}
-		out[role] = DefaultRightsOf(role)
+		// The build's defaults, not core's: a module brings rights of its own,
+		// and resolving a role without them refuses that module's screens to
+		// everybody the module meant to give them to.
+		out[role] = r.app.defaultRightsOf(role)
 	}
 	return out, nil
 }
@@ -174,8 +185,8 @@ func (r *RoleRights) Set(ctx context.Context, role string, rights []Right, by *S
 
 	clean := make([]Right, 0, len(rights))
 	for _, right := range rights {
-		if !slices.Contains(AllRights, right) {
-			return nil, Validationf("%q is not a right this engine has", right)
+		if !r.app.hasRight(right) {
+			return nil, Validationf("%q is not a right this build has", right)
 		}
 		if !slices.Contains(clean, right) {
 			clean = append(clean, right)
@@ -197,7 +208,7 @@ func (r *RoleRights) Set(ctx context.Context, role string, rights []Right, by *S
 
 	// Stored as the store's departure from the defaults, so a set that matches
 	// them is stored as no rows and the role goes back to tracking.
-	def := DefaultRightsOf(role)
+	def := r.app.defaultRightsOf(role)
 	var grantedBy *int64
 	if by != nil {
 		grantedBy = &by.ID
@@ -263,7 +274,7 @@ func (r *RoleRights) Reset(ctx context.Context, role string) (*RoleSet, error) {
 	if err != nil {
 		return nil, err
 	}
-	def := DefaultRightsOf(role)
+	def := r.app.defaultRightsOf(role)
 	return &RoleSet{Role: role, Rights: def, Default: def, Configurable: true}, nil
 }
 
@@ -288,7 +299,10 @@ func (r *RoleRights) overrides(ctx context.Context) (map[string][]Right, error) 
 			return nil, Internalf(err, "scan role right")
 		}
 		right := Right(name)
-		if !slices.Contains(AllRights, right) {
+		// Against this BUILD, not against core: a stored grant of a module's
+		// right was being dropped on the way out, so the store saved the
+		// permission, reported it saved, and refused the screen anyway.
+		if !r.app.hasRight(right) {
 			continue
 		}
 		out[role] = append(out[role], right)
