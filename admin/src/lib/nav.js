@@ -149,15 +149,17 @@ export const NAV = [
             { href: "/faq", label: "FAQ", right: "faq.read", module: "faq", keywords: "questions answers help support" },
         ],
     },
-    // "How much did we sell" has its answer on the dashboard, and the full
-    // report — the by-period table, the whole best-seller list — is here.
+    // "How much did we sell" and the full sales report — the by-period table,
+    // the whole best-seller list — are on the dashboard, where somebody
+    // arriving at the panel already sees them. This is the other kind of
+    // report: a saved SELECT answering a question only this shop has.
     {
         href: "/reports",
         label: "Reports",
         icon: "ri-line-chart-line",
         right: "reports.read",
         accent: "rose",
-        keywords: "sales revenue analytics best sellers",
+        keywords: "sql custom query saved analytics",
     },
     // What the store is doing in the background: imports in progress, events
     // waiting to go out, deliveries that failed. One screen, because "is it
@@ -216,10 +218,14 @@ export const NAV = [
             // The store as a running system rather than as a shop.
             { href: "/settings/diagnostics", label: "Diagnostics", right: "store.operate", health: true, keywords: "health checks doctor" },
             { href: "/settings/events", label: "Event log", right: "store.operate", keywords: "outbox execution history dead letters" },
+            { href: "/settings/api-keys", label: "API keys", right: "apikeys.read", keywords: "token credential integration machine partner bearer" },
             { href: "/settings/webhooks", label: "Webhooks", right: "webhooks.read", module: "webhooks", keywords: "endpoints deliveries integrations" },
             { href: "/settings/audit", label: "Audit trail", right: "store.operate", keywords: "who did what history" },
             { href: "/settings/agent", label: "Agent activity", right: "agent.read", module: "mcp", keywords: "mcp ai tools" },
-            { href: "/data", label: "Import / export", right: "data.export", keywords: "csv shopify import export" },
+            // Two entries, because they are two rights: one link gated on
+            // data.export left an operator who may only import with no way in.
+            { href: "/data", label: "Export", exact: true, right: "data.export", keywords: "csv shopify download products orders" },
+            { href: "/data/import", label: "Import", right: "data.import", keywords: "csv shopify upload taxonomy products orders" },
         ],
     },
 ];

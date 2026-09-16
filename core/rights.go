@@ -155,6 +155,12 @@ const (
 	// RightPluginsWrite is the one to be careful with: a plugin's settings are
 	// where a payment gateway's and a carrier's live credentials live, so this
 	// grants the ability to point the store's money at somewhere else.
+	// RightAPIKeysRead is which keys exist; RightAPIKeysWrite is minting and
+	// revoking them. Owner alone by default, and deliberately not manager: a
+	// role that can make a key can make one carrying more than itself, which
+	// turns any grant of it into a grant of everything.
+	RightAPIKeysRead  Right = "apikeys.read"
+	RightAPIKeysWrite Right = "apikeys.write"
 	RightPluginsRead  Right = "plugins.read"
 	RightPluginsWrite Right = "plugins.write"
 
@@ -196,8 +202,13 @@ const (
 	// shop shows people who are not allowed to open an order; abandoned carts
 	// are baskets rather than sales; payouts is the reconciliation.
 	RightReportsRead Right = "reports.read"
-	RightCartsRead   Right = "carts.read"
-	RightPayoutsRead Right = "payouts.read"
+	// RightReportsWrite is writing a custom report, which means writing SQL
+	// that reaches every table in the store. Owner alone by default: a saved
+	// report is a view of anything its author could see, and reports.read is
+	// what decides who may then look through it.
+	RightReportsWrite Right = "reports.write"
+	RightCartsRead    Right = "carts.read"
+	RightPayoutsRead  Right = "payouts.read"
 
 	// The Jobs screen gets no right of its own on purpose. It has no routes:
 	// it is a reading of the outbox (store.operate) plus whatever the import
@@ -269,6 +280,8 @@ var AllRights = []Right{
 	RightGroupsRead, RightGroupsWrite,
 	RightReportsRead, RightCartsRead, RightPayoutsRead,
 	RightStoreWrite,
+	RightAPIKeysRead, RightAPIKeysWrite,
+	RightReportsWrite,
 }
 
 // The roles. Fixed, and few: a store with three people does not need a

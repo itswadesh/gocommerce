@@ -51,6 +51,9 @@ func coreMigrations() []Migration {
 		{ID: "0040_notification_templates", SQL: migration0040NotificationTemplates},
 		{ID: "0041_role_profiles", SQL: migration0041RoleProfiles},
 		{ID: "0042_store_profile", SQL: migration0042StoreProfile},
+		{ID: "0043_store_clock", SQL: migration0043StoreClock},
+		{ID: "0044_api_keys", SQL: migration0044APIKeys},
+		{ID: "0045_custom_reports", SQL: migration0045CustomReports},
 	}
 }
 
@@ -2065,4 +2068,84 @@ CREATE TABLE store_profile (
     updated_by   bigint      REFERENCES superusers (id) ON DELETE SET NULL
 );
 INSERT INTO store_profile (id) VALUES (1);
+`
+
+// M43 — the store keeps its own clock and its own voice.
+//
+// A new migration rather than columns added to M42, because a shipped
+// migration is frozen: a store that has already run 42 would never see an
+// edit to it.
+//
+// Both default to empty, and empty is a real answer rather than a gap to fill
+// in. No timezone means UTC, which is what the server was doing anyway; no
+// language means the one the binary was started with. A store that has never
+// opened the screen behaves exactly as it did before this ran.
+const migration0043StoreClock = `
+ALTER TABLE store_profile
+    ADD COLUMN timezone text NOT NULL DEFAULT '',
+    ADD COLUMN language text NOT NULL DEFAULT '';
+`
+
+// M44 — API keys: a credential with a role.
+//
+// Config.AdminTokens already exists and is deliberately roleless: it is what a
+// deploy script uses, there is nobody behind it, and requireRights waves it
+// through everything. That is right for a script on the same machine and wrong
+// for the thing a store actually wants, which is a key it can give a shipping
+// partner that reads orders and cannot refund them.
+//
+// The secret is never stored. The prefix is, in plain text and indexed, so a
+// presented key can be found in one lookup and so the panel can show which key
+// is which; the hash beside it is what decides whether the rest of the key was
+// right. Finding the row is therefore cheap and forging one still costs a
+// preimage.
+//
+// A revoked key keeps its row. Deleting it would erase the only record of what
+// had access and when it stopped, which is the question asked after an
+// incident rather than before one.
+const migration0044APIKeys = `
+CREATE TABLE api_keys (
+    id           bigserial   PRIMARY KEY,
+    name         text        NOT NULL,
+    -- The visible half, unique so a presented key resolves in one lookup.
+    prefix       text        NOT NULL UNIQUE,
+    -- SHA-256 of the whole presented key, hex. Not bcrypt: this is machine-
+    -- generated randomness rather than a password somebody chose, so there is
+    -- no dictionary to slow down, and a key is checked on every request.
+    token_hash   text        NOT NULL,
+    role         text        NOT NULL,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    -- SET NULL for the reason store_profile gives: who issued a key is a fact
+    -- about the past and outlives their account.
+    created_by   bigint      REFERENCES superusers (id) ON DELETE SET NULL,
+    last_used_at timestamptz,
+    revoked_at   timestamptz,
+    revoked_by   bigint      REFERENCES superusers (id) ON DELETE SET NULL
+);
+CREATE INDEX api_keys_active_idx ON api_keys (revoked_at, id DESC);
+`
+
+// M45 — custom reports: a SELECT somebody saved.
+//
+// The SQL is stored as text and never interpolated into anything. It is not
+// a query template with parameters, because a report an operator can
+// parameterise is a report an operator can rewrite at call time, and the
+// point of saving one is that what runs is what was reviewed.
+//
+// No unique constraint on the name. Two reports called "Monthly" are a mess
+// somebody made and can fix; refusing the second is a rule that fires on the
+// person typing rather than on the person who typed first.
+const migration0045CustomReports = `
+CREATE TABLE custom_reports (
+    id          bigserial   PRIMARY KEY,
+    name        text        NOT NULL,
+    description text        NOT NULL DEFAULT '',
+    sql         text        NOT NULL,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    updated_at  timestamptz NOT NULL DEFAULT now(),
+    -- SET NULL for the reason store_profile gives: who wrote a report is a
+    -- fact about the past and outlives their account.
+    created_by  bigint      REFERENCES superusers (id) ON DELETE SET NULL,
+    updated_by  bigint      REFERENCES superusers (id) ON DELETE SET NULL
+);
 `

@@ -6004,6 +6004,275 @@ kbd + kbd {
     }
 }
 
+/* -------------------------------------------- plugins configured elsewhere */
+
+/*
+ * The second list on the Plugins screen: what is switched on here and set up
+ * somewhere with more context.
+ *
+ * Rows rather than cards, deliberately. A card says "this is a thing you act
+ * on"; these are a register of what is installed, and the action — the switch
+ * — is one button at the end of a line. Giving them the same card as a plugin
+ * you actually configure here would say the two are the same kind of row, and
+ * the whole point is that they are not.
+ */
+.shopify-skin .plugin-away-note {
+    max-width: 75ch;
+}
+.shopify-skin .plugin-away {
+    margin-bottom: var(--smSpacing);
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+    overflow: hidden;
+}
+.shopify-skin .plugin-away-home {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--surfaceAlt1Color);
+    font-weight: 600;
+    color: var(--surfaceTxtColor);
+    border-bottom: 1px solid var(--surfaceAlt2Color);
+}
+.shopify-skin .plugin-away-home:hover {
+    color: var(--primaryColor);
+}
+.shopify-skin .plugin-away-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: var(--smSpacing);
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--surfaceAlt1Color);
+}
+.shopify-skin .plugin-away-items > .plugin-away-row:last-child {
+    border-bottom: 0;
+}
+.shopify-skin .plugin-away-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+/* The switch is quiet until wanted: a column of buttons down a register reads
+   as a list of things to press. */
+.shopify-skin .plugin-away-btn {
+    opacity: 0.55;
+}
+.shopify-skin .plugin-away-row:hover .plugin-away-btn,
+.shopify-skin .plugin-away-btn:focus-visible {
+    opacity: 1;
+}
+
+/* ------------------------------------------------------------ api keys */
+
+/*
+ * The one screen where something is shown that can never be shown again.
+ *
+ * The minted key gets the warning colour rather than the success one, which
+ * looks wrong for a second and is right: green says "done, carry on", and the
+ * thing an operator must not do here is carry on without copying it. It is the
+ * only place in the panel where leaving the page loses something the server
+ * cannot give back.
+ */
+.shopify-skin .key-minted {
+    border-color: var(--warningColor);
+    background: var(--surfaceWarningColor);
+}
+.shopify-skin .key-secret {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: var(--smSpacing);
+    padding: 10px 12px;
+    border: 1px solid var(--surfaceAlt3Color);
+    border-radius: var(--borderRadius);
+    background: var(--surfaceColor);
+}
+.shopify-skin .key-secret code {
+    flex: 1 1 320px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-size: var(--fontSize);
+}
+
+/* Five columns, sharing the sitemap table's row vocabulary. */
+.shopify-skin .key-row {
+    grid-template-columns: minmax(140px, 1.2fr) minmax(110px, auto) minmax(90px, auto) minmax(150px, 1fr) auto;
+}
+.shopify-skin .key-prefix {
+    color: var(--surfaceTxtHintColor);
+}
+/* A revoked key is a record, not an option: it stays legible and stops
+   competing with the keys that still work. */
+.shopify-skin .key-row.is-revoked {
+    opacity: 0.6;
+}
+
+@media (max-width: 800px) {
+    .shopify-skin .key-row {
+        grid-template-columns: 1fr auto;
+        gap: 6px 10px;
+    }
+    /* The role chip and the last-seen line drop below the name rather than
+       being cut: on a phone the question is which key, then whether it is
+       still in use. */
+    .shopify-skin .key-row > :nth-child(2) {
+        display: none;
+    }
+}
+
+/* ------------------------------------------------------- custom reports */
+
+/*
+ * The Reports workspace: a short list of saved queries beside the one being
+ * written, and what it returned underneath.
+ *
+ * Two columns rather than a list that navigates to a page. Choosing a report
+ * and running it is one motion, and a screen that replaced itself each time
+ * would make comparing two of them a matter of the back button.
+ */
+.shopify-skin .rpt-intro {
+    max-width: 80ch;
+}
+.shopify-skin .rpt-layout {
+    display: grid;
+    grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+    gap: var(--smSpacing);
+    align-items: start;
+}
+/* minmax(0, 1fr) above and min-width here: without both, a wide result table
+   pushes the grid rather than scrolling inside its own box, and the whole page
+   gains a horizontal scrollbar. */
+.shopify-skin .rpt-work {
+    min-width: 0;
+}
+
+.shopify-skin .rpt-saved {
+    list-style: none;
+    margin: var(--smSpacing) 0 0;
+    padding: 0;
+}
+.shopify-skin .rpt-saved li {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 4px;
+}
+.shopify-skin .rpt-saved-item {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    width: 100%;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: var(--borderRadius);
+    background: none;
+    font: inherit;
+    text-align: left;
+    color: var(--surfaceTxtColor);
+    cursor: pointer;
+}
+.shopify-skin .rpt-saved-item:hover {
+    background: var(--surfaceAlt1Color);
+}
+.shopify-skin .rpt-saved-item.on {
+    background: var(--surfaceAlt2Color);
+}
+.shopify-skin .rpt-saved-item:focus-visible {
+    outline: 2px solid var(--primaryColor);
+    outline-offset: -2px;
+}
+/* The delete button is quiet until the row is wanted: a column of bins down a
+   list of saved work reads as an invitation. */
+.shopify-skin .rpt-del {
+    opacity: 0;
+}
+.shopify-skin .rpt-saved li:hover .rpt-del,
+.shopify-skin .rpt-del:focus-visible {
+    opacity: 1;
+}
+
+.shopify-skin .rpt-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 0 var(--spacing);
+}
+/*
+ * The query box is monospace and tall enough to hold a join without scrolling,
+ * because the thing this screen is for is reading what will run before running
+ * it. `tab-size` so a pasted query keeps the shape its author gave it.
+ */
+.shopify-skin .rpt-sql {
+    font-family: var(--tw-font-mono, ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace);
+    font-size: var(--smFontSize);
+    line-height: 1.5;
+    tab-size: 2;
+    white-space: pre;
+    overflow-wrap: normal;
+    overflow-x: auto;
+}
+.shopify-skin .rpt-error p {
+    margin: 0;
+    /* A database error keeps its own line breaks; they are where it points at
+       the character it could not parse. */
+    white-space: pre-wrap;
+    font-family: var(--tw-font-mono, ui-monospace, monospace);
+    font-size: var(--smFontSize);
+}
+
+.shopify-skin .rpt-result-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: var(--spacing);
+    padding-top: var(--smSpacing);
+    border-top: 1px solid var(--surfaceAlt2Color);
+}
+/* The one thing on this page allowed to be wider than the page, in its own
+   box: a report's columns are whatever the query asked for and cannot be
+   designed for. */
+.shopify-skin .rpt-scroll {
+    margin-top: var(--smSpacing);
+    overflow-x: auto;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+}
+.shopify-skin .rpt-table {
+    margin: 0;
+    font-size: var(--smFontSize);
+}
+.shopify-skin .rpt-table th {
+    white-space: nowrap;
+}
+.shopify-skin .rpt-table td {
+    /* Figures in a report line up on the digit; text stays on one line so a
+       long cell does not make its row four deep. */
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    max-width: 40ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* NULL is not the empty string, and a report where the two look alike is a
+   report that answers the wrong question. */
+.shopify-skin .rpt-table td.is-null {
+    color: var(--surfaceTxtDisabledColor);
+    font-style: italic;
+}
+
+@media (max-width: 900px) {
+    .shopify-skin .rpt-layout {
+        grid-template-columns: 1fr;
+    }
+    /* On a phone the bins cannot wait for a hover that never comes. */
+    .shopify-skin .rpt-del {
+        opacity: 1;
+    }
+}
+
 /* --------- @media print — KEEP LAST ---------
  *
  * Append your section ABOVE this block. These rules carry no `!important`, so a

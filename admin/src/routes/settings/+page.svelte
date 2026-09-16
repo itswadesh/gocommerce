@@ -19,6 +19,7 @@
      * for, and neither of which knew the TTLs, the flat shipping or whether
      * catalog prices include tax.
      */
+    import { base } from "$app/paths";
     import { settings, loadSettings } from "$lib/settings.svelte.js";
     import { storeProfile, can } from "$lib/api.js";
     import { formatMoney, pluralize } from "$lib/format.js";
@@ -51,7 +52,48 @@
         { key: "country", label: "Country", hint: "Two-letter code, such as GB." },
         { key: "tax_id", label: "Tax registration", hint: "VAT, GST or equivalent." },
         { key: "support_url", label: "Support URL" },
+        {
+            key: "timezone",
+            label: "Timezone",
+            kind: "select",
+            hint: "What \"today\" means on an invoice and in a report. Empty is UTC.",
+        },
+        {
+            key: "language",
+            label: "Language",
+            kind: "select",
+            hint: "How a customer is written to when their order recorded no preference of its own.",
+        },
     ];
+
+    /*
+     * The zones this browser knows, which is the IANA list the server will
+     * accept — both read the same database. A free-text box here means a
+     * typo is only discovered by the save, and a dropdown of four hundred
+     * names is still the shortest path to the right one.
+     *
+     * Older browsers without supportedValuesOf get a text box instead of an
+     * empty menu, because a control with no options is worse than a control
+     * that asks you to type.
+     */
+    const zones = (() => {
+        try {
+            return Intl.supportedValuesOf("timeZone");
+        } catch {
+            return [];
+        }
+    })();
+
+    /* Only what this binary has content for: choosing anything else would
+       write every customer a message in a language nobody translated, and the
+       engine refuses it anyway. */
+    const languages = $derived(settings.languages ?? []);
+
+    function optionsFor(key) {
+        if (key === "timezone") return zones;
+        if (key === "language") return languages;
+        return [];
+    }
 
     $effect(() => {
         loadProfile();
@@ -133,7 +175,27 @@
     const channels = $derived(
         Array.isArray(store?.notifier_channels) ? store.notifier_channels : [],
     );
-    const silent = $derived(channels.filter((c) => !c.delivers));
+    /*
+     * Two different silences, and telling them apart is the whole point.
+     *
+     * A channel with nothing but the engine's log backend needs a vendor
+     * module compiled in — a restart, and somebody with the source. A channel
+     * that HAS a vendor and still does not deliver needs an API key typed into
+     * a form, which is a minute's work by whoever is already looking at the
+     * screen. Reporting both as "no delivery backend" sent the second group to
+     * do the first group's job, having already done their own.
+     */
+    const vendorsOf = (c) => (c.backends ?? []).filter((b) => b.module !== "core");
+    const unwired = $derived(
+        channels.filter((c) => !c.delivers && vendorsOf(c).length === 0),
+    );
+    const unconfigured = $derived(
+        channels.filter((c) => !c.delivers && vendorsOf(c).length > 0),
+    );
+    /** The vendor names on a channel, for "SendGrid is installed but…". */
+    const vendorNames = (c) => vendorsOf(c).map((b) => b.name).join(" and ");
+    /** Where a channel's key is typed in. */
+    const setupHref = (c) => (c.channel === "sms" ? "/notifications/sms" : "/notifications/email");
 
     const CHANNEL_LABEL = { email: "Email", sms: "SMS" };
     const channelName = (code) => CHANNEL_LABEL[code] ?? code;
@@ -187,13 +249,33 @@
                             <div class="col-md-4">
                                 <div class="field" class:readonly={!editable}>
                                     <label for="sp-{f.key}">{f.label}</label>
-                                    <input
-                                        id="sp-{f.key}"
-                                        type="text"
-                                        maxlength="200"
-                                        readonly={!editable}
-                                        bind:value={draft[f.key]}
-                                    />
+                                    {#if f.kind === "select" && optionsFor(f.key).length}
+                                        <select
+                                            id="sp-{f.key}"
+                                            disabled={!editable}
+                                            bind:value={draft[f.key]}
+                                        >
+                                            <!-- Blank is a real choice, not a
+                                                 prompt: it means "whatever the
+                                                 binary was started with". -->
+                                            <option value="">
+                                                {f.key === "timezone"
+                                                    ? "UTC (nothing set)"
+                                                    : "The binary's default"}
+                                            </option>
+                                            {#each optionsFor(f.key) as option (option)}
+                                                <option value={option}>{option}</option>
+                                            {/each}
+                                        </select>
+                                    {:else}
+                                        <input
+                                            id="sp-{f.key}"
+                                            type="text"
+                                            maxlength="200"
+                                            readonly={!editable}
+                                            bind:value={draft[f.key]}
+                                        />
+                                    {/if}
                                     {#if f.hint}<div class="field-help">{f.hint}</div>{/if}
                                 </div>
                             </div>
@@ -330,12 +412,12 @@
                             <!-- The warning comes before the chips, because it is
                                  the thing to read: a channel with no delivery
                                  backend accepts every send and reports success. -->
-                            {#if silent.length}
+                            {#if unwired.length}
                                 <div class="alert danger m-b-10">
                                     <p>
                                         <i class="ri-error-warning-line" aria-hidden="true"></i>
                                         <strong>
-                                            No delivery backend for {silent
+                                            Nothing is installed to deliver {unwired
                                                 .map((c) => channelName(c.channel))
                                                 .join(" or ")}.
                                         </strong>
@@ -350,6 +432,31 @@
                                         channel. <code>gocommerce doctor</code> reports the
                                         same thing from the command line.
                                     </p>
+                                </div>
+                            {/if}
+                            {#if unconfigured.length}
+                                <!-- A different problem with a different fix:
+                                     the module is already compiled in, and what
+                                     is missing is a key somebody can type on
+                                     the next screen. -->
+                                <div class="alert warning m-b-10">
+                                    {#each unconfigured as c (c.channel)}
+                                        <p>
+                                            <i class="ri-key-2-line" aria-hidden="true"></i>
+                                            <strong>
+                                                {vendorNames(c)}
+                                                {vendorsOf(c).length === 1 ? "is" : "are"} installed
+                                                for {channelName(c.channel)}, and not sending.
+                                            </strong>
+                                            {vendorsOf(c).length === 1 ? "It needs its" : "They need an"}
+                                            API key and sender before anything leaves the building;
+                                            until then these messages only reach the process log and
+                                            are reported as sent.
+                                            <a href="{base}{setupHref(c)}">
+                                                Set up {channelName(c.channel)}
+                                            </a>.
+                                        </p>
+                                    {/each}
                                 </div>
                             {/if}
                             <div class="flex flex-wrap gap-5 m-b-10">

@@ -159,6 +159,51 @@ product is deleted (`ON DELETE SET NULL`, because an order line is a snapshot);
 the group key falls back to the SKU, so two deleted products stay two rows
 instead of collapsing into one invented bestseller.
 
+## Custom reports: a saved SELECT
+
+Everything above answers "how much did we sell", which every shop asks, and it
+lives on the dashboard. `/reports` is the other kind: the questions only this
+shop has — which wholesale customers have not ordered since March, what the
+Tuesday promotion actually cost — written as SQL once and run by whoever needs
+the answer (M45).
+
+```
+GET    /api/admin/reports/custom           reports.read   the saved list
+POST   /api/admin/reports/custom           reports.write  save one
+PATCH  /api/admin/reports/custom/{id}      reports.write  change one
+DELETE /api/admin/reports/custom/{id}      reports.write  delete one
+POST   /api/admin/reports/custom/{id}/run  reports.read   run a saved one
+POST   /api/admin/reports/custom/run       reports.write  run without saving
+```
+
+It is the one place a person's own SQL reaches the database, so what matters is
+what it refuses, and there are two layers.
+
+- **A read-only transaction**, which is what actually holds. Every run is
+  `BEGIN` … `SET TRANSACTION READ ONLY` with a 15-second `statement_timeout`,
+  always rolled back. PostgreSQL refuses every write and every DDL inside it, so
+  a bug in the layer below is a bad error message rather than a lost table. A
+  test proves it by calling `runInReadOnlyTx` directly with an `UPDATE`.
+- **A parse**, which exists for the error message. It strips comments first —
+  so a verb cannot hide behind one — then requires a single statement beginning
+  `SELECT` or `WITH`, and rejects a writing verb anywhere in it, which is how
+  a CTE smuggles a `DELETE` past a first-word check. An operator who pastes an
+  `UPDATE` reads "a report may only read" instead of a driver error.
+
+What it does **not** do is sandbox reading. A report selects anything the
+engine's database user can, which is everything.
+
+- **`reports.write` is owner's alone.** Saving a report is deciding what
+  everybody with `reports.read` may look at, including tables holding buyers'
+  addresses. Running a *saved* report is `reports.read` on purpose — the point
+  of saving one is that somebody who does not write SQL can get the answer, and
+  its text was reviewed by whoever could save it.
+- **1000 rows, and it says when it cut.** `truncated` is on the result;
+  without it a thousand-row prefix looks exactly like a thousand-row answer.
+- **The SQL is never interpolated.** There are no parameters, because a report
+  an operator can parameterise is one they can rewrite at call time, and the
+  point of saving one is that what runs is what was reviewed.
+
 ## What these numbers do not measure
 
 - **Refund value is reported, never netted.** See above.

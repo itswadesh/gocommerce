@@ -16,10 +16,12 @@
      * shown, because "enabled but not configured" is the state that sends an
      * operator here in the first place.
      */
+    import { base } from "$app/paths";
     import { can, request } from "$lib/api.js";
     import { toast } from "$lib/toast.svelte.js";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginSettingsDrawer from "$lib/components/PluginSettingsDrawer.svelte";
+    import { homeOf } from "$lib/plugin-homes.js";
 
     /* plugins.read lists them; plugins.write switches one on and holds its
        settings, which is where a gateway's live keys live. */
@@ -73,9 +75,25 @@
             return (p.title + " " + p.description + " " + p.key).toLowerCase().includes(needle);
         });
     });
+    /*
+     * Two lists, not one.
+     *
+     * Forty-six cards, of which the gateways belong on Payment methods, the
+     * carriers on Shipping providers, the mail backends under Setup Email, and
+     * a dozen more have a screen with the actual thing on it. A settings
+     * drawer here was a form with no context beside the form that has it, and
+     * the operator had no way to know which of the two was the real one.
+     *
+     * Nothing is hidden: everything with a home is still listed, still
+     * switchable, and now says where it is configured. What it loses is the
+     * second editing surface.
+     */
+    const here = $derived(shown.filter((p) => !homeOf(p)));
+    const elsewhere = $derived(shown.filter((p) => homeOf(p)));
+
     const groups = $derived.by(() => {
         const byCategory = new Map();
-        for (const p of shown) {
+        for (const p of here) {
             const key = p.category || "integration";
             if (!byCategory.has(key)) byCategory.set(key, []);
             byCategory.get(key).push(p);
@@ -83,6 +101,18 @@
         return [...byCategory.entries()].sort(
             ([a], [b]) => CATEGORY_ORDER.indexOf(a) - CATEGORY_ORDER.indexOf(b),
         );
+    });
+
+    /* Grouped by destination, so "everything on Payment methods" is one row of
+       cards rather than eight scattered through a list. */
+    const awayGroups = $derived.by(() => {
+        const byHome = new Map();
+        for (const p of elsewhere) {
+            const home = homeOf(p);
+            if (!byHome.has(home.href)) byHome.set(home.href, { home, items: [] });
+            byHome.get(home.href).items.push(p);
+        }
+        return [...byHome.values()].sort((a, b) => a.home.label.localeCompare(b.home.label));
     });
     const enabledCount = $derived(plugins.filter((p) => p.enabled).length);
 
@@ -220,6 +250,42 @@
                             {/each}
                         </div>
                     {/each}
+
+                    {#if awayGroups.length}
+                        <h6 class="section-title">Configured on their own screens</h6>
+                        <p class="txt-hint txt-sm m-b-sm plugin-away-note">
+                            These are switched on here and set up where the thing itself is, so
+                            there is one form rather than two.
+                        </p>
+                        {#each awayGroups as group (group.home.href)}
+                            <div class="plugin-away">
+                                <a class="plugin-away-home" href="{base}{group.home.href}">
+                                    <i class="ri-arrow-right-up-line" aria-hidden="true"></i>
+                                    <span>{group.home.label}</span>
+                                </a>
+                                <div class="plugin-away-items">
+                                    {#each group.items as p (p.key)}
+                                        {@const st = stateOf(p)}
+                                        <div class="plugin-away-row">
+                                            <span class="plugin-away-name">{p.title}</span>
+                                            <span class="label {st.cls}">{st.label}</span>
+                                            <button
+                                                type="button"
+                                                class="btn sm transparent secondary plugin-away-btn"
+                                                class:loading={working === p.key}
+                                                disabled={working === p.key || !writable}
+                                                onclick={() => toggle(p)}
+                                            >
+                                                <span class="txt">
+                                                    {p.enabled ? "Deactivate" : "Activate"}
+                                                </span>
+                                            </button>
+                                        </div>
+                                    {/each}
+                                </div>
+                            </div>
+                        {/each}
+                    {/if}
                 {/if}
             </div>
         {/if}

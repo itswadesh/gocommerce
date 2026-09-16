@@ -65,6 +65,9 @@ export const RIGHT_ORDER = [
     "carts.read",
     "payouts.read",
     "store.write",
+    "apikeys.read",
+    "apikeys.write",
+    "reports.write",
 ];
 
 /** A right reads better as a sentence than as a dotted identifier. */
@@ -112,6 +115,9 @@ export const RIGHT_LABELS = {
     "carts.read": "See abandoned carts",
     "payouts.read": "See what each gateway owes",
     "store.write": "Edit the store's name, address and contact details",
+    "apikeys.read": "See which API keys exist",
+    "apikeys.write": "Create and revoke API keys",
+    "reports.write": "Write custom SQL reports",
 };
 
 /*
@@ -163,6 +169,9 @@ export const RIGHT_SCOPES = {
     "carts.read": "Baskets nobody came back to",
     "payouts.read": "What each gateway collected, refunded and still owes",
     "store.write": "What the store calls itself on an invoice, a slip and a receipt",
+    "apikeys.read": "The keys other systems use, and when each was last seen",
+    "apikeys.write": "Minting a credential — and a key can be given any role, including one above yours",
+    "reports.write": "Writing SQL that reads any table in the store, and deciding what everyone with reports.read may see",
 };
 
 /*
@@ -321,6 +330,7 @@ export const RIGHT_SECTIONS = [
             "webhooks",
             "agent",
             "store",
+            "apikeys",
         ],
     },
 ];

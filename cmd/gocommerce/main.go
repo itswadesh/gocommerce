@@ -43,6 +43,7 @@ import (
 	msg91 "github.com/misiki/gocommerce/ext/notify-msg91"
 	resend "github.com/misiki/gocommerce/ext/notify-resend"
 	sendgrid "github.com/misiki/gocommerce/ext/notify-sendgrid"
+	twilio "github.com/misiki/gocommerce/ext/notify-twilio"
 	adyen "github.com/misiki/gocommerce/ext/payments-adyen"
 	helcim "github.com/misiki/gocommerce/ext/payments-helcim"
 	hyperswitch "github.com/misiki/gocommerce/ext/payments-hyperswitch"
@@ -142,6 +143,7 @@ environment:
 		withNews     = fs.Bool("newsletter", false, "install the newsletter module: the storefront's signup box and its list")
 		withResend   = fs.Bool("resend", false, "install the Resend module: the store's emails through Resend, and the one to reach for first — an API key is the only required setting (RESEND_API_KEY, RESEND_FROM, or Notifications › Setup Email)")
 		withSendgrid = fs.Bool("sendgrid", false, "install the SendGrid module: the store's emails through SendGrid (SENDGRID_API_KEY, SENDGRID_FROM, or Notifications › Setup Email)")
+		withTwilio   = fs.Bool("twilio", false, "install the Twilio module: the store's SMS through Twilio, with the wording from Notifications › Setup SMS (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM)")
 		withMsg91    = fs.Bool("msg91", false, "install the MSG91 module: the store's SMS through MSG91 (MSG91_AUTH_KEY, or Notifications › Setup SMS)")
 		withGateways = fs.Bool("gateways", false, "install every payment gateway module idle — Stripe, Razorpay, Adyen, Paddle, Lemon Squeezy, Helcim, Hyperswitch, RevenueCat — each switched on and given its keys under Settings › Payment methods")
 		withCarriers = fs.Bool("carriers", false, "install every carrier module idle — Shiprocket, Delhivery, NimbusPost, India Post, Shippo, ShipStation, Easyship, Shippit, USPS, Onfleet, Veeqo — each switched on and given its keys under Settings › Shipping providers")
@@ -261,6 +263,16 @@ environment:
 	if *withSendgrid {
 		modules = append(modules, sendgrid.New(sendgrid.Config{
 			APIKey: os.Getenv("SENDGRID_API_KEY"), From: os.Getenv("SENDGRID_FROM"), FromName: os.Getenv("SENDGRID_FROM_NAME"),
+		}))
+	}
+	// Twilio before MSG91 for the reason Resend comes before SendGrid: it is
+	// the one that works anywhere, because its wording is the store's own.
+	// MSG91 needs every message registered with a carrier first, which is the
+	// right module in India and a week of waiting everywhere else.
+	if *withTwilio {
+		modules = append(modules, twilio.New(twilio.Config{
+			AccountSID: os.Getenv("TWILIO_ACCOUNT_SID"), AuthToken: os.Getenv("TWILIO_AUTH_TOKEN"),
+			From: os.Getenv("TWILIO_FROM"), MessagingServiceSID: os.Getenv("TWILIO_MESSAGING_SERVICE_SID"),
 		}))
 	}
 	if *withMsg91 {

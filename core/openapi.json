@@ -11559,6 +11559,14 @@
                           "type": "string",
                           "format": "date-time",
                           "description": "When the profile was last changed."
+                        },
+                        "timezone": {
+                          "type": "string",
+                          "description": "IANA timezone name, such as Europe/London. Decides what \"today\" means on an invoice and in a report. Empty is UTC."
+                        },
+                        "language": {
+                          "type": "string",
+                          "description": "Which language a customer is written to in when the order recorded no preference. Must be one of the languages the binary was started with; empty means its default. Distinct from settings.default_language, which is what an API request that asked for no language is served."
                         }
                       }
                     }
@@ -11711,6 +11719,738 @@
                           "type": "string",
                           "format": "date-time",
                           "description": "When the profile was last changed."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/api-keys": {
+      "get": {
+        "tags": [
+          "admin:settings"
+        ],
+        "summary": "The API keys this store has issued",
+        "description": "Revoked keys are listed too, after the active ones: the question asked after an incident is what had access and when it stopped, and a deleted row answers neither. Nothing here can be turned back into a credential — the secret is returned once, when the key is made, and is not stored.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every key, active first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string",
+                            "description": "What the key is for, so the list is readable."
+                          },
+                          "prefix": {
+                            "type": "string",
+                            "description": "The visible half of the key, which identifies it in this list and in a log line."
+                          },
+                          "role": {
+                            "type": "string",
+                            "description": "The role the key acts as. Its rights are this store’s, resolved the same way an operator’s are."
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "created_by": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "last_used_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true,
+                            "description": "Recorded at most once a minute, which is enough to decide whether a key can be revoked."
+                          },
+                          "revoked_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          },
+                          "revoked_by": {
+                            "type": "integer",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin:settings"
+        ],
+        "summary": "Mint an API key",
+        "description": "Requires apikeys.write, which only owner carries by default: a role that can mint a key can mint one carrying more rights than itself. The response is the only time the secret exists outside the holder — it is hashed on the way in and cannot be recovered, so a lost key is revoked and replaced rather than looked up.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "role"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "What it is for. At most 80 characters."
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "owner",
+                      "manager",
+                      "staff"
+                    ],
+                    "description": "What the key may do, held to exactly like a person."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The key, with its secret — shown once.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "allOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "integer"
+                            },
+                            "name": {
+                              "type": "string",
+                              "description": "What the key is for, so the list is readable."
+                            },
+                            "prefix": {
+                              "type": "string",
+                              "description": "The visible half of the key, which identifies it in this list and in a log line."
+                            },
+                            "role": {
+                              "type": "string",
+                              "description": "The role the key acts as. Its rights are this store’s, resolved the same way an operator’s are."
+                            },
+                            "created_at": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "created_by": {
+                              "type": "integer",
+                              "nullable": true
+                            },
+                            "last_used_at": {
+                              "type": "string",
+                              "format": "date-time",
+                              "nullable": true,
+                              "description": "Recorded at most once a minute, which is enough to decide whether a key can be revoked."
+                            },
+                            "revoked_at": {
+                              "type": "string",
+                              "format": "date-time",
+                              "nullable": true
+                            },
+                            "revoked_by": {
+                              "type": "integer",
+                              "nullable": true
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "secret": {
+                              "type": "string",
+                              "description": "The credential. Never returned again."
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/api-keys/{id}": {
+      "delete": {
+        "tags": [
+          "admin:settings"
+        ],
+        "summary": "Revoke an API key",
+        "description": "Stops the key working and keeps its row, so there is still a record of what had access and when it stopped. Revoking one already revoked succeeds: the caller wanted it off, and it is off.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/reports/custom": {
+      "get": {
+        "tags": [
+          "admin:reports"
+        ],
+        "summary": "The custom reports this store has saved",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every saved report, by name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "sql": {
+                            "type": "string",
+                            "description": "A single SELECT, or a WITH whose body only reads."
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "updated_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "created_by": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "updated_by": {
+                            "type": "integer",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin:reports"
+        ],
+        "summary": "Save a custom report",
+        "description": "Requires reports.write, which only owner carries by default: a report reads any table the engine can, so saving one decides what everyone with reports.read may look at. The SQL is checked here as well as at run time, because a report that cannot run is not worth keeping and now is when its author can fix it.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "sql"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "What it answers. At most 120 characters."
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "sql": {
+                    "type": "string",
+                    "description": "A single SELECT, or a WITH whose body only reads."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The saved report.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "sql": {
+                          "type": "string",
+                          "description": "A single SELECT, or a WITH whose body only reads."
+                        },
+                        "created_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updated_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "created_by": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "updated_by": {
+                          "type": "integer",
+                          "nullable": true
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/reports/custom/{id}": {
+      "patch": {
+        "tags": [
+          "admin:reports"
+        ],
+        "summary": "Change a saved report",
+        "description": "The path wins over any id in the body: a PATCH to /42 carrying id 7 is a typo, and guessing which was meant is how one report overwrites another.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "integer"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "sql": {
+                    "type": "string",
+                    "description": "A single SELECT, or a WITH whose body only reads."
+                  },
+                  "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "updated_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "created_by": {
+                    "type": "integer",
+                    "nullable": true
+                  },
+                  "updated_by": {
+                    "type": "integer",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The saved report.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "sql": {
+                          "type": "string",
+                          "description": "A single SELECT, or a WITH whose body only reads."
+                        },
+                        "created_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updated_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "created_by": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "updated_by": {
+                          "type": "integer",
+                          "nullable": true
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin:reports"
+        ],
+        "summary": "Delete a saved report",
+        "description": "A report holds no data of its own, so there is nothing to keep a record of.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/reports/custom/{id}/run": {
+      "post": {
+        "tags": [
+          "admin:reports"
+        ],
+        "summary": "Run a saved report",
+        "description": "Requires reports.read rather than reports.write: the point of saving a report is that somebody else can run it, and its SQL was reviewed by whoever could write it. Runs inside a read-only transaction with a 15-second statement timeout, always rolled back, so PostgreSQL refuses every write regardless of what the query says. A parse also rejects anything that is not a single SELECT or a read-only WITH — comments stripped first, so a verb cannot hide behind one — which exists so the operator reads \"a report may only read\" rather than a driver error.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What the query selected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "columns": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "The column names the query returned."
+                        },
+                        "rows": {
+                          "type": "array",
+                          "description": "Rows as strings, nulls preserved. Rendering is the database’s own cast, not a type switch that would have to know every type a store might add.",
+                          "items": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "nullable": true
+                            }
+                          }
+                        },
+                        "truncated": {
+                          "type": "boolean",
+                          "description": "The answer was cut at 1000 rows. Without this a prefix looks like an answer."
+                        },
+                        "took_ms": {
+                          "type": "integer",
+                          "description": "How long the query ran."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/reports/custom/run": {
+      "post": {
+        "tags": [
+          "admin:reports"
+        ],
+        "summary": "Run a query without saving it",
+        "description": "Requires reports.write, because this is writing a report — it has just not been kept. Runs inside a read-only transaction with a 15-second statement timeout, always rolled back, so PostgreSQL refuses every write regardless of what the query says. A parse also rejects anything that is not a single SELECT or a read-only WITH — comments stripped first, so a verb cannot hide behind one — which exists so the operator reads \"a report may only read\" rather than a driver error.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sql"
+                ],
+                "properties": {
+                  "sql": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the query selected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "columns": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "The column names the query returned."
+                        },
+                        "rows": {
+                          "type": "array",
+                          "description": "Rows as strings, nulls preserved. Rendering is the database’s own cast, not a type switch that would have to know every type a store might add.",
+                          "items": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "nullable": true
+                            }
+                          }
+                        },
+                        "truncated": {
+                          "type": "boolean",
+                          "description": "The answer was cut at 1000 rows. Without this a prefix looks like an answer."
+                        },
+                        "took_ms": {
+                          "type": "integer",
+                          "description": "How long the query ran."
                         }
                       }
                     }

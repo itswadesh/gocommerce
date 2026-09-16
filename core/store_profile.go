@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // The shop's own details: what it is called, where it is, and how to reach it.
@@ -42,6 +43,20 @@ type StoreProfile struct {
 
 	// TaxID is the VAT, GST or equivalent registration number.
 	TaxID string `json:"tax_id"`
+
+	// Timezone is an IANA name — "Europe/London", "Asia/Kolkata". It decides
+	// what "today" means on an invoice and in a report: a shop in Auckland on
+	// a UTC server otherwise closes its day seventeen hours late. Empty is
+	// UTC, which is what the server was doing anyway.
+	Timezone string `json:"timezone"`
+	// Language is which one a customer is written to in when the order
+	// recorded no preference. It is not Config.DefaultLanguage, which answers
+	// a different question — what to serve a request that asked for no
+	// particular language (D21). This one is the store's choice about its own
+	// outgoing messages, so it is a setting rather than a start-up decision,
+	// and it is constrained to the languages the binary actually has content
+	// for. Empty means the binary's.
+	Language string `json:"language"`
 	// SupportURL is where a buyer is sent for help, for the foot of an email.
 	SupportURL string `json:"support_url"`
 }
@@ -64,11 +79,12 @@ func (p *StoreProfiles) Get(ctx context.Context) (*StoreProfile, error) {
 	err := p.app.db.QueryRowContext(ctx, `
 		SELECT name, legal_name, email, phone,
 		       address_line1, address_line2, city, state, postal_code, country,
-		       tax_id, support_url
+		       tax_id, support_url, timezone, language
 		FROM store_profile WHERE id = 1`).Scan(
 		&out.Name, &out.LegalName, &out.Email, &out.Phone,
 		&out.AddressLine1, &out.AddressLine2, &out.City, &out.State,
-		&out.PostalCode, &out.Country, &out.TaxID, &out.SupportURL)
+		&out.PostalCode, &out.Country, &out.TaxID, &out.SupportURL,
+		&out.Timezone, &out.Language)
 	if err == sql.ErrNoRows {
 		// Unreachable while the migration's INSERT stands, and harmless if a
 		// later one ever changes that: an empty shop is a real answer.
@@ -115,6 +131,25 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 	if in.Email != "" && !strings.Contains(in.Email, "@") {
 		return nil, Validationf("that does not look like an email address")
 	}
+	// Loaded, not pattern-matched: the only useful question about a timezone
+	// is whether this machine can resolve it, and a name that looks right and
+	// does not load prints the wrong date on every invoice for a year before
+	// anybody notices.
+	in.Timezone = strings.TrimSpace(in.Timezone)
+	if in.Timezone != "" {
+		if _, err := time.LoadLocation(in.Timezone); err != nil {
+			return nil, Validationf("%q is not a timezone this server can read; use an IANA name such as %q", in.Timezone, "Europe/London")
+		}
+	}
+	// Folded rather than refused, the way the country code is upper-cased:
+	// "EN" is the right language typed the wrong way.
+	in.Language = strings.ToLower(strings.TrimSpace(in.Language))
+	if in.Language != "" && !containsFold(p.app.cfg.Languages, in.Language) {
+		// Refused rather than accepted quietly, because choosing a language
+		// nothing is translated into sends every customer a message in it.
+		return nil, Validationf("this store has no content in %q; it was started with %s",
+			in.Language, strings.Join(p.app.cfg.Languages, ", "))
+	}
 
 	var updatedBy *int64
 	if by != nil {
@@ -125,15 +160,50 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 		    name = $1, legal_name = $2, email = $3, phone = $4,
 		    address_line1 = $5, address_line2 = $6, city = $7, state = $8,
 		    postal_code = $9, country = $10, tax_id = $11, support_url = $12,
-		    updated_at = now(), updated_by = $13
+		    timezone = $13, language = $14,
+		    updated_at = now(), updated_by = $15
 		WHERE id = 1`,
 		in.Name, in.LegalName, in.Email, in.Phone,
 		in.AddressLine1, in.AddressLine2, in.City, in.State,
-		in.PostalCode, in.Country, in.TaxID, in.SupportURL, updatedBy)
+		in.PostalCode, in.Country, in.TaxID, in.SupportURL,
+		in.Timezone, in.Language, updatedBy)
 	if err != nil {
 		return nil, Internalf(err, "save the store profile")
 	}
 	return p.Get(ctx)
+}
+
+// LocationOf is the store's clock, or UTC.
+//
+// It never returns nil and never fails: a stored timezone was loadable when it
+// was saved, and if the machine's zone database has since lost it, printing a
+// date in UTC is a better answer than refusing to print the invoice.
+func (p *StoreProfiles) LocationOf(ctx context.Context) *time.Location {
+	profile, err := p.Get(ctx)
+	if err != nil || profile.Timezone == "" {
+		return time.UTC
+	}
+	loc, err := time.LoadLocation(profile.Timezone)
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+}
+
+// MessageLanguage is the language to write a customer in.
+//
+// Three answers in order of who is nearest: what the order recorded about this
+// customer, then what the store chose, then what the binary was started with.
+// The customer's own preference wins over the shop's — it is the one fact here
+// about the person being written to.
+func (p *StoreProfiles) MessageLanguage(ctx context.Context, preferred string) string {
+	if preferred = strings.TrimSpace(preferred); preferred != "" {
+		return preferred
+	}
+	if profile, err := p.Get(ctx); err == nil && profile.Language != "" {
+		return profile.Language
+	}
+	return p.app.cfg.DefaultLanguage
 }
 
 // ------------------------------------------------------------------- routes

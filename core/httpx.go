@@ -398,6 +398,13 @@ func (a *App) bearerAuth(next http.Handler) http.Handler {
 			a.denyAdmin(w, r)
 			return
 		}
+		if key, ok := a.apiKeys.Resolve(r.Context(), token); ok {
+			// Before the static token and before a session, because a key says
+			// what it is: apiKeyPrefixOf declines anything not shaped like one,
+			// so this costs a string compare for every other credential.
+			next.ServeHTTP(w, withSuperuser(r, key))
+			return
+		}
 		if a.validAdminToken(token) {
 			// Authentication is unchanged; the marker is read only by
 			// auditActor, and it is what lets a row say "a script did this"
@@ -472,6 +479,8 @@ func (a *App) mountCoreRoutes() {
 	a.mountReportRoutes()
 	a.mountTransferRoutes()
 	a.mountStoreProfileRoutes()
+	a.mountAPIKeyRoutes()
+	a.mountCustomReportRoutes()
 	a.mountPluginRoutes()
 	a.mountNotificationRoutes()
 	a.mountNotifyTemplateRoutes()

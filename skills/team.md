@@ -299,6 +299,45 @@ exists and is almost never changed.
 - An address already on the team is refused, pointing at the role endpoint —
   which cannot be used to hand out a fresh password.
 
+## Machines: API keys
+
+Two credentials authenticate the admin API, and they are different on purpose.
+
+`Config.AdminTokens` is the static one, from the process environment. It is
+roleless: `requireRights` sees no superuser on the context and waves it through
+everything, because narrowing what a deploy script may do is a decision about
+which token it is given rather than about the route. That is the right shape for
+a cron job on the same machine.
+
+**API keys** (M44) are the other. A key carries a role, is resolved into the
+rights *this store* cut for that role, and is refused by name where the role
+does not reach — the same path a person goes through, because a second
+authorization path is a second thing to keep in step. `APIKeys.Resolve` returns
+a `Superuser` with no ID and an email reading `api key: <name>`, so a trail
+says what acted without inventing somebody who did.
+
+```
+POST   /api/admin/api-keys      apikeys.write   mints one, returns the secret ONCE
+GET    /api/admin/api-keys      apikeys.read    every key, revoked ones last
+DELETE /api/admin/api-keys/{id} apikeys.write   revokes, keeping the row
+```
+
+- **The secret is not stored.** A key is `gck_<prefix>_<secret>`; the prefix is
+  kept in plain text and indexed so a presented key resolves in one lookup and
+  the panel can say which key is which, and a SHA-256 of the whole string is
+  kept beside it. SHA-256 rather than bcrypt because this is machine-generated
+  randomness with no dictionary to slow down, and it is checked on every
+  request. A lost key is revoked and replaced; there is nothing to look up.
+- **Only owner may mint.** `apikeys.write` is deliberately not manager's: a role
+  that can mint a key can mint one carrying more rights than itself, so granting
+  it to manager would quietly be granting manager everything.
+- **Revoking keeps the row.** The question after an incident is what had access
+  and when it stopped, and a deleted row answers neither. Revoked keys sort
+  last in the listing.
+- **`last_used_at` is written at most once a minute**, off the request path.
+  It exists to answer "can this be revoked", which a minute's resolution
+  answers; a write per request would make authentication cost one.
+
 ## The two lockouts
 
 Both are the same failure: nobody left who carries `team.write`, which is the
