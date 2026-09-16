@@ -6,11 +6,11 @@ func (a *App) mountChannelRoutes() {
 	// Storefronts are how the store is wired to the world — the same kind of
 	// thing as shipping zones and the outbox — so they take `store.operate`
 	// rather than a right of their own, and core/rights.go stays closed (D24).
-	a.HandleAdminFunc("GET /api/admin/channels", a.handleListChannels, RightStoreOperate)
-	a.HandleAdminFunc("POST /api/admin/channels", a.handleCreateChannel, RightStoreOperate)
-	a.HandleAdminFunc("GET /api/admin/channels/{id}", a.handleGetChannel, RightStoreOperate)
-	a.HandleAdminFunc("PATCH /api/admin/channels/{id}", a.handleUpdateChannel, RightStoreOperate)
-	a.HandleAdminFunc("DELETE /api/admin/channels/{id}", a.handleDeleteChannel, RightStoreOperate)
+	a.HandleAdminFunc("GET /api/admin/channels", a.handleListChannels, RightChannelsRead)
+	a.HandleAdminFunc("POST /api/admin/channels", a.handleCreateChannel, RightChannelsWrite)
+	a.HandleAdminFunc("GET /api/admin/channels/{id}", a.handleGetChannel, RightChannelsRead)
+	a.HandleAdminFunc("PATCH /api/admin/channels/{id}", a.handleUpdateChannel, RightChannelsWrite)
+	a.HandleAdminFunc("DELETE /api/admin/channels/{id}", a.handleDeleteChannel, RightChannelsWrite)
 
 	// Which channels a product is narrowed to is a merchandising decision, so
 	// it takes the catalogue's rights rather than store.operate: the person who

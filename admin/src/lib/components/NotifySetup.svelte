@@ -11,7 +11,9 @@
      * with the wording that will actually go out: the default from code, or
      * the operator's own, restorable at any time.
      *
-     * Everything here is store.operate: pasting a delivery key and rewording
+     * Two rights: notifications.read to see the catalogue of messages and
+     * notifications.write to reword one. Activating a provider is a plugin
+     * setting, so that side asks plugins.write. Pasting a delivery key and rewording
      * a confirmation are both operating the store, not selling.
      */
     import { can, request } from "$lib/api.js";
@@ -29,7 +31,8 @@
         sms: { title: "SMS", noun: "text", plural: "texts", provider: "SMS provider" },
     };
     const words = $derived(WORDS[channel]);
-    const allowed = $derived(can("store.operate"));
+    const allowed = $derived(can("notifications.read"));
+    const writable = $derived(can("notifications.write"));
 
     let loading = $state(true);
     let backends = $state([]);
@@ -162,7 +165,7 @@
         </header>
 
         {#if !allowed}
-            <NoAccess right="store.operate" what="the {words.noun} setup" />
+            <NoAccess right="notifications.read" what="the {words.noun} setup" />
         {:else}
             <h2 class="tw:text-2xl tw:font-semibold tw:tracking-tight">{words.provider}</h2>
             <p class="txt-hint m-b-base">
@@ -344,9 +347,9 @@
     {#snippet footer()}
         <button type="button" class="btn transparent m-r-auto" onclick={() => (tpl = null)}><span class="txt">Cancel</span></button>
         {#if tpl?.customized}
-            <button type="button" class="btn secondary" disabled={saving} onclick={resetTemplate}><span class="txt">Restore default</span></button>
+            <button type="button" class="btn secondary" disabled={saving || !writable} onclick={resetTemplate}><span class="txt">Restore default</span></button>
         {/if}
-        <button type="button" class="btn" class:loading={saving} disabled={saving || !draft.body.trim()} onclick={saveTemplate}>
+        <button type="button" class="btn" class:loading={saving} disabled={saving || !writable || !draft.body.trim()} onclick={saveTemplate}>
             <span class="txt">Save</span>
         </button>
     {/snippet}

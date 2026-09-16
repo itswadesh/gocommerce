@@ -3,6 +3,7 @@
 #   .\scripts\dev.ps1              # foreground, Ctrl+C to stop
 #   .\scripts\dev.ps1 -Seed        # ...and load a demo catalog first
 #   .\scripts\dev.ps1 -Reset       # ...starting from an empty database
+#   .\scripts\dev.ps1 -All         # ...with every module this repo ships
 #
 # The dev store runs on its own database so nothing here can touch your test
 # database or anything else on the cluster.
@@ -25,7 +26,8 @@ param(
     [switch]$Seed,
     [switch]$Reset,
     [switch]$Identity,
-    [switch]$ImportAmazon
+    [switch]$ImportAmazon,
+    [switch]$All
 )
 
 $ErrorActionPreference = 'Stop'
@@ -100,9 +102,27 @@ $env:DATABASE_URL = "postgres://$PgUser@${PgHost}:$PgPort/${Database}?sslmode=di
 
 # -Identity installs the shopper-accounts module. The reference binary is
 # module-free by default; a storefront that offers sign-in needs this.
+#
+# -All installs every module this repository ships, which is what you want
+# when the thing being looked at is the panel. Without it the dev store has
+# no Menus, Reviews, FAQ, Wishlists, Pages or Invoices screen and no email
+# or SMS provider to activate — so a screen looks broken when it is simply
+# not built in, and the next half hour goes on finding that out.
 $serveArgs = @('-addr', "127.0.0.1:$Port", '-admin-token', $Token)
-if ($Identity) { $serveArgs += '-identity' }
-if ($ImportAmazon) { $serveArgs += '-import-amazon' }
+if ($All) {
+    $serveArgs += @(
+        '-identity', '-webhooks', '-menus', '-reviews', '-contact', '-newsletter',
+        '-sendgrid', '-msg91', '-invoices', '-cms', '-faq', '-wishlist',
+        '-gateways', '-carriers', '-feeds', '-sitemaps'
+    )
+} else {
+    if ($Identity) { $serveArgs += '-identity' }
+    if ($ImportAmazon) { $serveArgs += '-import-amazon' }
+}
+# -import-amazon stays opt-in even under -All: it drives a real Chrome and
+# wants an LLM key, so it is the one module that does something on a machine
+# rather than only serving routes.
+if ($All -and $ImportAmazon) { $serveArgs += '-import-amazon' }
 $base = "http://127.0.0.1:$Port"
 
 # Create the panel operator. Bootstrap only acts when there is none, so this is

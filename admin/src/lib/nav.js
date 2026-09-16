@@ -126,8 +126,8 @@ export const NAV = [
         accent: "amber",
         keywords: "email sms confirmation sent failed resend",
         children: [
-            { href: "/notifications/email", label: "Setup Email", right: "store.operate", keywords: "sendgrid provider templates" },
-            { href: "/notifications/sms", label: "Setup SMS", right: "store.operate", keywords: "msg91 provider templates" },
+            { href: "/notifications/email", label: "Setup Email", right: "notifications.read", keywords: "sendgrid provider templates" },
+            { href: "/notifications/sms", label: "Setup SMS", right: "notifications.read", keywords: "msg91 provider templates" },
         ],
     },
     // Shopify's Content: the words and pictures a storefront is made of that
@@ -144,8 +144,8 @@ export const NAV = [
             { href: "/media", label: "Files", right: "catalog.read", keywords: "media images pictures uploads" },
             { href: "/cms", label: "Pages", right: "catalog.read", module: "cms", keywords: "content copy about" },
             { href: "/menus", label: "Menus", right: "catalog.read", module: "navigation", keywords: "navigation header footer links" },
-            { href: "/feeds", label: "Feeds", right: "store.operate", module: "feeds", keywords: "google merchant meta catalogue feed" },
-            { href: "/sitemap", label: "Sitemap", right: "store.operate", module: "sitemaps", keywords: "sitemap.xml search console" },
+            { href: "/feeds", label: "Feeds", right: "plugins.read", module: "feeds", keywords: "google merchant meta catalogue feed" },
+            { href: "/sitemap", label: "Sitemap", right: "plugins.read", module: "sitemaps", keywords: "sitemap.xml search console" },
             { href: "/faq", label: "FAQ", right: "catalog.read", module: "faq", keywords: "questions answers help support" },
         ],
     },
@@ -172,13 +172,13 @@ export const NAV = [
     },
     // What this binary can do that is switched on from the panel: storefront
     // extras, widgets, search, marketing. Shopify's "Apps", under the name
-    // this store uses. store.operate, as webhooks are — pasting an analytics
-    // key is operating the store, not selling.
+    // this store uses. plugins.read to see them and plugins.write to change
+    // one, because a plugin's settings are where a gateway's live keys live.
     {
         href: "/plugins",
         label: "Plugins",
         icon: "ri-puzzle-line",
-        right: "store.operate",
+        right: "plugins.read",
         accent: "violet",
         keywords: "apps plugins integrations widgets search klaviyo meilisearch",
     },
@@ -206,12 +206,12 @@ export const NAV = [
             { href: "/settings/superusers", label: "Team", right: "team.read", keywords: "operators staff invitations" },
             { href: "/settings/roles", label: "Roles", right: "roles.write", keywords: "permissions rights" },
             { href: "/settings/account", label: "Your account", keywords: "password profile sessions" },
-            { href: "/settings/payments", label: "Payment methods", right: "store.operate", keywords: "gateways stripe razorpay cod checkout" },
-            { href: "/shipping", label: "Shipping and delivery", right: "store.operate", keywords: "zones rates methods" },
-            { href: "/shipping/providers", label: "Shipping providers", right: "store.operate", keywords: "carriers aggregators delhivery shiprocket" },
+            { href: "/settings/payments", label: "Payment methods", right: "plugins.read", keywords: "gateways stripe razorpay cod checkout" },
+            { href: "/shipping", label: "Shipping and delivery", right: "shipping.read", keywords: "zones rates methods" },
+            { href: "/shipping/providers", label: "Shipping providers", right: "plugins.read", keywords: "carriers aggregators delhivery shiprocket" },
             { href: "/taxes", label: "Taxes", right: "taxes.read", keywords: "vat gst rates" },
             { href: "/locations", label: "Locations", right: "locations.read", keywords: "warehouse store pickup" },
-            { href: "/channels", label: "Channels", right: "store.operate", keywords: "storefronts selling" },
+            { href: "/channels", label: "Channels", right: "channels.read", keywords: "storefronts selling" },
             { href: "/settings/attributes", label: "Attribute dictionary", right: "catalog.read", keywords: "fields taxonomy vocabulary" },
             // The store as a running system rather than as a shop.
             { href: "/settings/diagnostics", label: "Diagnostics", right: "store.operate", health: true, keywords: "health checks doctor" },

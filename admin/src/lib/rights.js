@@ -43,6 +43,14 @@ export const RIGHT_ORDER = [
     "data.export",
     "data.import",
     "store.operate",
+    "shipping.read",
+    "shipping.write",
+    "channels.read",
+    "channels.write",
+    "plugins.read",
+    "plugins.write",
+    "notifications.read",
+    "notifications.write",
 ];
 
 /** A right reads better as a sentence than as a dotted identifier. */
@@ -68,6 +76,14 @@ export const RIGHT_LABELS = {
     "data.export": "Export the catalog and orders",
     "data.import": "Import the catalog and orders",
     "store.operate": "Run health checks, maintenance and the outbox",
+    "shipping.read": "See delivery zones and rates",
+    "shipping.write": "Set what delivery costs",
+    "channels.read": "See the sales channels",
+    "channels.write": "Open and close sales channels",
+    "plugins.read": "See which integrations are on",
+    "plugins.write": "Switch integrations on and hold their keys",
+    "notifications.read": "See the messages the store sends",
+    "notifications.write": "Reword the messages the store sends",
 };
 
 /*
@@ -97,6 +113,14 @@ export const RIGHT_SCOPES = {
     "data.export": "The catalog or every order, as a file",
     "data.import": "Changing prices and stock in bulk, from a file",
     "store.operate": "Health, maintenance, and the outbox — which carries buyers' data",
+    "shipping.read": "The zones a buyer is charged delivery under",
+    "shipping.write": "What every future order collects for delivery",
+    "channels.read": "Where the catalogue is sold",
+    "channels.write": "Opening and closing those places",
+    "plugins.read": "Which integrations this build carries, and which are on",
+    "plugins.write": "Their settings — where a gateway's live keys live",
+    "notifications.read": "The catalogue of messages the store sends",
+    "notifications.write": "Their wording, on every channel",
 };
 
 /*
@@ -140,6 +164,10 @@ export const RESOURCE_LABELS = {
     roles: "Roles",
     data: "Import and export",
     store: "Store",
+    shipping: "Shipping",
+    channels: "Channels",
+    plugins: "Plugins",
+    notifications: "Notifications",
 };
 
 export const VERB_LABELS = {
@@ -162,6 +190,60 @@ export function resourceLabel(key) {
 /** verbLabel is what one cell is called. */
 export function verbLabel(verb) {
     return VERB_LABELS[verb] || titleCase(verb);
+}
+
+/*
+ * The sections the sidebar is cut into, and which resources answer for each.
+ *
+ * Grouping the grid this way rather than leaving fifteen rows in a column is
+ * what lets somebody granting access think in the shape they already navigate:
+ * "can this person touch Products" is a block, not five rows that happen to
+ * share a neighbourhood. The order is the sidebar's own.
+ *
+ * A resource named nowhere here still appears, under "Other" — a right added
+ * to the engine must never fall out of the only screen that grants it just
+ * because this table has not caught up.
+ */
+export const RIGHT_SECTIONS = [
+    { section: "Orders", resources: ["orders"] },
+    { section: "Products", resources: ["catalog", "inventory"] },
+    { section: "Customers", resources: ["customers"] },
+    { section: "Discounts", resources: ["discounts"] },
+    { section: "Notifications", resources: ["notifications"] },
+    { section: "Plugins", resources: ["plugins"] },
+    // The big one, and honestly so: Settings is where a store is configured,
+    // and eight of these are things only an owner would ordinarily touch.
+    {
+        section: "Settings",
+        resources: ["shipping", "channels", "taxes", "locations", "team", "roles", "data", "store"],
+    },
+];
+
+/**
+ * rightsBySection groups the grid rows under the sidebar's own sections.
+ *
+ * Returns `[{ section, rows }]`, dropping a section whose resources this
+ * engine does not have, so a build without a surface shows no empty heading.
+ */
+export function rightsBySection(all) {
+    const rows = rightsByResource(all);
+    const byKey = new Map(rows.map((r) => [r.key, r]));
+    const out = [];
+    for (const { section, resources } of RIGHT_SECTIONS) {
+        const mine = [];
+        for (const key of resources) {
+            const row = byKey.get(key);
+            if (row) {
+                mine.push(row);
+                byKey.delete(key);
+            }
+        }
+        if (mine.length) out.push({ section, rows: mine });
+    }
+    // Whatever the table above has not caught up with.
+    const rest = [...byKey.values()];
+    if (rest.length) out.push({ section: "Other", rows: rest });
+    return out;
 }
 
 /**

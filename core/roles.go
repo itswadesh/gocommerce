@@ -54,6 +54,14 @@ type RoleSet struct {
 	// nothing at all.
 	Customized   bool `json:"customized"`
 	Configurable bool `json:"configurable"`
+	// Title and Description are what this store calls the role. The key in
+	// Role is the identifier and never changes; these are the words a screen
+	// shows, and a store may set both (role_profiles, M41).
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	// TitleCustomized is whether those words are the store's own rather than
+	// the engine's, so a screen can offer to put them back.
+	TitleCustomized bool `json:"title_customized"`
 }
 
 // RoleMatrix is the whole model in one response: every role, the closed list of
@@ -75,15 +83,23 @@ func (r *RoleRights) Matrix(ctx context.Context) (*RoleMatrix, error) {
 	if err != nil {
 		return nil, err
 	}
+	labels, err := r.profiles(ctx)
+	if err != nil {
+		return nil, err
+	}
 	out := &RoleMatrix{
 		AllRights: append([]Right(nil), AllRights...),
 		Required:  append([]Right(nil), RequiredRights...),
 	}
 	for _, role := range Roles {
 		def := DefaultRightsOf(role)
+		label := profileOf(role, labels)
 		row := RoleSet{
 			Role: role, Rights: def, Default: def,
-			Configurable: RoleConfigurable(role),
+			Configurable:    RoleConfigurable(role),
+			Title:           label.Title,
+			Description:     label.Description,
+			TitleCustomized: label.Customized,
 		}
 		if set, ok := stored[role]; ok && row.Configurable {
 			row.Rights = set

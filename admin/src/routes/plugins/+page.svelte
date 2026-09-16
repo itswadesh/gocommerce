@@ -21,7 +21,10 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginSettingsDrawer from "$lib/components/PluginSettingsDrawer.svelte";
 
-    const allowed = $derived(can("store.operate"));
+    /* plugins.read lists them; plugins.write switches one on and holds its
+       settings, which is where a gateway's live keys live. */
+    const allowed = $derived(can("plugins.read"));
+    const writable = $derived(can("plugins.write"));
 
     let plugins = $state([]);
     let loading = $state(true);
@@ -196,7 +199,7 @@
                                             type="button"
                                             class="btn sm {p.enabled ? 'secondary' : ''}"
                                             class:loading={working === p.key}
-                                            disabled={working === p.key}
+                                            disabled={working === p.key || !writable}
                                             onclick={() => toggle(p)}
                                         >
                                             <span class="txt">{p.enabled ? "Deactivate" : "Activate"}</span>

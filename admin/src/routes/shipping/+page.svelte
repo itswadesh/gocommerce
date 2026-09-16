@@ -46,7 +46,11 @@
     let confirmOpen = $state(false);
     let pending = $state(null);
 
-    const writable = $derived(can("store.operate"));
+    /* Two rights now: seeing what delivery costs and setting it. The screen
+       loads on the first and arms its buttons on the second, so a reader gets
+       the zones rather than an empty page. */
+    const readable = $derived(can("shipping.read"));
+    const writable = $derived(can("shipping.write"));
 
     async function load() {
         loading = true;
@@ -62,7 +66,7 @@
     }
 
     $effect(() => {
-        if (writable) load();
+        if (readable) load();
     });
 
     function openZone(zone) {
@@ -204,7 +208,7 @@
 
 <svelte:head><title>Shipping and delivery · GoCommerce</title></svelte:head>
 
-{#if !can("store.operate")}
+{#if !can("shipping.read")}
     <NoAccess right="store.operate" what="shipping" />
 {:else}
     <div class="page page-shipping shopify-skin">

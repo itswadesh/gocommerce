@@ -5221,7 +5221,7 @@ kbd + kbd {
  * misaligned against the sections beside it.
  */
 .shopify-skin .import-panel {
-    padding: var(--baseSpacing);
+    padding: var(--smSpacing);
 }
 .shopify-skin .import-panel > .section-title:first-child {
     margin-top: 0;
@@ -5261,14 +5261,14 @@ kbd + kbd {
 }
 
 .shopify-skin .role-card {
-    padding: var(--baseSpacing);
+    padding: var(--smSpacing);
 }
 .shopify-skin .role-card-head {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: var(--baseSpacing);
-    margin-bottom: var(--baseSpacing);
+    gap: var(--smSpacing);
+    margin-bottom: var(--smSpacing);
 }
 .shopify-skin .role-title {
     margin: 0;
@@ -5292,6 +5292,11 @@ kbd + kbd {
 .shopify-skin .role-field {
     max-width: 430px;
 }
+/* The pair needs a gap, or the name and the description read as one grey
+   slab rather than as two fields. */
+.shopify-skin .role-field + .role-field {
+    margin-top: 12px;
+}
 .shopify-skin .role-field input[readonly],
 .shopify-skin .role-field textarea[readonly] {
     cursor: default;
@@ -5304,10 +5309,10 @@ kbd + kbd {
 }
 .shopify-skin .role-field-help {
     max-width: 60ch;
-    margin-bottom: var(--baseSpacing);
+    margin-bottom: var(--smSpacing);
 }
 .shopify-skin .perm-heading {
-    margin: var(--baseSpacing) 0 var(--xsSpacing);
+    margin: var(--smSpacing) 0 8px;
     font-size: 1rem;
     font-weight: 600;
 }
@@ -5331,15 +5336,15 @@ kbd + kbd {
        verbs fills from the left and leaves the rest empty. */
     grid-template-columns: minmax(120px, 210px) repeat(var(--perm-cols, 4), minmax(0, 1fr));
     align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
+    gap: 5px;
+    padding: 2px 8px;
     border-bottom: 1px solid var(--surfaceAlt2Color);
 }
 .shopify-skin .perm-row:last-child {
     border-bottom: 0;
 }
 .shopify-skin .perm-name {
-    padding: 6px 11px;
+    padding: 4px 10px;
     border-radius: 5px;
     background: var(--permNameBg);
     font-size: var(--smFontSize);
@@ -5350,11 +5355,11 @@ kbd + kbd {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 5px;
+    gap: 4px;
     width: 100%;
-    max-width: 108px;
+    max-width: 100px;
     margin: 0 auto;
-    padding: 5px 10px;
+    padding: 3px 9px;
     border: 1px solid transparent;
     border-radius: 6px;
     background: var(--permBtnBg);
@@ -5362,7 +5367,7 @@ kbd + kbd {
     /* 12px: the panel's scale stops at 13px, and a token that does not
        exist is how --baseAlt1Color came to style nothing for a release. */
     font-size: 12px;
-    line-height: 1.25;
+    line-height: 1.2;
     cursor: pointer;
     transition:
         color 0.15s,
@@ -5419,10 +5424,13 @@ kbd + kbd {
     .shopify-skin .perm-name {
         flex: 1 0 100%;
     }
+    /* Compact is for a mouse. A finger needs a bigger target, so the
+       phone layout spends back the padding the desktop rows saved. */
     .shopify-skin .perm-btn {
         width: auto;
         max-width: none;
         margin: 0;
+        padding: 7px 12px;
         flex: 0 0 auto;
     }
     .shopify-skin .perm-empty {
@@ -5455,4 +5463,41 @@ kbd + kbd {
     font-size: 11px;
     line-height: 17px;
     white-space: nowrap;
+}
+
+/*
+ * The grid's section headings: the sidebar's own cuts, so that granting
+ * access is thought about in the shape the panel is navigated in. Quiet on
+ * purpose — the heading is a signpost between blocks of rows, not a row.
+ */
+.shopify-skin .perm-section {
+    padding: 9px 10px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--surfaceTxtHintColor);
+    background: var(--surfaceColor);
+    border-bottom: 1px solid var(--surfaceAlt2Color);
+    position: sticky;
+    top: 0;
+    /* Above the rows it labels while the grid scrolls under it. */
+    z-index: 1;
+}
+.shopify-skin .perm-section:first-child {
+    padding-top: 6px;
+}
+
+/* The name and description save on their own button, apart from the rights:
+   the two are edited at different moments, and one Save for both would make a
+   rename overwrite a colleague's grant made a second earlier. */
+.shopify-skin .role-field-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+}
+.shopify-skin .role-field input,
+.shopify-skin .role-field textarea {
+    width: 100%;
 }

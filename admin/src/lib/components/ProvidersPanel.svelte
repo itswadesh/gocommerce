@@ -42,7 +42,7 @@
         },
     };
     const words = $derived(WORDS[kind]);
-    const allowed = $derived(can("store.operate"));
+    const allowed = $derived(can("plugins.read"));
 
     let loading = $state(true);
     let providers = $state([]);
@@ -125,7 +125,7 @@
         </header>
 
         {#if !allowed}
-            <NoAccess right="store.operate" what={words.title.toLowerCase()} />
+            <NoAccess right="plugins.read" what={words.title.toLowerCase()} />
         {:else}
             <p class="txt-hint m-b-base">{words.blurb}</p>
             {#if !loading}

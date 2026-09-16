@@ -32,12 +32,10 @@
        Said again here so a typed address refuses before the request. */
     const allowed = $derived(can("roles.write"));
 
-    const ROLE_LABEL = { owner: "Owner", manager: "Manager", staff: "Staff" };
-    const ROLE_BLURB = {
-        owner: "Everything, including who else may do what.",
-        manager: "Runs the shop: the catalogue, the orders, the money going back out.",
-        staff: "Works the orders, and cannot send money out or change who has access.",
-    };
+    /* The name and the sentence come from the API, because a store may change
+       both. The panel keeping its own copy is how a renamed role went on
+       showing the engine's word here while the role's own screen showed the
+       store's. */
 
     /* Every right, not the first six and a number.
        The engine has twenty-one of them and the names are short, so the whole
@@ -72,8 +70,8 @@
         return all
             .map((row) => ({
                 ...row,
-                label: ROLE_LABEL[row.role] ?? row.role,
-                blurb: ROLE_BLURB[row.role] ?? "",
+                label: row.title || row.role,
+                blurb: row.description ?? "",
                 // A role that carries every right says so in one word. Twenty-one
                 // chips is not a summary of anything.
                 everything: row.rights.length === (matrix?.all_rights?.length ?? 0),
@@ -233,7 +231,7 @@
                 <span class="txt txt-hint">
                     A change lands on the next request the affected operator makes; nobody has to
                     sign in again.
-                    {#if me?.role}You are {ROLE_LABEL[me.role] ?? me.role}.{/if}
+                    {#if me?.role}You are {rows.find((r) => r.role === me.role)?.label ?? me.role}.{/if}
                 </span>
             </footer>
         </div>

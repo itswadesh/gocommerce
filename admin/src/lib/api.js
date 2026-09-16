@@ -296,6 +296,10 @@ export const roles = {
     matrix: () => api.get("/api/admin/roles"),
     save: (role, rights) => request("PUT", `/api/admin/roles/${role}`, { body: { rights } }),
     reset: (role) => api.delete(`/api/admin/roles/${role}`),
+    // What the store calls the role, apart from what it may do. Blank either
+    // field to put the engine's own words back.
+    rename: (role, title, description) =>
+        request("PATCH", `/api/admin/roles/${role}`, { body: { title, description } }),
 };
 
 /**

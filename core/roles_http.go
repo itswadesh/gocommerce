@@ -16,6 +16,12 @@ func (a *App) mountRoleRoutes() {
 	a.HandleAdminFunc("GET /api/admin/roles", a.handleListRoles, RightRolesWrite)
 	a.HandleAdminFunc("PUT /api/admin/roles/{role}", a.handleSetRoleRights, RightRolesWrite)
 	a.HandleAdminFunc("DELETE /api/admin/roles/{role}", a.handleResetRoleRights, RightRolesWrite)
+	// What the store calls the role, apart from what the role may do. PATCH
+	// rather than folding it into the PUT above: the two are edited at
+	// different moments and by different intentions, and a screen that saved a
+	// rename by sending the whole right set would overwrite a colleague's
+	// grant made a second earlier.
+	a.HandleAdminFunc("PATCH /api/admin/roles/{role}", a.handleSetRoleProfile, RightRolesWrite)
 }
 
 // handleListRoles returns the whole matrix: every role, the closed list of
@@ -70,4 +76,47 @@ func (a *App) handleResetRoleRights(w http.ResponseWriter, r *http.Request) {
 	}
 	a.log.Info("role rights reset to defaults", "role", set.Role)
 	Respond(w, http.StatusOK, set)
+}
+
+// handleSetRoleProfile renames a role and describes it.
+//
+// The role's key is not in the body and cannot be: `owner`, `manager` and
+// `staff` are written on every superuser row, so the string is an identifier.
+// What changes is what a store calls it.
+//
+// Both fields are optional and a blank one means "back to the engine's own
+// words", which is why there is no separate reset verb: clearing the name is
+// the reset, and it reads the same way on the screen that does it.
+func (a *App) handleSetRoleProfile(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Title       string `json:"title"`
+		Description string `json:"description"`
+	}
+	if err := DecodeJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	role := r.PathValue("role")
+	if _, err := a.roles.SetProfile(r.Context(), role, in.Title, in.Description,
+		SuperuserFrom(r.Context())); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	// The whole matrix back, not just the one profile: the screen that renamed
+	// a role is showing its rights beside the name, and answering with half of
+	// what it displays is how the two come to disagree.
+	matrix, err := a.roles.Matrix(r.Context())
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	for _, set := range matrix.Roles {
+		if set.Role == role {
+			a.log.Info("role renamed", "role", role, "title", set.Title,
+				"customized", set.TitleCustomized)
+			Respond(w, http.StatusOK, set)
+			return
+		}
+	}
+	RespondError(w, r, NotFoundf("role %q", role))
 }

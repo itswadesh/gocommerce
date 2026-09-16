@@ -16,7 +16,7 @@
     /** @type {{ pluginKey: string, module: string, title: string, crumb?: string, blurb: string, links: {label: string, path: string, hint?: string}[] }} */
     let { pluginKey, module, title, crumb = "Content", blurb, links = [] } = $props();
 
-    const allowed = $derived(can("store.operate"));
+    const allowed = $derived(can("plugins.read"));
     const missing = $derived(modulesKnown() && !hasModule(module));
     let plugin = $state(null);
     let loading = $state(true);
@@ -83,7 +83,7 @@
         </header>
 
         {#if !allowed}
-            <NoAccess right="store.operate" what={title.toLowerCase()} />
+            <NoAccess right="plugins.read" what={title.toLowerCase()} />
         {:else if missing}
             <ModuleMissing {module} what="{title} is served by ext/{module}, and this binary does not have it." />
         {:else}

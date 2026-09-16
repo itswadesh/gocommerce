@@ -7,13 +7,17 @@
      * button per verb — dark, quiet when the role does not hold it, and a
      * green check when it does.
      *
-     * Two things about this engine shape the departures. The roles are fixed
-     * (rights.go): owner, manager and staff, with no renaming, no deleting and
-     * no adding, so Name and Description are the engine's own words rather
-     * than fields — shown in the same place, and read-only rather than absent,
-     * because "what is this role" is the first question the screen answers.
-     * And a role left alone keeps *tracking* the shipped default rather than
-     * freezing a copy of it, which is what makes Reset a real verb.
+     * Two things about this engine shape the departures. The set of roles is
+     * fixed (rights.go) — owner, manager and staff, none added or deleted —
+     * and the KEY of each is an identifier written on every operator's record,
+     * so a rename changes what the store calls a role and never what accounts
+     * are filed under. And a role left alone keeps *tracking* the shipped
+     * default, for its rights and for its words alike, which is what makes
+     * both Reset and a blank field mean "back to the engine's own".
+     *
+     * The name saves on its own button, apart from the rights. They are edited
+     * at different moments, and one Save for both would make a rename overwrite
+     * a colleague's grant made a second earlier.
      *
      * Every right is `resource.verb`, so the grid builds itself from what the
      * API sends and a right added to the engine needs no edit here.
@@ -21,7 +25,7 @@
     import { base } from "$app/paths";
     import { page } from "$app/state";
     import { roles as rolesApi, auth, can, getRecord } from "$lib/api.js";
-    import { rightScope, rightsByResource } from "$lib/rights.js";
+    import { rightScope, rightsByResource, rightsBySection } from "$lib/rights.js";
     import { toast } from "$lib/toast.svelte.js";
     import DirtyGuard from "$lib/components/DirtyGuard.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
@@ -36,18 +40,26 @@
     const me = getRecord();
     const allowed = $derived(can("roles.write"));
 
-    const ROLE_LABEL = { owner: "Owner", manager: "Manager", staff: "Staff" };
-    const ROLE_BLURB = {
-        owner: "Can do everything, including deciding who else can.",
-        manager:
-            "Runs the shop: the catalogue, the orders, the money going back out. Cannot change the store's configuration or the team, which is what separates running the shop from owning it.",
-        staff: "Works the orders. Can see what is being sold and move an order along, and cannot send money out, change prices, or alter who has access.",
-    };
-
-    const label = $derived(ROLE_LABEL[role] ?? role);
-    const blurb = $derived(ROLE_BLURB[role] ?? "");
     const row = $derived(matrix?.roles.find((r) => r.role === role) ?? null);
+
+    /* The words come from the engine now, which is what lets a store change
+       them: it ships a title and a sentence per role and stores the store's own
+       over the top. The panel keeping its own copy is how the two drift. */
+    const label = $derived(row?.title || role);
+    const blurb = $derived(row?.description ?? "");
+
+    /* The name and description as they are being edited, seeded from the row
+       and re-seeded whenever a different role is loaded or a save answers. */
+    let name = $state("");
+    let about = $state("");
+    let renaming = $state(false);
+    const labelDirty = $derived(
+        !!row && (name !== (row.title ?? "") || about !== (row.description ?? "")),
+    );
     const grid = $derived(rightsByResource(matrix?.all_rights ?? []));
+    /* The same rows, cut into the sidebar's sections: granting access is
+       easier to think about in the shape the panel is already navigated in. */
+    const sections = $derived(rightsBySection(matrix?.all_rights ?? []));
     const required = $derived(matrix?.required ?? []);
 
     /*
@@ -84,11 +96,36 @@
         loading = true;
         try {
             matrix = await rolesApi.matrix();
-            draft = [...(matrix?.roles.find((r) => r.role === role)?.rights ?? [])];
+            const mine = matrix?.roles.find((r) => r.role === role);
+            draft = [...(mine?.rights ?? [])];
+            seedLabel(mine);
         } catch (err) {
             toast.error(err);
         } finally {
             loading = false;
+        }
+    }
+
+    function seedLabel(set) {
+        name = set?.title ?? "";
+        about = set?.description ?? "";
+    }
+
+    /* Blank either field to put the engine's own words back, which is why
+       there is no separate reset: clearing the name IS the reset, and the
+       hint under the pair says so. */
+    async function rename() {
+        if (renaming || !labelDirty) return;
+        renaming = true;
+        try {
+            const saved = await rolesApi.rename(role, name.trim(), about.trim());
+            matrix.roles = matrix.roles.map((r) => (r.role === saved.role ? saved : r));
+            seedLabel(saved);
+            toast.success(saved.title + " saved");
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            renaming = false;
         }
     }
 
@@ -277,23 +314,47 @@
                     </a>
                 </div>
 
-                <!-- Read-only, and that is the engine rather than an
-                     oversight: owner, manager and staff are fixed in
-                     rights.go, so there is no rename and no third field to
-                     store a sentence in. Shown all the same, because "what is
-                     this role" is the first thing the screen has to answer. -->
+                <!-- The role's key is fixed — owner, manager and staff are
+                     written on every operator's record — but what the store
+                     calls it is not. -->
                 <div class="field role-field">
                     <label for="role-name">Name</label>
-                    <input id="role-name" type="text" value={label} readonly />
+                    <input
+                        id="role-name"
+                        type="text"
+                        maxlength="60"
+                        placeholder={row ? "e.g. " + role : ""}
+                        bind:value={name}
+                    />
                 </div>
 
                 <div class="field role-field">
                     <label for="role-desc">Description</label>
-                    <textarea id="role-desc" rows="3" readonly>{blurb}</textarea>
+                    <textarea
+                        id="role-desc"
+                        rows="3"
+                        maxlength="600"
+                        placeholder="What this role is for, in your own words"
+                        bind:value={about}
+                    ></textarea>
+                </div>
+                <div class="role-field-actions">
+                    <button
+                        type="button"
+                        class="btn sm"
+                        disabled={renaming || !labelDirty}
+                        onclick={rename}
+                    >
+                        <span class="txt">{renaming ? "Saving…" : "Save name"}</span>
+                    </button>
+                    {#if row?.title_customized}
+                        <span class="label">Renamed</span>
+                    {/if}
                 </div>
                 <div class="field-help role-field-help">
-                    The engine fixes these three roles and what each is called. What this store
-                    changes is the rights below.
+                    Only the name changes. Operators stay filed under
+                    <code>{role}</code>, so renaming moves nobody. Leave a field empty to put the
+                    engine's own words back.
                 </div>
 
                 {#if row?.configurable && (added.length || removed.length)}
@@ -313,8 +374,13 @@
                 <!-- The column count rides in a custom property so the CSS
                      does not have to hard-code a number the engine owns. -->
                 <div class="perm-grid" style="--perm-cols: {columns}">
-                    {#each grid as group (group.key)}
-                        <div class="perm-row">
+                    {#each sections as block (block.section)}
+                        <!-- The sidebar's own sections, in the sidebar's own
+                             order, so "can this person touch Products" is a
+                             block to look at rather than rows to gather. -->
+                        <div class="perm-section">{block.section}</div>
+                        {#each block.rows as group (group.key)}
+                            <div class="perm-row">
                             <div class="perm-name">{group.label}</div>
                             {#each slots(group) as item, i (item ? item.right : "gap-" + i)}
                                 {#if item}
@@ -342,7 +408,8 @@
                                     <span class="perm-empty" aria-hidden="true"></span>
                                 {/if}
                             {/each}
-                        </div>
+                            </div>
+                        {/each}
                     {/each}
 
                     {#if loading && !matrix}

@@ -122,6 +122,49 @@ const (
 	// price faster than any screen could.
 	RightDataImport Right = "data.import"
 
+	// ------------------------------------------------ the store's own setup
+	//
+	// These four pairs were all store.operate, and that had stopped being
+	// true to what store.operate says about itself below: "it changes no
+	// configuration, no product and no price". Shipping rates decide what a
+	// buyer is charged to receive an order; a channel decides where the
+	// catalogue is sold; a plugin's settings carry a gateway's live API key;
+	// a template is the wording of every message the store sends. Those are
+	// configuration, and the sentence had quietly become false as each one
+	// was added to the nearest right that would take it.
+	//
+	// The cost of leaving them there was not tidiness. store.operate also
+	// carries the outbox — which holds events as a consumer received them, so
+	// buyers' addresses, phone numbers and every line they bought — the
+	// store-wide audit feed, and ext/mcp's dispatch endpoint. Letting somebody
+	// edit a shipping rate meant handing them all of that, so in practice
+	// nobody below owner was given any of it.
+
+	// RightShippingRead is the zones and rates a buyer is charged under;
+	// RightShippingWrite changes what every future order collects for
+	// delivery.
+	RightShippingRead  Right = "shipping.read"
+	RightShippingWrite Right = "shipping.write"
+
+	// RightChannelsRead is where the catalogue is sold; RightChannelsWrite
+	// opens and closes those places.
+	RightChannelsRead  Right = "channels.read"
+	RightChannelsWrite Right = "channels.write"
+
+	// RightPluginsRead is which integrations are installed and switched on.
+	// RightPluginsWrite is the one to be careful with: a plugin's settings are
+	// where a payment gateway's and a carrier's live credentials live, so this
+	// grants the ability to point the store's money at somewhere else.
+	RightPluginsRead  Right = "plugins.read"
+	RightPluginsWrite Right = "plugins.write"
+
+	// RightNotificationsRead is the catalogue of messages the store sends;
+	// RightNotificationsWrite is their wording. Apart from store.operate
+	// because rewriting an order confirmation is a shopkeeper's job and
+	// draining the outbox is not.
+	RightNotificationsRead  Right = "notifications.read"
+	RightNotificationsWrite Right = "notifications.write"
+
 	// ------------------------------------------------------------- the store
 
 	// RightStoreOperate is the store as a running system rather than as a
@@ -165,9 +208,13 @@ var AllRights = []Right{
 	RightTeamRead, RightTeamWrite, RightRolesWrite,
 	RightDataExport, RightDataImport,
 	// Appended, never inserted. AllRights is the order the panel draws the roles
-	// matrix in, so slotting a right into the middle silently moves every row an
-	// operator has already learned the position of.
+	// grid in, down the rows and across each one, so slotting a right into the
+	// middle silently moves a control an operator has learned the position of.
 	RightStoreOperate,
+	RightShippingRead, RightShippingWrite,
+	RightChannelsRead, RightChannelsWrite,
+	RightPluginsRead, RightPluginsWrite,
+	RightNotificationsRead, RightNotificationsWrite,
 }
 
 // The roles. Fixed, and few: a store with three people does not need a
@@ -364,3 +411,42 @@ func requireRights(rights ...Right) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// The engine's own words for each role: what to call it, and what it is for.
+//
+// These are defaults, not labels the panel hard-codes. A store renames a role
+// and describes it in its own terms through role_profiles (M41); no row means
+// these, so improving one of these sentences reaches every store that has
+// never edited it.
+//
+// The key is not renameable and that is deliberate. `owner`, `manager` and
+// `staff` are written on every superuser row and in role_rights, so the string
+// is an identifier: renaming it would orphan accounts. What a store changes is
+// the display title.
+var roleTitles = map[string]string{
+	RoleOwner:   "Owner",
+	RoleManager: "Manager",
+	RoleStaff:   "Staff",
+}
+
+var roleDescriptions = map[string]string{
+	RoleOwner: "Can do everything, including deciding who else can.",
+	RoleManager: "Runs the shop: the catalogue, the orders, the money going back out. " +
+		"Cannot change the store's configuration or the team, which is what separates " +
+		"running the shop from owning it.",
+	RoleStaff: "Works the orders. Can see what is being sold and move an order along, " +
+		"and cannot send money out, change prices, or alter who has access.",
+}
+
+// DefaultTitleOf is what the engine calls a role before a store renames it.
+// An unknown role gets its own key back rather than an empty string: a blank
+// where a name should be reads as a bug, and the key is at least true.
+func DefaultTitleOf(role string) string {
+	if title, ok := roleTitles[role]; ok {
+		return title
+	}
+	return role
+}
+
+// DefaultDescriptionOf is the engine's sentence for a role, or none.
+func DefaultDescriptionOf(role string) string { return roleDescriptions[role] }

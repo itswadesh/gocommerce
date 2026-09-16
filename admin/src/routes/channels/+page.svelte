@@ -17,7 +17,10 @@
     import Drawer from "$lib/components/Drawer.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
 
-    const readable = $derived(can("store.operate"));
+    /* Seeing where the catalogue is sold, and opening or closing one of those
+       places, are different jobs. */
+    const readable = $derived(can("channels.read"));
+    const writable = $derived(can("channels.write"));
 
     let loading = $state(true);
     let channels = $state([]);
@@ -111,7 +114,7 @@
                 published to it and what that costs. They do not differ in currency — the store
                 settles in one, and every order snapshots it.
             </div>
-            <button type="button" class="btn sm" onclick={() => edit(null)}>
+            <button type="button" class="btn sm" disabled={!writable} onclick={() => edit(null)}>
                 <i class="ri-add-line" aria-hidden="true"></i>
                 <span class="txt">New channel</span>
             </button>
@@ -147,11 +150,11 @@
                                 </span>
                             </td>
                             <td class="col-meta min-width">
-                                <button type="button" class="btn sm secondary transparent"
+                                <button type="button" class="btn sm secondary transparent" disabled={!writable}
                                         onclick={() => edit(channel)}>
                                     <span class="txt">Edit</span>
                                 </button>
-                                <button type="button" class="btn sm transparent row-delete"
+                                <button type="button" class="btn sm transparent row-delete" disabled={!writable}
                                         title="Delete" aria-label="Delete {channel.name}"
                                         onclick={() => { pending = channel; confirmOpen = true; }}>
                                     <i class="ri-delete-bin-7-line" aria-hidden="true"></i>
@@ -218,7 +221,7 @@
         <button type="button" class="btn secondary" onclick={() => (open = false)}>
             <span class="txt">Cancel</span>
         </button>
-        <button type="button" class="btn" disabled={saving} onclick={save}>
+        <button type="button" class="btn" disabled={saving || !writable} onclick={save}>
             <span class="txt">{editing ? "Save" : "Create"}</span>
         </button>
     {/snippet}

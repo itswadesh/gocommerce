@@ -16,13 +16,13 @@ func (a *App) mountShippingRoutes() {
 	// rather than a right of its own — shipping is how the store is wired to
 	// the world, the same kind of thing as the outbox screen (D49) — and
 	// core/rights.go stays the closed catalogue it is.
-	a.HandleAdminFunc("GET /api/admin/shipping/zones", a.handleListShippingZones, RightStoreOperate)
-	a.HandleAdminFunc("POST /api/admin/shipping/zones", a.handleCreateShippingZone, RightStoreOperate)
-	a.HandleAdminFunc("PATCH /api/admin/shipping/zones/{id}", a.handleUpdateShippingZone, RightStoreOperate)
-	a.HandleAdminFunc("DELETE /api/admin/shipping/zones/{id}", a.handleDeleteShippingZone, RightStoreOperate)
-	a.HandleAdminFunc("POST /api/admin/shipping/rates", a.handleCreateShippingRate, RightStoreOperate)
-	a.HandleAdminFunc("PATCH /api/admin/shipping/rates/{id}", a.handleUpdateShippingRate, RightStoreOperate)
-	a.HandleAdminFunc("DELETE /api/admin/shipping/rates/{id}", a.handleDeleteShippingRate, RightStoreOperate)
+	a.HandleAdminFunc("GET /api/admin/shipping/zones", a.handleListShippingZones, RightShippingRead)
+	a.HandleAdminFunc("POST /api/admin/shipping/zones", a.handleCreateShippingZone, RightShippingWrite)
+	a.HandleAdminFunc("PATCH /api/admin/shipping/zones/{id}", a.handleUpdateShippingZone, RightShippingWrite)
+	a.HandleAdminFunc("DELETE /api/admin/shipping/zones/{id}", a.handleDeleteShippingZone, RightShippingWrite)
+	a.HandleAdminFunc("POST /api/admin/shipping/rates", a.handleCreateShippingRate, RightShippingWrite)
+	a.HandleAdminFunc("PATCH /api/admin/shipping/rates/{id}", a.handleUpdateShippingRate, RightShippingWrite)
+	a.HandleAdminFunc("DELETE /api/admin/shipping/rates/{id}", a.handleDeleteShippingRate, RightShippingWrite)
 }
 
 // handleShippingRates answers what a storefront needs to render the delivery

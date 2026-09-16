@@ -49,6 +49,7 @@ func coreMigrations() []Migration {
 		{ID: "0038_plugins", SQL: migration0038Plugins},
 		{ID: "0039_notifications", SQL: migration0039Notifications},
 		{ID: "0040_notification_templates", SQL: migration0040NotificationTemplates},
+		{ID: "0041_role_profiles", SQL: migration0041RoleProfiles},
 	}
 }
 
@@ -1993,5 +1994,34 @@ CREATE TABLE notification_templates (
     body       text        NOT NULL,
     updated_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (channel, event)
+);
+`
+
+// M41 — what a store calls its roles.
+//
+// The three roles are fixed in Go (rights.go) and that does not change here:
+// `owner`, `manager` and `staff` are written on every superuser row and in
+// role_rights, so the key is an identifier and renaming one would orphan
+// accounts. What a store may change is what it *calls* them, and what it says
+// they are for — "Fulfilment" reads better than "Staff" in a warehouse, and a
+// description is where a store writes down the rule it actually operates.
+//
+// A row per role only where the store has said something, which is the same
+// shape role_rights uses and for the same reason: no row means the engine's
+// own words, so improving a default reaches every store that never edited it.
+//
+// No CHECK on the role name, unlike role_rights. That constraint exists there
+// to keep `owner` unstorable, because storing owner's rights would be a way to
+// lock everybody out. A title is not a right: naming the owner role
+// "Proprietor" locks nobody out of anything, so all three are storable.
+const migration0041RoleProfiles = `
+CREATE TABLE role_profiles (
+    role        text        PRIMARY KEY,
+    title       text        NOT NULL DEFAULT '',
+    description text        NOT NULL DEFAULT '',
+    updated_at  timestamptz NOT NULL DEFAULT now(),
+    -- SET NULL for the reason role_rights gives: who renamed a role is a fact
+    -- about the past and outlives their account.
+    updated_by  bigint      REFERENCES superusers (id) ON DELETE SET NULL
 );
 `

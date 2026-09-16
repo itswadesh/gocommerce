@@ -6,9 +6,9 @@ import "net/http"
 // directions — reading it is not reading orders, and nothing on it is a
 // secret, but the page it lives on is the one where credentials are pasted.
 func (a *App) mountNotifyTemplateRoutes() {
-	a.HandleAdminFunc("GET /api/admin/notifications/templates", a.handleListNotifyTemplates, RightStoreOperate)
-	a.HandleAdminFunc("PUT /api/admin/notifications/templates/{channel}/{event}", a.handleSetNotifyTemplate, RightStoreOperate)
-	a.HandleAdminFunc("DELETE /api/admin/notifications/templates/{channel}/{event}", a.handleResetNotifyTemplate, RightStoreOperate)
+	a.HandleAdminFunc("GET /api/admin/notifications/templates", a.handleListNotifyTemplates, RightNotificationsRead)
+	a.HandleAdminFunc("PUT /api/admin/notifications/templates/{channel}/{event}", a.handleSetNotifyTemplate, RightNotificationsWrite)
+	a.HandleAdminFunc("DELETE /api/admin/notifications/templates/{channel}/{event}", a.handleResetNotifyTemplate, RightNotificationsWrite)
 }
 
 func (a *App) handleListNotifyTemplates(w http.ResponseWriter, r *http.Request) {

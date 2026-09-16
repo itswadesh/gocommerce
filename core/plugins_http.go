@@ -6,9 +6,9 @@ func (a *App) mountPluginRoutes() {
 	// store.operate for both halves: switching a storefront feature on and
 	// pasting an analytics key are the same act as registering a webhook,
 	// and reading the masked settings is the page that does it.
-	a.HandleAdminFunc("GET /api/admin/plugins", a.handleListPlugins, RightStoreOperate)
-	a.HandleAdminFunc("GET /api/admin/plugins/{key}", a.handleGetPlugin, RightStoreOperate)
-	a.HandleAdminFunc("PATCH /api/admin/plugins/{key}", a.handleUpdatePlugin, RightStoreOperate)
+	a.HandleAdminFunc("GET /api/admin/plugins", a.handleListPlugins, RightPluginsRead)
+	a.HandleAdminFunc("GET /api/admin/plugins/{key}", a.handleGetPlugin, RightPluginsRead)
+	a.HandleAdminFunc("PATCH /api/admin/plugins/{key}", a.handleUpdatePlugin, RightPluginsWrite)
 	// The storefront's half: what is on, and the settings meant for it.
 	a.HandleFunc("GET /api/plugins", a.handlePublicPlugins)
 }

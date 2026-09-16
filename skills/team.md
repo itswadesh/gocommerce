@@ -34,9 +34,33 @@ roles.write       the matrix itself: what holding a role means
 data.export       the catalog or every order, as a file
 data.import       changing prices and stock in bulk, from a file
 store.operate     the store as a running system rather than as a shop
+shipping.read     the zones and rates a buyer is charged delivery under
+shipping.write    what every future order collects for delivery
+channels.read     where the catalogue is sold
+channels.write    opening and closing those places
+plugins.read      which integrations this build carries, and which are on
+plugins.write     their settings, where a gateway's live keys live
+notifications.read   the catalogue of messages the store sends
+notifications.write  their wording, on every channel
 ```
 
-`store.operate` is the twenty-first and the odd one out, so it is worth spelling
+The last four pairs were `store.operate` until they were not, and the split
+is worth naming. `store.operate` describes itself below as changing "no
+configuration, no product and no price" — but a shipping rate decides what a
+buyer pays to receive an order, a channel decides where the catalogue is
+sold, a plugin's settings hold a gateway's live API key, and a template is
+the wording of every message the store sends. Each had been filed under the
+nearest right that would take it, and the sentence had quietly become false.
+
+The cost was not tidiness. `store.operate` also carries the outbox, the audit
+feed and `ext/mcp`'s dispatch endpoint, so letting somebody edit a shipping
+rate meant handing them all of that — and in practice nobody below owner was
+given any of it. **The defaults did not move**: all eight came off a right
+only owner held, so owner holds them and no other role gained anything. A
+store that wants a manager setting delivery prices can now grant
+`shipping.write` without also handing over a page of buyers' addresses.
+
+`store.operate` is what is left, and it is worth spelling
 out what it reaches: the health report (`GET /api/admin/diagnostics`) and the
 three maintenance passes that act on it (`POST /api/admin/maintenance/sweep-carts`,
 `/sweep-unpaid`, `/drain-outbox`), the store-wide audit feed, the outbox and its
@@ -53,8 +77,8 @@ the matrix, deliberately, which is what configurable sets are for.
 
 | Role | Carries |
 |---|---|
-| `owner` | everything, including deciding who else can — and, alone by default, `store.operate` |
-| `manager` | the catalog, discounts, orders, refunds, stock, customers — not tax or location writes, not the team, not import/export, not `store.operate` |
+| `owner` | everything, including deciding who else can — and, alone by default, `store.operate` and the four configuration pairs above |
+| `manager` | the catalog, discounts, orders, refunds, stock, customers — not tax or location writes, not the team, not import/export, not `store.operate`, and none of shipping, channels, plugins or notifications |
 | `staff` | sees the shop and moves orders along; no money out, no prices, no access |
 
 The rights are coarse on purpose — one per area a person could plausibly be
@@ -87,6 +111,27 @@ is what configurable sets are for.
 The table above is the **default**. `roleRights` being a map rather than a set
 of conditionals is what let M19 make the sets configurable by changing one
 lookup instead of finding every place a permission is decided.
+
+## Renaming a role
+
+The set of roles is fixed and the *key* of each is an identifier — `owner`, `manager` and `staff` are written on every superuser row and in
+`role_rights`, so renaming one would orphan accounts. What a store may change
+is what it **calls** a role, and what it says the role is for:
+
+```http
+PATCH /api/admin/roles/{role}    # { "title": "Fulfilment", "description": "Packs and ships." }
+```
+
+In Go it is `app.Roles().SetProfile`. Both fields are optional and a blank one
+restores the engine's own words (`DefaultTitleOf`, `DefaultDescriptionOf`), so there
+is no separate reset verb: clearing the name is the reset. Clearing both drops
+the row and the role goes back to tracking the defaults, exactly as a reset
+right-set does — improving a shipped sentence then reaches every store that
+never edited it (M41).
+
+All three roles are renameable, `owner` included. That is not an inconsistency with
+the rule below that owner's rights are unstorable: that rule exists so a store
+cannot narrow its own way back in, and a title locks nobody out of anything.
 
 ## Re-cutting a role
 
