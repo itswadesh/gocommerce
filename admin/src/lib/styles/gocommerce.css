@@ -6445,6 +6445,109 @@ kbd + kbd {
     --muted-foreground: oklch(49% 0 0);
 }
 
+/* --------------------------------------------------------- best sellers */
+
+/*
+ * A best-seller list is a ranking, and it was not drawn as one.
+ *
+ * The table gave the product column 904 of 1122 pixels and the three figures
+ * 57, 69 and 92, so every name ended around x=460 and its numbers began at
+ * x=1180 — seven hundred pixels of nothing in between. Two things were wrong
+ * with that: reading one product's figures meant crossing the whole screen,
+ * and the ranking had no shape at all. 29, 19, 14, 14, 12 is a picture, and a
+ * column of right-aligned digits is not.
+ *
+ * So the gap becomes the ranking. The position goes down the left, a bar fills
+ * the middle in proportion to whatever the list is sorted by, and the figures
+ * stay where they were — now with the bar carrying the eye to them.
+ */
+
+/* The product column stops eating the table. Without this it takes everything
+   the other columns do not ask for, which is most of the width. */
+.shopify-skin .top-table td.col-field-name-id,
+.shopify-skin .top-table th.col-field-name-id {
+    width: 34%;
+    max-width: 0;
+}
+
+/* The position. Small and quiet: it numbers the ranking rather than competing
+   with it, and the order of the rows already says most of it. */
+.shopify-skin .top-table .top-rank {
+    width: 1%;
+    padding-right: 0;
+    white-space: nowrap;
+    text-align: right;
+    font-size: var(--smFontSize);
+    font-variant-numeric: tabular-nums;
+    color: var(--surfaceTxtHintColor);
+}
+
+/* The bar's cell takes what is left, which is the space that was empty. */
+.shopify-skin .top-table .top-share {
+    width: auto;
+    padding-left: var(--smSpacing);
+    padding-right: var(--smSpacing);
+}
+.shopify-skin .top-bar {
+    height: 6px;
+    border-radius: 999px;
+    background: var(--surfaceAlt2Color);
+    overflow: hidden;
+}
+.shopify-skin .top-bar > div {
+    height: 100%;
+    border-radius: 999px;
+    /* The sales chart green, darkened towards the ink.
+       The chart draws its bars on a white card; these sit in a grey track, and
+       --successColor against --surfaceAlt2Color measures 2.45:1 — under the
+       3:1 a non-text mark needs. Mixing towards --surfaceTxtColor rather than
+       towards black is what makes one declaration serve both themes: that
+       token is by definition the readable end of whichever theme is on, so
+       light darkens to 3.2:1 and dark lightens to 4.5:1. */
+    background: color-mix(in srgb, var(--successColor), var(--surfaceTxtColor) 25%);
+    transition: width 0.25s ease;
+    /* A row that sold something gets a mark, however small — a bar rounded to
+       nothing reads as a product that sold nothing. */
+    min-width: 2px;
+}
+
+/*
+ * The column the bar is drawing.
+ *
+ * On the header alone. A tint down the whole column was the first attempt and
+ * failed twice over: --surfaceAlt1Color is #f8f9fa, which on a white card is
+ * not perceptible, and anything strong enough to be perceptible is a grey
+ * stripe through five rows — a lot of ink to say which of two numbers a bar
+ * refers to.
+ *
+ * The header is where a column is labelled, so it is where the label is
+ * marked: the word darkens to full strength and takes a rule in the bar’s own
+ * colour, which is the thing it is being tied to.
+ */
+.shopify-skin .top-table th.is-sorted {
+    color: var(--surfaceTxtColor);
+    box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--successColor), var(--surfaceTxtColor) 25%);
+}
+
+.shopify-skin .top-note {
+    max-width: 90ch;
+}
+
+@media (max-width: 600px) {
+    /*
+     * The stacked layout has no columns to place a bar across, and a
+     * full-width rule under each product would read as a divider. The position
+     * stays, because it is the ranking; the bar goes.
+     */
+    .shopify-skin .top-table .top-share {
+        display: none;
+    }
+    .shopify-skin .top-table .top-rank {
+        width: auto;
+        text-align: left;
+    }
+}
+
 /* --------- @media print — KEEP LAST ---------
  *
  * Append your section ABOVE this block. These rules carry no `!important`, so a

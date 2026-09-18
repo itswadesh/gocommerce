@@ -83,6 +83,18 @@
 
     let report = $state(null);
     let top = $state([]);
+    /*
+     * How each row compares with the best one, on whatever the list is sorted
+     * by. Against the leader rather than against the total, because the
+     * question a best-seller list answers is "how does this compare with the
+     * top one" — and shares of a total, with five rows out of fifty-five
+     * products, would all be slivers.
+     */
+    const topMetric = (row) =>
+        list.params.sort === "units" ? row.units : (row.revenue?.amount_minor ?? 0);
+    const topBest = $derived(Math.max(0, ...top.map(topMetric)));
+    const share = (row) => (topBest > 0 ? (topMetric(row) / topBest) * 100 : 0);
+
     let topMeta = $state(null);
     let loading = $state(true);
 
@@ -578,24 +590,30 @@
         </button>
     </h2>
 
-    <p class="tw:mb-3 tw:text-xs tw:text-muted-foreground">
-        Line value excluding tax, before order-level discounts — a discount is recorded once
-        per order and never split across its lines, so these do not add up to net.
-    </p>
-
     <div class="page-table-wrapper tw:rounded-xl tw:border">
-        <table class="table responsive-table">
+        <table class="table responsive-table top-table">
             <thead class="sticky">
                 <tr>
+                    <th class="top-rank"><span class="tw:sr-only">Position</span></th>
                     <th class="col-field-name-id">Product</th>
-                    <th class="col-field-type-number min-width">Units</th>
+                    <!-- The bar has no heading of its own: it is the Units or
+                         Revenue column drawn, and a second label for one figure
+                         would read as a second figure. -->
+                    <th class="top-share" aria-hidden="true"></th>
+                    <!-- The sorted column is marked, because the bar draws
+                         it and nothing else in the table said which. Sorted by
+                         units, three products on fourteen each get identical
+                         bars while their revenue differs fourfold — readable
+                         only if you know which number the bar is. -->
+                    <th class="col-field-type-number min-width" class:is-sorted={list.params.sort === "units"}>Units</th>
                     <th class="col-field-type-number min-width">Orders</th>
-                    <th class="col-field-type-number min-width">Revenue</th>
+                    <th class="col-field-type-number min-width" class:is-sorted={list.params.sort !== "units"}>Revenue</th>
                 </tr>
             </thead>
             <tbody>
-                {#each top as row (row.sku + "/" + (row.variant_id ?? row.product_id ?? ""))}
+                {#each top as row, position (row.sku + "/" + (row.variant_id ?? row.product_id ?? ""))}
                     <tr>
+                        <td class="top-rank" data-name="Position">{position + 1}</td>
                         <td class="col-field-name-id" data-name="Product">
                             <div class="row-name">
                                 {#if row.product_id}
@@ -620,6 +638,12 @@
                                 <span class="txt-hint txt-sm">product deleted</span>
                             {/if}
                         </td>
+                        <!-- Decorative: the figure it draws is in the next
+                             cell but one, so a reader who cannot see the bar
+                             loses nothing. -->
+                        <td class="top-share" aria-hidden="true">
+                            <div class="top-bar"><div style="width: {share(row)}%"></div></div>
+                        </td>
                         <td class="col-field-type-number min-width" data-name="Units">
                             {row.units}
                         </td>
@@ -633,12 +657,12 @@
                 {/each}
 
                 {#if loading && !top.length}
-                    <tr><td colspan="4"><span class="skeleton-loader"></span></td></tr>
+                    <tr><td colspan="6"><span class="skeleton-loader"></span></td></tr>
                 {/if}
 
                 {#if !loading && !top.length}
                     <tr>
-                        <td colspan="4" class="txt-center txt-hint p-base">
+                        <td colspan="6" class="txt-center txt-hint p-base">
                             No sales in this window, so there is nothing to rank.
                         </td>
                     </tr>
@@ -646,6 +670,15 @@
             </tbody>
         </table>
     </div>
+
+    <!-- Under the table rather than above it. It explains a figure, so it
+         belongs where a footnote belongs; between the heading and the content
+         it meant the first thing under "Best sellers" was two lines of small
+         print about discounts. -->
+    <p class="tw:mt-2 tw:text-xs tw:text-muted-foreground top-note">
+        Line value excluding tax, before order-level discounts — a discount is recorded once
+        per order and never split across its lines, so these do not add up to net.
+    </p>
 
 {/snippet}
 
