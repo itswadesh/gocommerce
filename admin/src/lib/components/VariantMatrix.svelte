@@ -813,6 +813,19 @@
         return `${fromMinor(low, code)} – ${fromMinor(high, code)}`;
     }
 
+    /*
+     * Whether a bulk stock box makes any sense for this group.
+     *
+     * applyGroupStock already refuses when nothing here tracks inventory, and
+     * that refusal is right — but it arrives after the operator has found the
+     * box, typed a number into it and pressed Enter. An input that is offered,
+     * accepts typing and then says no was never a real control. The per-variant
+     * cell has always shown "not tracked" instead; this is the same answer one
+     * level up.
+     */
+    const groupTracksStock = (group) =>
+        (group.items ?? []).some((v) => v.track_inventory);
+
     function stockRange(group) {
         const counts = (group.items ?? [])
             .filter((v) => v.track_inventory)
@@ -1474,7 +1487,9 @@
                             {/if}
                         </td>
                         <td class="col-field-type-number min-width">
-                            {#if stockRange(group)}
+                            {#if !groupTracksStock(group)}
+                                <span class="txt-hint">not tracked</span>
+                            {:else if stockRange(group)}
                                 <span class="group-range" title="These variants hold different amounts">
                                     {stockRange(group)}
                                 </span>

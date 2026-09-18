@@ -14610,6 +14610,10 @@
             "type": "integer",
             "description": "0 for a root. Present so a flat listing can be indented without the client rebuilding the tree."
           },
+          "child_count": {
+            "type": "integer",
+            "description": "How many categories sit directly under this one. Every listing computes it, so 0 means a leaf rather than a listing that did not count — which is what lets a picker draw an expander on a branch and nothing on a leaf."
+          },
           "children": {
             "type": "array",
             "items": {

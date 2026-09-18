@@ -262,14 +262,31 @@
     }
 
     /*
-     * The label column of the facts table.
+     * The facts table is laid out fixed, which is the only way the URL row can
+     * be made to fit.
      *
-     * `.table td` breaks words, which is right for a list of orders and wrong
-     * in a drawer this narrow: without this the column collapses to one
-     * character per line and "Added" is drawn as five stacked letters.
+     * Left to size itself, a table is as wide as its widest unbreakable cell,
+     * and the URL is one long token with nowrap on it — so the table came out
+     * 38px wider than the drawer on a desktop and 76px wider on a phone, and
+     * every row, "Type JPG" included, hung over the edge with it. Nothing
+     * inside could fix that: max-width: 100% on the URL row measures a td that
+     * has already sized itself to the URL.
+     *
+     * Fixed layout takes the widths from this rule instead of from the
+     * content, so the second column is whatever is left and the ellipsis in it
+     * finally has an edge to run into.
+     */
+    .media-detail-facts {
+        table-layout: fixed;
+        width: 100%;
+    }
+    /*
+     * Wide enough for "Dimensions", the longest label, because a fixed layout
+     * will not grow it: `.table td` breaks words, and a column too narrow
+     * draws "Added" as five stacked letters.
      */
     .media-detail-facts td:first-child {
-        width: 1%;
+        width: 7.5rem;
         white-space: nowrap;
     }
 

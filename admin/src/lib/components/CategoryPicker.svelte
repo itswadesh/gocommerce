@@ -167,12 +167,16 @@
     }
 
     /**
-     * Whether a row has anything to open. The store sends `child_count`; a local
-     * tree has to be asked, which costs nothing because it is already here.
+     * Whether a row has anything to open.
+     *
+     * Every category listing computes `child_count` now. It did not always:
+     * the one-level walk did, and the flat listing and the search sent a Go
+     * zero instead — which is not "unknown", it is the number 0, so the
+     * fallback that used to sit here behind a typeof check could never run.
+     * Nothing was ever expandable, and the tree could not be browsed.
      */
     function hasChildren(node) {
-        if (typeof node.child_count === "number") return node.child_count > 0;
-        return categories.some((c) => (c.parent_id ?? null) === node.id);
+        return (node.child_count ?? 0) > 0;
     }
 
     /**

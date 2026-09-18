@@ -323,7 +323,8 @@ func (s *Categories) Search(ctx context.Context, q CategoryQuery) ([]*Category, 
 	// category path, and it is what the offset now rides in on.
 	args = append(args, limit, q.Offset)
 	query := cte + `
-		SELECT count(*) OVER (), ` + prefixColumns(categoryColumns, "cat") + `, down.path, down.depth` +
+		SELECT count(*) OVER (), ` + prefixColumns(categoryColumns, "cat") + `, down.path, down.depth,
+		       (SELECT count(*) FROM categories k WHERE k.parent_id = cat.id)` +
 		from + `
 		ORDER BY ` + order +
 		fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)-1, len(args))
@@ -340,7 +341,7 @@ func (s *Categories) Search(ctx context.Context, q CategoryQuery) ([]*Category, 
 		var c Category
 		var meta []byte
 		if err := rows.Scan(&total, &c.ID, &c.ParentID, &c.Slug, &c.Title, &c.Position,
-			&meta, &c.CreatedAt, &c.UpdatedAt, &c.FullName, &c.Depth); err != nil {
+			&meta, &c.CreatedAt, &c.UpdatedAt, &c.FullName, &c.Depth, &c.ChildCount); err != nil {
 			return nil, 0, err
 		}
 		if err := scanMetadata(meta, &c.Metadata); err != nil {
@@ -556,10 +557,26 @@ func (s *Categories) all(ctx context.Context) ([]*Category, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Counted here rather than asked for, because this is the whole table: the
+	// parent links in hand say exactly how many children each row has, and a
+	// correlated subquery would ask the database to rediscover it.
+	//
+	// It has to be filled in at all because ChildCount is an int with no
+	// omitempty. A listing that leaves it alone does not omit the field, it
+	// sends a zero — which a client cannot tell from a category that really is
+	// a leaf, so every row reads as unexpandable and the tree stops being
+	// browsable.
+	kids := make(map[int64]int, len(out))
+	for _, c := range out {
+		if c.ParentID != nil {
+			kids[*c.ParentID]++
+		}
+	}
 	for _, c := range out {
 		if p, ok := paths[c.ID]; ok {
 			c.FullName, c.Depth = p.fullName, p.depth
 		}
+		c.ChildCount = kids[c.ID]
 	}
 	return out, nil
 }

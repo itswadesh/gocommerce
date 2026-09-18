@@ -503,16 +503,60 @@ func (m *Media) Get(ctx context.Context, id int64) (*MediaItem, error) {
 
 // SetAlt updates the alt text, which is the only field of a stored file that
 // is worth editing — everything else describes bytes that did not change.
+//
+// It is also the only thing about a file this engine audits. Uploading and
+// deleting are not recorded: a file is a file, and the history worth reading is
+// the product's. Alt text is not part of the file — it is a sentence somebody
+// wrote, it is what a screen reader says out loud and what a search engine
+// indexes, and it can be replaced or emptied without leaving another mark
+// anywhere. So the record of who wrote it travels with it.
+//
+// Both sides are stored, because "what did it used to say" is the question,
+// and an unchanged save writes nothing at all: a trail full of rows recording
+// that nothing happened is a trail nobody reads.
 func (m *Media) SetAlt(ctx context.Context, id int64, alt string) (*MediaItem, error) {
-	item, err := scanMedia(m.app.db.QueryRowContext(ctx,
-		`UPDATE media SET alt = $2 WHERE id = $1 RETURNING `+mediaColumns, id, alt))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, NotFoundf("media %d not found", id)
-	}
+	var item *MediaItem
+	err := InTx(ctx, m.app.db, func(tx *sql.Tx) error {
+		var was string
+		err := tx.QueryRowContext(ctx,
+			`SELECT alt FROM media WHERE id = $1 FOR UPDATE`, id).Scan(&was)
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("media %d not found", id)
+		}
+		if err != nil {
+			return Internalf(err, "read media")
+		}
+
+		item, err = scanMedia(tx.QueryRowContext(ctx,
+			`UPDATE media SET alt = $2 WHERE id = $1 RETURNING `+mediaColumns, id, alt))
+		if err != nil {
+			return Internalf(err, "update media")
+		}
+		if was == alt {
+			return nil
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditMediaAltSet, Entity: AuditEntityMedia,
+			ID: id, Label: item.Filename,
+			Summary: "Changed the alt text on " + mediaAuditLabel(item),
+			Before:  map[string]any{"alt": was},
+			After:   map[string]any{"alt": alt},
+		})
+	})
 	if err != nil {
-		return nil, Internalf(err, "update media")
+		return nil, err
 	}
 	return item, nil
+}
+
+// mediaAuditLabel names a file the way an operator would recognise it: by its
+// filename where there is one, and by its address where the file lives
+// somewhere else and has no name of its own here.
+func mediaAuditLabel(item *MediaItem) string {
+	if item.Filename != "" {
+		return item.Filename
+	}
+	return item.URL
 }
 
 // Delete removes the record and, if this store holds the file, the file.
@@ -610,9 +654,10 @@ func (m *Media) SetProductMedia(ctx context.Context, productID int64, mediaIDs [
 			}
 		}
 		// Filed against the product, because that is the record whose history a
-		// merchandiser reads. The media library's own upload, link, alt-text and
-		// delete are deliberately not audited at all: a media item is a file,
-		// and what matters is the product it ends up on.
+		// merchandiser reads. The media library's own uploads, links and
+		// deletions are deliberately not audited: a media item is a file, and
+		// what matters is the product it ends up on. Alt text is the one
+		// exception — see Media.SetAlt.
 		return writeAudit(ctx, tx, auditRecord{
 			Action: AuditProductMediaSet, Entity: AuditEntityProduct,
 			ID: productID, Summary: "Changed this product's pictures",

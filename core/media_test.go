@@ -880,3 +880,71 @@ func TestVariantMediaRoute(t *testing.T) {
 		t.Errorf("PUT with no media_ids = %d, want 400", rec.Code)
 	}
 }
+
+// TestAltTextIsRecorded pins the alt text of a picture as authored content, not
+// as a property of the bytes.
+//
+// The library's uploads and deletions stay unaudited on purpose — a file is a
+// file, and the history worth reading is the product's. Alt text is the
+// exception: nobody uploads a picture twice by accident, but alt text is a
+// sentence somebody wrote, it is what a screen reader says and what a search
+// engine indexes, and it can be replaced without leaving any other trace. A
+// store that cannot answer "who emptied the alt text on the hero image" has no
+// way to find out.
+func TestAltTextIsRecorded(t *testing.T) {
+	app, _ := mediaApp(t)
+	ctx := context.Background()
+
+	item, err := app.MediaLibrary().AddURL(ctx, "https://cdn.example/hero.jpg", "image", "A field of barley")
+	if err != nil {
+		t.Fatalf("AddURL: %v", err)
+	}
+	before := auditCount(t, app)
+
+	if _, err := app.MediaLibrary().SetAlt(ctx, item.ID, "A field of barley at dusk"); err != nil {
+		t.Fatalf("SetAlt: %v", err)
+	}
+
+	entries := auditRows(t, app, "entity_type = $1", AuditEntityMedia)
+	if len(entries) != 1 {
+		t.Fatalf("alt text edit wrote %d audit rows, want 1 (%d rows before)",
+			len(entries), before)
+	}
+	entry := entries[0]
+	if entry.Action != AuditMediaAltSet {
+		t.Errorf("action = %q, want %q", entry.Action, AuditMediaAltSet)
+	}
+	if entry.EntityID != strconv.FormatInt(item.ID, 10) {
+		t.Errorf("entity id = %q, want %d", entry.EntityID, item.ID)
+	}
+	// Both sides, because the question is what the alt text used to say — an
+	// entry holding only the new value cannot answer it.
+	if got := entry.Changes.Before["alt"]; got != "A field of barley" {
+		t.Errorf("before.alt = %v, want the original sentence", got)
+	}
+	if got := entry.Changes.After["alt"]; got != "A field of barley at dusk" {
+		t.Errorf("after.alt = %v, want the new sentence", got)
+	}
+
+	// Emptying it is the change that matters most, and an empty string is a
+	// value here, not an absent field.
+	if _, err := app.MediaLibrary().SetAlt(ctx, item.ID, ""); err != nil {
+		t.Fatalf("SetAlt(empty): %v", err)
+	}
+	entries = auditRows(t, app, "entity_type = $1", AuditEntityMedia)
+	if len(entries) != 2 {
+		t.Fatalf("clearing the alt text wrote %d rows in total, want 2", len(entries))
+	}
+	if got, ok := entries[1].Changes.After["alt"]; !ok || got != "" {
+		t.Errorf("after.alt = %v (present %v), want an explicit empty string", got, ok)
+	}
+
+	// Writing the same sentence again is not a change, and a trail full of
+	// rows saying nothing happened is a trail nobody reads.
+	if _, err := app.MediaLibrary().SetAlt(ctx, item.ID, ""); err != nil {
+		t.Fatalf("SetAlt(unchanged): %v", err)
+	}
+	if entries = auditRows(t, app, "entity_type = $1", AuditEntityMedia); len(entries) != 2 {
+		t.Errorf("re-saving the same alt text wrote a row: %d rows, want 2", len(entries))
+	}
+}

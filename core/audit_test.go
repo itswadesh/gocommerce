@@ -952,6 +952,17 @@ func TestTheVocabularyIsReachable(t *testing.T) {
 		t.Fatalf("set variant media: %v", err)
 	}
 
+	// The one thing about a file that is audited. It needs a file to be about,
+	// which the two calls above did not — they clear a list and can do that
+	// with nothing in the library at all.
+	picture, err := app.MediaLibrary().AddURL(ctx, "https://cdn.example/vocab.jpg", "image", "A shirt")
+	if err != nil {
+		t.Fatalf("add media: %v", err)
+	}
+	if _, err := app.MediaLibrary().SetAlt(ctx, picture.ID, "A shirt on a hanger"); err != nil {
+		t.Fatalf("set alt: %v", err)
+	}
+
 	disc, err := app.Discounts().Create(ctx, DiscountInput{
 		Title: "Ten off", Code: "TEN", Kind: DiscountPercentage, ValueBP: 1000})
 	if err != nil {

@@ -809,6 +809,50 @@
                     if (err?.status !== 409 || attempt >= 10) throw err;
                 }
             }
+            // The pictures come too. Media is a shared library — a row, not a
+            // file per product — so the copy points at the same items rather
+            // than duplicating any bytes, which is also why a picture edited
+            // later changes on both. Shopify copies images on duplicate, and a
+            // copy that arrives with no pictures is not a copy of anything a
+            // merchandiser recognises.
+            //
+            // It is a second request, after the product exists, because the
+            // create route takes no media. A store whose library refuses the
+            // attach still gets its product: the copy is already saved, so this
+            // reports what is missing rather than throwing the whole thing away.
+            const pictures = media.map((m) => m.id);
+            if (pictures.length) {
+                try {
+                    await request("PUT", `/api/admin/products/${copy.id}/media`, {
+                        body: { media_ids: pictures },
+                    });
+                    // Variant pictures are chosen out of the product's own
+                    // set, so they can only be attached once that set exists.
+                    //
+                    // Paired by their option values rather than by position: a
+                    // variant is identified within its product by the axis
+                    // values it sits on, and matching two lists by index would
+                    // quietly hang the small shirt's picture on the medium one
+                    // if the copies ever came back in another order.
+                    //
+                    // `images` is omitempty, so a variant showing the product's
+                    // default pictures has no key here and needs no request.
+                    const key = (v) => JSON.stringify(v.options ?? []);
+                    const copiesByOptions = new Map(
+                        (copy.variants ?? []).map((v) => [key(v), v]),
+                    );
+                    for (const original of product.variants ?? []) {
+                        const ids = (original.images ?? []).map((img) => img.media_id);
+                        const twin = copiesByOptions.get(key(original));
+                        if (!ids.length || !twin) continue;
+                        await request("PUT", `/api/admin/variants/${twin.id}/media`, {
+                            body: { media_ids: ids },
+                        });
+                    }
+                } catch (err) {
+                    toast.error(err);
+                }
+            }
             toast.success("Product duplicated");
             goto(`${base}/products/${copy.id}`);
         } catch (err) {

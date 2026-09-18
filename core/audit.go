@@ -62,6 +62,10 @@ const (
 	// AuditEntityNotificationTemplate is the wording of one message, keyed
 	// "channel/event".
 	AuditEntityNotificationTemplate = "notification_template"
+	// AuditEntityMedia carries alt text only. The bytes of a file are not
+	// audited — see Media.SetAlt for why the sentence is different from the
+	// picture it describes.
+	AuditEntityMedia = "media"
 )
 
 // AuditEntityTypes is the catalogue, in the panel's display order. The database
@@ -81,6 +85,7 @@ var AuditEntityTypes = []string{
 	AuditEntityTaxonomyAttribute,
 	AuditEntityPlugin,
 	AuditEntityNotificationTemplate,
+	AuditEntityMedia,
 }
 
 // The action vocabulary, `<record>.<verb>`, declared here and nowhere else.
@@ -139,6 +144,8 @@ const (
 	AuditVariantUpdate   = "variant.update"
 	AuditVariantDelete   = "variant.delete"
 	AuditVariantMediaSet = "variant.media_set"
+
+	AuditMediaAltSet = "media.alt_set"
 
 	AuditCategoryCreate = "category.create"
 	AuditCategoryUpdate = "category.update"
@@ -214,6 +221,8 @@ var AllAuditActions = []string{
 	AuditProductCollectionsSet, AuditProductImport,
 
 	AuditVariantCreate, AuditVariantUpdate, AuditVariantDelete, AuditVariantMediaSet,
+
+	AuditMediaAltSet,
 
 	AuditCategoryCreate, AuditCategoryUpdate, AuditCategoryDelete,
 

@@ -1192,3 +1192,108 @@ func TestReorderChildren(t *testing.T) {
 		t.Errorf("roots = %v, want [Zed Apparel]", roots)
 	}
 }
+
+// TestChildCountTravelsInEveryListing pins child_count as a fact rather than a
+// zero value.
+//
+// It is an int with no omitempty, so a query that does not compute it still
+// sends `"child_count": 0` — which is indistinguishable from a category that
+// genuinely has no children. A picker that trusts the number then draws no
+// expander on any row, and the tree cannot be browsed: only the roots are
+// reachable, and a sub-category can be assigned to a product only by typing a
+// search. Children and Ancestors computed it; List, Tree and Search did not.
+func TestChildCountTravelsInEveryListing(t *testing.T) {
+	app := categoriesApp(t)
+	ctx := context.Background()
+	svc := app.Categories()
+	tree(t, app)
+
+	// Apparel has Clothing and Footwear; Clothing has Shirts; Footwear and
+	// Shirts have none. Every listing has to say so.
+	want := map[string]int{"Apparel": 2, "Clothing": 1, "Shirts": 0, "Footwear": 0}
+
+	counts := func(rows []*Category) map[string]int {
+		got := map[string]int{}
+		for _, c := range rows {
+			got[c.Title] = c.ChildCount
+		}
+		return got
+	}
+	check := func(what string, got map[string]int) {
+		t.Helper()
+		for title, n := range want {
+			if got[title] != n {
+				t.Errorf("%s: %s child_count = %d, want %d", what, title, got[title], n)
+			}
+		}
+	}
+
+	flat, err := svc.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	check("List", counts(flat))
+
+	roots, err := svc.Tree(ctx)
+	if err != nil {
+		t.Fatalf("Tree: %v", err)
+	}
+	// Tree nests, so the counts are gathered by walking it.
+	nested := map[string]int{}
+	var walk func([]*Category)
+	walk = func(nodes []*Category) {
+		for _, n := range nodes {
+			nested[n.Title] = n.ChildCount
+			walk(n.Children)
+		}
+	}
+	walk(roots)
+	check("Tree", nested)
+
+	found, _, err := svc.Search(ctx, CategoryQuery{})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	check("Search", counts(found))
+
+	// And a search that matches a branch, which is the case that bites: a
+	// result the operator cannot open is a result they cannot use.
+	matched, _, err := svc.Search(ctx, CategoryQuery{Search: "Clothing"})
+	if err != nil {
+		t.Fatalf("Search(Clothing): %v", err)
+	}
+	// The search matches the rendered path, so "Clothing" also returns Shirts
+	// underneath it — the row to check is the one that is Clothing.
+	if counts(matched)["Clothing"] != 1 {
+		t.Errorf("searching for Clothing reported %d children for it, want 1",
+			counts(matched)["Clothing"])
+	}
+
+	// Over the wire, on the two routes the picker actually calls.
+	for _, path := range []string{"/api/admin/categories?flat=1", "/api/admin/categories?q=Apparel"} {
+		rec := do(t, app, http.MethodGet, path, withAdmin)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s = %d: %s", path, rec.Code, rec.Body)
+		}
+		var body struct {
+			Data []struct {
+				Title      string `json:"title"`
+				ChildCount int    `json:"child_count"`
+			} `json:"data"`
+		}
+		decodeJSONBody(t, rec.Body.Bytes(), &body)
+		seen := false
+		for _, row := range body.Data {
+			if row.Title != "Apparel" {
+				continue
+			}
+			seen = true
+			if row.ChildCount != 2 {
+				t.Errorf("GET %s: Apparel child_count = %d, want 2", path, row.ChildCount)
+			}
+		}
+		if !seen {
+			t.Errorf("GET %s did not return Apparel at all", path)
+		}
+	}
+}
