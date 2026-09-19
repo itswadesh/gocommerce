@@ -334,6 +334,32 @@
         return { title: "", slug: "", status: "draft", sku: "", price: "", stock: 0 };
     }
 
+    /*
+     * The SKU the engine would derive, shown before it does.
+     *
+     * The engine names an unnamed variant after its product — the same rule the
+     * option matrix uses — so leaving the box empty is now a real choice rather
+     * than a refused save. But a code that appears only after saving is a code
+     * nobody checked, and a SKU is the one field a warehouse reads aloud. So
+     * the suggestion is in the box, where it can be read and typed over.
+     *
+     * It mirrors the slug field's contract: it follows the title until somebody
+     * writes in it, and then it is theirs.
+     */
+    let skuEdited = $state(false);
+    const suggestedSKU = $derived.by(() => {
+        const source = form.slug.trim() || form.title.trim();
+        if (!source) return "";
+        const slug = source
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "");
+        return slug.toUpperCase();
+    });
+    $effect(() => {
+        if (!skuEdited) form.sku = suggestedSKU;
+    });
+
     $effect(() => {
         // Re-runs whenever any parameter changes: the search, the status, the
         // ordering, the page.
@@ -488,6 +514,7 @@
 
     function openCreate() {
         form = blankForm();
+        skuEdited = false;
         errors = {};
         createOpen = true;
     }
@@ -522,7 +549,7 @@
 
         errors = {};
         if (!form.title.trim()) errors.title = "A title is required.";
-        if (!form.sku.trim()) errors.sku = "A SKU is required.";
+
         // isValidMoney rather than isNaN(parseFloat(...)): parseFloat reads
         // "24,99" as 24, and this guard is what keeps toMinor from having to
         // answer null on the way to the wire.
@@ -537,7 +564,9 @@
                 title: form.title.trim(),
                 slug: form.slug.trim() || undefined,
                 status: form.status,
-                sku: form.sku.trim(),
+                // Omitted rather than sent empty, so the engine derives one
+                // and resolves any collision as it does for the matrix.
+                sku: form.sku.trim() || undefined,
                 price_minor: toMinor(form.price, currency),
                 stock: parseInt(form.stock, 10) || 0,
             });
@@ -1307,11 +1336,24 @@
             and options can be added to it afterwards.
         </div>
 
-        <div class="field required" class:error={!!errors.sku}>
+        <div class="field" class:error={!!errors.sku}>
             <label for="sku">SKU</label>
-            <input id="sku" type="text" bind:value={form.sku} placeholder="TEE-001" />
+            <input
+                id="sku"
+                type="text"
+                placeholder="Derived from the title if left empty"
+                value={form.sku}
+                oninput={(e) => {
+                    skuEdited = true;
+                    form.sku = e.currentTarget.value;
+                }}
+            />
         </div>
-        {#if errors.sku}<div class="field-help error">{errors.sku}</div>{/if}
+        {#if errors.sku}
+            <div class="field-help error">{errors.sku}</div>
+        {:else if !skuEdited && form.sku}
+            <div class="field-help">Suggested from the title. Type over it to use your own.</div>
+        {/if}
 
         <div class="fields m-t-sm">
             <div class="field required" class:error={!!errors.price}>

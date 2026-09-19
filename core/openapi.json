@@ -13657,7 +13657,7 @@
           },
           "sku": {
             "type": "string",
-            "description": "Shorthand for a product with no options; send with price_minor instead of variants."
+            "description": "Shorthand for a product with no options; send with price_minor instead of variants. Optional. Left out, the variant is named after its product — the slug, then its option values, upper-cased and hyphenated, which is the rule the option matrix has always used for the variants it generates. A derived code that is already taken is numbered rather than refused, since nobody chose it. A SKU sent here is used exactly as given, and a collision with one of those is a conflict."
           },
           "price_minor": {
             "type": "integer",
@@ -13769,12 +13769,12 @@
       "VariantInput": {
         "type": "object",
         "required": [
-          "sku",
           "price_minor"
         ],
         "properties": {
           "sku": {
-            "type": "string"
+            "type": "string",
+            "description": "Optional. Left out, the variant is named after its product — the slug, then its option values, upper-cased and hyphenated, which is the rule the option matrix has always used for the variants it generates. A derived code that is already taken is numbered rather than refused, since nobody chose it. A SKU sent here is used exactly as given, and a collision with one of those is a conflict."
           },
           "barcode": {
             "type": "string"

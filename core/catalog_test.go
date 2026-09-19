@@ -382,3 +382,84 @@ func TestExportProductsHonoursFilters(t *testing.T) {
 		}
 	}
 }
+
+// TestASKUIsDerivedWhenNoneIsGiven covers the first SKU a product has.
+//
+// Generating the option matrix has always named its variants after the
+// product — slug plus the option values — but the variant that exists before
+// there are any options had to be typed by hand, and so did one added on its
+// own afterwards. That is a code somebody invents at the moment they are least
+// able to: a new product, no range to be consistent with, and a required field
+// between them and saving. So an absent SKU is derived by the same rule, and
+// stays editable afterwards like any other.
+func TestASKUIsDerivedWhenNoneIsGiven(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	price := int64(2500)
+
+	// A product with no options and no SKU: named after itself.
+	p, err := app.Products().CreateProduct(ctx, ProductInput{
+		Title: "Linen field jumper", Status: "active", PriceMinor: &price,
+	})
+	if err != nil {
+		t.Fatalf("create without a sku: %v", err)
+	}
+	if got := p.DefaultVariant().SKU; got != "LINEN-FIELD-JUMPER" {
+		t.Errorf("derived sku = %q, want LINEN-FIELD-JUMPER", got)
+	}
+
+	// One given explicitly is still exactly what was asked for.
+	given, err := app.Products().CreateProduct(ctx, ProductInput{
+		Title: "Wool scarf", Status: "active", SKU: "wool-01", PriceMinor: &price,
+	})
+	if err != nil {
+		t.Fatalf("create with a sku: %v", err)
+	}
+	if got := given.DefaultVariant().SKU; got != "wool-01" {
+		t.Errorf("sku = %q, want the one that was given", got)
+	}
+
+	// A second product whose title derives the same code does not collide: the
+	// engine numbers it rather than refusing, because the operator did not
+	// choose this code and cannot be asked to resolve a clash in it.
+	again, err := app.Products().CreateProduct(ctx, ProductInput{
+		Title: "Linen field jumper", Slug: "linen-field-jumper-2", Status: "active", PriceMinor: &price,
+	})
+	if err != nil {
+		t.Fatalf("create a second: %v", err)
+	}
+	if got := again.DefaultVariant().SKU; got == "LINEN-FIELD-JUMPER" || got == "" {
+		t.Errorf("second derived sku = %q, want a distinct one", got)
+	}
+
+	// And a variant added by hand to a product that has options.
+	withAxis, err := app.Products().CreateProduct(ctx, ProductInput{
+		Title: "Cotton cap", Status: "active", SKU: "CAP", PriceMinor: &price,
+		Options: []OptionInput{{Name: "Size", Values: []string{"S", "M"}}},
+		Variants: []VariantInput{
+			{SKU: "CAP-S", PriceMinor: price, Options: []string{"S"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create with an axis: %v", err)
+	}
+	v, err := app.Products().CreateVariant(ctx, withAxis.ID, VariantInput{
+		PriceMinor: price, Options: []string{"M"},
+	})
+	if err != nil {
+		t.Fatalf("create a variant without a sku: %v", err)
+	}
+	if v.SKU != "COTTON-CAP-M" {
+		t.Errorf("derived variant sku = %q, want COTTON-CAP-M", v.SKU)
+	}
+
+	// Still editable: the derived code is a starting point, not a decision.
+	renamed := "CAP-MEDIUM"
+	updated, err := app.Products().UpdateVariant(ctx, v.ID, VariantPatch{SKU: &renamed})
+	if err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if updated.SKU != renamed {
+		t.Errorf("sku after rename = %q, want %q", updated.SKU, renamed)
+	}
+}

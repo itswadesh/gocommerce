@@ -407,6 +407,12 @@ func (c *Catalog) CreateProduct(ctx context.Context, in ProductInput) (*Product,
 			return err
 		}
 		for i, v := range in.Variants {
+			if strings.TrimSpace(v.SKU) == "" {
+				v.SKU, err = freeSKU(ctx, tx, derivedSKU(in.Slug, v.Options...))
+				if err != nil {
+					return err
+				}
+			}
 			if _, err := c.insertVariant(ctx, tx, id, v, values, i); err != nil {
 				return err
 			}
@@ -421,6 +427,53 @@ func (c *Catalog) CreateProduct(ctx context.Context, in ProductInput) (*Product,
 		return nil, err
 	}
 	return c.GetProduct(ctx, id)
+}
+
+// derivedSKU is the code a variant gets when nobody supplied one: the
+// product's slug, then its option values, upper-cased and hyphenated.
+//
+// The same rule the option matrix has always used to name the variants it
+// generates (see generateCombinations), lifted out so that a variant made by
+// hand and one made by the matrix are named alike. A SKU somebody typed is
+// never touched by this.
+func derivedSKU(slug string, parts ...string) string {
+	out := slug
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out += "-" + p
+		}
+	}
+	return strings.ReplaceAll(strings.ToUpper(out), " ", "-")
+}
+
+// freeSKU returns base, or base with the lowest number after it that no
+// variant is using.
+//
+// A typed SKU that collides is refused, and rightly: two products the operator
+// named the same thing is a decision to revisit. A derived one is different —
+// nobody chose it, so there is nobody to send back to fix it, and refusing
+// would block a save over a code the operator never saw. Two products called
+// "Field jumper" in different years is an ordinary thing to want.
+//
+// The walk is bounded because a store with a thousand collisions on one stem
+// has a naming problem this cannot solve; at that point the operator supplies
+// one.
+func freeSKU(ctx context.Context, tx *sql.Tx, base string) (string, error) {
+	for n := 1; n <= 50; n++ {
+		candidate := base
+		if n > 1 {
+			candidate = base + "-" + strconv.Itoa(n)
+		}
+		var taken bool
+		if err := tx.QueryRowContext(ctx,
+			`SELECT EXISTS (SELECT 1 FROM variants WHERE sku = $1)`, candidate).Scan(&taken); err != nil {
+			return "", Internalf(err, "check sku")
+		}
+		if !taken {
+			return candidate, nil
+		}
+	}
+	return "", Validationf("could not derive a free sku from %q; supply one", base)
 }
 
 // normalizeInput validates and fills in the shorthand forms.
@@ -450,9 +503,12 @@ func (c *Catalog) normalizeInput(in *ProductInput) error {
 	// The single-variant shorthand: a product with no options is still a
 	// product with one variant, the client just should not have to say so.
 	if len(in.Variants) == 0 {
-		if in.SKU == "" || in.PriceMinor == nil {
-			return Validationf("supply either variants, or sku and price_minor for a single-variant product")
+		if in.PriceMinor == nil {
+			return Validationf("supply either variants, or price_minor for a single-variant product")
 		}
+		// An absent SKU is derived below, inside the transaction, where a
+		// collision can be walked past. Left empty here on purpose so that the
+		// variant loop can tell "nobody gave one" from "somebody gave this".
 		v := VariantInput{SKU: in.SKU, PriceMinor: *in.PriceMinor, StockOnHand: in.Stock}
 		in.Variants = []VariantInput{v}
 	}
@@ -460,9 +516,6 @@ func (c *Catalog) normalizeInput(in *ProductInput) error {
 		return Validationf("a product with no options can have only one variant")
 	}
 	for i := range in.Variants {
-		if strings.TrimSpace(in.Variants[i].SKU) == "" {
-			return Validationf("variants[%d].sku is required", i)
-		}
 		if in.Variants[i].PriceMinor < 0 {
 			return Validationf("variants[%d].price_minor must not be negative", i)
 		}
@@ -811,15 +864,29 @@ func (c *Catalog) AddOption(ctx context.Context, productID int64, in OptionInput
 }
 
 // CreateVariant adds a variant to an existing product.
+//
+// A SKU is optional here as it is on create: without one the variant is named
+// after its product and its option values, by the same rule the option matrix
+// uses, and the operator can rename it afterwards.
 func (c *Catalog) CreateVariant(ctx context.Context, productID int64, in VariantInput) (*Variant, error) {
-	if strings.TrimSpace(in.SKU) == "" {
-		return nil, Validationf("sku is required")
-	}
 	var id int64
 	err := InTx(ctx, c.app.db, func(tx *sql.Tx) error {
 		values, err := c.optionValueLookup(ctx, tx, productID)
 		if err != nil {
 			return err
+		}
+		if strings.TrimSpace(in.SKU) == "" {
+			var slug string
+			if err := tx.QueryRowContext(ctx,
+				`SELECT slug FROM products WHERE id = $1`, productID).Scan(&slug); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return NotFoundf("product %d does not exist", productID)
+				}
+				return Internalf(err, "read product slug")
+			}
+			if in.SKU, err = freeSKU(ctx, tx, derivedSKU(slug, in.Options...)); err != nil {
+				return err
+			}
 		}
 		if len(values) == 0 && len(in.Options) > 0 {
 			return Validationf("this product has no options")

@@ -89,9 +89,63 @@
      */
     const imageChoices = $derived(media.filter((m) => m.kind === "image"));
 
+    /*
+     * The group whose pictures are being chosen, when it is a group rather
+     * than one variant. Both use the same drawer and the same `picked` list;
+     * only the save differs, because a group writes the same choice to every
+     * variant under it.
+     */
+    let imagesForGroup = $state(null);
+
     function openImages(variant) {
         picked = (variant.images ?? []).map((img) => img.media_id);
+        imagesForGroup = null;
         imageFor = variant;
+    }
+
+    /**
+     * What a group's variants already show, when they agree.
+     *
+     * The same rule the price and stock boxes follow: a control about to
+     * overwrite something should show what it is overwriting. Variants that
+     * disagree return null, and the drawer then opens with nothing ticked
+     * rather than with one arbitrary variant's choice standing for the rest.
+     */
+    function sharedImages(group) {
+        const items = group?.items ?? [];
+        if (!items.length) return null;
+        const first = (items[0].images ?? []).map((img) => img.media_id);
+        const same = items.every((v) => {
+            const ids = (v.images ?? []).map((img) => img.media_id);
+            return ids.length === first.length && ids.every((id, i) => id === first[i]);
+        });
+        return same ? first : null;
+    }
+
+    function openGroupImages(group) {
+        picked = sharedImages(group) ?? [];
+        imageFor = null;
+        imagesForGroup = group;
+    }
+
+    /**
+     * One choice, written to every variant in the group.
+     *
+     * "All the red ones show the red photograph" is how a picture is assigned
+     * in practice, and doing it a variant at a time means opening the same
+     * drawer once per size. The per-variant control stays for the exception.
+     */
+    function saveGroupImages(group, mediaIDs) {
+        const target = group.items ?? [];
+        imagesForGroup = null;
+        apply(
+            target,
+            (v) =>
+                request("PUT", `/api/admin/variants/${v.id}/media`, {
+                    body: { media_ids: mediaIDs },
+                }),
+            mediaIDs.length ? "Pictures set" : "Pictures removed",
+        );
     }
 
     function togglePicked(mediaID) {
@@ -1420,6 +1474,8 @@
             </thead>
             <tbody>
                 {#each groups as group (group.key)}
+                    {@const shared = sharedImages(group)}
+                    {@const cover = shared?.length ? group.items[0].images?.[0] : null}
                     <tr>
                         <td class="col-bulk-select min-width">
                             <div class="field">
@@ -1436,10 +1492,52 @@
                             </div>
                         </td>
                         <td class="min-width">
-                            <!-- A group is a set of variants and an image
-                                 belongs to one of them, so Shopify leaves this
-                                 empty too; the picker is on the rows below. -->
-                            <span class="txt-hint txt-sm">—</span>
+                            <!--
+                                Shopify leaves this cell empty, on the grounds
+                                that a picture belongs to a variant and a group
+                                is not one. True, and it costs the operator the
+                                thing they actually came to do: one photograph
+                                per colour, on every size of it. Leaving it
+                                blank also meant the only picture control on the
+                                screen lived inside a collapsed group — a table
+                                of seventy-two variants opened with no way to
+                                set a picture visible anywhere at all.
+
+                                So the group takes the shape its price and stock
+                                boxes already have: it shows what the variants
+                                agree on, and writing to it writes to all of
+                                them. The per-variant thumb stays for the size
+                                that differs.
+                            -->
+                            <button
+                                type="button"
+                                class="thumb sm variant-thumb"
+                                disabled={working || !group.items.length}
+                                aria-label="Choose the pictures for every variant in {group.label}"
+                                title={shared === null
+                                    ? "These variants show different pictures — choosing here sets them all"
+                                    : cover
+                                      ? `Change the pictures on all ${group.items.length} (${shared.length})`
+                                      : `Choose pictures for all ${group.items.length}`}
+                                onclick={() => openGroupImages(group)}
+                            >
+                                {#if cover}
+                                    <img src={cover.url} alt={cover.alt || group.label} />
+                                    {#if shared.length > 1}
+                                        <span class="variant-thumb-count" aria-hidden="true">
+                                            {shared.length}
+                                        </span>
+                                    {/if}
+                                {:else if shared === null}
+                                    <!-- Not "no picture": the variants disagree,
+                                         and an add icon here would claim they
+                                         are all empty. -->
+                                    <i class="ri-image-line" aria-hidden="true"></i>
+                                    <span class="variant-thumb-count" aria-hidden="true">?</span>
+                                {:else}
+                                    <i class="ri-image-add-line" aria-hidden="true"></i>
+                                {/if}
+                            </button>
                         </td>
                         <td>
                             <strong>{group.label}</strong>
@@ -1908,10 +2006,17 @@
     the variant's gallery; nothing is written until Save.
 -->
 <Drawer
-    open={!!imageFor}
-    title={imageFor ? `Pictures for ${imageFor.label || imageFor.sku}` : "Variant pictures"}
+    open={!!imageFor || !!imagesForGroup}
+    title={imagesForGroup
+        ? `Pictures for every ${imagesForGroup.label} variant`
+        : imageFor
+          ? `Pictures for ${imageFor.label || imageFor.sku}`
+          : "Variant pictures"}
     size="sm"
-    onclose={() => (imageFor = null)}
+    onclose={() => {
+        imageFor = null;
+        imagesForGroup = null;
+    }}
 >
     {#if !imageChoices.length}
         <div class="txt-center txt-hint p-base">
@@ -1958,15 +2063,25 @@
     </div>
 
     {#snippet footer()}
-        <button type="button" class="btn transparent m-r-auto" onclick={() => (imageFor = null)}>
+        <button
+            type="button"
+            class="btn transparent m-r-auto"
+            onclick={() => {
+                imageFor = null;
+                imagesForGroup = null;
+            }}
+        >
             <span class="txt">Cancel</span>
         </button>
-        {#if imageFor?.images?.length}
+        {#if imageFor?.images?.length || sharedImages(imagesForGroup)?.length}
             <button
                 type="button"
                 class="btn secondary"
                 disabled={working}
-                onclick={() => saveVariantImages(imageFor, [])}
+                onclick={() =>
+                    imagesForGroup
+                        ? saveGroupImages(imagesForGroup, [])
+                        : saveVariantImages(imageFor, [])}
             >
                 <span class="txt">Remove all</span>
             </button>
@@ -1975,7 +2090,10 @@
             type="button"
             class="btn"
             disabled={working || !imageChoices.length}
-            onclick={() => saveVariantImages(imageFor, picked)}
+            onclick={() =>
+                imagesForGroup
+                    ? saveGroupImages(imagesForGroup, picked)
+                    : saveVariantImages(imageFor, picked)}
         >
             <span class="txt">Save pictures</span>
         </button>
