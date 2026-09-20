@@ -39,6 +39,7 @@ import (
 	veeqo "github.com/misiki/gocommerce/ext/fulfill-veeqo"
 	"github.com/misiki/gocommerce/ext/identity"
 	amazon "github.com/misiki/gocommerce/ext/import-amazon"
+	shopify "github.com/misiki/gocommerce/ext/import-shopify"
 	"github.com/misiki/gocommerce/ext/invoices"
 	"github.com/misiki/gocommerce/ext/klaviyo"
 	"github.com/misiki/gocommerce/ext/mcp"
@@ -125,6 +126,12 @@ func main() {
 			Model:           os.Getenv("IMPORT_AMAZON_LLM_MODEL"),
 			Headed:          os.Getenv("IMPORT_AMAZON_HEADED") != "",
 		}),
+		// A whole Shopify catalogue over its Admin API. No configuration here:
+		// the shop domain and the access token are plugin settings, so a
+		// migrating merchant fills them in once on the plugins screen rather
+		// than being handed an environment variable to set on a server they
+		// may not have.
+		shopify.New(),
 	}
 
 	// Card payments, if the keys are configured. Adding Stripe changes no

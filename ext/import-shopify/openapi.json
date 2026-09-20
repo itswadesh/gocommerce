@@ -1,0 +1,124 @@
+{
+  "paths": {
+    "/api/admin/x/import-shopify/check": {
+      "post": {
+        "tags": ["admin:import-shopify"],
+        "summary": "Check the Shopify credentials",
+        "description": "Requires catalog.write. Reads the shop's own name and counts its products, using the domain and access token in this plugin's settings. It writes nothing. This exists so a wrong token is reported as a wrong token, on the button, rather than as an import that fails at 0% and has to be gone and read.",
+        "security": [{"adminToken": []}],
+        "responses": {
+          "200": {
+            "description": "The credentials work, and this is the shop they reach.",
+            "content": {"application/json": {"schema": {
+              "type": "object",
+              "properties": {"data": {
+                "type": "object",
+                "properties": {
+                  "shop": {"type": "string", "description": "What the store calls itself.", "example": "Acme Supply"},
+                  "domain": {"type": "string", "example": "acme.myshopify.com"},
+                  "currency": {"type": "string", "description": "The shop's own currency. Prices are converted into this store's on import.", "example": "USD"},
+                  "products": {"type": "integer", "description": "How many products an import would walk.", "example": 912}
+                }
+              }}
+            }}}
+          },
+          "400": {"description": "No settings, a refused token, or a shop domain that does not resolve — the message says which."},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      }
+    },
+    "/api/admin/x/import-shopify/jobs": {
+      "get": {
+        "tags": ["admin:import-shopify"],
+        "summary": "The most recent imports",
+        "description": "Requires catalog.write. The twenty newest jobs, newest first — enough for the drawer to show what happened last, not a history.",
+        "security": [{"adminToken": []}],
+        "responses": {
+          "200": {
+            "description": "The recent jobs.",
+            "content": {"application/json": {"schema": {
+              "type": "object",
+              "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/ImportShopifyJob"}}}
+            }}}
+          },
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      },
+      "post": {
+        "tags": ["admin:import-shopify"],
+        "summary": "Import the whole catalogue",
+        "description": "Requires catalog.write. Verifies the credentials, records how many products the shop has, and starts a job — answering at once. Poll the job for progress.\n\nProducts come over with their variants, options, pictures and stock. Pictures are linked by URL and never downloaded, as the CSV importer does (D56). Prices cross as minor units in this store's currency, read from Shopify's decimal strings by exponent, so a yen store is not multiplied by a hundred.\n\n**Running it twice is safe.** Every imported product records where it came from in `metadata.shopify.id`, and a second run updates those rows rather than making a copy beside them — so an import can be re-run after a fix in Shopify, and a half-finished one can simply be started again. An update refreshes the title, description, status, vendor, type and tags and deliberately leaves prices, stock and variants alone: re-pricing a variant somebody adjusted in this panel would undo their work silently.",
+        "security": [{"adminToken": []}],
+        "responses": {
+          "201": {
+            "description": "The job has started.",
+            "content": {"application/json": {"schema": {
+              "type": "object",
+              "properties": {"data": {"$ref": "#/components/schemas/ImportShopifyJob"}}
+            }}}
+          },
+          "400": {"description": "The settings are missing or the shop refused the token."},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      }
+    },
+    "/api/admin/x/import-shopify/jobs/{id}": {
+      "get": {
+        "tags": ["admin:import-shopify"],
+        "summary": "One import, for the progress bar",
+        "description": "Requires catalog.write. Poll this while a job is running: `done` of `total` is the bar, `step` is the product being written, and the counts separate what was created from what was updated.",
+        "security": [{"adminToken": []}],
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "integer", "format": "int64"}}
+        ],
+        "responses": {
+          "200": {
+            "description": "The job as it now stands.",
+            "content": {"application/json": {"schema": {
+              "type": "object",
+              "properties": {"data": {"$ref": "#/components/schemas/ImportShopifyJob"}}
+            }}}
+          },
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ImportShopifyJob": {
+        "type": "object",
+        "description": "One catalogue import. It commits product by product rather than in one transaction, so an import that dies halfway leaves half the catalogue in and re-running finishes it.",
+        "properties": {
+          "id": {"type": "integer", "format": "int64"},
+          "shop": {"type": "string", "example": "acme.myshopify.com"},
+          "status": {
+            "type": "string",
+            "enum": ["running", "done", "failed"],
+            "description": "`failed` means the walk stopped — a refused token, a shop that went away. Products that could not be imported individually do not fail the job; they raise a warning and increment `failed`."
+          },
+          "step": {"type": "string", "description": "What it is doing now, for the line under the bar.", "example": "importing Merino crew neck"},
+          "message": {"type": "string", "description": "Why it stopped, when it stopped."},
+          "total": {"type": "integer", "description": "How many products the shop said it had before the walk started, so the bar can say \"40 of 900\" rather than counting upwards into the dark."},
+          "done": {"type": "integer"},
+          "created": {"type": "integer", "description": "Products this run added."},
+          "updated": {"type": "integer", "description": "Products a previous run had already imported."},
+          "failed": {"type": "integer", "description": "Products that could not be imported. Each has a warning."},
+          "warnings": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "What came across imperfectly — a price that could not be read, a product with no variants. Capped at two hundred: a catalogue where everything is wrong would otherwise store a megabyte of near-identical lines."
+          },
+          "percent": {"type": "integer", "description": "Computed from done and total rather than stored, so it cannot disagree with the counts beside it."},
+          "started_at": {"type": "string", "format": "date-time"},
+          "finished_at": {"type": "string", "format": "date-time", "nullable": true}
+        }
+      }
+    }
+  }
+}

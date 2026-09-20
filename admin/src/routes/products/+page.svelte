@@ -307,6 +307,17 @@
        variations shows where it has got to rather than a spinner for a
        minute; and when Amazon asks for a person, the job says so and waits
        for the operator to click through in the Chrome window. */
+    /* Import from Shopify. Same shape as the Amazon drawer above and a
+       different job: that one is a product at a time from a URL, this one is a
+       whole catalogue over the API. The counts come back with the job, so the
+       bar can say "40 of 900" rather than turning while nothing visible
+       happens for four minutes. */
+    let shopifyOpen = $state(false);
+    let shopifyBusy = $state(false);
+    let shopifyJob = $state(null);
+    let shopifyShop = $state(null);
+    let shopifyTimer = null;
+
     let importOpen = $state(false);
     let importing = $state(false);
     let importJob = $state(null);
@@ -508,6 +519,74 @@
         }
         if (importJob.status === "done") {
             toast.success("Imported.");
+            await load();
+        }
+    }
+
+    /**
+     * Open the drawer and ask the engine whether the credentials work.
+     *
+     * Checked on open rather than on import, so an operator finds out the token
+     * is wrong while they are still looking at the settings link — not after
+     * watching a bar sit at 0% and then reading a job to find out why.
+     */
+    async function openShopify() {
+        shopifyOpen = true;
+        shopifyJob = null;
+        shopifyShop = null;
+        shopifyBusy = true;
+        try {
+            shopifyShop = await api.post("/api/admin/x/import-shopify/check", {});
+        } catch (err) {
+            // Shown in the drawer rather than as a toast: it is the state of
+            // the thing they just opened, and it tells them what to fix.
+            shopifyShop = { error: err?.message ?? String(err) };
+        } finally {
+            shopifyBusy = false;
+        }
+    }
+
+    function closeShopify() {
+        shopifyOpen = false;
+        clearTimeout(shopifyTimer);
+        shopifyTimer = null;
+    }
+
+    async function startShopify() {
+        if (shopifyBusy) return;
+        shopifyBusy = true;
+        try {
+            shopifyJob = await api.post("/api/admin/x/import-shopify/jobs", {});
+            shopifyTimer = setTimeout(pollShopify, 1000);
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            shopifyBusy = false;
+        }
+    }
+
+    async function pollShopify() {
+        shopifyTimer = null;
+        // Stop when the drawer is shut: the import carries on server-side, and
+        // polling a job nobody is looking at is a request every second for as
+        // long as the tab is open.
+        if (!shopifyJob || !shopifyOpen) return;
+        try {
+            shopifyJob = await api.get(`/api/admin/x/import-shopify/jobs/${shopifyJob.id}`);
+        } catch (err) {
+            toast.error(err);
+            return;
+        }
+        if (shopifyJob.status === "running") {
+            shopifyTimer = setTimeout(pollShopify, 1000);
+            return;
+        }
+        if (shopifyJob.status === "done") {
+            toast.success(
+                `Imported ${shopifyJob.created} and updated ${shopifyJob.updated} product${
+                    shopifyJob.created + shopifyJob.updated === 1 ? "" : "s"
+                }.`,
+            );
             await load();
         }
     }
@@ -927,6 +1006,12 @@
                     >
                         <i class="ri-download-2-line" aria-hidden="true"></i>
                         <span class="txt">Export</span>
+                    </button>
+                {/if}
+                {#if writable && hasModule("import-shopify")}
+                    <button type="button" class="btn secondary" onclick={openShopify}>
+                        <i class="ri-shopping-bag-line" aria-hidden="true"></i>
+                        <span class="txt">Import from Shopify</span>
                     </button>
                 {/if}
                 {#if writable && hasModule("import-amazon")}
@@ -1389,6 +1474,128 @@
         </button>
     {/snippet}
 </Drawer>
+
+{#if hasModule("import-shopify")}
+    <Drawer
+        open={shopifyOpen}
+        size="sm"
+        title="Import from Shopify"
+        onclose={closeShopify}
+    >
+        <div class="field-help m-b-base">
+            Brings the whole catalogue over the API — products, variants, options, pictures and
+            stock. Pictures are linked, not copied. Running it again updates what it brought over
+            before rather than importing a second copy.
+        </div>
+
+        {#if shopifyBusy && !shopifyJob}
+            <span class="skeleton-loader"></span>
+        {:else if shopifyShop?.error}
+            <div class="field-help error">
+                {shopifyShop.error}
+            </div>
+            <a class="btn sm secondary m-t-sm" href="{base}/settings/plugins">
+                <i class="ri-settings-3-line" aria-hidden="true"></i>
+                <span class="txt">Open the plugin settings</span>
+            </a>
+        {:else if shopifyShop}
+            <table class="table media-detail-facts">
+                <tbody>
+                    <tr>
+                        <td class="txt-hint">Shop</td>
+                        <td class="txt-right"><strong>{shopifyShop.shop}</strong></td>
+                    </tr>
+                    <tr>
+                        <td class="txt-hint">Domain</td>
+                        <td class="txt-right txt-code">{shopifyShop.domain}</td>
+                    </tr>
+                    <tr>
+                        <td class="txt-hint">Products</td>
+                        <td class="txt-right">{shopifyShop.products}</td>
+                    </tr>
+                </tbody>
+            </table>
+            {#if shopifyShop.currency && shopifyShop.currency !== currency}
+                <!-- Not a refusal: the numbers cross exactly, and what they
+                     mean afterwards is a decision only the operator can make. -->
+                <div class="field-help m-t-sm">
+                    That shop prices in <strong>{shopifyShop.currency}</strong> and this one in
+                    <strong>{currency}</strong>. The figures come across as they are — 19.99 stays
+                    19.99 — so they will need repricing.
+                </div>
+            {/if}
+        {/if}
+
+        {#if shopifyJob}
+            <h6 class="section-title">
+                <i class="ri-download-cloud-2-line" aria-hidden="true"></i>
+                {shopifyJob.status === "running" ? "Importing" : "Finished"}
+            </h6>
+
+            <div
+                class="import-bar"
+                role="progressbar"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow={shopifyJob.percent}
+                aria-label="Import progress"
+            >
+                <div style="width: {shopifyJob.percent}%"></div>
+            </div>
+            <div class="inline-flex gap-sm txt-sm m-t-5">
+                <strong>{shopifyJob.done} of {shopifyJob.total}</strong>
+                <span class="txt-hint">{shopifyJob.percent}%</span>
+            </div>
+            {#if shopifyJob.step}
+                <div class="txt-hint txt-sm txt-ellipsis m-t-5">{shopifyJob.step}</div>
+            {/if}
+
+            <div class="inline-flex gap-sm m-t-sm">
+                <span class="label label-success">{shopifyJob.created} added</span>
+                <span class="label">{shopifyJob.updated} updated</span>
+                {#if shopifyJob.failed}
+                    <span class="label label-danger">{shopifyJob.failed} failed</span>
+                {/if}
+            </div>
+
+            {#if shopifyJob.message}
+                <div class="field-help error m-t-sm">{shopifyJob.message}</div>
+            {/if}
+
+            {#if shopifyJob.warnings?.length}
+                <h6 class="section-title">
+                    <i class="ri-error-warning-line" aria-hidden="true"></i>
+                    What came across imperfectly
+                </h6>
+                <ul class="import-warnings">
+                    {#each shopifyJob.warnings as warning}
+                        <li>{warning}</li>
+                    {/each}
+                </ul>
+            {/if}
+        {/if}
+
+        {#snippet footer()}
+            <button type="button" class="btn transparent m-r-auto" onclick={closeShopify}>
+                <span class="txt">{shopifyJob?.status === "done" ? "Close" : "Cancel"}</span>
+            </button>
+            <button
+                type="button"
+                class="btn"
+                class:loading={shopifyBusy || shopifyJob?.status === "running"}
+                disabled={shopifyBusy ||
+                    !!shopifyShop?.error ||
+                    !shopifyShop ||
+                    shopifyJob?.status === "running"}
+                onclick={startShopify}
+            >
+                <span class="txt">
+                    {shopifyJob ? "Import again" : `Import ${shopifyShop?.products ?? ""} products`}
+                </span>
+            </button>
+        {/snippet}
+    </Drawer>
+{/if}
 
 {#if hasModule("import-amazon")}
     <Drawer open={importOpen} size="sm" title="Import from Amazon" onclose={closeImport}>

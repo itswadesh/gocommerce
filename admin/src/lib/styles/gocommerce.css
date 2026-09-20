@@ -6548,6 +6548,58 @@ kbd + kbd {
     }
 }
 
+/*
+ * The catalogue import's progress bar.
+ *
+ * Its own rule rather than reusing .map-progress-track: that one belongs to the
+ * sitemap screen and is sized for a card, and a shared class between two
+ * screens is how one of them changes when somebody tunes the other.
+ *
+ * The fill is mixed toward --surfaceTxtColor for the reason the best-seller bar
+ * is: raw --successColor on --surfaceAlt2Color measures under the 3:1 a
+ * non-text indicator needs, and mixing toward the token that is by definition
+ * readable on the surface fixes it in both themes and under any store's accent.
+ */
+.shopify-skin .import-bar {
+    height: 8px;
+    border-radius: 999px;
+    background: var(--surfaceAlt2Color);
+    overflow: hidden;
+}
+.shopify-skin .import-bar > div {
+    height: 100%;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--successColor), var(--surfaceTxtColor) 25%);
+    /* A wide catalogue moves this a fraction of a percent at a time, so the
+       easing is what makes it read as motion rather than as a still image. */
+    transition: width 0.3s ease;
+    /* A just-started import is a sliver, not nothing: zero width reads as a
+       bar that has not begun when in fact the first product is being written. */
+    min-width: 3px;
+}
+
+/*
+ * What came across imperfectly.
+ *
+ * Scrolls rather than growing: a catalogue with four hundred warnings would
+ * otherwise push the drawer's footer — and its Close button — past the bottom
+ * of the screen.
+ */
+.shopify-skin .import-warnings {
+    margin: 0;
+    padding-left: 18px;
+    max-height: 220px;
+    overflow-y: auto;
+    font-size: var(--xsFontSize);
+    color: var(--surfaceTxtHintColor);
+}
+.shopify-skin .import-warnings li {
+    margin-bottom: 4px;
+    /* A Shopify handle is one long unbroken token and will not wrap on its
+       own, which is what pushes a drawer sideways. */
+    overflow-wrap: anywhere;
+}
+
 /* --------- @media print — KEEP LAST ---------
  *
  * Append your section ABOVE this block. These rules carry no `!important`, so a
