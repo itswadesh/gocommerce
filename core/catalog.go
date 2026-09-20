@@ -376,6 +376,23 @@ func (a *App) Products() *Catalog { return a.catalog }
 
 // CreateProduct creates a product with its options and variants in one
 // transaction.
+// productEvent is what a catalogue change announces.
+//
+// Slug and status, not the whole product. A consumer that needs more reads the
+// product; an outbox row that carries a copy of it is a second, staler
+// catalogue that has to be kept in step. Slug is here because the commonest
+// consumer turns it into a URL, and status because "is this page still meant to
+// exist" is the other thing they all ask.
+type productEvent struct {
+	ID     int64  `json:"id"`
+	Slug   string `json:"slug"`
+	Title  string `json:"title"`
+	Status string `json:"status"`
+	// PreviousSlug travels on an update that renamed the handle, because the
+	// old URL is now a 404 somebody may need to retire.
+	PreviousSlug string `json:"previous_slug,omitempty"`
+}
+
 func (c *Catalog) CreateProduct(ctx context.Context, in ProductInput) (*Product, error) {
 	if err := c.normalizeInput(&in); err != nil {
 		return nil, err
@@ -417,11 +434,18 @@ func (c *Catalog) CreateProduct(ctx context.Context, in ProductInput) (*Product,
 				return err
 			}
 		}
-		return writeAudit(ctx, tx, auditRecord{
+		if err := writeAudit(ctx, tx, auditRecord{
 			Action: AuditProductCreate, Entity: AuditEntityProduct,
 			ID: id, Label: in.Title, Summary: "Created the product " + in.Title,
 			After: map[string]any{"slug": in.Slug, "title": in.Title, "status": in.Status},
-		})
+		}); err != nil {
+			return err
+		}
+		// In the same transaction as the row, which is the whole point of an
+		// outbox: the product and the announcement of it commit together or
+		// neither does.
+		return c.app.outbox.write(ctx, tx, EventProductCreated, AggregateProduct, id,
+			productEvent{ID: id, Slug: in.Slug, Title: in.Title, Status: in.Status})
 	})
 	if err != nil {
 		return nil, err
@@ -795,11 +819,28 @@ func (c *Catalog) UpdateProduct(ctx context.Context, id int64, patch ProductPatc
 			}
 			return translateCatalogErr(err)
 		}
-		return writeAudit(ctx, tx, auditRecord{
+		if err := writeAudit(ctx, tx, auditRecord{
 			Action: AuditProductUpdate, Entity: AuditEntityProduct,
 			ID: id, Label: newTitle, Summary: "Edited the product " + newTitle,
 			Before: before, After: after,
-		})
+		}); err != nil {
+			return err
+		}
+
+		nowSlug, nowStatus := slug, status
+		if v, ok := after["slug"].(string); ok {
+			nowSlug = v
+		}
+		if v, ok := after["status"].(string); ok {
+			nowStatus = v
+		}
+		event := productEvent{ID: id, Slug: nowSlug, Title: newTitle, Status: nowStatus}
+		// A renamed handle leaves an address behind. A consumer retiring the old
+		// URL needs to be told what it was, and after the commit nothing knows.
+		if was, ok := before["slug"].(string); ok && was != nowSlug {
+			event.PreviousSlug = was
+		}
+		return c.app.outbox.write(ctx, tx, EventProductUpdated, AggregateProduct, id, event)
 	})
 	if err != nil {
 		return nil, err
@@ -823,11 +864,18 @@ func (c *Catalog) DeleteProduct(ctx context.Context, id int64) error {
 		if err != nil {
 			return translateCatalogErr(err)
 		}
-		return writeAudit(ctx, tx, auditRecord{
+		if err := writeAudit(ctx, tx, auditRecord{
 			Action: AuditProductDelete, Entity: AuditEntityProduct,
 			ID: id, Label: title, Summary: "Deleted the product " + title,
 			Before: map[string]any{"slug": slug, "title": title},
-		})
+		}); err != nil {
+			return err
+		}
+		// The slug is on the event for the same reason it is on the audit row:
+		// after this commit nothing can say what address just stopped
+		// existing, and that address is the only thing a consumer can act on.
+		return c.app.outbox.write(ctx, tx, EventProductDeleted, AggregateProduct, id,
+			productEvent{ID: id, Slug: slug, Title: title, Status: "deleted"})
 	})
 }
 

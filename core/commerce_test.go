@@ -25,7 +25,30 @@ func simpleProduct(t *testing.T, app *App, sku string, priceMinor int64, stock i
 	if err != nil {
 		t.Fatalf("create product %s: %v", sku, err)
 	}
+	// A product announces itself now (product.created), and this fixture is
+	// arranging a shelf rather than testing the announcement. Left in the
+	// outbox it is noise in every test that counts rows to ask "what did the
+	// action under test write" — and those tests are right to count, so the
+	// fixture cleans up after itself instead.
+	//
+	// The catalogue events have their own tests, which create products
+	// directly rather than through here.
+	forgetOutbox(t, app)
 	return p
+}
+
+// forgetOutbox drops the catalogue events a fixture wrote, and only those.
+//
+// Emptying the whole table was the first attempt and was wrong: a fixture runs
+// more than once in a test, and the second call took away the delivered rows
+// the first one had set up. Scoped to the aggregates this fixture actually
+// touches, so an order or a cart event is never collateral.
+func forgetOutbox(t *testing.T, app *App) {
+	t.Helper()
+	if _, err := app.DB().ExecContext(context.Background(),
+		`DELETE FROM outbox_events WHERE aggregate_type IN ('product', 'collection')`); err != nil {
+		t.Fatalf("clear the outbox: %v", err)
+	}
 }
 
 func addToCart(t *testing.T, app *App, cartToken string, variantID int64, qty int) *Cart {

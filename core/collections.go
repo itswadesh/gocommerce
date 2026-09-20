@@ -65,6 +65,14 @@ type CollectionPatch struct {
 // product between collections changes what a storefront shows, not what the
 // store owes anyone, and an event nothing could act on is a promise the outbox
 // would have to keep forever.
+// collectionEvent is what a collection change announces: enough to build the
+// URL of the page that is now different, and nothing else.
+type collectionEvent struct {
+	ID    int64  `json:"id"`
+	Slug  string `json:"slug"`
+	Title string `json:"title"`
+}
+
 type Collections struct {
 	app *App
 }
@@ -269,11 +277,15 @@ func (s *Collections) Update(ctx context.Context, id int64, patch CollectionPatc
 		if err != nil {
 			return translateCollectionErr(err)
 		}
-		return writeAudit(ctx, tx, auditRecord{
+		if err := writeAudit(ctx, tx, auditRecord{
 			Action: AuditCollectionUpdate, Entity: AuditEntityCollection,
 			ID: c.ID, Label: c.Title, Summary: "Edited the collection " + c.Title,
 			Before: before, After: after,
-		})
+		}); err != nil {
+			return err
+		}
+		return s.app.outbox.write(ctx, tx, EventCollectionUpdated, AggregateCollection, c.ID,
+			collectionEvent{ID: c.ID, Slug: c.Slug, Title: c.Title})
 	})
 	if err != nil {
 		return nil, err
@@ -453,9 +465,9 @@ func (s *Collections) ProductsInCollection(ctx context.Context, collectionID int
 func (s *Collections) SetCollectionProducts(ctx context.Context, collectionID int64, productIDs []int64) error {
 	ids := dedupeIDs(productIDs)
 	return InTx(ctx, s.app.db, func(tx *sql.Tx) error {
-		var title string
+		var title, slug string
 		err := tx.QueryRowContext(ctx,
-			`SELECT title FROM collections WHERE id = $1`, collectionID).Scan(&title)
+			`SELECT title, slug FROM collections WHERE id = $1`, collectionID).Scan(&title, &slug)
 		if errors.Is(err, sql.ErrNoRows) {
 			return NotFoundf("collection %d does not exist", collectionID)
 		}
@@ -492,12 +504,18 @@ func (s *Collections) SetCollectionProducts(ctx context.Context, collectionID in
 		// Filed against the collection, which is the record an operator was
 		// looking at. The product-side write files the same kind of change
 		// against the product for the same reason.
-		return writeAudit(ctx, tx, auditRecord{
+		if err := writeAudit(ctx, tx, auditRecord{
 			Action: AuditCollectionProductsSet, Entity: AuditEntityCollection,
 			ID: collectionID, Label: title,
 			Summary: "Changed what is in the collection " + title + ", and in what order",
 			After:   map[string]any{"product_ids": ids},
-		})
+		}); err != nil {
+			return err
+		}
+		// The same event as an edit to the collection, because a consumer asks
+		// the same question of both: the page is different, go and look.
+		return s.app.outbox.write(ctx, tx, EventCollectionUpdated, AggregateCollection, collectionID,
+			collectionEvent{ID: collectionID, Slug: slug, Title: title})
 	})
 }
 

@@ -49,6 +49,27 @@ const (
 	// the cart going back to open and, where it matters, as order.created, and
 	// a purged one is a retention action nothing downstream can act on.
 	EventCartAbandoned = "cart.abandoned"
+
+	// The catalogue announcing itself.
+	//
+	// Added because something real now produces them — the rule this taxonomy
+	// states for itself. Until now every event here was an order or a cart, so
+	// anything watching the shop's own pages had nothing to watch: a module
+	// that wants to ping a search engine, warm a cache or rebuild a static
+	// site when a product changes had to poll.
+	//
+	// Updated covers every edit that changes what a shopper sees, including
+	// going from draft to active. Taking a product off sale is an update and
+	// not a delete: the row is still there, the page should say it is gone, and
+	// a consumer that treats the two the same will tell a search engine to drop
+	// a URL it should instead recrawl.
+	EventProductCreated = "product.created"
+	EventProductUpdated = "product.updated"
+	EventProductDeleted = "product.deleted"
+
+	// A collection changing is a page changing, even when no product did: the
+	// listing it renders is different.
+	EventCollectionUpdated = "collection.updated"
 )
 
 // Aggregate types name what an event is about.
@@ -58,6 +79,12 @@ const AggregateOrder = "order"
 // token is a credential and travels in the payload, because that is the only
 // handle a consumer or a shopper has on the basket itself.
 const AggregateCart = "cart"
+
+// AggregateProduct is the aggregate a catalogue event belongs to.
+const AggregateProduct = "product"
+
+// AggregateCollection is a curated list.
+const AggregateCollection = "collection"
 
 // Event is one thing that happened. It is created inside the transaction that
 // caused it and delivered afterwards, so an event exists if and only if the

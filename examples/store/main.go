@@ -40,6 +40,7 @@ import (
 	"github.com/misiki/gocommerce/ext/identity"
 	amazon "github.com/misiki/gocommerce/ext/import-amazon"
 	shopify "github.com/misiki/gocommerce/ext/import-shopify"
+	"github.com/misiki/gocommerce/ext/indexnow"
 	"github.com/misiki/gocommerce/ext/invoices"
 	"github.com/misiki/gocommerce/ext/klaviyo"
 	"github.com/misiki/gocommerce/ext/mcp"
@@ -132,6 +133,12 @@ func main() {
 		// than being handed an environment variable to set on a server they
 		// may not have.
 		shopify.New(),
+
+		// Tell Bing, Yandex, Seznam and Naver when a page changes. Nothing to
+		// configure here: the storefront URL is a plugin setting, and the key
+		// file is served by the storefront rather than by this engine — see
+		// the package comment for why it cannot be otherwise.
+		indexnow.New(),
 	}
 
 	// Card payments, if the keys are configured. Adding Stripe changes no
