@@ -355,6 +355,12 @@ type Route struct {
 	// describing a static file server would be noise, and the coverage test
 	// needs to tell "undocumented endpoint" apart from "not an endpoint".
 	UI bool
+	// VendorReachable marks a route a seller account may reach. Everything
+	// else refuses them — see refuseVendors. The flag is on the route rather
+	// than only in the middleware so a test can walk the table and assert that
+	// the open set is the one somebody meant, instead of discovering a new
+	// opening by probing every endpoint.
+	VendorReachable bool
 }
 
 // New opens the database, applies core and module migrations, wires the

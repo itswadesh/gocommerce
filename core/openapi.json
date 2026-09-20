@@ -12528,6 +12528,576 @@
           }
         }
       }
+    },
+    "/api/admin/vendors": {
+      "get": {
+        "tags": [
+          "Vendors"
+        ],
+        "summary": "List sellers",
+        "description": "Every seller, whatever their status. The storefront listing at /api/vendors shows approved ones only.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Matches the name or the slug."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "suspended"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Vendor"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Vendors"
+        ],
+        "summary": "Add a seller",
+        "description": "They arrive pending unless the body says otherwise.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VendorInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Vendor"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/vendors/{id}": {
+      "get": {
+        "tags": [
+          "Vendors"
+        ],
+        "summary": "Read a seller",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Vendor"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Vendors"
+        ],
+        "summary": "Edit a seller",
+        "description": "Approving one is a status change here, and it leaves an audit row carrying both sides.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VendorPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Vendor"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Vendors"
+        ],
+        "summary": "Remove a seller",
+        "description": "Withdraws everything they were offering, by cascade. Suspending is the way to stop somebody selling while keeping the record.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/admin/vendors/{id}/offers": {
+      "get": {
+        "tags": [
+          "Vendors"
+        ],
+        "summary": "What one seller is offering",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Offer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Vendors"
+        ],
+        "summary": "Set a seller’s price for a variant",
+        "description": "Creates the offer or replaces the one that is there. One row per seller per variant.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OfferInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Offer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/vendors/{id}/offers/{variantId}": {
+      "delete": {
+        "tags": [
+          "Vendors"
+        ],
+        "summary": "Withdraw one offer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "variantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Withdrawn"
+          }
+        }
+      }
+    },
+    "/api/admin/variants/{id}/offers": {
+      "get": {
+        "tags": [
+          "Vendors"
+        ],
+        "summary": "Who sells this variant",
+        "description": "Cheapest first, paused offers included — an operator’s screen needs to see those too.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Offer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vendors": {
+      "get": {
+        "tags": [
+          "Vendors"
+        ],
+        "summary": "Approved sellers",
+        "description": "Approved only, and not from a query parameter: a storefront cannot ask for the pending ones by adding ?status=pending.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PublicVendor"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vendors/{slug}": {
+      "get": {
+        "tags": [
+          "Vendors"
+        ],
+        "summary": "One seller’s shop",
+        "description": "A pending or suspended seller answers 404 rather than 403: that a slug is taken is itself something a shopper has no business learning.",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PublicVendor"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such shop"
+          }
+        }
+      }
+    },
+    "/api/variants/{id}/offers": {
+      "get": {
+        "tags": [
+          "Vendors"
+        ],
+        "summary": "Who is selling this, for a shopper",
+        "description": "Active offers from approved sellers, cheapest first.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PublicOffer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/vendors/{id}/users": {
+      "post": {
+        "tags": [
+          "Vendors"
+        ],
+        "summary": "Open a login for a seller",
+        "description": "Creates an operator account with the `vendor` role attached to this seller. Gated on `team.write`, not `vendors.write`: editing a seller’s commission and handing somebody access to the store are different powers.\n\nThe account and the attachment are inseparable — a database CHECK (M48) refuses the vendor role without a vendor and any other role with one, because an account with the role and no vendor is the row every scoping rule fails open on. Deleting the seller deletes their logins.\n\nThe role carries no rights by default. What a vendor may do is granted by this store on the Roles screen; what a vendor may *see* is scoped to their own rows regardless.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email",
+                  "password"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Superuser"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -13087,7 +13657,8 @@
             "enum": [
               "owner",
               "manager",
-              "staff"
+              "staff",
+              "vendor"
             ]
           },
           "rights": {
@@ -13127,6 +13698,12 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "vendor_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "The seller this account belongs to. Present only on accounts with the `vendor` role, and required on all of them — the two are set together or neither is."
           }
         }
       },
@@ -17719,6 +18296,350 @@
           "outstanding": {
             "$ref": "#/components/schemas/Money",
             "description": "Sold and not yet paid. On cash on delivery, money in transit; on a card gateway, usually a failure worth looking at."
+          }
+        }
+      },
+      "VendorAddress": {
+        "type": "object",
+        "description": "Where the seller trades from — what goes on an invoice and what a tax rule keys off.",
+        "properties": {
+          "line1": {
+            "type": "string"
+          },
+          "line2": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "postal_code": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          }
+        }
+      },
+      "Vendor": {
+        "type": "object",
+        "description": "A seller on this store. Not a brand: `products.vendor` is free text holding the manufacturer (\"Anker\"), which is what a Google feed sends as `brand`, and it is a different field with a different meaning. On a single-merchant store there are no vendors at all and the variant’s own price and stock are the shop selling its own goods.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "slug": {
+            "type": "string",
+            "description": "The handle in /vendor/{slug}. Unique, and it does not follow a rename."
+          },
+          "name": {
+            "type": "string"
+          },
+          "legal_name": {
+            "type": "string",
+            "description": "The name on the invoice, when it differs from the one over the shop."
+          },
+          "email": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "website": {
+            "type": "string"
+          },
+          "about": {
+            "type": "string"
+          },
+          "logo_media_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "address": {
+            "$ref": "#/components/schemas/VendorAddress"
+          },
+          "tax_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "suspended"
+            ],
+            "description": "pending is the default: a marketplace that lists whoever signs up is not moderating. Only approved sellers appear on the storefront; suspended keeps the row, the offers and the history."
+          },
+          "commission_bp": {
+            "type": "integer",
+            "description": "What this store takes, in basis points — 250 is 2.5%. Recorded, not settled: nothing computes a payout from it yet (PLAN.md §39.10)."
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "VendorInput": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Derived from the name when absent."
+          },
+          "name": {
+            "type": "string"
+          },
+          "legal_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "website": {
+            "type": "string"
+          },
+          "about": {
+            "type": "string"
+          },
+          "logo_media_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "address": {
+            "$ref": "#/components/schemas/VendorAddress"
+          },
+          "tax_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "suspended"
+            ]
+          },
+          "commission_bp": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "metadata": {
+            "type": "object"
+          }
+        }
+      },
+      "VendorPatch": {
+        "type": "object",
+        "description": "An absent field is left alone. `slug` is not patchable — a handle is a URL somebody has linked to.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "legal_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "website": {
+            "type": "string"
+          },
+          "about": {
+            "type": "string"
+          },
+          "logo_media_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "address": {
+            "$ref": "#/components/schemas/VendorAddress"
+          },
+          "tax_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "suspended"
+            ]
+          },
+          "commission_bp": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "metadata": {
+            "type": "object"
+          }
+        }
+      },
+      "Offer": {
+        "type": "object",
+        "description": "One seller’s price and stock for one variant. Several sellers may offer the same variant — that is what the table is for — and the variant keeps its own price and stock, which are the store’s own first-party offer. Nothing sells from an offer yet: checkout still prices and reserves against the variant.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "vendor_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "variant_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "stock_on_hand": {
+            "type": "integer"
+          },
+          "stock_reserved": {
+            "type": "integer"
+          },
+          "available": {
+            "type": "integer",
+            "description": "stock_on_hand minus stock_reserved."
+          },
+          "track_inventory": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "paused"
+            ]
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "OfferInput": {
+        "type": "object",
+        "required": [
+          "variant_id",
+          "price_minor"
+        ],
+        "description": "Setting an offer that already exists replaces it: one seller cannot hold two prices for one variant.",
+        "properties": {
+          "variant_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "price_minor": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "stock_on_hand": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "track_inventory": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "paused"
+            ]
+          },
+          "metadata": {
+            "type": "object"
+          }
+        }
+      },
+      "PublicVendor": {
+        "type": "object",
+        "description": "The seller as a shopper sees them. Deliberately narrower than Vendor: commission, the tax id and the contact email are the store’s business with its seller.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "about": {
+            "type": "string"
+          },
+          "website": {
+            "type": "string"
+          },
+          "logo_media_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "address": {
+            "$ref": "#/components/schemas/VendorAddress"
+          }
+        }
+      },
+      "PublicOffer": {
+        "type": "object",
+        "description": "A seller’s price for a variant, without their stock position — how many they are holding is commercial information about them, and a shopper needs one fact from it.",
+        "properties": {
+          "vendor_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "vendor": {
+            "type": "string"
+          },
+          "vendor_slug": {
+            "type": "string"
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "in_stock": {
+            "type": "boolean"
+          },
+          "variant_id": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       }

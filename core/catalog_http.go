@@ -24,9 +24,12 @@ func (a *App) mountCatalogRoutes() {
 	a.HandleFunc("GET /api/variants/{id}", a.handleGetVariant)
 
 	// Admin catalog.
-	a.HandleAdminFunc("GET /api/admin/products", a.handleAdminListProducts, RightCatalogRead)
+	// Open to sellers: they have to be able to find a variant before they can
+	// offer against it. The cost price is taken out of the answer on the way —
+	// see stripCostFor.
+	a.HandleVendorFunc("GET /api/admin/products", a.handleAdminListProducts, RightCatalogRead)
 	a.HandleAdminFunc("POST /api/admin/products", a.handleCreateProduct, RightCatalogWrite)
-	a.HandleAdminFunc("GET /api/admin/products/{id}", a.handleAdminGetProduct, RightCatalogRead)
+	a.HandleVendorFunc("GET /api/admin/products/{id}", a.handleAdminGetProduct, RightCatalogRead)
 	a.HandleAdminFunc("PATCH /api/admin/products/{id}", a.handleUpdateProduct, RightCatalogWrite)
 	a.HandleAdminFunc("DELETE /api/admin/products/{id}", a.handleDeleteProduct, RightCatalogWrite)
 	a.HandleAdminFunc("POST /api/admin/products/{id}/options", a.handleAddOption, RightCatalogWrite)
@@ -215,6 +218,7 @@ func (a *App) handleAdminListProducts(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	stripCostFor(r, products)
 	RespondList(w, products, ListMeta{Total: total, Limit: limit, Offset: offset})
 }
 
@@ -229,6 +233,7 @@ func (a *App) handleAdminGetProduct(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	stripCostFor(r, []*Product{p})
 	Respond(w, http.StatusOK, p)
 }
 

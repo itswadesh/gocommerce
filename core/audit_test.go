@@ -963,6 +963,29 @@ func TestTheVocabularyIsReachable(t *testing.T) {
 		t.Fatalf("set alt: %v", err)
 	}
 
+	// A seller, an offer, and both taken away again. Every verb this engine
+	// declares has to be reachable from one walkthrough, or the vocabulary
+	// drifts into naming things nothing ever writes.
+	seller, err := app.Vendors().Create(ctx, VendorInput{Name: "Vocabulary Supply"})
+	if err != nil {
+		t.Fatalf("create vendor: %v", err)
+	}
+	approvedVendor := VendorApproved
+	if _, err := app.Vendors().Update(ctx, seller.ID, VendorPatch{Status: &approvedVendor}); err != nil {
+		t.Fatalf("approve vendor: %v", err)
+	}
+	if _, err := app.Vendors().SetOffer(ctx, seller.ID, OfferInput{
+		VariantID: variant.ID, PriceMinor: 2800, StockOnHand: 3,
+	}); err != nil {
+		t.Fatalf("set offer: %v", err)
+	}
+	if err := app.Vendors().DeleteOffer(ctx, seller.ID, variant.ID); err != nil {
+		t.Fatalf("withdraw offer: %v", err)
+	}
+	if err := app.Vendors().Delete(ctx, seller.ID); err != nil {
+		t.Fatalf("delete vendor: %v", err)
+	}
+
 	disc, err := app.Discounts().Create(ctx, DiscountInput{
 		Title: "Ten off", Code: "TEN", Kind: DiscountPercentage, ValueBP: 1000})
 	if err != nil {

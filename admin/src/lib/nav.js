@@ -85,6 +85,10 @@ export const NAV = [
             // often as a promotion is, not vocabulary configured once.
             { href: "/pricing", label: "Price lists", right: "pricing.read", keywords: "trade wholesale b2b quantity breaks tiers" },
             { href: "/reviews", label: "Reviews", right: "reviews.read", module: "reviews", keywords: "ratings moderation" },
+            // Under Products because a vendor here is a seller of them, not a
+            // person the shop deals with — Customers is the other side of the
+            // counter. A store with no marketplace never opens this.
+            { href: "/vendors", label: "Vendors", right: "vendors.read", keywords: "sellers marketplace offers commission" },
         ],
     },
     {

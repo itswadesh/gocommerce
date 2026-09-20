@@ -68,6 +68,8 @@ export const RIGHT_ORDER = [
     "apikeys.read",
     "apikeys.write",
     "reports.write",
+    "vendors.read",
+    "vendors.write",
 ];
 
 /** A right reads better as a sentence than as a dotted identifier. */
@@ -118,6 +120,8 @@ export const RIGHT_LABELS = {
     "apikeys.read": "See which API keys exist",
     "apikeys.write": "Create and revoke API keys",
     "reports.write": "Write custom SQL reports",
+    "vendors.read": "See the sellers on this store",
+    "vendors.write": "Add sellers, approve them, and set what they are offering",
 };
 
 /*
@@ -172,6 +176,8 @@ export const RIGHT_SCOPES = {
     "apikeys.read": "The keys other systems use, and when each was last seen",
     "apikeys.write": "Minting a credential — and a key can be given any role, including one above yours",
     "reports.write": "Writing SQL that reads any table in the store, and deciding what everyone with reports.read may see",
+    "vendors.read": "Who sells through this shop, what they charge and how much they are holding",
+    "vendors.write": "Letting a seller in or stopping them, their commission, and the price on anything they offer",
 };
 
 /*

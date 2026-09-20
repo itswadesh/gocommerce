@@ -65,6 +65,10 @@ type Superuser struct {
 	// Role decides what they may do — see rights.go. Every operator that
 	// existed before roles did is an owner, which is what they were.
 	Role string `json:"role"`
+	// VendorID is the seller this account belongs to, and nil for everybody
+	// running the store. M48 makes the two inseparable: the vendor role and
+	// this field are set together or neither is.
+	VendorID *int64 `json:"vendor_id,omitempty"`
 	// Rights is the role spelled out *as this store cut it* (roles.go), so the
 	// panel can hide what it cannot do without keeping its own copy of the
 	// table, and so enforcement and display can never disagree.
@@ -216,14 +220,14 @@ func validateCredentials(email, password string) error {
 	return validatePassword(password)
 }
 
-const superuserColumns = `id, email, password_hash, role, created_at, updated_at`
+const superuserColumns = `id, email, password_hash, role, vendor_id, created_at, updated_at`
 
 // scanSuperuser reads the row and nothing else. It leaves Rights empty, which
 // is why every caller goes through scan or fills them from a resolved map: an
 // operator with no rights is refused everything, so forgetting fails closed.
 func scanSuperuser(row interface{ Scan(...any) error }) (*Superuser, error) {
 	var s Superuser
-	if err := row.Scan(&s.ID, &s.Email, &s.passwordHash, &s.Role, &s.CreatedAt, &s.UpdatedAt); err != nil {
+	if err := row.Scan(&s.ID, &s.Email, &s.passwordHash, &s.Role, &s.VendorID, &s.CreatedAt, &s.UpdatedAt); err != nil {
 		return nil, err
 	}
 	return &s, nil
@@ -267,6 +271,12 @@ func (s *Superusers) Create(ctx context.Context, email, password, role string) (
 	}
 	if !ValidRole(role) {
 		return nil, Validationf("%q is not a role; the roles are %s", role, strings.Join(Roles, ", "))
+	}
+	// A vendor account has to name its vendor, and this signature has nowhere
+	// to put one. Refused here rather than left to the CHECK so the message
+	// says what to call instead.
+	if role == RoleVendor {
+		return nil, Validationf("a vendor account belongs to a vendor; use CreateForVendor")
 	}
 	hash, err := hashPassword(password)
 	if err != nil {
@@ -897,7 +907,7 @@ func (s *Superusers) Resolve(ctx context.Context, token string) (*Superuser, boo
 	// superuserColumns: scanSuperuser reads a fixed shape, and a list that
 	// drifts from it surfaces as "unknown token" rather than as an error.
 	row := s.db.QueryRowContext(ctx, `
-		SELECT s.id, s.email, s.password_hash, s.role, s.created_at, s.updated_at
+		SELECT s.id, s.email, s.password_hash, s.role, s.vendor_id, s.created_at, s.updated_at
 		FROM superuser_sessions ss
 		JOIN superusers s ON s.id = ss.superuser_id
 		WHERE ss.token_hash = $1 AND ss.expires_at > now()`, hashToken(token))

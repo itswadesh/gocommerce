@@ -55,6 +55,8 @@ func coreMigrations() []Migration {
 		{ID: "0044_api_keys", SQL: migration0044APIKeys},
 		{ID: "0045_custom_reports", SQL: migration0045CustomReports},
 		{ID: "0046_api_key_secret", SQL: migration0046APIKeySecret},
+		{ID: "0047_vendors", SQL: migration0047Vendors},
+		{ID: "0048_vendor_accounts", SQL: migration0048VendorAccounts},
 	}
 }
 
@@ -2171,4 +2173,164 @@ CREATE TABLE custom_reports (
 const migration0046APIKeySecret = `
 ALTER TABLE api_keys
     ADD COLUMN secret text NOT NULL DEFAULT '';
+`
+
+// M47 — vendors, and what they offer.
+//
+// A vendor here is a seller on this store, not a brand. The two are different
+// things and the engine already had the other one: `products.vendor` is free
+// text holding "Anker" or "Amazon Essentials", it is what the Google feed sends
+// as `brand`, and it stays exactly as it is. Anker is not a seller on anyone's
+// marketplace, and backfilling manufacturer names into this table would have
+// asserted that it was.
+//
+// Two tables, because a seller and a thing a seller sells are not the same
+// record and only one of them is per-variant.
+//
+// ---------------------------------------------------------------------------
+// Why offers are a table and not columns on `variants`
+//
+// The alternative was `variants.vendor_id`, one seller per sellable thing. That
+// is the simpler schema and it is the wrong one for a marketplace: it says two
+// sellers of the same trainers are two products, so the shop shows the trainers
+// twice and no shopper can compare the price. An offer is the row that lets one
+// catalogue entry carry several sellers.
+//
+// The variant keeps its own `price_minor` and `stock_on_hand`. That is
+// deliberate and it is what makes this migration additive: a store with no
+// offers behaves exactly as it did yesterday, and the variant's own numbers are
+// the store's first-party offer — the shop selling its own stock, which is the
+// case for every store that exists today and most that ever will. Moving price
+// and stock off the variant wholesale would have been a flag day across the
+// cart, the checkout, the movement ledger, the reports and both transfer
+// dialects, all at once, to support a feature nobody has switched on yet.
+//
+// ---------------------------------------------------------------------------
+// What this migration does NOT do
+//
+// Nothing sells from an offer yet. Checkout still prices and reserves against
+// the variant, because teaching the reservation path to hold stock against a
+// particular seller is the next piece of work and it is not a schema change.
+// The columns for it are here now rather than added later — `stock_reserved`
+// and the constraint that keeps it inside `stock_on_hand`, mirroring
+// `variants` — because migrations are append-only and the shape is cheaper to
+// get right once than to correct across three more of them.
+const migration0047Vendors = `
+CREATE TABLE vendors (
+    id            bigserial   PRIMARY KEY,
+    -- The handle a storefront puts in a URL. Unique because /vendor/{slug} has
+    -- to resolve to one seller.
+    slug          text        NOT NULL UNIQUE,
+    name          text        NOT NULL,
+    -- The name on the invoice, when it differs from the one over the shop.
+    legal_name    text        NOT NULL DEFAULT '',
+    email         text        NOT NULL DEFAULT '',
+    phone         text        NOT NULL DEFAULT '',
+    website       text        NOT NULL DEFAULT '',
+    about         text        NOT NULL DEFAULT '',
+    -- SET NULL rather than RESTRICT: deleting a picture should not be blocked
+    -- by a vendor using it, and a seller with no logo is an ordinary state.
+    logo_media_id bigint      REFERENCES media (id) ON DELETE SET NULL,
+    address_line1 text        NOT NULL DEFAULT '',
+    address_line2 text        NOT NULL DEFAULT '',
+    city          text        NOT NULL DEFAULT '',
+    state         text        NOT NULL DEFAULT '',
+    postal_code   text        NOT NULL DEFAULT '',
+    country       text        NOT NULL DEFAULT '',
+    tax_id        text        NOT NULL DEFAULT '',
+    -- pending is the default because a marketplace that lists a seller the
+    -- moment they sign up has no moderation step at all. Only approved sellers
+    -- are offered to shoppers; suspended keeps the row and its history.
+    status        text        NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'approved', 'suspended')),
+    -- Basis points, like discounts.value_bp, for the reason rule 6 gives about
+    -- money: 250 is 2.5% and cannot drift the way 0.025 can. Stored now and
+    -- settled by nobody — PLAN.md §39.10 defers marketplace settlements, so
+    -- this records the agreement without pretending to act on it.
+    commission_bp integer     NOT NULL DEFAULT 0
+        CHECK (commission_bp >= 0 AND commission_bp <= 10000),
+    metadata      jsonb       NOT NULL DEFAULT '{}',
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    updated_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX vendors_status_idx ON vendors (status, id DESC);
+
+CREATE TABLE vendor_offers (
+    id             bigserial   PRIMARY KEY,
+    vendor_id      bigint      NOT NULL REFERENCES vendors (id) ON DELETE CASCADE,
+    -- The offer is against the variant, not the product: sellers differ on the
+    -- large one and agree on the small one, and price is per sellable thing.
+    variant_id     bigint      NOT NULL REFERENCES variants (id) ON DELETE CASCADE,
+    price_minor    bigint      NOT NULL CHECK (price_minor >= 0),
+    -- In the store's own currency, like variants.price_minor. A marketplace
+    -- whose sellers price in different currencies is a multi-currency store
+    -- first, which PLAN.md §39.5 defers.
+    stock_on_hand  integer     NOT NULL DEFAULT 0 CHECK (stock_on_hand >= 0),
+    stock_reserved integer     NOT NULL DEFAULT 0 CHECK (stock_reserved >= 0),
+    track_inventory boolean    NOT NULL DEFAULT true,
+    status         text        NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'paused')),
+    metadata       jsonb       NOT NULL DEFAULT '{}',
+    created_at     timestamptz NOT NULL DEFAULT now(),
+    updated_at     timestamptz NOT NULL DEFAULT now(),
+    -- One offer per seller per variant. A seller who wants two prices for the
+    -- same thing is describing two things.
+    CONSTRAINT vendor_offers_one_per_variant UNIQUE (vendor_id, variant_id),
+    CONSTRAINT vendor_offers_reserved_within_on_hand CHECK (stock_reserved <= stock_on_hand)
+);
+-- The question a product page asks: who sells this variant, cheapest first.
+CREATE INDEX vendor_offers_variant_idx ON vendor_offers (variant_id, status, price_minor);
+`
+
+// M48 — a vendor can sign in.
+//
+// A seller who cannot reach the store is a row somebody else maintains on their
+// behalf, which is a supplier list rather than a marketplace. So a vendor gets
+// an operator account: the same table, the same password hashing, the same
+// sessions, the same rights machinery. Building a second identity system beside
+// `superusers` would mean a second password reset, a second session store and a
+// second place for a login bug to live.
+//
+// Two constraints carry the whole idea.
+//
+// The role CHECK is dropped and rewritten rather than added to, because M13
+// wrote the list of roles into the database on purpose — "a role it has never
+// heard of should not be storable" — and that list has gained a member. This is
+// the append-only rule working as intended: the old migration is untouched and
+// this one states the change.
+//
+// The second is the one that matters. `(role = 'vendor') = (vendor_id IS NOT
+// NULL)` says a vendor account names exactly one vendor, and that no other kind
+// of account names any. Without it the schema permits an account with the
+// vendor role and no vendor attached — and that account is the one every
+// scoping rule fails open on, because "show me my own products" has no answer
+// when there is no "my". It is a CHECK rather than a service rule for the same
+// reason the reserved-stock constraint is: the service is the first line and
+// the database is the last one.
+//
+// ON DELETE CASCADE, so removing a seller takes their logins with them. The
+// alternative is an account that can still sign in and belongs to nobody.
+const migration0048VendorAccounts = `
+ALTER TABLE superusers
+    ADD COLUMN vendor_id bigint REFERENCES vendors (id) ON DELETE CASCADE;
+
+ALTER TABLE superusers DROP CONSTRAINT superusers_role_check;
+ALTER TABLE superusers
+    ADD CONSTRAINT superusers_role_check
+        CHECK (role IN ('owner', 'manager', 'staff', 'vendor'));
+
+ALTER TABLE superusers
+    ADD CONSTRAINT superusers_vendor_account
+        CHECK ((role = 'vendor') = (vendor_id IS NOT NULL));
+
+-- "Who can sign in for this seller" is asked on every request a vendor makes.
+CREATE INDEX superusers_vendor_idx ON superusers (vendor_id) WHERE vendor_id IS NOT NULL;
+
+-- M19 wrote the overridable roles into the database too, and vendor is one now.
+-- Owner is still absent from this list on purpose: an owner has every right by
+-- definition, so a row narrowing them would be a row that cannot be honoured.
+ALTER TABLE role_rights DROP CONSTRAINT role_rights_role_check;
+ALTER TABLE role_rights
+    ADD CONSTRAINT role_rights_role_check
+        CHECK (role IN ('manager', 'staff', 'vendor'));
 `

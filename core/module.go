@@ -89,6 +89,16 @@ func (a *App) HandleAdminFunc(pattern string, h http.HandlerFunc, rights ...Righ
 }
 
 func (a *App) mount(pattern string, h http.Handler, admin bool, rights ...Right) {
+	a.mountScoped(pattern, h, admin, false, rights...)
+}
+
+// mountVendorReachable is mount for the handful of admin routes a seller may
+// reach. See vendor_scope.go.
+func (a *App) mountVendorReachable(pattern string, h http.Handler, rights ...Right) {
+	a.mountScoped(pattern, h, true, true, rights...)
+}
+
+func (a *App) mountScoped(pattern string, h http.Handler, admin, vendorReachable bool, rights ...Right) {
 	owner := a.current
 	if owner == "" {
 		owner = coreMigrationOwner
@@ -105,6 +115,13 @@ func (a *App) mount(pattern string, h http.Handler, admin bool, rights ...Right)
 	}
 
 	if admin {
+		// Closed to sellers unless somebody opened it. Wrapped before rights in
+		// the chain as written, so it runs after them: a vendor reaching an
+		// endpoint they have the right for still has to be somewhere they are
+		// allowed to be, and the refusal says which of the two stopped them.
+		if !vendorReachable {
+			h = refuseVendors(h)
+		}
 		// Rights first in the chain as written, which means they are checked
 		// second: the wrapper closest to the handler runs last. Authentication
 		// has to answer "who" before anything can ask "may they".
@@ -115,12 +132,13 @@ func (a *App) mount(pattern string, h http.Handler, admin bool, rights ...Right)
 	}
 	a.mux.Handle(pattern, h)
 	a.routes = append(a.routes, Route{
-		Method:  method,
-		Path:    path,
-		Admin:   admin,
-		Owner:   owner,
-		Pattern: pattern,
-		Rights:  rights,
+		Method:          method,
+		Path:            path,
+		Admin:           admin,
+		Owner:           owner,
+		Pattern:         pattern,
+		Rights:          rights,
+		VendorReachable: vendorReachable,
 	})
 }
 

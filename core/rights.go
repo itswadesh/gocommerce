@@ -250,6 +250,12 @@ const (
 	// this right stops at the same line httpx.go draws for every other
 	// response.
 	RightStoreOperate Right = "store.operate"
+
+	// Sellers on this store, and what they offer. Read is separated from write
+	// for the reason every other pair here is: a manager runs the marketplace,
+	// staff need to see who sold a thing to answer a customer about it.
+	RightVendorsRead  Right = "vendors.read"
+	RightVendorsWrite Right = "vendors.write"
 )
 
 // AllRights is every right, in the order the panel renders them. Used by the
@@ -282,6 +288,7 @@ var AllRights = []Right{
 	RightStoreWrite,
 	RightAPIKeysRead, RightAPIKeysWrite,
 	RightReportsWrite,
+	RightVendorsRead, RightVendorsWrite,
 }
 
 // The roles. Fixed, and few: a store with three people does not need a
@@ -299,10 +306,24 @@ const (
 	// order along, and they cannot send money out, change prices, or alter who
 	// has access.
 	RoleStaff = "staff"
+
+	// RoleVendor is a seller signing in to run their own corner of the shop.
+	//
+	// It is the first role whose rights are not the whole answer. Every other
+	// role here is trusted with the store and gated only on *what* it may do;
+	// a vendor is a stranger and has to be gated on *which rows* as well. A
+	// right without that scope would hand one seller the whole catalogue,
+	// everyone's orders and their competitors' margins.
+	//
+	// So this role carries nothing by default and the scope is enforced
+	// separately — see the vendor scope in rights.go and what it does to every
+	// admin listing. Rights that are safe only when scoped are granted by the
+	// store, deliberately, on the Roles screen.
+	RoleVendor = "vendor"
 )
 
 // Roles is every role, in the order they are worth showing: most able first.
-var Roles = []string{RoleOwner, RoleManager, RoleStaff}
+var Roles = []string{RoleOwner, RoleManager, RoleStaff, RoleVendor}
 
 // roleRights is the default permission model: what each role carries in a store
 // that has never said otherwise.
@@ -375,6 +396,20 @@ var roleRights = map[string][]Right{
 		RightGroupsRead,
 		RightReportsRead, RightCartsRead, RightPayoutsRead,
 	},
+	// Deliberately empty.
+	//
+	// Not an oversight and not a placeholder: a vendor account can sign in and
+	// do nothing until this store decides otherwise. Every right in this file
+	// answers "may you do this" and none of them answers "to whose rows", and
+	// for a seller the second question is the one that matters. Handing this
+	// role a sensible-looking default — catalog.read, say — would let one
+	// seller read every competitor's cost price on their first login.
+	//
+	// The scope is enforced regardless of what is granted here (see
+	// VendorScopeOf and its use in the catalog and order listings), so a store
+	// that grants catalog.read to vendors gets a vendor who sees their own
+	// offers. The emptiness is the second lock, not the only one.
+	RoleVendor: {},
 }
 
 // ValidRole reports whether a role is one this engine knows.
@@ -514,6 +549,7 @@ var roleTitles = map[string]string{
 	RoleOwner:   "Owner",
 	RoleManager: "Manager",
 	RoleStaff:   "Staff",
+	RoleVendor:  "Vendor",
 }
 
 var roleDescriptions = map[string]string{
@@ -523,6 +559,9 @@ var roleDescriptions = map[string]string{
 		"running the shop from owning it.",
 	RoleStaff: "Works the orders. Can see what is being sold and move an order along, " +
 		"and cannot send money out, change prices, or alter who has access.",
+	RoleVendor: "A seller on this store. Sees only their own offers and the orders " +
+		"that carry them, whatever else is granted here — the scope is enforced " +
+		"separately from the rights.",
 }
 
 // DefaultTitleOf is what the engine calls a role before a store renames it.

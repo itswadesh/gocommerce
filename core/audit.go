@@ -66,6 +66,11 @@ const (
 	// audited — see Media.SetAlt for why the sentence is different from the
 	// picture it describes.
 	AuditEntityMedia = "media"
+	// A seller on this store. Its offers are filed against it rather than
+	// against the variant they price: "what has this seller been doing" is the
+	// question somebody brings to this trail, and a variant's own history is
+	// the catalogue's.
+	AuditEntityVendor = "vendor"
 )
 
 // AuditEntityTypes is the catalogue, in the panel's display order. The database
@@ -86,6 +91,7 @@ var AuditEntityTypes = []string{
 	AuditEntityPlugin,
 	AuditEntityNotificationTemplate,
 	AuditEntityMedia,
+	AuditEntityVendor,
 }
 
 // The action vocabulary, `<record>.<verb>`, declared here and nowhere else.
@@ -146,6 +152,15 @@ const (
 	AuditVariantMediaSet = "variant.media_set"
 
 	AuditMediaAltSet = "media.alt_set"
+
+	AuditVendorCreate   = "vendor.create"
+	AuditVendorUpdate   = "vendor.update"
+	AuditVendorDelete   = "vendor.delete"
+	AuditVendorOfferSet = "vendor.offer_set"
+	// Its own verb rather than vendor.update: withdrawing an offer takes a
+	// thing off sale, and that is a different question from editing the
+	// seller's address.
+	AuditVendorOfferDelete = "vendor.offer_delete"
 
 	AuditCategoryCreate = "category.create"
 	AuditCategoryUpdate = "category.update"
@@ -223,6 +238,9 @@ var AllAuditActions = []string{
 	AuditVariantCreate, AuditVariantUpdate, AuditVariantDelete, AuditVariantMediaSet,
 
 	AuditMediaAltSet,
+
+	AuditVendorCreate, AuditVendorUpdate, AuditVendorDelete,
+	AuditVendorOfferSet, AuditVendorOfferDelete,
 
 	AuditCategoryCreate, AuditCategoryUpdate, AuditCategoryDelete,
 

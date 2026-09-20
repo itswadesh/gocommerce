@@ -24,7 +24,19 @@ func TestRolesDrawFromTheOneList(t *testing.T) {
 			t.Errorf("%q is listed in Roles but ValidRole says no", role)
 		}
 		rights := DefaultRightsOf(role)
-		if len(rights) == 0 {
+		// An empty role is normally a mistake — somebody added a name and never
+		// came back to say what it may do. RoleVendor is the deliberate
+		// exception, and it is worth stating why rather than skipping quietly:
+		// every right in this engine answers "may you do this" and none of them
+		// answers "to whose rows". For a seller the second question is the one
+		// that matters, so the role starts with nothing and a store grants it
+		// what it wants once the scope is doing its work.
+		if role == RoleVendor {
+			if len(rights) != 0 {
+				t.Errorf("the vendor role carries %v by default; it is meant to carry nothing "+
+					"until a store grants it something", rights)
+			}
+		} else if len(rights) == 0 {
 			t.Errorf("role %q carries nothing", role)
 		}
 		for _, r := range rights {
