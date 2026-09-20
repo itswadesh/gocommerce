@@ -183,6 +183,16 @@ belong to the currency and the symbol belongs to the reader.
 A test asserts that every route the engine mounts appears in `/doc`, so the
 contract cannot quietly drift from the code.
 
+### Storefronts
+
+The API is the only thing a storefront needs, and anything that speaks HTTP will
+do. For [Svelte Commerce](https://github.com/itswadesh/svelte-commerce) there is
+a connector in this repository —
+[`connectors/svelte-commerce`](connectors/svelte-commerce) — which maps the
+storefront's expectations onto these routes: catalog, carts, checkout and order
+lookup. It is deliberately loud about what this engine does not have (accounts,
+blogs, wishlists, a search index) rather than answering those with empty lists.
+
 ## Quick start
 
 Requires Go 1.23+ and PostgreSQL 16+.

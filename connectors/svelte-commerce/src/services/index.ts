@@ -1,0 +1,5 @@
+export { CartService, cartService } from './cart.js'
+export { CheckoutService, checkoutService } from './checkout.js'
+export { OrderService, orderService } from './order.js'
+export { ProductService, productService } from './product.js'
+export { CategoryService, categoryService, CollectionService, collectionService } from './taxonomy.js'

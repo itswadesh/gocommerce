@@ -1,0 +1,49 @@
+{
+  "name": "@misiki/gocommerce-connector",
+  "version": "0.1.0",
+  "description": "Svelte Commerce connector for a GoCommerce engine: catalog, carts, checkout and orders over the storefront API.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/misiki-in/gocommerce.git",
+    "directory": "connectors/svelte-commerce"
+  },
+  "keywords": [
+    "gocommerce",
+    "svelte-commerce",
+    "kitcommerce",
+    "headless",
+    "commerce"
+  ],
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "svelte": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./services": {
+      "types": "./dist/services/index.d.ts",
+      "import": "./dist/services/index.js",
+      "default": "./dist/services/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,10 @@
+node_modules/
+
+# dist/ IS ignored here, unlike admin/build which is committed.
+#
+# The admin's build is embedded into the Go binary, so committing it is what
+# lets `go build` work on a machine with no Node. This is an npm package: it is
+# built on the way to the registry and nothing in this repository consumes the
+# compiled output.
+dist/
+*.tgz
