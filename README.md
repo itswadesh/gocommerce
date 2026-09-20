@@ -372,5 +372,4 @@ AI is a first-class developer interface here, in three layers:
 
 ## License
 
-Not yet chosen — MIT and Apache-2.0 are the candidates. Until then, all rights
-are reserved; treat this as source-available for evaluation.
+[MIT](LICENSE). Use it, fork it, sell what you build with it; keep the notice.
