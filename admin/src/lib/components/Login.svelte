@@ -54,6 +54,25 @@
             .catch(() => (installed = true));
     });
 
+    /*
+     * A demo link may carry credentials in the URL fragment — `#email=…&
+     * password=…`. The fragment is the one part of a URL the browser never
+     * sends, so it reaches no access log and no Referer. It prefills the form
+     * and nothing more: signing in is still the person's click. The fragment
+     * is then dropped from the address bar so a copied URL does not carry a
+     * password onward.
+     */
+    $effect(() => {
+        if (typeof window === "undefined" || !window.location.hash) return;
+        const params = new URLSearchParams(window.location.hash.slice(1));
+        const email = params.get("email");
+        const pass = params.get("password");
+        if (!email && !pass) return;
+        if (email) identity = email;
+        if (pass) password = pass;
+        history.replaceState(null, "", window.location.pathname + window.location.search);
+    });
+
     async function submit(e) {
         e.preventDefault();
         if (submitting) return;
