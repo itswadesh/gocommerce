@@ -1352,29 +1352,34 @@ MCP is a strategic feature, but it is not allowed to duplicate the domain.
 
 The MCP module exposes controlled tools over the core services.
 
-Initial tools:
+Shipped tools — 19, each calling the domain service the equivalent REST route
+calls, each naming that route's rights, and each marked `Mutates` so `ReadOnly`
+can withhold it:
 
 ```text
-list_products
-get_product
-update_product
-list_low_stock_variants
-list_orders
-get_order
-mark_paid
-cancel_order
-create_fulfillment
-ship_order
+read                            write
+store_info                      update_variant_inventory
+store_health                    mark_order_paid
+list_products                   cancel_order
+get_product                     create_fulfillment
+list_low_stock_variants         mark_order_delivered
+list_orders                     create_product
+get_order                       update_product
+list_customers                  set_variant_price
+sales_report                    create_discount
+                                refund_order
 ```
+
+Money crosses this boundary as whole minor units and `set_variant_price`
+refuses a decimal rather than truncating one: an agent sending `19.99` where
+`1999` was meant would otherwise price the variant at nineteen cents, silently.
 
 Potential later tools:
 
 ```text
-create_product
-update_variant_inventory
-create_discount
 create_purchase_recommendation
 reconcile_orders
+get_customer
 ```
 
 The principle is:

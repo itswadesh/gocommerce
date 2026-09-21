@@ -329,7 +329,286 @@ func (m *Module) builtinTools() []Tool {
 				return m.app.Order().MarkDelivered(ctx, args.OrderID)
 			},
 		},
+
+		// ---------------------------------------------------------- catalogue
+		//
+		// The tools above let an agent run a store that already exists. These
+		// let it build one, which is the other half of the job an agent is
+		// usually given: import a catalogue, fix a price, put a sale on.
+
+		{
+			Name: "create_product",
+			Description: "Create a product. Give price_minor and stock to have it " +
+				"created with a single default variant; omit them and the product " +
+				"is created bare, for variants to be added afterwards.",
+			Rights: []gocommerce.Right{gocommerce.RightCatalogWrite},
+			InputSchema: object(props{
+				"title":       str("What the product is called. Required."),
+				"description": str("Longer copy for the product page."),
+				"slug":        str("URL segment. Derived from the title when omitted."),
+				"status":      enumStr("Publication state (default draft).", "draft", "active", "archived"),
+				"vendor":      str("The manufacturer or brand, as a Google feed would send it."),
+				"tags":        arrayOfStr("Free-text tags."),
+				"sku":         str("SKU for the default variant. Generated from the title when omitted."),
+				"price_minor": integer("Price of the default variant in minor units — 4500 is 45.00. Never a decimal."),
+				"stock":       integer("Opening stock for the default variant."),
+			}, "title"),
+			Mutates: true,
+			Call: func(ctx context.Context, raw json.RawMessage) (any, error) {
+				var args struct {
+					Title       string   `json:"title"`
+					Description string   `json:"description"`
+					Slug        string   `json:"slug"`
+					Status      string   `json:"status"`
+					Vendor      string   `json:"vendor"`
+					Tags        []string `json:"tags"`
+					SKU         string   `json:"sku"`
+					PriceMinor  *int64   `json:"price_minor"`
+					Stock       *int     `json:"stock"`
+				}
+				if err := decode(raw, &args); err != nil {
+					return nil, err
+				}
+				in := gocommerce.ProductInput{
+					Title: args.Title, Description: args.Description, Slug: args.Slug,
+					Status: args.Status, Vendor: args.Vendor, Tags: args.Tags, SKU: args.SKU,
+				}
+				if args.PriceMinor != nil {
+					in.PriceMinor = args.PriceMinor
+				}
+				if args.Stock != nil {
+					in.Stock = args.Stock
+				}
+				return m.app.Products().CreateProduct(ctx, in)
+			},
+		},
+		{
+			Name: "update_product",
+			Description: "Change a product's copy, status or tags. Only the fields " +
+				"given are touched; everything else is left as it is.",
+			Rights: []gocommerce.Right{gocommerce.RightCatalogWrite},
+			InputSchema: object(props{
+				"product_id":  integer("The product id."),
+				"title":       str("New title."),
+				"description": str("New description."),
+				"status":      enumStr("New publication state.", "draft", "active", "archived"),
+				"vendor":      str("New vendor."),
+				"tags":        arrayOfStr("Replacement tag list."),
+			}, "product_id"),
+			Mutates: true,
+			Call: func(ctx context.Context, raw json.RawMessage) (any, error) {
+				var args struct {
+					ProductID   int64     `json:"product_id"`
+					Title       *string   `json:"title"`
+					Description *string   `json:"description"`
+					Status      *string   `json:"status"`
+					Vendor      *string   `json:"vendor"`
+					Tags        *[]string `json:"tags"`
+				}
+				if err := decode(raw, &args); err != nil {
+					return nil, err
+				}
+				// Pointers all the way through: a patch that cannot tell "not
+				// mentioned" from "set to empty" would let an agent blank a
+				// description by talking about the title.
+				return m.app.Products().UpdateProduct(ctx, args.ProductID, gocommerce.ProductPatch{
+					Title: args.Title, Description: args.Description,
+					Status: args.Status, Vendor: args.Vendor, Tags: args.Tags,
+				})
+			},
+		},
+		{
+			Name: "set_variant_price",
+			Description: "Set one variant's price, in minor units — 1999 is 19.99. " +
+				"A decimal is refused rather than rounded.",
+			Rights: []gocommerce.Right{gocommerce.RightCatalogWrite},
+			InputSchema: object(props{
+				"variant_id":  integer("The variant id."),
+				"price_minor": integer("The new price in minor units. Must be a whole number."),
+				"compare_at_price_minor": integer(
+					"Optional was-price in minor units, for showing a discount. Send 0 to clear it."),
+			}, "variant_id", "price_minor"),
+			Mutates: true,
+			Call: func(ctx context.Context, raw json.RawMessage) (any, error) {
+				// json.Number, not int64: encoding/json would accept 19.99 into
+				// an int64 field as an error, but it would accept 1999.0 quietly
+				// and that is a different price than the agent meant to send.
+				var args struct {
+					VariantID           int64        `json:"variant_id"`
+					PriceMinor          json.Number  `json:"price_minor"`
+					CompareAtPriceMinor *json.Number `json:"compare_at_price_minor"`
+				}
+				if err := decode(raw, &args); err != nil {
+					return nil, err
+				}
+				price, err := wholeMinor("price_minor", args.PriceMinor)
+				if err != nil {
+					return nil, err
+				}
+				patch := gocommerce.VariantPatch{PriceMinor: &price}
+				if args.CompareAtPriceMinor != nil {
+					compare, err := wholeMinor("compare_at_price_minor", *args.CompareAtPriceMinor)
+					if err != nil {
+						return nil, err
+					}
+					patch.CompareAtPriceMinor = gocommerce.SetAmount(compare)
+				}
+				return m.app.Products().UpdateVariant(ctx, args.VariantID, patch)
+			},
+		},
+		{
+			Name: "create_discount",
+			Description: "Create a discount code. A percentage takes value_bp in " +
+				"basis points — 1000 is 10%. A fixed amount takes value_minor.",
+			Rights: []gocommerce.Right{gocommerce.RightDiscountsWrite},
+			InputSchema: object(props{
+				"code":        str("The code shoppers type. Required."),
+				"title":       str("What it is for, shown to operators."),
+				"kind":        enumStr("How the value is read (default percentage).", "percentage", "fixed_amount"),
+				"value_bp":    integer("Percentage in basis points — 1000 is 10%."),
+				"value_minor": integer("Fixed amount off, in minor units."),
+				"scope":       str("What it applies to. Omit for the whole order."),
+				"target_ids":  arrayOfInt("Products, collections or categories, according to scope."),
+			}, "code"),
+			Mutates: true,
+			Call: func(ctx context.Context, raw json.RawMessage) (any, error) {
+				var args struct {
+					Code       string  `json:"code"`
+					Title      string  `json:"title"`
+					Kind       string  `json:"kind"`
+					ValueBP    int     `json:"value_bp"`
+					ValueMinor int64   `json:"value_minor"`
+					Scope      string  `json:"scope"`
+					TargetIDs  []int64 `json:"target_ids"`
+				}
+				if err := decode(raw, &args); err != nil {
+					return nil, err
+				}
+				kind := args.Kind
+				if kind == "" {
+					kind = "percentage"
+				}
+				return m.app.Discounts().Create(ctx, gocommerce.DiscountInput{
+					Code: args.Code, Title: args.Title, Kind: kind,
+					ValueBP: args.ValueBP, ValueMinor: args.ValueMinor,
+					Scope: args.Scope, TargetIDs: args.TargetIDs,
+				})
+			},
+		},
+		{
+			Name: "refund_order",
+			Description: "Refund an order, fully or in part. Omit amount_minor to " +
+				"refund everything not already refunded. The payment method must " +
+				"be one that can refund — cash on delivery cannot.",
+			// orders.refund is its own right in core precisely because moving
+			// money back is not the same permission as editing an order.
+			Rights: []gocommerce.Right{gocommerce.RightOrdersRefund},
+			InputSchema: object(props{
+				"order_id":     integer("The order id."),
+				"amount_minor": integer("How much to refund, in minor units. Omit for everything outstanding."),
+				"reason":       str("Why, recorded on the refund and carried on the event."),
+			}, "order_id"),
+			Mutates: true,
+			Call: func(ctx context.Context, raw json.RawMessage) (any, error) {
+				var args struct {
+					OrderID     int64  `json:"order_id"`
+					AmountMinor int64  `json:"amount_minor"`
+					Reason      string `json:"reason"`
+				}
+				if err := decode(raw, &args); err != nil {
+					return nil, err
+				}
+				// The acting operator is carried through so the refund is
+				// attributed to whoever the agent is working as, rather than to
+				// nobody. A static admin token has no superuser, and core
+				// accepts nil for exactly that case.
+				return m.app.Pay().Refund(ctx, args.OrderID, gocommerce.RefundRequest{
+					AmountMinor: args.AmountMinor, Reason: args.Reason,
+				}, gocommerce.SuperuserFrom(ctx))
+			},
+		},
+
+		// ------------------------------------------------------------ reading
+		//
+		// An agent asked "who is worth writing to" or "how did last month go"
+		// should have an answer that is not a hand-rolled SQL query.
+
+		{
+			Name: "list_customers",
+			Description: "List the people who have ordered, most recent first, with " +
+				"what they have spent.",
+			Rights: []gocommerce.Right{gocommerce.RightCustomersRead},
+			InputSchema: object(props{
+				"query": str("Match against name and email."),
+				"limit": integer("How many to return (default 20, max 200)."),
+			}),
+			Call: func(ctx context.Context, raw json.RawMessage) (any, error) {
+				var args struct {
+					Query string `json:"query"`
+					Limit int    `json:"limit"`
+				}
+				if err := decode(raw, &args); err != nil {
+					return nil, err
+				}
+				customers, total, err := m.app.Order().Customers(ctx, gocommerce.CustomerQuery{
+					Search: args.Query, Limit: limitOr(args.Limit, 20),
+				})
+				if err != nil {
+					return nil, err
+				}
+				return map[string]any{"total": total, "customers": customers}, nil
+			},
+		},
+		{
+			Name: "sales_report",
+			Description: "What the store sold over a period, grouped by day, week or " +
+				"month. Amounts are minor units in the store's settlement currency.",
+			Rights: []gocommerce.Right{gocommerce.RightReportsRead},
+			InputSchema: object(props{
+				"group_by": enumStr("Bucket size (default day).", "day", "week", "month"),
+			}),
+			Call: func(ctx context.Context, raw json.RawMessage) (any, error) {
+				var args struct {
+					GroupBy string `json:"group_by"`
+				}
+				if err := decode(raw, &args); err != nil {
+					return nil, err
+				}
+				groupBy := args.GroupBy
+				if groupBy == "" {
+					groupBy = "day"
+				}
+				report, err := m.app.Reports().Sales(ctx, gocommerce.SalesQuery{GroupBy: groupBy})
+				if err != nil {
+					return nil, err
+				}
+				// The currency is stated rather than assumed: a bare number of
+				// minor units is unreadable without knowing whether it has two
+				// decimal places, three, or none.
+				return map[string]any{
+					"currency": m.app.Config().Currency,
+					"group_by": groupBy,
+					"report":   report,
+				}, nil
+			},
+		},
 	}
+}
+
+// wholeMinor reads a money argument that must be an integer number of minor
+// units.
+//
+// Money is integer minor units plus a currency code everywhere in this engine,
+// and an agent sending 19.99 where 1999 was meant is the likeliest way that
+// rule gets broken from outside. Truncating would charge a different price than
+// the agent asked for and say nothing; this refuses and explains.
+func wholeMinor(field string, n json.Number) (int64, error) {
+	v, err := n.Int64()
+	if err != nil {
+		return 0, fmt.Errorf(
+			"%s must be a whole number of minor units — 19.99 is sent as 1999, not %s", field, n.String())
+	}
+	return v, nil
 }
 
 // ------------------------------------------------------------------ summaries
@@ -414,6 +693,20 @@ func str(description string) map[string]any {
 
 func integer(description string) map[string]any {
 	return map[string]any{"type": "integer", "description": description}
+}
+
+func arrayOfStr(description string) map[string]any {
+	return map[string]any{
+		"type": "array", "description": description,
+		"items": map[string]any{"type": "string"},
+	}
+}
+
+func arrayOfInt(description string) map[string]any {
+	return map[string]any{
+		"type": "array", "description": description,
+		"items": map[string]any{"type": "integer"},
+	}
 }
 
 func enumStr(description string, values ...string) map[string]any {
