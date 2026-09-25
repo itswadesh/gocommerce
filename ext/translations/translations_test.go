@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	gocommerce "github.com/misiki/gocommerce/core"
-	"github.com/misiki/gocommerce/gctest"
+	gocommerce "github.com/itswadesh/gocommerce/core"
+	"github.com/itswadesh/gocommerce/gctest"
 )
 
 // newApp boots a store that serves English, French and Canadian French.

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/misiki/gocommerce/core"
-	"github.com/misiki/gocommerce/gctest"
+	"github.com/itswadesh/gocommerce/core"
+	"github.com/itswadesh/gocommerce/gctest"
 )
 
 func newApp(t *testing.T, cfg Config) *gocommerce.App {

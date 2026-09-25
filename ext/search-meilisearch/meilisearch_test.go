@@ -10,8 +10,8 @@ import (
 	"sync"
 	"testing"
 
-	gocommerce "github.com/misiki/gocommerce/core"
-	"github.com/misiki/gocommerce/gctest"
+	gocommerce "github.com/itswadesh/gocommerce/core"
+	"github.com/itswadesh/gocommerce/gctest"
 )
 
 // fakeMeili is enough of Meilisearch's API to prove the sync and the search

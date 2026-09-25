@@ -31,7 +31,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/misiki/gocommerce/core"
+	"github.com/itswadesh/gocommerce/core"
 )
 
 // protocolVersion is the MCP revision this module implements.

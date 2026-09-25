@@ -119,7 +119,7 @@ jobs:
           # commit onwards, on a dependency nobody added.
           deps=$(go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./... \
             | grep -v '^$' \
-            | grep -v '^github.com/misiki/gocommerce' \
+            | grep -v '^github.com/itswadesh/gocommerce' \
             | cut -d/ -f1-3 | sort -u \
             | grep -v '^golang.org/x/' || true)
           echo "third-party module paths reached from the engine:"
@@ -142,7 +142,7 @@ jobs:
           bad=$(go list -f '{{.ImportPath}}{{range .Imports}} {{.}}{{end}}' ./ext/... \
             | tr ' ' '\n' \
             | grep '\.' | grep '/' \
-            | grep -v '^github.com/misiki/gocommerce' | sort -u || true)
+            | grep -v '^github.com/itswadesh/gocommerce' | sort -u || true)
           if [ -n "$bad" ]; then
             echo "::error::ext/ packages must not import third-party code:"
             echo "$bad"

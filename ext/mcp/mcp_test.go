@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/misiki/gocommerce/core"
-	"github.com/misiki/gocommerce/gctest"
+	"github.com/itswadesh/gocommerce/core"
+	"github.com/itswadesh/gocommerce/gctest"
 )
 
 // rpc sends one JSON-RPC call to the MCP endpoint and returns the result.

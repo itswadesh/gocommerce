@@ -15,8 +15,8 @@ import (
 	"strings"
 	"testing"
 
-	gocommerce "github.com/misiki/gocommerce/core"
-	"github.com/misiki/gocommerce/gctest"
+	gocommerce "github.com/itswadesh/gocommerce/core"
+	"github.com/itswadesh/gocommerce/gctest"
 )
 
 // A 32-byte key, hex, as the Customer Area hands them out.

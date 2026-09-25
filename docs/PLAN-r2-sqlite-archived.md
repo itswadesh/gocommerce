@@ -64,7 +64,7 @@ store extends by writing ordinary Go packages and wiring them in `main()`.
 
 ```
 gocommerce/                          # repo root
-├── go.mod                           # module github.com/misiki/gocommerce — deps: modernc.org/sqlite. That's all.
+├── go.mod                           # module github.com/itswadesh/gocommerce — deps: modernc.org/sqlite. That's all.
 ├── PLAN.md                          # this file
 ├── gocommerce.go                    # App, Config, New, ListenAndServe, OnStart/OnStop
 ├── module.go                        # Module, Migration, namespace enforcement
@@ -747,7 +747,7 @@ media/upload module, admin UI, kafka bus.
 
 ## 15. Open questions (answer before M0)
 
-1. **Module path** — `github.com/misiki/gocommerce` assumed; confirm the org.
+1. **Module path** — `github.com/itswadesh/gocommerce` assumed; confirm the org.
 2. **Default currency** for examples/docs — INR assumed.
 3. **License** — MIT/Apache-2.0 if open source; affects whether `modules/`
    third-party contributions are expected.
