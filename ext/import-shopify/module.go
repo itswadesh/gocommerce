@@ -43,7 +43,7 @@ import (
 	"sync"
 	"time"
 
-	gocommerce "github.com/misiki/gocommerce/core"
+	gocommerce "github.com/itswadesh/gocommerce/core"
 )
 
 const pluginKey = "import-shopify"

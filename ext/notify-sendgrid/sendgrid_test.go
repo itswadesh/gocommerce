@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/misiki/gocommerce/core"
-	"github.com/misiki/gocommerce/gctest"
+	"github.com/itswadesh/gocommerce/core"
+	"github.com/itswadesh/gocommerce/gctest"
 )
 
 // captured is one message the stub SendGrid received.

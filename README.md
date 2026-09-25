@@ -42,7 +42,7 @@ if err != nil {
 log.Fatal(app.ListenAndServe())
 ```
 
-The engine imports as `github.com/misiki/gocommerce/core`; the package is
+The engine imports as `github.com/itswadesh/gocommerce/core`; the package is
 still named `gocommerce`, so the code reads as above. The old root import path
 no longer resolves as a package — ignore any stale pkg.go.dev page for it.
 
