@@ -7,9 +7,15 @@ products and variants, inventory, carts, checkout, orders, payments,
 fulfillment and durable events — over a PostgreSQL database. Integrations are
 ordinary Go packages you wire together in `main()`.
 
-> **Status: pre-1.0.** The engine and the modules below are implemented and
-> tested. The API is unstable until `v0.1.0`; see [PLAN.md](PLAN.md) for the
-> architecture and the road there.
+The project's page is [kitcommerce.store/gocommerce](https://kitcommerce.store/gocommerce/),
+with every screen of the [admin panel](https://kitcommerce.store/gocommerce/admin/),
+the [modules](https://kitcommerce.store/integrations/) and the
+[features](https://kitcommerce.store/features/).
+
+> **Status: 1.0.** The engine and the modules below are implemented and
+> tested. The exported API and the HTTP contract are stable and breaking
+> either takes a major version. See [PLAN.md](PLAN.md) for the architecture
+> and the decisions behind it.
 
 ## A store is a Go program
 
