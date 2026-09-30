@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	gocommerce "github.com/misiki/gocommerce/core"
-	"github.com/misiki/gocommerce/gctest"
+	gocommerce "github.com/itswadesh/gocommerce/core"
+	"github.com/itswadesh/gocommerce/gctest"
 )
 
 const testHashKey = "hs_response_hash_key"

@@ -33,7 +33,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/misiki/gocommerce/core"
+	"github.com/itswadesh/gocommerce/core"
 )
 
 // DSNEnv names the environment variable holding the PostgreSQL URL used by

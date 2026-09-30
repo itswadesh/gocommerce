@@ -125,9 +125,9 @@ Two rules follow and both are load-bearing:
 
 ## One repository, one Go module (D23)
 
-`github.com/misiki/gocommerce` is the whole repo — that is still the module
+`github.com/itswadesh/gocommerce` is the whole repo — that is still the module
 path, though since D25 the engine package itself imports as
-`github.com/misiki/gocommerce/core`. `github.com/jackc/pgx/v5` is
+`github.com/itswadesh/gocommerce/core`. `github.com/jackc/pgx/v5` is
 the only production dependency. There is no `go.work`, no nested `go.mod`, no
 per-extension tags.
 

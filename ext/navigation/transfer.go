@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode"
 
-	gocommerce "github.com/misiki/gocommerce/core"
+	gocommerce "github.com/itswadesh/gocommerce/core"
 )
 
 // Menus as a spreadsheet.

@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"strings"
 
-	gocommerce "github.com/misiki/gocommerce/core"
+	gocommerce "github.com/itswadesh/gocommerce/core"
 )
 
 const (

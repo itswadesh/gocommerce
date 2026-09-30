@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	gocommerce "github.com/misiki/gocommerce/core"
+	gocommerce "github.com/itswadesh/gocommerce/core"
 )
 
 const (

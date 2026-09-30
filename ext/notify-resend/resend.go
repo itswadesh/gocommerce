@@ -37,7 +37,7 @@ import (
 	"text/template"
 	"time"
 
-	gocommerce "github.com/misiki/gocommerce/core"
+	gocommerce "github.com/itswadesh/gocommerce/core"
 )
 
 const defaultBaseURL = "https://api.resend.com"

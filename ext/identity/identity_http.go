@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	gocommerce "github.com/misiki/gocommerce/core"
+	gocommerce "github.com/itswadesh/gocommerce/core"
 )
 
 // mountRoutes wires the module's namespace. Public routes are the ones a

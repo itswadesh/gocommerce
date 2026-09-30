@@ -41,9 +41,9 @@ is required for tests; there is no mock.
 
 ### 1. One Go module. One production dependency.
 
-`github.com/misiki/gocommerce` is the whole repo. The engine is one package,
+`github.com/itswadesh/gocommerce` is the whole repo. The engine is one package,
 `gocommerce`, living in `core/` and imported as
-`github.com/misiki/gocommerce/core` (D25). The only third-party
+`github.com/itswadesh/gocommerce/core` (D25). The only third-party
 production dependency is `github.com/jackc/pgx/v5`. Adding a second is a
 decision that belongs in `PLAN.md`, not in a commit.
 

@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"testing"
 
-	gocommerce "github.com/misiki/gocommerce/core"
-	"github.com/misiki/gocommerce/gctest"
+	gocommerce "github.com/itswadesh/gocommerce/core"
+	"github.com/itswadesh/gocommerce/gctest"
 )
 
 // The module's reason to exist: a shop writes its answers, arranges them,

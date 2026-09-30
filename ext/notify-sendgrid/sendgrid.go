@@ -33,7 +33,7 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/misiki/gocommerce/core"
+	"github.com/itswadesh/gocommerce/core"
 )
 
 const defaultBaseURL = "https://api.sendgrid.com"

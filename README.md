@@ -7,10 +7,15 @@ products and variants, inventory, carts, checkout, orders, payments,
 fulfillment and durable events — over a PostgreSQL database. Integrations are
 ordinary Go packages you wire together in `main()`.
 
+The project's page is [kitcommerce.store/gocommerce](https://kitcommerce.store/gocommerce/),
+with every screen of the [admin panel](https://kitcommerce.store/gocommerce/admin/),
+the [modules](https://kitcommerce.store/integrations/) and the
+[features](https://kitcommerce.store/features/).
+
 > **Status: 1.0.** The engine and the modules below are implemented and
-> tested. The exported API and the HTTP contract are stable: a breaking change
-> takes a major version. See [PLAN.md](PLAN.md) for the architecture and the
-> decisions behind it.
+> tested. The exported API and the HTTP contract are stable and breaking
+> either takes a major version. See [PLAN.md](PLAN.md) for the architecture
+> and the decisions behind it.
 
 ## A store is a Go program
 
@@ -37,7 +42,7 @@ if err != nil {
 log.Fatal(app.ListenAndServe())
 ```
 
-The engine imports as `github.com/misiki/gocommerce/core`; the package is
+The engine imports as `github.com/itswadesh/gocommerce/core`; the package is
 still named `gocommerce`, so the code reads as above. The old root import path
 no longer resolves as a package — ignore any stale pkg.go.dev page for it.
 

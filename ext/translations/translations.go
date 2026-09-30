@@ -45,7 +45,7 @@ import (
 	"strconv"
 	"strings"
 
-	gocommerce "github.com/misiki/gocommerce/core"
+	gocommerce "github.com/itswadesh/gocommerce/core"
 )
 
 // The fields a product may carry a translation for.

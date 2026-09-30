@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/misiki/gocommerce/core"
-	"github.com/misiki/gocommerce/gctest"
+	"github.com/itswadesh/gocommerce/core"
+	"github.com/itswadesh/gocommerce/gctest"
 )
 
 const testSecret = "whsec_test_secret"

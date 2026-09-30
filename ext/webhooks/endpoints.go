@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	gocommerce "github.com/misiki/gocommerce/core"
+	gocommerce "github.com/itswadesh/gocommerce/core"
 )
 
 // endpointColumns reads events through to_jsonb for the reason catalog.go

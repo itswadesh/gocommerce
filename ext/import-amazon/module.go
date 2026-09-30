@@ -67,7 +67,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/misiki/gocommerce/core"
+	"github.com/itswadesh/gocommerce/core"
 )
 
 // Config configures the module. Nothing is required: without an API key the

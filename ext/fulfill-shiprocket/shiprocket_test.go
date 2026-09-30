@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/misiki/gocommerce/core"
-	"github.com/misiki/gocommerce/gctest"
+	"github.com/itswadesh/gocommerce/core"
+	"github.com/itswadesh/gocommerce/gctest"
 )
 
 // created is the part of the adhoc-order payload this package is responsible

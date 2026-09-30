@@ -54,7 +54,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/misiki/gocommerce/core"
+	"github.com/itswadesh/gocommerce/core"
 )
 
 const (
