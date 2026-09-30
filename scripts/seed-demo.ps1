@@ -706,10 +706,9 @@ if ($sellable.Count -eq 0) {
 # safe list is jpg, png, gif, webp and avif; System.Drawing draws a real PNG
 # without a dependency.
 #
-# Uploaded rather than linked, which is also forced: the panel's CSP is
-# `img-src 'self' data: blob:`, so an image on someone else's host is recorded
-# happily and then blocked, and `AddURL` rejects a data: URI outright. A file
-# the store serves itself is the only route that renders. The server needs
+# Uploaded rather than linked, because there is nowhere to link to: the tiles
+# are drawn here, not hosted anywhere, and `AddURL` rejects a data: URI
+# outright. A file the store serves itself is the only route. The server needs
 # GOCOMMERCE_MEDIA_DIR set; without it the upload answers 501 and this reports
 # that rather than failing the seed.
 

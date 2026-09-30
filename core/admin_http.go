@@ -144,9 +144,19 @@ func (a *App) handleAdminPanel(w http.ResponseWriter, r *http.Request) {
 	//
 	// frame-ancestors lives here rather than in the meta, because meta CSP
 	// ignores it.
+	//
+	// Images are the one thing let off the origin, because the catalogue is not
+	// all on it: the library links pictures it does not hold (POST
+	// /api/admin/media/link, and every URL a product import names), and a
+	// panel that refuses them shows an imported catalogue as broken
+	// thumbnails. What that costs is one more way out for a compromised
+	// dependency, since an image URL can carry a token — but a top-level
+	// navigation or a form post could already, so this policy never stopped
+	// sending. What it does stop, script from elsewhere and fetches that read
+	// a reply, is unchanged.
 	w.Header().Set("Content-Security-Policy",
 		"default-src 'self'; script-src 'self' 'unsafe-inline'; "+
-			"style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "+
+			"style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; "+
 			"font-src 'self'; connect-src 'self'; base-uri 'self'; "+
 			"object-src 'none'; frame-ancestors 'none'")
 	w.Header().Set("X-Content-Type-Options", "nosniff")

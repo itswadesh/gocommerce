@@ -37,7 +37,10 @@ export default {
                 "default-src": ["self"],
                 "script-src": ["self"],
                 "style-src": ["self", "unsafe-inline"],
-                "img-src": ["self", "data:", "blob:"],
+                // Off-origin images are allowed on purpose: the media library
+                // links pictures it does not hold. The reasoning is beside the
+                // header in core/admin_http.go, which has to say the same.
+                "img-src": ["self", "data:", "blob:", "https:", "http:"],
                 "font-src": ["self"],
                 "connect-src": ["self"],
                 "base-uri": ["self"],

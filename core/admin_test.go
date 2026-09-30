@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -141,6 +142,43 @@ func TestCSPDoesNotBlockThePanelFromBooting(t *testing.T) {
 	}
 	if !strings.Contains(html, "sha256-") {
 		t.Error("the meta CSP carries no script hash")
+	}
+}
+
+// TestCSPShowsPicturesTheStoreLinks is a regression test for a real bug: the
+// library records pictures it does not hold — POST /api/admin/media/link, and
+// every image a product import names — and an img-src of 'self' refused every
+// one of them, so an imported catalogue came up as a column of broken
+// thumbnails. The store's own /media/ files were refused too the moment the
+// URL named another host for them, which is what an export from one address
+// imported at another does.
+//
+// Both policies are checked because both are enforced: an image the header
+// allows and the meta forbids is still refused.
+func TestCSPShowsPicturesTheStoreLinks(t *testing.T) {
+	if !HasAdminPanel() {
+		t.Skip("built with -tags no_admin")
+	}
+	app := newTestApp(t)
+
+	rec := do(t, app, http.MethodGet, "/")
+	meta := regexp.MustCompile(`http-equiv="content-security-policy" content="([^"]*)"`).
+		FindStringSubmatch(rec.Body.String())
+	if meta == nil {
+		t.Fatal("the page ships no meta CSP")
+	}
+
+	for name, csp := range map[string]string{
+		"header": rec.Header().Get("Content-Security-Policy"),
+		"meta":   meta[1],
+	} {
+		src := strings.Fields(directive(csp, "img-src"))
+		for _, scheme := range []string{"https:", "http:"} {
+			if !slices.Contains(src, scheme) {
+				t.Errorf("the %s CSP's img-src is %q, which refuses a linked picture over %s",
+					name, strings.Join(src, " "), scheme)
+			}
+		}
 	}
 }
 

@@ -225,10 +225,14 @@
 {#if !readable}
     <NoAccess right="vendors.read" />
 {:else}
-    <div class="page-header-wrapper">
+<div class="page page-vendors shopify-skin">
+    <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
-            <nav class="breadcrumbs"><div class="breadcrumb-item">Vendors</div></nav>
-            <div class="inline-flex gap-sm flex-gap-auto">
+            <nav class="breadcrumbs">
+                <div class="tw:text-2xl tw:font-semibold tw:tracking-tight">Vendors</div>
+            </nav>
+            <div class="flex-fill"></div>
+            <div class="page-header-primary-btns">
                 {#if writable}
                     <button type="button" class="btn" onclick={openNew}>
                         <i class="ri-add-line" aria-hidden="true"></i>
@@ -237,9 +241,7 @@
                 {/if}
             </div>
         </header>
-    </div>
 
-    <div class="page-content">
         <div class="field-help m-b-base">
             A vendor is somebody selling through this shop. It is not the
             <strong>vendor</strong> field on a product — that one holds the brand or
@@ -283,8 +285,13 @@
                     {#if loading && !vendors.length}
                         <tr><td colspan="5"><span class="skeleton-loader"></span></td></tr>
                     {/if}
-                    {#each vendors as vendor (rowKey(vendor))}
-                        <tr onclick={() => goto(`${base}/vendors/${vendor.id}`)}>
+                    {#each vendors as vendor (vendor.id)}
+                        <tr
+                            class="handle"
+                            tabindex="0"
+                            onclick={() => goto(`${base}/vendors/${vendor.id}`)}
+                            onkeydown={(e) => rowKey(e, () => goto(`${base}/vendors/${vendor.id}`))}
+                        >
                             <td data-name="Vendor">
                                 <a href="{base}/vendors/{vendor.id}" onclick={(e) => e.stopPropagation()}>
                                     <strong>{vendor.name}</strong>
@@ -349,18 +356,19 @@
             </table>
         </div>
 
-        {#if meta}
+        <footer class="page-footer tw:text-xs tw:text-muted-foreground">
             <Pager
-                page={meta.page}
-                total={meta.total}
+                {meta}
                 {loading}
                 noun="vendor"
                 {perPage}
                 onpage={(n) => list.setPage(n)}
                 onperpage={(n) => list.set({ limit: n })}
             />
-        {/if}
+            <div class="flex-fill"></div>
+        </footer>
     </div>
+</div>
 
     <Drawer
         open={editorOpen}

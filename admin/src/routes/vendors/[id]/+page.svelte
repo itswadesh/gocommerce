@@ -191,18 +191,15 @@
 {#if !readable}
     <NoAccess right="vendors.read" />
 {:else}
-    <div class="page-header-wrapper">
+<div class="page page-vendor shopify-skin">
+    <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
             <nav class="breadcrumbs">
-                <div class="breadcrumb-item">
-                    <a href="{base}/vendors">Vendors</a>
-                </div>
-                <div class="breadcrumb-item">{vendor?.name ?? "…"}</div>
+                <a href="{base}/vendors">Vendors</a>
+                <div>{vendor?.name ?? "…"}</div>
             </nav>
         </header>
-    </div>
 
-    <div class="page-content">
         {#if loading && !vendor}
             <span class="skeleton-loader"></span>
         {:else if vendor}
@@ -363,6 +360,7 @@
             </div>
         {/if}
     </div>
+</div>
 
     <Confirm
         bind:open={confirmOpen}

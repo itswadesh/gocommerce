@@ -571,7 +571,10 @@ the dashboard's address.
   to `/`, so an old bookmark still works.
 - Hashed assets under `_app/immutable` are cached for a year; `index.html` is
   never cached, or a deploy would not reach anyone.
-- A strict CSP locks the panel to its own origin.
+- A strict CSP locks the panel to its own origin — scripts, styles, fonts and
+  fetches. Images are the exception: `img-src` also takes any `http:` or
+  `https:` URL, because the media library links pictures it does not hold, and
+  a product import links every picture its file names.
 
 Panel routes are marked `UI` in the route table so the OpenAPI coverage test
 skips them: a spec describing a file server would be noise.
