@@ -172,7 +172,7 @@ func (m *Module) builtinTools() []Tool {
 				if err != nil {
 					return nil, err
 				}
-				return map[string]any{"total": total, "orders": summarizeOrders(orders)}, nil
+				return map[string]any{"total": total, "orders": summarizeOrders(m.app, orders)}, nil
 			},
 		},
 		{
@@ -194,6 +194,7 @@ func (m *Module) builtinTools() []Tool {
 				// The access token is the customer's credential, not something
 				// an agent needs in order to read the order.
 				order.AccessToken = ""
+				m.app.MaskOrder(order)
 				return order, nil
 			},
 		},
@@ -258,7 +259,7 @@ func (m *Module) builtinTools() []Tool {
 				if err := decode(raw, &args); err != nil {
 					return nil, err
 				}
-				return m.app.Pay().MarkPaid(ctx, args.OrderID, args.Reference)
+				return m.masked(m.app.Pay().MarkPaid(ctx, args.OrderID, args.Reference))
 			},
 		},
 		{
@@ -279,7 +280,7 @@ func (m *Module) builtinTools() []Tool {
 				if err := decode(raw, &args); err != nil {
 					return nil, err
 				}
-				return m.app.Order().Cancel(ctx, args.OrderID, args.Reason)
+				return m.masked(m.app.Order().Cancel(ctx, args.OrderID, args.Reason))
 			},
 		},
 		{
@@ -305,8 +306,8 @@ func (m *Module) builtinTools() []Tool {
 				if err := decode(raw, &args); err != nil {
 					return nil, err
 				}
-				return m.app.Ship().Create(ctx, args.OrderID, args.Provider,
-					gocommerce.ShipRequest{Tracking: args.Tracking, Carrier: args.Carrier, Lines: args.Lines})
+				return m.masked(m.app.Ship().Create(ctx, args.OrderID, args.Provider,
+					gocommerce.ShipRequest{Tracking: args.Tracking, Carrier: args.Carrier, Lines: args.Lines}))
 			},
 		},
 		{
@@ -326,7 +327,7 @@ func (m *Module) builtinTools() []Tool {
 				if err := decode(raw, &args); err != nil {
 					return nil, err
 				}
-				return m.app.Order().MarkDelivered(ctx, args.OrderID)
+				return m.masked(m.app.Order().MarkDelivered(ctx, args.OrderID))
 			},
 		},
 
@@ -522,9 +523,9 @@ func (m *Module) builtinTools() []Tool {
 				// attributed to whoever the agent is working as, rather than to
 				// nobody. A static admin token has no superuser, and core
 				// accepts nil for exactly that case.
-				return m.app.Pay().Refund(ctx, args.OrderID, gocommerce.RefundRequest{
+				return m.masked(m.app.Pay().Refund(ctx, args.OrderID, gocommerce.RefundRequest{
 					AmountMinor: args.AmountMinor, Reason: args.Reason,
-				}, gocommerce.SuperuserFrom(ctx))
+				}, gocommerce.SuperuserFrom(ctx)))
 			},
 		},
 
@@ -556,7 +557,7 @@ func (m *Module) builtinTools() []Tool {
 				if err != nil {
 					return nil, err
 				}
-				return map[string]any{"total": total, "customers": customers}, nil
+				return map[string]any{"total": total, "customers": maskCustomers(m.app, customers)}, nil
 			},
 		},
 		{
@@ -657,7 +658,10 @@ func summarizeVariants(variants []*gocommerce.Variant) []map[string]any {
 	return out
 }
 
-func summarizeOrders(orders []*gocommerce.Order) []map[string]any {
+// summarizeOrders masks the address for the same reason every admin screen
+// does: an agent on a demo store reaches these tools with the same credential
+// an operator signs in with.
+func summarizeOrders(app *gocommerce.App, orders []*gocommerce.Order) []map[string]any {
 	out := make([]map[string]any, 0, len(orders))
 	for _, o := range orders {
 		out = append(out, map[string]any{
@@ -668,7 +672,7 @@ func summarizeOrders(orders []*gocommerce.Order) []map[string]any {
 			// it went back: payment_status stays "paid" until all of it has (D36).
 			"refunded_minor": o.Refunded.AmountMinor,
 			"currency":       o.Currency,
-			"email":          o.Email, "items": len(o.Lines),
+			"email":          app.MaskEmail(o.Email), "items": len(o.Lines),
 			"created_at": o.CreatedAt,
 		})
 	}
@@ -749,4 +753,28 @@ func limitOr(requested, fallback int) int {
 		return gocommerce.MaxLimit
 	}
 	return requested
+}
+
+// maskCustomers is the customers tool's half of what MaskOrder does for orders.
+// A customer here is a reading of the orders (core/customers.go), so the same
+// two fields are the same two fields.
+func maskCustomers(app *gocommerce.App, cs []*gocommerce.Customer) []*gocommerce.Customer {
+	for _, c := range cs {
+		c.Email = app.MaskEmail(c.Email)
+		c.Phone = app.MaskPhone(c.Phone)
+		c.Address.Phone = app.MaskPhone(c.Address.Phone)
+	}
+	return cs
+}
+
+// masked is what every tool that answers with a whole order returns through.
+// The read tools were masked and the acting ones were not, which left
+// cancel_order and its four siblings handing an agent the address that
+// list_orders beside them hides.
+func (m *Module) masked(o *gocommerce.Order, err error) (any, error) {
+	if err != nil {
+		return nil, err
+	}
+	m.app.MaskOrder(o)
+	return o, nil
 }

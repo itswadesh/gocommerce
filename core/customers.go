@@ -98,13 +98,20 @@ var customerSorts = SortSpec{
 // newest order says, and matching the name column row-by-row before the GROUP BY
 // is what lets "Petra" find a shopper who has since been recorded under a
 // different spelling.
-func customerSearchClause(search string, args *[]any) string {
+//
+// On a demo the email column drops out, for the reason orderSearchClause gives:
+// a contains-match against a masked value reads it back a character at a time,
+// which publishes the address the mask hid.
+func customerSearchClause(search string, args *[]any, demo bool) string {
 	needle := strings.ToLower(strings.TrimSpace(search))
 	if needle == "" {
 		return ""
 	}
 	*args = append(*args, "%"+needle+"%")
 	n := len(*args)
+	if demo {
+		return fmt.Sprintf("(lower(coalesce(o.name, '')) LIKE $%d)", n)
+	}
 	return fmt.Sprintf("(lower(o.email) LIKE $%d OR lower(coalesce(o.name, '')) LIKE $%d)", n, n)
 }
 
@@ -115,7 +122,7 @@ func customerSearchClause(search string, args *[]any) string {
 // address are not.
 func (s *Orders) Customers(ctx context.Context, q CustomerQuery) ([]*Customer, int, error) {
 	where, args := []string{"o.email <> ''"}, []any{}
-	if clause := customerSearchClause(q.Search, &args); clause != "" {
+	if clause := customerSearchClause(q.Search, &args, s.app.cfg.Demo); clause != "" {
 		where = append(where, clause)
 	}
 	clause := strings.Join(where, " AND ")

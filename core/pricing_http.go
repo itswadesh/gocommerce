@@ -125,6 +125,7 @@ func (a *App) handleListGroupMembers(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	members = a.maskEmails(members)
 	RespondList(w, members, ListMeta{Total: total, Limit: limit, Offset: offset})
 }
 
@@ -146,6 +147,10 @@ func (a *App) handleAddGroupMember(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	if err := a.refuseMaskedInput(in.Email, "the address"); err != nil {
+		RespondError(w, r, err)
+		return
+	}
 	if err := a.Pricing().AddMember(r.Context(), id, in.Email); err != nil {
 		RespondError(w, r, err)
 		return
@@ -161,6 +166,10 @@ func (a *App) handleRemoveGroupMember(w http.ResponseWriter, r *http.Request) {
 	}
 	var in memberBody
 	if err := DecodeJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	if err := a.refuseMaskedInput(in.Email, "the address"); err != nil {
 		RespondError(w, r, err)
 		return
 	}

@@ -385,6 +385,10 @@ func (m *Module) handleAdminList(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
+	for _, c := range list {
+		c.Email = m.app.MaskEmail(c.Email)
+		c.Phone = m.app.MaskPhone(c.Phone)
+	}
 	gocommerce.RespondList(w, list, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})
 }
 
@@ -399,6 +403,8 @@ func (m *Module) handleAdminGet(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
+	c.Email = m.app.MaskEmail(c.Email)
+	c.Phone = m.app.MaskPhone(c.Phone)
 	gocommerce.Respond(w, http.StatusOK, c)
 }
 

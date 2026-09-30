@@ -60,6 +60,10 @@ func (a *App) entityHistory(entityType string) http.HandlerFunc {
 			RespondError(w, r, err)
 			return
 		}
+		// The same rows the cross-store feed serves, so the same rule: these
+		// five per-record routes were publishing the operator addresses, and
+		// the before-and-after values, that /api/admin/audit masks.
+		a.maskAuditEntries(rows)
 		RespondList(w, rows, ListMeta{Total: total, Limit: limit, Offset: offset})
 	}
 }
@@ -103,6 +107,7 @@ func (a *App) handleAuditFeed(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	a.maskAuditEntries(rows)
 	RespondList(w, rows, ListMeta{Total: total, Limit: limit, Offset: offset})
 }
 
@@ -117,5 +122,6 @@ func (a *App) handleAuditActors(w http.ResponseWriter, r *http.Request) {
 	if actors == nil {
 		actors = []AuditActor{}
 	}
+	a.maskAuditActors(actors)
 	Respond(w, http.StatusOK, actors)
 }

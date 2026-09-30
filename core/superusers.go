@@ -842,6 +842,16 @@ func newSessionToken() (string, error) {
 func (s *Superusers) Authenticate(ctx context.Context, identity, password, clientIP string) (*Superuser, *Session, error) {
 	identity = normalizeEmail(identity)
 
+	// A demo with a designated demo account signs every visitor in as that
+	// account, whatever they typed: the form is a formality for a store whose
+	// whole point is being looked at. It is that one account and no other —
+	// the owner's password is still the owner's — and what the visitor may do
+	// is whatever rights the operator gave it. What a demo will not let them
+	// do is change who can sign in: see demoFrozen in demo.go.
+	if s.app.cfg.Demo && s.app.cfg.DemoAccount != "" {
+		return s.authenticateDemo(ctx)
+	}
+
 	if retryAfter, ok := s.throttle.blocked(identity, clientIP); ok {
 		return nil, nil, (&APIError{
 			Status:  http.StatusTooManyRequests,
@@ -873,6 +883,34 @@ func (s *Superusers) Authenticate(ctx context.Context, identity, password, clien
 	}
 	s.throttle.succeed(identity, clientIP)
 
+	sess, err := s.issue(ctx, su.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return su, sess, nil
+}
+
+// authenticateDemo issues a session for the designated demo account. If that
+// account does not exist the refusal is the ordinary one, and the log says
+// why, because a demo whose only door is missing is misconfigured rather than
+// under attack.
+func (s *Superusers) authenticateDemo(ctx context.Context) (*Superuser, *Session, error) {
+	email := normalizeEmail(s.app.cfg.DemoAccount)
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+superuserColumns+` FROM superusers WHERE email = $1`, email)
+	su, err := s.scan(ctx, row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			s.app.log.Warn("demo account does not exist; nobody can sign in",
+				"account", email, "fix", "gocommerce superuser create <email> <password> [role]")
+			return nil, nil, &APIError{
+				Status:  http.StatusBadRequest,
+				Code:    "invalid_credentials",
+				Message: "invalid login credentials",
+			}
+		}
+		return nil, nil, Internalf(err, "look up demo account")
+	}
 	sess, err := s.issue(ctx, su.ID)
 	if err != nil {
 		return nil, nil, err

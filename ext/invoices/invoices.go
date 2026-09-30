@@ -48,6 +48,7 @@ type Config struct {
 // Module issues invoices.
 type Module struct {
 	cfg    Config
+	app    *gocommerce.App
 	db     *sql.DB
 	log    *slog.Logger
 	orders *gocommerce.Orders
@@ -102,6 +103,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	if m.cfg.NumberFormat == "" {
 		m.cfg.NumberFormat = "INV-{year}-{seq:05}"
 	}
+	m.app = app
 	m.db = app.DB()
 	m.log = app.Log()
 	m.orders = app.Order()
@@ -314,6 +316,11 @@ func (m *Module) handleGet(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
+	// On the way out, never on the way in: issue() stores this snapshot as the
+	// order actually was, and masking there would write bullets into the
+	// document a real store has to be able to produce. Both shapes below read
+	// from here, so the JSON and the printable page mask together.
+	m.app.MaskOrder(&order)
 
 	// JSON for a client that wants the data, HTML for a human who wants to
 	// print it.

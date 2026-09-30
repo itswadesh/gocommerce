@@ -119,6 +119,14 @@ environment:
   GOCOMMERCE_IDENTITY_RESET_URL
                     with -identity, the storefront page a password-reset email
                     links to, with {token} where the token goes
+  GOCOMMERCE_DEMO   same as -demo. Off when unset, empty, "0", "false", "no"
+                    or "off"; any other value is on
+  GOCOMMERCE_DEMO_ACCOUNT
+                    on a demo only, the email of an existing operator that
+                    EVERY visitor is signed in as — the form then accepts any
+                    email and any password. There is no flag for this: it names
+                    an account that has to exist. Leave it unset and a demo
+                    still asks for real credentials
 `)
 	}
 
@@ -129,6 +137,7 @@ environment:
 		currency     = fs.String("currency", gocommerce.DefaultCurrency, "store settlement currency (ISO 4217)")
 		langs        = fs.String("languages", gocommerce.DefaultLanguage, "served languages, comma-separated; the first is the default")
 		dev          = fs.Bool("dev", false, "development mode: permits booting with no admin token")
+		demo         = fs.Bool("demo", false, "public demo: mask every email address and phone number on admin responses and freeze operators, keys and roles; with $GOCOMMERCE_DEMO_ACCOUNT set, any email and password sign in as that account (default $GOCOMMERCE_DEMO)")
 		verbose      = fs.Bool("v", false, "verbose (debug) logging")
 		jsonOut      = fs.Bool("json", false, "machine-readable output (doctor)")
 		mediaDir     = fs.String("media-dir", "", "directory for uploaded media (default $GOCOMMERCE_MEDIA_DIR; empty disables uploads)")
@@ -198,6 +207,18 @@ environment:
 		Languages:   languages,
 		AdminTokens: splitList(*tokens),
 		Dev:         *dev || offline,
+		// Not or-ed with offline the way Dev is: masking is about what the HTTP
+		// surface publishes, and a store that is a demo is one whichever command
+		// is running against it.
+		//
+		// envTrue rather than the != "" this file uses for every other variable:
+		// those switch a module on, and this one lets anybody sign in. A
+		// deployment that wrote GOCOMMERCE_DEMO=false meaning "off" and got a
+		// panel open to the internet would have been right to expect better.
+		Demo: *demo || envTrue("GOCOMMERCE_DEMO"),
+		// The one account a demo visitor becomes. Env only: it names an
+		// operator that has to exist, which is a deployment fact, not a flag.
+		DemoAccount: os.Getenv("GOCOMMERCE_DEMO_ACCOUNT"),
 		Logger:      log,
 	}
 	if *mediaDir == "" {
@@ -601,4 +622,18 @@ func attributesCmd(ctx context.Context, app *gocommerce.App, args []string, log 
 		"attributes", result.Attributes, "categories", result.Categories,
 		"unmatched", result.Unmatched, "skipped", result.Skipped)
 	return nil
+}
+
+// envTrue reads a variable that must be switched on deliberately. Absent, empty,
+// and the words people write when they mean no are all off; anything else is on.
+//
+// The rest of this file treats any non-empty value as true, which is fine for a
+// variable whose only job is to carry a key. It is not fine for one that opens a
+// panel, so this exists for those.
+func envTrue(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "", "0", "false", "no", "off":
+		return false
+	}
+	return true
 }

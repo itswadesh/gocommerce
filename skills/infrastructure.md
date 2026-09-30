@@ -285,9 +285,69 @@ machine with no Node.js. Details in [development](development.md) and
 
 The reference binary's commands: `serve` (default), `migrate`, `superuser
 create|update|list`, `doctor` (with `-json`), `spec`, `version`. Flags: `-db`,
-`-addr`, `-admin-token`, `-currency`, `-languages`, `-dev`, `-v`, `-json`.
-`DATABASE_URL`, `GOCOMMERCE_ADMIN_TOKEN`, `GOCOMMERCE_ADMIN_EMAIL` and
+`-addr`, `-admin-token`, `-currency`, `-languages`, `-dev`, `-demo`, `-v`,
+`-json`. `DATABASE_URL`, `GOCOMMERCE_ADMIN_TOKEN`, `GOCOMMERCE_DEMO`,
+`GOCOMMERCE_DEMO_ACCOUNT`, `GOCOMMERCE_ADMIN_EMAIL` and
 `GOCOMMERCE_ADMIN_PASSWORD` are the environment equivalents.
+`GOCOMMERCE_DEMO` is the one variable here read as a word rather than as
+"non-empty": `0`, `false`, `no` and `off` mean off, because a deployment that
+wrote `GOCOMMERCE_DEMO=false` and got a panel anybody could sign into would
+have been right to expect better.
+
+## Running a public demo
+
+`-demo` (`Config.Demo`, `GOCOMMERCE_DEMO`) is for a store put on the internet
+for people to click around in. It masks every email address and phone number on
+the way out of an admin route — `jane.doe@gmail.com` reads `j•••@g•••.com`, and
+`+31 20 555 1242` reads `+31 •• ••• ••42` — across the panel's screens, the CSV
+exports and the MCP tools. It is independent of `-dev`: a demo still needs its
+admin token and still serves production errors.
+
+Two things a demo does beyond masking. With `GOCOMMERCE_DEMO_ACCOUNT` set to
+the email of an operator that exists, the sign-in form accepts any email and
+any password and issues a session for that account and no other — the owner's
+password stays the owner's, and what a visitor may do is whatever rights you
+gave that account (`gocommerce superuser create demo@example.com <password>
+staff`). Set the role before you switch the demo on, not after: Settings →
+Roles is one of the frozen families, so a running demo refuses to change it.
+Without the variable, a demo still asks for real credentials. And on any demo, the routes that decide who can sign
+in — `/api/admin/superusers`, `/api/admin/me`, `/api/admin/invitations`,
+`/api/admin/password-reset`, `/api/admin/api-keys`, `/api/admin/roles` —
+refuse writes with `demo_frozen`, so a visitor who is an owner for the
+afternoon cannot change a password, mint an API key that outlives the session,
+or strip a role of the rights the next visitor needs (`core/demo.go`).
+
+Five routes are refused whatever the method, including a `GET`, because what
+they answer with reads around the mask rather than being a screen: an API key's
+secret (`/api/admin/api-keys/{id}/secret` — stored as presented, so reading one
+is taking it), an order's guest access token (the guest's own view of an order
+is deliberately unmasked, so the token is a key to the very fields being
+hidden), the two custom-report runners (`/api/admin/reports/custom/run` and
+`.../{id}/run` — an operator's own `SELECT`, which can read the superuser and
+API key tables and has no columns masking could recognise), and a vendor's
+login (`/api/admin/vendors/{id}/users`, which writes a `superusers` row with a
+password the caller chose). Freezing only writes left every one of these open.
+For the same reason the search box stops matching the email column on a demo:
+`?q=a`, `?q=ab`, `?q=abc` reads a masked address back a character at a time.
+Numbers and names still match.
+
+Three things it deliberately does not do. The storefront is untouched, so a
+shopper reading their own order at `/api/orders/{number}` still sees their own
+address. `GET /api/admin/me` and your own row on the Team screen stay in full,
+or you could not tell which account you were signed in as. And names and street
+addresses are not masked — a demo with no names in it shows nothing about how
+the panel reads.
+
+Two consequences worth knowing before you point one at real data. A form filled
+from a masked response submits the mask back, and the engine treats that as "no
+change" rather than writing it (`core/demo.go`); an address the operator
+actually types is still an edit. And because a customer here is an email
+several orders share, two customers whose addresses mask alike open one
+another's order list on a demo store.
+
+The masking is a display rule, not storage: the rows still hold what the
+shopper typed, and turning the flag off shows it again. Somewhere that needs
+the data to be genuinely absent wants seeded data, not this.
 
 ## Common mistakes
 

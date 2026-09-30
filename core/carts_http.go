@@ -63,6 +63,7 @@ func (a *App) handleAdminListCarts(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	a.maskCartSummaries(carts)
 	RespondList(w, carts, ListMeta{Total: total, Limit: limit, Offset: offset})
 }
 
@@ -77,5 +78,6 @@ func (a *App) handleAdminGetCart(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	a.maskCartSummary(&cart.CartSummary)
 	Respond(w, http.StatusOK, cart)
 }

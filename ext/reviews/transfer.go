@@ -99,6 +99,7 @@ func (m *Module) Export(ctx context.Context, out io.Writer) error {
 			&title, &body, &status, &verified, &reply, &created); err != nil {
 			return gocommerce.Internalf(err, "scan the reviews")
 		}
+		email = m.app.MaskEmail(email)
 		if err := w.Write([]string{
 			strconv.FormatInt(id, 10), slug, product, name, email,
 			strconv.Itoa(rating), title, body, status, strconv.FormatBool(verified),

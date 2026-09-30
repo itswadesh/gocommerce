@@ -160,6 +160,23 @@ type Config struct {
 	// Dev permits booting with no admin token and serves friendlier errors.
 	// Never set it in production.
 	Dev bool
+	// Demo marks this store as a public demonstration, one whose panel anybody
+	// may sign into. Every email address and phone number is masked on the way
+	// out of an admin route — see demo.go — so that a store put on the internet
+	// for people to click around in does not also publish the people in it.
+	// And the routes that decide who can sign in — operators, invitations,
+	// password resets, API keys, roles — refuse writes, so a visitor cannot
+	// lock the next one out.
+	//
+	// It is independent of Dev. A demo is a real store, served the way a real
+	// one is: it has its admin tokens, its migrations and its errors.
+	Demo bool
+	// DemoAccount is the email of the operator every demo visitor becomes.
+	// With it set, the sign-in form accepts any email and any password and
+	// issues a session for this account and no other; what the visitor may do
+	// is whatever rights the operator gave it. Without it, a demo still asks
+	// for real credentials. Ignored unless Demo is set.
+	DemoAccount string
 	// Logger defaults to slog.Default().
 	Logger *slog.Logger
 }
@@ -685,6 +702,10 @@ func (a *App) Routes() []Route {
 func (a *App) Handler() http.Handler {
 	var h http.Handler = a.mux
 	h = a.fallbackJSON(h)
+	// Outside the fallback on purpose: a frozen family is frozen for every
+	// method, including ones no route serves, so the answer is 403 and not a
+	// 404 that invites trying the next verb.
+	h = a.demoGuardMW(h)
 	h = a.languageMW(h)
 	h = a.logMW(h)
 	h = a.recoverMW(h)
@@ -725,7 +746,22 @@ func (a *App) ListenAndServe() error {
 		a.log.Info("gocommerce listening",
 			"addr", a.cfg.Addr, "version", Version,
 			"currency", a.cfg.Currency, "language", a.cfg.DefaultLanguage,
-			"modules", len(a.modules), "routes", len(a.routes), "dev", a.cfg.Dev)
+			"modules", len(a.modules), "routes", len(a.routes),
+			"dev", a.cfg.Dev, "demo", a.cfg.Demo)
+		// Said again, and loudly, when a store is a demo. A flag that masks
+		// personal data is a decision; one that signs every visitor in as a
+		// named operator is the kind of thing that has to be impossible to have
+		// switched on without knowing — the line above would scroll past.
+		if a.cfg.Demo {
+			if a.cfg.DemoAccount != "" {
+				a.log.Warn("DEMO MODE: personal data is masked, and ANY email and password "+
+					"signs in as this account",
+					"account", a.cfg.DemoAccount)
+			} else {
+				a.log.Warn("DEMO MODE: personal data is masked on admin responses; " +
+					"sign-in still asks for real credentials")
+			}
+		}
 		if err := a.srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errc <- err
 			return

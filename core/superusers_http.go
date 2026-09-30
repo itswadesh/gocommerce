@@ -170,6 +170,7 @@ func (a *App) handleListSuperusers(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	a.maskSuperuserRows(r.Context(), list)
 	RespondList(w, list, ListMeta{Total: len(list), Limit: len(list)})
 }
 
@@ -189,6 +190,7 @@ func (a *App) handleCreateSuperuser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.log.Info("superuser created", "email", su.Email, "via", "api")
+	a.maskSuperuserExceptSelf(r.Context(), su)
 	Respond(w, http.StatusCreated, su)
 }
 
@@ -205,6 +207,12 @@ func (a *App) handleUpdateSuperuser(w http.ResponseWriter, r *http.Request) {
 	if err := DecodeJSON(w, r, &in); err != nil {
 		RespondError(w, r, err)
 		return
+	}
+	// A demo store showed this form a masked address, so a save that did not
+	// touch the field submits the mask back. Empty is "leave the email alone",
+	// which is what the operator meant.
+	if a.maskedInput(in.Email) {
+		in.Email = ""
 	}
 	su, err := a.superusers.Update(r.Context(), id, in.Email, in.Password)
 	if err != nil {
@@ -268,5 +276,6 @@ func (a *App) handleSetRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.log.Info("superuser role changed", "email", su.Email, "role", su.Role)
+	a.maskSuperuserExceptSelf(r.Context(), su)
 	Respond(w, http.StatusOK, su)
 }

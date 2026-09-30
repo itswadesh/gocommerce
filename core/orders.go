@@ -518,13 +518,22 @@ var orderSorts = SortSpec{
 // address is remembered from the middle. LIKE metacharacters are not escaped,
 // following every other search in the engine — which is precisely why ?email=
 // stays exact equality, since `_` is a wildcard and is common in real addresses.
-func orderSearchClause(search string, args *[]any) string {
+// On a demo the email column drops out of the search, and it has to. A
+// contains-match against a hidden value is an oracle: ?q=a, ?q=ab, ?q=abc reads
+// a masked address back one character at a time, which is a slower way of
+// publishing exactly what the mask was for. The number and the name still
+// match, so the box still works — and the name was never masked anyway.
+func orderSearchClause(search string, args *[]any, demo bool) string {
 	needle := strings.ToLower(strings.TrimSpace(search))
 	if needle == "" {
 		return ""
 	}
 	*args = append(*args, needle+"%", "%"+needle+"%")
 	prefix, contains := len(*args)-1, len(*args)
+	if demo {
+		return fmt.Sprintf("(lower(o.number) LIKE $%d"+
+			" OR lower(coalesce(o.name, '')) LIKE $%d)", prefix, contains)
+	}
 	return fmt.Sprintf("(lower(o.number) LIKE $%d OR lower(o.email) LIKE $%d"+
 		" OR lower(coalesce(o.name, '')) LIKE $%d)", prefix, contains, contains)
 }
@@ -542,9 +551,25 @@ func (s *Orders) List(ctx context.Context, q OrderQuery) ([]*Order, int, error) 
 		add("o.payment_status = $%d", q.PaymentStatus)
 	}
 	if q.Email != "" {
-		add("lower(o.email) = $%d", strings.ToLower(q.Email))
+		// A demo store hands the Customers screen a masked address and gets it
+		// straight back here, because the address is the only identity a
+		// customer has (customers.go). Matching the mask against the rows it
+		// could have come from is what keeps those links pointing at somebody.
+		//
+		// Gated on Demo, and it has to be: without the check, a bullet in
+		// ?email= turned this into a LIKE on every store, so an exact filter
+		// nobody asked to widen would quietly match more rows than it named.
+		pattern := ""
+		if s.app.cfg.Demo {
+			pattern = maskedEmailPattern(q.Email)
+		}
+		if pattern != "" {
+			add(`lower(o.email) LIKE $%d ESCAPE '\'`, pattern)
+		} else {
+			add("lower(o.email) = $%d", strings.ToLower(q.Email))
+		}
 	}
-	if clause := orderSearchClause(q.Search, &args); clause != "" {
+	if clause := orderSearchClause(q.Search, &args, s.app.cfg.Demo); clause != "" {
 		where = append(where, clause)
 	}
 	if q.From != nil {

@@ -61,6 +61,7 @@ func (a *App) handleListVendors(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	a.maskVendors(list)
 	RespondList(w, list, ListMeta{Total: total, Limit: limit, Offset: offset})
 }
 
@@ -75,6 +76,7 @@ func (a *App) handleCreateVendor(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	a.maskVendor(v)
 	Respond(w, http.StatusCreated, v)
 }
 
@@ -96,6 +98,7 @@ func (a *App) handleGetVendor(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	a.maskVendor(v)
 	Respond(w, http.StatusOK, v)
 }
 
@@ -117,11 +120,15 @@ func (a *App) handleUpdateVendor(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	// See handleUpdateOrder: a mask coming back is a field nobody touched.
+	a.dropMasked(&patch.Email)
+	a.dropMasked(&patch.Phone)
 	v, err := a.Vendors().Update(r.Context(), id, patch)
 	if err != nil {
 		RespondError(w, r, err)
 		return
 	}
+	a.maskVendor(v)
 	Respond(w, http.StatusOK, v)
 }
 
@@ -265,6 +272,7 @@ func (a *App) handleCreateVendorUser(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	a.maskSuperuserExceptSelf(r.Context(), su)
 	Respond(w, http.StatusCreated, su)
 }
 

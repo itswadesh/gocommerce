@@ -40,6 +40,7 @@ func (a *App) handleListInvitations(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	a.maskInvitations(list)
 	RespondList(w, list, ListMeta{Total: len(list), Limit: len(list), Offset: 0})
 }
 
@@ -70,6 +71,9 @@ func (a *App) handleCreateInvitation(w http.ResponseWriter, r *http.Request) {
 	// HTTP layer knows what this store is reached at. It is returned once and
 	// never again.
 	inv.AcceptURL = a.acceptURL(r, inv.Token)
+	// Masked like the listing it is about to appear in. The link and the token
+	// are what this response exists to hand over, and neither is an address.
+	a.maskInvitations([]*Invitation{inv})
 	Respond(w, http.StatusCreated, inv)
 }
 

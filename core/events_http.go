@@ -75,6 +75,7 @@ func (a *App) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	a.maskOutboxEvents(events)
 	RespondList(w, events, ListMeta{Total: total, Limit: limit, Offset: offset})
 }
 
@@ -85,6 +86,9 @@ func (a *App) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	event, err := a.GetEvent(r.Context(), id)
+	if err == nil {
+		a.maskOutboxEvent(event)
+	}
 	respondOr(w, r, event, err)
 }
 
@@ -110,6 +114,7 @@ func (a *App) handleRetryEvent(w http.ResponseWriter, r *http.Request) {
 	logFrom(r).Info("outbox event requeued",
 		"event_id", id, "event", event.Name, "state", event.State,
 		"attempts", event.Attempts, "by", eventActor(r.Context()))
+	a.maskOutboxEvent(event)
 	Respond(w, http.StatusOK, event)
 }
 
