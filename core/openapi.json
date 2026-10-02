@@ -864,7 +864,7 @@
           "checkout"
         ],
         "summary": "Check out with a payment method",
-        "description": "Validates the cart, reserves inventory and creates the order in one transaction, then starts payment outside it — a gateway having a slow day must not become the store having a slow day.\n\nIf a line's price changed, its product went inactive, or stock ran out, the whole checkout is refused with 409 and per-line detail; the cart is refreshed to current prices so the shopper can confirm again.\n\nSend an `Idempotency-Key` header. The same key replays the original result instead of creating a second order; if the first attempt created the order but payment initiation failed, a retry resumes payment on that same order.",
+        "description": "Validates the cart, reserves inventory and creates the order in one transaction, then starts payment outside it — a gateway having a slow day must not become the store having a slow day.\n\nIf a line's price changed, its product went inactive, or stock ran out, the whole checkout is refused with 409 and per-line detail; the cart is refreshed to current prices so the shopper can confirm again.\n\nSend an `Idempotency-Key` header. The same key replays the original result instead of creating a second order; if the first attempt created the order but payment initiation failed, a retry resumes payment on that same order. A checkout guard a module registered may refuse it before the order exists (D67) — a 403 or 409 with the module's own code, such as company_checkout_required from b2b for a basket priced as a company's buyer.",
         "parameters": [
           {
             "name": "code",
@@ -923,6 +923,9 @@
           },
           "400": {
             "$ref": "#/components/responses/Validation"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
@@ -10263,7 +10266,7 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/ValidationFailed"
+            "$ref": "#/components/responses/Validation"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -10331,7 +10334,7 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/ValidationError"
+            "$ref": "#/components/responses/Validation"
           }
         }
       }
@@ -10371,7 +10374,7 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/ValidationError"
+            "$ref": "#/components/responses/Validation"
           }
         }
       },
@@ -10427,7 +10430,7 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/ValidationError"
+            "$ref": "#/components/responses/Validation"
           }
         }
       },
@@ -10548,7 +10551,7 @@
             "description": "In the group."
           },
           "400": {
-            "$ref": "#/components/responses/ValidationError"
+            "$ref": "#/components/responses/Validation"
           }
         }
       },
@@ -10594,7 +10597,7 @@
             "description": "Out of the group."
           },
           "400": {
-            "$ref": "#/components/responses/ValidationError"
+            "$ref": "#/components/responses/Validation"
           }
         }
       }
@@ -10659,7 +10662,7 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/ValidationError"
+            "$ref": "#/components/responses/Validation"
           }
         }
       }
@@ -10699,7 +10702,7 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/ValidationError"
+            "$ref": "#/components/responses/Validation"
           }
         }
       },
@@ -10748,7 +10751,7 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/ValidationError"
+            "$ref": "#/components/responses/Validation"
           }
         }
       },
@@ -10863,7 +10866,7 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/ValidationError"
+            "$ref": "#/components/responses/Validation"
           }
         }
       },
@@ -10907,7 +10910,7 @@
             "description": "Gone."
           },
           "400": {
-            "$ref": "#/components/responses/ValidationError"
+            "$ref": "#/components/responses/Validation"
           }
         }
       }
@@ -10972,7 +10975,7 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/ValidationError"
+            "$ref": "#/components/responses/Validation"
           }
         }
       }
@@ -11012,7 +11015,7 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/ValidationError"
+            "$ref": "#/components/responses/Validation"
           }
         }
       },
@@ -11060,7 +11063,7 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/ValidationError"
+            "$ref": "#/components/responses/Validation"
           }
         }
       },
@@ -13836,15 +13839,8 @@
             "properties": {
               "code": {
                 "type": "string",
-                "enum": [
-                  "not_found",
-                  "method_not_allowed",
-                  "validation_failed",
-                  "conflict",
-                  "unauthorized",
-                  "not_ready",
-                  "internal_error"
-                ]
+                "description": "A stable, machine-readable reason. Core answers with not_found, method_not_allowed, validation_failed, conflict, unauthorized, forbidden, not_ready, internal_error, too_many_attempts, invalid_credentials and demo_frozen, among others; a module adds its own — email_unverified from identity, credit_limit_exceeded or company_checkout_required from b2b. The set is open on purpose: branch on the codes you handle and fall back on the HTTP status for the rest.",
+                "example": "validation_failed"
               },
               "message": {
                 "type": "string"
