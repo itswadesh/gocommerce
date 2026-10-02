@@ -31,7 +31,7 @@ import { ensureSettings, settings } from "$lib/settings.svelte.js";
 
 /**
  * The bundled modules that mount an admin surface, where to poke, and the
- * right that poke needs.
+ * right that poke needs — or a list of rights, any one of which will do.
  *
  * The right is here so a probe that is certain to be refused is not made at
  * all: an operator without store.operate cannot reach any mcp screen, so
@@ -60,7 +60,10 @@ const PROBES = {
     newsletter: { path: "/api/admin/x/newsletter/subscriptions?limit=1", right: "customers.read" },
     faq: { path: "/api/admin/x/faq", right: "catalog.read" },
     wishlist: { path: "/api/admin/x/wishlist/lists?limit=1", right: "customers.read" },
-    b2b: { path: "/api/admin/x/b2b/companies?limit=1", right: "companies.read" },
+    // Three screens behind three unrelated rights, so any one of them is
+    // reason to ask. The path is the companies list either way: an operator
+    // holding only leads.read gets a 403 there, which still means installed.
+    b2b: { path: "/api/admin/x/b2b/companies?limit=1", right: ["companies.read", "leads.read", "quotes.read"] },
     // Plugin-only modules have no admin routes of their own; the plugin's
     // row is the proof they are installed.
     feeds: { path: "/api/admin/plugins/product-feeds", right: "store.operate" },
@@ -106,7 +109,8 @@ async function round() {
         return s.names;
     }
 
-    const names = Object.keys(PROBES).filter((name) => can(PROBES[name].right));
+    const mayAsk = (right) => [right].flat().some((r) => can(r));
+    const names = Object.keys(PROBES).filter((name) => mayAsk(PROBES[name].right));
     const present = await Promise.all(names.map((name) => probe(PROBES[name].path)));
     s.names = names.filter((_, i) => present[i]);
     s.loaded = true;

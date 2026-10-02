@@ -109,7 +109,11 @@ export const NAV = [
             { href: "/customers/groups", label: "Groups", right: "groups.read", keywords: "customer groups wholesale trade segments" },
             // A business that buys here, with its buyers and its terms. Beside
             // Groups because a company's prices are a group's.
-            { href: "/b2b/companies", label: "Companies", right: "companies.read", module: "b2b", keywords: "b2b business trade accounts credit limit terms buyers" },
+            { href: "/b2b/companies", label: "Companies", right: "companies.read", module: "b2b", keywords: "b2b business trade accounts credit limit terms buyers dealers territories" },
+            // Members of the public asking where to buy, and which dealer each
+            // was sent to. Customers-to-be rather than orders, and read beside
+            // the dealers they are routed to.
+            { href: "/b2b/leads", label: "Leads", right: "leads.read", module: "b2b", keywords: "b2b dealer enquiries find a dealer routing territory unrouted" },
             { href: "/accounts", label: "Accounts", right: "accounts.read", module: "identity", keywords: "logins passwords sessions" },
             // Both are the customers talking: the form and the signup box.
             { href: "/contact", label: "Contact messages", right: "contact.read", module: "contact", keywords: "inbox enquiries" },

@@ -1,5 +1,7 @@
+import { COUNTRIES } from "$lib/countries.js";
+
 /**
- * Words and colours for ext/b2b's states, shared by its five screens.
+ * Words and colours for ext/b2b's states, shared by its screens.
  *
  * One copy because the same company appears on four of them — its own page,
  * the list, a quote's header and a receivables row — and a status that reads
@@ -108,4 +110,86 @@ export function endOfDay(value) {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? "");
     if (!m) return null;
     return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59).toISOString();
+}
+
+/* What a dealer reports back about an enquiry — not a sales pipeline; the
+   pipeline is the dealer's own business. New is amber because nobody has
+   answered the person yet. */
+export const LEAD_STATUSES = [
+    { value: "new", label: "New", hint: "Nobody has answered yet" },
+    { value: "contacted", label: "Contacted", hint: "The dealer has been in touch" },
+    { value: "won", label: "Won", hint: "It became a sale" },
+    { value: "lost", label: "Lost", hint: "It went nowhere" },
+];
+
+export function leadStatusLabel(status) {
+    return LEAD_STATUSES.find((s) => s.value === status)?.label ?? status;
+}
+
+export function leadStatusClass(status) {
+    return { new: "label-warning", contacted: "label-info", won: "label-success" }[status] ?? "";
+}
+
+/** How a lead reached whoever holds it, as a phrase that follows the name. */
+export function routedByLabel(routedBy) {
+    return { territory: "by territory", store: "by the store" }[routedBy] ?? "";
+}
+
+/** A country's name for its ISO code, or the code itself for one the list lacks. */
+export function countryName(code) {
+    return COUNTRIES.find((c) => c.value === code)?.label ?? code;
+}
+
+/**
+ * A territory as one phrase, widest part first: "CA, US · postcodes 941…".
+ * An empty part means the whole of the part above it, so it is left out
+ * rather than printed as a blank.
+ */
+export function areaLabel(t) {
+    const parts = [t.state ? `${t.state}, ${t.country}` : countryName(t.country)];
+    if (t.postal_prefix) parts.push(`postcodes ${t.postal_prefix}…`);
+    return parts.join(" · ");
+}
+
+/** Where an enquiry came from, as an address line: "94105, CA, US". */
+export function leadPlace(lead) {
+    return [lead.postal_code, lead.state, lead.country].filter(Boolean).join(", ");
+}
+
+/**
+ * Companies for a dealer picker or filter, dealers first.
+ *
+ * A lead can be handed to any company, so every company is offered — but the
+ * ones with territories are the dealers, and they lead the list. One page of
+ * the engine's largest is read; past that, the dealers are read on their own
+ * as well, so a store with more companies than one page still offers every
+ * dealer. `dealersOnly` is for a filter where a company without territories
+ * would only ever match nothing.
+ */
+export async function loadDealers(api, { dealersOnly = false } = {}) {
+    const first = await api.get("/api/admin/x/b2b/companies?limit=200" + (dealersOnly ? "&dealers=true" : ""));
+    let list = first.data ?? [];
+    const more = (first.meta?.total ?? 0) > list.length;
+    if (more && !dealersOnly) {
+        const dealers = (await api.get("/api/admin/x/b2b/companies?limit=200&dealers=true")).data ?? [];
+        const seen = new Set(list.map((c) => c.id));
+        list = [...list, ...dealers.filter((c) => !seen.has(c.id))];
+    }
+    const ranked = [...list].sort(
+        (a, b) => Number(b.territory_count > 0) - Number(a.territory_count > 0) || a.name.localeCompare(b.name),
+    );
+    return { dealers: ranked, more };
+}
+
+/**
+ * A company as a picker option: the name, how much it covers, and why it
+ * might not take a lead.
+ */
+export function dealerOption(c) {
+    const parts = [];
+    if (c.territory_count > 0) parts.push(`${c.territory_count} ${c.territory_count === 1 ? "territory" : "territories"}`);
+    else if (c.territory_count === 0) parts.push("no territories");
+    if (c.status === "closed") parts.push("closed, takes no leads");
+    else if (c.status === "on_hold") parts.push("on hold");
+    return { value: String(c.id), label: parts.length ? `${c.name} — ${parts.join(", ")}` : c.name, short: c.name };
 }

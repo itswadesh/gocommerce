@@ -1,7 +1,7 @@
 <script>
     /**
-     * One company: its terms, where its account stands, who buys for it, and
-     * what it has ordered on account.
+     * One company: its terms, where its account stands, who buys for it, the
+     * territories it serves as a dealer, and what it has ordered on account.
      *
      * The credit figures are the engine's, not sums of the orders table below:
      * that table is one page of a ledger and the outstanding figure is all of
@@ -37,6 +37,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
+    import CompanyTerritories from "$lib/components/CompanyTerritories.svelte";
 
     const ORDERS_PER_PAGE = 25;
 
@@ -406,6 +407,9 @@
                             <a class="b2b-more" href="{base}/b2b/quotes?company_id={company.id}">Quotes <span aria-hidden="true">→</span></a>
                         {/if}
                         <a class="b2b-more" href="{base}/b2b/approvals?company_id={company.id}">Approval requests <span aria-hidden="true">→</span></a>
+                        {#if can("leads.read")}
+                            <a class="b2b-more" href="{base}/b2b/leads?company_id={company.id}">Leads sent to it <span aria-hidden="true">→</span></a>
+                        {/if}
                     </div>
                 </section>
 
@@ -538,8 +542,8 @@
                 </div>
 
                 {#if writable}
-                    <form class="b2b-add-buyer m-b-base" onsubmit={addBuyer} novalidate>
-                        <div class="field" class:error={!!addError}>
+                    <form class="b2b-inline-form m-b-base" onsubmit={addBuyer} novalidate>
+                        <div class="field b2b-grow" class:error={!!addError}>
                             <label for="buyer-email">Add a buyer by email</label>
                             <input
                                 id="buyer-email"
@@ -550,7 +554,7 @@
                                 oninput={() => (addError = "")}
                             />
                         </div>
-                        <div class="field b2b-add-role">
+                        <div class="field b2b-fixed">
                             <label for="buyer-role">Role</label>
                             <Select
                                 id="buyer-role"
@@ -642,6 +646,12 @@
                         </table>
                     </div>
                 {/if}
+
+                <h2 class="section-title">
+                    <i class="ri-map-2-line" aria-hidden="true"></i>
+                    Territories
+                </h2>
+                <CompanyTerritories companyId={company.id} companyName={company.name} {writable} />
 
                 <div class="b2b-section-head">
                     <h2 class="section-title" tabindex="-1" bind:this={ordersHeading}>

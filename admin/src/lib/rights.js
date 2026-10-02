@@ -269,6 +269,7 @@ export const RESOURCE_LABELS = {
     webhooks: "Webhooks",
     companies: "Companies",
     quotes: "Quotes",
+    leads: "Dealer leads",
 };
 
 export const VERB_LABELS = {
@@ -316,7 +317,7 @@ export const RIGHT_SECTIONS = [
     },
     {
         section: "Customers",
-        resources: ["customers", "groups", "companies", "accounts", "contact", "newsletter", "wishlists"],
+        resources: ["customers", "groups", "companies", "leads", "accounts", "contact", "newsletter", "wishlists"],
     },
     { section: "Discounts", resources: ["discounts"] },
     { section: "Notifications", resources: ["notifications"] },

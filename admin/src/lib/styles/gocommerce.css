@@ -6603,10 +6603,12 @@ kbd + kbd {
 /* ------------------------------------------------------------------ b2b */
 
 /*
- * The business-customer screens (ext/b2b): companies, quotes, approvals and
- * receivables. Everything here is scoped to `.b2b-*` and built from the design
- * tokens the rest of a migrated screen already uses, so nothing reaches a
- * screen that did not ask for it.
+ * The business-customer screens (ext/b2b): companies, quotes, approvals,
+ * receivables and leads. Every class here is `.b2b-*` and built from the
+ * design tokens the rest of a migrated screen already uses, so nothing reaches
+ * a screen that did not ask for it. Most rules also sit under `.shopify-skin`;
+ * the few a drawer uses do not, because a drawer is portalled to the body,
+ * outside the page that carries the skin.
  *
  * Motion follows the panel's rule — 150ms, `--animationSpeed` — and moves only
  * transform and opacity, so nothing here triggers layout or paint on a frame.
@@ -6616,14 +6618,14 @@ kbd + kbd {
 
 /* A company's facts, two or three across: a label above each value, the
    eyebrow DESIGN.md §3 puts over every figure. */
-.shopify-skin .b2b-facts {
+.b2b-facts {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
     gap: 12px 24px;
     margin: 16px 0 0;
 }
-.shopify-skin .b2b-facts dt,
-.shopify-skin .b2b-eyebrow {
+.b2b-facts dt,
+.b2b-eyebrow {
     margin: 0 0 2px;
     font-size: 12px;
     font-weight: 500;
@@ -6631,17 +6633,17 @@ kbd + kbd {
     text-transform: uppercase;
     color: var(--muted-foreground);
 }
-.shopify-skin .b2b-facts dd {
+.b2b-facts dd {
     margin: 0;
     font-size: var(--fontSize);
     overflow-wrap: anywhere;
 }
 /* First in its card, the card's own padding is the gap; after the facts, the
    eyebrow starts a new group and needs the same gap the facts have above. */
-.shopify-skin .b2b-facts:first-child {
+.b2b-facts:first-child {
     margin-top: 0;
 }
-.shopify-skin .b2b-facts + .b2b-eyebrow {
+.b2b-facts + .b2b-eyebrow {
     margin-top: 16px;
 }
 
@@ -6658,7 +6660,7 @@ kbd + kbd {
 }
 
 /* The buyer's own words, set apart from the store's. */
-.shopify-skin .b2b-note {
+.b2b-note {
     margin: 0;
     padding: 2px 0 2px 12px;
     border-left: 2px solid var(--border);
@@ -6770,7 +6772,7 @@ kbd + kbd {
 /* Something that has just appeared because of what the operator did — an
    invitation sent, a filter applied, unsaved changes — arrives the way the
    page itself does, so it reads as the answer rather than as furniture. */
-.shopify-skin .b2b-notice {
+.b2b-notice {
     animation: slideTop var(--animationSpeed) ease-out;
 }
 
@@ -6822,19 +6824,23 @@ kbd + kbd {
     overflow-wrap: anywhere;
 }
 
-/* Adding a buyer: the address takes the room, the role and the button what
-   they need. On a phone they stack. */
-.shopify-skin .b2b-add-buyer {
+/* A one-line form under a table — adding a buyer, adding a territory: the
+   free-text box takes the room, the pickers and the button what they need.
+   On a phone they stack. */
+.shopify-skin .b2b-inline-form {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-end;
     gap: 8px;
 }
-.shopify-skin .b2b-add-buyer > .field:first-child {
-    flex: 1 1 260px;
+.shopify-skin .b2b-inline-form > .b2b-grow {
+    flex: 1 1 220px;
 }
-.shopify-skin .b2b-add-buyer > .b2b-add-role {
+.shopify-skin .b2b-inline-form > .b2b-fixed {
     flex: 0 1 170px;
+}
+.shopify-skin .b2b-inline-form > .b2b-wide {
+    flex: 0 1 260px;
 }
 
 .shopify-skin .b2b-total {
@@ -6847,6 +6853,27 @@ kbd + kbd {
 .shopify-skin .b2b-total-value {
     font-size: 20px;
     font-variant-numeric: tabular-nums;
+}
+
+/* An enquiry's message under the name, cut to one line by PocketBase's own
+   .txt-ellipsis: enough to recognise it, one row high however long it is. */
+.shopify-skin .b2b-snippet {
+    max-width: 48ch;
+}
+
+/* Two filters in the header share the row and wrap under each other rather
+   than squeezing. */
+.shopify-skin .b2b-filters {
+    flex-wrap: wrap;
+}
+
+/* In a narrow drawer two facts share a row; a fact that is a sentence
+   rather than a value takes the row to itself. */
+.b2b-facts-stacked {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+.b2b-facts > .b2b-fact-wide {
+    grid-column: 1 / -1;
 }
 
 /*
@@ -6876,9 +6903,13 @@ kbd + kbd {
         min-width: 0;
         width: 100%;
     }
-    .shopify-skin .b2b-add-buyer > .field:first-child,
-    .shopify-skin .b2b-add-buyer > .b2b-add-role,
-    .shopify-skin .b2b-add-buyer > .btn {
+    .shopify-skin .b2b-filters {
+        width: 100%;
+    }
+    .shopify-skin .b2b-snippet {
+        max-width: 100%;
+    }
+    .shopify-skin .b2b-inline-form > :is(.b2b-grow, .b2b-fixed, .b2b-wide, .btn) {
         flex: 1 1 100%;
     }
     .shopify-skin .b2b-total {
@@ -6899,7 +6930,7 @@ kbd + kbd {
     .b2b-page.shopify-skin tbody tr {
         animation: fadeIn var(--animationSpeed);
     }
-    .shopify-skin .b2b-notice {
+    .b2b-notice {
         animation-name: fadeIn;
     }
     .shopify-skin .b2b-more > span {
