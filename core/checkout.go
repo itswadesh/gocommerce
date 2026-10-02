@@ -532,7 +532,7 @@ func (s *Orders) initiatePayment(ctx context.Context, provider PaymentProvider, 
 
 // refreshCartPrices re-snapshots a cart to current prices after a conflict.
 func (s *Orders) refreshCartPrices(ctx context.Context, cartToken string) {
-	priced := effectivePriceSQL("v.id", "l.quantity", "c.email", "c.channel_id", "v.price_minor")
+	priced := effectivePriceSQL("v.id", "l.quantity", "c.verified_email", "c.channel_id", "v.price_minor")
 	if _, err := s.app.db.ExecContext(ctx, `
 		UPDATE cart_line_items l
 		SET unit_price_minor = `+priced+`, updated_at = now()
@@ -599,10 +599,15 @@ func loadCheckoutLines(ctx context.Context, tx *sql.Tx, cartID int64) ([]checkou
 	// The current price is the resolved one, not the catalogue one: a trade
 	// list or a quantity break is what this buyer is owed, and comparing the
 	// snapshot against the catalogue would make every listed line look changed.
+	//
+	// Owed to the cart's verified address, never to the email on this
+	// checkout or the one typed onto the cart (D66): both are whatever the
+	// caller says, and the order going out under one address at another's
+	// trade price was the hole.
 	rows, err := tx.QueryContext(ctx, `
 		SELECT l.variant_id, v.product_id, v.sku, p.title, l.quantity,
 		       l.unit_price_minor,
-		       `+effectivePriceSQL("v.id", "l.quantity", "c.email", "c.channel_id", "v.price_minor")+`,
+		       `+effectivePriceSQL("v.id", "l.quantity", "c.verified_email", "c.channel_id", "v.price_minor")+`,
 		       v.active, v.taxable, v.requires_shipping,
 		       CASE WHEN v.track_inventory AND NOT v.continue_selling
 		            THEN coalesce((SELECT sum(vs.on_hand - vs.reserved) FROM variant_stock vs WHERE vs.variant_id = v.id), 0) ELSE -1 END,
@@ -756,6 +761,16 @@ func (s *Orders) Create(ctx context.Context, in NewOrderInput) (*CheckoutResult,
 	cart, err := s.app.carts.Create(ctx, in.Email)
 	if err != nil {
 		return nil, err
+	}
+	// The operator is the proof (D66): somebody signed in to the panel, under
+	// orders.write, typed this customer's address, so the order is priced as
+	// that customer — the phone order a dealer rings through is at the
+	// dealer's price. Verified before any line goes in, so AddLine snapshots
+	// the right figure the first time.
+	if strings.TrimSpace(in.Email) != "" {
+		if _, err := s.app.carts.VerifyEmail(ctx, cart.Token, in.Email); err != nil {
+			return nil, err
+		}
 	}
 	for _, l := range in.Lines {
 		if l.Quantity <= 0 {

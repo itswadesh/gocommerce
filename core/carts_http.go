@@ -20,6 +20,36 @@ import (
 func (a *App) mountAdminCartRoutes() {
 	a.HandleAdminFunc("GET /api/admin/carts", a.handleAdminListCarts, RightCartsRead)
 	a.HandleAdminFunc("GET /api/admin/carts/{id}", a.handleAdminGetCart, RightCartsRead)
+	// The one write, and it is by token, so the rule above still holds: the
+	// caller must already hold the basket. It is how a storefront that signs
+	// its own customers in — its backend, with an API key — says whose basket
+	// this is, so it is priced as them (D66). groups.write because putting an
+	// address into a group already gives it the group's prices; this cannot
+	// give anything that right does not.
+	a.HandleAdminFunc("POST /api/admin/carts/verify-email", a.handleAdminVerifyCartEmail, RightGroupsWrite)
+}
+
+func (a *App) handleAdminVerifyCartEmail(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		// The token, named as every public route names it. In the body rather
+		// than the path so it stays out of access logs.
+		CartID string `json:"cart_id"`
+		Email  string `json:"email"`
+	}
+	if err := DecodeJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	if strings.TrimSpace(in.CartID) == "" {
+		RespondError(w, r, Validationf("cart_id is required"))
+		return
+	}
+	cart, err := a.carts.VerifyEmail(r.Context(), in.CartID, in.Email)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, cart)
 }
 
 func (a *App) handleAdminListCarts(w http.ResponseWriter, r *http.Request) {

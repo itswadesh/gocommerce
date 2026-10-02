@@ -45,6 +45,12 @@ type Cart struct {
 	Status   string `json:"status"`
 	Currency string `json:"currency"`
 	Email    string `json:"email,omitempty"`
+	// VerifiedEmail is the address this basket is priced as: the one a
+	// customer group's prices are read from. Email is where to reach the
+	// shopper and anybody holding the token can set it; this one is set only by
+	// something that has proof — an operator, a signed-in account whose address
+	// is confirmed, or a module — through VerifyEmail (D66).
+	VerifiedEmail string `json:"verified_email,omitempty"`
 	// ChannelCode is the storefront this basket was opened on, empty on a store
 	// that has no channels. It is what the price of every line was resolved
 	// against, so it travels with the cart rather than being looked up again.
@@ -94,19 +100,22 @@ type CartSummary struct {
 	// State is derived; Status is the column. They differ for a cart the
 	// sweeper has not reached yet, and the drawer says so rather than looking
 	// like a bug.
-	State        string     `json:"state"`
-	Status       string     `json:"status"`
-	Currency     string     `json:"currency"`
-	Email        string     `json:"email,omitempty"`
-	DiscountCode string     `json:"discount_code,omitempty"`
-	LineCount    int        `json:"line_count"`
-	ItemCount    int        `json:"item_count"`
-	Subtotal     Money      `json:"subtotal"`
-	Metadata     Metadata   `json:"metadata"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	ExpiresAt    time.Time  `json:"expires_at"`
-	AbandonedAt  *time.Time `json:"abandoned_at,omitempty"`
+	State    string `json:"state"`
+	Status   string `json:"status"`
+	Currency string `json:"currency"`
+	Email    string `json:"email,omitempty"`
+	// VerifiedEmail says whose prices the basket carries, which is what an
+	// operator needs to read a trade total that looks low (D66).
+	VerifiedEmail string     `json:"verified_email,omitempty"`
+	DiscountCode  string     `json:"discount_code,omitempty"`
+	LineCount     int        `json:"line_count"`
+	ItemCount     int        `json:"item_count"`
+	Subtotal      Money      `json:"subtotal"`
+	Metadata      Metadata   `json:"metadata"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	ExpiresAt     time.Time  `json:"expires_at"`
+	AbandonedAt   *time.Time `json:"abandoned_at,omitempty"`
 }
 
 // CartDetail is a summary with what is in the basket.
@@ -183,14 +192,14 @@ func (c *Carts) GetByToken(ctx context.Context, tok string) (*Cart, error) {
 	}
 	cart := &Cart{}
 	var meta []byte
-	var email, channelCode sql.NullString
+	var email, verified, channelCode sql.NullString
 	err := c.app.db.QueryRowContext(ctx, `
-		SELECT c.id, c.token, c.status, c.currency, c.email, ch.code,
+		SELECT c.id, c.token, c.status, c.currency, c.email, c.verified_email, ch.code,
 		       c.metadata, c.created_at, c.updated_at, c.expires_at
 		FROM carts c
 		LEFT JOIN channels ch ON ch.id = c.channel_id
 		WHERE c.token = $1`, tok,
-	).Scan(&cart.ID, &cart.Token, &cart.Status, &cart.Currency, &email, &channelCode,
+	).Scan(&cart.ID, &cart.Token, &cart.Status, &cart.Currency, &email, &verified, &channelCode,
 		&meta, &cart.CreatedAt, &cart.UpdatedAt, &cart.ExpiresAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -199,6 +208,7 @@ func (c *Carts) GetByToken(ctx context.Context, tok string) (*Cart, error) {
 		return nil, err
 	}
 	cart.Email = email.String
+	cart.VerifiedEmail = verified.String
 	cart.ChannelCode = channelCode.String
 	if err := scanMetadata(meta, &cart.Metadata); err != nil {
 		return nil, err
@@ -235,10 +245,14 @@ func (c *Carts) linesOf(ctx context.Context, cartID int64, currency string) (lin
 	// flag every line a price list covers as "the price changed", which is the
 	// banner a shopper is shown before being asked to re-confirm: it would fire
 	// on every trade cart, every time, and mean nothing after the first.
+	//
+	// Priced as c.verified_email and never c.email (D66). Reading the typed
+	// address here also answered, for anybody, whether that address is in a
+	// priced group — the current price is in the public response.
 	rows, err := c.app.db.QueryContext(ctx, `
 		SELECT l.id, l.variant_id, v.product_id, v.sku, p.title, l.quantity,
 		       l.unit_price_minor,
-		       `+effectivePriceSQL("v.id", "l.quantity", "c.email", "c.channel_id", "v.price_minor")+`,
+		       `+effectivePriceSQL("v.id", "l.quantity", "c.verified_email", "c.channel_id", "v.price_minor")+`,
 		       v.track_inventory,
 		       coalesce((SELECT sum(vs.on_hand - vs.reserved) FROM variant_stock vs WHERE vs.variant_id = v.id), 0), v.active
 		FROM cart_line_items l
@@ -330,7 +344,8 @@ const cartSummaryColumns = `c.id,
 	     WHEN c.status = 'abandoned' THEN 'abandoned'
 	     WHEN c.expires_at < now()   THEN 'abandoned'
 	     ELSE 'live' END,
-	c.status, c.currency, coalesce(c.email, ''), c.discount_code, c.metadata,
+	c.status, c.currency, coalesce(c.email, ''), coalesce(c.verified_email, ''),
+	c.discount_code, c.metadata,
 	c.created_at, c.updated_at, c.expires_at, c.abandoned_at,
 	v.line_count, v.item_count, v.subtotal_minor`
 
@@ -354,7 +369,7 @@ func scanCartSummary(row interface{ Scan(...any) error }) (*CartSummary, error) 
 	var meta []byte
 	var abandonedAt sql.NullTime
 	var subtotalMinor int64
-	if err := row.Scan(&s.ID, &s.State, &s.Status, &s.Currency, &s.Email,
+	if err := row.Scan(&s.ID, &s.State, &s.Status, &s.Currency, &s.Email, &s.VerifiedEmail,
 		&s.DiscountCode, &meta, &s.CreatedAt, &s.UpdatedAt, &s.ExpiresAt,
 		&abandonedAt, &s.LineCount, &s.ItemCount, &subtotalMinor); err != nil {
 		return nil, err
@@ -508,10 +523,13 @@ func (c *Carts) AddLine(ctx context.Context, tok string, variantID int64, qty in
 		var storedPrice sql.NullInt64
 		var cartEmail string
 		var cartChannel sql.NullInt64
+		// The verified address, not the typed one (D66): the price of a line is
+		// a statement about who is buying, and only the verified column has
+		// anything behind it.
 		err = tx.QueryRowContext(ctx, `
 			SELECT coalesce((SELECT quantity FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2), 0),
 			       (SELECT unit_price_minor FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2),
-			       coalesce((SELECT email FROM carts WHERE id = $1), ''),
+			       coalesce((SELECT verified_email FROM carts WHERE id = $1), ''),
 			       (SELECT channel_id FROM carts WHERE id = $1)`,
 			cartID, variantID).Scan(&existing, &storedPrice, &cartEmail, &cartChannel)
 		if err != nil {
@@ -656,6 +674,12 @@ func (c *Carts) RemoveLine(ctx context.Context, tok string, lineID int64) (*Cart
 // SetEmail records the shopper's email on the cart, so an abandoned-cart
 // consumer has something to work with. An empty value clears it, which is the
 // shopper's own way to withdraw the address.
+//
+// It is a contact address and nothing more: it never earns a group price
+// (D66). Typing a different address than the one the cart was verified as also
+// withdraws the verification, because the basket has stopped saying it belongs
+// to that person — a shared device whose next user types their own address
+// must not keep the last one's trade prices.
 func (c *Carts) SetEmail(ctx context.Context, tok, email string) (*Cart, error) {
 	email = strings.TrimSpace(email)
 	// Not the full checkout validation: an address that is merely wrong still
@@ -668,10 +692,24 @@ func (c *Carts) SetEmail(ctx context.Context, tok, email string) (*Cart, error) 
 		if err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx,
-			`UPDATE carts SET email = $2 WHERE id = $1`, cartID, nullString(email))
+		var withdrawn bool
+		err = tx.QueryRowContext(ctx, `
+			UPDATE carts c
+			SET email = $2,
+			    verified_email = CASE WHEN c.verified_email = lower($3) THEN c.verified_email END
+			FROM (SELECT verified_email FROM carts WHERE id = $1) old
+			WHERE c.id = $1
+			RETURNING old.verified_email IS NOT NULL AND c.verified_email IS NULL`,
+			cartID, nullString(email), email).Scan(&withdrawn)
 		if err != nil {
 			return err
+		}
+		// Back to the prices anybody pays, now rather than at checkout: the
+		// basket on screen should not go on showing somebody else's terms.
+		if withdrawn {
+			if err := repriceCartLines(ctx, tx, cartID); err != nil {
+				return err
+			}
 		}
 		// Every other mutation extends the cart's life, and a shopper who has
 		// just typed their address is the most active they have been.
@@ -681,6 +719,69 @@ func (c *Carts) SetEmail(ctx context.Context, tok, email string) (*Cart, error) 
 		return nil, err
 	}
 	return c.GetByToken(ctx, tok)
+}
+
+// VerifyEmail says who a basket belongs to, so it is priced as them: the
+// customer groups that address is in reach this cart's lines (D66). An empty
+// address withdraws it, and the basket goes back to the prices anybody pays.
+//
+// The caller is the proof, which is why no public route reaches this. The
+// operator placing an order by hand vouches for the address they typed; a
+// module vouches for a signed-in account whose address it has confirmed; a
+// storefront with its own sign-in vouches through the admin route, under
+// groups.write — whoever may put an address into a group may already give it
+// that group's prices.
+//
+// The contact address follows, because a cart verified as one person and
+// addressed to another is two claims about the same basket.
+//
+// The lines already in the basket are re-priced in the same transaction. Left
+// on their old snapshot they would read price_changed and fail the first
+// checkout with a 409 — a signed-in buyer's first sight of their own trade
+// price would be an error.
+func (c *Carts) VerifyEmail(ctx context.Context, tok, email string) (*Cart, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email != "" && !strings.Contains(email, "@") {
+		return nil, Validationf("a valid email is required")
+	}
+	err := InTx(ctx, c.app.db, func(tx *sql.Tx) error {
+		cartID, err := c.openCartID(ctx, tx, tok)
+		if err != nil {
+			return err
+		}
+		if email == "" {
+			_, err = tx.ExecContext(ctx,
+				`UPDATE carts SET verified_email = NULL WHERE id = $1`, cartID)
+		} else {
+			_, err = tx.ExecContext(ctx,
+				`UPDATE carts SET verified_email = $2, email = $2 WHERE id = $1`, cartID, email)
+		}
+		if err != nil {
+			return err
+		}
+		if err := repriceCartLines(ctx, tx, cartID); err != nil {
+			return err
+		}
+		return touchCart(ctx, tx, cartID, c.app.cfg.CartTTL)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return c.GetByToken(ctx, tok)
+}
+
+// repriceCartLines re-snapshots every line of one cart at what it costs the
+// cart's verified address now. checkout's refreshCartPrices is the same
+// statement keyed by token, for after a conflict.
+func repriceCartLines(ctx context.Context, tx *sql.Tx, cartID int64) error {
+	priced := effectivePriceSQL("v.id", "l.quantity", "c.verified_email", "c.channel_id", "v.price_minor")
+	_, err := tx.ExecContext(ctx, `
+		UPDATE cart_line_items l
+		SET unit_price_minor = `+priced+`, updated_at = now()
+		FROM variants v, carts c
+		WHERE v.id = l.variant_id AND c.id = l.cart_id AND c.id = $1
+		  AND l.unit_price_minor <> `+priced, cartID)
+	return err
 }
 
 // SetDiscountCode puts a promotion code on a cart, or clears it when the code

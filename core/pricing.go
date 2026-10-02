@@ -126,6 +126,11 @@ type PriceRow struct {
 // it is why the group test is written as "the list has no group OR this address
 // is in it" rather than as a join that would quietly drop the ungrouped ones.
 //
+// The address must be one something has proven, because membership is all a
+// group price asks. Carts pass carts.verified_email and never carts.email
+// (D66): the second is whatever the token holder typed, and reading it let
+// anybody who knew a dealer's address buy at the dealer's price.
+//
 // No rows means no list covers this line, and the caller falls back to
 // variants.price_minor — which is why this answers the base price itself rather
 // than a sentinel: every caller wants a price, and none of them wants to

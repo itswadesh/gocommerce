@@ -397,6 +397,7 @@ func (a *App) maskCartSummary(c *CartSummary) {
 		return
 	}
 	c.Email = maskEmail(c.Email)
+	c.VerifiedEmail = maskEmail(c.VerifiedEmail)
 }
 
 func (a *App) maskCartSummaries(cs []*CartSummary) {

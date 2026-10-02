@@ -191,11 +191,22 @@ of quantity × snapshot price) and `from`/`to` over `updated_at`.
 - **Treating the cart's `id` as a row id.** It is the token — an opaque string,
   and the only credential. Do not log it, and do not put it in a URL a third
   party will see in a `Referer` header.
-- **Expecting an admin cart route to hand you the token, or to write.** Neither
-  admin route returns one and neither writes: `GET /api/admin/carts` and
-  `GET /api/admin/carts/{id}` are read-only, keyed by row id, and gated on
-  `orders.read`. Every mutation of a cart is still the shopper's, taken under
+- **Expecting an admin cart route to hand you the token.** None returns one:
+  `GET /api/admin/carts` and `GET /api/admin/carts/{id}` are read-only, keyed
+  by row id, and gated on `carts.read`. The one admin write,
+  `POST /api/admin/carts/verify-email`, takes the token in its body — you must
+  already hold the basket — and every other mutation is the shopper's, under
   their token.
+- **Expecting the cart's `email` to earn a customer group's prices.** It does
+  not, and it used to (D66). Anybody can type any address onto a cart, so a
+  group price is read from `verified_email`, which only
+  `Carts.VerifyEmail` sets: an operator placing an order by hand, a module that
+  has confirmed a signed-in account's address, or
+  a storefront backend calling `POST /api/admin/carts/verify-email` under
+  `groups.write`. Vouching re-prices the lines at once; typing a different
+  address with `PUT /api/carts/<token>/email` withdraws it and re-prices back.
+  `Pricing.PriceFor(variant, qty, email)` still takes an address — the caller
+  is the one vouching for it.
 - **Looking for a DELETE that clears the email.** There is none, because the
   setter clears: `PUT /api/carts/<token>/email` with `{"email": ""}` is the
   shopper's own withdrawal path. A non-empty value with no `@` in it is

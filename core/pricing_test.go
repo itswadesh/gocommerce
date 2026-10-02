@@ -379,10 +379,15 @@ func TestCartAndCheckoutUsePriceLists(t *testing.T) {
 			got.Lines[0].UnitPrice.AmountMinor)
 	}
 
-	// A member's cart takes the list price at the quantity it holds.
+	// A member's cart takes the list price at the quantity it holds — once
+	// something has vouched for whose cart it is (D66). The address on Create
+	// is only a contact address.
 	cart, err := app.Cart().Create(ctx, "shopper@example.com")
 	if err != nil {
 		t.Fatalf("cart: %v", err)
+	}
+	if _, err := app.Cart().VerifyEmail(ctx, cart.Token, "shopper@example.com"); err != nil {
+		t.Fatalf("verify: %v", err)
 	}
 	if _, err := app.Cart().AddLine(ctx, cart.Token, variant, 2); err != nil {
 		t.Fatalf("add: %v", err)
@@ -458,9 +463,12 @@ func TestListedLineIsNotFlaggedAsChanged(t *testing.T) {
 		t.Fatalf("price: %v", err)
 	}
 
-	cart, err := app.Cart().Create(ctx, "buyer@example.com")
+	cart, err := app.Cart().Create(ctx, "")
 	if err != nil {
 		t.Fatalf("cart: %v", err)
+	}
+	if _, err := app.Cart().VerifyEmail(ctx, cart.Token, "buyer@example.com"); err != nil {
+		t.Fatalf("verify: %v", err)
 	}
 	if _, err := app.Cart().AddLine(ctx, cart.Token, variant, 1); err != nil {
 		t.Fatalf("add: %v", err)

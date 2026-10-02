@@ -571,7 +571,8 @@
                 "properties": {
                   "email": {
                     "type": "string",
-                    "format": "email"
+                    "format": "email",
+                    "description": "A contact address, for an abandoned-cart flow to reach the shopper on. It never earns a customer group's prices: anybody can type any address here, so a group price is read from `verified_email`, which only a trusted caller sets (see `POST /api/admin/carts/verify-email`)."
                   },
                   "channel": {
                     "type": "string",
@@ -746,7 +747,7 @@
           "cart"
         ],
         "summary": "Set the shopper's email on a cart",
-        "description": "The address an abandoned-cart flow reaches the shopper on. A shopper types it into the checkout form mid-session, before checkout exists to capture it, and this is where it is recorded. An empty string clears it, which is the shopper's own way to withdraw the address. Like every cart mutation it extends the cart's TTL, and it revives a cart the sweeper has already marked `abandoned`.",
+        "description": "The address an abandoned-cart flow reaches the shopper on. A shopper types it into the checkout form mid-session, before checkout exists to capture it, and this is where it is recorded. An empty string clears it, which is the shopper's own way to withdraw the address. Like every cart mutation it extends the cart's TTL, and it revives a cart the sweeper has already marked `abandoned`. It is a contact address only and never earns a customer group's prices — anybody holding the token can type any address. Typing a different address from the cart's `verified_email` withdraws that verification and re-prices the basket at what anybody pays, so a shared device's next user does not keep the last one's trade prices.",
         "parameters": [
           {
             "$ref": "#/components/parameters/CartID"
@@ -3843,6 +3844,63 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/carts/verify-email": {
+      "post": {
+        "tags": [
+          "admin:orders"
+        ],
+        "summary": "Say whose basket a cart is, so it is priced as them",
+        "description": "Sets the cart's `verified_email`: the address a customer group's prices are read from. The public cart routes take any address from anybody, so they never earn a group price; this route is how a storefront that signs its own customers in vouches for one, from its backend with an API key. The basket's lines are re-priced in the same transaction, and the contact `email` follows. An empty `email` withdraws the verification. Gated on `groups.write`, because putting an address into a group already gives it that group's prices. Addressed by the cart's token, in the body to keep it out of access logs: an operator can only act on a basket they already hold.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "cart_id"
+                ],
+                "properties": {
+                  "cart_id": {
+                    "type": "string",
+                    "description": "The cart's token, as the public routes name it."
+                  },
+                  "email": {
+                    "type": "string",
+                    "description": "The proven address. Empty withdraws the verification."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/CartResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       }
@@ -14487,6 +14545,10 @@
           "email": {
             "type": "string"
           },
+          "verified_email": {
+            "type": "string",
+            "description": "The address this basket is priced as: a customer group's prices reach it only through this field. Set by an operator, a signed-in account whose address is confirmed, or a module — never by the public cart routes, which take any address from anybody. Absent when nothing has vouched for the basket."
+          },
           "line_items": {
             "type": "array",
             "items": {
@@ -14595,6 +14657,10 @@
           },
           "email": {
             "type": "string"
+          },
+          "verified_email": {
+            "type": "string",
+            "description": "Whose prices the basket carries, when something has vouched for it. Explains a trade total that looks low."
           },
           "discount_code": {
             "type": "string"

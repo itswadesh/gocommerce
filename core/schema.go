@@ -57,6 +57,7 @@ func coreMigrations() []Migration {
 		{ID: "0046_api_key_secret", SQL: migration0046APIKeySecret},
 		{ID: "0047_vendors", SQL: migration0047Vendors},
 		{ID: "0048_vendor_accounts", SQL: migration0048VendorAccounts},
+		{ID: "0049_cart_verified_email", SQL: migration0049CartVerifiedEmail},
 	}
 }
 
@@ -2333,4 +2334,27 @@ ALTER TABLE role_rights DROP CONSTRAINT role_rights_role_check;
 ALTER TABLE role_rights
     ADD CONSTRAINT role_rights_role_check
         CHECK (role IN ('manager', 'staff', 'vendor'));
+`
+
+// migration0049CartVerifiedEmail separates the address a cart is priced as
+// from the address a cart is reachable at (D66).
+//
+// carts.email is whatever the token holder typed — PUT /api/carts/{id}/email
+// and POST /api/carts both take it from anybody — and M34 read group
+// membership off it. So anyone who knew a dealer's address could type it into
+// an anonymous cart and be charged the dealer's price, then check out under
+// their own address. verified_email is the one a group price is read from,
+// and nothing public writes it: an operator, a signed-in account whose address
+// is proven, or a module vouches for it through Carts.VerifyEmail.
+//
+// Folded to lower case for the reason customer_group_members.email is: the two
+// are compared, and an address that differs only in case is the same mailbox.
+//
+// Existing carts start unverified. A basket priced as a member before this
+// migration reads price_changed on its next view and re-prices at checkout,
+// which is the honest outcome — nothing ever proved who it belonged to.
+const migration0049CartVerifiedEmail = `
+ALTER TABLE carts
+    ADD COLUMN verified_email text
+        CHECK (verified_email = lower(verified_email) AND verified_email <> '');
 `
