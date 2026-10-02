@@ -4,7 +4,7 @@
       "post": {
         "tags": ["identity"],
         "summary": "Create an account and sign in",
-        "description": "Guest checkout is untouched: an account is never required. Registering returns a session token to send as `Authorization: Bearer <token>`.",
+        "description": "Guest checkout is untouched: an account is never required. Registering returns a session token to send as `Authorization: Bearer <token>`. The address starts unconfirmed (`email_verified: false`) and no email is sent; ask for the confirmation email with `POST /x/identity/me/email-verification` when the storefront wants it.",
         "requestBody": {
           "required": true,
           "content": {"application/json": {"schema": {"$ref": "#/components/schemas/IdentityRegisterInput"}}}
@@ -68,6 +68,7 @@
       "patch": {
         "tags": ["identity"],
         "summary": "Update the signed-in account's details",
+        "description": "Changing the email keeps every session but withdraws the address's confirmation, and any confirmation link already mailed stops working: it went to the old address. Retyping the same address in another case changes nothing.",
         "security": [{"customerSession": []}],
         "requestBody": {
           "required": true,
@@ -105,6 +106,23 @@
         }
       }
     },
+    "/x/identity/me/email-verification": {
+      "post": {
+        "tags": ["identity"],
+        "summary": "Email a link that confirms the account's address",
+        "description": "Mails the account's current address a confirmation link, replacing any sent before; nothing is sent at signup, so the storefront calls this when it wants the address proved. The notification event `identity.email_verification` carries `verify_token` and, when the store configured a confirmation URL, `verify_url`. The link confirms the address it was sent to and no other. A confirmed address is what a customer group's prices wait on: see `POST /x/identity/me/carts`.",
+        "security": [{"customerSession": []}],
+        "responses": {
+          "202": {"description": "The email has been handed to the store's notifiers.", "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {"data": {"type": "object", "properties": {"accepted": {"type": "boolean"}}}}
+          }}}},
+          "401": {"$ref": "#/components/responses/IdentityUnauthorized"},
+          "409": {"description": "The address is already confirmed.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
+          "429": {"description": "A confirmation email went to this account less than a minute ago (`too_many_attempts`). The wait survives changing the address, so the route cannot be used to fill somebody's inbox.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
+        }
+      }
+    },
     "/x/identity/password-reset": {
       "post": {
         "tags": ["identity"],
@@ -131,7 +149,7 @@
       "post": {
         "tags": ["identity"],
         "summary": "Set a new password with a reset token",
-        "description": "Spends the token, revokes every existing session and signs the shopper in.",
+        "description": "Spends the token, revokes every existing session and signs the shopper in. The link reached the address it was mailed to, so that address is confirmed too — if it is still the account's.",
         "requestBody": {
           "required": true,
           "content": {"application/json": {"schema": {
@@ -146,6 +164,25 @@
         "responses": {
           "200": {"$ref": "#/components/responses/IdentityAuthResponse"},
           "400": {"description": "The token is unknown, used or expired (`invalid_token`), or the password is too short.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
+        }
+      }
+    },
+    "/x/identity/email-verification/confirm": {
+      "post": {
+        "tags": ["identity"],
+        "summary": "Confirm an account's address with the emailed token",
+        "description": "Public: the link is usually opened from an inbox, often on a device where the shopper is not signed in, and the token is the whole credential. Spends the token and returns the account with `email_verified: true`. It signs nobody in.",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {
+            "type": "object",
+            "required": ["token"],
+            "properties": {"token": {"type": "string"}}
+          }}}
+        },
+        "responses": {
+          "200": {"$ref": "#/components/responses/IdentityCustomerResponse"},
+          "400": {"description": "The token is unknown, used or expired, or the account has changed its address since the link was sent (`invalid_token`).", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
         }
       }
     },
@@ -277,11 +314,40 @@
         }
       }
     },
+    "/x/identity/me/carts": {
+      "post": {
+        "tags": ["identity"],
+        "summary": "Price a cart as the signed-in account",
+        "description": "Sets the cart's `verified_email` to the account's address, so the customer groups that address is in reach the basket, and re-prices the lines already in it on the spot. The cart token is the proof the basket is this shopper's, as an order's access token is for claiming an order; the confirmed address is the proof they are who a group lists. A session alone proves a password, not a mailbox — anybody can sign up as a dealer's address before the dealer does — so an unconfirmed address is refused with 403 `email_unverified`.",
+        "security": [{"customerSession": []}],
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {
+            "type": "object",
+            "required": ["cart_id"],
+            "properties": {
+              "cart_id": {"type": "string", "description": "The cart's token, as the public cart routes name it."}
+            }
+          }}}
+        },
+        "responses": {
+          "200": {"description": "The cart, priced as the account.", "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {"data": {"$ref": "#/components/schemas/Cart"}}
+          }}}},
+          "400": {"$ref": "#/components/responses/IdentityValidation"},
+          "401": {"$ref": "#/components/responses/IdentityUnauthorized"},
+          "403": {"description": "The account's address is not confirmed yet (`email_unverified`). Ask for the confirmation email with `POST /x/identity/me/email-verification`.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"description": "The cart has already been checked out.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
+        }
+      }
+    },
     "/api/admin/x/identity/customers": {
       "get": {
         "tags": ["admin:identity"],
         "summary": "List accounts",
-        "description": "Requires customers.read — the same right the engine's own customer route carries, because this is the same personal data.",
+        "description": "Requires accounts.read, which by default goes to the roles that hold customers.read: this is the same personal data the engine's own customer route serves, so installing the module widens nobody.",
         "security": [{"adminToken": []}],
         "parameters": [
           {"name": "q", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Matches an email or a name — not a phone number."},
@@ -305,7 +371,7 @@
       "get": {
         "tags": ["admin:identity"],
         "summary": "One account",
-        "description": "Requires customers.read.",
+        "description": "Requires accounts.read.",
         "security": [{"adminToken": []}],
         "responses": {
           "200": {"$ref": "#/components/responses/IdentityCustomerResponse"},
@@ -317,7 +383,7 @@
       "delete": {
         "tags": ["admin:identity"],
         "summary": "Delete an account",
-        "description": "Requires customers.read AND store.operate. Rights are all-of, and erasure is not a read: this removes the account, its sessions, its address book and its order links. The orders themselves are core's and stay. There is no customers.write in the engine, so the destructive half borrows the store's operating right rather than riding a read one.",
+        "description": "Requires accounts.read AND accounts.erase. Rights are all-of, and erasure is not a read: this removes the account, its sessions, its address book and its order links. The orders themselves are core's and stay. accounts.erase is the module's own right and by default only an owner holds it.",
         "security": [{"adminToken": []}],
         "responses": {
           "204": {"description": "Deleted."},
@@ -347,6 +413,7 @@
         "properties": {
           "id": {"type": "integer", "format": "int64"},
           "email": {"type": "string", "format": "email"},
+          "email_verified": {"type": "boolean", "description": "Whether the shopper has proved they read mail at `email`, by a confirmation link or a completed password reset. False at signup and again after the address changes. A customer group's prices wait on it."},
           "name": {"type": "string"},
           "phone": {"type": "string"},
           "created_at": {"type": "string", "format": "date-time"},

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -40,6 +41,12 @@ func (c *capture) last() *gocommerce.Notification {
 		return nil
 	}
 	return &c.sent[len(c.sent)-1]
+}
+
+func (c *capture) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.sent)
 }
 
 func newApp(t *testing.T) (*gocommerce.App, *capture) {
@@ -568,4 +575,383 @@ func TestModuleContract(t *testing.T) {
 	app, _ := newApp(t)
 	gctest.AssertAdminRoutesDeclareRights(t, app, "identity")
 	gctest.AssertSpecCoversModuleRoutes(t, app, "identity")
+}
+
+// ------------------------------------------------------- email confirmation
+
+// requestConfirmation asks for the confirmation email and returns the token
+// it carried.
+func requestConfirmation(t *testing.T, app *gocommerce.App, mail *capture, session string) string {
+	t.Helper()
+	rec := as(t, app, session, http.MethodPost, "/x/identity/me/email-verification", nil)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("request confirmation = %d: %s", rec.Code, rec.Body)
+	}
+	note := mail.last()
+	if note == nil || note.Event != EventEmailVerification {
+		t.Fatalf("no confirmation email; last notification %+v", note)
+	}
+	token := note.Data["verify_token"]
+	if token == "" {
+		t.Fatalf("no verify_token in %v", note.Data)
+	}
+	return token
+}
+
+func confirmToken(t *testing.T, app *gocommerce.App, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	return gctest.Request(t, app, http.MethodPost, "/x/identity/email-verification/confirm",
+		map[string]any{"token": token})
+}
+
+// confirmAddress runs the whole flow for a signed-in shopper.
+func confirmAddress(t *testing.T, app *gocommerce.App, mail *capture, session string) Customer {
+	t.Helper()
+	rec := confirmToken(t, app, requestConfirmation(t, app, mail, session))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("confirm = %d: %s", rec.Code, rec.Body)
+	}
+	var c Customer
+	gctest.DecodeData(t, rec, &c)
+	if !c.EmailVerified {
+		t.Fatalf("confirmed account came back unconfirmed: %+v", c)
+	}
+	return c
+}
+
+// forgetCooldown stands in for the minute a real shopper would wait between
+// two confirmation emails.
+func forgetCooldown(t *testing.T, app *gocommerce.App, id int64) {
+	t.Helper()
+	if _, err := app.DB().ExecContext(context.Background(),
+		`UPDATE identity_customers SET email_verification_sent_at = now() - interval '1 hour' WHERE id = $1`,
+		id); err != nil {
+		t.Fatalf("forget cooldown: %v", err)
+	}
+}
+
+func account(t *testing.T, app *gocommerce.App, session string) Customer {
+	t.Helper()
+	rec := as(t, app, session, http.MethodGet, "/x/identity/me", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("me = %d: %s", rec.Code, rec.Body)
+	}
+	var c Customer
+	gctest.DecodeData(t, rec, &c)
+	return c
+}
+
+func TestEmailVerification(t *testing.T) {
+	mail := &capture{}
+	app := gctest.New(t, New(Config{Notifier: mail, VerifyURL: "https://shop.example/confirm?token={token}"}))
+	ada := register(t, app, "ada@example.com")
+
+	// Signing up proves nothing and sends nothing: the storefront asks.
+	if ada.Record.EmailVerified {
+		t.Error("a new account came back confirmed")
+	}
+	if note := mail.last(); note != nil {
+		t.Errorf("signup sent %s; asking is the storefront's call", note.Event)
+	}
+
+	if rec := as(t, app, "", http.MethodPost, "/x/identity/me/email-verification", nil); rec.Code != http.StatusUnauthorized {
+		t.Errorf("request without a session = %d, want 401", rec.Code)
+	}
+
+	token := requestConfirmation(t, app, mail, ada.Token)
+	note := mail.last()
+	if note.Channel != gocommerce.ChannelEmail || note.To != "ada@example.com" {
+		t.Errorf("notification = %+v", note)
+	}
+	if want := "https://shop.example/confirm?token=" + token; note.Data["verify_url"] != want {
+		t.Errorf("verify_url = %q, want %q", note.Data["verify_url"], want)
+	}
+	if note.Data["expires_in_minutes"] != "1440" {
+		t.Errorf("expires_in_minutes = %q, want the 24-hour default", note.Data["expires_in_minutes"])
+	}
+
+	// Asking again at once is what a script filling an inbox would do.
+	rec := as(t, app, ada.Token, http.MethodPost, "/x/identity/me/email-verification", nil)
+	if rec.Code != http.StatusTooManyRequests || errorCode(t, rec) != "too_many_attempts" {
+		t.Errorf("second request inside the cooldown = %d %s, want 429 too_many_attempts", rec.Code, rec.Body)
+	}
+	if mail.count() != 1 {
+		t.Errorf("%d emails sent, want 1: the refused request still sent one", mail.count())
+	}
+
+	if rec := confirmToken(t, app, "bogus"); rec.Code != http.StatusBadRequest || errorCode(t, rec) != "invalid_token" {
+		t.Errorf("confirm with a made-up token = %d %s", rec.Code, rec.Body)
+	}
+	rec = confirmToken(t, app, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("confirm = %d: %s", rec.Code, rec.Body)
+	}
+	var confirmed Customer
+	gctest.DecodeData(t, rec, &confirmed)
+	if !confirmed.EmailVerified || confirmed.Email != "ada@example.com" {
+		t.Errorf("confirmed = %+v", confirmed)
+	}
+	if !account(t, app, ada.Token).EmailVerified {
+		t.Error("GET /me does not show the confirmation")
+	}
+
+	// A token is single-use, and a confirmed address has nothing left to ask
+	// for — cooldown or no cooldown.
+	if rec := confirmToken(t, app, token); rec.Code != http.StatusBadRequest || errorCode(t, rec) != "invalid_token" {
+		t.Errorf("reused token = %d %s, want 400 invalid_token", rec.Code, rec.Body)
+	}
+	forgetCooldown(t, app, ada.Record.ID)
+	if rec := as(t, app, ada.Token, http.MethodPost, "/x/identity/me/email-verification", nil); rec.Code != http.StatusConflict {
+		t.Errorf("request for a confirmed address = %d %s, want 409", rec.Code, rec.Body)
+	}
+}
+
+func TestChangingTheAddressWithdrawsTheConfirmation(t *testing.T) {
+	app, mail := newApp(t)
+	ada := register(t, app, "ada@example.com")
+
+	// A link goes to the address the account has now, and the account moves
+	// before anybody opens it.
+	stale := requestConfirmation(t, app, mail, ada.Token)
+	rec := as(t, app, ada.Token, http.MethodPatch, "/x/identity/me", map[string]any{"email": "ada.new@example.com"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch email = %d: %s", rec.Code, rec.Body)
+	}
+	if rec := confirmToken(t, app, stale); rec.Code != http.StatusBadRequest || errorCode(t, rec) != "invalid_token" {
+		t.Errorf("a link mailed to the old address = %d %s, want 400 invalid_token", rec.Code, rec.Body)
+	}
+	if account(t, app, ada.Token).EmailVerified {
+		t.Fatal("a link mailed to the old address confirmed the new one")
+	}
+
+	// The wait outlives the move. If changing the address reset it, flipping
+	// the address back and forth would be a way around it.
+	if rec := as(t, app, ada.Token, http.MethodPost, "/x/identity/me/email-verification", nil); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("request straight after an address change = %d, want 429", rec.Code)
+	}
+
+	forgetCooldown(t, app, ada.Record.ID)
+	confirmed := confirmAddress(t, app, mail, ada.Token)
+	if mail.last().To != "ada.new@example.com" || confirmed.Email != "ada.new@example.com" {
+		t.Errorf("confirmation went to %q and confirmed %q, want the new address for both",
+			mail.last().To, confirmed.Email)
+	}
+
+	// Retyping the same address in another case is not a move.
+	rec = as(t, app, ada.Token, http.MethodPatch, "/x/identity/me", map[string]any{"email": "ADA.New@example.com"})
+	var same Customer
+	gctest.DecodeData(t, rec, &same)
+	if !same.EmailVerified {
+		t.Error("retyping the confirmed address in another case withdrew the confirmation")
+	}
+
+	// A real move withdraws it.
+	rec = as(t, app, ada.Token, http.MethodPatch, "/x/identity/me", map[string]any{"email": "countess@example.com"})
+	var moved Customer
+	gctest.DecodeData(t, rec, &moved)
+	if moved.EmailVerified || account(t, app, ada.Token).EmailVerified {
+		t.Error("changing the address kept the old address's confirmation")
+	}
+}
+
+func TestAPasswordResetConfirmsTheAddress(t *testing.T) {
+	app, mail := newApp(t)
+	ada := register(t, app, "ada@example.com")
+
+	reset := func(email string) string {
+		t.Helper()
+		rec := gctest.Request(t, app, http.MethodPost, "/x/identity/password-reset", map[string]any{"email": email})
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("reset %s = %d: %s", email, rec.Code, rec.Body)
+		}
+		note := mail.last()
+		if note == nil || note.Event != EventPasswordReset {
+			t.Fatalf("no reset email for %s", email)
+		}
+		return note.Data["reset_token"]
+	}
+	complete := func(token string) Customer {
+		t.Helper()
+		rec := gctest.Request(t, app, http.MethodPost, "/x/identity/password-reset/confirm", map[string]any{
+			"token": token, "password": "battery staple",
+		})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("confirm reset = %d: %s", rec.Code, rec.Body)
+		}
+		var auth AuthResponse
+		gctest.DecodeData(t, rec, &auth)
+		return *auth.Record
+	}
+
+	// A reset mailed to the old address still resets the password, and proves
+	// nothing about the address the account has moved to.
+	stale := reset("ada@example.com")
+	if rec := as(t, app, ada.Token, http.MethodPatch, "/x/identity/me", map[string]any{
+		"email": "ada.new@example.com",
+	}); rec.Code != http.StatusOK {
+		t.Fatalf("patch email = %d: %s", rec.Code, rec.Body)
+	}
+	if got := complete(stale); got.EmailVerified {
+		t.Error("a reset mailed to the old address confirmed the new one")
+	}
+
+	// One mailed to the address the account has proves it.
+	if got := complete(reset("ada.new@example.com")); !got.EmailVerified {
+		t.Error("completing a reset did not confirm the address it was mailed to")
+	}
+
+	// A reset issued before resets recorded their address confirms nothing:
+	// there is no knowing where it went.
+	bob := register(t, app, "bob@example.com")
+	if _, err := app.DB().ExecContext(context.Background(), `
+		INSERT INTO identity_password_resets (token_hash, customer_id, expires_at)
+		VALUES ($1, $2, now() + interval '1 hour')`, hashToken("legacy-reset"), bob.Record.ID); err != nil {
+		t.Fatalf("insert legacy reset: %v", err)
+	}
+	if got := complete("legacy-reset"); got.EmailVerified {
+		t.Error("a reset with no recorded address confirmed one")
+	}
+}
+
+// The money path (D66): a group price reaches a basket through a signed-in
+// account only once the account has proved the mailbox the group lists.
+func TestClaimCartPricesTheBasketAsTheAccount(t *testing.T) {
+	app, mail := newApp(t)
+	ctx := context.Background()
+
+	// One product at 10000, and a group whose member pays 6000 for it.
+	variant := gctest.CreateProduct(t, app, "TRADE-1", 10000, 50).DefaultVariant().ID
+	group, err := app.Pricing().CreateGroup(ctx, gocommerce.CustomerGroupInput{Code: "dealers", Name: "Dealers"})
+	if err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if err := app.Pricing().AddMember(ctx, group.ID, "dealer@example.com"); err != nil {
+		t.Fatalf("member: %v", err)
+	}
+	list, err := app.Pricing().CreateList(ctx, gocommerce.PriceListInput{Name: "Dealer", GroupID: &group.ID})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if err := app.Pricing().SetPrice(ctx, list.ID,
+		gocommerce.PriceRow{VariantID: variant, MinQuantity: 1, AmountMinor: 6000}); err != nil {
+		t.Fatalf("price: %v", err)
+	}
+
+	cart, err := app.Cart().Create(ctx, "")
+	if err != nil {
+		t.Fatalf("cart: %v", err)
+	}
+	if cart, err = app.Cart().AddLine(ctx, cart.Token, variant, 2); err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	if got := cart.Lines[0].UnitPrice.AmountMinor; got != 10000 {
+		t.Fatalf("anonymous line = %d, want the catalogue 10000", got)
+	}
+
+	claim := func(session, cartID string) *httptest.ResponseRecorder {
+		t.Helper()
+		return as(t, app, session, http.MethodPost, "/x/identity/me/carts", map[string]any{"cart_id": cartID})
+	}
+
+	// Somebody signed up as the dealer's address. A session is all they hold.
+	dealer := register(t, app, "dealer@example.com")
+	if rec := claim("", cart.Token); rec.Code != http.StatusUnauthorized {
+		t.Errorf("claim without a session = %d, want 401", rec.Code)
+	}
+	rec := claim(dealer.Token, cart.Token)
+	if rec.Code != http.StatusForbidden || errorCode(t, rec) != "email_unverified" {
+		t.Fatalf("claim by an unconfirmed account = %d %s, want 403 email_unverified", rec.Code, rec.Body)
+	}
+	still, err := app.Cart().GetByToken(ctx, cart.Token)
+	if err != nil {
+		t.Fatalf("get cart: %v", err)
+	}
+	if still.VerifiedEmail != "" || still.Lines[0].UnitPrice.AmountMinor != 10000 {
+		t.Fatalf("after the refusal: verified %q, line %d; want neither touched",
+			still.VerifiedEmail, still.Lines[0].UnitPrice.AmountMinor)
+	}
+
+	// Proving the mailbox is what the group price was waiting on.
+	confirmAddress(t, app, mail, dealer.Token)
+	rec = claim(dealer.Token, cart.Token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("claim by a confirmed account = %d: %s", rec.Code, rec.Body)
+	}
+	var priced gocommerce.Cart
+	gctest.DecodeData(t, rec, &priced)
+	if priced.VerifiedEmail != "dealer@example.com" {
+		t.Errorf("verified_email = %q, want dealer@example.com", priced.VerifiedEmail)
+	}
+	line := priced.Lines[0]
+	if line.UnitPrice.AmountMinor != 6000 || line.PriceChanged {
+		t.Errorf("line = %d (changed %v), want re-priced to the member's 6000 at once",
+			line.UnitPrice.AmountMinor, line.PriceChanged)
+	}
+	if priced.Subtotal.AmountMinor != 12000 {
+		t.Errorf("subtotal = %d, want 2 x 6000", priced.Subtotal.AmountMinor)
+	}
+
+	if rec := claim(dealer.Token, ""); rec.Code != http.StatusBadRequest {
+		t.Errorf("claim with no cart_id = %d, want 400", rec.Code)
+	}
+	if rec := claim(dealer.Token, "no-such-cart"); rec.Code != http.StatusNotFound {
+		t.Errorf("claim of an unknown cart = %d, want 404", rec.Code)
+	}
+}
+
+// MarkEmailVerified and the exact lookups are for other modules, which reach
+// the module in Go rather than over HTTP.
+func TestOtherModulesConfirmOnlyTheAccountsOwnAddress(t *testing.T) {
+	mail := &capture{}
+	mod := New(Config{Notifier: mail})
+	app := gctest.New(t, mod)
+	ctx := context.Background()
+	ada := register(t, app, "ada@example.com")
+	id := ada.Record.ID
+
+	// A link is outstanding when the other module's proof arrives.
+	if err := mod.RequestVerification(ctx, id); err != nil {
+		t.Fatalf("request confirmation: %v", err)
+	}
+	pending := mail.last().Data["verify_token"]
+
+	if _, err := mod.MarkEmailVerified(ctx, id, "someone.else@example.com"); !errors.Is(err, gocommerce.ErrConflict) {
+		t.Errorf("a proof about another address = %v, want a conflict", err)
+	}
+	if _, err := mod.MarkEmailVerified(ctx, id, "  "); !errors.Is(err, gocommerce.ErrValidation) {
+		t.Errorf("no address = %v, want a validation error", err)
+	}
+	if _, err := mod.MarkEmailVerified(ctx, 1<<40, "ada@example.com"); !errors.Is(err, gocommerce.ErrNotFound) {
+		t.Errorf("no such account = %v, want not found", err)
+	}
+	if c, err := mod.CustomerByID(ctx, id); err != nil || c.EmailVerified {
+		t.Fatalf("after the refusals: %+v, %v; want still unconfirmed", c, err)
+	}
+
+	first, err := mod.MarkEmailVerified(ctx, id, " ADA@example.com ")
+	if err != nil || !first.EmailVerified {
+		t.Fatalf("mark the account's own address = %+v, %v", first, err)
+	}
+	again, err := mod.MarkEmailVerified(ctx, id, "ada@example.com")
+	if err != nil || !again.EmailVerified {
+		t.Errorf("marking twice = %+v, %v; want the same answer", again, err)
+	}
+	if again != nil && !again.UpdatedAt.Equal(first.UpdatedAt) {
+		t.Error("marking a confirmed address again touched the account")
+	}
+	if rec := confirmToken(t, app, pending); rec.Code != http.StatusBadRequest {
+		t.Errorf("the link outstanding before the proof = %d, want 400: it has nothing left to prove", rec.Code)
+	}
+
+	// Exact matches, which List's substring search is not.
+	byEmail, err := mod.CustomerByEmail(ctx, "Ada@Example.com")
+	if err != nil || byEmail.ID != id || !byEmail.EmailVerified {
+		t.Errorf("CustomerByEmail = %+v, %v", byEmail, err)
+	}
+	if _, err := mod.CustomerByEmail(ctx, "ada@"); !errors.Is(err, gocommerce.ErrNotFound) {
+		t.Errorf("CustomerByEmail of a fragment = %v, want not found", err)
+	}
+	if _, err := mod.CustomerByID(ctx, 1<<40); !errors.Is(err, gocommerce.ErrNotFound) {
+		t.Errorf("CustomerByID of nobody = %v, want not found", err)
+	}
 }

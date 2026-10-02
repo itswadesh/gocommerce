@@ -108,7 +108,8 @@ func main() {
 		// account only adds saved addresses and a claimable order history.
 		// The reset email goes through whichever notifier is installed below.
 		identity.New(identity.Config{
-			ResetURL: "https://shop.example.com/auth/reset-password?token={token}",
+			ResetURL:  "https://shop.example.com/auth/reset-password?token={token}",
+			VerifyURL: "https://shop.example.com/auth/confirm-email?token={token}",
 		}),
 
 		// Products from Amazon listings, through the Chrome installed on this

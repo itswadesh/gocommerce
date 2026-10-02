@@ -19,6 +19,9 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	app.HandleFunc("POST /x/identity/login", m.handleLogin)
 	app.HandleFunc("POST /x/identity/password-reset", m.handleRequestReset)
 	app.HandleFunc("POST /x/identity/password-reset/confirm", m.handleConfirmReset)
+	// Public: the link is opened from the inbox, often on a device where the
+	// shopper is not signed in. The token is the whole credential.
+	app.HandleFunc("POST /x/identity/email-verification/confirm", m.handleConfirmVerification)
 
 	auth := m.requireSession
 	app.HandleFunc("POST /x/identity/logout", auth(m.handleLogout))
@@ -26,6 +29,7 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	app.HandleFunc("GET /x/identity/me", auth(m.handleMe))
 	app.HandleFunc("PATCH /x/identity/me", auth(m.handleUpdateMe))
 	app.HandleFunc("PUT /x/identity/me/password", auth(m.handleChangePassword))
+	app.HandleFunc("POST /x/identity/me/email-verification", auth(m.handleRequestVerification))
 
 	app.HandleFunc("GET /x/identity/me/addresses", auth(m.handleListAddresses))
 	app.HandleFunc("POST /x/identity/me/addresses", auth(m.handleAddAddress))
@@ -37,6 +41,8 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	app.HandleFunc("POST /x/identity/me/orders", auth(m.handleClaimOrder))
 	app.HandleFunc("GET /x/identity/me/orders/{number}", auth(m.handleGetOrder))
 
+	app.HandleFunc("POST /x/identity/me/carts", auth(m.handleClaimCart))
+
 	// Reading account holders is the same personal data customers.read already
 	// governs on the core route, and serving it without a right meant that
 	// installing this module widened who could see every account's email, name
@@ -46,10 +52,9 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	app.HandleAdminFunc("GET /api/admin/x/identity/customers/{id}", m.handleAdminGet,
 		rightAccountsRead)
 	// Erasure is not a read: it takes the account, its sessions, its address
-	// book and its order links. The engine has no customers.write, so the
-	// destructive half carries store.operate as well — rights are all-of, so
-	// whoever may erase an account can also see the one they are erasing, and
-	// by default only an owner holds both.
+	// book and its order links, so it carries the module's own accounts.erase
+	// as well, which by default only an owner holds. Rights are all-of, so
+	// whoever may erase an account can also see the one they are erasing.
 	app.HandleAdminFunc("DELETE /api/admin/x/identity/customers/{id}", m.handleAdminDelete,
 		rightAccountsRead, rightAccountsErase)
 }
@@ -188,6 +193,22 @@ func (m *Module) handleConfirmReset(w http.ResponseWriter, r *http.Request) {
 	respondAuth(w, http.StatusOK, c, sess)
 }
 
+func (m *Module) handleConfirmVerification(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Token string `json:"token"`
+	}
+	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	c, err := m.ConfirmVerification(r.Context(), in.Token)
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	gocommerce.Respond(w, http.StatusOK, c)
+}
+
 // ----------------------------------------------------------------- session
 
 func (m *Module) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -246,6 +267,16 @@ func (m *Module) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondAuth(w, http.StatusOK, c, sess)
+}
+
+func (m *Module) handleRequestVerification(w http.ResponseWriter, r *http.Request) {
+	if err := m.RequestVerification(r.Context(), CustomerFrom(r.Context()).ID); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	// Accepted, not OK: the email has been handed on, which is not the same as
+	// arriving.
+	gocommerce.Respond(w, http.StatusAccepted, map[string]bool{"accepted": true})
 }
 
 // --------------------------------------------------------------- addresses
@@ -368,6 +399,26 @@ func (m *Module) handleGetOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	gocommerce.Respond(w, http.StatusOK, o)
+}
+
+// ------------------------------------------------------------------- carts
+
+func (m *Module) handleClaimCart(w http.ResponseWriter, r *http.Request) {
+	// cart_id, the name the public cart routes give the token, so a storefront
+	// passes on the value it already holds under the name it already uses.
+	var in struct {
+		CartID string `json:"cart_id"`
+	}
+	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	cart, err := m.ClaimCart(r.Context(), CustomerFrom(r.Context()).ID, in.CartID)
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	gocommerce.Respond(w, http.StatusOK, cart)
 }
 
 // ------------------------------------------------------------------- admin

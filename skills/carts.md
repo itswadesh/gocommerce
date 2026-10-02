@@ -200,8 +200,10 @@ of quantity × snapshot price) and `from`/`to` over `updated_at`.
 - **Expecting the cart's `email` to earn a customer group's prices.** It does
   not, and it used to (D66). Anybody can type any address onto a cart, so a
   group price is read from `verified_email`, which only
-  `Carts.VerifyEmail` sets: an operator placing an order by hand, a module that
-  has confirmed a signed-in account's address, or
+  `Carts.VerifyEmail` sets: an operator placing an order by hand, a signed-in
+  account whose address ext/identity has confirmed (`POST /x/identity/me/carts`
+  — `403 email_unverified` until `POST /x/identity/me/email-verification` and
+  its link have been through), or
   a storefront backend calling `POST /api/admin/carts/verify-email` under
   `groups.write`. Vouching re-prices the lines at once; typing a different
   address with `PUT /api/carts/<token>/email` withdraws it and re-prices back.

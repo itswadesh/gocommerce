@@ -20,6 +20,21 @@
 // when the client presents the order's own access token, which only whoever
 // placed the order holds. Matching on email alone would let anyone register an
 // address they do not own and read that person's purchases.
+//
+// An account's address is unconfirmed until a link mailed to it comes back.
+// Signing up sends nothing: the storefront asks, with
+// POST /x/identity/me/email-verification, when it wants the address proved —
+// straight after signup, or the first time the shopper needs it. The link
+// confirms the address it was sent to and no other, so changing the address
+// withdraws the confirmation, and a link still in the old inbox cannot confirm
+// the new one. Completing a password reset confirms the address too, because
+// the reset link reached it.
+//
+// The confirmation exists for prices (D66). A customer group is a list of
+// email addresses, and a session proves a password, not a mailbox: anybody can
+// sign up as a dealer's address before the dealer does. So
+// POST /x/identity/me/carts, which says a basket is the signed-in shopper's and
+// prices it as their groups, is refused until the address is confirmed.
 package identity
 
 import (
@@ -61,8 +76,22 @@ const (
 	// when Config.ResetURL is set, reset_url.
 	EventPasswordReset = "identity.password_reset"
 
+	// EventEmailVerification is the notification sent when a shopper asks to
+	// confirm their address. It reaches the store's email notifier with
+	// customer_email, customer_name, verify_token, expires_in_minutes and,
+	// when Config.VerifyURL is set, verify_url.
+	EventEmailVerification = "identity.email_verification"
+
 	defaultSessionTTL = 30 * 24 * time.Hour
 	defaultResetTTL   = time.Hour
+	// A day, not a reset's hour: nothing is at stake while the link waits, and
+	// a confirmation email is the one a shopper leaves until tomorrow.
+	defaultVerifyTTL = 24 * time.Hour
+
+	// verifyCooldown is how soon an account may ask for another confirmation
+	// email. The route sends mail to whatever address the account holds, so
+	// without it a script could fill somebody's inbox.
+	verifyCooldown = time.Minute
 )
 
 // pbkdf2Iterations is a var so tests can wind it down; the stored hash
@@ -85,10 +114,21 @@ type Config struct {
 	// would carry the store's name over it. Leave it empty and the
 	// notification carries reset_token alone for the template to place.
 	ResetURL string
-	// Notifier overrides how the reset email is delivered. Leave it nil and
-	// the module hands the message to the engine's own notifiers — the same
-	// SendGrid the order emails go through — falling back to the log when
-	// this build of the engine has no App.Notify to offer.
+	// VerifyTTL is how long an email-confirmation token stays valid. Defaults
+	// to 24 hours.
+	VerifyTTL time.Duration
+	// VerifyURL is the storefront page a confirmation email links to, with
+	// "{token}" where the token goes, e.g.
+	// "https://shop.example.com/auth/confirm-email?token={token}". Configured
+	// here for ResetURL's reason: a link a client could choose is a link a
+	// phisher could choose. Leave it empty and the notification carries
+	// verify_token alone.
+	VerifyURL string
+	// Notifier overrides how the module's emails — password reset and address
+	// confirmation — are delivered. Leave it nil and the module hands the
+	// message to the engine's own notifiers — the same SendGrid the order
+	// emails go through — falling back to the log when this build of the
+	// engine has no App.Notify to offer.
 	Notifier gocommerce.Notifier
 }
 
@@ -96,12 +136,15 @@ type Config struct {
 // serialized: the struct is what handlers return, so the missing json tag on
 // the hash is load-bearing.
 type Customer struct {
-	ID        int64     `json:"id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	Phone     string    `json:"phone"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID    int64  `json:"id"`
+	Email string `json:"email"`
+	// EmailVerified says the shopper has proved they read mail at Email. It is
+	// what a customer group's prices wait on (D66); signing up does not set it.
+	EmailVerified bool      `json:"email_verified"`
+	Name          string    `json:"name"`
+	Phone         string    `json:"phone"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 
 	passwordHash string
 }
@@ -169,6 +212,9 @@ func New(cfg Config) *Module {
 	}
 	if cfg.ResetTTL <= 0 {
 		cfg.ResetTTL = defaultResetTTL
+	}
+	if cfg.VerifyTTL <= 0 {
+		cfg.VerifyTTL = defaultVerifyTTL
 	}
 	return &Module{cfg: cfg, throttle: newLoginThrottle()}
 }
@@ -240,6 +286,36 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			-- An order was placed by one person; the first account to prove it
 			-- keeps it.
 			CREATE UNIQUE INDEX identity_orders_order_idx ON identity_orders (order_id);`,
+	}, {
+		// Group prices are read from a proven address (D66), and until now an
+		// account's address was whatever its owner typed. Every account that
+		// exists starts unconfirmed: nothing ever proved those addresses either.
+		ID: "0002_email_verification",
+		SQL: `
+			-- NULL is unconfirmed.
+			ALTER TABLE identity_customers ADD COLUMN email_verified_at timestamptz;
+			-- When the account last asked for a confirmation email, for the
+			-- cooldown. Kept on the account rather than read off the tokens:
+			-- changing the address deletes the tokens, and a cooldown that an
+			-- address change resets is one a script can step around by
+			-- flipping the address back and forth.
+			ALTER TABLE identity_customers ADD COLUMN email_verification_sent_at timestamptz;
+
+			-- The address a reset was mailed to, so completing it can confirm
+			-- that address — and only while it is still the account's. NULL on a
+			-- reset issued before this column, which confirms nothing.
+			ALTER TABLE identity_password_resets ADD COLUMN email text;
+
+			-- A confirmation token is bound to the address it was mailed to: a
+			-- link still in the old inbox must not confirm a new address.
+			CREATE TABLE identity_email_verifications (
+			    token_hash  text        PRIMARY KEY,
+			    customer_id bigint      NOT NULL REFERENCES identity_customers(id) ON DELETE CASCADE,
+			    email       text        NOT NULL,
+			    expires_at  timestamptz NOT NULL,
+			    created_at  timestamptz NOT NULL DEFAULT now()
+			);
+			CREATE INDEX identity_email_verifications_customer_idx ON identity_email_verifications (customer_id);`,
 	}}
 }
 
@@ -267,6 +343,23 @@ Somebody asked to reset the password for {{.customer_email}}. If that was you,
 {{.reset_token}}{{end}}
 
 If it was not you, nothing has changed and you can ignore this message.`,
+	})
+	// The same arrangement for the confirmation email: without a VerifyURL the
+	// code stands in for the link.
+	app.RegisterNotifyTemplate(gocommerce.NotifyTemplate{
+		Channel: gocommerce.ChannelEmail, Event: EventEmailVerification, Title: "Email confirmation",
+		Description: "To a shopper who asked to confirm the address on their account.",
+		Variables:   []string{"customer_name", "customer_email", "verify_url", "verify_token", "expires_in_minutes"},
+		Subject:     "Confirm your email address",
+		Body: `Hello {{.customer_name}},
+
+Please confirm that {{.customer_email}} is your email address. {{if .verify_url}}Open this link within {{.expires_in_minutes}} minutes:
+
+{{.verify_url}}{{else}}Use this code within {{.expires_in_minutes}} minutes:
+
+{{.verify_token}}{{end}}
+
+If it was not you, ignore this message and the address stays unconfirmed.`,
 	})
 	return nil
 }
@@ -361,11 +454,14 @@ var invalidCredentials = &gocommerce.APIError{
 
 // ----------------------------------------------------------------- accounts
 
-const customerColumns = `id, email, password_hash, name, phone, created_at, updated_at`
+// customerColumns is in scanCustomer's order. Resolve spells it out again with
+// a table alias, so a column added here is added there too.
+const customerColumns = `id, email, password_hash, name, phone, email_verified_at IS NOT NULL, created_at, updated_at`
 
 func scanCustomer(row interface{ Scan(...any) error }) (*Customer, error) {
 	var c Customer
-	if err := row.Scan(&c.ID, &c.Email, &c.passwordHash, &c.Name, &c.Phone, &c.CreatedAt, &c.UpdatedAt); err != nil {
+	if err := row.Scan(&c.ID, &c.Email, &c.passwordHash, &c.Name, &c.Phone, &c.EmailVerified,
+		&c.CreatedAt, &c.UpdatedAt); err != nil {
 		return nil, err
 	}
 	return &c, nil
@@ -388,11 +484,36 @@ func (m *Module) customerByEmail(ctx context.Context, email string) (*Customer, 
 		`SELECT `+customerColumns+` FROM identity_customers WHERE email = $1`, normalizeEmail(email)))
 }
 
+// CustomerByID returns one account, for another module that holds its id.
+func (m *Module) CustomerByID(ctx context.Context, id int64) (*Customer, error) {
+	return m.customerByID(ctx, id)
+}
+
+// CustomerByEmail returns the account registered at an address, matched
+// exactly after case folding — List's search is a substring match, which is
+// the wrong tool for "is this person a shopper here".
+//
+// Finding an account says only that somebody signed up with the address, not
+// that they read its mail: check EmailVerified before treating the account as
+// the person the address belongs to.
+func (m *Module) CustomerByEmail(ctx context.Context, email string) (*Customer, error) {
+	c, err := m.customerByEmail(ctx, email)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, gocommerce.NotFoundf("no account is registered for %s", normalizeEmail(email))
+	}
+	if err != nil {
+		return nil, gocommerce.Internalf(err, "look up account")
+	}
+	return c, nil
+}
+
 func isUniqueViolation(err error, index string) bool {
 	return err != nil && strings.Contains(err.Error(), index)
 }
 
-// Signup creates an account and signs it in.
+// Signup creates an account and signs it in. The address starts unconfirmed
+// and no email goes out: when to ask is the storefront's call, through
+// RequestVerification, not something every signup should trigger.
 func (m *Module) Signup(ctx context.Context, email, password, name, phone string) (*Customer, *Session, error) {
 	email = normalizeEmail(email)
 	if err := validateEmail(email); err != nil {
@@ -457,45 +578,76 @@ func (m *Module) Authenticate(ctx context.Context, email, password, clientIP str
 }
 
 // Update changes the account's own details. An email change keeps every
-// session: the credential is the token, not the address.
+// session — the credential is the token, not the address — but not the
+// confirmation: the new address has proved nothing, and the confirmation links
+// already mailed went to the old one.
 func (m *Module) Update(ctx context.Context, id int64, email, name, phone *string) (*Customer, error) {
-	sets, args := []string{}, []any{}
-	add := func(col string, v any) {
-		args = append(args, v)
-		sets = append(sets, fmt.Sprintf("%s = $%d", col, len(args)))
-	}
+	var newEmail string
 	if email != nil {
-		e := normalizeEmail(*email)
-		if err := validateEmail(e); err != nil {
+		newEmail = normalizeEmail(*email)
+		if err := validateEmail(newEmail); err != nil {
 			return nil, err
 		}
-		add("email", e)
 	}
-	if name != nil {
-		add("name", strings.TrimSpace(*name))
-	}
-	if phone != nil {
-		add("phone", strings.TrimSpace(*phone))
-	}
-	if len(sets) == 0 {
-		return m.customerByID(ctx, id)
-	}
-	sets = append(sets, "updated_at = now()")
-	args = append(args, id)
-	row := m.db.QueryRowContext(ctx,
-		`UPDATE identity_customers SET `+strings.Join(sets, ", ")+
-			fmt.Sprintf(` WHERE id = $%d RETURNING `, len(args))+customerColumns, args...)
-	c, err := scanCustomer(row)
-	if isUniqueViolation(err, "identity_customers_email_key") {
-		return nil, gocommerce.Conflictf("an account already exists for %s", normalizeEmail(*email))
-	}
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, gocommerce.NotFoundf("account %d does not exist", id)
-	}
+	var out *Customer
+	err := gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+		// Locked, so the comparison below is with the address the UPDATE
+		// replaces and not one a concurrent request has already moved past.
+		current, err := scanCustomer(tx.QueryRowContext(ctx,
+			`SELECT `+customerColumns+` FROM identity_customers WHERE id = $1 FOR UPDATE`, id))
+		if errors.Is(err, sql.ErrNoRows) {
+			return gocommerce.NotFoundf("account %d does not exist", id)
+		}
+		if err != nil {
+			return gocommerce.Internalf(err, "look up account")
+		}
+
+		sets, args := []string{}, []any{}
+		add := func(col string, v any) {
+			args = append(args, v)
+			sets = append(sets, fmt.Sprintf("%s = $%d", col, len(args)))
+		}
+		// Retyping the same address in another case is not a move, and must
+		// not cost the shopper a confirmation they already made.
+		moved := email != nil && newEmail != current.Email
+		if moved {
+			add("email", newEmail)
+			sets = append(sets, "email_verified_at = NULL")
+		}
+		if name != nil {
+			add("name", strings.TrimSpace(*name))
+		}
+		if phone != nil {
+			add("phone", strings.TrimSpace(*phone))
+		}
+		if len(sets) == 0 {
+			out = current
+			return nil
+		}
+		sets = append(sets, "updated_at = now()")
+		args = append(args, id)
+		c, err := scanCustomer(tx.QueryRowContext(ctx,
+			`UPDATE identity_customers SET `+strings.Join(sets, ", ")+
+				fmt.Sprintf(` WHERE id = $%d RETURNING `, len(args))+customerColumns, args...))
+		if isUniqueViolation(err, "identity_customers_email_key") {
+			return gocommerce.Conflictf("an account already exists for %s", newEmail)
+		}
+		if err != nil {
+			return gocommerce.Internalf(err, "update account")
+		}
+		if moved {
+			if _, err := tx.ExecContext(ctx,
+				`DELETE FROM identity_email_verifications WHERE customer_id = $1`, id); err != nil {
+				return gocommerce.Internalf(err, "withdraw confirmation links")
+			}
+		}
+		out = c
+		return nil
+	})
 	if err != nil {
-		return nil, gocommerce.Internalf(err, "update account")
+		return nil, err
 	}
-	return c, nil
+	return out, nil
 }
 
 // ChangePassword sets a new password after checking the current one, then
@@ -510,7 +662,7 @@ func (m *Module) ChangePassword(ctx context.Context, id int64, current, password
 	if !verifyPassword(c.passwordHash, current) {
 		return nil, nil, invalidCredentials
 	}
-	if err := m.setPassword(ctx, id, password); err != nil {
+	if err := m.setPassword(ctx, id, password, ""); err != nil {
 		return nil, nil, err
 	}
 	sess, err := m.issue(ctx, id)
@@ -522,7 +674,12 @@ func (m *Module) ChangePassword(ctx context.Context, id int64, current, password
 
 // setPassword stores a new hash and, in the same transaction, ends every
 // session and every outstanding reset for the account.
-func (m *Module) setPassword(ctx context.Context, id int64, password string) error {
+//
+// provenEmail is an address the change itself proved the shopper reads — the
+// one a reset link was mailed to — or empty. It is confirmed in the same
+// transaction if it is still the account's address, so a reset that completes
+// never leaves the password changed and the confirmation lost.
+func (m *Module) setPassword(ctx context.Context, id int64, password, provenEmail string) error {
 	if err := validatePassword(password); err != nil {
 		return err
 	}
@@ -544,6 +701,13 @@ func (m *Module) setPassword(ctx context.Context, id int64, password string) err
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM identity_password_resets WHERE customer_id = $1`, id); err != nil {
 			return gocommerce.Internalf(err, "clear password resets")
+		}
+		if provenEmail != "" {
+			// No row is the account having moved to another address since the
+			// link went out: the reset still counts, the confirmation does not.
+			if _, err := markVerified(ctx, tx, id, provenEmail); err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return gocommerce.Internalf(err, "confirm address")
+			}
 		}
 		return nil
 	})
@@ -638,6 +802,7 @@ func (m *Module) issue(ctx context.Context, customerID int64) (*Session, error) 
 	// than the problem deserves.
 	_, _ = m.db.ExecContext(ctx, `DELETE FROM identity_sessions WHERE expires_at < now()`)
 	_, _ = m.db.ExecContext(ctx, `DELETE FROM identity_password_resets WHERE expires_at < now()`)
+	_, _ = m.db.ExecContext(ctx, `DELETE FROM identity_email_verifications WHERE expires_at < now()`)
 	return &Session{Token: token, ExpiresAt: expires}, nil
 }
 
@@ -648,7 +813,8 @@ func (m *Module) Resolve(ctx context.Context, token string) (*Customer, bool) {
 		return nil, false
 	}
 	c, err := scanCustomer(m.db.QueryRowContext(ctx, `
-		SELECT c.id, c.email, c.password_hash, c.name, c.phone, c.created_at, c.updated_at
+		SELECT c.id, c.email, c.password_hash, c.name, c.phone, c.email_verified_at IS NOT NULL,
+		       c.created_at, c.updated_at
 		FROM identity_sessions s
 		JOIN identity_customers c ON c.id = s.customer_id
 		WHERE s.token_hash = $1 AND s.expires_at > now()`, hashToken(token)))
@@ -707,8 +873,8 @@ func (m *Module) RequestReset(ctx context.Context, email string) error {
 	}
 	expires := time.Now().Add(m.cfg.ResetTTL)
 	if _, err := m.db.ExecContext(ctx, `
-		INSERT INTO identity_password_resets (token_hash, customer_id, expires_at)
-		VALUES ($1, $2, $3)`, hashToken(token), c.ID, expires); err != nil {
+		INSERT INTO identity_password_resets (token_hash, customer_id, email, expires_at)
+		VALUES ($1, $2, $3, $4)`, hashToken(token), c.ID, c.Email, expires); err != nil {
 		return gocommerce.Internalf(err, "store reset token")
 	}
 
@@ -721,12 +887,8 @@ func (m *Module) RequestReset(ctx context.Context, email string) error {
 	if m.cfg.ResetURL != "" {
 		data["reset_url"] = strings.ReplaceAll(m.cfg.ResetURL, "{token}", token)
 	}
-	lang := gocommerce.Language(ctx)
-	if lang == "" {
-		lang = m.app.Config().DefaultLanguage
-	}
 	if err := m.notify(ctx, gocommerce.Notification{
-		Event: EventPasswordReset, Channel: gocommerce.ChannelEmail, To: c.Email, Language: lang, Data: data,
+		Event: EventPasswordReset, Channel: gocommerce.ChannelEmail, To: c.Email, Language: m.language(ctx), Data: data,
 	}); err != nil {
 		// The token is stored and the shopper can ask again; what must not
 		// happen is a 500 that tells them the address exists.
@@ -750,6 +912,14 @@ func (m *Module) notify(ctx context.Context, n gocommerce.Notification) error {
 	return nil
 }
 
+// language is the one the shopper's request asked for, else the store's.
+func (m *Module) language(ctx context.Context) string {
+	if lang := gocommerce.Language(ctx); lang != "" {
+		return lang
+	}
+	return m.app.Config().DefaultLanguage
+}
+
 var invalidResetToken = &gocommerce.APIError{
 	Status:  http.StatusBadRequest,
 	Code:    "invalid_token",
@@ -757,7 +927,10 @@ var invalidResetToken = &gocommerce.APIError{
 }
 
 // ConfirmReset spends a reset token: sets the password, ends every existing
-// session, and signs the shopper in.
+// session, and signs the shopper in. The link reached the address it was
+// mailed to, so that address is confirmed as well while it is still the
+// account's — which is also how the owner of an address takes back an account
+// somebody else signed up with it.
 func (m *Module) ConfirmReset(ctx context.Context, token, password string) (*Customer, *Session, error) {
 	if token == "" {
 		return nil, nil, invalidResetToken
@@ -766,17 +939,18 @@ func (m *Module) ConfirmReset(ctx context.Context, token, password string) (*Cus
 		return nil, nil, err
 	}
 	var customerID int64
+	var sentTo sql.NullString
 	err := m.db.QueryRowContext(ctx, `
 		DELETE FROM identity_password_resets
 		WHERE token_hash = $1 AND expires_at > now()
-		RETURNING customer_id`, hashToken(token)).Scan(&customerID)
+		RETURNING customer_id, email`, hashToken(token)).Scan(&customerID, &sentTo)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, invalidResetToken
 	}
 	if err != nil {
 		return nil, nil, gocommerce.Internalf(err, "spend reset token")
 	}
-	if err := m.setPassword(ctx, customerID, password); err != nil {
+	if err := m.setPassword(ctx, customerID, password, sentTo.String); err != nil {
 		return nil, nil, err
 	}
 	c, err := m.customerByID(ctx, customerID)
@@ -788,6 +962,204 @@ func (m *Module) ConfirmReset(ctx context.Context, token, password string) (*Cus
 		return nil, nil, err
 	}
 	return c, sess, nil
+}
+
+// ------------------------------------------------------- email confirmation
+
+// RequestVerification mails the account a link that confirms its current
+// address, replacing any link sent before. It refuses an address that is
+// already confirmed, and a second request inside verifyCooldown.
+func (m *Module) RequestVerification(ctx context.Context, customerID int64) error {
+	token, err := newToken()
+	if err != nil {
+		return gocommerce.Internalf(err, "issue confirmation token")
+	}
+	var c *Customer
+	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+		// The row lock is what makes the cooldown hold: two requests racing
+		// each other would otherwise both find nothing recent and both send.
+		got, err := scanCustomer(tx.QueryRowContext(ctx,
+			`SELECT `+customerColumns+` FROM identity_customers WHERE id = $1 FOR UPDATE`, customerID))
+		if errors.Is(err, sql.ErrNoRows) {
+			return gocommerce.NotFoundf("account %d does not exist", customerID)
+		}
+		if err != nil {
+			return gocommerce.Internalf(err, "look up account")
+		}
+		if got.EmailVerified {
+			return gocommerce.Conflictf("%s is already confirmed", got.Email)
+		}
+		// Both instants from the database's clock, so a replica whose clock
+		// drifts cannot shorten the wait.
+		var sentAt sql.NullTime
+		var now time.Time
+		if err := tx.QueryRowContext(ctx,
+			`SELECT email_verification_sent_at, now() FROM identity_customers WHERE id = $1`,
+			customerID).Scan(&sentAt, &now); err != nil {
+			return gocommerce.Internalf(err, "read confirmation cooldown")
+		}
+		if sentAt.Valid {
+			if wait := sentAt.Time.Add(verifyCooldown).Sub(now); wait > 0 {
+				return &gocommerce.APIError{
+					Status: http.StatusTooManyRequests,
+					Code:   "too_many_attempts",
+					Message: fmt.Sprintf("a confirmation email was sent a moment ago; try again in %s",
+						(wait + time.Second - 1).Truncate(time.Second)),
+				}
+			}
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE identity_customers SET email_verification_sent_at = now() WHERE id = $1`, customerID); err != nil {
+			return gocommerce.Internalf(err, "start confirmation cooldown")
+		}
+		// One live link per account: the newest email is the one the shopper
+		// will open, and an older one still working is only something to leak.
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM identity_email_verifications WHERE customer_id = $1`, customerID); err != nil {
+			return gocommerce.Internalf(err, "replace confirmation link")
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO identity_email_verifications (token_hash, customer_id, email, expires_at)
+			VALUES ($1, $2, $3, $4)`,
+			hashToken(token), customerID, got.Email, time.Now().Add(m.cfg.VerifyTTL)); err != nil {
+			return gocommerce.Internalf(err, "store confirmation token")
+		}
+		c = got
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	data := map[string]string{
+		"customer_email":     c.Email,
+		"customer_name":      c.Name,
+		"verify_token":       token,
+		"expires_in_minutes": strconv.Itoa(int(m.cfg.VerifyTTL / time.Minute)),
+	}
+	if m.cfg.VerifyURL != "" {
+		data["verify_url"] = strings.ReplaceAll(m.cfg.VerifyURL, "{token}", token)
+	}
+	// Sent after the commit, never inside it: a mail vendor that takes four
+	// seconds must not hold the account's row for four seconds.
+	if err := m.notify(ctx, gocommerce.Notification{
+		Event: EventEmailVerification, Channel: gocommerce.ChannelEmail, To: c.Email,
+		Language: m.language(ctx), Data: data,
+	}); err != nil {
+		// Unlike a reset there is nothing to hide — the shopper is signed in
+		// and the address is their own — so the failure is reported rather
+		// than answered with an "accepted" that would send them to an empty
+		// inbox. The token stays: another backend may have delivered it.
+		return gocommerce.Internalf(err, "send confirmation email")
+	}
+	return nil
+}
+
+var invalidVerificationToken = &gocommerce.APIError{
+	Status:  http.StatusBadRequest,
+	Code:    "invalid_token",
+	Message: "this confirmation link is invalid or has expired",
+}
+
+// ConfirmVerification spends a confirmation token and marks the address it
+// was mailed to as confirmed — provided that is still the account's address.
+//
+// It signs nobody in. The link is often opened in a mail app on another device
+// from the one that asked, and a session created there is a credential the
+// shopper never wanted.
+func (m *Module) ConfirmVerification(ctx context.Context, token string) (*Customer, error) {
+	if token == "" {
+		return nil, invalidVerificationToken
+	}
+	var out *Customer
+	err := gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+		var customerID int64
+		var sentTo string
+		err := tx.QueryRowContext(ctx, `
+			DELETE FROM identity_email_verifications
+			WHERE token_hash = $1 AND expires_at > now()
+			RETURNING customer_id, email`, hashToken(token)).Scan(&customerID, &sentTo)
+		if errors.Is(err, sql.ErrNoRows) {
+			return invalidVerificationToken
+		}
+		if err != nil {
+			return gocommerce.Internalf(err, "spend confirmation token")
+		}
+		c, err := markVerified(ctx, tx, customerID, sentTo)
+		if errors.Is(err, sql.ErrNoRows) {
+			// The account has moved to another address since the link went
+			// out. The link proves the old mailbox, which is no longer theirs.
+			return invalidVerificationToken
+		}
+		if err != nil {
+			return gocommerce.Internalf(err, "confirm address")
+		}
+		out = c
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// MarkEmailVerified confirms an account's address on another module's proof
+// that the shopper reads mail there — an invitation mailed to the address and
+// accepted while signed in to this account, say.
+//
+// The caller names the address its proof is about, and it is checked here
+// against the account's own rather than trusted to line up: a proof for one
+// address must not confirm whatever the account has since changed to. A
+// mismatch is a Conflict; confirming a confirmed address is not an error.
+func (m *Module) MarkEmailVerified(ctx context.Context, customerID int64, email string) (*Customer, error) {
+	email = normalizeEmail(email)
+	if email == "" {
+		return nil, gocommerce.Validationf("email is required")
+	}
+	var out *Customer
+	err := gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+		c, err := markVerified(ctx, tx, customerID, email)
+		if errors.Is(err, sql.ErrNoRows) {
+			var exists bool
+			if err := tx.QueryRowContext(ctx,
+				`SELECT EXISTS (SELECT 1 FROM identity_customers WHERE id = $1)`, customerID).Scan(&exists); err != nil {
+				return gocommerce.Internalf(err, "look up account")
+			}
+			if !exists {
+				return gocommerce.NotFoundf("account %d does not exist", customerID)
+			}
+			return gocommerce.Conflictf("%s is not the address on account %d", email, customerID)
+		}
+		if err != nil {
+			return gocommerce.Internalf(err, "confirm address")
+		}
+		out = c
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// markVerified confirms an account's address when email is still that address,
+// and retires the account's outstanding confirmation links, which have nothing
+// left to prove. sql.ErrNoRows means it is not the address — or not an account.
+func markVerified(ctx context.Context, tx *sql.Tx, customerID int64, email string) (*Customer, error) {
+	c, err := scanCustomer(tx.QueryRowContext(ctx, `
+		UPDATE identity_customers
+		SET email_verified_at = coalesce(email_verified_at, now()),
+		    updated_at = CASE WHEN email_verified_at IS NULL THEN now() ELSE updated_at END
+		WHERE id = $1 AND email = $2
+		RETURNING `+customerColumns, customerID, normalizeEmail(email)))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM identity_email_verifications WHERE customer_id = $1`, customerID); err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 // ---------------------------------------------------------------- addresses
@@ -1099,6 +1471,36 @@ func (m *Module) Order(ctx context.Context, customerID int64, number string) (*g
 	return o, nil
 }
 
+// -------------------------------------------------------------------- carts
+
+var errEmailUnverified = &gocommerce.APIError{
+	Status:  http.StatusForbidden,
+	Code:    "email_unverified",
+	Message: "confirm your email address first",
+}
+
+// ClaimCart says a basket is the signed-in shopper's, so it is priced as them:
+// the customer groups their address is in reach its lines, re-priced on the
+// spot (D66). The cart token proves the basket is theirs, as an order's access
+// token does for ClaimOrder; the confirmed address proves they are who a group
+// lists. An unconfirmed address is refused rather than quietly ignored, so the
+// storefront knows to ask for the confirmation instead of showing a trade
+// customer the retail price with no explanation.
+func (m *Module) ClaimCart(ctx context.Context, customerID int64, cartToken string) (*gocommerce.Cart, error) {
+	cartToken = strings.TrimSpace(cartToken)
+	if cartToken == "" {
+		return nil, gocommerce.Validationf("cart_id is required")
+	}
+	c, err := m.customerByID(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
+	if !c.EmailVerified {
+		return nil, errEmailUnverified
+	}
+	return m.app.Cart().VerifyEmail(ctx, cartToken, c.Email)
+}
+
 // --------------------------------------------------------------- throttling
 
 // loginThrottle slows password guessing. In-process, so per replica — the
@@ -1196,7 +1598,7 @@ func (t *loginThrottle) sweep(now time.Time) {
 // operator's: an operator who could rewrite an address book would be a support
 // call away from changing where somebody's parcels go. Deleting is the
 // exception because somebody has to be able to honour an erasure request, and
-// it pairs customers.read with store.operate for exactly that reason.
+// it pairs accounts.read with accounts.erase for exactly that reason.
 func (m *Module) Screens() []gocommerce.Screen {
 	return []gocommerce.Screen{{
 		Slug:  "identity-accounts",

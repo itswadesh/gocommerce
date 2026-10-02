@@ -119,6 +119,9 @@ environment:
   GOCOMMERCE_IDENTITY_RESET_URL
                     with -identity, the storefront page a password-reset email
                     links to, with {token} where the token goes
+  GOCOMMERCE_IDENTITY_VERIFY_URL
+                    with -identity, the storefront page an email-confirmation
+                    message links to, with {token} where the token goes
   GOCOMMERCE_DEMO   same as -demo. Off when unset, empty, "0", "false", "no"
                     or "off"; any other value is on
   GOCOMMERCE_DEMO_ACCOUNT
@@ -235,7 +238,8 @@ environment:
 	var modules []gocommerce.Module
 	if *withIdentity {
 		modules = append(modules, identity.New(identity.Config{
-			ResetURL: os.Getenv("GOCOMMERCE_IDENTITY_RESET_URL"),
+			ResetURL:  os.Getenv("GOCOMMERCE_IDENTITY_RESET_URL"),
+			VerifyURL: os.Getenv("GOCOMMERCE_IDENTITY_VERIFY_URL"),
 		}))
 	}
 	if *withWebhooks {
