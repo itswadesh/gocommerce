@@ -621,10 +621,13 @@ func (m *Module) handleAdminAddMember(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
+	// Masked like the member and invitation lists, on a demo store.
 	if mem != nil {
+		mem.Email = m.app.MaskEmail(mem.Email)
 		gocommerce.Respond(w, http.StatusCreated, addMemberResponse{Member: mem})
 		return
 	}
+	inv.Email = m.app.MaskEmail(inv.Email)
 	gocommerce.Respond(w, http.StatusAccepted, addMemberResponse{Invitation: inv})
 }
 

@@ -401,7 +401,14 @@ func (m *Module) addMember(ctx context.Context, companyID, customerID int64, ema
 			return nil, err
 		}
 	}
-	return m.MemberOf(ctx, customerID)
+	mem, err := m.MemberOf(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
+	if acct, err := m.accounts.CustomerByID(ctx, customerID); err == nil {
+		mem.Name = acct.Name
+	}
+	return mem, nil
 }
 
 // SetRole changes a buyer's role. The last admin cannot be demoted: a company
