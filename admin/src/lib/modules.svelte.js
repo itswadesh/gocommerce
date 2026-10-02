@@ -60,6 +60,7 @@ const PROBES = {
     newsletter: { path: "/api/admin/x/newsletter/subscriptions?limit=1", right: "customers.read" },
     faq: { path: "/api/admin/x/faq", right: "catalog.read" },
     wishlist: { path: "/api/admin/x/wishlist/lists?limit=1", right: "customers.read" },
+    b2b: { path: "/api/admin/x/b2b/companies?limit=1", right: "companies.read" },
     // Plugin-only modules have no admin routes of their own; the plugin's
     // row is the proof they are installed.
     feeds: { path: "/api/admin/plugins/product-feeds", right: "store.operate" },

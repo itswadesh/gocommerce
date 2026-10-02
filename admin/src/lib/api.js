@@ -163,6 +163,9 @@ export const api = {
     get: (path, options) => request("GET", path, options),
     post: (path, body, options) => request("POST", path, { ...options, body }),
     patch: (path, body, options) => request("PATCH", path, { ...options, body }),
+    // vendors/[id] was already calling api.put, which did not exist, so its
+    // offer editor threw a TypeError before any request left the browser.
+    put: (path, body, options) => request("PUT", path, { ...options, body }),
     delete: (path, options) => request("DELETE", path, options),
 };
 

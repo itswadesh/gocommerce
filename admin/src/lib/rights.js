@@ -267,6 +267,8 @@ export const RESOURCE_LABELS = {
     wishlists: "Wishlists",
     invoices: "Invoices",
     webhooks: "Webhooks",
+    companies: "Companies",
+    quotes: "Quotes",
 };
 
 export const VERB_LABELS = {
@@ -307,14 +309,14 @@ export function verbLabel(verb) {
  * because this table has not caught up.
  */
 export const RIGHT_SECTIONS = [
-    { section: "Orders", resources: ["orders", "carts", "invoices", "payouts"] },
+    { section: "Orders", resources: ["orders", "carts", "invoices", "payouts", "quotes"] },
     {
         section: "Products",
         resources: ["catalog", "collections", "categories", "inventory", "pricing", "reviews"],
     },
     {
         section: "Customers",
-        resources: ["customers", "groups", "accounts", "contact", "newsletter", "wishlists"],
+        resources: ["customers", "groups", "companies", "accounts", "contact", "newsletter", "wishlists"],
     },
     { section: "Discounts", resources: ["discounts"] },
     { section: "Notifications", resources: ["notifications"] },

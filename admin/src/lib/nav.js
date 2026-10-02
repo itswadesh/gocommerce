@@ -68,6 +68,13 @@ export const NAV = [
             // because that is the money it counts, and an owner reconciling
             // a statement is already looking at orders.
             { href: "/payouts", label: "Payouts", right: "payouts.read", keywords: "settlements gateways collected refunded reconcile" },
+            // A business customer's side of selling, where Shopify keeps its
+            // own: a quote is an order being priced, an approval is an order
+            // waiting on the buyer's company, and receivables are orders not
+            // yet paid for. The company itself is under Customers.
+            { href: "/b2b/quotes", label: "Quotes", right: "quotes.read", module: "b2b", keywords: "b2b quote requests price rfq" },
+            { href: "/b2b/approvals", label: "Approvals", right: "companies.read", module: "b2b", keywords: "b2b approval threshold waiting buyer" },
+            { href: "/b2b/receivables", label: "Receivables", right: "companies.read", module: "b2b", keywords: "b2b on account net terms owed overdue invoices due" },
         ],
     },
     {
@@ -100,6 +107,9 @@ export const NAV = [
         keywords: "buyers shoppers",
         children: [
             { href: "/customers/groups", label: "Groups", right: "groups.read", keywords: "customer groups wholesale trade segments" },
+            // A business that buys here, with its buyers and its terms. Beside
+            // Groups because a company's prices are a group's.
+            { href: "/b2b/companies", label: "Companies", right: "companies.read", module: "b2b", keywords: "b2b business trade accounts credit limit terms buyers" },
             { href: "/accounts", label: "Accounts", right: "accounts.read", module: "identity", keywords: "logins passwords sessions" },
             // Both are the customers talking: the form and the signup box.
             { href: "/contact", label: "Contact messages", right: "contact.read", module: "contact", keywords: "inbox enquiries" },
