@@ -1,7 +1,10 @@
 // Package b2b sells to businesses: companies with buyers in roles, orders
 // placed on account against a credit limit and payment terms, purchase-order
 // numbers, approval before a junior buyer spends the company's money, and
-// quotes a merchant prices for one buyer.
+// quotes a merchant prices for one buyer. A buyer can paste a whole order by
+// SKU, repeat a past one, or check out part of a basket; and a supplier with a
+// dealer network gives each dealer territories, so a consumer's enquiry goes
+// to the dealer who covers them.
 //
 //	accounts := identity.New(identity.Config{...})
 //	app, err := gocommerce.New(cfg, accounts, b2b.New(b2b.Config{Accounts: accounts}))
@@ -29,6 +32,11 @@
 //
 // A quote is a price agreed for one basket (D68), placed through
 // Orders.Create, never a price list a whole group would reach.
+//
+// Everything else that puts things in a basket — a pasted order, a repeat
+// order, the part of a basket being checked out — does it through core's own
+// Carts.AddLine on a basket priced as the buyer, so a line here costs what it
+// costs anywhere else today, and is checked out through the same guard.
 package b2b
 
 import (
@@ -75,6 +83,7 @@ const (
 	EventApprovalRequest  = "b2b.approval_requested"
 	EventApprovalDecision = "b2b.approval_decided"
 	EventQuoteReady       = "b2b.quote_ready"
+	EventLeadRouted       = "b2b.lead_routed"
 )
 
 // metaKey is the order metadata key this module writes, and reserves: an
@@ -87,12 +96,15 @@ const (
 	rightCompaniesWrite gocommerce.Right = "companies.write"
 	rightQuotesRead     gocommerce.Right = "quotes.read"
 	rightQuotesWrite    gocommerce.Right = "quotes.write"
+	rightLeadsRead      gocommerce.Right = "leads.read"
+	rightLeadsWrite     gocommerce.Right = "leads.write"
 )
 
 const (
-	defaultInviteTTL = 7 * 24 * time.Hour
-	defaultQuoteTTL  = 30 * 24 * time.Hour
-	reconcileEvery   = time.Hour
+	defaultInviteTTL      = 7 * 24 * time.Hour
+	defaultQuoteTTL       = 30 * 24 * time.Hour
+	defaultLeadsPerMinute = 10
+	reconcileEvery        = time.Hour
 )
 
 // Accounts is what this module needs from the shopper-accounts module.
@@ -121,6 +133,12 @@ type Config struct {
 	// QuoteTTL is how long a quote stays open when the merchant sends it
 	// without an expiry of their own. Defaults to thirty days.
 	QuoteTTL time.Duration
+	// LeadsPerMinute is how many enquiries one address may send through the
+	// public dealer form in a minute. Zero means ten; a negative number turns
+	// the limit off. It counts by the connection's peer address and never by
+	// X-Forwarded-For, which anybody can write — so behind a reverse proxy
+	// every visitor shares the proxy's budget, and this wants raising.
+	LeadsPerMinute int
 }
 
 // Module is the b2b module.
@@ -129,6 +147,7 @@ type Module struct {
 	app      *gocommerce.App
 	db       *sql.DB
 	accounts Accounts
+	leads    *leadThrottle
 
 	stop chan struct{}
 	done sync.WaitGroup
@@ -142,7 +161,10 @@ func New(cfg Config) *Module {
 	if cfg.QuoteTTL <= 0 {
 		cfg.QuoteTTL = defaultQuoteTTL
 	}
-	return &Module{cfg: cfg, accounts: cfg.Accounts}
+	if cfg.LeadsPerMinute == 0 {
+		cfg.LeadsPerMinute = defaultLeadsPerMinute
+	}
+	return &Module{cfg: cfg, accounts: cfg.Accounts, leads: newLeadThrottle(cfg.LeadsPerMinute, time.Minute)}
 }
 
 // Name implements gocommerce.Module.
@@ -318,6 +340,92 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			    position         integer   NOT NULL DEFAULT 0,
 			    UNIQUE (quote_id, variant_id)
 			);`,
+	}, {
+		ID: "0002_b2b_partial_checkouts_and_dealers",
+		SQL: `
+			-- Part of a buyer's basket being checked out, through a basket built
+			-- from the chosen lines so the rest stay where they were. The row is
+			-- what makes that safe to retry and impossible to place twice: a
+			-- retry under the same Idempotency-Key checks out the basket the
+			-- first attempt built, which core then answers from the key, and only
+			-- one partial checkout of a basket is in flight at a time — the
+			-- guarantee core's row lock gives a checkout of the whole basket.
+			--
+			-- Both columns hold cart tokens. cart_token is kept whole because it
+			-- is what a retry checks out; once placed, the basket it names is
+			-- converted and nothing can change it.
+			CREATE TABLE b2b_partial_checkouts (
+			    id              bigserial   PRIMARY KEY,
+			    customer_id     bigint      NOT NULL,
+			    idempotency_key text,
+			    source_cart     text        NOT NULL,
+			    line_ids        jsonb       NOT NULL,
+			    cart_token      text        NOT NULL DEFAULT '',
+			    status          text        NOT NULL DEFAULT 'placing'
+			                    CHECK (status IN ('placing', 'placed')),
+			    created_at      timestamptz NOT NULL DEFAULT now(),
+			    updated_at      timestamptz NOT NULL DEFAULT now()
+			);
+			CREATE UNIQUE INDEX b2b_partial_checkouts_idem_idx
+			    ON b2b_partial_checkouts (customer_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+			CREATE UNIQUE INDEX b2b_partial_checkouts_source_idx
+			    ON b2b_partial_checkouts (source_cart) WHERE status = 'placing';
+
+			-- An area a dealer covers. The unique key is the area alone, not the
+			-- area and the dealer: a territory has one dealer, so routing never
+			-- has to choose between two who both claim the same postcode.
+			--
+			-- state and postal_prefix are '' rather than NULL so that key holds —
+			-- NULLs are never equal, and two dealers could each claim the whole
+			-- of a country. Both are stored normalised, upper case and a prefix
+			-- without spaces or hyphens, and an enquiry's address is normalised
+			-- the same way before it is matched. The state is upper-cased in Go
+			-- and not checked here: outside ASCII, what upper() does depends on
+			-- the database's locale, and a check that disagreed with Go would
+			-- refuse a state Go had already normalised.
+			CREATE TABLE b2b_territories (
+			    id            bigserial   PRIMARY KEY,
+			    company_id    bigint      NOT NULL REFERENCES b2b_companies (id) ON DELETE CASCADE,
+			    country       char(2)     NOT NULL CHECK (country ~ '^[A-Z]{2}$'),
+			    state         text        NOT NULL DEFAULT '',
+			    postal_prefix text        NOT NULL DEFAULT '' CHECK (postal_prefix ~ '^[A-Z0-9]*$'),
+			    created_at    timestamptz NOT NULL DEFAULT now(),
+			    UNIQUE (country, state, postal_prefix)
+			);
+			CREATE INDEX b2b_territories_company_idx ON b2b_territories (company_id);
+
+			-- An enquiry from the storefront's dealer form, and who has it.
+			-- company_id NULL is the store's own; routed_by says how it got where
+			-- it is — matched to a territory, handed over by the store, or with
+			-- nobody yet. A deleted dealer's leads go back to the store, marked
+			-- unrouted by DeleteCompany in the same transaction; the SET NULL is
+			-- the backstop.
+			--
+			-- variant_id and product_id have no foreign key, as nothing in this
+			-- module points into core: a product must stay deletable after
+			-- somebody once asked about it.
+			CREATE TABLE b2b_leads (
+			    id          bigserial   PRIMARY KEY,
+			    name        text        NOT NULL DEFAULT '',
+			    email       text        NOT NULL DEFAULT '',
+			    phone       text        NOT NULL DEFAULT '',
+			    message     text        NOT NULL DEFAULT '',
+			    country     text        NOT NULL DEFAULT '' CHECK (country ~ '^([A-Z]{2})?$'),
+			    state       text        NOT NULL DEFAULT '',
+			    postal_code text        NOT NULL DEFAULT '',
+			    variant_id  bigint,
+			    product_id  bigint,
+			    status      text        NOT NULL DEFAULT 'new'
+			                CHECK (status IN ('new', 'contacted', 'won', 'lost')),
+			    company_id  bigint      REFERENCES b2b_companies (id) ON DELETE SET NULL,
+			    routed_by   text        NOT NULL CHECK (routed_by IN ('territory', 'store', 'unrouted')),
+			    source      text        NOT NULL DEFAULT '',
+			    created_at  timestamptz NOT NULL DEFAULT now(),
+			    updated_at  timestamptz NOT NULL DEFAULT now(),
+			    CHECK (email <> '' OR phone <> '')
+			);
+			CREATE INDEX b2b_leads_company_idx ON b2b_leads (company_id, id DESC);
+			CREATE INDEX b2b_leads_status_idx ON b2b_leads (status, id DESC);`,
 	}}
 }
 
@@ -363,6 +471,24 @@ func (m *Module) registerRights(app *gocommerce.App) {
 		Right:   rightQuotesWrite,
 		Label:   "Price quotes",
 		Scope:   "Set the prices a quote offers, send it, or decline it",
+		Default: []string{gocommerce.RoleManager},
+	})
+	// Rights of their own rather than companies.*: a lead is a consumer's
+	// name, address and phone number, not a business customer's terms, and a
+	// store may well want somebody triaging enquiries who must not see what
+	// its dealers owe (D65).
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightLeadsRead,
+		Label:   "See dealer leads",
+		Scope:   "Enquiries from the storefront's dealer form, who they were routed to and how they stand",
+		Default: []string{gocommerce.RoleManager, gocommerce.RoleStaff},
+	})
+	// Manager only: handing a lead to a dealer sends a member of the public's
+	// contact details to another business.
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightLeadsWrite,
+		Label:   "Route dealer leads",
+		Scope:   "Hand an enquiry to a dealer, take it back, or change how it stands",
 		Default: []string{gocommerce.RoleManager},
 	})
 }
@@ -549,6 +675,40 @@ type Quote struct {
 	OrderNumber   string            `json:"order_number,omitempty"`
 	CreatedAt     time.Time         `json:"created_at"`
 	UpdatedAt     time.Time         `json:"updated_at"`
+}
+
+// Territory is an area one dealer covers. An empty State or PostalPrefix
+// covers all of it: {US, CA, ""} is the whole of California.
+type Territory struct {
+	ID           int64     `json:"id"`
+	CompanyID    int64     `json:"company_id"`
+	CompanyName  string    `json:"company_name"`
+	Country      string    `json:"country"`
+	State        string    `json:"state"`
+	PostalPrefix string    `json:"postal_prefix"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// Lead is a consumer's enquiry from the storefront's dealer form, and the
+// dealer it went to. CompanyID absent is the store's own.
+type Lead struct {
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	Email       string    `json:"email"`
+	Phone       string    `json:"phone"`
+	Message     string    `json:"message"`
+	Country     string    `json:"country"`
+	State       string    `json:"state"`
+	PostalCode  string    `json:"postal_code"`
+	VariantID   *int64    `json:"variant_id"`
+	ProductID   *int64    `json:"product_id"`
+	Status      string    `json:"status"`
+	CompanyID   *int64    `json:"company_id"`
+	CompanyName string    `json:"company_name,omitempty"`
+	RoutedBy    string    `json:"routed_by"`
+	Source      string    `json:"source"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // quoteNumber is derived rather than stored: the id is already unique, and a

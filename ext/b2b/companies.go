@@ -237,7 +237,7 @@ func (m *Module) UpdateCompany(ctx context.Context, id int64, in CompanyInput) (
 	if err != nil {
 		return nil, err
 	}
-	if !sameGroup(before.GroupID, after.GroupID) {
+	if !sameID(before.GroupID, after.GroupID) {
 		if err := m.moveGroup(ctx, id, before.GroupID, after.GroupID); err != nil {
 			return nil, err
 		}
@@ -265,7 +265,18 @@ func (m *Module) DeleteCompany(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
-	if _, err := m.db.ExecContext(ctx, `DELETE FROM b2b_companies WHERE id = $1`, id); err != nil {
+	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+		// A dealer's leads go back to the store rather than vanish with it:
+		// the customer still asked, and somebody still has to answer.
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE b2b_leads SET company_id = NULL, routed_by = 'unrouted', updated_at = now()
+			WHERE company_id = $1`, id); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `DELETE FROM b2b_companies WHERE id = $1`, id)
+		return err
+	})
+	if err != nil {
 		return err
 	}
 	if c.GroupID != nil {
@@ -583,6 +594,9 @@ func (m *Module) reconcile(ctx context.Context) error {
 	if err := m.reconcileOrders(ctx); err != nil {
 		return err
 	}
+	if err := m.reconcilePartials(ctx); err != nil {
+		return err
+	}
 	return m.reconcileApprovals(ctx)
 }
 
@@ -796,7 +810,8 @@ func nonNil(md gocommerce.Metadata) gocommerce.Metadata {
 	return md
 }
 
-func sameGroup(a, b *int64) bool {
+// sameID compares two optional ids, absent equalling only absent.
+func sameID(a, b *int64) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}

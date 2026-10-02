@@ -394,7 +394,7 @@
           "b2b"
         ],
         "summary": "Place the buyer's cart for their company",
-        "description": "The cart is first priced as the buyer — their company's customer-group prices, through the address identity has confirmed — and then placed with the company's rules applied to the final total, inside the checkout's own transaction: a refusal means no order exists, not one cancelled afterwards.\n\n`payment_method` defaults to `on_account` when the company has an account (a credit limit), and must be given when it has none. On account nothing is charged: `payment.kind` is `none`, the payment stays pending until the store marks the order paid, and the order falls due `net_days` after it was placed. `on_account` exists only on this module's routes: `GET /api/checkout` does not list it, and the public checkout refuses it.\n\nAn order over the company's approval threshold, placed by somebody whose role is `buyer`, is not placed. It is filed as a request for approval holding the basket at its prices, the company's approvers and admins are emailed (`b2b.approval_requested`), and the answer is 202 with `approval`. Admins and approvers never wait. Send an `Idempotency-Key`: a retry with the same key replays the order, or answers with the request already filed.\n\nA basket priced as a company's buyer cannot be placed around this route: `POST /api/checkout/{code}` refuses it with 403 `company_checkout_required`.",
+        "description": "The cart is first priced as the buyer — their company's customer-group prices, through the address identity has confirmed — and then placed with the company's rules applied to the final total, inside the checkout's own transaction: a refusal means no order exists, not one cancelled afterwards.\n\n`payment_method` defaults to `on_account` when the company has an account (a credit limit), and must be given when it has none. On account nothing is charged: `payment.kind` is `none`, the payment stays pending until the store marks the order paid, and the order falls due `net_days` after it was placed. `on_account` exists only on this module's routes: `GET /api/checkout` does not list it, and the public checkout refuses it.\n\nAn order over the company's approval threshold, placed by somebody whose role is `buyer`, is not placed. It is filed as a request for approval holding the basket at its prices, the company's approvers and admins are emailed (`b2b.approval_requested`), and the answer is 202 with `approval`. Admins and approvers never wait. Send an `Idempotency-Key`: a retry with the same key replays the order, or answers with the request already filed.\n\nA basket priced as a company's buyer cannot be placed around this route: `POST /api/checkout/{code}` refuses it with 403 `company_checkout_required`.\n\n`line_ids` checks out only those lines of the cart. They are copied into a basket of their own — on the same storefront, priced as the buyer, with the cart's discount code — and that basket is checked out exactly as above, limits and approvals included. The lines leave the cart only once they are an order; a request for approval filed instead leaves the cart as it was. A retry under the same `Idempotency-Key` replays the order or the request.",
         "security": [
           {
             "customerSession": []
@@ -428,7 +428,7 @@
             "$ref": "#/components/responses/B2bApprovalFiled"
           },
           "400": {
-            "description": "`cart_id` is missing; the company has no account and no `payment_method` was given; the company requires a purchase-order number and `po_number` is empty; or the address is incomplete.",
+            "description": "`cart_id` is missing; the company has no account and no `payment_method` was given; the company requires a purchase-order number and `po_number` is empty; or the address is incomplete; or a `line_ids` entry is not a line of this cart, is listed twice, or is not a positive integer.",
             "content": {
               "application/json": {
                 "schema": {
@@ -461,7 +461,7 @@
             }
           },
           "409": {
-            "description": "The cart is no longer valid at these prices, with per-line detail as `POST /api/checkout/{code}` gives it, or it has already been checked out.",
+            "description": "The cart is no longer valid at these prices, with per-line detail as `POST /api/checkout/{code}` gives it — a partial checkout reports a line that would not go into its basket the same way — or it has already been checked out; or part of this cart is already being checked out.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1051,6 +1051,307 @@
           },
           "409": {
             "description": "The quote is already accepted, declined or cancelled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x/b2b/cart/lines": {
+      "post": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "Put a pasted order into the basket",
+        "description": "Quick order: up to 500 lines by SKU or variant id, added one by one through the same rules as the public cart routes, into the basket named by `cart_id` or a new one. The basket is priced as the buyer first, so every line goes in at their company's price.\n\nA line that cannot go in — a SKU nobody sells, something not for sale, more than is in stock, a quantity under 1 — is listed in `rejected` with its reason, and the rest still go in: the answer is 200 whatever was rejected. Adding a SKU already in the basket adds to its quantity.\n\nNothing is placed; check the basket out with `POST /x/b2b/checkout`.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/B2bBulkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bCartFilled"
+          },
+          "400": {
+            "description": "`lines` is empty or longer than 500, or the body is malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "description": "The account buys for no company; the company is closed; or the buyer's address is not confirmed (`email_unverified`), so the basket cannot be priced as them.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No basket has that `cart_id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The basket has already been checked out.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x/b2b/orders/{order_id}/reorder": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/B2bOrderID"
+        }
+      ],
+      "post": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "Repeat an order, at today's prices",
+        "description": "Puts a past order's lines into a new basket, priced as the buyer today — never at the order's own prices, which may have been a quote's or a list since changed. A line that can no longer be bought is listed in `rejected`, as a pasted order's is. Nothing is placed: the basket is checked out like any other, through the same limits and approvals.\n\nThe order must be in the company's order list and the caller's to see there: their own to a buyer, any to an admin or approver.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/B2bCartFilled"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "description": "The account buys for no company; the company is closed; or the buyer's address is not confirmed (`email_unverified`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such order in the company's list, or one placed by a colleague of a buyer, who sees only their own.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x/b2b/leads": {
+      "get": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "The dealer's leads",
+        "description": "Enquiries routed to the caller's company, newest first, with the customer's details unmasked: they are the dealer's to answer. An admin or approver only — a buyer orders for the company and does not see its leads.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/B2bLeadStatus"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bLeadPage"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "description": "The account buys for no company, or is a buyer rather than an admin or approver.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "Send an enquiry to the dealer who covers an address",
+        "description": "The storefront's \"find a dealer\" form, and the one route here that needs no session. The enquiry goes to the dealer whose territory covers the address — the most specific match: a territory naming a state outranks one that does not, and within that the longest postcode prefix wins — among dealers that are not closed. An on-hold dealer still sells, so it still receives. When nobody covers the address the store keeps it. The dealer's admins and approvers are emailed (`b2b.lead_routed`).\n\nThe answer is the same 202 whoever the enquiry went to, and whether it went to anybody: naming the dealer would let anyone map the dealer network a postcode at a time.\n\nLimited per peer address — ten a minute unless the store configured otherwise — counting every attempt, valid or not. The address is the connection's, never `X-Forwarded-For`.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/B2bLeadInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Received.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "accepted": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A field is too long or has control characters in it; neither `email` nor `phone` was given; one is malformed; `country` is not a two-letter code; the variant or product does not exist; or the body has a field the form does not.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many enquiries from this address (`too_many_attempts`). `Retry-After` says how many seconds until the next is accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x/b2b/leads/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "patch": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "Say how a lead stands",
+        "description": "A dealer's admin or approver reporting back on one of its leads. Another dealer's lead is a 404: dealers do not learn about each other's customers.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/B2bLeadStatusInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bLeadResponse"
+          },
+          "400": {
+            "description": "`status` is not new, contacted, won or lost.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "description": "The account buys for no company, or is a buyer rather than an admin or approver.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such lead among the company's.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1705,6 +2006,158 @@
         }
       }
     },
+    "/api/admin/x/b2b/companies/{id}/territories": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "A dealer's territories",
+        "description": "Requires companies.read. By country, state and prefix.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/B2bCountry"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bTerritoryPage"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Give a dealer a territory",
+        "description": "Requires companies.write. An area — a country, a state in it, a postcode prefix in that — that sends this dealer the enquiries from it. A territory has one dealer: an area another dealer already has is refused, naming them.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/B2bTerritoryInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/B2bTerritoryResponse"
+          },
+          "400": {
+            "description": "`country` is not a two-letter code, `state` is too long, or `postal_prefix` is not letters and digits or is longer than 16.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Another dealer already covers exactly that area.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/companies/{id}/territories/{territory_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        },
+        {
+          "$ref": "#/components/parameters/B2bTerritoryID"
+        }
+      ],
+      "delete": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Take a territory back",
+        "description": "Requires companies.write. Leads already routed stay with the dealer.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "The company has no such territory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/x/b2b/receivables": {
       "get": {
         "tags": [
@@ -2027,6 +2480,169 @@
           }
         }
       }
+    },
+    "/api/admin/x/b2b/territories": {
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Every dealer's territories",
+        "description": "Requires companies.read. The whole network, by country, state and prefix: for a map, or to see who covers where.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/B2bCompanyFilter"
+          },
+          {
+            "$ref": "#/components/parameters/B2bCountry"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bTerritoryPage"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/leads": {
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Leads, across dealers",
+        "description": "Requires leads.read. Newest first. `unrouted=true` is the store's own — the enquiries nobody's territory covers. `email` and `phone` are masked on a demo store.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/B2bLeadStatus"
+          },
+          {
+            "$ref": "#/components/parameters/B2bCompanyFilter"
+          },
+          {
+            "$ref": "#/components/parameters/B2bUnrouted"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bLeadPage"
+          },
+          "400": {
+            "description": "An unknown `status`, a `company_id` that is not a positive integer, or `unrouted` together with `company_id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/leads/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "patch": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Hand a lead to a dealer, take it back, or say how it stands",
+        "description": "Requires leads.write. Handing a lead to a dealer emails its admins and approvers (`b2b.lead_routed`) and starts it again at `new`, unless `status` is sent too: how far the last dealer got is not how far this one has. `email` and `phone` in the answer are masked on a demo store.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/B2bLeadUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bLeadResponse"
+          },
+          "400": {
+            "description": "Neither field was sent, `status` is unknown, or the company does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "The dealer is closed and takes no leads.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2105,6 +2721,65 @@
         "schema": {
           "type": "integer",
           "format": "int64"
+        }
+      },
+      "B2bOrderID": {
+        "name": "order_id",
+        "in": "path",
+        "required": true,
+        "description": "The order's id, as the company's order list gives it.",
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      "B2bTerritoryID": {
+        "name": "territory_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      "B2bLeadStatus": {
+        "name": "status",
+        "in": "query",
+        "required": false,
+        "description": "Only leads in this state. Empty is every state; anything else is a 400.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "new",
+            "contacted",
+            "won",
+            "lost"
+          ]
+        }
+      },
+      "B2bCountry": {
+        "name": "country",
+        "in": "query",
+        "required": false,
+        "description": "Only territories in this country, a two-letter ISO 3166-1 code. Case does not matter.",
+        "schema": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 2
+        }
+      },
+      "B2bUnrouted": {
+        "name": "unrouted",
+        "in": "query",
+        "required": false,
+        "description": "`true` keeps only the leads no dealer has: the store's own. Cannot be combined with `company_id`.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "true"
+          ]
         }
       }
     },
@@ -2539,6 +3214,15 @@
           "return_url": {
             "type": "string",
             "description": "Where a redirect-flow gateway sends the buyer back to."
+          },
+          "line_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Check out only these lines of the cart, by the `id` each of its `line_items` carries, and leave the rest in the basket. Empty or absent is the whole cart; every line listed is the whole cart too, and converts it as a whole checkout does."
           }
         }
       },
@@ -2907,6 +3591,321 @@
             "$ref": "#/components/schemas/Address"
           }
         }
+      },
+      "B2bBulkLine": {
+        "type": "object",
+        "description": "One line of a pasted order. Give a `sku` or a `variant_id`; when both are given the variant id names the variant and the SKU is only echoed back.",
+        "required": [
+          "quantity"
+        ],
+        "properties": {
+          "sku": {
+            "type": "string"
+          },
+          "variant_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "At least 1. A line asking for less is rejected (`invalid`), not refused with the whole request."
+          }
+        }
+      },
+      "B2bBulkRequest": {
+        "type": "object",
+        "required": [
+          "lines"
+        ],
+        "properties": {
+          "cart_id": {
+            "type": "string",
+            "description": "The basket to add to, by its token. Absent opens a new one."
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "$ref": "#/components/schemas/B2bBulkLine"
+            }
+          }
+        }
+      },
+      "B2bRejectedLine": {
+        "type": "object",
+        "description": "A line that did not go into the basket, and why.",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "As asked for, or the variant's own when the line named only a variant."
+          },
+          "variant_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Absent when nothing was found to name."
+          },
+          "quantity": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "not_found",
+              "inactive",
+              "insufficient_stock",
+              "invalid"
+            ],
+            "description": "`not_found`: no variant has that SKU or id. `inactive`: it is not for sale. `insufficient_stock`: more than is available. `invalid`: the quantity is under 1. `inactive` and `insufficient_stock` are the reasons a refused checkout gives for the same two things."
+          },
+          "message": {
+            "type": "string",
+            "description": "The reason in words, for a person: \"only 3 left in stock\"."
+          }
+        }
+      },
+      "B2bCartFill": {
+        "type": "object",
+        "description": "A basket after lines were put into it, priced as the buyer, and the lines that would not go.",
+        "properties": {
+          "cart": {
+            "$ref": "#/components/schemas/Cart"
+          },
+          "rejected": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/B2bRejectedLine"
+            },
+            "description": "Empty when every line went in."
+          }
+        }
+      },
+      "B2bTerritory": {
+        "type": "object",
+        "description": "An area one dealer covers. An empty `state` or `postal_prefix` covers all of it: `{US, CA, \"\"}` is the whole of California.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "company_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "company_name": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2, upper case."
+          },
+          "state": {
+            "type": "string",
+            "description": "Upper case, spaces closed up."
+          },
+          "postal_prefix": {
+            "type": "string",
+            "description": "Letters and digits, upper case; spaces and hyphens removed."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "B2bTerritoryInput": {
+        "type": "object",
+        "required": [
+          "country"
+        ],
+        "properties": {
+          "country": {
+            "type": "string",
+            "description": "A two-letter ISO 3166-1 code. Case does not matter."
+          },
+          "state": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Empty is the whole country. Matched without regard to case or repeated spaces."
+          },
+          "postal_prefix": {
+            "type": "string",
+            "description": "Empty is the whole state, or country. Letters and digits, at most 16; spaces and hyphens are ignored, so `SW1A 1` and `sw1a1` are one prefix."
+          }
+        }
+      },
+      "B2bLead": {
+        "type": "object",
+        "description": "A consumer's enquiry from the storefront's dealer form, and who has it. On admin routes of a demo store `email` and `phone` are masked; a dealer's own routes show them, since those are the dealer's customers to call.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "postal_code": {
+            "type": "string"
+          },
+          "variant_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "product_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Read off the variant when the enquiry named one."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "new",
+              "contacted",
+              "won",
+              "lost"
+            ]
+          },
+          "company_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "The dealer who has it. Absent: the store's own."
+          },
+          "company_name": {
+            "type": "string"
+          },
+          "routed_by": {
+            "type": "string",
+            "enum": [
+              "territory",
+              "store",
+              "unrouted"
+            ],
+            "description": "`territory`: matched to a dealer's territory when it arrived. `store`: an operator handed it over. `unrouted`: nobody covers the address, or the store took it back."
+          },
+          "source": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "B2bLeadInput": {
+        "type": "object",
+        "description": "What the dealer form sends. Every field is bounded, and an `email` or a `phone` is required so the dealer can answer. Single-line fields refuse control characters. Unknown fields are a 400.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 254
+          },
+          "phone": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "Digits, spaces and `+ - ( ) .`, with at least five digits."
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "May run over several lines."
+          },
+          "country": {
+            "type": "string",
+            "description": "A two-letter ISO 3166-1 code. Without one the enquiry stays with the store."
+          },
+          "state": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Reaches a dealer whose territory names this state; without it, only territories that name none."
+          },
+          "postal_code": {
+            "type": "string",
+            "maxLength": 20
+          },
+          "variant_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "What the enquiry is about, if the form was on a product. Must exist."
+          },
+          "product_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Must exist, and be the variant's product when both are given."
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Where on the storefront it was sent from, in the storefront's own words."
+          }
+        }
+      },
+      "B2bLeadStatusInput": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "new",
+              "contacted",
+              "won",
+              "lost"
+            ]
+          }
+        }
+      },
+      "B2bLeadUpdate": {
+        "type": "object",
+        "description": "At least one of the two.",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "new",
+              "contacted",
+              "won",
+              "lost"
+            ]
+          },
+          "company_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Hand the lead to this dealer: it is marked `routed_by: store`, goes back to `new` unless `status` says otherwise, and the dealer's admins and approvers are emailed (`b2b.lead_routed`). `null` takes it back for the store. A closed dealer takes no leads."
+          }
+        }
       }
     },
     "responses": {
@@ -3154,6 +4153,93 @@
                       "$ref": "#/components/schemas/B2bApproval"
                     }
                   }
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bCartFilled": {
+        "description": "The basket, priced as the buyer, and the lines that would not go into it.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/B2bCartFill"
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bTerritoryResponse": {
+        "description": "A territory.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/B2bTerritory"
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bTerritoryPage": {
+        "description": "A page of territories, by country, state and prefix.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/B2bTerritory"
+                  }
+                },
+                "meta": {
+                  "$ref": "#/components/schemas/ListMeta"
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bLeadResponse": {
+        "description": "A lead.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/B2bLead"
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bLeadPage": {
+        "description": "A page of leads, newest first.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/B2bLead"
+                  }
+                },
+                "meta": {
+                  "$ref": "#/components/schemas/ListMeta"
                 }
               }
             }

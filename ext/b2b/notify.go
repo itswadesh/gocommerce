@@ -63,6 +63,24 @@ Total: {{.total_minor}} ({{.currency}}, minor units), open until {{.expires_at}}
 
 {{.reply}}{{end}}`,
 	})
+	// The subject carries nothing the customer typed: it is a header, and the
+	// body is where their words belong.
+	app.RegisterNotifyTemplate(gocommerce.NotifyTemplate{
+		Channel: gocommerce.ChannelEmail, Event: EventLeadRouted, Title: "Dealer lead",
+		Description: "To a dealer's admins and approvers when an enquiry from their territory reaches them, or the store hands them one.",
+		Variables: []string{"company_name", "lead_id", "name", "email", "phone", "message",
+			"country", "state", "postal_code", "product", "sku"},
+		Subject: "A customer near you has asked to hear from {{.company_name}}",
+		Body: `{{if .name}}{{.name}}{{else}}A customer{{end}} has asked to be contacted{{if .product}} about {{.product}}{{if .sku}} ({{.sku}}){{end}}{{end}}.
+
+{{if .email}}Email: {{.email}}
+{{end}}{{if .phone}}Phone: {{.phone}}
+{{end}}{{if or .postal_code .state .country}}Where: {{.postal_code}} {{.state}} {{.country}}
+{{end}}{{if .message}}
+{{.message}}
+{{end}}
+This is lead {{.lead_id}} in your account.`,
+	})
 }
 
 // send hands one message to the store's notifiers. A failure is logged and
@@ -137,6 +155,51 @@ func (m *Module) notifyDecision(ctx context.Context, c *Company, a *Approval) {
 		"order_number": a.OrderNumber,
 		"approval_id":  strconv.FormatInt(a.ID, 10),
 	})
+}
+
+// notifyLead tells a dealer's admins and approvers about an enquiry that is
+// now theirs. Not its buyers: a buyer orders for the company, and answering a
+// customer is the company's business.
+//
+// Only to the address each one's membership holds, which is a confirmed one
+// — never addressOf's current address, which may be one its holder has not
+// yet proven. This message carries a member of the public's name and phone
+// number, and a mistyped address is a stranger's inbox.
+func (m *Module) notifyLead(ctx context.Context, c *Company, l *Lead) {
+	members, err := m.Members(ctx, c.ID)
+	if err != nil {
+		m.app.Log().Warn("b2b: could not list a dealer's approvers", "company", c.ID, "error", err)
+		return
+	}
+	data := map[string]string{
+		"company_name": c.Name,
+		"lead_id":      strconv.FormatInt(l.ID, 10),
+		"name":         l.Name,
+		"email":        l.Email,
+		"phone":        l.Phone,
+		"message":      l.Message,
+		"country":      l.Country,
+		"state":        l.State,
+		"postal_code":  l.PostalCode,
+		"product":      "",
+		"sku":          "",
+	}
+	if l.ProductID != nil {
+		if p, err := m.app.Products().GetProduct(ctx, *l.ProductID); err == nil {
+			data["product"] = p.Title
+		}
+	}
+	if l.VariantID != nil {
+		if v, err := m.app.Products().GetVariant(ctx, *l.VariantID); err == nil {
+			data["sku"] = v.SKU
+		}
+	}
+	for _, mem := range members {
+		if mem.Role != RoleAdmin && mem.Role != RoleApprover {
+			continue
+		}
+		m.send(ctx, EventLeadRouted, mem.Email, data)
+	}
 }
 
 func (m *Module) notifyQuoteReady(ctx context.Context, q *Quote) {

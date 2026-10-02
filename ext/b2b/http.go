@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
 	"github.com/itswadesh/gocommerce/ext/identity"
@@ -19,8 +20,10 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	app.HandleFunc("POST /x/b2b/invitations", m.session(m.handleInvite))
 	app.HandleFunc("DELETE /x/b2b/invitations/{id}", m.session(m.handleRevokeInvitation))
 	app.HandleFunc("POST /x/b2b/invitations/accept", m.session(m.handleAcceptInvitation))
+	app.HandleFunc("POST /x/b2b/cart/lines", m.session(m.handleAddLines))
 	app.HandleFunc("POST /x/b2b/checkout", m.session(m.handleCheckout))
 	app.HandleFunc("GET /x/b2b/orders", m.session(m.handleMyOrders))
+	app.HandleFunc("POST /x/b2b/orders/{order_id}/reorder", m.session(m.handleReorder))
 	app.HandleFunc("GET /x/b2b/approvals", m.session(m.handleMyApprovals))
 	app.HandleFunc("GET /x/b2b/approvals/{id}", m.session(m.handleMyApproval))
 	app.HandleFunc("POST /x/b2b/approvals/{id}/approve", m.session(m.handleApprove))
@@ -31,6 +34,12 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	app.HandleFunc("GET /x/b2b/quotes/{id}", m.session(m.handleMyQuote))
 	app.HandleFunc("POST /x/b2b/quotes/{id}/accept", m.session(m.handleAcceptQuote))
 	app.HandleFunc("POST /x/b2b/quotes/{id}/decline", m.session(m.handleDeclineMyQuote))
+	app.HandleFunc("GET /x/b2b/leads", m.session(m.handleMyLeads))
+	app.HandleFunc("PATCH /x/b2b/leads/{id}", m.session(m.handleSetMyLead))
+
+	// The storefront's dealer form, sent by a member of the public: the one
+	// route here with no session at all.
+	app.HandleFunc("POST /x/b2b/leads", m.handleFileLead)
 
 	// The store's side.
 	app.HandleAdminFunc("GET /api/admin/x/b2b/companies", m.handleAdminCompanies, rightCompaniesRead)
@@ -46,6 +55,12 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	app.HandleAdminFunc("GET /api/admin/x/b2b/companies/{id}/invitations", m.handleAdminInvitations, rightCompaniesRead)
 	app.HandleAdminFunc("DELETE /api/admin/x/b2b/companies/{id}/invitations/{invitation_id}", m.handleAdminRevokeInvitation, rightCompaniesWrite)
 	app.HandleAdminFunc("GET /api/admin/x/b2b/companies/{id}/orders", m.handleAdminCompanyOrders, rightCompaniesRead)
+	app.HandleAdminFunc("GET /api/admin/x/b2b/companies/{id}/territories", m.handleAdminTerritories, rightCompaniesRead)
+	app.HandleAdminFunc("POST /api/admin/x/b2b/companies/{id}/territories", m.handleAdminAddTerritory, rightCompaniesWrite)
+	app.HandleAdminFunc("DELETE /api/admin/x/b2b/companies/{id}/territories/{territory_id}", m.handleAdminDeleteTerritory, rightCompaniesWrite)
+	app.HandleAdminFunc("GET /api/admin/x/b2b/territories", m.handleAdminAllTerritories, rightCompaniesRead)
+	app.HandleAdminFunc("GET /api/admin/x/b2b/leads", m.handleAdminLeads, rightLeadsRead)
+	app.HandleAdminFunc("PATCH /api/admin/x/b2b/leads/{id}", m.handleAdminUpdateLead, rightLeadsWrite)
 	app.HandleAdminFunc("GET /api/admin/x/b2b/receivables", m.handleAdminReceivables, rightCompaniesRead)
 	app.HandleAdminFunc("GET /api/admin/x/b2b/approvals", m.handleAdminApprovals, rightCompaniesRead)
 	app.HandleAdminFunc("GET /api/admin/x/b2b/quotes", m.handleAdminQuotes, rightQuotesRead)
@@ -306,6 +321,27 @@ func (m *Module) handleCheckout(w http.ResponseWriter, r *http.Request, acct *id
 	gocommerce.Respond(w, http.StatusCreated, checkoutResponse{CheckoutResult: result})
 }
 
+// handleAddLines answers 200 whatever was rejected: the basket exists and
+// holds what could go in, and rejected says what could not.
+func (m *Module) handleAddLines(w http.ResponseWriter, r *http.Request, acct *identity.Customer) {
+	var in BulkRequest
+	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	fill, err := m.AddLines(r.Context(), acct, in)
+	respond(w, r, http.StatusOK, fill, err)
+}
+
+func (m *Module) handleReorder(w http.ResponseWriter, r *http.Request, acct *identity.Customer) {
+	id, ok := idOr400(w, r, "order_id")
+	if !ok {
+		return
+	}
+	fill, err := m.Reorder(r.Context(), acct, id)
+	respond(w, r, http.StatusCreated, fill, err)
+}
+
 // handleMyOrders shows a buyer the orders placed for their company: every
 // buyer's to an admin or approver, their own to a buyer.
 func (m *Module) handleMyOrders(w http.ResponseWriter, r *http.Request, acct *identity.Customer) {
@@ -500,6 +536,86 @@ func (m *Module) handleDeclineMyQuote(w http.ResponseWriter, r *http.Request, ac
 	}
 	q, err = m.DeclineQuote(r.Context(), id, acct.Email)
 	respond(w, r, http.StatusOK, q, err)
+}
+
+// leadAccepted is all the public form is told. Naming the dealer, or even
+// whether there was one, would let anybody walk a list of postcodes and map
+// the store's dealer network.
+type leadAccepted struct {
+	Accepted bool `json:"accepted"`
+}
+
+// handleFileLead counts the attempt before reading it, so a stream of
+// malformed requests is limited like any other.
+func (m *Module) handleFileLead(w http.ResponseWriter, r *http.Request) {
+	if wait, ok := m.leads.allow(peerAddr(r), time.Now()); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int((wait+time.Second-1)/time.Second)))
+		gocommerce.RespondError(w, r, &gocommerce.APIError{Status: http.StatusTooManyRequests,
+			Code: "too_many_attempts", Message: "too many enquiries from this address; try again in a minute"})
+		return
+	}
+	var in LeadInput
+	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	if _, err := m.FileLead(r.Context(), in); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	gocommerce.Respond(w, http.StatusAccepted, leadAccepted{Accepted: true})
+}
+
+// dealer is the caller's company, for the lead routes: an enquiry is answered
+// by whoever runs the account, so a buyer does not see them.
+func (m *Module) dealer(w http.ResponseWriter, r *http.Request, acct *identity.Customer) (*buyerContext, bool) {
+	b, ok := m.buyer(w, r, acct)
+	if !ok {
+		return nil, false
+	}
+	if !b.can(RoleAdmin, RoleApprover) {
+		gocommerce.RespondError(w, r, gocommerce.Forbiddenf("only a company admin or approver may see its leads"))
+		return nil, false
+	}
+	return b, true
+}
+
+func (m *Module) handleMyLeads(w http.ResponseWriter, r *http.Request, acct *identity.Customer) {
+	b, ok := m.dealer(w, r, acct)
+	if !ok {
+		return
+	}
+	limit, offset, ok := page(w, r)
+	if !ok {
+		return
+	}
+	list, total, err := m.Leads(r.Context(), LeadQuery{CompanyID: b.company.ID,
+		Status: r.URL.Query().Get("status"), Limit: limit, Offset: offset})
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	gocommerce.RespondList(w, list, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})
+}
+
+func (m *Module) handleSetMyLead(w http.ResponseWriter, r *http.Request, acct *identity.Customer) {
+	b, ok := m.dealer(w, r, acct)
+	if !ok {
+		return
+	}
+	id, ok := idOr400(w, r, "id")
+	if !ok {
+		return
+	}
+	var in struct {
+		Status string `json:"status"`
+	}
+	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	lead, err := m.SetLeadStatus(r.Context(), b.company.ID, id, in.Status)
+	respond(w, r, http.StatusOK, lead, err)
 }
 
 // ------------------------------------------------------------ store's side
@@ -843,4 +959,134 @@ func (m *Module) handleAdminDeclineQuote(w http.ResponseWriter, r *http.Request)
 	}
 	q, err := m.DeclineQuote(r.Context(), id, "store")
 	m.adminQuote(w, r, q, err)
+}
+
+// companyFilter reads ?company_id, zero when absent.
+func companyFilter(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	v := r.URL.Query().Get("company_id")
+	if v == "" {
+		return 0, true
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n <= 0 {
+		gocommerce.RespondError(w, r, gocommerce.Validationf("company_id must be a positive integer"))
+		return 0, false
+	}
+	return n, true
+}
+
+func (m *Module) listTerritories(w http.ResponseWriter, r *http.Request, companyID int64) {
+	limit, offset, ok := page(w, r)
+	if !ok {
+		return
+	}
+	list, total, err := m.Territories(r.Context(), companyID, r.URL.Query().Get("country"), limit, offset)
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	gocommerce.RespondList(w, list, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})
+}
+
+func (m *Module) handleAdminTerritories(w http.ResponseWriter, r *http.Request) {
+	id, ok := idOr400(w, r, "id")
+	if !ok {
+		return
+	}
+	if _, err := m.Company(r.Context(), id); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	m.listTerritories(w, r, id)
+}
+
+// handleAdminAllTerritories is every dealer's territories, for a map of the
+// network or a check of who covers where.
+func (m *Module) handleAdminAllTerritories(w http.ResponseWriter, r *http.Request) {
+	company, ok := companyFilter(w, r)
+	if !ok {
+		return
+	}
+	m.listTerritories(w, r, company)
+}
+
+func (m *Module) handleAdminAddTerritory(w http.ResponseWriter, r *http.Request) {
+	id, ok := idOr400(w, r, "id")
+	if !ok {
+		return
+	}
+	var in TerritoryInput
+	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	t, err := m.AddTerritory(r.Context(), id, in)
+	respond(w, r, http.StatusCreated, t, err)
+}
+
+func (m *Module) handleAdminDeleteTerritory(w http.ResponseWriter, r *http.Request) {
+	id, ok := idOr400(w, r, "id")
+	if !ok {
+		return
+	}
+	tid, ok := idOr400(w, r, "territory_id")
+	if !ok {
+		return
+	}
+	if err := m.DeleteTerritory(r.Context(), id, tid); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// maskLead hides a member of the public's address and number on a demo
+// store, as every admin route hides a shopper's. The dealer's own routes are
+// not masked: those are the dealer's customers to call.
+func (m *Module) maskLead(l *Lead) {
+	l.Email = m.app.MaskEmail(l.Email)
+	l.Phone = m.app.MaskPhone(l.Phone)
+}
+
+func (m *Module) handleAdminLeads(w http.ResponseWriter, r *http.Request) {
+	limit, offset, ok := page(w, r)
+	if !ok {
+		return
+	}
+	company, ok := companyFilter(w, r)
+	if !ok {
+		return
+	}
+	q := LeadQuery{CompanyID: company, Unrouted: r.URL.Query().Get("unrouted") == "true",
+		Status: r.URL.Query().Get("status"), Limit: limit, Offset: offset}
+	if q.Unrouted && q.CompanyID > 0 {
+		gocommerce.RespondError(w, r, gocommerce.Validationf("unrouted and company_id ask for different leads; send one"))
+		return
+	}
+	list, total, err := m.Leads(r.Context(), q)
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	for _, l := range list {
+		m.maskLead(l)
+	}
+	gocommerce.RespondList(w, list, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})
+}
+
+func (m *Module) handleAdminUpdateLead(w http.ResponseWriter, r *http.Request) {
+	id, ok := idOr400(w, r, "id")
+	if !ok {
+		return
+	}
+	var in LeadUpdate
+	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	lead, err := m.UpdateLead(r.Context(), id, in)
+	if err == nil {
+		m.maskLead(lead)
+	}
+	respond(w, r, http.StatusOK, lead, err)
 }
