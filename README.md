@@ -126,7 +126,8 @@ Every gateway and carrier module installs idle: `-gateways` and `-carriers` put 
 | `invoices` | Numbered, gapless invoices on payment |
 | `cms` | Content pages, per language |
 | `translations` | Catalogue content in the language a shopper asked for |
-| `identity` | Shopper accounts: sessions, saved addresses, order history, password reset |
+| `identity` | Shopper accounts: sessions, saved addresses, order history, password reset, confirmed email addresses |
+| `b2b` | Companies and their buyers in roles, orders on account against a credit limit and net terms, purchase-order numbers, approval over a limit, and quotes priced for one buyer |
 | `cart-recovery` | Chases an abandoned basket with a link back to it |
 | `import-amazon` | A product, its variations and pictures from an Amazon URL, through a real Chrome; copy rewritten by Claude |
 | `mcp` | The store as tools for an AI agent, with an audit trail |

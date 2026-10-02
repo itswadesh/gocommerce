@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/itswadesh/gocommerce/core"
+	"github.com/itswadesh/gocommerce/ext/b2b"
 	"github.com/itswadesh/gocommerce/ext/cms"
 	"github.com/itswadesh/gocommerce/ext/contact"
 	"github.com/itswadesh/gocommerce/ext/faq"
@@ -122,6 +123,9 @@ environment:
   GOCOMMERCE_IDENTITY_VERIFY_URL
                     with -identity, the storefront page an email-confirmation
                     message links to, with {token} where the token goes
+  GOCOMMERCE_B2B_INVITE_URL
+                    with -b2b, the storefront page a company invitation links
+                    to, with {token} where the token goes
   GOCOMMERCE_DEMO   same as -demo. Off when unset, empty, "0", "false", "no"
                     or "off"; any other value is on
   GOCOMMERCE_DEMO_ACCOUNT
@@ -164,6 +168,7 @@ environment:
 		withCMS      = fs.Bool("cms", false, "install the cms module: content pages at /x/cms/pages/{slug}, edited on the Pages screen")
 		withFAQ      = fs.Bool("faq", false, "install the faq module: the shop's questions and answers at /x/faq, edited on the FAQ screen")
 		withWishlist = fs.Bool("wishlist", false, "install the wishlist module: shoppers save products, and the Wishlists screen shows what is wanted most")
+		withB2B      = fs.Bool("b2b", false, "install the b2b module: companies, buyer roles, orders on account against a credit limit, approvals and quotes (implies -identity)")
 		withAmazon   = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or IMPORT_AMAZON_LLM_URL + IMPORT_AMAZON_LLM_MODEL for a local model rewrite the copy; IMPORT_AMAZON_HEADED=1 shows the browser)")
 	)
 	if err := fs.Parse(args); err != nil {
@@ -236,11 +241,20 @@ environment:
 	// proves the engine boots on its own. Accounts are the one capability a
 	// storefront asks for often enough that a flag beats a fork of main().
 	var modules []gocommerce.Module
-	if *withIdentity {
-		modules = append(modules, identity.New(identity.Config{
+	// b2b's buyers are identity's accounts, so -b2b brings identity with it
+	// and is handed the same instance, listed first for its tables.
+	if *withIdentity || *withB2B {
+		accounts := identity.New(identity.Config{
 			ResetURL:  os.Getenv("GOCOMMERCE_IDENTITY_RESET_URL"),
 			VerifyURL: os.Getenv("GOCOMMERCE_IDENTITY_VERIFY_URL"),
-		}))
+		})
+		modules = append(modules, accounts)
+		if *withB2B {
+			modules = append(modules, b2b.New(b2b.Config{
+				Accounts:  accounts,
+				InviteURL: os.Getenv("GOCOMMERCE_B2B_INVITE_URL"),
+			}))
+		}
 	}
 	if *withWebhooks {
 		modules = append(modules, webhooks.New(webhooks.Config{}))

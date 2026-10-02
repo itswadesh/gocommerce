@@ -1,0 +1,3165 @@
+{
+  "paths": {
+    "/x/b2b/me": {
+      "get": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "The signed-in buyer's company, role and account",
+        "description": "The company the account buys for, its role there, and where the company's account stands. A 403 means the account buys for no company — the storefront's cue to treat the shopper as a retail one. `credit.limit` and `credit.available` are null when the company has no account and pays up front.\n\nLike every route here that needs a buyer, it first compares the account's address with the one it joined under: a changed address leaves the company's customer group, and the new one joins once identity has confirmed it.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The buyer's company.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/B2bMe"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/B2bNotABuyer"
+          }
+        }
+      }
+    },
+    "/x/b2b/members": {
+      "get": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "The company's buyers",
+        "description": "Every buyer of the caller's company with their role, oldest first, names read from their accounts. Any buyer may read it. Not paginated.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bMemberList"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/B2bNotABuyer"
+          }
+        }
+      }
+    },
+    "/x/b2b/members/{customer_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/B2bCustomerID"
+        }
+      ],
+      "patch": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "Change a buyer's role",
+        "description": "Company admins only. The last admin cannot be demoted: a company nobody can administer is one only the store can rescue.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/B2bRoleInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bMemberResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "description": "The account buys for no company, or is not its admin (`forbidden`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "That account is not a buyer for this company.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It is the company's last admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "Remove a buyer, or leave the company",
+        "description": "An admin may remove anybody, and any buyer may remove themselves: somebody who has left the company should not need an admin to stop buying for it. The account's address leaves the company's customer group, so its next cart is priced as anybody's. The last admin can neither leave nor be removed here; the store can, through `DELETE /api/admin/x/b2b/companies/{id}/members/{customer_id}`.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "description": "The account buys for no company, or is removing somebody else without being an admin (`forbidden`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "That account is not a buyer for this company.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It is the company's last admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x/b2b/invitations": {
+      "get": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "The company's open invitations",
+        "description": "Company admins only. Invitations not yet accepted and not expired, newest first. Not paginated. The token is never returned.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bInvitationList"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "description": "The account buys for no company, or is not its admin (`forbidden`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "Invite somebody to buy for the company",
+        "description": "Company admins only. Emails the address: the notification event `b2b.invitation` carries `invite_token` and, when the store configured an invitation page, `invite_url`. The token is never in the response — it went to the mailbox, and only the mailbox should have it. An invitation stays open for a week unless the store configured otherwise. A second invitation to the same address replaces the first, so only the newest link works.\n\nThe invitation is sent even when the address already belongs to a confirmed account: joining is accepting it, with `POST /x/b2b/invitations/accept`.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/B2bInviteInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/B2bInvitationResponse"
+          },
+          "400": {
+            "description": "`role` is not admin, approver or buyer, or `email` is not an address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "description": "The account buys for no company, or is not its admin (`forbidden`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x/b2b/invitations/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "delete": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "Withdraw an open invitation",
+        "description": "Company admins only. The emailed link stops working.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Withdrawn."
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "description": "The account buys for no company, or is not its admin (`forbidden`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No open invitation with that id for this company.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x/b2b/invitations/accept": {
+      "post": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "Accept an invitation and join the company",
+        "description": "The one route here the caller need not already be a buyer for: it is how they become one. The signed-in account's address must be the one the invitation was mailed to — a forwarded link is refused. The token reached that mailbox, so accepting it proves the account reads it: identity marks the address confirmed (`email_verified: true`), the account joins with the invitation's role, and its address joins the company's customer group, so its carts are priced on the company's terms from then on. An account buys for one company at a time.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "token"
+                ],
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "description": "The token from the invitation email, or from the link it carried."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bMemberResponse"
+          },
+          "400": {
+            "description": "The token is unknown, already used or expired (`invalid_token`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "description": "The invitation was mailed to another address; sign in as that address to accept it (`forbidden`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The account already buys for another company.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x/b2b/checkout": {
+      "post": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "Place the buyer's cart for their company",
+        "description": "The cart is first priced as the buyer — their company's customer-group prices, through the address identity has confirmed — and then placed with the company's rules applied to the final total, inside the checkout's own transaction: a refusal means no order exists, not one cancelled afterwards.\n\n`payment_method` defaults to `on_account` when the company has an account (a credit limit), and must be given when it has none. On account nothing is charged: `payment.kind` is `none`, the payment stays pending until the store marks the order paid, and the order falls due `net_days` after it was placed. `on_account` exists only on this module's routes: `GET /api/checkout` does not list it, and the public checkout refuses it.\n\nAn order over the company's approval threshold, placed by somebody whose role is `buyer`, is not placed. It is filed as a request for approval holding the basket at its prices, the company's approvers and admins are emailed (`b2b.approval_requested`), and the answer is 202 with `approval`. Admins and approvers never wait. Send an `Idempotency-Key`: a retry with the same key replays the order, or answers with the request already filed.\n\nA basket priced as a company's buyer cannot be placed around this route: `POST /api/checkout/{code}` refuses it with 403 `company_checkout_required`.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/B2bCheckoutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/B2bOrderPlaced"
+          },
+          "202": {
+            "$ref": "#/components/responses/B2bApprovalFiled"
+          },
+          "400": {
+            "description": "`cart_id` is missing; the company has no account and no `payment_method` was given; the company requires a purchase-order number and `po_number` is empty; or the address is incomplete.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "description": "The account buys for no company; the company is closed; `on_account` was chosen and the company is on hold or has no account; the order would take the company past its credit limit (`credit_limit_exceeded`, the message saying how much is available, in minor units); or the buyer's address is not confirmed (`email_unverified`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such cart, or no such payment method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The cart is no longer valid at these prices, with per-line detail as `POST /api/checkout/{code}` gives it, or it has already been checked out.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x/b2b/orders": {
+      "get": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "The company's orders",
+        "description": "Orders placed for the company, newest first. An admin or approver sees every buyer's; a buyer sees their own. Each row says whether it was placed on account, when it falls due, and whether it is overdue.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/B2bOverdue"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bCompanyOrderPage"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/B2bNotABuyer"
+          }
+        }
+      }
+    },
+    "/x/b2b/approvals": {
+      "get": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "Requests for approval",
+        "description": "Newest first. An admin or approver sees the company's; a buyer sees their own.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/B2bApprovalStatus"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bApprovalPage"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/B2bNotABuyer"
+          }
+        }
+      }
+    },
+    "/x/b2b/approvals/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "get": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "One request for approval",
+        "description": "A buyer may read only the requests they filed; anybody else's is a 404, as another company's is.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bApprovalResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/B2bNotABuyer"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/x/b2b/approvals/{id}/approve": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "post": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "Approve a request and place its order",
+        "description": "Approvers and admins only. Places the order on the requester's behalf from the request's snapshot: its lines at the prices the approver was shown, with the payment method, PO number and address the buyer gave; delivery and tax are worked out again as of now. The approval threshold no longer applies; the credit limit and the company's status still do.\n\nThe request is claimed before anything is placed, so two approvers approving at once place it once and the second gets 409. If the order cannot be placed — stock gone, the credit limit used up since, the requester no longer a buyer for the company, the quote it came from no longer on offer — the request goes back to `pending` with the reason in `last_error`, and that refusal is the answer. On success the requester is emailed (`b2b.approval_decided`).\n\nThe order is under `order.order`: `order` is the same `{order, payment}` pair a checkout answers with.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Approved, and the order placed: the same order and payment a checkout answers with, and the approval that placed it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/B2bApproved"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "description": "The account buys for no company or its role is `buyer` (`forbidden`); or placing the order was refused — the company is closed, or on hold with `on_account` chosen, or the order is over its credit limit (`credit_limit_exceeded`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such request for this company.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request is no longer pending; the requester no longer buys for the company; the quote it came from expired (`quote_expired`) or is otherwise not on offer; or a line can no longer be sold.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x/b2b/approvals/{id}/reject": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "post": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "Turn a request down",
+        "description": "Approvers and admins only. The `reason`, if one is given, is kept on the request and emailed to the requester (`b2b.approval_decided`). The body may be left out altogether.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "description": "Why, in the approver's words."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bApprovalResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "description": "The account buys for no company, or its role is `buyer` (`forbidden`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such request for this company.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request is no longer pending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x/b2b/approvals/{id}/cancel": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "post": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "Withdraw a request",
+        "description": "Only the buyer who filed it may: an approver who does not want it rejects it, and says why. Nobody is emailed.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bApprovalResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "description": "The account buys for no company, or did not file this request (`forbidden`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such request for this company.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request is no longer pending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x/b2b/quotes": {
+      "get": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "The company's quotes",
+        "description": "Newest first. An admin or approver sees the company's; a buyer sees the ones they asked for.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/B2bQuoteStatus"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bQuotePage"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/B2bNotABuyer"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "Ask for a price",
+        "description": "Any buyer of the company may ask, whatever their role. A request carries variants and quantities, never prices: a `unit_price_minor` on a line is accepted and thrown away, because what a buyer would like to pay is not what the store offers. The quote starts `requested`; the store prices it and sends it, and the buyer is emailed when it is ready (`b2b.quote_ready`).",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/B2bQuoteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/B2bQuoteResponse"
+          },
+          "400": {
+            "description": "No lines, a line without a positive quantity, a variant listed twice, or a variant that does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "description": "The account buys for no company, or the company is closed (`forbidden`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x/b2b/quotes/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "get": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "One quote",
+        "description": "A buyer may read only the quotes they asked for; anybody else's is a 404, as another company's is.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bQuoteResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/B2bNotABuyer"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/x/b2b/quotes/{id}/accept": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "post": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "Accept a quote and place its order",
+        "description": "Places the order at the quoted prices, under the rules a checkout meets: the company's status, its credit limit, a required PO number. `payment_method` defaults to `on_account` when the company has an account. The quote is claimed first, so two accepts at once place one order; it becomes `accepted`, with the order's id and number on it.\n\nA quote over the company's approval threshold, accepted by somebody whose role is `buyer`, is filed for approval instead — 202 with `approval`, of kind `quote` — and the quote waits as `awaiting_approval` until an approver places it, or goes back to `quoted` if the approval is rejected or withdrawn.\n\nThe buyer who asked may accept it, and so may an admin or approver; to anybody else it is a 404.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/B2bQuoteAcceptance"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/B2bOrderPlaced"
+          },
+          "202": {
+            "$ref": "#/components/responses/B2bApprovalFiled"
+          },
+          "400": {
+            "description": "The company has no account and no `payment_method` was given; a PO number is required and `po_number` is empty; or the address is incomplete.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "description": "The account buys for no company; or placing the order was refused — the company is closed, `on_account` was chosen and the company is on hold or has no account, or the order is over its credit limit (`credit_limit_exceeded`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such quote for this company, or no such payment method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The quote expired (`quote_expired`) — ask for it to be quoted again — or is not on offer: not sent yet, already accepted, or declined.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x/b2b/quotes/{id}/decline": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "post": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "Decline a quote",
+        "description": "Closes the quote without an order, whether it was still waiting for a price or already sent. `declined_by` records the buyer's address. The buyer who asked may decline it, and so may an admin or approver; to anybody else it is a 404. Nobody is emailed.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bQuoteResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/B2bNotABuyer"
+          },
+          "404": {
+            "description": "No such quote for this company.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The quote is already accepted, declined or cancelled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/companies": {
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "List companies",
+        "description": "Requires companies.read. Newest first.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Matches part of the name, in any case, or part of the code."
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bCompanyPage"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Add a company",
+        "description": "Requires companies.write, which by default only a manager holds: setting a credit limit is lending the store's money. Only `name` is required; `code` is made from the name when left out. A company without `credit_limit_minor` has no account and pays up front; without `approval_threshold_minor` its buyers never wait for approval. `group_id` names the customer group whose prices the company's buyers get (`/api/admin/customer-groups`); the module adds and removes buyers' addresses there itself.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/B2bCompanyInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/B2bCompanyResponse"
+          },
+          "400": {
+            "description": "`name` is missing; `code` is not lower-case letters, digits and single hyphens; `status` or `net_days` is out of range; an amount is negative; or the customer group does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "A company with that code already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/companies/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "One company",
+        "description": "Requires companies.read.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bCompanyResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Change a company",
+        "description": "Requires companies.write. Every field is optional and an omitted one is left alone; `null` on `group_id`, `credit_limit_minor` or `approval_threshold_minor` clears it — no customer group, no account, no approval rule. `metadata`, when given, replaces the whole object. Moving the company to another customer group moves every buyer's address with it, so their carts are priced on the new terms from their next checkout.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/B2bCompanyInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bCompanyResponse"
+          },
+          "400": {
+            "description": "`name` is empty; `code` is not lower-case letters, digits and single hyphens; `status` or `net_days` is out of range; an amount is negative; or the customer group does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Another company already has that code.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Delete a company",
+        "description": "Requires companies.write. Its buyers' addresses leave its customer group, and its buyers, invitations, requests for approval and quotes go with it. A company with orders on its books is refused: the ledger would lose whose orders they were. Close it instead, with `status: closed`.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "The company has orders on its books.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/companies/{id}/credit": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Where a company's account stands",
+        "description": "Requires companies.read. What is outstanding is read from the orders themselves: placed on account, neither paid nor cancelled. `limit` and `available` are null when the company has no account.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The company's account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/B2bCredit"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/companies/{id}/members": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "A company's buyers",
+        "description": "Requires companies.read. Oldest first, not paginated. Addresses are masked on a demo store, as on every admin route.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bMemberList"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Add a buyer, or invite one",
+        "description": "Requires companies.write. An account whose address identity has already confirmed joins at once: 201 with `member`. Anybody else — no account yet, or an address not confirmed — is invited instead, because the address is about to be given the company's prices and nothing has proved it: 202 with `invitation`, and an email goes to the address (`b2b.invitation`) carrying a link or a token the API never returns. The invitation names the signed-in operator as who sent it, or `the store` for a static token.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/B2bInviteInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Added. `member` is set and `invitation` is absent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "member": {
+                          "$ref": "#/components/schemas/B2bMember"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Invited. `invitation` is set and `member` is absent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "invitation": {
+                          "$ref": "#/components/schemas/B2bInvitation"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`role` is not admin, approver or buyer, or `email` is not an address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "The account already buys for another company.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/companies/{id}/members/{customer_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        },
+        {
+          "$ref": "#/components/parameters/B2bCustomerID"
+        }
+      ],
+      "patch": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Change a buyer's role",
+        "description": "Requires companies.write. The last admin cannot be demoted. The address in the answer is masked on a demo store.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/B2bRoleInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bMemberResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "The account is not a buyer for this company.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It is the company's last admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Remove a buyer",
+        "description": "Requires companies.write. Their address leaves the company's customer group. Unlike the buyers' own route this removes the last admin too: the store is who rescues a company nobody can administer.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "The account is not a buyer for this company.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/companies/{id}/invitations": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "A company's open invitations",
+        "description": "Requires companies.read. Not accepted and not expired, newest first; not paginated. The token is never returned, and addresses are masked on a demo store. A company that does not exist has no invitations: the answer is an empty list, not a 404.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bInvitationList"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/companies/{id}/invitations/{invitation_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        },
+        {
+          "$ref": "#/components/parameters/B2bInvitationID"
+        }
+      ],
+      "delete": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Withdraw an invitation",
+        "description": "Requires companies.write. The emailed link stops working.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Withdrawn."
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "No open invitation with that id for this company.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/companies/{id}/orders": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "A company's orders",
+        "description": "Requires companies.read. Every order placed for the company, newest first, on account or not. `placed_by` is masked on a demo store.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/B2bOverdue"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bCompanyOrderPage"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/receivables": {
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Every company's orders, for chasing payment",
+        "description": "Requires companies.read. Every company's orders placed on account, newest first — the ledger a store chases payment from; an order paid for at checkout is owed nothing and is not in it. `overdue=true` narrows it to orders past their due date and still unpaid. An order on account is settled with `POST /api/admin/orders/{id}/mark-paid`. `placed_by` is masked on a demo store.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/B2bOverdue"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bCompanyOrderPage"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/approvals": {
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Requests for approval, across companies",
+        "description": "Requires companies.read. Newest first. Read-only: approving is the company's decision, made by its own approvers, not the store's. `requested_by_email` is masked on a demo store.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/B2bApprovalStatus"
+          },
+          {
+            "$ref": "#/components/parameters/B2bCompanyFilter"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bApprovalPage"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/quotes": {
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Quotes, across companies",
+        "description": "Requires quotes.read. Newest first; `status=requested` is the queue waiting for a price. `requested_by_email` is masked on a demo store.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/B2bQuoteStatus"
+          },
+          {
+            "$ref": "#/components/parameters/B2bCompanyFilter"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bQuotePage"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/quotes/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "One quote",
+        "description": "Requires quotes.read.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bQuoteResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Price a quote",
+        "description": "Requires quotes.write, which by default only a manager holds: a quote is a price. `lines`, when given, replace the quote's lines — the store may change a quantity or add what the buyer forgot — each with its `unit_price_minor`; `reply` is the store's note to the buyer; `expires_at` is when the offer lapses. A field left out is left alone. Lines may stay unpriced while the work is in progress; sending needs every one priced.\n\nAfterwards the quote is `requested`, whatever it was: changing a sent quote takes it back, so the buyer cannot accept a price being rewritten under them, and it has to be sent again. An expired quote re-priced this way needs a new `expires_at`, or sending it is refused.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/B2bQuoteReply"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bQuoteResponse"
+          },
+          "400": {
+            "description": "`lines` is an empty array; a line has no positive quantity or a negative price; or a variant is listed twice or does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "The quote is accepted, declined or cancelled, and can no longer be changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/quotes/{id}/send": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "post": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Send a priced quote to the buyer",
+        "description": "Requires quotes.write. Only a `requested` quote with every line priced can be sent. It is on offer until its `expires_at`, or for thirty days when it has none unless the store configured otherwise, and the buyer who asked is emailed (`b2b.quote_ready`). From then it is `quoted` and can be accepted, until it reads `expired`.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bQuoteResponse"
+          },
+          "400": {
+            "description": "A line has no price, or `expires_at` is in the past.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "The quote is not `requested`: it has been sent already, or is accepted, declined or cancelled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/quotes/{id}/decline": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "post": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Decline a quote",
+        "description": "Requires quotes.write. Closes the quote without an order, whether it was waiting for a price or already sent; `declined_by` is `store`. Nobody is emailed.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bQuoteResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "The quote is already accepted, declined or cancelled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "B2bCustomerID": {
+        "name": "customer_id",
+        "in": "path",
+        "required": true,
+        "description": "The buyer's account id, from ext/identity.",
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      "B2bInvitationID": {
+        "name": "invitation_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      },
+      "B2bOverdue": {
+        "name": "overdue",
+        "in": "query",
+        "required": false,
+        "description": "`true` keeps only orders on account past their due date and still unpaid. Any other value is no filter.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "true"
+          ]
+        }
+      },
+      "B2bApprovalStatus": {
+        "name": "status",
+        "in": "query",
+        "required": false,
+        "description": "Only requests in this state. Empty is every state.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "placing",
+            "approved",
+            "rejected",
+            "cancelled"
+          ]
+        }
+      },
+      "B2bQuoteStatus": {
+        "name": "status",
+        "in": "query",
+        "required": false,
+        "description": "Only quotes in this state. `expired` finds quotes sent and past their expiry; `quoted` only those still on offer. Empty is every state.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "requested",
+            "quoted",
+            "awaiting_approval",
+            "expired",
+            "accepted",
+            "declined"
+          ]
+        }
+      },
+      "B2bCompanyFilter": {
+        "name": "company_id",
+        "in": "query",
+        "required": false,
+        "description": "Only this company's. Anything but an integer is a 400.",
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "schemas": {
+      "B2bCompany": {
+        "type": "object",
+        "description": "A business that buys from the store.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "code": {
+            "type": "string",
+            "description": "Lower-case letters, digits and single hyphens; unique.",
+            "example": "acme-distribution"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tax_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "on_hold",
+              "closed"
+            ],
+            "description": "`on_hold` stops new orders on account and nothing else: the company still buys, paying up front, until somebody lifts the hold. `closed` stops it ordering at all."
+          },
+          "group_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "The customer group whose prices the company's buyers get. A group deleted since leaves the company pricing as everybody does."
+          },
+          "credit_limit": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "nullable": true,
+            "description": "null: the company has no account and pays up front."
+          },
+          "net_days": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 365,
+            "description": "Days after it is placed that an order on account falls due."
+          },
+          "approval_threshold": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "nullable": true,
+            "description": "An order total above this, placed by a `buyer`, waits for an approver. null: nobody ever waits."
+          },
+          "require_po": {
+            "type": "boolean",
+            "description": "Every order needs a purchase-order number."
+          },
+          "notes": {
+            "type": "string",
+            "description": "The store's own notes on the company."
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "member_count": {
+            "type": "integer",
+            "description": "How many buyers it has."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "B2bCompanyInput": {
+        "type": "object",
+        "description": "On create, `name` is required and `code` defaults to one made from the name. On patch every field is optional: an omitted field is left alone, and `null` on `group_id`, `credit_limit_minor` or `approval_threshold_minor` clears it. Amounts are minor units of the store's currency. An unknown field is a 400.",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Lower-case letters, digits and single hyphens."
+          },
+          "name": {
+            "type": "string"
+          },
+          "tax_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "on_hold",
+              "closed"
+            ],
+            "default": "active"
+          },
+          "group_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "A customer group that exists. null: none."
+          },
+          "credit_limit_minor": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true,
+            "description": "null: no account; the company pays up front."
+          },
+          "net_days": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 365,
+            "default": 30
+          },
+          "approval_threshold_minor": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true,
+            "description": "null: no approval rule."
+          },
+          "require_po": {
+            "type": "boolean",
+            "default": false
+          },
+          "notes": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Replaces the whole object when given."
+          }
+        }
+      },
+      "B2bMember": {
+        "type": "object",
+        "description": "One buyer and their role in a company.",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "customer_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The buyer's account id, from ext/identity."
+          },
+          "email": {
+            "type": "string",
+            "description": "The address the company's customer group holds for this buyer. Empty while they have moved to an address they have not yet confirmed: the old one has left the group and the new one joins once identity confirms it. Masked on admin routes of a demo store."
+          },
+          "confirmed": {
+            "type": "boolean",
+            "description": "True when `email` is set — the buyer's current address is confirmed and in the company's customer group. False while it is awaiting confirmation, so a screen can say so rather than show a blank."
+          },
+          "name": {
+            "type": "string",
+            "description": "Read from the account."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "approver",
+              "buyer"
+            ],
+            "description": "`admin` runs the company's account: buyers, invitations, approvals. `approver` orders without approval and decides other people's requests. `buyer` orders; an order over the approval threshold waits for an approver."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "B2bInvitation": {
+        "type": "object",
+        "description": "An open offer to join a company. The token is never in it: it went to the mailbox, and only the mailbox should have it.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "company_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "email": {
+            "type": "string",
+            "description": "Masked on admin routes of a demo store."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "approver",
+              "buyer"
+            ]
+          },
+          "invited_by": {
+            "type": "string",
+            "description": "The address of whoever sent it, or `the store` for a static admin token."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "accepted_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Absent while it is open."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "B2bInviteInput": {
+        "type": "object",
+        "required": [
+          "email",
+          "role"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "approver",
+              "buyer"
+            ]
+          }
+        }
+      },
+      "B2bRoleInput": {
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "approver",
+              "buyer"
+            ]
+          }
+        }
+      },
+      "B2bMe": {
+        "type": "object",
+        "properties": {
+          "company": {
+            "$ref": "#/components/schemas/B2bCompany"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "approver",
+              "buyer"
+            ]
+          },
+          "credit": {
+            "$ref": "#/components/schemas/B2bCredit"
+          }
+        }
+      },
+      "B2bCredit": {
+        "type": "object",
+        "description": "Where a company stands on its account.",
+        "properties": {
+          "limit": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "nullable": true,
+            "description": "null: the company has no account."
+          },
+          "outstanding": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "Orders on account neither paid nor cancelled."
+          },
+          "available": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "nullable": true,
+            "description": "The limit less what is outstanding, never below zero. null when there is no limit."
+          },
+          "overdue": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "The part of `outstanding` past its due date."
+          },
+          "overdue_orders": {
+            "type": "integer"
+          },
+          "net_days": {
+            "type": "integer"
+          }
+        }
+      },
+      "B2bCompanyOrder": {
+        "type": "object",
+        "description": "An order placed for a company, as its ledger reads it. The order itself is core's, at /api/admin/orders/{id}.",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "number": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "The order's status."
+          },
+          "payment_status": {
+            "type": "string",
+            "description": "The order's payment status. An order on account stays `pending` until the store marks it paid."
+          },
+          "total": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "po_number": {
+            "type": "string"
+          },
+          "placed_by": {
+            "type": "string",
+            "description": "The order's email. Masked on admin routes of a demo store."
+          },
+          "on_account": {
+            "type": "boolean"
+          },
+          "due_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Present for an order on account only: anything else was paid for at checkout."
+          },
+          "overdue": {
+            "type": "boolean",
+            "description": "On account, past `due_at`, unpaid and not cancelled."
+          },
+          "company_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "company_name": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "B2bCheckoutRequest": {
+        "type": "object",
+        "description": "The buyer's own cart, checked out for their company. The email is the account's, so there is no field for it.",
+        "required": [
+          "cart_id",
+          "address"
+        ],
+        "properties": {
+          "cart_id": {
+            "type": "string",
+            "description": "The cart's token, as the public cart routes name it."
+          },
+          "payment_method": {
+            "type": "string",
+            "description": "A payment method code. Defaults to `on_account` when the company has an account; required when it has none."
+          },
+          "po_number": {
+            "type": "string",
+            "description": "The company's purchase-order number. Required when the company has `require_po`."
+          },
+          "name": {
+            "type": "string",
+            "description": "Defaults to the account's name."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Defaults to the account's phone."
+          },
+          "address": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "shipping_rate_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "payment_data": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Passed through to the payment provider, as on the public checkout."
+          },
+          "return_url": {
+            "type": "string",
+            "description": "Where a redirect-flow gateway sends the buyer back to."
+          }
+        }
+      },
+      "B2bPlacedOrder": {
+        "type": "object",
+        "description": "An order placed, and what the client must do to pay: the pair `POST /api/checkout/{code}` answers with. On account, `payment.kind` is `none`.",
+        "properties": {
+          "order": {
+            "$ref": "#/components/schemas/Order"
+          },
+          "payment": {
+            "$ref": "#/components/schemas/PaymentIntent"
+          }
+        }
+      },
+      "B2bApprovalLine": {
+        "type": "object",
+        "description": "One line of a basket waiting for approval, at the price the approver is asked to approve.",
+        "properties": {
+          "variant_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer"
+          },
+          "unit_price": {
+            "$ref": "#/components/schemas/Money"
+          }
+        }
+      },
+      "B2bApproval": {
+        "type": "object",
+        "description": "A basket waiting for an approver. Its lines and prices are a snapshot: an approver approves what they were shown, and the order is placed from it, not from a cart the buyer could still be changing.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "company_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cart",
+              "quote"
+            ],
+            "description": "A checked-out cart, or an accepted quote."
+          },
+          "quote_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Present when `kind` is `quote`."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "placing",
+              "approved",
+              "rejected",
+              "cancelled"
+            ],
+            "description": "`placing` is an approver's claim while the order is being placed; it ends `approved`, or back at `pending` with `last_error`."
+          },
+          "requested_by": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The requester's account id."
+          },
+          "requested_by_email": {
+            "type": "string",
+            "description": "Who asked, as they were when they asked — the request is a record, and a buyer who later changes address or leaves the company still asked for it. Masked on admin routes of a demo store."
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/B2bApprovalLine"
+            }
+          },
+          "subtotal": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "total": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "What the order came to when it was submitted, delivery and tax included. Placing it works delivery and tax out again as of the approval."
+          },
+          "payment_method": {
+            "type": "string"
+          },
+          "po_number": {
+            "type": "string"
+          },
+          "decided_by": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The approver's account id. Absent until approved or rejected, and on a request its buyer withdrew."
+          },
+          "decided_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why it was rejected."
+          },
+          "last_error": {
+            "type": "string",
+            "description": "Why the last attempt to place it failed."
+          },
+          "order_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "order_number": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "B2bApproved": {
+        "type": "object",
+        "description": "The order an approval placed, in the shape a checkout answers with (`order`, `payment`), and the approval it closed.",
+        "properties": {
+          "order": {
+            "$ref": "#/components/schemas/Order"
+          },
+          "payment": {
+            "$ref": "#/components/schemas/PaymentIntent"
+          },
+          "approval": {
+            "$ref": "#/components/schemas/B2bApproval"
+          }
+        }
+      },
+      "B2bQuoteLine": {
+        "type": "object",
+        "description": "One line of a quote. The SKU and title are copied when the line is written, so the quote still says what it was for after a product is renamed.",
+        "properties": {
+          "variant_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer"
+          },
+          "unit_price": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "nullable": true,
+            "description": "null until the store prices the line."
+          }
+        }
+      },
+      "B2bQuote": {
+        "type": "object",
+        "description": "A request for a price and, once sent, the price: agreed for this basket and this company, never a price list a whole customer group would reach.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "number": {
+            "type": "string",
+            "example": "Q-000042"
+          },
+          "company_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "company_name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "requested",
+              "quoted",
+              "awaiting_approval",
+              "accepted",
+              "declined",
+              "expired"
+            ],
+            "description": "`requested` is waiting for the store; `quoted` is sent and on offer. `awaiting_approval` was accepted by a buyer over their approval limit and is held for the approval — it cannot be accepted again, and goes back to `quoted` if the approval is rejected or withdrawn. `expired` is read, not stored: a quoted quote past `expires_at` reads as expired, so nothing has to run at midnight to make it true."
+          },
+          "requested_by": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The requester's account id."
+          },
+          "requested_by_email": {
+            "type": "string",
+            "description": "Who asked, as they were when they asked — the request is a record, and a buyer who later changes address or leaves the company still asked for it. Masked on admin routes of a demo store."
+          },
+          "note": {
+            "type": "string",
+            "description": "The buyer's note."
+          },
+          "reply": {
+            "type": "string",
+            "description": "The store's reply."
+          },
+          "declined_by": {
+            "type": "string",
+            "description": "Present once declined: `store`, or the address of the buyer who declined it."
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/B2bQuoteLine"
+            }
+          },
+          "total": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "nullable": true,
+            "description": "The lines at their prices. null until every line is priced."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "quoted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "accepted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "order_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The order it became, once accepted."
+          },
+          "order_number": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "B2bQuoteLineInput": {
+        "type": "object",
+        "required": [
+          "variant_id",
+          "quantity"
+        ],
+        "properties": {
+          "variant_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "unit_price_minor": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "The store's price, in minor units of the store's currency. Ignored on a buyer's request."
+          }
+        }
+      },
+      "B2bQuoteRequest": {
+        "type": "object",
+        "required": [
+          "lines"
+        ],
+        "properties": {
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/B2bQuoteLineInput"
+            },
+            "description": "One line per variant."
+          },
+          "note": {
+            "type": "string",
+            "description": "Anything the store should know."
+          }
+        }
+      },
+      "B2bQuoteReply": {
+        "type": "object",
+        "description": "The store pricing a quote. Every field is optional; one left out is left alone.",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/B2bQuoteLineInput"
+            },
+            "description": "Replaces the quote's lines."
+          },
+          "reply": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the offer lapses. Once set it can be moved but not cleared."
+          }
+        }
+      },
+      "B2bQuoteAcceptance": {
+        "type": "object",
+        "description": "A buyer taking a quote, and where it is going. The email is the account's.",
+        "required": [
+          "address"
+        ],
+        "properties": {
+          "payment_method": {
+            "type": "string",
+            "description": "Defaults to `on_account` when the company has an account; required when it has none."
+          },
+          "po_number": {
+            "type": "string",
+            "description": "Required when the company has `require_po`."
+          },
+          "name": {
+            "type": "string",
+            "description": "Defaults to the account's name."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Defaults to the account's phone."
+          },
+          "address": {
+            "$ref": "#/components/schemas/Address"
+          }
+        }
+      }
+    },
+    "responses": {
+      "B2bUnauthorized": {
+        "description": "No shopper session, or an expired one.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "B2bNotABuyer": {
+        "description": "The account buys for no company (`forbidden`).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "B2bCompanyResponse": {
+        "description": "A company.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/B2bCompany"
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bCompanyPage": {
+        "description": "A page of companies.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/B2bCompany"
+                  }
+                },
+                "meta": {
+                  "$ref": "#/components/schemas/ListMeta"
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bMemberResponse": {
+        "description": "A buyer.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/B2bMember"
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bMemberList": {
+        "description": "Every buyer of the company. Not paginated: there is no `meta`.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/B2bMember"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bInvitationResponse": {
+        "description": "An invitation, without its token.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/B2bInvitation"
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bInvitationList": {
+        "description": "Every open invitation. Not paginated: there is no `meta`.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/B2bInvitation"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bCompanyOrderPage": {
+        "description": "A page of the company ledger.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/B2bCompanyOrder"
+                  }
+                },
+                "meta": {
+                  "$ref": "#/components/schemas/ListMeta"
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bApprovalResponse": {
+        "description": "A request for approval.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/B2bApproval"
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bApprovalPage": {
+        "description": "A page of requests for approval.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/B2bApproval"
+                  }
+                },
+                "meta": {
+                  "$ref": "#/components/schemas/ListMeta"
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bQuoteResponse": {
+        "description": "A quote with its lines.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/B2bQuote"
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bQuotePage": {
+        "description": "A page of quotes, each with its lines.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/B2bQuote"
+                  }
+                },
+                "meta": {
+                  "$ref": "#/components/schemas/ListMeta"
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bOrderPlaced": {
+        "description": "The order is placed: `order` and `payment`, as a checkout answers. `approval` is absent.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/B2bPlacedOrder"
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bApprovalFiled": {
+        "description": "Accepted for a decision, not yet an order: the order is over the company's approval threshold and is waiting for an approver. Only `approval` is set; there is no `order` or `payment`.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "approval": {
+                      "$ref": "#/components/schemas/B2bApproval"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
