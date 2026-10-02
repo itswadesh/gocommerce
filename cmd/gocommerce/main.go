@@ -59,6 +59,7 @@ import (
 	"github.com/itswadesh/gocommerce/ext/sitemaps"
 	webhooks "github.com/itswadesh/gocommerce/ext/webhooks"
 	"github.com/itswadesh/gocommerce/ext/wishlist"
+	"github.com/itswadesh/gocommerce/platform"
 )
 
 func main() {
@@ -78,6 +79,8 @@ usage:
 
 commands:
   serve      apply migrations, then serve the API (default)
+  platform   serve many stores from one database, each in a schema of its
+             own, routed by host; the platform API creates them (D70)
   migrate    apply migrations and exit
   superuser  create or update an admin-panel operator, then exit
   doctor     run operational diagnostics and exit (-json for agents)
@@ -126,6 +129,13 @@ environment:
   GOCOMMERCE_B2B_INVITE_URL
                     with -b2b, the storefront page a company invitation links
                     to, with {token} where the token goes
+  GOCOMMERCE_PLATFORM_TOKEN
+                    with "platform", the platform operators' token(s),
+                    comma-separated, used when -platform-token is not given
+  GOCOMMERCE_BASE_DOMAIN
+                    with "platform", used when -base-domain is not given
+  In platform mode, {domain} in the URL variables above (and STOREFRONT_URL)
+  is replaced with each store's own host, so one setting serves every store.
   GOCOMMERCE_DEMO   same as -demo. Off when unset, empty, "0", "false", "no"
                     or "off"; any other value is on
   GOCOMMERCE_DEMO_ACCOUNT
@@ -169,7 +179,13 @@ environment:
 		withFAQ      = fs.Bool("faq", false, "install the faq module: the shop's questions and answers at /x/faq, edited on the FAQ screen")
 		withWishlist = fs.Bool("wishlist", false, "install the wishlist module: shoppers save products, and the Wishlists screen shows what is wanted most")
 		withB2B      = fs.Bool("b2b", false, "install the b2b module: companies, buyer roles, orders on account against a credit limit, approvals and quotes (implies -identity)")
-		withAmazon   = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or IMPORT_AMAZON_LLM_URL + IMPORT_AMAZON_LLM_MODEL for a local model rewrite the copy; IMPORT_AMAZON_HEADED=1 shows the browser)")
+		// Platform mode, the "platform" command (D70).
+		baseDomain     = fs.String("base-domain", "", "platform: every store answers at <slug>.<base-domain> (default $GOCOMMERCE_BASE_DOMAIN)")
+		platformHosts  = fs.String("platform-host", "", "platform: host(s) serving the platform API, comma-separated (default platform.<base-domain>)")
+		apiHosts       = fs.String("api-host", "", "platform: shared host(s) where the X-Store header names the store, comma-separated")
+		platformTokens = fs.String("platform-token", "", "platform: the platform operators' token(s), comma-separated (default $GOCOMMERCE_PLATFORM_TOKEN)")
+		namespace      = fs.String("namespace", "", "platform: a prefix for every schema the platform creates, so two platforms can share a database")
+		withAmazon     = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or IMPORT_AMAZON_LLM_URL + IMPORT_AMAZON_LLM_MODEL for a local model rewrite the copy; IMPORT_AMAZON_HEADED=1 shows the browser)")
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -205,7 +221,7 @@ environment:
 	// diagnostic command refuses to run on precisely the store it exists to
 	// diagnose: one whose operators are superusers and which has no static
 	// token at all.
-	offline := command != "serve"
+	offline := command != "serve" && command != "platform"
 
 	languages := splitList(*langs)
 	cfg := gocommerce.Config{
@@ -240,134 +256,159 @@ environment:
 	// The reference binary installs no module by default — that is what
 	// proves the engine boots on its own. Accounts are the one capability a
 	// storefront asks for often enough that a flag beats a fork of main().
-	var modules []gocommerce.Module
-	// b2b's buyers are identity's accounts, so -b2b brings identity with it
-	// and is handed the same instance, listed first for its tables.
-	if *withIdentity || *withB2B {
-		accounts := identity.New(identity.Config{
-			ResetURL:  os.Getenv("GOCOMMERCE_IDENTITY_RESET_URL"),
-			VerifyURL: os.Getenv("GOCOMMERCE_IDENTITY_VERIFY_URL"),
-		})
-		modules = append(modules, accounts)
-		if *withB2B {
-			modules = append(modules, b2b.New(b2b.Config{
-				Accounts:  accounts,
-				InviteURL: os.Getenv("GOCOMMERCE_B2B_INVITE_URL"),
+	//
+	// A factory rather than a list, because platform mode builds one set per
+	// store: a module holds the engine it registered with, so one instance
+	// shared between two stores would answer one store's requests from the
+	// other's tables. domain is the store's host on a platform and empty for
+	// a single store; it fills {domain} in the URL settings so one
+	// environment serves every store's links.
+	buildModules := func(domain string) []gocommerce.Module {
+		env := func(key string) string {
+			v := os.Getenv(key)
+			if domain != "" {
+				v = strings.ReplaceAll(v, "{domain}", domain)
+			}
+			return v
+		}
+		var modules []gocommerce.Module
+		// b2b's buyers are identity's accounts, so -b2b brings identity with it
+		// and is handed the same instance, listed first for its tables.
+		if *withIdentity || *withB2B {
+			accounts := identity.New(identity.Config{
+				ResetURL:  env("GOCOMMERCE_IDENTITY_RESET_URL"),
+				VerifyURL: env("GOCOMMERCE_IDENTITY_VERIFY_URL"),
+			})
+			modules = append(modules, accounts)
+			if *withB2B {
+				modules = append(modules, b2b.New(b2b.Config{
+					Accounts:  accounts,
+					InviteURL: env("GOCOMMERCE_B2B_INVITE_URL"),
+				}))
+			}
+		}
+		if *withWebhooks {
+			modules = append(modules, webhooks.New(webhooks.Config{}))
+		}
+		// The four below are plugins as much as modules: installed here, but
+		// switched on and configured from the Plugins screen, with the
+		// environment as the fallback for a store that prefers it.
+		if *withSearch {
+			modules = append(modules, meilisearch.New(meilisearch.Config{
+				Host: os.Getenv("MEILI_HOST"), APIKey: os.Getenv("MEILI_API_KEY"), SearchKey: os.Getenv("MEILI_SEARCH_KEY"),
 			}))
 		}
-	}
-	if *withWebhooks {
-		modules = append(modules, webhooks.New(webhooks.Config{}))
-	}
-	// The four below are plugins as much as modules: installed here, but
-	// switched on and configured from the Plugins screen, with the
-	// environment as the fallback for a store that prefers it.
-	if *withSearch {
-		modules = append(modules, meilisearch.New(meilisearch.Config{
-			Host: os.Getenv("MEILI_HOST"), APIKey: os.Getenv("MEILI_API_KEY"), SearchKey: os.Getenv("MEILI_SEARCH_KEY"),
-		}))
-	}
-	if *withKlaviyo {
-		modules = append(modules, klaviyo.New(klaviyo.Config{
-			PrivateKey: os.Getenv("KLAVIYO_PRIVATE_KEY"), PublicKey: os.Getenv("KLAVIYO_PUBLIC_KEY"),
-		}))
-	}
-	if *withFeeds {
-		modules = append(modules, feeds.New(feeds.Config{StorefrontURL: os.Getenv("STOREFRONT_URL")}))
-	}
-	if *withSitemaps {
-		modules = append(modules, sitemaps.New(sitemaps.Config{StorefrontURL: os.Getenv("STOREFRONT_URL")}))
-	}
-	if *withMenus {
-		modules = append(modules, navigation.New(navigation.Config{}))
-	}
-	if *withReviews {
-		modules = append(modules, reviews.New(reviews.Config{}))
-	}
-	if *withContact {
-		modules = append(modules, contact.New(contact.Config{NotifyEmail: os.Getenv("CONTACT_EMAIL")}))
-	}
-	if *withNews {
-		modules = append(modules, newsletter.New(newsletter.Config{}))
-	}
-	// The delivery backends. With nothing in the environment they are
-	// installed idle and wait for the Setup Email / Setup SMS screens.
-	// Resend first, because it is the one that works with one setting: a key
-	// and nothing else sends, from Resend's own onboarding address, until the
-	// store has a domain of its own to verify.
-	if *withResend {
-		modules = append(modules, resend.New(resend.Config{
-			APIKey: os.Getenv("RESEND_API_KEY"), From: os.Getenv("RESEND_FROM"), FromName: os.Getenv("RESEND_FROM_NAME"),
-		}))
-	}
-	if *withSendgrid {
-		modules = append(modules, sendgrid.New(sendgrid.Config{
-			APIKey: os.Getenv("SENDGRID_API_KEY"), From: os.Getenv("SENDGRID_FROM"), FromName: os.Getenv("SENDGRID_FROM_NAME"),
-		}))
-	}
-	// Twilio before MSG91 for the reason Resend comes before SendGrid: it is
-	// the one that works anywhere, because its wording is the store's own.
-	// MSG91 needs every message registered with a carrier first, which is the
-	// right module in India and a week of waiting everywhere else.
-	if *withTwilio {
-		modules = append(modules, twilio.New(twilio.Config{
-			AccountSID: os.Getenv("TWILIO_ACCOUNT_SID"), AuthToken: os.Getenv("TWILIO_AUTH_TOKEN"),
-			From: os.Getenv("TWILIO_FROM"), MessagingServiceSID: os.Getenv("TWILIO_MESSAGING_SERVICE_SID"),
-		}))
-	}
-	if *withMsg91 {
-		modules = append(modules, msg91.New(msg91.Config{AuthKey: os.Getenv("MSG91_AUTH_KEY")}))
-	}
-	// Gateways and carriers install idle: nothing in Config, everything on
-	// the Payment methods and Shipping providers screens. A store that
-	// prefers the environment wires the module itself in its own main().
-	if *withGateways {
-		modules = append(modules,
-			stripe.New(stripe.Config{}), razorpay.New(razorpay.Config{}), adyen.New(adyen.Config{}),
-			paddle.New(paddle.Config{}), lemonsqueezy.New(lemonsqueezy.Config{}), creem.New(creem.Config{}),
-			helcim.New(helcim.Config{}),
-			hyperswitch.New(hyperswitch.Config{}), revenuecat.New(revenuecat.Config{}),
-		)
-	}
-	if *withCarriers {
-		modules = append(modules,
-			shiprocket.New(shiprocket.Config{}), delhivery.New(delhivery.Config{}), nimbuspost.New(nimbuspost.Config{}),
-			indiapost.New(indiapost.Config{}), shippo.New(shippo.Config{}), shipstation.New(shipstation.Config{}),
-			easyship.New(easyship.Config{}), shippit.New(shippit.Config{}), usps.New(usps.Config{}),
-			onfleet.New(onfleet.Config{}), veeqo.New(veeqo.Config{}),
-		)
-	}
-	if *withInvoices {
-		seller := os.Getenv("INVOICES_SELLER_NAME")
-		if seller == "" {
-			seller = "This store"
+		if *withKlaviyo {
+			modules = append(modules, klaviyo.New(klaviyo.Config{
+				PrivateKey: os.Getenv("KLAVIYO_PRIVATE_KEY"), PublicKey: os.Getenv("KLAVIYO_PUBLIC_KEY"),
+			}))
 		}
-		modules = append(modules, invoices.New(invoices.Config{
-			SellerName: seller, SellerAddress: os.Getenv("INVOICES_SELLER_ADDRESS"), TaxID: os.Getenv("INVOICES_TAX_ID"),
-		}))
-	}
-	if *withCMS {
-		modules = append(modules, cms.New(cms.Config{}))
-	}
-	if *withFAQ {
-		modules = append(modules, faq.New(faq.Config{}))
-	}
-	if *withWishlist {
-		modules = append(modules, wishlist.New(wishlist.Config{}))
-	}
-	if *withAmazon {
-		modules = append(modules, amazon.New(amazon.Config{
-			AnthropicAPIKey: os.Getenv("ANTHROPIC_API_KEY"),
-			GeminiAPIKey:    os.Getenv("GEMINI_API_KEY"),
-			OpenAIAPIKey:    os.Getenv("OPENAI_API_KEY"),
-			LLMBaseURL:      os.Getenv("IMPORT_AMAZON_LLM_URL"),
-			Model:           os.Getenv("IMPORT_AMAZON_LLM_MODEL"),
-			ChromePath:      os.Getenv("CHROME_PATH"),
-			Headed:          os.Getenv("IMPORT_AMAZON_HEADED") != "",
-		}))
+		if *withFeeds {
+			modules = append(modules, feeds.New(feeds.Config{StorefrontURL: env("STOREFRONT_URL")}))
+		}
+		if *withSitemaps {
+			modules = append(modules, sitemaps.New(sitemaps.Config{StorefrontURL: env("STOREFRONT_URL")}))
+		}
+		if *withMenus {
+			modules = append(modules, navigation.New(navigation.Config{}))
+		}
+		if *withReviews {
+			modules = append(modules, reviews.New(reviews.Config{}))
+		}
+		if *withContact {
+			modules = append(modules, contact.New(contact.Config{NotifyEmail: os.Getenv("CONTACT_EMAIL")}))
+		}
+		if *withNews {
+			modules = append(modules, newsletter.New(newsletter.Config{}))
+		}
+		// The delivery backends. With nothing in the environment they are
+		// installed idle and wait for the Setup Email / Setup SMS screens.
+		// Resend first, because it is the one that works with one setting: a key
+		// and nothing else sends, from Resend's own onboarding address, until the
+		// store has a domain of its own to verify.
+		if *withResend {
+			modules = append(modules, resend.New(resend.Config{
+				APIKey: os.Getenv("RESEND_API_KEY"), From: os.Getenv("RESEND_FROM"), FromName: os.Getenv("RESEND_FROM_NAME"),
+			}))
+		}
+		if *withSendgrid {
+			modules = append(modules, sendgrid.New(sendgrid.Config{
+				APIKey: os.Getenv("SENDGRID_API_KEY"), From: os.Getenv("SENDGRID_FROM"), FromName: os.Getenv("SENDGRID_FROM_NAME"),
+			}))
+		}
+		// Twilio before MSG91 for the reason Resend comes before SendGrid: it is
+		// the one that works anywhere, because its wording is the store's own.
+		// MSG91 needs every message registered with a carrier first, which is the
+		// right module in India and a week of waiting everywhere else.
+		if *withTwilio {
+			modules = append(modules, twilio.New(twilio.Config{
+				AccountSID: os.Getenv("TWILIO_ACCOUNT_SID"), AuthToken: os.Getenv("TWILIO_AUTH_TOKEN"),
+				From: os.Getenv("TWILIO_FROM"), MessagingServiceSID: os.Getenv("TWILIO_MESSAGING_SERVICE_SID"),
+			}))
+		}
+		if *withMsg91 {
+			modules = append(modules, msg91.New(msg91.Config{AuthKey: os.Getenv("MSG91_AUTH_KEY")}))
+		}
+		// Gateways and carriers install idle: nothing in Config, everything on
+		// the Payment methods and Shipping providers screens. A store that
+		// prefers the environment wires the module itself in its own main().
+		if *withGateways {
+			modules = append(modules,
+				stripe.New(stripe.Config{}), razorpay.New(razorpay.Config{}), adyen.New(adyen.Config{}),
+				paddle.New(paddle.Config{}), lemonsqueezy.New(lemonsqueezy.Config{}), creem.New(creem.Config{}),
+				helcim.New(helcim.Config{}),
+				hyperswitch.New(hyperswitch.Config{}), revenuecat.New(revenuecat.Config{}),
+			)
+		}
+		if *withCarriers {
+			modules = append(modules,
+				shiprocket.New(shiprocket.Config{}), delhivery.New(delhivery.Config{}), nimbuspost.New(nimbuspost.Config{}),
+				indiapost.New(indiapost.Config{}), shippo.New(shippo.Config{}), shipstation.New(shipstation.Config{}),
+				easyship.New(easyship.Config{}), shippit.New(shippit.Config{}), usps.New(usps.Config{}),
+				onfleet.New(onfleet.Config{}), veeqo.New(veeqo.Config{}),
+			)
+		}
+		if *withInvoices {
+			seller := os.Getenv("INVOICES_SELLER_NAME")
+			if seller == "" {
+				seller = "This store"
+			}
+			modules = append(modules, invoices.New(invoices.Config{
+				SellerName: seller, SellerAddress: os.Getenv("INVOICES_SELLER_ADDRESS"), TaxID: os.Getenv("INVOICES_TAX_ID"),
+			}))
+		}
+		if *withCMS {
+			modules = append(modules, cms.New(cms.Config{}))
+		}
+		if *withFAQ {
+			modules = append(modules, faq.New(faq.Config{}))
+		}
+		if *withWishlist {
+			modules = append(modules, wishlist.New(wishlist.Config{}))
+		}
+		if *withAmazon {
+			modules = append(modules, amazon.New(amazon.Config{
+				AnthropicAPIKey: os.Getenv("ANTHROPIC_API_KEY"),
+				GeminiAPIKey:    os.Getenv("GEMINI_API_KEY"),
+				OpenAIAPIKey:    os.Getenv("OPENAI_API_KEY"),
+				LLMBaseURL:      os.Getenv("IMPORT_AMAZON_LLM_URL"),
+				Model:           os.Getenv("IMPORT_AMAZON_LLM_MODEL"),
+				ChromePath:      os.Getenv("CHROME_PATH"),
+				Headed:          os.Getenv("IMPORT_AMAZON_HEADED") != "",
+			}))
+		}
+
+		return modules
 	}
 
-	app, err := gocommerce.New(cfg, modules...)
+	if command == "platform" {
+		return platformCmd(cfg, platformFlags{
+			baseDomain: *baseDomain, platformHosts: *platformHosts, apiHosts: *apiHosts,
+			tokens: *platformTokens, namespace: *namespace,
+		}, buildModules, log)
+	}
+
+	app, err := gocommerce.New(cfg, buildModules("")...)
 	if err != nil {
 		return err
 	}
@@ -654,4 +695,38 @@ func envTrue(name string) bool {
 		return false
 	}
 	return true
+}
+
+type platformFlags struct {
+	baseDomain, platformHosts, apiHosts, tokens, namespace string
+}
+
+// platformCmd serves many stores from one database (D70). The single-store
+// configuration built above is the template every store starts from — its
+// currency, languages, demo and dev settings — while each store gets its own
+// schema, admin token, media directory and modules from the platform.
+func platformCmd(cfg gocommerce.Config, f platformFlags, buildModules func(string) []gocommerce.Module, log *slog.Logger) error {
+	if f.tokens == "" {
+		f.tokens = os.Getenv("GOCOMMERCE_PLATFORM_TOKEN")
+	}
+	if f.baseDomain == "" {
+		f.baseDomain = os.Getenv("GOCOMMERCE_BASE_DOMAIN")
+	}
+	p, err := platform.New(platform.Config{
+		DBURL:         cfg.DBURL,
+		Addr:          cfg.Addr,
+		BaseDomain:    f.baseDomain,
+		PlatformHosts: splitList(f.platformHosts),
+		APIHosts:      splitList(f.apiHosts),
+		Tokens:        splitList(f.tokens),
+		Namespace:     f.namespace,
+		Store:         cfg,
+		MediaRoot:     cfg.MediaDir,
+		Modules:       func(t platform.Tenant) []gocommerce.Module { return buildModules(t.Host) },
+		Logger:        log,
+	})
+	if err != nil {
+		return err
+	}
+	return p.ListenAndServe()
 }

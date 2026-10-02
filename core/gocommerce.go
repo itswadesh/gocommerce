@@ -72,6 +72,11 @@ const (
 type Config struct {
 	// DBURL is the PostgreSQL connection string. Required.
 	DBURL string
+	// MaxOpenConns caps this store's connection pool. Zero keeps the engine's
+	// default of 25, which is right for a store with the process to itself
+	// and wrong for a hundred stores sharing one PostgreSQL behind a platform:
+	// a hundred pools of 25 is past any server's max_connections (D70).
+	MaxOpenConns int
 	// Addr is the listen address. Defaults to ":8080".
 	Addr string
 
@@ -355,6 +360,13 @@ type App struct {
 	specPaths []string
 
 	srv *http.Server
+
+	// stopRun ends the context Start handed the background work, and
+	// started/stopped make Start and the stop hooks run once each however the
+	// App is wound down: ListenAndServe, Close, or a platform hosting it.
+	stopRun context.CancelFunc
+	started bool
+	stopped bool
 }
 
 type hook struct {
@@ -404,6 +416,10 @@ func New(cfg Config, mods ...Module) (*App, error) {
 	db, err := OpenDB(context.Background(), cfg.DBURL)
 	if err != nil {
 		return nil, err
+	}
+	if cfg.MaxOpenConns > 0 {
+		db.SetMaxOpenConns(cfg.MaxOpenConns)
+		db.SetMaxIdleConns(min(maxIdleConns, cfg.MaxOpenConns))
 	}
 
 	a := &App{
@@ -722,10 +738,8 @@ func (a *App) ListenAndServe() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	for _, h := range a.onStart {
-		if err := h.fn(ctx); err != nil {
-			return fmt.Errorf("gocommerce: OnStart (%s): %w", h.owner, err)
-		}
+	if err := a.Start(ctx); err != nil {
+		return err
 	}
 
 	a.srv = &http.Server{
@@ -795,7 +809,35 @@ func (a *App) ListenAndServe() error {
 	return err
 }
 
+// Start runs the OnStart hooks — the outbox dispatcher, the sweepers, every
+// module's background work — without serving. ListenAndServe calls it; so
+// does a process that serves the App's Handler itself, such as a platform
+// hosting one App per store (D70). The work runs until ctx ends or Close is
+// called. A second call does nothing.
+func (a *App) Start(ctx context.Context) error {
+	if a.started {
+		return nil
+	}
+	a.started = true
+	runCtx, cancel := context.WithCancel(ctx)
+	a.stopRun = cancel
+	for _, h := range a.onStart {
+		if err := h.fn(runCtx); err != nil {
+			cancel()
+			return fmt.Errorf("gocommerce: OnStart (%s): %w", h.owner, err)
+		}
+	}
+	return nil
+}
+
 func (a *App) shutdownHooks(ctx context.Context) {
+	if a.stopped {
+		return
+	}
+	a.stopped = true
+	if a.stopRun != nil {
+		a.stopRun()
+	}
 	for i := len(a.onStop) - 1; i >= 0; i-- {
 		if err := a.onStop[i].fn(ctx); err != nil {
 			a.log.Error("OnStop hook failed", "owner", a.onStop[i].owner, "error", err)
@@ -803,8 +845,9 @@ func (a *App) shutdownHooks(ctx context.Context) {
 	}
 }
 
-// Close releases resources without serving. Tests use it; ListenAndServe does
-// its own cleanup.
+// Close stops the background work Start began, runs the OnStop hooks and
+// closes the database. Tests use it, and so does a platform retiring a store;
+// ListenAndServe does its own cleanup.
 func (a *App) Close() error {
 	a.shutdownHooks(context.Background())
 	return a.db.Close()

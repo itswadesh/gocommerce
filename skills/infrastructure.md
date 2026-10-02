@@ -284,9 +284,11 @@ machine with no Node.js. Details in [development](development.md) and
 [`docs/admin-panel.md`](../docs/admin-panel.md).
 
 The reference binary's commands: `serve` (default), `migrate`, `superuser
-create|update|list`, `doctor` (with `-json`), `spec`, `version`. Flags: `-db`,
+create|update|list`, `doctor` (with `-json`), `spec`, `version`, and `platform` for many stores (below).
+Flags: `-db`,
 `-addr`, `-admin-token`, `-currency`, `-languages`, `-dev`, `-demo`, `-v`,
-`-json`. `DATABASE_URL`, `GOCOMMERCE_ADMIN_TOKEN`, `GOCOMMERCE_DEMO`,
+`-json`, and for `platform` `-base-domain`, `-platform-host`, `-api-host`,
+`-platform-token` and `-namespace`. `DATABASE_URL`, `GOCOMMERCE_ADMIN_TOKEN`, `GOCOMMERCE_DEMO`,
 `GOCOMMERCE_DEMO_ACCOUNT`, `GOCOMMERCE_ADMIN_EMAIL` and
 `GOCOMMERCE_ADMIN_PASSWORD` are the environment equivalents.
 `GOCOMMERCE_DEMO` is the one variable here read as a word rather than as
@@ -348,6 +350,45 @@ another's order list on a demo store.
 The masking is a display rule, not storage: the rows still hold what the
 shopper typed, and turning the flag off shows it again. Somewhere that needs
 the data to be genuinely absent wants seeded data, not this.
+
+## Running many stores: platform mode
+
+`gocommerce platform` serves many stores from one process and one database
+(D70, [`platform/`](../platform/platform.go)). Each store is an ordinary
+engine in a schema of its own — `store_<slug>` — with its own operators,
+admin panel, admin token, media directory and module instances. A request
+reaches a store by the host it was sent to: `<slug>.<base domain>`, any
+custom domain attached to it, or a shared API host with the store named in the
+`X-Store` header.
+
+```
+gocommerce -db "$DATABASE_URL" -base-domain shops.example.com   -platform-token "$GOCOMMERCE_PLATFORM_TOKEN" -b2b -resend platform
+```
+
+The platform's own API is served only on `platform.<base domain>` (or
+`-platform-host`) and needs a platform token, which is not a store
+credential — it opens no store's admin API, and no store's token opens it.
+`POST /api/platform/tenants` creates a store all or nothing — schema,
+migrations, first owner, domains — and returns the owner's generated password
+and the store's admin token once. A store is suspended with
+`PATCH /api/platform/tenants/{slug}` (its hosts answer 503
+`store_unavailable`) and deleted only once suspended, with the slug repeated
+as `?confirm=<slug>`. The whole surface is in `GET /api/platform/doc`.
+
+What to know before running one:
+
+- **Every store runs the same modules**, the ones the binary was started
+  with. A provider key in the environment (`RESEND_API_KEY`) is shared by
+  every store until a store sets its own on its Plugins screen. URL settings
+  may contain `{domain}`, filled with each store's host.
+- **A pool per store**, four connections by default
+  (`MaxOpenConnsPerStore`). A hundred stores is up to 400 connections; past a
+  few hundred, put PgBouncer in front.
+- **TLS for custom domains is the proxy's.** Point it at
+  `GET /api/platform/tls/allowed?domain=` — Caddy's `on_demand_tls { ask … }`
+  — so it issues certificates only for hosts the platform serves.
+- **`-namespace`** prefixes every schema the platform creates, so a staging
+  platform can share a database with production, and the tests run beside both.
 
 ## Common mistakes
 

@@ -149,6 +149,13 @@ navigation; leave it out and it does not.
 Cash on delivery and manual fulfillment are built in, because they need no
 third party — a store can sell and ship before it has integrated anything.
 
+**Many stores from one install.** `gocommerce platform` serves any number of
+stores from one process and one PostgreSQL database — a supplier's dealers, an
+agency's clients — each an ordinary store in a schema of its own, with its own
+operators and admin panel, reached at `<slug>.<base domain>` or its own domain.
+A platform API, with credentials of its own, creates, suspends and deletes them
+([platform mode](skills/infrastructure.md#running-many-stores-platform-mode)).
+
 ## API
 
 Unversioned, JSON, and compatible with the useful overlap of the Litekart API
