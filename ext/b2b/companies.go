@@ -58,7 +58,8 @@ type CompanyInput struct {
 const companyColumns = `c.id, c.code, c.name, c.tax_id, c.status, c.group_id,
 	c.credit_limit_minor, c.net_days, c.approval_threshold_minor, c.require_po,
 	c.notes, c.metadata, c.created_at, c.updated_at,
-	(SELECT count(*) FROM b2b_members bm WHERE bm.company_id = c.id)`
+	(SELECT count(*) FROM b2b_members bm WHERE bm.company_id = c.id),
+	(SELECT count(*) FROM b2b_territories bt WHERE bt.company_id = c.id)`
 
 type rowScanner interface{ Scan(...any) error }
 
@@ -68,7 +69,7 @@ func (m *Module) scanCompany(row rowScanner) (*Company, error) {
 	var meta []byte
 	if err := row.Scan(&c.ID, &c.Code, &c.Name, &c.TaxID, &c.Status, &group,
 		&limit, &c.NetDays, &threshold, &c.RequirePO, &c.Notes, &meta,
-		&c.CreatedAt, &c.UpdatedAt, &c.MemberCount); err != nil {
+		&c.CreatedAt, &c.UpdatedAt, &c.MemberCount, &c.TerritoryCount); err != nil {
 		return nil, err
 	}
 	if group.Valid {
@@ -96,14 +97,27 @@ func (m *Module) Company(ctx context.Context, id int64) (*Company, error) {
 	return c, err
 }
 
-// Companies lists companies, newest first, optionally matching a search over
-// the name and code.
-func (m *Module) Companies(ctx context.Context, search string, limit, offset int) ([]*Company, int, error) {
-	where, args := "true", []any{}
-	if s := strings.ToLower(strings.TrimSpace(search)); s != "" {
+// CompanyQuery narrows a list of companies.
+type CompanyQuery struct {
+	// Search matches part of the name, in any case, or part of the code.
+	Search string
+	// Dealers keeps only companies with at least one territory.
+	Dealers       bool
+	Limit, Offset int
+}
+
+// Companies lists companies, newest first.
+func (m *Module) Companies(ctx context.Context, q CompanyQuery) ([]*Company, int, error) {
+	conds, args := []string{"true"}, []any{}
+	if s := strings.ToLower(strings.TrimSpace(q.Search)); s != "" {
 		args = append(args, "%"+s+"%")
-		where = "(lower(c.name) LIKE $1 OR c.code LIKE $1)"
+		conds = append(conds, "(lower(c.name) LIKE $1 OR c.code LIKE $1)")
 	}
+	if q.Dealers {
+		conds = append(conds, "EXISTS (SELECT 1 FROM b2b_territories bt WHERE bt.company_id = c.id)")
+	}
+	where := strings.Join(conds, " AND ")
+	limit, offset := q.Limit, q.Offset
 	var total int
 	if err := m.db.QueryRowContext(ctx,
 		`SELECT count(*) FROM b2b_companies c WHERE `+where, args...).Scan(&total); err != nil {

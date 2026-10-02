@@ -148,7 +148,8 @@ func (m *Module) AddTerritory(ctx context.Context, companyID int64, in Territory
 	if _, err := m.Company(ctx, companyID); err != nil {
 		return nil, err
 	}
-	country, state, prefix := normCountry(in.Country), normState(in.State), normPostal(in.PostalPrefix)
+	country := normCountry(in.Country)
+	state, prefix := stateIn(country, in.State), normPostal(in.PostalPrefix)
 	switch {
 	case !validCountry(country):
 		return nil, gocommerce.Validationf("country is a two-letter ISO 3166-1 code, like \"US\"")
@@ -197,7 +198,8 @@ func (m *Module) DeleteTerritory(ctx context.Context, companyID, id int64) error
 // prefix — so {US, CA, 941} beats {US, CA}, which beats {US, -, 9}, which
 // beats {US}. A territory naming a state or a prefix matches only an enquiry
 // that gives one: a form that does not ask for the state reaches the
-// country's dealers and no state's.
+// country's dealers and no state's. A state is compared as stateIn reads it,
+// so an enquiry from "California" reaches the dealer for CA.
 //
 // The unique key on the area means two matches can never rank equal: two
 // territories can only both match by differing in specificity.
@@ -212,7 +214,7 @@ func (m *Module) route(ctx context.Context, country, state, postal string) (*Com
 		  AND (t.state = '' OR t.state = $2)
 		  AND (t.postal_prefix = '' OR starts_with($3, t.postal_prefix))
 		ORDER BY t.state <> '' DESC, length(t.postal_prefix) DESC
-		LIMIT 1`, country, normState(state), normPostal(postal)).Scan(&id)
+		LIMIT 1`, country, stateIn(country, state), normPostal(postal)).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -245,8 +247,16 @@ type LeadQuery struct {
 	// CompanyID is one dealer's; zero is every dealer's and the store's.
 	CompanyID int64
 	// Unrouted keeps only the store's own.
-	Unrouted      bool
-	Status        string
+	Unrouted bool
+	Status   string
+	// RoutedBy keeps the leads that reached their holder one way: by
+	// territory, handed over by the store, or nobody's.
+	RoutedBy string
+	// Search matches part of the name, message or postcode, in any case —
+	// and the email and phone too, except on a demo store, where they are
+	// masked and a contains-match would read them back a character at a time.
+	Search        string
+	Demo          bool
 	Limit, Offset int
 }
 
@@ -387,16 +397,23 @@ func validPhone(s string) bool {
 }
 
 const leadColumns = `l.id, l.name, l.email, l.phone, l.message, l.country, l.state, l.postal_code,
-	l.variant_id, l.product_id, l.status, l.company_id, coalesce(c.name, ''), l.routed_by, l.source,
-	l.created_at, l.updated_at`
+	l.variant_id, l.product_id, coalesce(p.title, ''), coalesce(v.sku, ''), l.status, l.company_id,
+	coalesce(c.name, ''), l.routed_by, l.source, l.created_at, l.updated_at`
 
-const leadFrom = ` FROM b2b_leads l LEFT JOIN b2b_companies c ON c.id = l.company_id`
+// The catalogue is read, never written: a lead names what it was about as the
+// product is called now, and a deleted one leaves the ids and no name. Each
+// join is on a primary key, so it cannot multiply a lead and the count query
+// can share this FROM.
+const leadFrom = ` FROM b2b_leads l
+	LEFT JOIN b2b_companies c ON c.id = l.company_id
+	LEFT JOIN products p ON p.id = l.product_id
+	LEFT JOIN variants v ON v.id = l.variant_id`
 
 func scanLead(row rowScanner) (*Lead, error) {
 	l := &Lead{}
 	var variant, product, company sql.NullInt64
 	if err := row.Scan(&l.ID, &l.Name, &l.Email, &l.Phone, &l.Message, &l.Country, &l.State,
-		&l.PostalCode, &variant, &product, &l.Status, &company, &l.CompanyName, &l.RoutedBy,
+		&l.PostalCode, &variant, &product, &l.ProductTitle, &l.VariantSKU, &l.Status, &company, &l.CompanyName, &l.RoutedBy,
 		&l.Source, &l.CreatedAt, &l.UpdatedAt); err != nil {
 		return nil, err
 	}
@@ -436,6 +453,28 @@ func (m *Module) Leads(ctx context.Context, q LeadQuery) ([]*Lead, int, error) {
 		}
 		args = append(args, q.Status)
 		where = append(where, "l.status = $"+strconv.Itoa(len(args)))
+	}
+	if q.RoutedBy != "" {
+		switch q.RoutedBy {
+		case RoutedTerritory, RoutedStore, RoutedNone:
+		default:
+			return nil, 0, gocommerce.Validationf("routed_by must be territory, store or unrouted")
+		}
+		args = append(args, q.RoutedBy)
+		where = append(where, "l.routed_by = $"+strconv.Itoa(len(args)))
+	}
+	if s := strings.ToLower(strings.TrimSpace(q.Search)); s != "" {
+		args = append(args, "%"+s+"%")
+		n := "$" + strconv.Itoa(len(args))
+		cols := []string{"l.name", "l.message", "l.postal_code"}
+		if !q.Demo {
+			cols = append(cols, "l.email", "l.phone")
+		}
+		match := make([]string, len(cols))
+		for i, c := range cols {
+			match[i] = "lower(" + c + ") LIKE " + n
+		}
+		where = append(where, "("+strings.Join(match, " OR ")+")")
 	}
 	clause := strings.Join(where, " AND ")
 	var total int

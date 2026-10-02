@@ -1386,6 +1386,18 @@
             "description": "Matches part of the name, in any case, or part of the code."
           },
           {
+            "name": "dealers",
+            "in": "query",
+            "required": false,
+            "description": "`true` keeps only the companies with at least one territory: the dealers.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ]
+            }
+          },
+          {
             "$ref": "#/components/parameters/Limit"
           },
           {
@@ -2549,6 +2561,29 @@
             "$ref": "#/components/parameters/B2bUnrouted"
           },
           {
+            "name": "routed_by",
+            "in": "query",
+            "required": false,
+            "description": "Keeps the leads that reached their holder one way. `unrouted` cannot be combined with `company_id`, nor `territory` or `store` with `unrouted=true`.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "territory",
+                "store",
+                "unrouted"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Matches part of the name, message or postcode, in any case — and of the email or phone, except on a demo store, where those are masked and are not searched.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "$ref": "#/components/parameters/Limit"
           },
           {
@@ -2563,7 +2598,7 @@
             "$ref": "#/components/responses/B2bLeadPage"
           },
           "400": {
-            "description": "An unknown `status`, a `company_id` that is not a positive integer, or `unrouted` together with `company_id`.",
+            "description": "An unknown `status` or `routed_by`, a `company_id` that is not a positive integer, or two filters that ask for different leads: `unrouted` or `routed_by=unrouted` with `company_id`, or `unrouted` with `routed_by=territory` or `store`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2587,6 +2622,42 @@
           "$ref": "#/components/parameters/PathID"
         }
       ],
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "One lead",
+        "description": "Requires leads.read. `email` and `phone` are masked on a demo store.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bLeadResponse"
+          },
+          "400": {
+            "description": "The id is not a positive integer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
       "patch": {
         "tags": [
           "admin:b2b"
@@ -2856,6 +2927,10 @@
           "member_count": {
             "type": "integer",
             "description": "How many buyers it has."
+          },
+          "territory_count": {
+            "type": "integer",
+            "description": "How many territories it serves as a dealer. Zero is a company that is not a dealer."
           },
           "created_at": {
             "type": "string",
@@ -3702,7 +3777,7 @@
           },
           "state": {
             "type": "string",
-            "description": "Upper case, spaces closed up."
+            "description": "Upper case, spaces closed up; the code, for a state given by a name this module knows."
           },
           "postal_prefix": {
             "type": "string",
@@ -3727,7 +3802,7 @@
           "state": {
             "type": "string",
             "maxLength": 100,
-            "description": "Empty is the whole country. Matched without regard to case or repeated spaces."
+            "description": "Empty is the whole country. Matched without regard to case or repeated spaces, and stored as its code when it is a name this module knows. A state is read by its code or, in the United States, Canada, Australia and India, by its name: \"California\", \"ca\" and \"US-CA\" are all `CA`."
           },
           "postal_prefix": {
             "type": "string",
@@ -3774,6 +3849,14 @@
             "format": "int64",
             "nullable": true,
             "description": "Read off the variant when the enquiry named one."
+          },
+          "product_title": {
+            "type": "string",
+            "description": "The product's title as it is now. Absent once the product has been deleted."
+          },
+          "variant_sku": {
+            "type": "string",
+            "description": "The variant's SKU as it is now, when the enquiry named a variant. Absent once it has been deleted."
           },
           "status": {
             "type": "string",
@@ -3844,7 +3927,7 @@
           "state": {
             "type": "string",
             "maxLength": 100,
-            "description": "Reaches a dealer whose territory names this state; without it, only territories that name none."
+            "description": "Reaches a dealer whose territory names this state; without it, only territories that name none. A state is read by its code or, in the United States, Canada, Australia and India, by its name: \"California\", \"ca\" and \"US-CA\" are all `CA`."
           },
           "postal_code": {
             "type": "string",

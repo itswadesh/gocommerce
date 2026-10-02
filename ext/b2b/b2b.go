@@ -548,8 +548,11 @@ type Company struct {
 	Notes             string              `json:"notes"`
 	Metadata          gocommerce.Metadata `json:"metadata"`
 	MemberCount       int                 `json:"member_count"`
-	CreatedAt         time.Time           `json:"created_at"`
-	UpdatedAt         time.Time           `json:"updated_at"`
+	// TerritoryCount is how many areas it serves as a dealer; zero is a
+	// company that is not one, or not yet.
+	TerritoryCount int       `json:"territory_count"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // Member is one buyer and their role in a company.
@@ -692,23 +695,27 @@ type Territory struct {
 // Lead is a consumer's enquiry from the storefront's dealer form, and the
 // dealer it went to. CompanyID absent is the store's own.
 type Lead struct {
-	ID          int64     `json:"id"`
-	Name        string    `json:"name"`
-	Email       string    `json:"email"`
-	Phone       string    `json:"phone"`
-	Message     string    `json:"message"`
-	Country     string    `json:"country"`
-	State       string    `json:"state"`
-	PostalCode  string    `json:"postal_code"`
-	VariantID   *int64    `json:"variant_id"`
-	ProductID   *int64    `json:"product_id"`
-	Status      string    `json:"status"`
-	CompanyID   *int64    `json:"company_id"`
-	CompanyName string    `json:"company_name,omitempty"`
-	RoutedBy    string    `json:"routed_by"`
-	Source      string    `json:"source"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	Email      string `json:"email"`
+	Phone      string `json:"phone"`
+	Message    string `json:"message"`
+	Country    string `json:"country"`
+	State      string `json:"state"`
+	PostalCode string `json:"postal_code"`
+	VariantID  *int64 `json:"variant_id"`
+	ProductID  *int64 `json:"product_id"`
+	// ProductTitle and VariantSKU name what the enquiry was about, read from
+	// the catalogue as it is now; both are absent once it has been deleted.
+	ProductTitle string    `json:"product_title,omitempty"`
+	VariantSKU   string    `json:"variant_sku,omitempty"`
+	Status       string    `json:"status"`
+	CompanyID    *int64    `json:"company_id"`
+	CompanyName  string    `json:"company_name,omitempty"`
+	RoutedBy     string    `json:"routed_by"`
+	Source       string    `json:"source"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // quoteNumber is derived rather than stored: the id is already unique, and a

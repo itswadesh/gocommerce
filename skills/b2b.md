@@ -83,7 +83,11 @@ basket is checked out through `POST /x/b2b/checkout` like any other.
 The store gives a dealer territories (`POST /api/admin/x/b2b/companies/{id}/territories`,
 under `companies.write`): a country, a state in it, a postcode prefix in that.
 A territory has one dealer — the area is unique — and both state and prefix are
-matched case-blind, the prefix with spaces and hyphens ignored.
+matched case-blind, the prefix with spaces and hyphens ignored. A state in the
+United States, Canada, Australia or India is read by its code or its name —
+"California", "ca" and "US-CA" are all `CA` — on both sides, and a territory
+given a name is stored as its code ([`subdivisions.go`](../ext/b2b/subdivisions.go));
+anywhere else a state is matched as written.
 
 A storefront's dealer form posts to `POST /x/b2b/leads`, which needs no
 session. The lead goes to the most specific territory that covers the address:
@@ -96,7 +100,8 @@ holds.
 
 The dealer works its leads at `GET /x/b2b/leads` and reports with
 `PATCH /x/b2b/leads/{id}`. The store sees every lead at
-`GET /api/admin/x/b2b/leads` (`leads.read`; `?unrouted=true` is its own) and
+`GET /api/admin/x/b2b/leads` (`leads.read`; `?unrouted=true` is its own,
+`?routed_by=` and `?q=` narrow it) and one at `GET /api/admin/x/b2b/leads/{id}`, and
 hands one to a dealer, or takes it back, with
 `PATCH /api/admin/x/b2b/leads/{id}` (`leads.write`), which emails the new
 dealer and starts the lead again at `new`.
@@ -151,6 +156,10 @@ dealer and starts the lead again at `new`.
   visitor shares one budget. Raise `Config.LeadsPerMinute`.
 - **Expecting a state-scoped territory to catch a form that asks no state.** A
   territory naming a state matches only an enquiry naming it.
+- **Expecting a state name outside the four known countries to match its
+  code.** "Bayern" and "BY" are two states to the module. Add the country to
+  `subdivisions.go`, or have the storefront send the form's state the way the
+  territory was written.
 
 Related: [carts](carts.md), [checkout](checkout.md), [payments](payments.md),
 [team](team.md).

@@ -1334,3 +1334,127 @@ func TestDealersSeeOnlyTheirOwnLeadsAndTheStoreMovesThem(t *testing.T) {
 		t.Errorf("a deleted dealer's lead = %+v (%v); want it back with the store", back, err)
 	}
 }
+
+// A state reaches its dealer by its code or by its name, whichever way round
+// the territory and the enquiry were written; a territory given as a name is
+// stored as its code, so another dealer cannot claim the same state spelled
+// differently. Outside the countries the module knows, a state is its text.
+func TestAStateIsMatchedByItsCodeOrItsName(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	golden := f.dealer(t, "Golden State", StatusActive, TerritoryInput{Country: "US", State: "California"})
+	ghats := f.dealer(t, "Western Ghats", StatusActive, TerritoryInput{Country: "IN", State: "MH"})
+	kalinga := f.dealer(t, "Kalinga", StatusActive, TerritoryInput{Country: "IN", State: "Orissa"})
+	bavaria := f.dealer(t, "Bavaria", StatusActive, TerritoryInput{Country: "DE", State: "Bayern"})
+	country := f.dealer(t, "Country Wide", StatusActive, TerritoryInput{Country: "US"})
+
+	for c, want := range map[*Company]string{golden: "CA", kalinga: "OD", bavaria: "BAYERN"} {
+		ts, _, err := f.b2b.Territories(ctx, c.ID, "", 10, 0)
+		if err != nil || len(ts) != 1 || ts[0].State != want {
+			t.Errorf("%s's territory = %+v (%v); want state %q", c.Name, ts, err, want)
+		}
+	}
+
+	for _, c := range []struct {
+		why            string
+		country, state string
+		want           *Company
+	}{
+		{"the code", "US", "CA", golden},
+		{"the name, in lower case", "US", "california", golden},
+		{"ISO's own spelling", "US", "US-CA", golden},
+		{"the name with stray spaces", "US", "  California ", golden},
+		{"an Indian state by name", "IN", "Maharashtra", ghats},
+		{"an Indian state by ISO code", "IN", "IN-MH", ghats},
+		{"the code India used before 2023", "IN", "OR", kalinga},
+		{"the name India uses now", "IN", "Odisha", kalinga},
+		{"a country the module does not know", "DE", "bayern", bavaria},
+		{"a spelling nobody listed", "US", "Calif.", country},
+	} {
+		l := f.lead(t, c.country, c.state, "")
+		if l.CompanyID == nil || *l.CompanyID != c.want.ID {
+			t.Errorf("%s (%s/%s): went to %q, want %q", c.why, c.country, c.state, l.CompanyName, c.want.Name)
+		}
+	}
+
+	if rec := gctest.AdminRequest(t, f.app, http.MethodPost,
+		"/api/admin/x/b2b/companies/"+strconv.FormatInt(country.ID, 10)+"/territories",
+		TerritoryInput{Country: "US", State: "ca"}); rec.Code != http.StatusConflict ||
+		!strings.Contains(rec.Body.String(), "Golden State") {
+		t.Errorf("claiming CA when California is held = %d %s, want 409 naming Golden State", rec.Code, rec.Body)
+	}
+}
+
+// The store reads one lead, finds leads by what they say, and narrows them by
+// how they arrived; a lead names the product it was about. Filters that ask
+// for two sets that cannot overlap are refused rather than answered empty.
+func TestTheStoreReadsSearchesAndNarrowsLeads(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	north := f.dealer(t, "North", StatusActive, TerritoryInput{Country: "GB", PostalPrefix: "N"})
+	about, err := f.b2b.FileLead(ctx, LeadInput{Name: "Robin Hart", Email: "robin@example.test",
+		Country: "GB", PostalCode: "N1 9GU", VariantID: &f.variant, Message: "Forty widgets by June?"})
+	if err != nil {
+		t.Fatalf("file lead: %v", err)
+	}
+	stray := f.lead(t, "FR", "", "75001")
+	if rec := gctest.AdminRequest(t, f.app, http.MethodPatch,
+		"/api/admin/x/b2b/leads/"+strconv.FormatInt(stray.ID, 10), map[string]any{"company_id": north.ID}); rec.Code != http.StatusOK {
+		t.Fatalf("hand the stray to North = %d: %s", rec.Code, rec.Body)
+	}
+
+	var one Lead
+	rec := gctest.AdminRequest(t, f.app, http.MethodGet, "/api/admin/x/b2b/leads/"+strconv.FormatInt(about.ID, 10), nil)
+	gctest.DecodeData(t, rec, &one)
+	if one.ID != about.ID || one.ProductTitle != "gctest B2B-WIDGET" || one.VariantSKU != "B2B-WIDGET" {
+		t.Errorf("one lead = %+v; want Robin's, naming the widget and its SKU", one)
+	}
+	if rec := gctest.AdminRequest(t, f.app, http.MethodGet, "/api/admin/x/b2b/leads/999999", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("a lead that does not exist = %d, want 404", rec.Code)
+	}
+
+	ids := func(query string) []int64 {
+		t.Helper()
+		var list []Lead
+		gctest.DecodeData(t, gctest.AdminRequest(t, f.app, http.MethodGet, "/api/admin/x/b2b/leads?"+query, nil), &list)
+		out := []int64{}
+		for _, l := range list {
+			out = append(out, l.ID)
+		}
+		return out
+	}
+	for query, want := range map[string][]int64{
+		"q=forty":              {about.ID},
+		"q=ROBIN%40":           {about.ID},
+		"q=75001":              {stray.ID},
+		"routed_by=store":      {stray.ID},
+		"routed_by=territory":  {about.ID},
+		"routed_by=unrouted":   {},
+		"q=widgets&routed_by=": {about.ID},
+	} {
+		if got := ids(query); len(got) != len(want) || (len(want) == 1 && got[0] != want[0]) {
+			t.Errorf("leads?%s = %v, want %v", query, got, want)
+		}
+	}
+	for _, query := range []string{
+		"routed_by=sideways",
+		"routed_by=unrouted&company_id=" + strconv.FormatInt(north.ID, 10),
+		"unrouted=true&routed_by=store",
+	} {
+		if rec := gctest.AdminRequest(t, f.app, http.MethodGet, "/api/admin/x/b2b/leads?"+query, nil); rec.Code != http.StatusBadRequest {
+			t.Errorf("leads?%s = %d, want 400", query, rec.Code)
+		}
+	}
+
+	var dealers []Company
+	gctest.DecodeData(t, gctest.AdminRequest(t, f.app, http.MethodGet, "/api/admin/x/b2b/companies?dealers=true", nil), &dealers)
+	if len(dealers) != 1 || dealers[0].ID != north.ID || dealers[0].TerritoryCount != 1 {
+		t.Errorf("dealers = %+v; want North alone, with its one territory", dealers)
+	}
+	var acme Company
+	gctest.DecodeData(t, gctest.AdminRequest(t, f.app, http.MethodGet,
+		"/api/admin/x/b2b/companies/"+strconv.FormatInt(f.company.ID, 10), nil), &acme)
+	if acme.TerritoryCount != 0 {
+		t.Errorf("a company with no territories counts %d", acme.TerritoryCount)
+	}
+}

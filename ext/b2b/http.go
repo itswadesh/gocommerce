@@ -60,6 +60,7 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	app.HandleAdminFunc("DELETE /api/admin/x/b2b/companies/{id}/territories/{territory_id}", m.handleAdminDeleteTerritory, rightCompaniesWrite)
 	app.HandleAdminFunc("GET /api/admin/x/b2b/territories", m.handleAdminAllTerritories, rightCompaniesRead)
 	app.HandleAdminFunc("GET /api/admin/x/b2b/leads", m.handleAdminLeads, rightLeadsRead)
+	app.HandleAdminFunc("GET /api/admin/x/b2b/leads/{id}", m.handleAdminLead, rightLeadsRead)
 	app.HandleAdminFunc("PATCH /api/admin/x/b2b/leads/{id}", m.handleAdminUpdateLead, rightLeadsWrite)
 	app.HandleAdminFunc("GET /api/admin/x/b2b/receivables", m.handleAdminReceivables, rightCompaniesRead)
 	app.HandleAdminFunc("GET /api/admin/x/b2b/approvals", m.handleAdminApprovals, rightCompaniesRead)
@@ -633,7 +634,8 @@ func (m *Module) handleAdminCompanies(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	list, total, err := m.Companies(r.Context(), r.URL.Query().Get("q"), limit, offset)
+	list, total, err := m.Companies(r.Context(), CompanyQuery{Search: r.URL.Query().Get("q"),
+		Dealers: r.URL.Query().Get("dealers") == "true", Limit: limit, Offset: offset})
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
@@ -1057,10 +1059,21 @@ func (m *Module) handleAdminLeads(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	q := LeadQuery{CompanyID: company, Unrouted: r.URL.Query().Get("unrouted") == "true",
-		Status: r.URL.Query().Get("status"), Limit: limit, Offset: offset}
-	if q.Unrouted && q.CompanyID > 0 {
+	v := r.URL.Query()
+	q := LeadQuery{CompanyID: company, Unrouted: v.Get("unrouted") == "true", Status: v.Get("status"),
+		RoutedBy: v.Get("routed_by"), Search: v.Get("q"), Demo: m.app.Demo(), Limit: limit, Offset: offset}
+	// Each pair asks for two sets of leads that cannot overlap. An empty page
+	// would be a true answer to a question nobody meant to ask, so it is
+	// refused instead, naming the pair.
+	switch {
+	case q.Unrouted && q.CompanyID > 0:
 		gocommerce.RespondError(w, r, gocommerce.Validationf("unrouted and company_id ask for different leads; send one"))
+		return
+	case q.RoutedBy == RoutedNone && q.CompanyID > 0:
+		gocommerce.RespondError(w, r, gocommerce.Validationf("routed_by=unrouted and company_id ask for different leads; send one"))
+		return
+	case q.Unrouted && q.RoutedBy != "" && q.RoutedBy != RoutedNone:
+		gocommerce.RespondError(w, r, gocommerce.Validationf("unrouted and routed_by=%s ask for different leads; send one", q.RoutedBy))
 		return
 	}
 	list, total, err := m.Leads(r.Context(), q)
@@ -1072,6 +1085,18 @@ func (m *Module) handleAdminLeads(w http.ResponseWriter, r *http.Request) {
 		m.maskLead(l)
 	}
 	gocommerce.RespondList(w, list, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})
+}
+
+func (m *Module) handleAdminLead(w http.ResponseWriter, r *http.Request) {
+	id, ok := idOr400(w, r, "id")
+	if !ok {
+		return
+	}
+	lead, err := m.Lead(r.Context(), id)
+	if err == nil {
+		m.maskLead(lead)
+	}
+	respond(w, r, http.StatusOK, lead, err)
 }
 
 func (m *Module) handleAdminUpdateLead(w http.ResponseWriter, r *http.Request) {
