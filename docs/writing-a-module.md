@@ -73,6 +73,7 @@ app.RegisterNotifier(channel, n)        // deliver email or SMS
 app.Notify(ctx, notification)           // send one, on the store's backends
 app.RegisterTranslator(t)               // supply catalog translations
 app.Subscribe(pattern, handler)         // react to events
+app.RegisterCheckoutGuard(guard)        // refuse a checkout before the order exists
 app.Handle(pattern, h)                  // public route, under /x/<name>/
 app.HandleAdmin(pattern, h)             // admin route, authentication included
 app.OnStart(fn)  app.OnStop(fn)         // long-running work
@@ -162,6 +163,35 @@ returns an id for the refund: that id is what somebody reconciles against a bank
 statement, and it is recorded on the refund. Not implementing either is a valid
 answer — cash on delivery does not, and the engine reports that plainly rather
 than pretending.
+
+## Refusing a checkout
+
+An event handler runs after the order has committed, so it can only clean up.
+A guard runs inside the checkout's transaction, after every line has been
+priced and reserved and the total is final, and before the order exists:
+
+```go
+app.RegisterCheckoutGuard(func(ctx context.Context, a *gocommerce.CheckoutAttempt) error {
+    if a.Method == "on_account" && a.Total.AmountMinor > m.available(ctx, a.Tx, a.VerifiedEmail) {
+        return gocommerce.Forbiddenf("this order is over the account's credit limit")
+    }
+    return nil
+})
+```
+
+Returning an error rolls the whole checkout back — no order, no reservation,
+no order number. Return an `*APIError` for a refusal the shopper should read;
+anything else is answered as a 500 without its text.
+
+Two rules come with the transaction. **No network I/O**: the guard holds the
+cart's row lock and every reserved variant's while it runs. And **`a.Tx` is
+for reading and locking**, never for writing a core table — take a
+`pg_advisory_xact_lock` on it to serialise your own decision, so two checkouts
+cannot both pass a limit that only one fits under.
+
+`a.VerifiedEmail` is the address the cart was priced as, which something
+proved; `a.Input.Email` is whatever the caller typed. `a.ByOperator` is true
+for an order placed through `Orders.Create`.
 
 ## Adding a notifier
 

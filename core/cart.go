@@ -252,7 +252,7 @@ func (c *Carts) linesOf(ctx context.Context, cartID int64, currency string) (lin
 	rows, err := c.app.db.QueryContext(ctx, `
 		SELECT l.id, l.variant_id, v.product_id, v.sku, p.title, l.quantity,
 		       l.unit_price_minor,
-		       `+effectivePriceSQL("v.id", "l.quantity", "c.verified_email", "c.channel_id", "v.price_minor")+`,
+		       `+cartLinePriceSQL()+`,
 		       v.track_inventory,
 		       coalesce((SELECT sum(vs.on_hand - vs.reserved) FROM variant_stock vs WHERE vs.variant_id = v.id), 0), v.active
 		FROM cart_line_items l
@@ -520,7 +520,7 @@ func (c *Carts) AddLine(ctx context.Context, tok string, variantID int64, qty in
 		}
 
 		var existing int
-		var storedPrice sql.NullInt64
+		var storedPrice, agreedPrice sql.NullInt64
 		var cartEmail string
 		var cartChannel sql.NullInt64
 		// The verified address, not the typed one (D66): the price of a line is
@@ -529,9 +529,10 @@ func (c *Carts) AddLine(ctx context.Context, tok string, variantID int64, qty in
 		err = tx.QueryRowContext(ctx, `
 			SELECT coalesce((SELECT quantity FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2), 0),
 			       (SELECT unit_price_minor FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2),
+			       (SELECT agreed_price_minor FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2),
 			       coalesce((SELECT verified_email FROM carts WHERE id = $1), ''),
 			       (SELECT channel_id FROM carts WHERE id = $1)`,
-			cartID, variantID).Scan(&existing, &storedPrice, &cartEmail, &cartChannel)
+			cartID, variantID).Scan(&existing, &storedPrice, &agreedPrice, &cartEmail, &cartChannel)
 		if err != nil {
 			return err
 		}
@@ -575,6 +576,11 @@ func (c *Carts) AddLine(ctx context.Context, tok string, variantID int64, qty in
 			if atOldQuantity != storedPrice.Int64 {
 				price = storedPrice.Int64
 			}
+		}
+		// An agreed price is per unit and holds at any quantity (D68): it was
+		// agreed for this line, and neither a break nor a list moves it.
+		if agreedPrice.Valid {
+			price = agreedPrice.Int64
 		}
 
 		_, err = tx.ExecContext(ctx, `
@@ -770,11 +776,34 @@ func (c *Carts) VerifyEmail(ctx context.Context, tok, email string) (*Cart, erro
 	return c.GetByToken(ctx, tok)
 }
 
+// agreePrice fixes one line's unit price (D68). Unexported on purpose: the
+// only way in is Orders.Create, on a cart it built and never hands out, so no
+// token holder can reach a line priced this way.
+func (c *Carts) agreePrice(ctx context.Context, tok string, variantID, amountMinor int64) error {
+	return InTx(ctx, c.app.db, func(tx *sql.Tx) error {
+		cartID, err := c.openCartID(ctx, tx, tok)
+		if err != nil {
+			return err
+		}
+		res, err := tx.ExecContext(ctx, `
+			UPDATE cart_line_items
+			SET agreed_price_minor = $3, unit_price_minor = $3, updated_at = now()
+			WHERE cart_id = $1 AND variant_id = $2`, cartID, variantID, amountMinor)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return NotFoundf("variant %d is not in this cart", variantID)
+		}
+		return nil
+	})
+}
+
 // repriceCartLines re-snapshots every line of one cart at what it costs the
 // cart's verified address now. checkout's refreshCartPrices is the same
 // statement keyed by token, for after a conflict.
 func repriceCartLines(ctx context.Context, tx *sql.Tx, cartID int64) error {
-	priced := effectivePriceSQL("v.id", "l.quantity", "c.verified_email", "c.channel_id", "v.price_minor")
+	priced := cartLinePriceSQL()
 	_, err := tx.ExecContext(ctx, `
 		UPDATE cart_line_items l
 		SET unit_price_minor = `+priced+`, updated_at = now()

@@ -332,6 +332,9 @@ type App struct {
 	paymentOwners     map[string]string
 	fulfillmentOwners map[string]string
 
+	// Checkout guards, in registration order (D67).
+	guards []guardEntry
+
 	routes  []Route
 	onStart []hook
 	onStop  []hook

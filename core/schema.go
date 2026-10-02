@@ -58,6 +58,7 @@ func coreMigrations() []Migration {
 		{ID: "0047_vendors", SQL: migration0047Vendors},
 		{ID: "0048_vendor_accounts", SQL: migration0048VendorAccounts},
 		{ID: "0049_cart_verified_email", SQL: migration0049CartVerifiedEmail},
+		{ID: "0050_agreed_line_price", SQL: migration0050AgreedLinePrice},
 	}
 }
 
@@ -2357,4 +2358,22 @@ const migration0049CartVerifiedEmail = `
 ALTER TABLE carts
     ADD COLUMN verified_email text
         CHECK (verified_email = lower(verified_email) AND verified_email <> '');
+`
+
+// migration0050AgreedLinePrice lets a cart line carry a price somebody agreed
+// to, rather than one resolved from the catalogue and the price lists (D68).
+//
+// A quote is a price for this buyer, for this basket, once — and neither of the
+// two existing mechanisms says that. A price list applies to every cart its
+// group reaches until somebody switches it off, and a discount code applies to
+// whoever types it. An agreed price is set only through Orders.Create
+// (NewOrderLine.UnitPriceMinor), on a cart that is never handed out, so no
+// token holder can carry it anywhere.
+//
+// NULL means "resolve it as usual", which is every line that existed before.
+// Zero is allowed: a replacement for a parcel that never arrived is a real
+// order at no charge.
+const migration0050AgreedLinePrice = `
+ALTER TABLE cart_line_items
+    ADD COLUMN agreed_price_minor bigint CHECK (agreed_price_minor >= 0);
 `

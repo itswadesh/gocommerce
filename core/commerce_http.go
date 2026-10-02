@@ -902,6 +902,20 @@ func (a *App) handleCreateOrder(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	// orders.write places an order at the prices the store already set. A
+	// price nobody set is pricing.write's to give (D68) — otherwise anyone who
+	// can take a phone order could sell the stock at nothing. A nil superuser is
+	// the static admin token, exempt as it is everywhere.
+	for _, l := range in.Lines {
+		if l.UnitPriceMinor == nil {
+			continue
+		}
+		if su := SuperuserFrom(r.Context()); su != nil && !su.Has(RightPricingWrite) {
+			RespondError(w, r, Forbiddenf("setting a line's price needs pricing.write as well as orders.write"))
+			return
+		}
+		break
+	}
 	result, err := a.orders.Create(r.Context(), in)
 	if err != nil {
 		RespondError(w, r, err)

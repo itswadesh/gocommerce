@@ -353,6 +353,34 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 			total += tax
 		}
 
+		// The modules' last word, with every figure final and nothing written
+		// yet (D67). A refusal here rolls back the reservations above and burns
+		// no order number, which is the difference between a credit limit and
+		// an apology for one.
+		if len(s.app.guards) > 0 {
+			var verified sql.NullString
+			if err := tx.QueryRowContext(ctx,
+				`SELECT verified_email FROM carts WHERE id = $1`, cartID).Scan(&verified); err != nil {
+				return err
+			}
+			attempt := &CheckoutAttempt{
+				Method: code, Input: in, VerifiedEmail: verified.String,
+				Subtotal: money(subtotal, currency), Shipping: money(shipping, currency),
+				Discount: money(discount, currency), Tax: money(tax, currency),
+				Total: money(total, currency), ByOperator: byOperator(ctx), Tx: tx,
+			}
+			for _, l := range lines {
+				attempt.Lines = append(attempt.Lines, AttemptLine{
+					VariantID: l.VariantID, ProductID: l.ProductID, SKU: l.SKU,
+					Quantity: l.Quantity, UnitPrice: money(l.CurrentPrice, currency),
+					Agreed: l.Agreed,
+				})
+			}
+			if err := s.app.runGuards(ctx, attempt); err != nil {
+				return err
+			}
+		}
+
 		if err := tx.QueryRowContext(ctx,
 			`SELECT nextval(pg_get_serial_sequence('orders', 'id'))`).Scan(&orderID); err != nil {
 			return err
@@ -532,7 +560,7 @@ func (s *Orders) initiatePayment(ctx context.Context, provider PaymentProvider, 
 
 // refreshCartPrices re-snapshots a cart to current prices after a conflict.
 func (s *Orders) refreshCartPrices(ctx context.Context, cartToken string) {
-	priced := effectivePriceSQL("v.id", "l.quantity", "c.verified_email", "c.channel_id", "v.price_minor")
+	priced := cartLinePriceSQL()
 	if _, err := s.app.db.ExecContext(ctx, `
 		UPDATE cart_line_items l
 		SET unit_price_minor = `+priced+`, updated_at = now()
@@ -554,6 +582,7 @@ type checkoutLine struct {
 	Quantity         int
 	SnapshotPrice    int64
 	CurrentPrice     int64
+	Agreed           bool
 	Available        int
 	Active           bool
 	Taxable          bool
@@ -607,7 +636,7 @@ func loadCheckoutLines(ctx context.Context, tx *sql.Tx, cartID int64) ([]checkou
 	rows, err := tx.QueryContext(ctx, `
 		SELECT l.variant_id, v.product_id, v.sku, p.title, l.quantity,
 		       l.unit_price_minor,
-		       `+effectivePriceSQL("v.id", "l.quantity", "c.verified_email", "c.channel_id", "v.price_minor")+`,
+		       `+cartLinePriceSQL()+`, l.agreed_price_minor IS NOT NULL,
 		       v.active, v.taxable, v.requires_shipping,
 		       CASE WHEN v.track_inventory AND NOT v.continue_selling
 		            THEN coalesce((SELECT sum(vs.on_hand - vs.reserved) FROM variant_stock vs WHERE vs.variant_id = v.id), 0) ELSE -1 END,
@@ -633,7 +662,7 @@ func loadCheckoutLines(ctx context.Context, tx *sql.Tx, cartID int64) ([]checkou
 	for rows.Next() {
 		var l checkoutLine
 		if err := rows.Scan(&l.VariantID, &l.ProductID, &l.SKU, &l.Title, &l.Quantity,
-			&l.SnapshotPrice, &l.CurrentPrice, &l.Active, &l.Taxable, &l.RequiresShipping, &l.Available,
+			&l.SnapshotPrice, &l.CurrentPrice, &l.Agreed, &l.Active, &l.Taxable, &l.RequiresShipping, &l.Available,
 			&l.Label); err != nil {
 			return nil, err
 		}
@@ -727,6 +756,12 @@ type NewOrderInput struct {
 type NewOrderLine struct {
 	VariantID int64 `json:"variant_id"`
 	Quantity  int   `json:"quantity"`
+	// UnitPriceMinor, when set, is the price agreed for this line: a quote
+	// accepted, a trade price negotiated on the phone (D68). It holds at any
+	// quantity and over every price list. Absent, the line is priced as the
+	// shopper's own would be. Over HTTP it needs pricing.write as well as
+	// orders.write, because it is a price the catalogue did not set.
+	UnitPriceMinor *int64 `json:"unit_price_minor,omitempty"`
 }
 
 // Create places an order the way a shopper would, on their behalf.
@@ -750,6 +785,25 @@ func (s *Orders) Create(ctx context.Context, in NewOrderInput) (*CheckoutResult,
 	if len(in.Lines) == 0 {
 		return nil, Validationf("an order needs at least one line")
 	}
+	// AddLine merges a variant named twice into one line, and one line has one
+	// price — so two different agreed prices for the same variant cannot both
+	// be honoured, and picking one would be guessing.
+	agreed := map[int64]int64{}
+	for _, l := range in.Lines {
+		if l.UnitPriceMinor == nil {
+			continue
+		}
+		if *l.UnitPriceMinor < 0 {
+			return nil, Validationf("unit_price_minor must not be negative")
+		}
+		if prev, ok := agreed[l.VariantID]; ok && prev != *l.UnitPriceMinor {
+			return nil, Validationf("variant %d is listed twice at two different prices", l.VariantID)
+		}
+		agreed[l.VariantID] = *l.UnitPriceMinor
+	}
+	// Every checkout guard is told this order is being placed on someone's
+	// behalf rather than by a token holder (D67).
+	ctx = withByOperator(ctx)
 	code := strings.TrimSpace(in.PaymentMethod)
 	if code == "" {
 		code = CodeCOD
@@ -780,6 +834,11 @@ func (s *Orders) Create(ctx context.Context, in NewOrderInput) (*CheckoutResult,
 		// shelf cannot cover is refused here in the same words the storefront
 		// would use — before any order exists to be half-made.
 		if _, err := s.app.carts.AddLine(ctx, cart.Token, l.VariantID, l.Quantity); err != nil {
+			return nil, err
+		}
+	}
+	for variantID, price := range agreed {
+		if err := s.app.carts.agreePrice(ctx, cart.Token, variantID, price); err != nil {
 			return nil, err
 		}
 	}

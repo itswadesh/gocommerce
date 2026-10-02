@@ -178,6 +178,17 @@ reserved >= $3`, and `UNIQUE (scope, key)`. No fake reproduces any of it.
   concurrent checkouts will deadlock in production and never in your test.
 - **Assuming a conflict means an empty cart.** The cart is still `open` and
   still owned by the shopper; only its snapshot prices moved.
+- **Refusing a checkout from an event handler or a provider's `Initiate`.**
+  Both run after the order committed, so a refusal there is a cancellation of
+  an order that already reserved stock and emailed the customer. Register a
+  checkout guard instead (D67, `app.RegisterCheckoutGuard`): it runs inside
+  phase A with the final total, and its error rolls the whole checkout back
+  without drawing an order number. It must not do network I/O, and its `Tx` is
+  for reading and locking only.
+- **Pricing a quote with a price list or a discount code.** A list reaches
+  everyone in its group until switched off, and a code reaches whoever types
+  it. Place the order through `Orders.Create` with `NewOrderLine.UnitPriceMinor`
+  (D68); over HTTP that field needs `pricing.write` on top of `orders.write`.
 
 Related: [carts](carts.md), [orders](orders.md), [payments](payments.md),
 [events](events.md).

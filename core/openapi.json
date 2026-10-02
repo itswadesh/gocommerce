@@ -3599,7 +3599,7 @@
           "admin:orders"
         ],
         "summary": "Place an order on a customer's behalf",
-        "description": "The phone order, the trade counter, the replacement parcel. It builds a cart and checks it out rather than inserting an order, so the result is indistinguishable from one a shopper placed: stock is reserved under the same lock, prices are snapshotted the same way, and the same order.created event reaches every notifier. The order carries an access token, so the customer can look it up without an account. Distinct from POST /api/admin/import/orders, which records orders that already happened elsewhere and deliberately moves no stock.",
+        "description": "The phone order, the trade counter, the replacement parcel. It builds a cart and checks it out rather than inserting an order, so the result is indistinguishable from one a shopper placed: stock is reserved under the same lock, prices are snapshotted the same way, and the same order.created event reaches every notifier. The order carries an access token, so the customer can look it up without an account. Distinct from POST /api/admin/import/orders, which records orders that already happened elsewhere and deliberately moves no stock. A line may carry `unit_price_minor`, an agreed price that needs `pricing.write` on top of `orders.write`. The order is priced as the customer at the address given — their customer group's prices apply — because an operator typing it is the proof a public cart lacks. Checkout guards that modules register still run, told the order was placed on someone's behalf.",
         "security": [
           {
             "adminToken": []
@@ -3651,6 +3651,12 @@
                         "quantity": {
                           "type": "integer",
                           "minimum": 1
+                        },
+                        "unit_price_minor": {
+                          "type": "integer",
+                          "format": "int64",
+                          "minimum": 0,
+                          "description": "An agreed price for this line, in minor units: a quote accepted, a trade price negotiated on the phone. It holds at any quantity and over every price list. Absent, the line is priced as the customer's own would be — at their customer group's prices, because the operator typing the address vouches for it. Setting it needs `pricing.write` as well as `orders.write`; naming one variant twice at two different prices is a 400."
                         }
                       }
                     }
@@ -3693,8 +3699,14 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
