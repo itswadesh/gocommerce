@@ -75,6 +75,20 @@ func (a *App) handleUI(pattern string, h http.HandlerFunc) {
 }
 
 func (a *App) handleAdminPanel(w http.ResponseWriter, r *http.Request) {
+	ServeAdminPanel(w, r)
+}
+
+// ServeAdminPanel serves the embedded panel's files — index.html for a
+// client-side route — with the cache rules and Content-Security-Policy a
+// store's own host sends. It is exported for the platform, which serves the
+// panel's /platform console on hosts that belong to no store (D73); one
+// function rather than a copy is what keeps the two hosts' policies the same.
+// A binary built without the panel answers a JSON 404.
+func ServeAdminPanel(w http.ResponseWriter, r *http.Request) {
+	if admin.DistFS == nil {
+		RespondError(w, r, NotFoundf("this binary was built without the admin panel"))
+		return
+	}
 	requested := path.Clean("/" + strings.TrimPrefix(r.URL.Path, "/"))
 
 	// An unmatched API path is a missing endpoint, not a client-side route.

@@ -44,8 +44,12 @@
      * Listed by prefix rather than gated inside the page, because the shell is
      * what decides whether a login form appears — a page cannot opt out of a
      * layout that has already replaced it.
+     *
+     * The platform console is the other (D73). It has a shell and a sign-in of
+     * its own, by platform token, and a store's login form over it would be
+     * asking a platform operator for a credential no store issued them.
      */
-    const PUBLIC_PREFIXES = ["/accept-invite"];
+    const PUBLIC_PREFIXES = ["/accept-invite", "/platform"];
     const isPublic = $derived(
         PUBLIC_PREFIXES.some((prefix) =>
             page.url.pathname.replace(base, "").startsWith(prefix),

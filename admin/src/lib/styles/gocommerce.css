@@ -6857,25 +6857,30 @@ kbd + kbd {
  *
  * Scoped to these forms and not to every select: the trigger is still
  * PocketBase's markup on thirty screens, and the panel-wide answer is to
- * detach it (rule 12), not to reach into it from here. The drawer forms are
+ * detach it (rule 12), not to reach into it from here. The platform console's
+ * store filter (D73) sits beside a search box the same way, so it is listed too. The drawer forms are
  * portalled outside the skin, hence the class of their own.
  */
 .shopify-skin .b2b-inline-form .field > .input.select,
+.shopify-skin .platform-filters .field > .input.select,
 .b2b-select-fit .field > .input.select {
     min-height: 0;
 }
-.shopify-skin .b2b-inline-form .field > .input.select {
+.shopify-skin .b2b-inline-form .field > .input.select,
+.shopify-skin .platform-filters .field > .input.select {
     padding: 1px 0 6px;
 }
 .b2b-select-fit .field > .input.select {
     padding: 10px 0;
 }
 .shopify-skin .b2b-inline-form .field > .input.select > .selected-container,
+.shopify-skin .platform-filters .field > .input.select > .selected-container,
 .b2b-select-fit .field > .input.select > .selected-container {
     padding-block: 0;
     line-height: normal;
 }
 .shopify-skin .b2b-inline-form .field > .input.select > .selected-container::after,
+.shopify-skin .platform-filters .field > .input.select > .selected-container::after,
 .b2b-select-fit .field > .input.select > .selected-container::after {
     line-height: 0;
     align-self: center;
@@ -7008,6 +7013,339 @@ kbd + kbd {
     }
     .shopify-skin .b2b-more:hover > span,
     .shopify-skin .b2b-more:focus-visible > span {
+        transform: none;
+    }
+}
+
+/* ------------------------------------------------------------- platform */
+
+/*
+ * The platform console (D73): the screens under /platform, served on the
+ * platform's own hosts. Every class is `.platform-*`; the shell borrows the
+ * store's `.app-*` sidebar unchanged, and the cards are the same Tailwind
+ * utilities a B2B company's page uses. Motion follows the panel's rule — 150
+ * to 300ms, transform and opacity only — and the reduced-motion block at the
+ * end keeps each answer as a fade.
+ */
+
+.platform-brand-tag {
+    margin-left: 2px;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+/* A flag's name is one word to the operator; a break at its hyphen reads as a
+   minus sign. */
+.platform-signin .txt-code {
+    white-space: nowrap;
+}
+
+/* The sign-in card arrives like a page does. */
+.platform-signin > .wrapper {
+    animation: slideTop var(--animationSpeed) ease-out;
+}
+
+/* A refused token shakes once: the answer is "no", and it is said where the
+   operator is looking. 240ms, three small strokes, transform only. */
+.platform-refusal {
+    animation: platformShake 240ms ease-out;
+}
+@keyframes platformShake {
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+    25% {
+        transform: translateX(-4px);
+    }
+    50% {
+        transform: translateX(3px);
+    }
+    75% {
+        transform: translateX(-2px);
+    }
+}
+
+.platform-notice,
+.platform-reveal,
+.platform-created {
+    animation: slideTop var(--animationSpeed) ease-out;
+}
+
+/* The four counts over the list. */
+.shopify-skin .platform-stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+.shopify-skin .platform-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--card);
+}
+.shopify-skin .platform-stat-value {
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+.shopify-skin .platform-stat-label {
+    font-size: 12px;
+    color: var(--muted-foreground);
+}
+.shopify-skin .platform-stat-bad .platform-stat-value {
+    color: var(--dangerColor);
+}
+
+/* Search takes the room; the status filter what it needs. Both carry labels,
+   so the two fields are one height without help. */
+.shopify-skin .platform-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 8px 12px;
+}
+.shopify-skin .platform-filters > .platform-search {
+    flex: 1 1 320px;
+    margin: 0;
+}
+.shopify-skin .platform-filters > .platform-status-filter {
+    flex: 0 1 220px;
+}
+
+/* A store's address in the list: the link icon nudges toward where it goes. */
+.platform-host {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+}
+.platform-host > i {
+    font-size: 12px;
+    transition: transform var(--animationSpeed) ease-out;
+}
+.platform-host:hover > i,
+.platform-host:focus-visible > i {
+    transform: translate(2px, -2px);
+}
+
+/* Labelled facts, the eyebrow over each value, as on a company's page. */
+.platform-facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px 24px;
+    margin: 0;
+}
+.platform-facts dt {
+    margin: 0 0 2px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+}
+.platform-facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+/* A credential shown once. Not under the skin: the new-store drawer is
+   portalled to the body. */
+.platform-secret + .platform-secret {
+    margin-top: var(--smSpacing);
+}
+.platform-secret .field > input {
+    overflow-wrap: anywhere;
+}
+.platform-secret-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin-top: 6px;
+}
+.platform-secret-row > .field-help {
+    margin: 0;
+}
+.platform-copy > i {
+    transition: transform var(--animationSpeed) ease-out;
+}
+.platform-copy.copied > i {
+    animation: platformPop 200ms ease-out;
+}
+@keyframes platformPop {
+    0% {
+        transform: scale(0.6);
+        opacity: 0.4;
+    }
+    70% {
+        transform: scale(1.2);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* The store's state beside its name in the heading. */
+.platform-title {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 10px;
+    min-width: 0;
+}
+.platform-head-labels {
+    display: inline-flex;
+    gap: 5px;
+    letter-spacing: normal;
+}
+
+/* The store's cards: two across where there is room, the danger zone the
+   full width so it is never mistaken for one more setting. */
+.shopify-skin .platform-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+    gap: 16px;
+    align-items: start;
+    transition: opacity var(--animationSpeed);
+}
+.shopify-skin .platform-grid.faded {
+    opacity: 0.6;
+}
+.shopify-skin .platform-card {
+    min-width: 0;
+}
+.shopify-skin .platform-card-title {
+    margin: 0 0 12px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+}
+.shopify-skin .platform-card-text {
+    margin: 0 0 12px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--muted-foreground);
+}
+.shopify-skin .platform-card-text:last-child {
+    margin-bottom: 0;
+}
+.shopify-skin .platform-danger {
+    grid-column: 1 / -1;
+    border-color: color-mix(in srgb, var(--dangerColor), transparent 55%);
+}
+.shopify-skin .platform-danger .platform-card-title {
+    color: var(--dangerColor);
+}
+
+/* A field and its button on one line; on a phone they stack. */
+.shopify-skin .platform-inline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 8px;
+}
+.shopify-skin .platform-inline > .platform-grow {
+    flex: 1 1 220px;
+}
+/* Two fields side by side where they fit, the button under them. */
+.shopify-skin .platform-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+    align-items: end;
+    gap: 8px;
+}
+.shopify-skin .platform-form-actions {
+    grid-column: 1 / -1;
+}
+
+.shopify-skin .platform-domains {
+    margin: 0 0 8px;
+    padding: 0;
+    list-style: none;
+}
+.shopify-skin .platform-domain {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+}
+/* A host is read in full, so it wraps rather than being cut to an ellipsis. */
+.shopify-skin .platform-domain {
+    flex-wrap: wrap;
+}
+.shopify-skin .platform-domain-name {
+    min-width: 0;
+    margin-right: auto;
+    overflow-wrap: anywhere;
+}
+.shopify-skin .platform-remove {
+    transition: transform var(--animationSpeed) ease-out;
+}
+.shopify-skin .platform-remove:hover,
+.shopify-skin .platform-remove:focus-visible {
+    transform: rotate(90deg);
+}
+.shopify-skin .platform-remove:active {
+    transform: rotate(90deg) scale(0.9);
+}
+
+.shopify-skin .platform-empty {
+    padding: 48px 16px;
+}
+.shopify-skin .platform-empty > i {
+    font-size: 2.5rem;
+}
+
+@media (max-width: 720px) {
+    .shopify-skin .platform-stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .shopify-skin .platform-filters > .platform-search,
+    .shopify-skin .platform-filters > .platform-status-filter {
+        flex: 1 1 100%;
+    }
+    .shopify-skin .platform-inline > .platform-grow,
+    .shopify-skin .platform-inline > .btn {
+        flex: 1 1 100%;
+    }
+}
+
+/* The motion goes; the answer stays, as a fade. */
+@media (prefers-reduced-motion: reduce) {
+    .platform-page.shopify-skin > .page-content {
+        animation: fadeIn var(--animationSpeed) ease-out;
+    }
+    .platform-page.shopify-skin tbody tr {
+        animation: fadeIn var(--animationSpeed);
+    }
+    .platform-signin > .wrapper,
+    .platform-refusal,
+    .platform-notice,
+    .platform-reveal,
+    .platform-created,
+    .platform-copy.copied > i {
+        animation: fadeIn var(--animationSpeed) ease-out;
+    }
+    .platform-host > i,
+    .shopify-skin .platform-remove {
+        transition: none;
+    }
+    .platform-host:hover > i,
+    .platform-host:focus-visible > i,
+    .shopify-skin .platform-remove:hover,
+    .shopify-skin .platform-remove:focus-visible,
+    .shopify-skin .platform-remove:active {
         transform: none;
     }
 }

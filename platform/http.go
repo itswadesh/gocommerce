@@ -3,6 +3,8 @@ package platform
 import (
 	_ "embed"
 	"net/http"
+	"path"
+	"strings"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
 )
@@ -55,11 +57,35 @@ func (p *Platform) routes() http.Handler {
 		}
 		mux.HandleFunc(rt.pattern, h)
 	}
-	// Everything else on a platform host is a JSON 404, never a store.
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		gocommerce.RespondError(w, r, gocommerce.NotFoundf("no platform route for %s %s", r.Method, r.URL.Path))
-	})
+	// Everything else on a platform host is the console or a JSON 404, never
+	// a store.
+	mux.HandleFunc("/", handleConsole)
 	return mux
+}
+
+// consolePath is where the admin panel keeps the platform's own screens.
+const consolePath = "/platform"
+
+// handleConsole serves the platform console (D73): the panel's /platform
+// screens and the asset files they load, through the same function a store's
+// host serves its panel with. Only those — the rest of the panel is a store's,
+// and its login form would ask a platform operator for a credential no store
+// issued them. `/` goes to the console because the platform's address is what
+// an operator types. Without a panel in the binary, all of it is a JSON 404.
+func handleConsole(w http.ResponseWriter, r *http.Request) {
+	clean := path.Clean("/" + r.URL.Path)
+	readOnly := r.Method == http.MethodGet || r.Method == http.MethodHead
+	switch {
+	case !readOnly || !gocommerce.HasAdminPanel() || clean == "/api" || strings.HasPrefix(clean, "/api/"):
+		// A write, an API path nobody serves, or no panel: the 404 below.
+	case clean == "/":
+		http.Redirect(w, r, consolePath, http.StatusFound)
+		return
+	case clean == consolePath || strings.HasPrefix(clean, consolePath+"/") || path.Ext(clean) != "":
+		gocommerce.ServeAdminPanel(w, r)
+		return
+	}
+	gocommerce.RespondError(w, r, gocommerce.NotFoundf("no platform route for %s %s", r.Method, r.URL.Path))
 }
 
 func (p *Platform) handleDoc(w http.ResponseWriter, r *http.Request) {
@@ -88,6 +114,10 @@ type health struct {
 	Running   int      `json:"running"`
 	Unbooted  []string `json:"unbooted"`
 	BaseHosts []string `json:"platform_hosts"`
+	// BaseDomain is what every store's own address ends in, so the console
+	// can name it — <slug>.<base_domain> — before and after a store exists.
+	// Empty when stores are reached only by attached domains.
+	BaseDomain string `json:"base_domain"`
 }
 
 // handleHealth says how many stores there are and which active ones are not
@@ -95,7 +125,8 @@ type health struct {
 func (p *Platform) handleHealth(w http.ResponseWriter, r *http.Request) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	h := health{Stores: len(p.tenants), Running: len(p.apps), Unbooted: []string{}, BaseHosts: p.cfg.PlatformHosts}
+	h := health{Stores: len(p.tenants), Running: len(p.apps), Unbooted: []string{},
+		BaseHosts: p.cfg.PlatformHosts, BaseDomain: p.cfg.BaseDomain}
 	for slug, t := range p.tenants {
 		if t.Status == StatusActive && p.apps[slug] == nil {
 			h.Unbooted = append(h.Unbooted, slug)

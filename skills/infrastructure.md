@@ -375,6 +375,15 @@ and the store's admin token once. A store is suspended with
 `store_unavailable`) and deleted only once suspended, with the slug repeated
 as `?confirm=<slug>`. The whole surface is in `GET /api/platform/doc`.
 
+The same hosts serve a console (D73): open the platform host in a browser and
+`/` goes to `/platform`, the admin panel's own screens for the API above,
+signed in to with a platform token that the tab keeps until it closes. It lists
+the stores with the health report's running and failed-to-start counts, opens
+new ones, and on a store's page renames, suspends and resumes, attaches and
+detaches domains, adds an owner, replaces the admin token and deletes. Every
+other path on a platform host is still a JSON 404. A binary built with
+`-tags no_admin` has no console; the API is unchanged.
+
 What to know before running one:
 
 - **Every store runs the same modules**, the ones the binary was started

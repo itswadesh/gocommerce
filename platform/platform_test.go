@@ -405,3 +405,60 @@ func TestTheContractCoversThePlatformAPI(t *testing.T) {
 		}
 	}
 }
+
+// The platform's hosts serve the console — the panel's /platform screens and
+// the files they load — and nothing else of the panel: every other path is
+// still a JSON 404, and a store's own host is untouched (D73).
+func TestThePlatformHostServesTheConsole(t *testing.T) {
+	p := newPlatform(t)
+	provision(t, p, "acme")
+	host := "platform.shops.test"
+
+	jsonNotFound := func(method, path string) {
+		t.Helper()
+		rec := call(t, p, host, method, path, "", nil)
+		if rec.Code != http.StatusNotFound || errCode(rec) == "" {
+			t.Errorf("%s %s on the platform host = %d %.120s, want a JSON 404", method, path, rec.Code, rec.Body)
+		}
+	}
+
+	if !gocommerce.HasAdminPanel() {
+		jsonNotFound(http.MethodGet, "/")
+		jsonNotFound(http.MethodGet, "/platform")
+		return
+	}
+
+	rec := call(t, p, host, http.MethodGet, "/", "", nil)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/platform" {
+		t.Errorf("GET / = %d to %q, want 302 to /platform", rec.Code, rec.Header().Get("Location"))
+	}
+	for _, path := range []string{"/platform", "/platform/acme", "/_app/version.json"} {
+		rec := call(t, p, host, http.MethodGet, path, "", nil)
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET %s = %d, want the panel's file", path, rec.Code)
+		}
+		if !strings.Contains(rec.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") {
+			t.Errorf("GET %s carries no panel CSP: the console must be served the way a store's panel is", path)
+		}
+	}
+	if ct := call(t, p, host, http.MethodGet, "/platform", "", nil).Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("GET /platform Content-Type = %q, want the panel's page", ct)
+	}
+
+	// No store screen, no store API, no write: none of it is a store.
+	for _, path := range []string{"/orders", "/platformx", "/health", "/api/store", "/api/platform/nope", "/_app/missing.js"} {
+		jsonNotFound(http.MethodGet, path)
+	}
+	jsonNotFound(http.MethodPost, "/platform")
+
+	// The console reads the base domain from the health report.
+	rec = call(t, p, host, http.MethodGet, "/api/platform/health", platformToken, nil)
+	if !strings.Contains(rec.Body.String(), `"base_domain":"shops.test"`) {
+		t.Errorf("health = %s, want base_domain", rec.Body)
+	}
+
+	// A store's host still serves its own panel at its root.
+	if rec := call(t, p, "acme.shops.test", http.MethodGet, "/", "", nil); rec.Code != http.StatusOK {
+		t.Errorf("a store's root = %d, want its panel", rec.Code)
+	}
+}

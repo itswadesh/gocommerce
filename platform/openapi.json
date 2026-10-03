@@ -107,6 +107,10 @@
                           "items": {
                             "type": "string"
                           }
+                        },
+                        "base_domain": {
+                          "type": "string",
+                          "description": "What every store's own address ends in, <slug>.<base_domain>. Empty when stores are reached only by attached domains."
                         }
                       }
                     }
