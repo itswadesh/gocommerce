@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "gocommerce",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "A small, composable commerce engine for Go.\n\nMoney is always an integer count of the currency's minor unit plus its code — never a float, never a formatted string. The number of decimal places belongs to the currency (USD has 2, JPY has 0, KWD has 3) and formatting belongs to the client.\n\nEvery response is `{\"data\": ...}` or `{\"error\": {\"code\", \"message\"}}`. Every collection paginates.\n\nGuest checkout is permanent: a shopper needs a cart token and an email, never an account.",
     "license": {
       "name": "MIT",
@@ -16666,7 +16666,7 @@
           "version": {
             "type": "string",
             "description": "The engine version this store is running.",
-            "example": "1.0.0"
+            "example": "1.1.0"
           },
           "currency": {
             "type": "string",
