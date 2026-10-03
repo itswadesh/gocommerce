@@ -139,7 +139,8 @@ func readBulkCSV(file io.Reader) ([]wantLine, error) {
 }
 
 func (m *Module) addLines(ctx context.Context, buyer *identity.Customer, cartID string, want []wantLine) (*CartFill, error) {
-	if _, _, err := m.orderingMember(ctx, buyer); err != nil {
+	_, company, err := m.orderingMember(ctx, buyer)
+	if err != nil {
 		return nil, err
 	}
 	switch {
@@ -152,7 +153,7 @@ func (m *Module) addLines(ctx context.Context, buyer *identity.Customer, cartID 
 	if err != nil {
 		return nil, err
 	}
-	return m.fill(ctx, token, want)
+	return m.fill(ctx, token, want, company)
 }
 
 // Reorder puts a past order's lines into a new basket at today's prices. It
@@ -199,7 +200,7 @@ func (m *Module) Reorder(ctx context.Context, buyer *identity.Customer, orderID 
 	if err != nil {
 		return nil, err
 	}
-	return m.fill(ctx, token, want)
+	return m.fill(ctx, token, want, company)
 }
 
 // orderingMember is the caller's membership and company, provided the company
@@ -239,9 +240,26 @@ func (m *Module) buyerCart(ctx context.Context, buyer *identity.Customer, token 
 
 // fill adds each line through core's AddLine and collects the ones that would
 // not go in. Only a failure that is not about the line — the database, say —
-// stops it.
-func (m *Module) fill(ctx context.Context, token string, lines []wantLine) (*CartFill, error) {
+// stops it. A line outside the company's catalogue never reaches the basket:
+// the checkout guard would refuse it, and a basket that cannot be checked out
+// is no help to anybody.
+func (m *Module) fill(ctx context.Context, token string, lines []wantLine, company *Company) (*CartFill, error) {
 	rejected := []RejectedLine{}
+	allowed := map[int64]bool{}
+	inCatalogue := func(productID int64) (bool, error) {
+		if company.CatalogueID == nil {
+			return true, nil
+		}
+		if ok, seen := allowed[productID]; seen {
+			return ok, nil
+		}
+		outside, err := outsideCatalogue(ctx, m.db, *company.CatalogueID, []int64{productID})
+		if err != nil {
+			return false, err
+		}
+		allowed[productID] = !outside[productID]
+		return allowed[productID], nil
+	}
 	for _, l := range lines {
 		r := RejectedLine{SKU: l.sku, Quantity: l.quantity, Row: l.row}
 		if l.variantID > 0 {
@@ -273,6 +291,14 @@ func (m *Module) fill(ctx context.Context, token string, lines []wantLine) (*Car
 		r.VariantID = &id
 		if r.SKU == "" {
 			r.SKU = v.SKU
+		}
+		ok, err := inCatalogue(v.ProductID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			reject(RejectNotInCatalogue, "not in "+company.Name+"'s catalogue")
+			continue
 		}
 		if !v.Active {
 			reject(RejectInactive, "that variant is not available")

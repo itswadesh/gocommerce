@@ -7034,6 +7034,19 @@ kbd + kbd {
     color: var(--muted-foreground);
 }
 
+/* A fact that is a link — a company's catalogue — reads at the size of the
+   facts beside it, and keeps the arrow's nudge. */
+.shopify-skin .b2b-more.b2b-fact-link {
+    font-size: var(--fontSize);
+    color: var(--foreground);
+}
+
+/* A catalogue's two pickers are as wide as a sentence of chips needs, not
+   the whole page. */
+.shopify-skin .b2b-catalogue-form {
+    max-width: 880px;
+}
+
 @media (max-width: 600px) {
     .shopify-skin .b2b-statement-day {
         width: 100%;

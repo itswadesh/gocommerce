@@ -479,6 +479,42 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			    created_at  timestamptz NOT NULL DEFAULT now(),
 			    UNIQUE (order_id, kind, at)
 			);`,
+	}, {
+		ID: "0004_b2b_catalogues",
+		SQL: `
+			-- What a company may buy: categories, each with everything under it,
+			-- and products one by one. A company with no catalogue buys
+			-- everything, as before there were catalogues.
+			--
+			-- category_id and product_id have no foreign key, for the reason
+			-- group_id has none: a module's table must never refuse a core
+			-- delete. A deleted category or product simply allows nothing, and
+			-- the subtree is read from core's tree as it is at the moment of the
+			-- check, so moving a category moves its products in or out.
+			CREATE TABLE b2b_catalogues (
+			    id          bigserial   PRIMARY KEY,
+			    name        text        NOT NULL UNIQUE CHECK (name <> ''),
+			    description text        NOT NULL DEFAULT '',
+			    created_at  timestamptz NOT NULL DEFAULT now(),
+			    updated_at  timestamptz NOT NULL DEFAULT now()
+			);
+			CREATE TABLE b2b_catalogue_categories (
+			    catalogue_id bigint NOT NULL REFERENCES b2b_catalogues (id) ON DELETE CASCADE,
+			    category_id  bigint NOT NULL,
+			    PRIMARY KEY (catalogue_id, category_id)
+			);
+			CREATE TABLE b2b_catalogue_products (
+			    catalogue_id bigint NOT NULL REFERENCES b2b_catalogues (id) ON DELETE CASCADE,
+			    product_id   bigint NOT NULL,
+			    PRIMARY KEY (catalogue_id, product_id)
+			);
+
+			-- No ON DELETE: a catalogue a company is held to is refused deletion
+			-- rather than dropped from under it, which would quietly let the
+			-- company buy everything.
+			ALTER TABLE b2b_companies ADD COLUMN catalogue_id bigint REFERENCES b2b_catalogues (id);
+			CREATE INDEX b2b_companies_catalogue_idx ON b2b_companies (catalogue_id)
+			    WHERE catalogue_id IS NOT NULL;`,
 	}}
 }
 
@@ -602,11 +638,15 @@ type Company struct {
 	CreditLimit *gocommerce.Money `json:"credit_limit"`
 	NetDays     int               `json:"net_days"`
 	// ApprovalThreshold absent means a buyer never waits for approval.
-	ApprovalThreshold *gocommerce.Money   `json:"approval_threshold"`
-	RequirePO         bool                `json:"require_po"`
-	Notes             string              `json:"notes"`
-	Metadata          gocommerce.Metadata `json:"metadata"`
-	MemberCount       int                 `json:"member_count"`
+	ApprovalThreshold *gocommerce.Money `json:"approval_threshold"`
+	RequirePO         bool              `json:"require_po"`
+	// CatalogueID absent means the company may buy everything; CatalogueName
+	// names the one it is held to.
+	CatalogueID   *int64              `json:"catalogue_id"`
+	CatalogueName string              `json:"catalogue_name,omitempty"`
+	Notes         string              `json:"notes"`
+	Metadata      gocommerce.Metadata `json:"metadata"`
+	MemberCount   int                 `json:"member_count"`
 	// TerritoryCount is how many areas it serves as a dealer; zero is a
 	// company that is not one, or not yet.
 	TerritoryCount int       `json:"territory_count"`

@@ -47,16 +47,20 @@ type CompanyInput struct {
 	GroupID optionalInt64 `json:"group_id"`
 	// Minor units of the store currency. null clears it: no account, or no
 	// approval rule.
-	CreditLimitMinor       optionalInt64       `json:"credit_limit_minor"`
-	NetDays                *int                `json:"net_days"`
-	ApprovalThresholdMinor optionalInt64       `json:"approval_threshold_minor"`
-	RequirePO              *bool               `json:"require_po"`
-	Notes                  *string             `json:"notes"`
-	Metadata               gocommerce.Metadata `json:"metadata"`
+	CreditLimitMinor       optionalInt64 `json:"credit_limit_minor"`
+	NetDays                *int          `json:"net_days"`
+	ApprovalThresholdMinor optionalInt64 `json:"approval_threshold_minor"`
+	RequirePO              *bool         `json:"require_po"`
+	// CatalogueID holds the company to a catalogue; null lets it buy
+	// everything.
+	CatalogueID optionalInt64       `json:"catalogue_id"`
+	Notes       *string             `json:"notes"`
+	Metadata    gocommerce.Metadata `json:"metadata"`
 }
 
 const companyColumns = `c.id, c.code, c.name, c.tax_id, c.status, c.group_id,
 	c.credit_limit_minor, c.net_days, c.approval_threshold_minor, c.require_po,
+	c.catalogue_id, coalesce((SELECT bc.name FROM b2b_catalogues bc WHERE bc.id = c.catalogue_id), ''),
 	c.notes, c.metadata, c.created_at, c.updated_at,
 	(SELECT count(*) FROM b2b_members bm WHERE bm.company_id = c.id),
 	(SELECT count(*) FROM b2b_territories bt WHERE bt.company_id = c.id)`
@@ -65,16 +69,20 @@ type rowScanner interface{ Scan(...any) error }
 
 func (m *Module) scanCompany(row rowScanner) (*Company, error) {
 	c := &Company{}
-	var group, limit, threshold sql.NullInt64
+	var group, limit, threshold, catalogue sql.NullInt64
 	var meta []byte
 	if err := row.Scan(&c.ID, &c.Code, &c.Name, &c.TaxID, &c.Status, &group,
-		&limit, &c.NetDays, &threshold, &c.RequirePO, &c.Notes, &meta,
+		&limit, &c.NetDays, &threshold, &c.RequirePO, &catalogue, &c.CatalogueName, &c.Notes, &meta,
 		&c.CreatedAt, &c.UpdatedAt, &c.MemberCount, &c.TerritoryCount); err != nil {
 		return nil, err
 	}
 	if group.Valid {
 		g := group.Int64
 		c.GroupID = &g
+	}
+	if catalogue.Valid {
+		id := catalogue.Int64
+		c.CatalogueID = &id
 	}
 	c.CreditLimit = m.moneyPtr(limit)
 	c.ApprovalThreshold = m.moneyPtr(threshold)
@@ -173,12 +181,13 @@ func (m *Module) CreateCompany(ctx context.Context, in CompanyInput) (*Company, 
 	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
 		if err := tx.QueryRowContext(ctx, `
 			INSERT INTO b2b_companies (code, name, tax_id, status, group_id, credit_limit_minor,
-			                           net_days, approval_threshold_minor, require_po, notes, metadata)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			                           net_days, approval_threshold_minor, require_po, notes, metadata,
+			                           catalogue_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 			RETURNING id`,
 			code, strings.TrimSpace(*in.Name), deref(in.TaxID), status, in.GroupID.Value,
 			in.CreditLimitMinor.Value, netDays, in.ApprovalThresholdMinor.Value,
-			in.RequirePO != nil && *in.RequirePO, deref(in.Notes), meta).Scan(&id); err != nil {
+			in.RequirePO != nil && *in.RequirePO, deref(in.Notes), meta, in.CatalogueID.Value).Scan(&id); err != nil {
 			return err
 		}
 		opened, err := readTerms(ctx, tx, id, false)
@@ -238,6 +247,9 @@ func (m *Module) UpdateCompany(ctx context.Context, id int64, in CompanyInput) (
 	}
 	if in.RequirePO != nil {
 		set("require_po", *in.RequirePO)
+	}
+	if in.CatalogueID.Set {
+		set("catalogue_id", in.CatalogueID.Value)
 	}
 	if in.Notes != nil {
 		set("notes", *in.Notes)
@@ -362,6 +374,16 @@ func (m *Module) validateCompany(ctx context.Context, in CompanyInput) error {
 	if in.GroupID.Value != nil {
 		if _, err := m.app.Pricing().Group(ctx, *in.GroupID.Value); err != nil {
 			return gocommerce.Validationf("customer group %d does not exist", *in.GroupID.Value)
+		}
+	}
+	if in.CatalogueID.Value != nil {
+		var exists bool
+		if err := m.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM b2b_catalogues WHERE id = $1)`,
+			*in.CatalogueID.Value).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return gocommerce.Validationf("catalogue %d does not exist", *in.CatalogueID.Value)
 		}
 	}
 	return nil
@@ -880,6 +902,8 @@ func translateErr(err error) error {
 		return gocommerce.Validationf("a company code is lower-case letters, digits and single hyphens")
 	case strings.Contains(msg, "b2b_companies_name_check"):
 		return gocommerce.Validationf("a company needs a name")
+	case strings.Contains(msg, "b2b_companies_catalogue_id_fkey"):
+		return gocommerce.Validationf("that catalogue no longer exists")
 	}
 	return err
 }

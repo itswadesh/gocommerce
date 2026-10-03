@@ -1,8 +1,8 @@
 <script>
     /**
      * How a company's terms changed: its credit limit, payment terms, approval
-     * threshold, purchase-order rule, status and customer group, each change
-     * with who made it and when.
+     * threshold, purchase-order rule, status, customer group and catalogue,
+     * each change with who made it and when.
      *
      * The engine writes a row per field in the same transaction as the change,
      * so the record cannot miss one or invent one. One save that moved two
@@ -36,7 +36,18 @@
 
     $effect(() => {
         if (can("groups.read")) loadGroups();
+        loadCatalogues();
     });
+
+    let catalogues = $state({});
+    async function loadCatalogues() {
+        try {
+            const result = await api.get("/api/admin/x/b2b/catalogues?limit=200");
+            catalogues = Object.fromEntries((result.data ?? []).map((c) => [c.id, c.name]));
+        } catch {
+            // As with groups: the id still says which catalogue.
+        }
+    }
 
     async function load() {
         const mine = ++reqId;
@@ -87,6 +98,7 @@
         approval_threshold_minor: "Approval over",
         require_po: "Purchase orders",
         group_id: "Customer group",
+        catalogue_id: "Catalogue",
     };
 
     function value(entry, v) {
@@ -100,6 +112,7 @@
             return v === null ? "Never" : formatMoney({ amount_minor: v, currency: entry.currency });
         }
         if (entry.field === "group_id") return v === null ? "None" : groups[v] || `Group ${v}`;
+        if (entry.field === "catalogue_id") return v === null ? "Everything" : catalogues[v] || `Catalogue ${v}`;
         return v === null ? "None" : String(v);
     }
 

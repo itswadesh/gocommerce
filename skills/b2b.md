@@ -1,6 +1,6 @@
 ---
 name: b2b
-description: Use when selling to businesses — companies, buyer roles, orders on account, credit limits, approvals, quotes, quick and repeat orders, partial checkout, statements and terms history, or dealer territories and lead routing — or when a trade price is reaching somebody it should not.
+description: Use when selling to businesses — companies, buyer roles, orders on account, credit limits, approvals, quotes, quick and repeat orders, partial checkout, catalogues, statements and terms history, or dealer territories and lead routing — or when a trade price is reaching somebody it should not.
 ---
 
 # B2B: companies, accounts, approvals, quotes and dealers
@@ -70,7 +70,7 @@ basket is checked out through `POST /x/b2b/checkout` like any other.
 - **Quick order:** `POST /x/b2b/cart/lines` with up to 500 lines by `sku` or
   `variant_id`, into `cart_id` or a new basket. A line that cannot go in comes
   back in `rejected` with a reason — `not_found`, `inactive`,
-  `insufficient_stock`, `invalid` — and the rest still go in; the answer is
+  `insufficient_stock`, `invalid`, `not_in_catalogue` — and the rest still go in; the answer is
   200 either way. The same route takes a spreadsheet: `Content-Type: text/csv`,
   the basket in `?cart_id=`, a header naming `quantity` and `sku` or
   `variant_id` in any case, other columns ignored. It is read by core's
@@ -87,6 +87,31 @@ basket is checked out through `POST /x/b2b/checkout` like any other.
   judges exactly those lines. They leave the buyer's basket only once they are
   an order; a request for approval filed instead leaves it untouched. Every
   line chosen is just a checkout of the whole basket.
+
+## Catalogues
+
+A company may be held to a **catalogue** (D75): categories, each with every
+product filed under it or under the categories beneath it, and products one by
+one. A company with none buys everything. The store manages them at
+`/api/admin/x/b2b/catalogues` (`companies.read` to read, `companies.write` to
+change) and holds a company to one with `catalogue_id` on the company, which
+the terms history records. One a company is held to cannot be deleted.
+
+It is held where the order is made. The checkout guard refuses a basket with a
+line outside the catalogue — `403 not_in_catalogue`, each such line in
+`details` — before the approval threshold, so it is never filed for an
+approver, and an approval or an accepted quote placed later is checked again.
+Quick order, a file and a repeat order leave such a line out with reason
+`not_in_catalogue`; a quote request, the store's pricing of a quote and its
+sending refuse one. The subtree is read from core's category tree when the
+check runs, so moving a category moves its products in or out.
+
+`GET /x/b2b/catalogue?q=&category_id=&page=&per_page=` lists what the buyer's
+company may buy, by title, each active variant with `price_minor` and
+`currency`: core's `Pricing.PriceInChannel` for the address the company's
+group holds for the buyer, on the default storefront a quick order's basket is
+opened on — what that basket would charge for one. `q` matches a title or a
+SKU; `per_page` is `limit`.
 
 ## Statements and the terms history
 
@@ -119,7 +144,8 @@ other line is `recorded`.
 
 The **terms history** is `GET /api/admin/x/b2b/companies/{id}/history`
 (`companies.read`, newest first): a row per term that moved — status, credit
-limit, net days, approval threshold, PO rule, customer group — written in the
+limit, net days, approval threshold, PO rule, customer group, catalogue —
+written in the
 same transaction as the change, with the old and new value as the API takes
 them and who made it: `operator` (with their address), `token`, `buyer` (a
 company admin) or `system`. Creating a company records its first terms as
@@ -182,6 +208,9 @@ dealer and starts the lead again at `new`.
   check counts — on account, neither paid nor cancelled — and the statement
   files whatever it missed before it is read, so a statement ending today and
   `GET …/credit` never disagree.
+- **A catalogue is a control, not a filter.** The guard refuses what it leaves
+  out whatever filled the basket — the public cart routes included — and
+  approvals and quotes are checked again when they are placed.
 - **A term changes with its record or not at all.** `UpdateCompany` reads the
   terms under the row's lock and writes the history in the same transaction.
 - **The lead form says nothing about where a lead went.** It answers
@@ -206,6 +235,13 @@ dealer and starts the lead again at `new`.
   delivered.** The first moves on every edit and the second on every retry.
   The event's `At` and the order's timeline are when it was recorded; with
   neither, the line says `noticed`.
+- **Expecting a catalogue to hide products on the storefront.** The public
+  listing knows nothing of companies (D22); a held buyer can see and add
+  anything there, and is refused at `POST /x/b2b/checkout`. A storefront that
+  wants the narrowed range lists `GET /x/b2b/catalogue` instead.
+- **Pricing the catalogue listing from the price lists yourself.**
+  `Pricing.PriceInChannel` is core's resolution — group, channel, quantity
+  break, base price — and a second copy of it drifts.
 - **Parsing an uploaded order with `encoding/csv` directly.** A SKU exported
   as `'-RED` would arrive with its apostrophe and match nothing, and a header
   saved by Excel would start with a byte-order mark. `gocommerce.NewCSVReader`

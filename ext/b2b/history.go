@@ -89,10 +89,11 @@ type terms struct {
 	NetDays           int
 	ApprovalThreshold sql.NullInt64
 	RequirePO         bool
+	CatalogueID       sql.NullInt64
 }
 
 const termsColumns = `status, group_id, credit_limit_minor, net_days,
-	approval_threshold_minor, require_po`
+	approval_threshold_minor, require_po, catalogue_id`
 
 func readTerms(ctx context.Context, tx *sql.Tx, companyID int64, lock bool) (terms, error) {
 	var t terms
@@ -101,7 +102,7 @@ func readTerms(ctx context.Context, tx *sql.Tx, companyID int64, lock bool) (ter
 		q += ` FOR UPDATE`
 	}
 	err := tx.QueryRowContext(ctx, q, companyID).Scan(&t.Status, &t.GroupID, &t.CreditLimit,
-		&t.NetDays, &t.ApprovalThreshold, &t.RequirePO)
+		&t.NetDays, &t.ApprovalThreshold, &t.RequirePO, &t.CatalogueID)
 	return t, err
 }
 
@@ -126,6 +127,7 @@ func (t terms) fields() []struct {
 		{"approval_threshold_minor", nullable(t.ApprovalThreshold)},
 		{"require_po", t.RequirePO},
 		{"group_id", nullable(t.GroupID)},
+		{"catalogue_id", nullable(t.CatalogueID)},
 	}
 }
 

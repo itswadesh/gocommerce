@@ -63,8 +63,8 @@ func TestTermsChangesAreRecordedWithWhoMadeThem(t *testing.T) {
 		t.Fatalf("history = %d: %s", rec.Code, rec.Body)
 	}
 	gctest.DecodeData(t, rec, &created)
-	if len(created) != 6 {
-		t.Fatalf("history after creating = %d entries, want one per term (6): %+v", len(created), created)
+	if len(created) != 7 {
+		t.Fatalf("history after creating = %d entries, want one per term (7): %+v", len(created), created)
 	}
 	for _, e := range created {
 		if e.Action != HistoryCreated || e.ActorKind != ActorToken || string(e.OldValue) != "null" {
@@ -85,8 +85,8 @@ func TestTermsChangesAreRecordedWithWhoMadeThem(t *testing.T) {
 	}
 
 	list, total, err := f.b2b.History(ctx, f.company.ID, 10, 0)
-	if err != nil || total != 9 {
-		t.Fatalf("history = %d entries (%v), want 6 + 2 + 1", total, err)
+	if err != nil || total != 10 {
+		t.Fatalf("history = %d entries (%v), want 7 + 2 + 1", total, err)
 	}
 	cleared, raised, terms := list[0], list[1], list[2]
 	if raised.Field != "net_days" {

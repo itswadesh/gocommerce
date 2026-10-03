@@ -396,6 +396,18 @@
                             </dd>
                         </div>
                         <div>
+                            <dt>Catalogue</dt>
+                            <dd>
+                                {#if company.catalogue_id}
+                                    <a class="b2b-more b2b-fact-link" href="{base}/b2b/catalogues/{company.catalogue_id}"
+                                        >{company.catalogue_name || `Catalogue ${company.catalogue_id}`} <span aria-hidden="true">→</span></a
+                                    >
+                                {:else}
+                                    <span class="txt-hint">Everything</span>
+                                {/if}
+                            </dd>
+                        </div>
+                        <div>
                             <dt>Tax number</dt>
                             <dd class:txt-code={!!company.tax_id}>
                                 {#if company.tax_id}{company.tax_id}{:else}<span class="txt-hint">—</span>{/if}
