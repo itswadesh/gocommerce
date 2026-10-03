@@ -8376,6 +8376,195 @@ kbd + kbd {
     margin-top: 4px;
 }
 
+/* --- a spreadsheet, dropped or chosen ------------------------------------ */
+
+.portal-upload {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--card);
+}
+/* The whole box is the file picker's label, so a click anywhere chooses and
+   a file dropped anywhere on it is taken. While one is dragged over it the
+   box lifts a little and its edge darkens: the answer to "will it take this
+   here", before the drop. */
+.portal-drop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 8px;
+    padding: 22px 16px;
+    border: 1.5px dashed var(--border);
+    border-radius: 12px;
+    text-align: center;
+    cursor: pointer;
+    transition:
+        border-color var(--animationSpeed) ease-out,
+        transform 200ms ease-out;
+}
+.portal-drop > i {
+    font-size: 26px;
+    color: var(--surfaceTxtHintColor);
+    transition: transform 200ms ease-out;
+}
+.portal-drop:hover,
+.portal-drop:focus-within {
+    border-color: var(--surfaceTxtHintColor);
+}
+.portal-drop.is-over {
+    border-color: var(--foreground);
+    transform: scale(1.01);
+}
+.portal-drop.is-over > i {
+    transform: translateY(-3px);
+}
+.portal-drop.has-file > i {
+    color: var(--successColor);
+    animation: portalPop 240ms ease-out;
+}
+/* Kept in the box and focusable — it is the control a keyboard uses — but
+   drawn by the box around it. */
+.portal-file-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+.portal-drop:has(.portal-file-input:focus-visible) {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+}
+.portal-row-no {
+    font-variant-numeric: tabular-nums;
+}
+
+/* --- the catalogue ------------------------------------------------------- */
+
+.shopify-skin .portal-category-pick {
+    min-width: 240px;
+}
+.shopify-skin .portal-products {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+    gap: 14px;
+    align-items: start;
+    margin-bottom: var(--spacing);
+    transition: opacity var(--animationSpeed);
+}
+.shopify-skin .portal-products.faded {
+    opacity: 0.6;
+}
+.portal-product {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+    padding: 14px 16px;
+    animation: fadeIn var(--animationSpeed);
+}
+.portal-product-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+.portal-product-image {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 48px;
+    height: 48px;
+    overflow: hidden;
+    border-radius: 8px;
+    background: var(--surfaceAlt1Color);
+    color: var(--surfaceTxtHintColor);
+    font-size: 20px;
+}
+.portal-product-image > img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.portal-product-name {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.portal-variants {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.portal-variant {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 4px 12px;
+    padding: 8px 0;
+    border-top: 1px solid var(--border);
+}
+.portal-variant-what {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.portal-variant-price {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+.portal-variant-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.shopify-skin .portal-variant-qty {
+    width: 70px;
+    margin: 0;
+}
+.portal-variant-refused {
+    grid-column: 1 / -1;
+}
+.portal-stock.is-out {
+    color: var(--dangerColor);
+}
+.portal-stock.is-low {
+    color: var(--warningColor);
+}
+/* An add that went in turns its icon to a tick, which pops once: the basket
+   count in the navigation moves too, but the eye is on the button. */
+.portal-added {
+    animation: portalPop 260ms ease-out;
+}
+
+/* --- the statement ------------------------------------------------------- */
+
+.shopify-skin .portal-period {
+    min-width: 220px;
+}
+/* The opening and closing rows frame the entries, set off as totals are. */
+.shopify-skin .portal-statement-table tr.portal-statement-edge > td {
+    background: var(--surfaceAlt1Color);
+}
+.portal-noticed {
+    padding-bottom: 1px;
+    border-bottom: 1px dotted currentColor;
+    cursor: help;
+    white-space: nowrap;
+}
+
+/* A line the catalogue refused at checkout: still in the basket, plainly not
+   orderable. */
+.portal-line.is-outside {
+    background: color-mix(in srgb, var(--dangerColor) 6%, transparent);
+}
+
 /* --- phone --------------------------------------------------------------- */
 
 @media (max-width: 1024px) {
@@ -8384,6 +8573,22 @@ kbd + kbd {
     }
 }
 @media (max-width: 600px) {
+    /* Two figures a row: one a row made a statement four screens tall. */
+    .shopify-skin .portal-tiles {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .portal-variant {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .portal-variant-add {
+        grid-column: 1 / -1;
+        justify-content: flex-end;
+    }
+    .shopify-skin .portal-category-pick,
+    .shopify-skin .portal-period {
+        min-width: 0;
+        width: 100%;
+    }
     .portal-qo-head,
     .portal-qo-row {
         grid-template-columns: minmax(0, 1fr) 76px 36px;
@@ -8456,8 +8661,21 @@ kbd + kbd {
     .portal-quote-line,
     .portal-row-link,
     .portal-line,
-    .portal-page tbody tr {
+    .portal-page tbody tr,
+    .portal-product {
         animation: fadeIn var(--animationSpeed) ease-out;
+    }
+    .portal-added,
+    .portal-drop.has-file > i {
+        animation: fadeIn var(--animationSpeed) ease-out;
+    }
+    .portal-drop,
+    .portal-drop > i {
+        transition: border-color var(--animationSpeed) ease-out;
+    }
+    .portal-drop.is-over,
+    .portal-drop.is-over > i {
+        transform: none;
     }
     .portal-nav-badge,
     .portal-outcome-icon,

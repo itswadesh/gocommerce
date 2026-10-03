@@ -39,6 +39,9 @@
     let busyLine = $state(0);
     let placing = $state(false);
     let placeError = $state("");
+    /* Variants the last checkout refused as outside the company's catalogue
+       (D75): marked on their lines, with a way to leave them out. */
+    let outside = $state(new Set());
     let outcome = $state(null);
     let details = $state({ po: "", addressId: null, address: null, name: "", phone: "", method: "", rateId: null, ready: false });
     /* One key per attempt to place, kept across a retry after a network
@@ -141,6 +144,7 @@
         if (placing || !chosen.length || !details.ready) return;
         placing = true;
         placeError = "";
+        outside = new Set();
         attemptKey ||= crypto.randomUUID();
         const body = {
             cart_id: cart.id,
@@ -173,6 +177,7 @@
             if (err.status !== 0) attemptKey = "";
             if (!err.handled) placeError = explain(err);
             if (err.code === "credit_limit_exceeded") loadMe();
+            if (err.code === "not_in_catalogue") outside = new Set((err.details ?? []).map((d) => d.variant_id));
         } finally {
             placing = false;
         }
@@ -180,9 +185,22 @@
 
     /* What is left was left on purpose for another order, and this is that
        order: every remaining line is ticked again. */
+    const outsidePicked = $derived(lines.filter((l) => outside.has(l.variant_id) && picked.has(l.id)));
+
+    /* Unticks the lines the catalogue refused, so the rest go as a partial
+       checkout; the refused lines stay in the basket for the buyer to take
+       up with the store. */
+    function leaveOut() {
+        const next = new Set(picked);
+        for (const l of outsidePicked) next.delete(l.id);
+        picked = next;
+        placeError = "";
+    }
+
     function another() {
         outcome = null;
         placeError = "";
+        outside = new Set();
         picked = new Set(lines.map((l) => l.id));
     }
 </script>
@@ -292,7 +310,12 @@
                 </div>
                 <ul class="portal-lines tw:rounded-xl tw:border tw:bg-card" class:faded={loading}>
                     {#each lines as line (line.id)}
-                        <li class="portal-line" class:unpicked={!picked.has(line.id)} class:busy={busyLine === line.id}>
+                        <li
+                            class="portal-line"
+                            class:unpicked={!picked.has(line.id)}
+                            class:busy={busyLine === line.id}
+                            class:is-outside={outside.has(line.variant_id)}
+                        >
                             <label class="portal-line-pick">
                                 <input
                                     type="checkbox"
@@ -307,6 +330,9 @@
                                     <span class="txt-code">{line.sku}</span>{line.variant_label ? ` · ${line.variant_label}` : ""}
                                     · {formatMoney(line.unit_price)} each
                                 </span>
+                                {#if outside.has(line.variant_id)}
+                                    <span class="txt-danger txt-sm portal-notice">Not in {company.name}'s catalogue, so it can't be ordered</span>
+                                {/if}
                                 {#if !line.in_stock}
                                     <span class="txt-danger txt-sm">
                                         {line.available > 0 ? `Only ${line.available} in stock` : "Not available at the moment"}
@@ -366,7 +392,14 @@
                         {/if}
                         {#key placeError}
                             {#if placeError}
-                                <div class="alert danger portal-refusal m-b-sm" role="alert"><p>{placeError}</p></div>
+                                <div class="alert danger portal-refusal m-b-sm" role="alert">
+                                    <p>{placeError}</p>
+                                    {#if outsidePicked.length}
+                                        <button type="button" class="btn sm secondary portal-press m-t-xs" onclick={leaveOut}>
+                                            <span class="txt">Leave {outsidePicked.length === 1 ? "it" : "them"} out</span>
+                                        </button>
+                                    {/if}
+                                </div>
                             {/if}
                         {/key}
                         <button
