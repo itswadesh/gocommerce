@@ -541,6 +541,10 @@ type CatalogueVariant struct {
 	Label     string   `json:"label"`
 	Options   []string `json:"options"`
 	Available int      `json:"available"`
+	// InStock is whether one can be ordered now: stock above zero, or a
+	// variant that tracks none or sells past it. Available alone cannot say,
+	// because it is zero for a variant whose stock is not counted.
+	InStock bool `json:"in_stock"`
 	// PriceMinor is what one costs in a basket priced as this buyer, on the
 	// storefront a quick order fills: their group's price lists, else the
 	// variant's own. A quantity break lowers it in the basket.
@@ -574,20 +578,125 @@ type CatalogueQuery struct {
 // a quick order's basket is opened on — the price that basket would charge
 // for one. Nothing here reads a price list.
 func (m *Module) BuyerCatalogue(ctx context.Context, buyer *identity.Customer, q CatalogueQuery) ([]*CatalogueProduct, int, error) {
-	mem, company, err := m.memberAndCompany(ctx, buyer)
+	s, err := m.buyerScope(ctx, buyer, q)
 	if err != nil {
 		return nil, 0, err
 	}
-	channel, err := m.app.Channels().Resolve(ctx, "")
+	var total int
+	if err := m.db.QueryRowContext(ctx, `SELECT count(*) FROM products p WHERE `+s.where, s.args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	// Built before the call: arg grows s.args, and Go does not order that
+	// against reading s.args in the same argument list.
+	query := `SELECT p.id FROM products p WHERE ` + s.where + `
+		ORDER BY lower(p.title), p.id LIMIT ` + s.arg(q.Limit) + ` OFFSET ` + s.arg(q.Offset)
+	ids, err := m.idsOf(ctx, query, s.args...)
 	if err != nil {
 		return nil, 0, err
+	}
+	return m.catalogueProducts(ctx, ids, s.member, s.channelID, total)
+}
+
+// CatalogueCategory is a category holding something a buyer may buy.
+// ProductCount is how many such products are filed under it at any depth, so
+// a branch counts what its leaves hold — which is what picking it shows.
+type CatalogueCategory struct {
+	ID           int64  `json:"id"`
+	ParentID     *int64 `json:"parent_id"`
+	Slug         string `json:"slug"`
+	Title        string `json:"title"`
+	FullName     string `json:"full_name"`
+	Depth        int    `json:"depth"`
+	ProductCount int    `json:"product_count"`
+}
+
+// BuyerCatalogueCategories lists the categories a buyer can browse their
+// catalogue by: those holding at least one product their company may buy,
+// and the branches above them, in the order of their full names. A company
+// held to a catalogue sees only its own corner of the tree; offering the rest
+// would be offering a filter that can only come back empty.
+func (m *Module) BuyerCatalogueCategories(ctx context.Context, buyer *identity.Customer) ([]*CatalogueCategory, error) {
+	s, err := m.buyerScope(ctx, buyer, CatalogueQuery{})
+	if err != nil {
+		return nil, err
+	}
+	rows, err := m.db.QueryContext(ctx, `SELECT p.category_id, count(*) FROM products p
+		WHERE `+s.where+` AND p.category_id IS NOT NULL GROUP BY p.category_id`, s.args...)
+	if err != nil {
+		return nil, err
+	}
+	direct := map[int64]int{}
+	for rows.Next() {
+		var id int64
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		direct[id] = n
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	byID := map[int64]*CatalogueCategory{}
+	for id, n := range direct {
+		chain, err := m.app.Categories().Ancestors(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range chain {
+			cc := byID[c.ID]
+			if cc == nil {
+				cc = &CatalogueCategory{ID: c.ID, ParentID: c.ParentID, Slug: c.Slug, Title: c.Title,
+					FullName: c.FullName, Depth: c.Depth}
+				byID[c.ID] = cc
+			}
+			cc.ProductCount += n
+		}
+	}
+	out := make([]*CatalogueCategory, 0, len(byID))
+	for _, c := range byID {
+		out = append(out, c)
+	}
+	slices.SortFunc(out, func(a, b *CatalogueCategory) int {
+		return strings.Compare(strings.ToLower(a.FullName), strings.ToLower(b.FullName))
+	})
+	return out, nil
+}
+
+// catalogueScope is the products a buyer's company may buy, narrowed by a
+// query, as a WHERE clause over `products p` and its arguments. arg adds one
+// more argument and returns its placeholder, for what the caller appends.
+type catalogueScope struct {
+	member    *Member
+	channelID int64
+	where     string
+	args      []any
+	arg       func(any) string
+}
+
+// buyerScope is the one definition of what a buyer may see in the catalogue:
+// the product list and the categories that hold it read the same rows.
+func (m *Module) buyerScope(ctx context.Context, buyer *identity.Customer, q CatalogueQuery) (*catalogueScope, error) {
+	mem, company, err := m.memberAndCompany(ctx, buyer)
+	if err != nil {
+		return nil, err
+	}
+	channel, err := m.app.Channels().Resolve(ctx, "")
+	if err != nil {
+		return nil, err
 	}
 	var channelID int64
 	if channel != nil {
 		channelID = channel.ID
 	}
 
-	conds := []string{"p.status = $1"}
+	s := &catalogueScope{member: mem, channelID: channelID}
+	// A product on sale with every variant switched off has nothing to buy,
+	// and listing it would page and count a card with no lines on it.
+	conds := []string{"p.status = $1",
+		"EXISTS (SELECT 1 FROM variants av WHERE av.product_id = p.id AND av.active)"}
 	args := []any{gocommerce.ProductActive}
 	arg := func(v any) string {
 		args = append(args, v)
@@ -617,8 +726,8 @@ func (m *Module) BuyerCatalogue(ctx context.Context, buyer *identity.Customer, q
 			    WHERE down.depth < `+depth+`)
 			SELECT id FROM down)`)
 	}
-	if s := strings.ToLower(strings.TrimSpace(q.Search)); s != "" {
-		like := arg("%" + s + "%")
+	if term := strings.ToLower(strings.TrimSpace(q.Search)); term != "" {
+		like := arg("%" + term + "%")
 		conds = append(conds, `(lower(p.title) LIKE `+like+` OR EXISTS (
 			SELECT 1 FROM variants v WHERE v.product_id = p.id AND lower(v.sku) LIKE `+like+`))`)
 	}
@@ -629,17 +738,20 @@ func (m *Module) BuyerCatalogue(ctx context.Context, buyer *identity.Customer, q
 		conds = append(conds, `(EXISTS (SELECT 1 FROM product_channels pc WHERE pc.product_id = p.id AND pc.channel_id = `+ch+`)
 			OR NOT EXISTS (SELECT 1 FROM product_channels pc WHERE pc.product_id = p.id))`)
 	}
-	where := strings.Join(conds, " AND ")
-	var total int
-	if err := m.db.QueryRowContext(ctx, `SELECT count(*) FROM products p WHERE `+where, args...).Scan(&total); err != nil {
-		return nil, 0, err
+	s.where = strings.Join(conds, " AND ")
+	// Every argument goes through s.args, so a placeholder the caller adds
+	// later is numbered after the ones the clause already holds.
+	s.args = args
+	s.arg = func(v any) string {
+		s.args = append(s.args, v)
+		return "$" + strconv.Itoa(len(s.args))
 	}
-	ids, err := m.idsOf(ctx, `SELECT p.id FROM products p WHERE `+where+`
-		ORDER BY lower(p.title), p.id LIMIT `+arg(q.Limit)+` OFFSET `+arg(q.Offset), args...)
-	if err != nil {
-		return nil, 0, err
-	}
+	return s, nil
+}
 
+// catalogueProducts reads the listed products with each active variant's
+// price for one, as the buyer.
+func (m *Module) catalogueProducts(ctx context.Context, ids []int64, mem *Member, channelID int64, total int) ([]*CatalogueProduct, int, error) {
 	currency := m.app.Config().Currency
 	out := make([]*CatalogueProduct, 0, len(ids))
 	for _, id := range ids {
@@ -661,7 +773,7 @@ func (m *Module) BuyerCatalogue(ctx context.Context, buyer *identity.Customer, q
 				return nil, 0, err
 			}
 			item.Variants = append(item.Variants, CatalogueVariant{ID: v.ID, SKU: v.SKU, Label: v.Label,
-				Options: v.Options, Available: v.Available, PriceMinor: price, Currency: currency})
+				Options: v.Options, Available: v.Available, InStock: v.InStock(1), PriceMinor: price, Currency: currency})
 		}
 		out = append(out, item)
 	}

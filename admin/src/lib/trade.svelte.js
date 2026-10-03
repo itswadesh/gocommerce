@@ -126,7 +126,63 @@ export const tradeApi = {
     patch: (path, body) => call("PATCH", path, body),
     put: (path, body) => call("PUT", path, body),
     delete: (path) => call("DELETE", path),
+    /**
+     * download fetches a file a route renders — a statement's CSV — and hands
+     * it to the browser to save. A link cannot carry the buyer's token, which
+     * is a header and not a cookie, so the file is fetched with it and saved
+     * from a blob.
+     */
+    async download(path, filename) {
+        const response = await send("GET", path);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        // Revoked on the next turn, after the browser has taken the file.
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+    },
+    /** upload sends a file as the request body, typed as itself — a CSV quick order. */
+    async upload(path, file, type) {
+        const response = await send("POST", path, file, type);
+        return (await response.json())?.data;
+    },
 };
+
+/**
+ * send is call for a body or an answer that is not JSON: a file going up, a
+ * file coming down. A refusal is still the engine's JSON envelope, and is
+ * thrown as call throws it, ending the session on a 401 the same way.
+ */
+async function send(method, path, body, type) {
+    if (!path.startsWith("/x/")) {
+        // Only the module routes read a buyer's session; see call.
+        throw new ApiError(0, "not_for_buyers", "The trade portal sends files to its own routes only.");
+    }
+    const token = trade.token;
+    const headers = {};
+    if (token) headers["Authorization"] = "Bearer " + token;
+    if (type) headers["Content-Type"] = type;
+    let response;
+    try {
+        response = await fetch(path, { method, headers, body });
+    } catch {
+        throw new ApiError(0, "network_error", "We could not reach the store. Check your connection and try again.");
+    }
+    if (!response.ok) {
+        const e = (await response.json().catch(() => null))?.error;
+        const err = new ApiError(response.status, e?.code || "error", e?.message || response.statusText, e?.details);
+        if (response.status === 401 && token && token === trade.token) {
+            endSession(true);
+            err.handled = true;
+        }
+        throw err;
+    }
+    return response;
+}
 
 // ---------------------------------------------------------------- session
 
@@ -416,6 +472,8 @@ export function rejectedWords(line) {
             return "We don't sell anything with this code.";
         case "inactive":
             return "This item isn't available to order at the moment.";
+        case "not_in_catalogue":
+            return `This isn't in ${trade.me?.company?.name ?? "your company"}'s catalogue, so it can't be ordered.`;
         case "insufficient_stock":
             // "only 0 left in stock" is true and reads like a joke.
             if (/\bonly 0\b/i.test(line.message ?? "")) return "Out of stock at the moment.";
@@ -452,6 +510,13 @@ export function explain(err) {
         }
         case "email_unverified":
             return "Confirm your email address first. We can send you the link again from your account menu.";
+        case "not_in_catalogue": {
+            const skus = (err.details ?? []).map((d) => d.sku || `item ${d.variant_id}`);
+            const company = trade.me?.company?.name ?? "your company";
+            if (!skus.length) return `Something here isn't in ${company}'s catalogue, so it can't be ordered.`;
+            const one = skus.length === 1;
+            return `${skus.join(", ")} ${one ? "isn't" : "aren't"} in ${company}'s catalogue, so ${one ? "it" : "they"} can't be ordered. Leave ${one ? "it" : "them"} out to order the rest.`;
+        }
         case "network_error":
             return err.message;
     }
@@ -470,6 +535,8 @@ function conflictWords(d) {
             return `${sku}no longer available.`;
         case "price_changed":
             return `${sku}the price changed.`;
+        case "not_in_catalogue":
+            return `${sku}not in your company's catalogue.`;
         default:
             return `${sku}${d.reason}.`;
     }
@@ -478,18 +545,16 @@ function conflictWords(d) {
 /**
  * The portal's navigation, in the order a buyer works.
  *
- * Each item says who sees it. Three screens are being built in ext/b2b and
- * slot in where the comments are, each as one more line here: the company's
- * catalogue after Quick order, statements after Orders, and a spreadsheet
- * upload on the Quick order screen itself rather than as a destination.
+ * Each item says who sees it, by the rule its routes apply: a plain buyer
+ * gets 403 from the statement, so it is not offered them.
  */
 export const NAV = [
     { href: "/portal", label: "Overview", icon: "ri-home-5-line", exact: true },
     { href: "/portal/quick-order", label: "Quick order", icon: "ri-flashlight-line" },
-    // Catalogue: { href: "/portal/catalogue", label: "Catalogue", icon: "ri-store-3-line" },
+    { href: "/portal/catalogue", label: "Catalogue", icon: "ri-store-3-line" },
     { href: "/portal/basket", label: "Your basket", icon: "ri-shopping-basket-2-line", badge: "basket" },
     { href: "/portal/orders", label: "Orders", icon: "ri-file-list-3-line" },
-    // Statements: { href: "/portal/statements", label: "Statements", icon: "ri-bill-line" },
+    { href: "/portal/statements", label: "Statements", icon: "ri-bill-line", when: () => isApprover() },
     { href: "/portal/approvals", label: "Approvals", icon: "ri-checkbox-circle-line", badge: "waiting" },
     { href: "/portal/quotes", label: "Quotes", icon: "ri-price-tag-3-line" },
     { href: "/portal/team", label: "Team", icon: "ri-team-line", when: () => trade.me?.role === "admin" },

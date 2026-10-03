@@ -282,15 +282,21 @@ URLs at `/portal/reset-password?token={token}` and
 host and one setting serves every store.
 
 What a buyer sees follows their role, because the routes above already refuse
-the rest: every member orders, quotes and reads approvals; approvers and admins
-decide requests and see every buyer's orders; only admins see Team; Leads
+the rest: every member orders — typed, pasted, uploaded as a CSV, or from the
+catalogue — quotes and reads approvals; approvers and admins decide requests,
+see every buyer's orders and read the statement; only admins see Team; Leads
 appear for admins and approvers of a company with territories or with leads the
-store handed it. Two routes exist for the portal:
-`GET /x/b2b/orders/{order_id}` (an order's lines, by the order list's rule) and
-`cart_id` on the reorder body, so a repeat fills the basket already open.
+store handed it. Some routes exist for the portal:
+`GET /x/b2b/orders/{order_id}` (an order's lines, by the order list's rule),
+`cart_id` on the reorder body, so a repeat fills the basket already open, and
+`GET /x/b2b/catalogue/categories` — the categories holding something the
+company may buy, each counting what is under it at any depth, so a company held
+to a catalogue is never offered a branch that can only filter to nothing. The
+catalogue lists only products with a variant on sale, and each variant says
+`in_stock`, since `available` is 0 for one whose stock is not counted.
 
 The portal's client is `admin/src/lib/trade.svelte.js`, and it never calls
 `/api/admin`; the screens are `admin/src/routes/portal/`. A new screen is a
-route there and a line in `NAV`: statements after Orders, the company's
-catalogue after Quick order, and a spreadsheet upload beside Paste a list on
-the Quick order screen, which marks the place.
+route there and a line in `NAV`. The statement's CSV is fetched with the
+buyer's token and saved from a blob, because the token is a header and not a
+cookie; a CSV quick order is sent the same way, as the request body.

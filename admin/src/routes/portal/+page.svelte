@@ -114,10 +114,15 @@
         </dl>
     </section>
 
-    <h2 class="section-title">
-        <i class="ri-bank-card-line" aria-hidden="true"></i>
-        Your account with {trade.store.name || "the store"}
-    </h2>
+    <div class="b2b-section-head">
+        <h2 class="section-title">
+            <i class="ri-bank-card-line" aria-hidden="true"></i>
+            Your account with {trade.store.name || "the store"}
+        </h2>
+        {#if isApprover() && credit?.limit}
+            <a href="{base}/portal/statements" class="b2b-more">Statement <span aria-hidden="true">→</span></a>
+        {/if}
+    </div>
     {#if credit?.limit}
         <div class="portal-tiles m-b-sm" aria-live="polite">
             <div class="b2b-tile">

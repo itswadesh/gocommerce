@@ -542,7 +542,7 @@
           "b2b"
         ],
         "summary": "What the company may buy, at the buyer's prices",
-        "description": "The products on sale that the caller's company may buy — its catalogue's, or every one when it has none — by title, each with its active variants and what one costs in a basket priced as this buyer: core's own price resolution (`Pricing.PriceInChannel`) for the address the company's group holds for them, on the default storefront a quick order opens its basket on. A quantity break lowers it in the basket. Any buyer of the company may read it. A catalogue is what a company held to it may buy: every product filed under one of its categories or anything beneath them — read from core's category tree as it stands at the moment of the check — and its products one by one. A company with no catalogue buys everything. The checkout guard, quick order, a file, a repeat order and a quote all hold to it; the public storefront still lists every product to a signed-in company buyer, and the guard is what holds the line.",
+        "description": "The products on sale that the caller's company may buy — its catalogue's, or every one when it has none — by title, each with its active variants and what one costs in a basket priced as this buyer: core's own price resolution (`Pricing.PriceInChannel`) for the address the company's group holds for them, on the default storefront a quick order opens its basket on. A quantity break lowers it in the basket. A product on sale whose every variant is switched off has nothing to buy and is left out, from the page and from the total. Any buyer of the company may read it. A catalogue is what a company held to it may buy: every product filed under one of its categories or anything beneath them — read from core's category tree as it stands at the moment of the check — and its products one by one. A company with no catalogue buys everything. The checkout guard, quick order, a file, a repeat order and a quote all hold to it; the public storefront still lists every product to a signed-in company buyer, and the guard is what holds the line.",
         "security": [
           {
             "customerSession": []
@@ -612,6 +612,46 @@
           },
           "400": {
             "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/B2bNotABuyer"
+          }
+        }
+      }
+    },
+    "/x/b2b/catalogue/categories": {
+      "get": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "The categories the company's catalogue can be browsed by",
+        "description": "Every category holding at least one product the caller's company may buy — the products `GET /x/b2b/catalogue` lists — and the categories above them, ordered by full name. `product_count` counts what is filed under a category at any depth, which is what `category_id` on the catalogue returns. A company held to a catalogue sees only the branches it may buy from; one with none sees every category that holds a product on sale. Any buyer of the company may read it.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The categories, by full name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/B2bCatalogueCategory"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/B2bUnauthorized"
@@ -4318,6 +4358,10 @@
                 "available": {
                   "type": "integer"
                 },
+                "in_stock": {
+                  "type": "boolean",
+                  "description": "Whether one can be ordered now: stock above zero, or a variant that does not count its stock or sells past zero. `available` is 0 for a variant whose stock is not counted, so it cannot say this alone."
+                },
                 "price_minor": {
                   "type": "integer",
                   "format": "int64",
@@ -4328,6 +4372,39 @@
                 }
               }
             }
+          }
+        }
+      },
+      "B2bCatalogueCategory": {
+        "type": "object",
+        "description": "A category holding something the buyer's company may buy.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "parent_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "full_name": {
+            "type": "string",
+            "description": "The path from the root, \"Apparel / Shirts\"."
+          },
+          "depth": {
+            "type": "integer",
+            "description": "0 for a root."
+          },
+          "product_count": {
+            "type": "integer",
+            "description": "Products the company may buy filed under this category, at any depth."
           }
         }
       },
