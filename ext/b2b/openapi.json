@@ -518,6 +518,49 @@
         }
       }
     },
+    "/x/b2b/orders/{order_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/B2bOrderID"
+        }
+      ],
+      "get": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "One of the company's orders, with what was in it",
+        "description": "An order from the company's list, by the rule the list applies — their own to a buyer, any of the company's to an admin or approver — with the order itself as its shopper is shown it: lines, address, figures and shipments, without the store's note to itself or its record of returns. This is what a buyer reads before repeating an order.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bBuyerOrderResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/B2bNotABuyer"
+          },
+          "404": {
+            "description": "No such order in the company's list, or one placed by a colleague of a buyer, who sees only their own.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/x/b2b/approvals": {
       "get": {
         "tags": [
@@ -1148,12 +1191,28 @@
           "b2b"
         ],
         "summary": "Repeat an order, at today's prices",
-        "description": "Puts a past order's lines into a new basket, priced as the buyer today — never at the order's own prices, which may have been a quote's or a list since changed. A line that can no longer be bought is listed in `rejected`, as a pasted order's is. Nothing is placed: the basket is checked out like any other, through the same limits and approvals.\n\nThe order must be in the company's order list and the caller's to see there: their own to a buyer, any to an admin or approver.",
+        "description": "Puts a past order's lines into a basket — the one `cart_id` names, or a new one — priced as the buyer today — never at the order's own prices, which may have been a quote's or a list since changed. A line that can no longer be bought is listed in `rejected`, as a pasted order's is. Nothing is placed: the basket is checked out like any other, through the same limits and approvals.\n\nThe order must be in the company's order list and the caller's to see there: their own to a buyer, any to an admin or approver.",
         "security": [
           {
             "customerSession": []
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cart_id": {
+                    "type": "string",
+                    "description": "The basket to add the order's lines to, by its token, beside what it already holds. Absent opens a new one."
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "$ref": "#/components/responses/B2bCartFilled"
@@ -3321,6 +3380,23 @@
           }
         }
       },
+      "B2bBuyerOrder": {
+        "description": "An order from the company's list as a buyer reads it: the ledger's fields, and the order itself.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/B2bCompanyOrder"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "order": {
+                "$ref": "#/components/schemas/Order",
+                "description": "The order as its shopper is shown it: no access token, no store note, no returns, and only the refunds that moved money."
+              }
+            }
+          }
+        ]
+      },
       "B2bCheckoutRequest": {
         "type": "object",
         "description": "The buyer's own cart, checked out for their company. The email is the account's, so there is no field for it.",
@@ -4416,6 +4492,21 @@
               "properties": {
                 "data": {
                   "$ref": "#/components/schemas/B2bCompanyOrder"
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bBuyerOrderResponse": {
+        "description": "One of the company's orders, with its lines.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/B2bBuyerOrder"
                 }
               }
             }

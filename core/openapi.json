@@ -858,6 +858,51 @@
         }
       }
     },
+    "/api/store": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "The store's name, and how a buyer reaches it",
+        "description": "What anyone may read about the shop: its trading name and the contact details it gives buyers — the fields at the foot of every email it sends. For a page a buyer opens before signing in, like the trade portal's sign-in (D77) or a storefront's footer. The address, legal name and tax number stay behind GET /api/admin/store. Every field is a string and may be empty; a store that has filled nothing in answers blanks.",
+        "responses": {
+          "200": {
+            "description": "The store's public face.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "description": "The trading name — what a customer would call the shop.",
+                          "example": "The Corner Shop"
+                        },
+                        "email": {
+                          "type": "string",
+                          "description": "Where a buyer writes to."
+                        },
+                        "phone": {
+                          "type": "string",
+                          "description": "Where a buyer calls."
+                        },
+                        "support_url": {
+                          "type": "string",
+                          "description": "Where a buyer is sent for help."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/checkout/{code}": {
       "post": {
         "tags": [

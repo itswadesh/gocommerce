@@ -201,3 +201,44 @@ func TestTheStoreLanguageIsTheFallbackForAMessage(t *testing.T) {
 		t.Errorf("with the order saying fr = %q, want fr", got)
 	}
 }
+
+// Anyone may read the shop's name and how a buyer reaches it — the trade
+// portal greets a buyer with it before they have signed in (D77) — and
+// nothing else from the profile: the address and the tax number stay behind
+// the admin route.
+func TestTheStoresPublicFaceIsItsNameAndContactsOnly(t *testing.T) {
+	app := newTestApp(t)
+
+	rec := do(t, app, http.MethodGet, "/api/store")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("a store that has said nothing = %d, want 200 with blanks: %s", rec.Code, rec.Body)
+	}
+
+	if _, err := app.Profile().Set(context.Background(), StoreProfile{
+		Name: "The Corner Shop", Email: "hello@corner.example", Phone: "+44 20 7946 0000",
+		SupportURL: "https://corner.example/help", AddressLine1: "14 Bridge Street", City: "Bath",
+		TaxID: "GB123456789",
+	}, nil); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	rec = do(t, app, http.MethodGet, "/api/store")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("with no token = %d, want 200: %s", rec.Code, rec.Body)
+	}
+	var body struct {
+		Data map[string]string `json:"data"`
+	}
+	decodeJSONBody(t, rec.Body.Bytes(), &body)
+	want := map[string]string{
+		"name": "The Corner Shop", "email": "hello@corner.example",
+		"phone": "+44 20 7946 0000", "support_url": "https://corner.example/help",
+	}
+	if len(body.Data) != len(want) {
+		t.Errorf("public fields = %v, want exactly %v", body.Data, want)
+	}
+	for k, v := range want {
+		if body.Data[k] != v {
+			t.Errorf("%s = %q, want %q", k, body.Data[k], v)
+		}
+	}
+}

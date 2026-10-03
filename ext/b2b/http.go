@@ -1,6 +1,8 @@
 package b2b
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,6 +25,7 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	app.HandleFunc("POST /x/b2b/cart/lines", m.session(m.handleAddLines))
 	app.HandleFunc("POST /x/b2b/checkout", m.session(m.handleCheckout))
 	app.HandleFunc("GET /x/b2b/orders", m.session(m.handleMyOrders))
+	app.HandleFunc("GET /x/b2b/orders/{order_id}", m.session(m.handleMyOrder))
 	app.HandleFunc("POST /x/b2b/orders/{order_id}/reorder", m.session(m.handleReorder))
 	app.HandleFunc("GET /x/b2b/approvals", m.session(m.handleMyApprovals))
 	app.HandleFunc("GET /x/b2b/approvals/{id}", m.session(m.handleMyApproval))
@@ -335,13 +338,40 @@ func (m *Module) handleAddLines(w http.ResponseWriter, r *http.Request, acct *id
 	respond(w, r, http.StatusOK, fill, err)
 }
 
+// handleReorder takes an optional body naming the basket to fill. Without one
+// it opens a new basket, as it always has.
+//
+// The route read no body before cart_id existed, so whatever a client sends
+// is read for cart_id alone: a field it does not know, or a body that is not
+// JSON at all, answers as it always did rather than becoming a 400. Not
+// "> 0": a chunked body reports -1, and its cart_id would be lost.
 func (m *Module) handleReorder(w http.ResponseWriter, r *http.Request, acct *identity.Customer) {
 	id, ok := idOr400(w, r, "order_id")
 	if !ok {
 		return
 	}
-	fill, err := m.Reorder(r.Context(), acct, id)
+	var in struct {
+		CartID string `json:"cart_id"`
+	}
+	if r.ContentLength != 0 {
+		if body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20)); err == nil {
+			_ = json.Unmarshal(body, &in)
+		}
+	}
+	fill, err := m.ReorderInto(r.Context(), acct, id, in.CartID)
 	respond(w, r, http.StatusCreated, fill, err)
+}
+
+// handleMyOrder is one order from the company's list, with what was in it:
+// the list says what an order is, and a buyer deciding whether to repeat it
+// needs to see what it held.
+func (m *Module) handleMyOrder(w http.ResponseWriter, r *http.Request, acct *identity.Customer) {
+	id, ok := idOr400(w, r, "order_id")
+	if !ok {
+		return
+	}
+	o, err := m.MyOrder(r.Context(), acct, id)
+	respond(w, r, http.StatusOK, o, err)
 }
 
 // handleMyOrders shows a buyer the orders placed for their company: every

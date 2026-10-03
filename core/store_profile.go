@@ -216,6 +216,31 @@ func (a *App) mountStoreProfileRoutes() {
 	// Writing is store.write: this is the shop's legal identity, and it is
 	// what appears on documents a buyer keeps.
 	a.HandleAdminFunc("PATCH /api/admin/store", a.handleSetStoreProfile, RightStoreWrite)
+	// The public face, for a page a buyer opens before signing in — the trade
+	// portal's sign-in (D77), a storefront's footer. Without it the portal
+	// could only greet a buyer with the engine's name, which they have never
+	// heard of.
+	a.HandleFunc("GET /api/store", a.handlePublicStore)
+}
+
+// publicStore is what anyone may read about the shop: what it is called and
+// how a buyer reaches it, which is what the foot of every email it sends
+// already says. The address, legal name and tax number stay behind the admin
+// route: a page that names a shop has no need to publish where it is.
+type publicStore struct {
+	Name       string `json:"name"`
+	Email      string `json:"email"`
+	Phone      string `json:"phone"`
+	SupportURL string `json:"support_url"`
+}
+
+func (a *App) handlePublicStore(w http.ResponseWriter, r *http.Request) {
+	p, err := a.profile.Get(r.Context())
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, publicStore{Name: p.Name, Email: p.Email, Phone: p.Phone, SupportURL: p.SupportURL})
 }
 
 func (a *App) handleGetStoreProfile(w http.ResponseWriter, r *http.Request) {

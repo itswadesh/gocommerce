@@ -95,24 +95,22 @@ func (m *Module) AddLines(ctx context.Context, buyer *identity.Customer, req Bul
 // quote's, perhaps, or a list since changed — and repeating it is a new order,
 // checked out like any other, through the same limits and approvals.
 //
-// The order has to be in the company's ledger and the caller's to see, by the
-// rule the order list applies: their own to a buyer, any of the company's to
-// an admin or approver. Anything else is a 404, not a 403 — another company's
-// orders are not something to confirm the existence of.
+// The order has to be in the company's ledger and the caller's to see; see
+// orderVisible.
 func (m *Module) Reorder(ctx context.Context, buyer *identity.Customer, orderID int64) (*CartFill, error) {
+	return m.ReorderInto(ctx, buyer, orderID, "")
+}
+
+// ReorderInto is Reorder into the basket named, or a new one when cartID is
+// empty. A buyer who repeats last month's order with something already in
+// their basket wants one basket with both in it, not a second basket that
+// leaves the first behind.
+func (m *Module) ReorderInto(ctx context.Context, buyer *identity.Customer, orderID int64, cartID string) (*CartFill, error) {
 	mem, company, err := m.orderingMember(ctx, buyer)
 	if err != nil {
 		return nil, err
 	}
-	var placedBy sql.NullInt64
-	err = m.db.QueryRowContext(ctx,
-		`SELECT customer_id FROM b2b_orders WHERE order_id = $1 AND company_id = $2`,
-		orderID, company.ID).Scan(&placedBy)
-	if errors.Is(err, sql.ErrNoRows) ||
-		(err == nil && mem.Role == RoleBuyer && (!placedBy.Valid || placedBy.Int64 != buyer.ID)) {
-		return nil, gocommerce.NotFoundf("order %d does not exist", orderID)
-	}
-	if err != nil {
+	if err := m.orderVisible(ctx, mem, company, buyer, orderID); err != nil {
 		return nil, err
 	}
 	o, err := m.app.Order().Get(ctx, orderID)
@@ -130,11 +128,61 @@ func (m *Module) Reorder(ctx context.Context, buyer *identity.Customer, orderID 
 		}
 		want = append(want, w)
 	}
-	token, err := m.buyerCart(ctx, buyer, "")
+	token, err := m.buyerCart(ctx, buyer, cartID)
 	if err != nil {
 		return nil, err
 	}
 	return m.fill(ctx, token, want)
+}
+
+// orderVisible says whether an order is in the company's ledger and the
+// caller's to see, by the rule the order list applies: their own to a buyer,
+// any of the company's to an admin or approver. Anything else is a 404, not a
+// 403 — another company's orders are not something to confirm the existence
+// of.
+func (m *Module) orderVisible(ctx context.Context, mem *Member, company *Company, buyer *identity.Customer, orderID int64) error {
+	var placedBy sql.NullInt64
+	err := m.db.QueryRowContext(ctx,
+		`SELECT customer_id FROM b2b_orders WHERE order_id = $1 AND company_id = $2`,
+		orderID, company.ID).Scan(&placedBy)
+	if errors.Is(err, sql.ErrNoRows) ||
+		(err == nil && mem.Role == RoleBuyer && (!placedBy.Valid || placedBy.Int64 != buyer.ID)) {
+		return gocommerce.NotFoundf("order %d does not exist", orderID)
+	}
+	return err
+}
+
+// BuyerOrder is one of the company's orders as a buyer reads it: its place in
+// the ledger, and the order itself as its shopper would be shown it — what
+// was bought, where it went, and how far it has got.
+type BuyerOrder struct {
+	*CompanyOrder
+	Order *gocommerce.Order `json:"order"`
+}
+
+// MyOrder reads one of the company's orders for a buyer, by the rule the
+// order list applies. A closed company's buyers can still read their
+// history, so membership is enough; ordering is not asked for.
+func (m *Module) MyOrder(ctx context.Context, buyer *identity.Customer, orderID int64) (*BuyerOrder, error) {
+	mem, company, err := m.memberAndCompany(ctx, buyer)
+	if err != nil {
+		return nil, err
+	}
+	if err := m.orderVisible(ctx, mem, company, buyer, orderID); err != nil {
+		return nil, err
+	}
+	co, err := m.CompanyOrder(ctx, orderID)
+	if err != nil {
+		return nil, err
+	}
+	o, err := m.app.Order().Get(ctx, orderID)
+	if err != nil {
+		return nil, err
+	}
+	// The guest's copy: the store's note to itself and its record of goods
+	// taken back are the store's, not the buyer's.
+	o.Redact()
+	return &BuyerOrder{CompanyOrder: co, Order: o}, nil
 }
 
 // orderingMember is the caller's membership and company, provided the company
