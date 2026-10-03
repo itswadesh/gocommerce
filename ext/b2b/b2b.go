@@ -426,6 +426,59 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			);
 			CREATE INDEX b2b_leads_company_idx ON b2b_leads (company_id, id DESC);
 			CREATE INDEX b2b_leads_status_idx ON b2b_leads (status, id DESC);`,
+	}, {
+		ID: "0003_b2b_terms_history_and_account_entries",
+		SQL: `
+			-- Every change to a company's terms, written in the transaction that
+			-- made it. A credit limit is the store lending money, and "who raised
+			-- it, and when" is asked after something has gone wrong — when the
+			-- only honest answer is one recorded at the time.
+			--
+			-- old_value and new_value are JSON so a value keeps its type and a
+			-- limit taken off (JSON null) stays distinct from a row that had no
+			-- earlier value at all: action 'created' rows carry SQL NULL there.
+			-- actor_id is the operator's or the buyer's id, NULL for a token or
+			-- the engine itself; actor_email is kept as it was, because the
+			-- record must still say who after the account is gone.
+			CREATE TABLE b2b_company_history (
+			    id          bigserial   PRIMARY KEY,
+			    company_id  bigint      NOT NULL REFERENCES b2b_companies (id) ON DELETE CASCADE,
+			    field       text        NOT NULL,
+			    action      text        NOT NULL CHECK (action IN ('created', 'changed')),
+			    old_value   jsonb,
+			    new_value   jsonb,
+			    actor_kind  text        NOT NULL CHECK (actor_kind IN ('operator', 'token', 'buyer', 'system')),
+			    actor_id    bigint,
+			    actor_email text        NOT NULL DEFAULT '',
+			    changed_at  timestamptz NOT NULL DEFAULT now()
+			);
+			CREATE INDEX b2b_company_history_company_idx ON b2b_company_history (company_id, id DESC);
+
+			-- What happened to an order on account after it was placed, and
+			-- when. Core keeps an order's payment status and no time it was paid,
+			-- so a statement could not otherwise say when a debt was settled.
+			--
+			-- at is read from core's own record of the transition — the event
+			-- written in the transaction that made it, delivered to this module
+			-- or read back from the order's history — and date_source says so:
+			-- 'recorded'. A transition with no surviving record is dated when this
+			-- module first saw it and marked 'noticed': it happened at or before
+			-- that moment, and the statement says which rather than guess.
+			--
+			-- The natural key is the order, the kind and the instant: the event
+			-- and its audit row share their transaction's now(), so the event
+			-- handler and a read of the history file one transition once.
+			-- No foreign key onto orders, as b2b_orders has none.
+			CREATE TABLE b2b_account_entries (
+			    id          bigserial   PRIMARY KEY,
+			    order_id    bigint      NOT NULL,
+			    kind        text        NOT NULL CHECK (kind IN ('payment', 'payment_reversed', 'cancellation')),
+			    at          timestamptz NOT NULL,
+			    date_source text        NOT NULL CHECK (date_source IN ('recorded', 'noticed')),
+			    event_id    text,
+			    created_at  timestamptz NOT NULL DEFAULT now(),
+			    UNIQUE (order_id, kind, at)
+			);`,
 	}}
 }
 
@@ -441,6 +494,12 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.RegisterCheckoutGuard(m.guard)
 	m.registerTemplates(app)
 	m.mountRoutes(app)
+	// The three transitions that move what a company owes after its order is
+	// placed. Each is filed with the time core wrote it, which is the only
+	// record of when an order on account was paid (statement.go).
+	for _, name := range []string{gocommerce.EventOrderPaid, gocommerce.EventOrderUnpaid, gocommerce.EventOrderCancelled} {
+		app.Subscribe(name, m.onAccountEvent)
+	}
 	app.OnStart(m.start)
 	app.OnStop(m.halt)
 	return nil

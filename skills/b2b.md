@@ -1,6 +1,6 @@
 ---
 name: b2b
-description: Use when selling to businesses — companies, buyer roles, orders on account, credit limits, approvals, quotes, quick and repeat orders, partial checkout, or dealer territories and lead routing — or when a trade price is reaching somebody it should not.
+description: Use when selling to businesses — companies, buyer roles, orders on account, credit limits, approvals, quotes, quick and repeat orders, partial checkout, statements and terms history, or dealer territories and lead routing — or when a trade price is reaching somebody it should not.
 ---
 
 # B2B: companies, accounts, approvals, quotes and dealers
@@ -83,6 +83,43 @@ basket is checked out through `POST /x/b2b/checkout` like any other.
   an order; a request for approval filed instead leaves it untouched. Every
   line chosen is just a checkout of the whole basket.
 
+## Statements and the terms history
+
+A company's **statement** is its account over a period (D74):
+`GET /api/admin/x/b2b/companies/{id}/statement?from=YYYY-MM-DD&to=YYYY-MM-DD`
+under `companies.read`, and `GET /x/b2b/statement` for the signed-in buyer's
+own company — its admins and approvers only; a plain buyer gets 403. `from` is
+the first day and `to` the day after the last, exclusive as every range in the
+engine is, both civil dates in the store's time zone (its profile's; UTC when
+it has none). Leaving both out is the month to date. It answers the opening
+balance, every order placed on account (a debit, with its PO number and due
+date), every payment (a credit), a payment taken back with core's mark-unpaid
+(`payment_reversed`, a debit), an order cancelled while still owed (a credit),
+the running and closing balances, and `aging` — what is owed at the end by
+whole days past due in the store's calendar. `format=csv` answers the same
+through core's CSV writer: one table, the opening balance its first row and
+the closing balance and aging buckets its last, each named in `kind`.
+
+**Where a payment's date comes from.** Core keeps an order's payment status and
+no time it was paid. The module subscribes to `order.paid`, `order.unpaid` and
+`order.cancelled` and files each order on account in `b2b_account_entries` at
+the event's `At` — the outbox row's `created_at`, the `now()` of the
+transaction that paid it — however late the event is delivered. Before a
+statement is read, and in the hourly pass, any order whose entries disagree
+with what core says of it now is read back from `Orders.Timeline`, whose audit
+rows and events carry the same instants. Only a transition with no record left
+anywhere — an order imported already paid — is filed at the moment the module
+noticed it, with `date_source: noticed`: it happened at or before then. Every
+other line is `recorded`.
+
+The **terms history** is `GET /api/admin/x/b2b/companies/{id}/history`
+(`companies.read`, newest first): a row per term that moved — status, credit
+limit, net days, approval threshold, PO rule, customer group — written in the
+same transaction as the change, with the old and new value as the API takes
+them and who made it: `operator` (with their address), `token`, `buyer` (a
+company admin) or `system`. Creating a company records its first terms as
+`action: created`.
+
 ## Dealers and leads
 
 The store gives a dealer territories (`POST /api/admin/x/b2b/companies/{id}/territories`,
@@ -136,6 +173,12 @@ dealer and starts the lead again at `new`.
   `Idempotency-Key` checks out the basket the first attempt built, which core
   then replays. The copy is emptied when it does not become an order, so the
   abandoned-cart sweep never writes about a basket the buyer never saw.
+- **A statement closes on the outstanding figure.** Owed is what the credit
+  check counts — on account, neither paid nor cancelled — and the statement
+  files whatever it missed before it is read, so a statement ending today and
+  `GET …/credit` never disagree.
+- **A term changes with its record or not at all.** `UpdateCompany` reads the
+  terms under the row's lock and writes the history in the same transaction.
 - **The lead form says nothing about where a lead went.** It answers
   `202 {"accepted": true}` whoever got it and whether anybody did; anything
   more maps the dealer network a postcode at a time.
@@ -154,6 +197,12 @@ dealer and starts the lead again at `new`.
 - **Expecting shipping or tax to be frozen in an approval.** The request keeps
   the lines and their prices; delivery and tax are worked out again when the
   approver places it, against the address in the request.
+- **Dating a payment from `orders.updated_at`, or from when an event was
+  delivered.** The first moves on every edit and the second on every retry.
+  The event's `At` and the order's timeline are when it was recorded; with
+  neither, the line says `noticed`.
+- **Reading `to` as the last day.** It is the day after, as in the reports and
+  the order list; a September statement is `from=2026-09-01&to=2026-10-01`.
 - **Placing a repeat order at the old prices.** The old order may have been a
   quote's prices or a list since changed. Reorder builds a basket; the buyer
   checks it out.

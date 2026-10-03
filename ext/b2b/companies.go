@@ -170,14 +170,23 @@ func (m *Module) CreateCompany(ctx context.Context, in CompanyInput) (*Company, 
 		netDays = *in.NetDays
 	}
 	var id int64
-	err = m.db.QueryRowContext(ctx, `
-		INSERT INTO b2b_companies (code, name, tax_id, status, group_id, credit_limit_minor,
-		                           net_days, approval_threshold_minor, require_po, notes, metadata)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		RETURNING id`,
-		code, strings.TrimSpace(*in.Name), deref(in.TaxID), status, in.GroupID.Value,
-		in.CreditLimitMinor.Value, netDays, in.ApprovalThresholdMinor.Value,
-		in.RequirePO != nil && *in.RequirePO, deref(in.Notes), meta).Scan(&id)
+	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+		if err := tx.QueryRowContext(ctx, `
+			INSERT INTO b2b_companies (code, name, tax_id, status, group_id, credit_limit_minor,
+			                           net_days, approval_threshold_minor, require_po, notes, metadata)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			RETURNING id`,
+			code, strings.TrimSpace(*in.Name), deref(in.TaxID), status, in.GroupID.Value,
+			in.CreditLimitMinor.Value, netDays, in.ApprovalThresholdMinor.Value,
+			in.RequirePO != nil && *in.RequirePO, deref(in.Notes), meta).Scan(&id); err != nil {
+			return err
+		}
+		opened, err := readTerms(ctx, tx, id, false)
+		if err != nil {
+			return err
+		}
+		return recordTerms(ctx, tx, id, nil, opened)
+	})
 	if err != nil {
 		return nil, translateErr(err)
 	}
@@ -243,8 +252,28 @@ func (m *Module) UpdateCompany(ctx context.Context, id int64, in CompanyInput) (
 	if len(sets) == 0 {
 		return before, nil
 	}
-	if _, err := m.db.ExecContext(ctx, `UPDATE b2b_companies SET `+strings.Join(sets, ", ")+
-		`, updated_at = now() WHERE id = $1`, args...); err != nil {
+	// The terms are read under the row's lock and recorded in the same
+	// transaction as the change, so two edits at once each record the value
+	// they really replaced, and no change commits without its record.
+	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+		was, err := readTerms(ctx, tx, id, true)
+		if errors.Is(err, sql.ErrNoRows) {
+			return gocommerce.NotFoundf("company %d does not exist", id)
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE b2b_companies SET `+strings.Join(sets, ", ")+
+			`, updated_at = now() WHERE id = $1`, args...); err != nil {
+			return err
+		}
+		now, err := readTerms(ctx, tx, id, false)
+		if err != nil {
+			return err
+		}
+		return recordTerms(ctx, tx, id, &was, now)
+	})
+	if err != nil {
 		return nil, translateErr(err)
 	}
 	after, err := m.Company(ctx, id)
@@ -609,6 +638,9 @@ func (m *Module) reconcile(ctx context.Context) error {
 		return err
 	}
 	if err := m.reconcilePartials(ctx); err != nil {
+		return err
+	}
+	if err := m.reconcileAccounts(ctx, 0); err != nil {
 		return err
 	}
 	return m.reconcileApprovals(ctx)

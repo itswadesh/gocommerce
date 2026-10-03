@@ -473,6 +473,69 @@
         }
       }
     },
+    "/x/b2b/statement": {
+      "get": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "The company's statement",
+        "description": "The caller's company's account over a period, for its admins and approvers; a plain buyer is refused. Every order placed on account is a debit on the day it was placed; a payment is a credit on the day the store recorded it; a payment taken back as recorded in error (`payment_reversed`) is a debit again; and an order cancelled while still owed is a credit. A payment is dated from core's own record of it — the event written in the transaction that marked the order paid, delivered to the module or read back from the order's history — and `date_source` is `recorded`. A payment with no record left (an order imported already paid, an event deleted) is dated the moment the module first saw it and marked `noticed`: it was paid at or before then. What is owed is worked out as the credit check works it out — on account, neither paid nor cancelled — so a statement ending today closes on the outstanding figure.\n\n`from` is the first day and `to` the day after the last, as every date range in the engine is, both civil dates in the store's time zone (its profile's, UTC when it has none). Leaving both out is the month to date. `aging` is what is owed at the end, by whole days past due in the store's calendar: due on the 30th is current on the 30th.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/B2bStatementFrom"
+          },
+          {
+            "$ref": "#/components/parameters/B2bStatementTo"
+          },
+          {
+            "$ref": "#/components/parameters/B2bStatementFormat"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The statement. With `format=csv`, the same as a file: one table, the opening balance its first row and the closing balance and aging buckets its last, each named in `kind` with the amount in `balance_minor`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/B2bStatement"
+                    }
+                  }
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "description": "The account buys for no company, or is a plain buyer: a statement is for whoever runs the account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/x/b2b/orders": {
       "get": {
         "tags": [
@@ -1639,6 +1702,117 @@
                       "$ref": "#/components/schemas/B2bCredit"
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/companies/{id}/history": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "How a company's terms changed",
+        "description": "Requires companies.read. Every change to a company's terms — status, credit limit, net days, approval threshold, whether a PO is required and customer group — newest first, written in the same transaction as the change: the field, its old and new value as the API takes them (`null` is none), who made it and when. A company's first terms are recorded as `action: created` with no old value. Money fields carry `currency`. `actor_kind` is `operator` (somebody signed in, or an API key, with their address), `token` (a static admin token), `buyer` (one of the company's own admins) or `system`.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bHistoryPage"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/companies/{id}/statement": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "A company's statement",
+        "description": "Requires companies.read. Every order placed on account is a debit on the day it was placed; a payment is a credit on the day the store recorded it; a payment taken back as recorded in error (`payment_reversed`) is a debit again; and an order cancelled while still owed is a credit. A payment is dated from core's own record of it — the event written in the transaction that marked the order paid, delivered to the module or read back from the order's history — and `date_source` is `recorded`. A payment with no record left (an order imported already paid, an event deleted) is dated the moment the module first saw it and marked `noticed`: it was paid at or before then. What is owed is worked out as the credit check works it out — on account, neither paid nor cancelled — so a statement ending today closes on the outstanding figure.\n\n`from` is the first day and `to` the day after the last, as every date range in the engine is, both civil dates in the store's time zone (its profile's, UTC when it has none). Leaving both out is the month to date. `aging` is what is owed at the end, by whole days past due in the store's calendar: due on the 30th is current on the 30th.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/B2bStatementFrom"
+          },
+          {
+            "$ref": "#/components/parameters/B2bStatementTo"
+          },
+          {
+            "$ref": "#/components/parameters/B2bStatementFormat"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The statement. With `format=csv`, the same as a file: one table, the opening balance its first row and the closing balance and aging buckets its last, each named in `kind` with the amount in `balance_minor`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/B2bStatement"
+                    }
+                  }
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -2920,6 +3094,39 @@
         "schema": {
           "type": "string"
         }
+      },
+      "B2bStatementFrom": {
+        "name": "from",
+        "in": "query",
+        "required": false,
+        "description": "The first day the statement covers, YYYY-MM-DD in the store's time zone. Defaults to the first of the month the period ends in.",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "B2bStatementTo": {
+        "name": "to",
+        "in": "query",
+        "required": false,
+        "description": "The day after the last one the statement covers — exclusive, as every range in the engine is — YYYY-MM-DD in the store's time zone. Defaults to tomorrow, so the statement runs to the end of today.",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "B2bStatementFormat": {
+        "name": "format",
+        "in": "query",
+        "required": false,
+        "description": "`csv` answers the statement as a text/csv file. Anything but `json` or `csv` is a 400.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "json",
+            "csv"
+          ]
+        }
       }
     },
     "schemas": {
@@ -3254,6 +3461,216 @@
           },
           "net_days": {
             "type": "integer"
+          }
+        }
+      },
+      "B2bHistoryEntry": {
+        "type": "object",
+        "description": "One of a company's terms changing, or set when the company was created.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "company_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "field": {
+            "type": "string",
+            "enum": [
+              "status",
+              "credit_limit_minor",
+              "net_days",
+              "approval_threshold_minor",
+              "require_po",
+              "group_id"
+            ],
+            "description": "The term, named as the company's input names it."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "created",
+              "changed"
+            ]
+          },
+          "old_value": {
+            "nullable": true,
+            "description": "The value before, as the API takes it; null when it was none, and on a `created` entry."
+          },
+          "new_value": {
+            "nullable": true,
+            "description": "The value after; null is none — no account, no group."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Set on `credit_limit_minor` and `approval_threshold_minor`, whose values are minor units."
+          },
+          "actor_kind": {
+            "type": "string",
+            "enum": [
+              "operator",
+              "token",
+              "buyer",
+              "system"
+            ]
+          },
+          "actor_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "actor_email": {
+            "type": "string",
+            "description": "The operator's or buyer's address as it was; empty for a token or the system."
+          },
+          "changed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "B2bStatementEntry": {
+        "type": "object",
+        "description": "One line of a statement.",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "The civil date in the store's time zone."
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The instant."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "order",
+              "payment",
+              "payment_reversed",
+              "cancellation"
+            ]
+          },
+          "order_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "order_number": {
+            "type": "string"
+          },
+          "po_number": {
+            "type": "string"
+          },
+          "due_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "debit_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "credit_minor": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Zero for a cancellation of an order already paid: that money is a refund, settled on the order."
+          },
+          "balance_minor": {
+            "type": "integer",
+            "format": "int64",
+            "description": "What the company owed once this line was written."
+          },
+          "date_source": {
+            "type": "string",
+            "enum": [
+              "recorded",
+              "noticed"
+            ],
+            "description": "`recorded`: core's own record of the moment. `noticed`: no record survived, and the line is dated when the module first saw it — it happened at or before then."
+          }
+        }
+      },
+      "B2bStatement": {
+        "type": "object",
+        "description": "A company's account over a period. Amounts are minor units of `currency`.",
+        "properties": {
+          "company": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "code": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "currency": {
+            "type": "string"
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "The store's time zone, in which the dates are civil dates."
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date",
+            "description": "Exclusive: the day after the last one covered."
+          },
+          "opening_balance_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "closing_balance_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/B2bStatementEntry"
+            }
+          },
+          "aging": {
+            "type": "object",
+            "description": "What is owed at the end by whole days past due; the five sum to the closing balance.",
+            "properties": {
+              "as_of": {
+                "type": "string",
+                "format": "date",
+                "description": "The last day covered."
+              },
+              "current_minor": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "days_1_30_minor": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "days_31_60_minor": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "days_61_90_minor": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "days_over_90_minor": {
+                "type": "integer",
+                "format": "int64"
+              }
+            }
           }
         }
       },
@@ -4203,6 +4620,27 @@
                   "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/B2bCompanyOrder"
+                  }
+                },
+                "meta": {
+                  "$ref": "#/components/schemas/ListMeta"
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bHistoryPage": {
+        "description": "A page of a company's terms history, newest first.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/B2bHistoryEntry"
                   }
                 },
                 "meta": {
