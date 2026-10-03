@@ -1,11 +1,19 @@
 name: Release
 
-# Push an annotated tag that matches core.Version — `git tag -a v1.1.0 -F notes.md
-# && git push origin v1.1.0` — and this publishes the GitHub release: the tag's
-# message as its notes, and the reference binary for each platform attached.
+# A release is a version bump on main. When core.Version names a version that
+# has no release yet, this builds the reference binary for each platform and
+# publishes the release — creating the v<version> tag on the commit that
+# bumped it — with docs/releases/v<version>.md as its notes. Bumping the
+# version without writing those notes fails the run rather than publishing a
+# release that says nothing.
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths:
+      - core/gocommerce.go
+      - docs/releases/**
+      - .github/workflows/release.yml
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -18,38 +26,52 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          # The tag's annotation is the release notes; a shallow checkout has
-          # the commit but not the tag object.
-          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      # A release whose binary reports another version is the one mistake a
-      # tag can make that nobody notices until a bug report quotes it.
-      - name: the tag is core.Version
+      - name: is there a version to release
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           version=$(sed -n 's/^const Version = "\(.*\)"$/\1/p' core/gocommerce.go)
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match core.Version $version"
+          tag="v$version"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag is already released; nothing to do."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ ! -s "docs/releases/$tag.md" ]; then
+            echo "::error::core.Version is $version but docs/releases/$tag.md is missing or empty"
             exit 1
           fi
+          echo "release=true" >> "$GITHUB_OUTPUT"
 
       # No cgo anywhere (development.md), so every target cross-compiles from here.
       # admin/build is committed, so the panel is inside each binary.
       - name: build
+        if: steps.version.outputs.release == 'true'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           mkdir -p dist
           for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
             os=${target%/*}; arch=${target#*/}
-            out="dist/gocommerce_${GITHUB_REF_NAME}_${os}_${arch}"
+            out="dist/gocommerce_${TAG}_${os}_${arch}"
             [ "$os" = windows ] && out="$out.exe"
             CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w" -o "$out" ./cmd/gocommerce
           done
           (cd dist && sha256sum * > SHA256SUMS)
 
       - name: publish
+        if: steps.version.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "GoCommerce $GITHUB_REF_NAME" --notes-from-tag --verify-tag
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          gh release create "$TAG" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "GoCommerce $TAG" \
+            --notes-file "docs/releases/$TAG.md"
