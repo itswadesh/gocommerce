@@ -1,0 +1,86 @@
+name: Updates
+
+# Every push to main is published: each commit becomes a row, feature or bug
+# fix, on kitcommerce.store/updates/ (src/data/updates.json in the landing
+# page repository, which deploys on push), and the push as a whole becomes
+# one short post on Discord, X and Instagram. .github/scripts/publish-update.mjs
+# says how a commit is classified and how to override it.
+#
+# Secrets, each optional — a channel without its secret is skipped:
+#   LANDING_PAGE_TOKEN       fine-grained PAT, Contents: write on gocommerce-landing-page
+#   DISCORD_WEBHOOK_URL      a channel's webhook URL
+#   X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET
+#                            an X app with Read and write, and its access token
+#   INSTAGRAM_USER_ID, INSTAGRAM_ACCESS_TOKEN
+#                            an Instagram business account and a long-lived token
+# Variable, optional: INSTAGRAM_IMAGE_URL, the public image each post carries.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Two pushes close together must not both rewrite updates.json at once.
+concurrency:
+  group: updates
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      # Secrets cannot be read in a step's `if`; this can.
+      HAS_LANDING: ${{ secrets.LANDING_PAGE_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: check out the landing page
+        if: env.HAS_LANDING == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: itswadesh/gocommerce-landing-page
+          token: ${{ secrets.LANDING_PAGE_TOKEN }}
+          path: landing
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: record the changes
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          LANDING_DIR: ${{ env.HAS_LANDING == 'true' && 'landing' || '' }}
+        run: node .github/scripts/publish-update.mjs record
+
+      - name: publish to kitcommerce.store
+        if: env.HAS_LANDING == 'true'
+        working-directory: landing
+        run: |
+          git add src/data/updates.json
+          if git diff --cached --quiet; then echo "Already on the page."; exit 0; fi
+          git config user.name "gocommerce-updates"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Updates: ${GITHUB_SHA::7} from itswadesh/gocommerce"
+          # The landing page may have moved since the checkout; take its new
+          # tip and try again rather than fail the announcement.
+          for i in 1 2 3; do
+            git push origin HEAD:main && exit 0
+            git pull --rebase origin main
+          done
+          exit 1
+
+      - name: announce
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_SECRET: ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
+          INSTAGRAM_USER_ID: ${{ secrets.INSTAGRAM_USER_ID }}
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          INSTAGRAM_IMAGE_URL: ${{ vars.INSTAGRAM_IMAGE_URL }}
+        run: node .github/scripts/publish-update.mjs announce
