@@ -63,6 +63,7 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	app.HandleAdminFunc("GET /api/admin/x/b2b/leads/{id}", m.handleAdminLead, rightLeadsRead)
 	app.HandleAdminFunc("PATCH /api/admin/x/b2b/leads/{id}", m.handleAdminUpdateLead, rightLeadsWrite)
 	app.HandleAdminFunc("GET /api/admin/x/b2b/receivables", m.handleAdminReceivables, rightCompaniesRead)
+	app.HandleAdminFunc("GET /api/admin/x/b2b/orders/{order_id}", m.handleAdminCompanyOrder, rightCompaniesRead)
 	app.HandleAdminFunc("GET /api/admin/x/b2b/approvals", m.handleAdminApprovals, rightCompaniesRead)
 	app.HandleAdminFunc("GET /api/admin/x/b2b/quotes", m.handleAdminQuotes, rightQuotesRead)
 	app.HandleAdminFunc("GET /api/admin/x/b2b/quotes/{id}", m.handleAdminQuote, rightQuotesRead)
@@ -358,8 +359,11 @@ func (m *Module) handleMyOrders(w http.ResponseWriter, r *http.Request, acct *id
 	if !b.can(RoleAdmin, RoleApprover) {
 		who = acct.ID
 	}
-	orders, total, err := m.CompanyOrders(r.Context(), b.company.ID, who, false,
-		r.URL.Query().Get("overdue") == "true", limit, offset)
+	// The buyer's own route searches the email too: these are the buyer's
+	// colleagues' orders, shown unmasked, so nothing is being read back.
+	orders, total, err := m.CompanyOrders(r.Context(), CompanyOrderQuery{CompanyID: b.company.ID,
+		CustomerID: who, OverdueOnly: r.URL.Query().Get("overdue") == "true",
+		Search: r.URL.Query().Get("q"), Limit: limit, Offset: offset})
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
@@ -834,8 +838,9 @@ func (m *Module) listOrders(w http.ResponseWriter, r *http.Request, companyID in
 	if !ok {
 		return
 	}
-	orders, total, err := m.CompanyOrders(r.Context(), companyID, 0, onAccountOnly,
-		r.URL.Query().Get("overdue") == "true", limit, offset)
+	orders, total, err := m.CompanyOrders(r.Context(), CompanyOrderQuery{CompanyID: companyID,
+		OnAccountOnly: onAccountOnly, OverdueOnly: r.URL.Query().Get("overdue") == "true",
+		Search: r.URL.Query().Get("q"), Demo: m.app.Demo(), Limit: limit, Offset: offset})
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
@@ -856,6 +861,21 @@ func (m *Module) handleAdminCompanyOrders(w http.ResponseWriter, r *http.Request
 		return
 	}
 	m.listOrders(w, r, id, false)
+}
+
+// handleAdminCompanyOrder is one order's place in its company's ledger: whose
+// it was, its PO number, whether it is on account and when it is due. The
+// order screen asks for it beside the order itself.
+func (m *Module) handleAdminCompanyOrder(w http.ResponseWriter, r *http.Request) {
+	id, ok := idOr400(w, r, "order_id")
+	if !ok {
+		return
+	}
+	co, err := m.CompanyOrder(r.Context(), id)
+	if err == nil {
+		co.PlacedBy = m.app.MaskEmail(co.PlacedBy)
+	}
+	respond(w, r, http.StatusOK, co, err)
 }
 
 // handleAdminReceivables is every company's orders on account — the ledger

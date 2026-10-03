@@ -48,7 +48,8 @@
 
     /* The orders' filter and page ride in the URL, so "Acme's overdue orders"
        is a link somebody can be sent. */
-    const orderList = listState({ overdue: false, page: 1 });
+    const orderList = listState({ oq: "", overdue: false, page: 1 });
+    let orderDraft = $state(orderList.params.oq);
 
     let company = $state(null);
     let credit = $state(null);
@@ -137,6 +138,7 @@
             const result = await api.get(
                 `/api/admin/x/b2b/companies/${id}/orders` +
                     query({
+                        q: orderList.params.oq,
                         overdue: orderList.params.overdue ? "true" : "",
                         page: orderList.params.page,
                         limit: ORDERS_PER_PAGE,
@@ -658,6 +660,16 @@
                         <i class="ri-file-list-3-line" aria-hidden="true"></i>
                         Orders
                     </h2>
+                    <div class="field b2b-order-search">
+                        <input
+                            type="search"
+                            aria-label="Search this company's orders"
+                            placeholder="PO or order number"
+                            autocomplete="off"
+                            bind:value={orderDraft}
+                            oninput={(e) => orderList.set({ oq: e.currentTarget.value.trim() })}
+                        />
+                    </div>
                     <div class="field b2b-filter">
                         <Select
                             ariaLabel="Which orders"
@@ -731,9 +743,13 @@
                             {#if !ordersLoading && !orders.length}
                                 <tr>
                                     <td colspan="6" class="txt-hint txt-center p-base">
-                                        {orderList.params.overdue
-                                            ? "Nothing is overdue."
-                                            : `${company.name} has not ordered yet.`}
+                                        {#if orderList.params.oq}
+                                            No order matches “{orderList.params.oq}”.
+                                        {:else if orderList.params.overdue}
+                                            Nothing is overdue.
+                                        {:else}
+                                            {company.name} has not ordered yet.
+                                        {/if}
                                     </td>
                                 </tr>
                             {/if}

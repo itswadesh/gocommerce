@@ -39,6 +39,7 @@
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import OrderBusinessCard from "$lib/components/OrderBusinessCard.svelte";
     import OrderNoteCard from "$lib/components/OrderNoteCard.svelte";
     import OrderRefundList from "$lib/components/OrderRefundList.svelte";
     import OrderReturnsCard from "$lib/components/OrderReturnsCard.svelte";
@@ -785,11 +786,20 @@
     /** Basis points as a percentage: 1800 → "18", 1250 → "12.5". */
     const ratePercent = (bp) => String(Math.round(bp) / 100);
 
+    /* An order placed for a company gets a card of its own instead of a line
+       of JSON in Metadata — when this binary has the module and the operator
+       may read companies; otherwise the raw key stays, the honest fallback. */
+    const showsBusinessCard = $derived(
+        !!order?.metadata?.b2b && hasModule("b2b") && can("companies.read"),
+    );
+
     /* Metadata the store put there that is not the note. A module writes its
        own keys here and they were invisible — which made the panel the one
        client that could not see what the store was recording. */
     const extraMetadata = $derived(
-        Object.entries(order?.metadata ?? {}).filter(([key]) => key !== "notes"),
+        Object.entries(order?.metadata ?? {}).filter(
+            ([key]) => key !== "notes" && !(key === "b2b" && showsBusinessCard),
+        ),
     );
 
     function metaValue(value) {
@@ -1675,6 +1685,10 @@
                                 {/if}
                             {/if}
                         </section>
+
+                        {#if showsBusinessCard}
+                            <OrderBusinessCard orderId={order.id} meta={order.metadata.b2b} />
+                        {/if}
 
                         <section class="order-card">
                             <div class="order-card-head">

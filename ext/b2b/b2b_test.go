@@ -1458,3 +1458,79 @@ func TestTheStoreReadsSearchesAndNarrowsLeads(t *testing.T) {
 		t.Errorf("a company with no territories counts %d", acme.TerritoryCount)
 	}
 }
+
+// The ledger finds an order by its PO number or its own, on the store's side
+// and the buyer's, and reads one order's place in it for the order screen —
+// whose it was, its PO, whether it is on account and when it is due.
+func TestTheLedgerFindsAnOrderByItsPONumberAndReadsOne(t *testing.T) {
+	f := newFixture(t)
+	_, tok := f.member(t, "boss@acme.test", RoleAdmin)
+	var placed []struct {
+		Order struct {
+			ID     int64  `json:"id"`
+			Number string `json:"number"`
+		} `json:"order"`
+	}
+	for _, po := range []string{"PO-ALPHA-7", "PO-BETA-9"} {
+		r := f.checkout(t, tok, f.cart(t, 1), map[string]any{"po_number": po})
+		if r.code != http.StatusCreated {
+			t.Fatalf("checkout %s = %d: %s", po, r.code, r.body)
+		}
+		var o struct {
+			Order struct {
+				ID     int64  `json:"id"`
+				Number string `json:"number"`
+			} `json:"order"`
+		}
+		decodeBody(t, r.body, &o)
+		placed = append(placed, o)
+	}
+
+	numbers := func(rec *httptest.ResponseRecorder) []string {
+		t.Helper()
+		var list []CompanyOrder
+		gctest.DecodeData(t, rec, &list)
+		out := []string{}
+		for _, o := range list {
+			out = append(out, o.PONumber)
+		}
+		return out
+	}
+	for path, want := range map[string]string{
+		"/api/admin/x/b2b/receivables?q=alpha":                     "PO-ALPHA-7",
+		f.companyPath() + "/orders?q=beta":                         "PO-BETA-9",
+		"/api/admin/x/b2b/receivables?q=" + placed[1].Order.Number: "PO-BETA-9",
+	} {
+		if got := numbers(gctest.AdminRequest(t, f.app, http.MethodGet, path, nil)); len(got) != 1 || got[0] != want {
+			t.Errorf("%s = %v, want [%s]", path, got, want)
+		}
+	}
+	if got := numbers(gctest.SessionRequest(t, f.app, tok, http.MethodGet, "/x/b2b/orders?q=ALPHA", nil)); len(got) != 1 || got[0] != "PO-ALPHA-7" {
+		t.Errorf("the buyer searching ALPHA = %v, want [PO-ALPHA-7]", got)
+	}
+
+	var one CompanyOrder
+	gctest.DecodeData(t, gctest.AdminRequest(t, f.app, http.MethodGet,
+		"/api/admin/x/b2b/orders/"+strconv.FormatInt(placed[0].Order.ID, 10), nil), &one)
+	if one.CompanyID != f.company.ID || one.PONumber != "PO-ALPHA-7" || !one.OnAccount || one.DueAt == nil {
+		t.Errorf("one order = %+v; want Acme's, PO-ALPHA-7, on account, with a due date", one)
+	}
+
+	plain := gctest.CreateProduct(t, f.app, "PLAIN-1", 500, 5)
+	cart, err := f.app.Cart().Create(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.app.Cart().AddLine(context.Background(), cart.Token, plain.Variants[0].ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	res, err := f.app.Order().Checkout(context.Background(), gocommerce.CodeCOD, gocommerce.CheckoutInput{
+		CartID: cart.Token, Email: "walk-in@example.test", Name: "Walk In", Address: address}, "")
+	if err != nil {
+		t.Fatalf("a shopper's own checkout: %v", err)
+	}
+	if rec := gctest.AdminRequest(t, f.app, http.MethodGet,
+		"/api/admin/x/b2b/orders/"+strconv.FormatInt(res.Order.ID, 10), nil); rec.Code != http.StatusNotFound {
+		t.Errorf("an order no company placed = %d, want 404", rec.Code)
+	}
+}

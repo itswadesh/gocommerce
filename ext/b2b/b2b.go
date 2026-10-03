@@ -609,7 +609,11 @@ type CompanyOrder struct {
 	Overdue       bool             `json:"overdue"`
 	CompanyID     int64            `json:"company_id"`
 	CompanyName   string           `json:"company_name"`
-	CreatedAt     time.Time        `json:"created_at"`
+	// ApprovalID and QuoteID are the request an approver said yes to and the
+	// quote the order was placed from, when it came either way.
+	ApprovalID *int64    `json:"approval_id,omitempty"`
+	QuoteID    *int64    `json:"quote_id,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // ApprovalLine is one line of a basket awaiting approval, at the price the

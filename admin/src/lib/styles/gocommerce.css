@@ -6881,6 +6881,35 @@ kbd + kbd {
     align-self: center;
 }
 
+/* The business-order card on an order's screen. Its rows start the card, so
+   they drop the rule `.order-lines` draws when it sits under a total. Not
+   under the skin: the order screen is its own. */
+.order-card .b2b-order-lines {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+}
+
+/* A search box beside a section's filter, as wide as a PO number needs. */
+.shopify-skin .b2b-section-head .b2b-order-search {
+    width: 220px;
+}
+
+/*
+ * Controls in a section heading carry no label, and a bare text box (23px in
+ * the skin, whose padding assumes a label row above it) and a bare select
+ * (32px, PocketBase's own) are not the same height. The text box takes the
+ * select's height and drops the lopsided padding, so its text is centred the
+ * way the select's is. Making the field a flex box instead does not work: the
+ * field's clearfix `::after` becomes a second flex line and takes half the
+ * height.
+ */
+.shopify-skin .b2b-section-head > .field > input:not([type="checkbox"]):not([type="radio"]) {
+    height: 32px;
+    padding-block: 0;
+    line-height: normal;
+}
+
 .shopify-skin .b2b-total {
     display: flex;
     align-items: baseline;
@@ -6942,6 +6971,9 @@ kbd + kbd {
         width: 100%;
     }
     .shopify-skin .b2b-filters {
+        width: 100%;
+    }
+    .shopify-skin .b2b-section-head .b2b-order-search {
         width: 100%;
     }
     .shopify-skin .b2b-snippet {

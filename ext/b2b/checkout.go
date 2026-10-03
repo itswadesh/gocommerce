@@ -711,37 +711,104 @@ func (m *Module) reconcileOrders(ctx context.Context) error {
 	return err
 }
 
-// CompanyOrders reads a company's ledger, newest first. customerID narrows it
-// to one buyer's orders; zero is every buyer's. onAccountOnly keeps the orders
-// placed on account, and overdueOnly those of them past their due date and
-// still unpaid.
-func (m *Module) CompanyOrders(ctx context.Context, companyID, customerID int64, onAccountOnly, overdueOnly bool, limit, offset int) ([]*CompanyOrder, int, error) {
+// CompanyOrderQuery narrows a company's ledger.
+type CompanyOrderQuery struct {
+	// CompanyID is one company's; zero is every company's.
+	CompanyID int64
+	// CustomerID narrows to one buyer's orders; zero is every buyer's.
+	CustomerID int64
+	// OnAccountOnly keeps the orders placed on account, and OverdueOnly those
+	// of them past their due date and still unpaid.
+	OnAccountOnly bool
+	OverdueOnly   bool
+	// Search matches part of the order number or the PO number, in any case —
+	// and of the email it was placed with, except on a demo store, where that
+	// is masked and a contains-match would read it back a character at a time.
+	Search        string
+	Demo          bool
+	Limit, Offset int
+}
+
+const companyOrderColumns = `bo.order_id, bo.order_number, o.status, o.payment_status, o.total_minor,
+	o.currency, bo.po_number, o.email, bo.on_account, bo.due_at, bo.company_id, c.name,
+	bo.approval_id, bo.quote_id, o.created_at`
+
+const companyOrderFrom = ` FROM b2b_orders bo JOIN orders o ON o.id = bo.order_id
+	JOIN b2b_companies c ON c.id = bo.company_id`
+
+// scanCompanyOrder reads one ledger row. Overdue is worked out here, against
+// the clock, rather than stored: an order becomes overdue at midnight with
+// nothing having happened to it.
+func scanCompanyOrder(row rowScanner, now time.Time) (*CompanyOrder, error) {
+	co := &CompanyOrder{}
+	var due sql.NullTime
+	var approval, quote sql.NullInt64
+	if err := row.Scan(&co.OrderID, &co.Number, &co.Status, &co.PaymentStatus,
+		&co.Total.AmountMinor, &co.Total.Currency, &co.PONumber, &co.PlacedBy,
+		&co.OnAccount, &due, &co.CompanyID, &co.CompanyName, &approval, &quote, &co.CreatedAt); err != nil {
+		return nil, err
+	}
+	if due.Valid {
+		d := due.Time
+		co.DueAt = &d
+		co.Overdue = co.OnAccount && d.Before(now) &&
+			(co.PaymentStatus == gocommerce.PaymentPending || co.PaymentStatus == gocommerce.PaymentFailed) &&
+			co.Status != gocommerce.OrderCancelled
+	}
+	if approval.Valid {
+		co.ApprovalID = &approval.Int64
+	}
+	if quote.Valid {
+		co.QuoteID = &quote.Int64
+	}
+	return co, nil
+}
+
+// CompanyOrder is one order as a company's ledger reads it. An order that was
+// not placed for a company is a 404: it has no ledger row to read.
+func (m *Module) CompanyOrder(ctx context.Context, orderID int64) (*CompanyOrder, error) {
+	co, err := scanCompanyOrder(m.db.QueryRowContext(ctx,
+		`SELECT `+companyOrderColumns+companyOrderFrom+` WHERE bo.order_id = $1`, orderID), time.Now())
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, gocommerce.NotFoundf("order %d was not placed for a company", orderID)
+	}
+	return co, err
+}
+
+// CompanyOrders reads the ledger, newest first.
+func (m *Module) CompanyOrders(ctx context.Context, q CompanyOrderQuery) ([]*CompanyOrder, int, error) {
 	where := []string{"true"}
 	args := []any{}
-	if companyID > 0 {
-		args = append(args, companyID)
+	if q.CompanyID > 0 {
+		args = append(args, q.CompanyID)
 		where = append(where, "bo.company_id = $"+strconv.Itoa(len(args)))
 	}
-	if customerID > 0 {
-		args = append(args, customerID)
+	if q.CustomerID > 0 {
+		args = append(args, q.CustomerID)
 		where = append(where, "bo.customer_id = $"+strconv.Itoa(len(args)))
 	}
-	if onAccountOnly {
+	if q.OnAccountOnly {
 		where = append(where, "bo.on_account")
 	}
-	if overdueOnly {
+	if q.OverdueOnly {
 		where = append(where, "bo.on_account AND bo.due_at < now() AND o.payment_status IN ('pending', 'failed') AND o.status <> 'cancelled'")
 	}
-	clause := strings.Join(where, " AND ")
-	from := ` FROM b2b_orders bo JOIN orders o ON o.id = bo.order_id JOIN b2b_companies c ON c.id = bo.company_id WHERE ` + clause
+	if s := strings.ToLower(strings.TrimSpace(q.Search)); s != "" {
+		args = append(args, "%"+s+"%")
+		n := "$" + strconv.Itoa(len(args))
+		match := "lower(bo.order_number) LIKE " + n + " OR lower(bo.po_number) LIKE " + n
+		if !q.Demo {
+			match += " OR lower(o.email) LIKE " + n
+		}
+		where = append(where, "("+match+")")
+	}
+	from := companyOrderFrom + ` WHERE ` + strings.Join(where, " AND ")
 	var total int
 	if err := m.db.QueryRowContext(ctx, `SELECT count(*)`+from, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	args = append(args, limit, offset)
-	rows, err := m.db.QueryContext(ctx, `
-		SELECT bo.order_id, bo.order_number, o.status, o.payment_status, o.total_minor, o.currency,
-		       bo.po_number, o.email, bo.on_account, bo.due_at, bo.company_id, c.name, o.created_at`+from+`
+	args = append(args, q.Limit, q.Offset)
+	rows, err := m.db.QueryContext(ctx, `SELECT `+companyOrderColumns+from+`
 		ORDER BY bo.order_id DESC
 		LIMIT $`+strconv.Itoa(len(args)-1)+` OFFSET $`+strconv.Itoa(len(args)), args...)
 	if err != nil {
@@ -751,19 +818,9 @@ func (m *Module) CompanyOrders(ctx context.Context, companyID, customerID int64,
 	out := []*CompanyOrder{}
 	now := time.Now()
 	for rows.Next() {
-		co := &CompanyOrder{}
-		var due sql.NullTime
-		if err := rows.Scan(&co.OrderID, &co.Number, &co.Status, &co.PaymentStatus,
-			&co.Total.AmountMinor, &co.Total.Currency, &co.PONumber, &co.PlacedBy,
-			&co.OnAccount, &due, &co.CompanyID, &co.CompanyName, &co.CreatedAt); err != nil {
+		co, err := scanCompanyOrder(rows, now)
+		if err != nil {
 			return nil, 0, err
-		}
-		if due.Valid {
-			d := due.Time
-			co.DueAt = &d
-			co.Overdue = co.OnAccount && d.Before(now) &&
-				(co.PaymentStatus == gocommerce.PaymentPending || co.PaymentStatus == gocommerce.PaymentFailed) &&
-				co.Status != gocommerce.OrderCancelled
 		}
 		out = append(out, co)
 	}

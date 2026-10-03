@@ -490,6 +490,9 @@
             "$ref": "#/components/parameters/B2bOverdue"
           },
           {
+            "$ref": "#/components/parameters/B2bOrderSearch"
+          },
+          {
             "$ref": "#/components/parameters/Limit"
           },
           {
@@ -1990,6 +1993,9 @@
             "$ref": "#/components/parameters/B2bOverdue"
           },
           {
+            "$ref": "#/components/parameters/B2bOrderSearch"
+          },
+          {
             "$ref": "#/components/parameters/Limit"
           },
           {
@@ -2187,6 +2193,9 @@
             "$ref": "#/components/parameters/B2bOverdue"
           },
           {
+            "$ref": "#/components/parameters/B2bOrderSearch"
+          },
+          {
             "$ref": "#/components/parameters/Limit"
           },
           {
@@ -2208,6 +2217,56 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/orders/{order_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/B2bOrderID"
+        }
+      ],
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "One order in a company's ledger",
+        "description": "Requires companies.read. Which company an order was placed for, its PO number, whether it is on account, when it is due and whether it is overdue, and the approval or quote it came from. `placed_by` is masked on a demo store.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bCompanyOrderResponse"
+          },
+          "400": {
+            "description": "The order id is not a positive integer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "The order was not placed for a company, or does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }
@@ -2852,6 +2911,15 @@
             "true"
           ]
         }
+      },
+      "B2bOrderSearch": {
+        "name": "q",
+        "in": "query",
+        "required": false,
+        "description": "Matches part of the order number or the PO number, in any case — and of the email the order was placed with, except on a demo store's admin routes, where that is masked and is not searched.",
+        "schema": {
+          "type": "string"
+        }
       }
     },
     "schemas": {
@@ -3236,6 +3304,16 @@
           },
           "company_name": {
             "type": "string"
+          },
+          "approval_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The approval request the order was placed from, when an approver said yes to it."
+          },
+          "quote_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The quote the order was placed from, when it was one."
           },
           "created_at": {
             "type": "string",
@@ -4323,6 +4401,21 @@
                 },
                 "meta": {
                   "$ref": "#/components/schemas/ListMeta"
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bCompanyOrderResponse": {
+        "description": "One order as its company's ledger reads it.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/B2bCompanyOrder"
                 }
               }
             }

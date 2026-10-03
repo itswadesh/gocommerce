@@ -49,6 +49,11 @@ it does.
 4. Over the company's approval threshold, a `buyer`'s checkout answers
    `202 {approval}` instead of an order. An `approver` or `admin` places it with
    `POST /x/b2b/approvals/{id}/approve`, at the prices in the request.
+5. The store chases payment from `GET /api/admin/x/b2b/receivables` — every
+   company's orders on account, `?overdue=true` for the late ones, `?q=` for a
+   PO or order number — and reads one order's place in the ledger, due date
+   and all, at `GET /api/admin/x/b2b/orders/{order_id}`. Payment is recorded on
+   the order itself, with core's mark-paid.
 
 Quotes: a buyer asks (`POST /x/b2b/quotes`, quantities only), the store prices
 and sends (`PUT /api/admin/x/b2b/quotes/{id}`, then `…/send`, under
