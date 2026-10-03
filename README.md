@@ -201,7 +201,7 @@ contract cannot quietly drift from the code.
 
 The API is the only thing a storefront needs, and anything that speaks HTTP will
 do. For [Svelte Commerce](https://github.com/itswadesh/svelte-commerce) there is
-a connector, [`@misiki/gocommerce-connector`](https://github.com/itswadesh/gocommerce-connector),
+a connector, [`@misiki/gocommerce-connector`](https://github.com/misiki-in/gocommerce-connector),
 kept in a repository of its own like every connector in that family. It maps the
 storefront's service surface onto these routes and the storefront modules —
 catalogue, bag, checkout, orders, accounts, addresses, wishlists, reviews, pages,
