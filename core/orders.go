@@ -74,7 +74,11 @@ type Order struct {
 	// of Subtotal rather than added to it, which is what that flag is for.
 	Tax          Money `json:"tax"`
 	TaxInclusive bool  `json:"tax_inclusive"`
-	Total        Money `json:"total"`
+	// TaxExemption is set when the order was sold tax-exempt through a
+	// customer group, and says which (D76). Its Tax is then zero by
+	// construction — a CHECK on the row, not a convention.
+	TaxExemption *TaxExemption `json:"tax_exemption,omitempty"`
+	Total        Money         `json:"total"`
 	// Refunded is what has gone back to the customer, running total. It stays
 	// under Total for a partial refund and reaches it for a full one, at which
 	// point PaymentStatus becomes refunded — so `paid` no longer implies the
@@ -267,6 +271,15 @@ func (o *Order) Redact() {
 	// should have to know before handing one to a shopper.
 	o.AccessToken = ""
 
+	// The shopper keeps why they paid no tax — a receipt has to say so — but
+	// not the group's id, which is a handle into the store's admin and nothing
+	// a buyer can use.
+	if o.TaxExemption != nil {
+		o.TaxExemption = &TaxExemption{
+			GroupCode: o.TaxExemption.GroupCode, GroupName: o.TaxExemption.GroupName,
+		}
+	}
+
 	// A return is the store's record of goods it took back and what it judged
 	// them to be worth: which shelf they went on, and whether it decided a line
 	// was unsellable. The shopper's view of their order is what they bought,
@@ -336,18 +349,28 @@ const orderColumns = `o.id, o.number, o.status, o.payment_status, o.payment_prov
 	o.email, coalesce(o.phone, ''), coalesce(o.name, ''),
 	o.address, o.lang, o.metadata, o.shipping_method,
 	coalesce((SELECT ch.code FROM channels ch WHERE ch.id = o.channel_id), ''),
-	o.created_at, o.updated_at`
+	o.created_at, o.updated_at,
+	o.tax_exempt_group_id, o.tax_exempt_group_code, o.tax_exempt_group_name`
 
 func (s *Orders) scanOrder(row interface{ Scan(...any) error }) (*Order, error) {
 	o := &Order{}
 	var addr, meta []byte
 	var subtotal, shipping, discount, tax, total, refunded int64
+	var exemptID sql.NullInt64
+	var exemptCode, exemptName sql.NullString
 	if err := row.Scan(&o.ID, &o.Number, &o.Status, &o.PaymentStatus, &o.PaymentProvider,
 		&o.PaymentReference, &o.Currency, &subtotal, &shipping, &discount,
 		&tax, &o.TaxInclusive, &total, &refunded,
 		&o.Email, &o.Phone, &o.Name, &addr, &o.Language, &meta, &o.ShippingMethod,
-		&o.ChannelCode, &o.CreatedAt, &o.UpdatedAt); err != nil {
+		&o.ChannelCode, &o.CreatedAt, &o.UpdatedAt,
+		&exemptID, &exemptCode, &exemptName); err != nil {
 		return nil, err
+	}
+	if exemptCode.Valid {
+		o.TaxExemption = &TaxExemption{GroupCode: exemptCode.String, GroupName: exemptName.String}
+		if exemptID.Valid {
+			o.TaxExemption.GroupID = &exemptID.Int64
+		}
 	}
 	o.Subtotal = money(subtotal, o.Currency)
 	o.Shipping = money(shipping, o.Currency)

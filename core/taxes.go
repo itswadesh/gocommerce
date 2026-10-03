@@ -78,6 +78,17 @@ type LineTax struct {
 	AmountMinor int64  `json:"amount_minor"`
 }
 
+// TaxExemption is why an order carries no tax: the customer group it was sold
+// through, as that group was named on the day (D76). It is a snapshot for the
+// reason a line's tax is — the group can be renamed, stop being exempt or be
+// deleted, and the order still has to say why nothing was collected. GroupID
+// is the way back to the group while it exists, and nil once it does not.
+type TaxExemption struct {
+	GroupID   *int64 `json:"group_id,omitempty"`
+	GroupCode string `json:"group_code"`
+	GroupName string `json:"group_name"`
+}
+
 const taxRateColumns = `t.id, t.name, t.rate_bp, t.country, t.state, t.category_id,
 	t.active, t.metadata, t.created_at, t.updated_at`
 
@@ -492,6 +503,39 @@ func taxOn(base int64, rateBP int, inclusive bool) int64 {
 		return base - net
 	}
 	return (base*int64(rateBP) + 5000) / 10000
+}
+
+// exemptionFor is the tax-exempt group a proven address is in, or nil.
+//
+// The address must be one something has proven — a cart passes its
+// verified_email (D66) — because membership is all an exemption asks, exactly
+// as it is all a group price asks, and an exemption typed onto a cart would be
+// tax anybody could decline to pay.
+//
+// An address in several exempt groups is exempt once; the oldest group is the
+// one the order names, so the answer does not depend on which was edited last.
+func (s *Taxes) exemptionFor(ctx context.Context, q rowQuerier, email string) (*TaxExemption, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return nil, nil
+	}
+	var e TaxExemption
+	var id int64
+	err := q.QueryRowContext(ctx, `
+		SELECT g.id, g.code, g.name
+		FROM customer_groups g
+		JOIN customer_group_members m ON m.group_id = g.id
+		WHERE g.tax_exempt AND m.email = $1
+		ORDER BY g.id
+		LIMIT 1`, email).Scan(&id, &e.GroupCode, &e.GroupName)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	e.GroupID = &id
+	return &e, nil
 }
 
 // computeTax charges every line and returns the per-line tax and the total.

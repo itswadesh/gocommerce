@@ -60,6 +60,9 @@
         { value: "invitation", many: "Invitations", one: "Invitation" },
         { value: "role", many: "Roles", one: "Role" },
         { value: "taxonomy_attribute", many: "Attributes", one: "Attribute" },
+        // Only its tax exemption is recorded (D76) — the one thing about a
+        // group that decides what the store collects.
+        { value: "customer_group", many: "Customer groups", one: "Customer group" },
     ];
 
     const ENTITY_TYPES = [

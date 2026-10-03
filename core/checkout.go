@@ -171,6 +171,15 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		if err != nil {
 			return err
 		}
+		// Who this basket is proven to belong to, read under the cart's lock:
+		// it decides the lines' prices, the delivery a group is offered and
+		// whether tax is charged at all, and all three have to be judged as the
+		// same person (D66, D76).
+		var verified sql.NullString
+		if err := tx.QueryRowContext(ctx,
+			`SELECT verified_email FROM carts WHERE id = $1`, cartID).Scan(&verified); err != nil {
+			return err
+		}
 
 		lines, err := loadCheckoutLines(ctx, tx, cartID)
 		if err != nil {
@@ -264,22 +273,25 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 				break
 			}
 		}
-		rated, err := s.app.shipping.configured(ctx, tx)
-		if err != nil {
-			return err
-		}
-		if !physical {
-			shipping, rated = 0, false
-		}
-		if rated {
-			quotes, err := s.app.shipping.quote(ctx, tx, ShippingQuery{
+		var quotes []ShippingQuote
+		rated := false
+		if physical {
+			// A group's rates are re-judged here against the verified address
+			// as it stands now, so a rate quoted while the cart was in a group
+			// it has since left is refused below like any rate that moved.
+			quotes, rated, err = s.app.shipping.options(ctx, tx, ShippingQuery{
 				Country:       in.Address.Country,
 				State:         in.Address.State,
 				SubtotalMinor: subtotal,
+				Email:         verified.String,
 			})
 			if err != nil {
 				return err
 			}
+		} else {
+			shipping = 0
+		}
+		if rated {
 			if len(quotes) == 0 {
 				// A store with rates has said where it delivers. Charging the old
 				// flat number here would sell a parcel nobody can send.
@@ -339,10 +351,27 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 			}
 		}
 		inclusive := s.app.cfg.PricesIncludeTax
-		lineTaxes, tax, err := s.app.taxes.computeTax(ctx, tx,
-			in.Address.Country, in.Address.State, taxable, eligible, discount, inclusive)
+		// An address in a tax-exempt group is charged none, on any line (D76).
+		// The prices do not move: in an exclusive store nothing is added to
+		// them, and in an inclusive one the price the cart showed is the price
+		// charged, with none of it recorded as tax — a lower price for an
+		// exempt buyer is a price list, read from the same address.
+		exemption, err := s.app.taxes.exemptionFor(ctx, tx, verified.String)
 		if err != nil {
 			return err
+		}
+		lineTaxes := make([]LineTax, len(lines))
+		var tax int64
+		if exemption == nil {
+			lineTaxes, tax, err = s.app.taxes.computeTax(ctx, tx,
+				in.Address.Country, in.Address.State, taxable, eligible, discount, inclusive)
+			if err != nil {
+				return err
+			}
+		}
+		var exemptID, exemptCode, exemptName any
+		if exemption != nil {
+			exemptID, exemptCode, exemptName = *exemption.GroupID, exemption.GroupCode, exemption.GroupName
 		}
 
 		// Inclusive prices already contain the tax, so it is reported rather
@@ -358,11 +387,6 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		// no order number, which is the difference between a credit limit and
 		// an apology for one.
 		if len(s.app.guards) > 0 {
-			var verified sql.NullString
-			if err := tx.QueryRowContext(ctx,
-				`SELECT verified_email FROM carts WHERE id = $1`, cartID).Scan(&verified); err != nil {
-				return err
-			}
 			attempt := &CheckoutAttempt{
 				Method: code, Input: in, VerifiedEmail: verified.String,
 				Subtotal: money(subtotal, currency), Shipping: money(shipping, currency),
@@ -405,15 +429,18 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 			                    discount_minor, tax_minor, tax_inclusive, total_minor,
 			                    email, phone, name, address,
 			                    lang, metadata, shipping_method, channel_id,
-			                    reservation_expires_at)
+			                    reservation_expires_at,
+			                    tax_exempt_group_id, tax_exempt_group_code, tax_exempt_group_name)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
 			        (SELECT channel_id FROM carts WHERE id = $22),
-			        now() + make_interval(secs => $21))`,
+			        now() + make_interval(secs => $21),
+			        $23, $24, $25)`,
 			orderID, number, accessToken, OrderPending, PaymentPending, code, currency,
 			subtotal, shipping, discount, tax, inclusive, total,
 			strings.ToLower(in.Email), nullString(in.Phone),
 			nullString(in.Name), addr, s.app.RequestLanguageValue(ctx), meta, shippingMethod,
 			s.app.cfg.OrderTTL.Seconds(), cartID,
+			exemptID, exemptCode, exemptName,
 		); err != nil {
 			return err
 		}
@@ -750,6 +777,10 @@ type NewOrderInput struct {
 	Address      Address        `json:"address"`
 	Lines        []NewOrderLine `json:"lines"`
 	Metadata     Metadata       `json:"metadata"`
+	// ShippingRateID is the delivery the customer asked for, judged exactly as
+	// a shopper's choice is — against the address typed above and the groups
+	// it is in (D76). Omitted takes the first option, as checkout does.
+	ShippingRateID *int64 `json:"shipping_rate_id,omitempty"`
 }
 
 // NewOrderLine is one variant and how many of it.
@@ -859,11 +890,12 @@ func (s *Orders) Create(ctx context.Context, in NewOrderInput) (*CheckoutResult,
 	// panel does not retry. A caller that wants replay protection can check out
 	// the cart itself with a key.
 	return s.Checkout(ctx, code, CheckoutInput{
-		CartID:   cart.Token,
-		Email:    in.Email,
-		Phone:    in.Phone,
-		Name:     in.Name,
-		Address:  in.Address,
-		Metadata: in.Metadata,
+		CartID:         cart.Token,
+		Email:          in.Email,
+		Phone:          in.Phone,
+		Name:           in.Name,
+		Address:        in.Address,
+		Metadata:       in.Metadata,
+		ShippingRateID: in.ShippingRateID,
 	}, "")
 }

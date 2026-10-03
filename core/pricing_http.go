@@ -40,6 +40,19 @@ func (a *App) mountPricingRoutes() {
 
 // ------------------------------------------------------------------- groups
 
+// mayDecideTax is whether the caller holds taxes.write, which deciding that a
+// group pays no tax needs on top of groups.write (D76). It is a tax decision —
+// it changes what every future order of every member collects, as a rate
+// does — and the person who files customers into groups is not thereby the
+// person who decides what the store collects. Membership stays groups.write:
+// adding an address to an exempt group exempts it, as adding one to a priced
+// group gives it the price (D66), and an operator granting groups.write should
+// know that. A nil superuser is the static admin token, exempt as everywhere.
+func mayDecideTax(r *http.Request) bool {
+	su := SuperuserFrom(r.Context())
+	return su == nil || su.Has(RightTaxesWrite)
+}
+
 func (a *App) handleListCustomerGroups(w http.ResponseWriter, r *http.Request) {
 	groups, err := a.Pricing().Groups(r.Context())
 	if err != nil {
@@ -53,6 +66,10 @@ func (a *App) handleCreateCustomerGroup(w http.ResponseWriter, r *http.Request) 
 	var in CustomerGroupInput
 	if err := DecodeJSON(w, r, &in); err != nil {
 		RespondError(w, r, err)
+		return
+	}
+	if in.TaxExempt && !mayDecideTax(r) {
+		RespondError(w, r, Forbiddenf("making a group tax-exempt needs taxes.write as well as groups.write"))
 		return
 	}
 	g, err := a.Pricing().CreateGroup(r.Context(), in)
@@ -87,6 +104,20 @@ func (a *App) handleUpdateCustomerGroup(w http.ResponseWriter, r *http.Request) 
 	if err := DecodeJSON(w, r, &patch); err != nil {
 		RespondError(w, r, err)
 		return
+	}
+	// Only a change asks for the second right, so a client that sends the
+	// whole group back to rename it is not refused for repeating a value it
+	// read.
+	if patch.TaxExempt != nil && !mayDecideTax(r) {
+		current, err := a.Pricing().Group(r.Context(), id)
+		if err != nil {
+			RespondError(w, r, err)
+			return
+		}
+		if current.TaxExempt != *patch.TaxExempt {
+			RespondError(w, r, Forbiddenf("changing whether a group pays tax needs taxes.write as well as groups.write"))
+			return
+		}
 	}
 	g, err := a.Pricing().UpdateGroup(r.Context(), id, patch)
 	if err != nil {

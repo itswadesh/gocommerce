@@ -3717,6 +3717,11 @@
                     "type": "string",
                     "description": "Optional. A promotion code the operator is honouring — the one the customer quoted on the telephone. It is judged by the checkout under its own lock, exactly as a shopper's is, so an expired, exhausted or ineligible code refuses the whole request with 422 and no order is created and no stock is reserved.",
                     "example": "SPRING20"
+                  },
+                  "shipping_rate_id": {
+                    "type": "integer",
+                    "format": "int64",
+                    "description": "The delivery the customer asked for, judged as a shopper's choice is: against this address and the customer groups the typed email is in (D76). Omitted takes the first option on offer. A rate not on offer to this customer refuses the order with 409."
                   }
                 }
               }
@@ -9092,7 +9097,8 @@
                 "superuser",
                 "invitation",
                 "role",
-                "taxonomy_attribute"
+                "taxonomy_attribute",
+                "customer_group"
               ]
             }
           },
@@ -9895,7 +9901,7 @@
           "checkout"
         ],
         "summary": "What it costs to send this basket there",
-        "description": "A quote rather than a price list: the price depends on what is in the cart, so the cart's own token is the input rather than a subtotal the caller could invent. An empty rates array is an answer, not an error - this store does not deliver to that destination - and a storefront has to render it either way. A store with no rates configured is still on Config.FlatShippingMinor, and this returns nothing.",
+        "description": "A quote rather than a price list: the price depends on what is in the cart, so the cart's own token is the input rather than a subtotal the caller could invent. An empty rates array is an answer, not an error - this store does not deliver to that destination - and a storefront has to render it either way. A store with no rates configured is still on Config.FlatShippingMinor, and this returns nothing. A cart whose verified_email is in a customer group (D66) is offered that group's rates instead of the public ones wherever the group has a rate for this basket and place, and the union when the address is in several groups; anywhere else, and for a cart with no verified address, exactly the public rates. An address typed onto the cart never earns a group's rate. Checkout re-judges the chosen rate under the same rule (D76).",
         "parameters": [
           {
             "name": "cart",
@@ -10129,7 +10135,7 @@
           "shipping"
         ],
         "summary": "Price a method inside a zone",
-        "description": "The band is half-open: min_subtotal_minor is inclusive and max_subtotal_minor exclusive, so a Standard at 4900 below 200000 and a Standard at 0 from 200000 are one method the shopper recognises and cannot both claim a basket. Two bands of one name that do overlap are refused, because a shopper offered the same method at two prices has no way to choose.",
+        "description": "The band is half-open: min_subtotal_minor is inclusive and max_subtotal_minor exclusive, so a Standard at 4900 below 200000 and a Standard at 0 from 200000 are one method the shopper recognises and cannot both claim a basket. Two bands of one name that do overlap are refused, because a shopper offered the same method at two prices has no way to choose. A rate may name a customer group (group_id); it is then offered only to a cart whose verified address is in that group, and replaces the public rates there (D76). An unknown group is a 400.",
         "requestBody": {
           "required": true,
           "content": {
@@ -10380,6 +10386,9 @@
           },
           "400": {
             "$ref": "#/components/responses/Validation"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -10427,7 +10436,7 @@
         "tags": [
           "pricing"
         ],
-        "summary": "Rename or re-code a group",
+        "summary": "Rename, re-code or exempt a group",
         "parameters": [
           {
             "name": "id",
@@ -10452,6 +10461,10 @@
                   },
                   "name": {
                     "type": "string"
+                  },
+                  "tax_exempt": {
+                    "type": "boolean",
+                    "description": "Whether the group's members are charged tax."
                   }
                 }
               }
@@ -10476,15 +10489,22 @@
           },
           "400": {
             "$ref": "#/components/responses/Validation"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
-        }
+        },
+        "description": "Fields left out are left alone. Changing tax_exempt needs taxes.write as well as groups.write: it decides what every future order of every member collects, which is a tax decision, and it is written to the audit trail as customer_group.tax_exemption. Sending the value the group already has is not a change and needs no second right. Membership stays under groups.write, so whoever may add an address to an exempt group may exempt that address (D76)."
       },
       "delete": {
         "tags": [
           "pricing"
         ],
         "summary": "Delete a customer group",
-        "description": "Takes its membership and the price lists aimed at it with it. Cascading rather than refusing, unlike a category with products under it: a product orphaned by a deleted category is still valuable and has merely lost its filing, while a price list whose audience has gone is meaningless — it would price for nobody and could never be reached again.",
+        "description": "Takes its membership, the price lists aimed at it and the shipping rates offered to it with it. Cascading rather than refusing, unlike a category with products under it: a product orphaned by a deleted category is still valuable and has merely lost its filing, while a price list or a rate whose audience has gone is meaningless — and a group's rate that fell to everybody would hand a negotiated price to every shopper. Orders sold tax-exempt through the group keep its name and code.",
         "parameters": [
           {
             "name": "id",
@@ -10559,7 +10579,7 @@
           "pricing"
         ],
         "summary": "Add an address to a group",
-        "description": "Adding one twice is not an error: the caller asked for it to be a member, and it is. The address travels in the body rather than the path because an email in a URL is an email in an access log.",
+        "description": "Adding one twice is not an error: the caller asked for it to be a member, and it is. The address travels in the body rather than the path because an email in a URL is an email in an access log. A member is priced by the group's lists, offered its shipping rates, and — when the group is tax-exempt — charged no tax, from the next time a cart verified as that address is priced or checked out.",
         "parameters": [
           {
             "name": "id",
@@ -14889,6 +14909,34 @@
           "discount": {
             "$ref": "#/components/schemas/Money"
           },
+          "tax": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "tax_inclusive": {
+            "type": "boolean",
+            "description": "Whether the prices on this order already contained its tax. When true, tax is part of subtotal rather than added to it."
+          },
+          "tax_exemption": {
+            "type": "object",
+            "description": "Present when the order was sold tax-exempt through a customer group (D76), as the group was named when it was sold: renaming the group, ending its exemption or deleting it changes nothing here. tax is then zero. A shopper's own copy carries the name and code but not group_id.",
+            "properties": {
+              "group_id": {
+                "type": "integer",
+                "format": "int64",
+                "description": "The group, while it exists. Absent once it has been deleted."
+              },
+              "group_code": {
+                "type": "string"
+              },
+              "group_name": {
+                "type": "string"
+              }
+            }
+          },
+          "shipping_method": {
+            "type": "string",
+            "description": "The name of the delivery rate the order was sold, snapshotted. Empty when no rate was involved."
+          },
           "total": {
             "$ref": "#/components/schemas/Money"
           },
@@ -16636,7 +16684,8 @@
               "superuser",
               "invitation",
               "role",
-              "taxonomy_attribute"
+              "taxonomy_attribute",
+              "customer_group"
             ]
           },
           "entity_id": {
@@ -17606,6 +17655,19 @@
           },
           "position": {
             "type": "integer"
+          },
+          "group_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The customer group this rate is offered to. Absent is everybody. A group's rates replace the public ones for a cart whose verified address is in it, wherever the group has a rate for that basket and place (D76)."
+          },
+          "group_code": {
+            "type": "string",
+            "description": "The group's code, beside group_id."
+          },
+          "group_name": {
+            "type": "string",
+            "description": "The group's name, beside group_id."
           }
         }
       },
@@ -17647,6 +17709,12 @@
           "position": {
             "type": "integer",
             "default": 0
+          },
+          "group_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Who sees this rate: a customer group's id, or null for everybody. Absent on a create is everybody; absent on an update leaves the rate's audience as it was, so a client that does not know about groups cannot widen a group's rate to everybody by editing its price. Overlapping bands are refused only between rates offered to the same people. Naming a group needs no right beyond shipping.write."
           }
         }
       },
@@ -17739,6 +17807,10 @@
             "type": "integer",
             "description": "How many addresses are in it."
           },
+          "tax_exempt": {
+            "type": "boolean",
+            "description": "A cart whose verified address is in this group is charged no tax, on any line, and its order records the group it was sold through (D76). Adding an address to the group therefore exempts it."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -17763,6 +17835,11 @@
           "name": {
             "type": "string",
             "example": "Trade accounts"
+          },
+          "tax_exempt": {
+            "type": "boolean",
+            "default": false,
+            "description": "Create the group tax-exempt. True needs taxes.write as well as groups.write."
           }
         }
       },

@@ -71,6 +71,10 @@ const (
 	// question somebody brings to this trail, and a variant's own history is
 	// the catalogue's.
 	AuditEntityVendor = "vendor"
+	// A customer group, for the one thing about it that is a tax decision:
+	// whether its members pay tax (D76). Its name, code and members are not
+	// audited, as they were not before.
+	AuditEntityCustomerGroup = "customer_group"
 )
 
 // AuditEntityTypes is the catalogue, in the panel's display order. The database
@@ -92,6 +96,7 @@ var AuditEntityTypes = []string{
 	AuditEntityNotificationTemplate,
 	AuditEntityMedia,
 	AuditEntityVendor,
+	AuditEntityCustomerGroup,
 }
 
 // The action vocabulary, `<record>.<verb>`, declared here and nowhere else.
@@ -196,6 +201,11 @@ const (
 	AuditTaxRateUpdate = "tax_rate.update"
 	AuditTaxRateDelete = "tax_rate.delete"
 
+	// AuditCustomerGroupTaxExemption is a group made tax-exempt, or made to
+	// pay tax again — written on create as well as on change, so a group born
+	// exempt has a row saying who decided it.
+	AuditCustomerGroupTaxExemption = "customer_group.tax_exemption"
+
 	AuditLocationCreate     = "location.create"
 	AuditLocationUpdate     = "location.update"
 	AuditLocationDelete     = "location.delete"
@@ -266,6 +276,8 @@ var AllAuditActions = []string{
 	AuditOrderImport,
 
 	AuditPluginUpdate, AuditNotificationTemplateUpdate,
+
+	AuditCustomerGroupTaxExemption,
 }
 
 // AuditChanges is what a row says actually moved.

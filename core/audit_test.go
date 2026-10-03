@@ -1174,6 +1174,10 @@ func TestTheVocabularyIsReachable(t *testing.T) {
 	if _, err := app.NotifyTemplates().Set(ctx, ChannelEmail, EventOrderCreated, "Order {{.order_number}}", "Thanks, {{.customer_name}}."); err != nil {
 		t.Fatalf("template update: %v", err)
 	}
+	// And a group that stops paying tax.
+	if _, err := app.Pricing().CreateGroup(ctx, CustomerGroupInput{Code: "charities", Name: "Charities", TaxExempt: true}); err != nil {
+		t.Fatalf("exempt group: %v", err)
+	}
 
 	// pending names the actions whose call sites live in files this change does
 	// not own: the guarded admin-placed-order write in checkout.go, bulk import

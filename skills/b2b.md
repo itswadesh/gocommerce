@@ -17,7 +17,7 @@ lives in the module's own `b2b_*` tables. A company can also be a **dealer**:
 it has **territories**, and a consumer's enquiry from the address one covers is
 routed to it as a **lead**.
 
-Three engine decisions carry it, and each is why something here looks the way
+Four engine decisions carry it, and each is why something here looks the way
 it does.
 
 - **A company's prices are a customer group's, and a group price needs a
@@ -31,6 +31,12 @@ it does.
   order exists — never cancelled after.
 - **A quote is an agreed price (D68),** placed through `Orders.Create` with
   `NewOrderLine.UnitPriceMinor`, never a price list a whole group would reach.
+- **A company's delivery and tax are its group's too (D76).** A shipping rate
+  that names the company's customer group replaces the public rates in that
+  zone for its buyers, and a tax-exempt group sells without tax; both are read
+  from the same proven address as the prices. They are core's, configured on
+  the Shipping and Customer groups screens, so nothing in this module sets
+  them — see [checkout](checkout.md).
 
 ## How a buyer orders
 
