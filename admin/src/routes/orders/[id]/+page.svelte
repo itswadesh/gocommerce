@@ -1562,6 +1562,26 @@
                                         </span>
                                         <span class="txt-money">{formatMoney(order.tax)}</span>
                                     </div>
+                                {:else if order.tax_exemption}
+                                    <!-- Why there is no tax line: the group it was
+                                         sold through, as it was named on the day
+                                         (D76). Linked while the group exists. -->
+                                    <div class="order-line order-exempt">
+                                        <span class="txt-hint">Tax</span>
+                                        <span class="order-exempt-value">
+                                            <span class="label info">Exempt</span>
+                                            {#if order.tax_exemption.group_id}
+                                                <a class="order-exempt-group" href="{base}/customers/groups"
+                                                   title="Sold tax-exempt through {order.tax_exemption.group_name}">
+                                                    {order.tax_exemption.group_name}
+                                                </a>
+                                            {:else}
+                                                <span title="This group has since been removed">
+                                                    {order.tax_exemption.group_name}
+                                                </span>
+                                            {/if}
+                                        </span>
+                                    </div>
                                 {/if}
                                 <div class="order-line">
                                     <span class="txt-hint">Shipping</span>

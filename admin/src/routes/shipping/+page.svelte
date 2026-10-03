@@ -17,17 +17,32 @@
      * bands of one name that overlap — a shopper offered the same method at two
      * prices has no way to choose — so the form says what a band means before
      * somebody discovers it from an error.
+     *
+     * A rate can also be a customer group's (D76), and that is the other
+     * thing the form has to say rather than leave to be found out: a group's
+     * rates *replace* everybody's for its members wherever it has one, and a
+     * cart is a member only once its address has been proven. The list shows
+     * the group on every rate that has one, so "Standard" for dealers and
+     * "Standard" for everybody are never read as one rate.
      */
-    import { can, shipping } from "$lib/api.js";
+    import { api, can, shipping } from "$lib/api.js";
     import { formatMoney } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import Select from "$lib/components/Select.svelte";
 
     let groups = $state([]);
     let loading = $state(true);
     let currency = $state("");
+
+    /* The customer groups a rate can be offered to. Reading them is
+       groups.read, which a shipping operator need not hold: without it the
+       picker says why it is empty instead of looking broken, and a rate that
+       already names a group still shows the group's name from the rate. */
+    let customerGroups = $state([]);
+    let groupsReadable = $state(true);
 
     let zoneOpen = $state(false);
     let zoneForm = $state({ id: null, name: "", countries: "", states: "" });
@@ -40,6 +55,8 @@
         price: "",
         min: "",
         max: "",
+        group_id: 0,
+        group_name: "",
     });
 
     let saving = $state(false);
@@ -65,9 +82,45 @@
         }
     }
 
+    async function loadCustomerGroups() {
+        if (!can("groups.read")) {
+            groupsReadable = false;
+            return;
+        }
+        try {
+            // An unpaged list: api.get hands back the array itself.
+            const res = await api.get("/api/admin/customer-groups");
+            customerGroups = Array.isArray(res) ? res : (res?.data ?? []);
+            groupsReadable = true;
+        } catch {
+            groupsReadable = false;
+        }
+    }
+
     $effect(() => {
         if (readable) load();
     });
+
+    $effect(() => {
+        if (writable) loadCustomerGroups();
+    });
+
+    /* Everyone first, then the groups — the order the pricing screen uses for
+       a price list's audience, so the two pickers read alike. A rate already
+       naming a group the operator cannot list keeps that group as an option,
+       or the form would silently offer to change it to everyone. */
+    const audienceOptions = $derived.by(() => {
+        const opts = [
+            { value: 0, label: "Everyone", note: "Shoppers in no group, and any cart not signed in" },
+            ...customerGroups.map((g) => ({ value: g.id, label: g.name, count: g.members })),
+        ];
+        if (rateForm.group_id && !opts.some((o) => o.value === rateForm.group_id)) {
+            opts.push({ value: rateForm.group_id, label: rateForm.group_name || `Group #${rateForm.group_id}` });
+        }
+        return opts;
+    });
+
+    const chosenGroup = $derived(audienceOptions.find((o) => o.value === rateForm.group_id && o.value !== 0));
 
     function openZone(zone) {
         zoneForm = zone
@@ -90,8 +143,10 @@
                   price: String(rate.price.amount_minor),
                   min: String(rate.min_subtotal_minor ?? 0),
                   max: rate.max_subtotal_minor == null ? "" : String(rate.max_subtotal_minor),
+                  group_id: rate.group_id ?? 0,
+                  group_name: rate.group_name ?? "",
               }
-            : { id: null, zone_id: zoneID, name: "", price: "", min: "0", max: "" };
+            : { id: null, zone_id: zoneID, name: "", price: "", min: "0", max: "", group_id: 0, group_name: "" };
         rateOpen = true;
     }
 
@@ -143,6 +198,9 @@
                 price_minor: price,
                 min_subtotal_minor: Number(rateForm.min || 0),
                 max_subtotal_minor: rateForm.max === "" ? null : Number(rateForm.max),
+                // Always sent: the form shows who sees the rate, so saving it
+                // says so, and null is everybody.
+                group_id: rateForm.group_id || null,
             };
             if (rateForm.id) await shipping.updateRate(rateForm.id, body);
             else await shipping.createRate(body);
@@ -302,10 +360,25 @@
 
                             {#each g.rates as r (r.id)}
                                 <div class="rate-row">
-                                    <div class="flex-fill zone-text">
+                                    <div class="zone-text rate-text">
                                         <div class="rate-name">{r.name}</div>
                                         <div class="txt-hint txt-sm">{band(r)}</div>
                                     </div>
+                                    {#if r.group_id}
+                                        <!-- Who sees it, beside the price: a
+                                             group's Standard and everybody's
+                                             Standard are two rates, and the
+                                             list must not read as one. -->
+                                        <span class="rate-group-cell">
+                                            <span
+                                                class="label info rate-group"
+                                                title="Offered only to {r.group_name || 'this group'}, in place of everybody's rates"
+                                            >
+                                                <i class="ri-group-line" aria-hidden="true"></i>
+                                                <span class="txt">{r.group_name || "A group"} only</span>
+                                            </span>
+                                        </span>
+                                    {/if}
                                     {#if !r.active}
                                         <span class="label">Off</span>
                                     {/if}
@@ -341,6 +414,14 @@
                                 <!-- Red because it is a fault, not a state: an
                                      order going to this zone is refused. -->
                                 <div class="zone-warning">At least one shipping rate is required</div>
+                            {:else if g.rates.every((r) => r.group_id)}
+                                <!-- Not a fault: a zone written only for groups
+                                     is passed over for everybody else, who get
+                                     the next zone that covers them. -->
+                                <div class="zone-note">
+                                    Only customer groups have rates here. Everybody else is offered the
+                                    next zone that covers them.
+                                </div>
                             {/if}
                             {#if writable}
                                 <button type="button" class="rate-add" onclick={() => openRate(g.zone.id, null)}>
@@ -356,7 +437,9 @@
             <footer class="page-footer tw:text-xs tw:text-muted-foreground">
                 <span class="txt-hint txt-sm">
                     The most specific zone wins: a zone naming a state beats one naming only its
-                    country, which beats the zone that names nowhere in particular.
+                    country, which beats the zone that names nowhere in particular. A customer
+                    group's rates replace everybody's for its members, in the most specific zone
+                    where the group has one.
                 </span>
                 <div class="flex-fill"></div>
             </footer>
@@ -447,6 +530,32 @@
                 200000 with no ceiling. Two bands of the same name that overlap are refused,
                 because a shopper offered one method at two prices cannot choose between them.
             </div>
+            <div class="field m-t-sm">
+                <label for="rate-audience">Who sees this rate</label>
+                <Select
+                    id="rate-audience"
+                    value={rateForm.group_id}
+                    onchange={(v) => (rateForm.group_id = v || 0)}
+                    options={audienceOptions}
+                />
+            </div>
+            {#key chosenGroup ? "group" : "everyone"}
+                <div class="field-help rate-audience-help">
+                    {#if chosenGroup}
+                        Only {chosenGroup.label}. Where this group has a rate for the basket, its
+                        members are offered the group's rates <strong>instead of</strong> everybody's;
+                        anywhere else they see what everybody sees. A cart counts as a member only once
+                        its address is proven — a signed-in account, an order you place for them, or
+                        your storefront vouching for it — never because somebody typed the address.
+                    {:else}
+                        Every shopper, except members of a group that has its own rate for their
+                        basket in this zone.
+                    {/if}
+                    {#if !groupsReadable}
+                        Choosing a customer group needs the groups.read right.
+                    {/if}
+                </div>
+            {/key}
         </form>
         {#snippet footer()}
             <button type="button" class="btn transparent m-r-auto" onclick={() => (rateOpen = false)}>
@@ -558,5 +667,67 @@
     .rate-add:hover,
     .rate-add:focus-visible {
         background: var(--surfaceAlt1Color);
+    }
+    .zone-note {
+        padding: 8px 14px;
+        border-top: 1px solid var(--surfaceAlt2Color);
+        background: var(--surfaceAlt1Color);
+        color: var(--txtHintColor);
+        font-size: var(--smFontSize);
+        text-align: center;
+    }
+
+    /* A rate arrives the way a table row does — a fade, nothing travelling —
+       so a method just saved is seen landing in its zone. */
+    .rate-row {
+        animation: fadeIn var(--animationSpeed);
+    }
+    /* PocketBase's .flex-fill is `!important`, which no phone rule could then
+       narrow; the rate's text grows the same way without it. */
+    .rate-text {
+        flex: 1 1 auto;
+    }
+    .rate-group-cell {
+        display: flex;
+        min-width: 0;
+        max-width: 45%;
+    }
+    .rate-group {
+        min-width: 0;
+        max-width: 100%;
+    }
+    /* On a phone the chip takes a line of its own under the rate, so the
+       name keeps the width it needs and the price stays beside it. */
+    @media (max-width: 600px) {
+        .rate-row {
+            flex-wrap: wrap;
+            row-gap: 6px;
+        }
+        /* A basis of nothing, so a long name wraps beside its price instead
+           of pushing the price and the menu down a line. */
+        .rate-text {
+            flex: 1 1 0;
+        }
+        .rate-group-cell {
+            order: 1;
+            flex: 0 0 100%;
+            max-width: 100%;
+        }
+    }
+    .rate-group .txt {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* The sentence under the audience changes with the choice, and arrives
+       the way the page does so the change is noticed rather than read past. */
+    .rate-audience-help {
+        animation: slideTop var(--animationSpeed) ease-out;
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .rate-audience-help {
+            animation-name: fadeIn;
+        }
     }
 </style>

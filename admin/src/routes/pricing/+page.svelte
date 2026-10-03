@@ -62,9 +62,13 @@
                 api.get("/api/admin/customer-groups"),
                 api.get("/api/admin/settings"),
             ]);
-            lists = l.data ?? [];
-            groups = g.data ?? [];
-            currency = settings.data?.currency ?? currency;
+            // api.get unwraps the envelope, so an unpaged list arrives as the
+            // array itself and the settings as the object; reading `.data` off
+            // them showed every store an empty screen.
+            const rows = (r) => (Array.isArray(r) ? r : (r?.data ?? []));
+            lists = rows(l);
+            groups = rows(g);
+            currency = settings?.currency ?? currency;
         } catch (err) {
             toast.error(err);
         } finally {

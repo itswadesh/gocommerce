@@ -2931,8 +2931,12 @@ button.media-check {
  * every other screen puts there. Orders now has five — status, payment, the
  * date range, Export and New order — and on a phone they ran off the edge of
  * the header in one unbreakable row.
+ *
+ * The audit trail has four — who, what, from and to — and ran 250px off a
+ * phone the same way, further once "Customer groups" joined the record types.
  */
-.page-orders .page-header-primary-btns {
+.page-orders .page-header-primary-btns,
+.page-audit .page-header-primary-btns {
     flex-wrap: wrap;
     /* Wrapping alone changes nothing while the group is a `flex-shrink: 0` item
        of the header: it keeps its max-content width and never reaches a line it
@@ -2949,13 +2953,25 @@ button.media-check {
  * each, and below 550px they are `aspect-ratio: 1/1` circles, so a wide button
  * becomes a tall one and drags the whole row with it.
  */
-.page-orders .page-header-primary-btns .btn {
+.page-orders .page-header-primary-btns .btn,
+.page-audit .page-header-primary-btns .btn {
     flex-grow: 0;
     /* `flex-basis: auto` has to come with it. PocketBase's pair is
        `grow: 1; basis: 0`, and below 550px the button is also
        `width: auto; aspect-ratio: 1/1` — so a basis of 0 with nothing growing
        it resolves to a button 0 pixels wide. */
     flex-basis: auto;
+}
+
+/* Below 550px PocketBase turns a header button into its icon in a circle. The
+   audit trail's "Clear filters" has no icon, so it was its words squeezed
+   into a circle and running off the phone's edge; it keeps its own shape. */
+@media (max-width: 550px) {
+    .page-audit .page-header-primary-btns .btn:not(.circle) {
+        aspect-ratio: auto;
+        padding: 5px 14px;
+        border-radius: var(--borderRadius);
+    }
 }
 
 /*
@@ -3394,6 +3410,63 @@ button.media-check {
 }
 .order-line .txt-money {
     font-variant-numeric: tabular-nums;
+}
+
+/* An order sold tax-exempt says so where its tax line would be, and through
+   which group (D76): the label is the answer, the name is the reason. The
+   name links to the groups while the group exists, and answers hover and
+   press through opacity alone, so the feedback costs no layout. */
+.order-exempt {
+    align-items: center;
+    animation: fadeIn var(--animationSpeed);
+}
+.order-exempt-value {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+.order-exempt-value .label {
+    min-height: 0;
+    padding: 1px 6px;
+}
+.order-exempt-value > :last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.order-exempt-group {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    transition: opacity var(--animationSpeed) ease-out;
+}
+.order-exempt-group:hover {
+    opacity: 0.7;
+}
+.order-exempt-group:active {
+    opacity: 0.5;
+    transition-duration: var(--activeAnimationSpeed);
+}
+.order-exempt-group:focus-visible {
+    outline: 2px solid var(--primaryColor);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
+/*
+ * A row whose only way in is its buttons. PocketBase hides `.col-meta` on a
+ * phone because its rows open by a click on the row, and a table whose rows
+ * do not — the customer groups, where Edit is the only door to a group's tax
+ * exemption — would leave nothing to press. `.row-actions` keeps the cell, on
+ * its own line at the right of the card.
+ */
+@media (max-width: 600px) {
+    .responsive-table td.col-meta.row-actions {
+        display: block;
+        text-align: right;
+    }
 }
 
 /* ------------------------------------------------------------- the customer */
