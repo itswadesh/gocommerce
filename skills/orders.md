@@ -114,6 +114,14 @@ The cost is real and worth knowing: stock movements skip lines whose
 `variant_id` is NULL, because there is nothing left to move. Cancelling an order
 whose variant was deleted restocks nothing, correctly.
 
+**An order sold tax-exempt says through which group, as a snapshot (D76).**
+`tax_exemption` — `group_code` and `group_name` as text, beside a `group_id`
+that is `ON DELETE SET NULL` — is set when the cart's verified address was in a
+tax-exempt customer group at checkout. Renaming the group, ending its
+exemption or deleting it changes nothing on the order, and a CHECK holds such an
+order's `tax_minor` at zero. A guest's copy keeps the name and the code and
+drops the id, which is a handle into the admin.
+
 **Guest checkout is permanent** (AGENTS.md rule 8). There is no `customer_id`.
 An order is reachable by `orders.access_token`, returned at checkout and by no
 order read, guest or admin. `GetForGuest` compares it in constant time and

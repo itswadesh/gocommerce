@@ -249,6 +249,19 @@ grant.
 the one scripts use; narrowing what a script may do is a decision about who holds
 the token, not about the route.
 
+**Some fields need a second right, checked in the handler.** A route's rights
+say who may use it; a field that does something the route's right was never
+meant to grant asks for its own on top. `unit_price_minor` on
+`POST /api/admin/orders` needs `pricing.write` beside `orders.write` (D68), and
+changing `tax_exempt` on `PATCH /api/admin/customer-groups/{id}` — or creating
+a group exempt — needs `taxes.write` beside `groups.write` (D76), because it
+decides what every future order of every member collects. Only a change asks:
+sending back the value a group already has is not refused. Membership stays
+`groups.write`, and that is worth knowing when granting it: putting an address
+into a tax-exempt group exempts that address, as putting one into a priced group
+gives it the price (D66). A rate that names a customer group needs nothing beyond
+`shipping.write`.
+
 ## Adding a right
 
 Three edits and no migration — `role_rights` has no foreign key to the rights,

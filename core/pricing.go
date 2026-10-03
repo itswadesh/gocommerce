@@ -30,10 +30,14 @@ func (a *App) Pricing() *Pricing { return &Pricing{app: a} }
 // customer is an address that has ordered, which is what customers.go reads and
 // the only handle a group can hold.
 type CustomerGroup struct {
-	ID        int64  `json:"id"`
-	Code      string `json:"code"`
-	Name      string `json:"name"`
-	Members   int    `json:"members"`
+	ID      int64  `json:"id"`
+	Code    string `json:"code"`
+	Name    string `json:"name"`
+	Members int    `json:"members"`
+	// TaxExempt means a cart whose verified address is in this group is
+	// charged no tax (D76). Putting an address in the group exempts it, which
+	// is why the membership routes are worth guarding as carefully as this.
+	TaxExempt bool   `json:"tax_exempt"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }
@@ -44,12 +48,19 @@ type CustomerGroupInput struct {
 	// renamed group stays the same group.
 	Code string `json:"code"`
 	Name string `json:"name"`
+	// TaxExempt creates the group exempt. Over HTTP, true needs taxes.write as
+	// well as groups.write: it decides what every future order of its members
+	// collects, which is a tax decision.
+	TaxExempt bool `json:"tax_exempt"`
 }
 
 // CustomerGroupPatch updates one. A nil field is left alone.
 type CustomerGroupPatch struct {
 	Code *string `json:"code"`
 	Name *string `json:"name"`
+	// TaxExempt changes whether the group's members pay tax. Over HTTP a
+	// change needs taxes.write as well as groups.write.
+	TaxExempt *bool `json:"tax_exempt"`
 }
 
 // PriceList is a set of prices that applies to a group, over a window.
@@ -214,12 +225,38 @@ func (p *Pricing) CreateGroup(ctx context.Context, in CustomerGroupInput) (*Cust
 		return nil, Validationf("a group needs a name, which is what an operator sees")
 	}
 	var id int64
-	if err := p.app.db.QueryRowContext(ctx,
-		`INSERT INTO customer_groups (code, name) VALUES ($1, $2) RETURNING id`,
-		code, name).Scan(&id); err != nil {
-		return nil, translatePricingErr(err)
+	err = InTx(ctx, p.app.db, func(tx *sql.Tx) error {
+		if err := tx.QueryRowContext(ctx,
+			`INSERT INTO customer_groups (code, name, tax_exempt) VALUES ($1, $2, $3) RETURNING id`,
+			code, name, in.TaxExempt).Scan(&id); err != nil {
+			return translatePricingErr(err)
+		}
+		if !in.TaxExempt {
+			return nil
+		}
+		return auditTaxExemption(ctx, tx, id, name, false, true)
+	})
+	if err != nil {
+		return nil, err
 	}
 	return p.Group(ctx, id)
+}
+
+// auditTaxExemption records a group starting or stopping being tax-exempt, in
+// the transaction that changes it, beside every tax rate's history: "who
+// stopped charging the dealers tax, and when" is the same question as "who
+// raised VAT", and it is asked of the same trail.
+func auditTaxExemption(ctx context.Context, tx *sql.Tx, id int64, name string, was, now bool) error {
+	summary := "Made the customer group " + name + " tax-exempt"
+	if !now {
+		summary = "Made the customer group " + name + " pay tax again"
+	}
+	return writeAudit(ctx, tx, auditRecord{
+		Action: AuditCustomerGroupTaxExemption, Entity: AuditEntityCustomerGroup,
+		ID: id, Label: name, Summary: summary,
+		Before: map[string]any{"tax_exempt": was},
+		After:  map[string]any{"tax_exempt": now},
+	})
 }
 
 func (p *Pricing) Group(ctx context.Context, id int64) (*CustomerGroup, error) {
@@ -227,9 +264,9 @@ func (p *Pricing) Group(ctx context.Context, id int64) (*CustomerGroup, error) {
 	err := p.app.db.QueryRowContext(ctx, `
 		SELECT g.id, g.code, g.name,
 		       (SELECT count(*) FROM customer_group_members m WHERE m.group_id = g.id),
-		       g.created_at, g.updated_at
+		       g.tax_exempt, g.created_at, g.updated_at
 		FROM customer_groups g WHERE g.id = $1`, id,
-	).Scan(&g.ID, &g.Code, &g.Name, &g.Members, &g.CreatedAt, &g.UpdatedAt)
+	).Scan(&g.ID, &g.Code, &g.Name, &g.Members, &g.TaxExempt, &g.CreatedAt, &g.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, NotFoundf("customer group %d does not exist", id)
 	}
@@ -243,7 +280,7 @@ func (p *Pricing) Groups(ctx context.Context) ([]*CustomerGroup, error) {
 	rows, err := p.app.db.QueryContext(ctx, `
 		SELECT g.id, g.code, g.name,
 		       (SELECT count(*) FROM customer_group_members m WHERE m.group_id = g.id),
-		       g.created_at, g.updated_at
+		       g.tax_exempt, g.created_at, g.updated_at
 		FROM customer_groups g ORDER BY g.name, g.id`)
 	if err != nil {
 		return nil, err
@@ -252,7 +289,8 @@ func (p *Pricing) Groups(ctx context.Context) ([]*CustomerGroup, error) {
 	out := []*CustomerGroup{}
 	for rows.Next() {
 		g := &CustomerGroup{}
-		if err := rows.Scan(&g.ID, &g.Code, &g.Name, &g.Members, &g.CreatedAt, &g.UpdatedAt); err != nil {
+		if err := rows.Scan(&g.ID, &g.Code, &g.Name, &g.Members, &g.TaxExempt,
+			&g.CreatedAt, &g.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, g)
@@ -280,23 +318,47 @@ func (p *Pricing) UpdateGroup(ctx context.Context, id int64, patch CustomerGroup
 		}
 		add("name", name)
 	}
+	if patch.TaxExempt != nil {
+		add("tax_exempt", *patch.TaxExempt)
+	}
 	if len(sets) == 0 {
 		return p.Group(ctx, id)
 	}
 	add("updated_at", time.Now())
 	args = append(args, id)
-	res, err := p.app.db.ExecContext(ctx,
-		`UPDATE customer_groups SET `+strings.Join(sets, ", ")+` WHERE id = $`+strconv.Itoa(len(args)), args...)
+	err := InTx(ctx, p.app.db, func(tx *sql.Tx) error {
+		// The row as it was, locked, so an exemption that did not actually
+		// change writes no audit row and two operators flipping it at once
+		// record what each of them really did.
+		var was bool
+		err := tx.QueryRowContext(ctx,
+			`SELECT tax_exempt FROM customer_groups WHERE id = $1 FOR UPDATE`, id).Scan(&was)
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("customer group %d does not exist", id)
+		}
+		if err != nil {
+			return err
+		}
+		var name string
+		if err := tx.QueryRowContext(ctx,
+			`UPDATE customer_groups SET `+strings.Join(sets, ", ")+
+				` WHERE id = $`+strconv.Itoa(len(args))+` RETURNING name`, args...).Scan(&name); err != nil {
+			return translatePricingErr(err)
+		}
+		if patch.TaxExempt == nil || *patch.TaxExempt == was {
+			return nil
+		}
+		return auditTaxExemption(ctx, tx, id, name, was, *patch.TaxExempt)
+	})
 	if err != nil {
-		return nil, translatePricingErr(err)
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return nil, NotFoundf("customer group %d does not exist", id)
+		return nil, err
 	}
 	return p.Group(ctx, id)
 }
 
-// DeleteGroup removes a group, its membership and the lists priced for it.
+// DeleteGroup removes a group, its membership, the lists priced for it and the
+// shipping rates offered to it (D76). Orders sold tax-exempt through it keep
+// the group's name; they lose only the way back to it.
 //
 // Cascading rather than refusing, which is the opposite of what a category does
 // with its products, and for a reason that is not laziness: a product orphaned

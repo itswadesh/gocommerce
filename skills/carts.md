@@ -207,6 +207,9 @@ of quantity × snapshot price) and `from`/`to` over `updated_at`.
   a storefront backend calling `POST /api/admin/carts/verify-email` under
   `groups.write`. Vouching re-prices the lines at once; typing a different
   address with `PUT /api/carts/<token>/email` withdraws it and re-prices back.
+  The same address decides the group's shipping rates on
+  `GET /api/checkout/rates` and whether the order is charged tax (D76) — see
+  [checkout](checkout.md).
   `Pricing.PriceFor(variant, qty, email)` still takes an address — the caller
   is the one vouching for it.
 - **Looking for a DELETE that clears the email.** There is none, because the

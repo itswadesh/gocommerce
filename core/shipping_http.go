@@ -12,10 +12,11 @@ func (a *App) mountShippingRoutes() {
 	// caller could make up.
 	a.HandleFunc("GET /api/checkout/rates", a.handleShippingRates)
 
-	// Operator: where this store delivers and what it charges. `store.operate`
-	// rather than a right of its own — shipping is how the store is wired to
-	// the world, the same kind of thing as the outbox screen (D49) — and
-	// core/rights.go stays the closed catalogue it is.
+	// Operator: where this store delivers and what it charges, under the
+	// shipping pair D63 gave it. Naming a customer group on a rate needs
+	// nothing more (D76): it offers that group a delivery price, which is what
+	// shipping.write already decides for everybody, and it reaches no address
+	// the group did not already hold.
 	a.HandleAdminFunc("GET /api/admin/shipping/zones", a.handleListShippingZones, RightShippingRead)
 	a.HandleAdminFunc("POST /api/admin/shipping/zones", a.handleCreateShippingZone, RightShippingWrite)
 	a.HandleAdminFunc("PATCH /api/admin/shipping/zones/{id}", a.handleUpdateShippingZone, RightShippingWrite)
@@ -49,10 +50,14 @@ func (a *App) handleShippingRates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Quoted as whoever the cart is proven to belong to, so a dealer's basket
+	// is offered the dealer's freight — and as nobody in particular when it is
+	// not, whatever address was typed onto it (D66, D76).
 	quotes, err := a.shipping.Quote(r.Context(), ShippingQuery{
 		Country:       country,
 		State:         q.Get("state"),
 		SubtotalMinor: cart.Subtotal.AmountMinor,
+		Email:         cart.VerifiedEmail,
 	})
 	if err != nil {
 		RespondError(w, r, err)

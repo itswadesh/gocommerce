@@ -109,6 +109,28 @@ cards — is charged nothing to send and is not asked for a delivery option,
 wherever the address is; the flat number and the rates below apply the moment
 one physical line is in it.
 
+**Who the cart is proven to belong to decides its delivery options and whether
+it pays tax, as it decides its prices (D66, D76).** All three read the cart's
+`verified_email` under the cart's lock — never the checkout's `email`, never
+the one typed onto the cart. A shipping rate that names a customer group is
+offered only to a cart whose verified address is in that group, and **replaces**
+the public rates wherever the group has a rate for that basket and place: each
+group's offer comes from the most specific zone covering the address in which
+the group has a rate that fits the basket, an address in several groups gets the
+union (the cheaper of two same-named methods), and where no group has anything
+to say the cart is offered exactly what anybody is. A zone whose rates all name
+groups is not there for anybody else, and group rates alone leave everybody else
+on `Config.FlatShippingMinor`. The chosen `shipping_rate_id` is re-judged under
+the lock, so a cart that left its group since it was quoted gets the same 409 as
+any rate that moved. An address in a tax-exempt group is charged no tax on any
+line: in an exclusive store nothing is added, and in an inclusive one the price
+the cart showed is charged with none of it recorded as tax — a lower price for
+exempt buyers is a price list on the same group. The order snapshots the group
+as `tax_exemption` (see [orders](orders.md)). `Orders.Create` verifies the
+address the operator typed, so a phone order is judged the same way, and
+`NewOrderInput.ShippingRateID` (`shipping_rate_id` on `POST /api/admin/orders`)
+chooses its delivery.
+
 ## How to check out over HTTP
 
 ```http
@@ -189,6 +211,11 @@ reserved >= $3`, and `UNIQUE (scope, key)`. No fake reproduces any of it.
   everyone in its group until switched off, and a code reaches whoever types
   it. Place the order through `Orders.Create` with `NewOrderLine.UnitPriceMinor`
   (D68); over HTTP that field needs `pricing.write` on top of `orders.write`.
+- **Reading a company's terms from the address on the checkout.** Group prices,
+  group shipping rates and tax exemption are all read from the cart's
+  `verified_email` (D66, D76). A guard or a module that decides anything from
+  `CheckoutInput.Email` has rebuilt the hole D66 closed; use
+  `CheckoutAttempt.VerifiedEmail`.
 
 Related: [carts](carts.md), [orders](orders.md), [payments](payments.md),
 [events](events.md).

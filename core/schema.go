@@ -59,6 +59,7 @@ func coreMigrations() []Migration {
 		{ID: "0048_vendor_accounts", SQL: migration0048VendorAccounts},
 		{ID: "0049_cart_verified_email", SQL: migration0049CartVerifiedEmail},
 		{ID: "0050_agreed_line_price", SQL: migration0050AgreedLinePrice},
+		{ID: "0051_group_shipping_and_tax", SQL: migration0051GroupShippingAndTax},
 	}
 }
 
@@ -2376,4 +2377,47 @@ ALTER TABLE carts
 const migration0050AgreedLinePrice = `
 ALTER TABLE cart_line_items
     ADD COLUMN agreed_price_minor bigint CHECK (agreed_price_minor >= 0);
+`
+
+// migration0051GroupShippingAndTax gives a customer group its own delivery
+// rates and lets it be exempt from tax (D76), read from the same verified
+// address a group price is (D66), so a company gets both through its group and
+// core learns no new idea of who a buyer is.
+//
+// A rate's group is nullable and NULL is everybody, for the reason a price
+// list's is: every rate that exists was written for everybody, and adopting
+// the feature must not retire one. CASCADE from the group rather than SET
+// NULL, which is the opposite of what an order's snapshot below does and for
+// the reason that matters most here: a dealer's free freight whose group was
+// deleted would otherwise quietly become everybody's free freight.
+//
+// The order keeps what it was sold under as text beside a nullable id. The
+// text is the record — the group can be renamed, unexempted or deleted and the
+// order still has to say why it carries no tax — and the id is only a way
+// back to the group while it exists, which is why it is SET NULL. The CHECK
+// says the snapshot is whole or absent, and that an order sold exempt carries
+// no tax; nothing writes tax onto an order after checkout, and this keeps it
+// that way.
+const migration0051GroupShippingAndTax = `
+ALTER TABLE shipping_rates
+    ADD COLUMN customer_group_id bigint REFERENCES customer_groups (id) ON DELETE CASCADE;
+CREATE INDEX shipping_rates_group_idx ON shipping_rates (customer_group_id)
+    WHERE customer_group_id IS NOT NULL;
+
+ALTER TABLE customer_groups
+    ADD COLUMN tax_exempt boolean NOT NULL DEFAULT false;
+
+ALTER TABLE orders
+    ADD COLUMN tax_exempt_group_id   bigint REFERENCES customer_groups (id) ON DELETE SET NULL,
+    ADD COLUMN tax_exempt_group_code text,
+    ADD COLUMN tax_exempt_group_name text,
+    ADD CONSTRAINT orders_tax_exemption_whole CHECK (
+        (tax_exempt_group_code IS NULL) = (tax_exempt_group_name IS NULL)
+        AND (tax_exempt_group_id IS NULL OR tax_exempt_group_code IS NOT NULL)
+        AND (tax_exempt_group_code IS NULL OR tax_minor = 0)
+    );
+-- Deleting a group sets this to NULL on its orders, which without an index is
+-- a scan of every order the store has taken.
+CREATE INDEX orders_tax_exempt_group_idx ON orders (tax_exempt_group_id)
+    WHERE tax_exempt_group_id IS NOT NULL;
 `
