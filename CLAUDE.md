@@ -94,6 +94,17 @@ It exits non-zero on any finding, and a screen a later wave has not built yet
 is marked optional so it reports absence rather than failing. Run it more than
 once — the worst bug found this way was intermittent.
 
+## Every push to main is published
+
+`.github/workflows/updates.yml` puts each commit on
+[kitcommerce.store/updates](https://kitcommerce.store/updates/) as a feature
+or a bug fix, and posts the push to Discord, X and Instagram. The subject
+decides the type — one starting "Fix", "Stop", "Prevent" and the like, or
+naming a bug, is a fix; anything else is a feature. When the guess would be
+wrong, say so in a trailer: `Update: fix`, `Update: feature`, or
+`Update: skip` for a change readers would not care about. The subject is
+what the public reads, so write it for them.
+
 ## Working style
 
 - Read `PLAN.md` §5 before proposing anything structural. The decisions have
