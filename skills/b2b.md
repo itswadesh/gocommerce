@@ -71,7 +71,12 @@ basket is checked out through `POST /x/b2b/checkout` like any other.
   `variant_id`, into `cart_id` or a new basket. A line that cannot go in comes
   back in `rejected` with a reason — `not_found`, `inactive`,
   `insufficient_stock`, `invalid` — and the rest still go in; the answer is
-  200 either way.
+  200 either way. The same route takes a spreadsheet: `Content-Type: text/csv`,
+  the basket in `?cart_id=`, a header naming `quantity` and `sku` or
+  `variant_id` in any case, other columns ignored. It is read by core's
+  `CSVReader`, so a byte-order mark and an export's escaping apostrophe are
+  taken off (D62), and each rejected line carries its `row` — the header is
+  row 1, as a spreadsheet numbers it. A file with no such header is a 400.
 - **Repeat order:** `POST /x/b2b/orders/{order_id}/reorder` copies an order's
   lines into a new basket at today's prices, with the same `rejected` list. The
   order must be in the company's ledger and visible to the caller by the rule
@@ -201,6 +206,10 @@ dealer and starts the lead again at `new`.
   delivered.** The first moves on every edit and the second on every retry.
   The event's `At` and the order's timeline are when it was recorded; with
   neither, the line says `noticed`.
+- **Parsing an uploaded order with `encoding/csv` directly.** A SKU exported
+  as `'-RED` would arrive with its apostrophe and match nothing, and a header
+  saved by Excel would start with a byte-order mark. `gocommerce.NewCSVReader`
+  handles both.
 - **Reading `to` as the last day.** It is the day after, as in the reports and
   the order list; a September statement is `from=2026-09-01&to=2026-10-01`.
 - **Placing a repeat order at the old prices.** The old order may have been a

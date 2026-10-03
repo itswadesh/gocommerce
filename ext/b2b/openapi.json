@@ -1133,8 +1133,8 @@
         "tags": [
           "b2b"
         ],
-        "summary": "Put a pasted order into the basket",
-        "description": "Quick order: up to 500 lines by SKU or variant id, added one by one through the same rules as the public cart routes, into the basket named by `cart_id` or a new one. The basket is priced as the buyer first, so every line goes in at their company's price.\n\nA line that cannot go in — a SKU nobody sells, something not for sale, more than is in stock, a quantity under 1 — is listed in `rejected` with its reason, and the rest still go in: the answer is 200 whatever was rejected. Adding a SKU already in the basket adds to its quantity.\n\nNothing is placed; check the basket out with `POST /x/b2b/checkout`.",
+        "summary": "Put a pasted order, or a spreadsheet, into the basket",
+        "description": "Quick order: up to 500 lines by SKU or variant id, added one by one through the same rules as the public cart routes, into the basket named by `cart_id` or a new one. The basket is priced as the buyer first, so every line goes in at their company's price.\n\nThe body is JSON, or a spreadsheet sent as `text/csv` with the basket named in the `cart_id` query parameter. A file's first row names its columns — `sku` or `variant_id`, and `quantity` — in any case and any order, with any byte-order mark ignored; other columns are ignored too, so an export with titles and prices beside the SKUs still reads. Empty rows are skipped. It is read by core's CSV reader, which takes off the apostrophe an export put before a cell beginning with `=`, `+`, `-` or `@`. A file with no such header, or that cannot be parsed, is a 400 naming the problem.\n\nA line that cannot go in — a SKU nobody sells, something not for sale, more than is in stock, a quantity under 1 or not a number — is listed in `rejected` with its reason, and from a file with its `row`, and the rest still go in: the answer is 200 whatever was rejected. Adding a SKU already in the basket adds to its quantity.\n\nNothing is placed; check the basket out with `POST /x/b2b/checkout`.",
         "security": [
           {
             "customerSession": []
@@ -1147,6 +1147,12 @@
               "schema": {
                 "$ref": "#/components/schemas/B2bBulkRequest"
               }
+            },
+            "text/csv": {
+              "schema": {
+                "type": "string"
+              },
+              "example": "sku,quantity\nTEE-M-BLK,12\nMUG-001,40\n"
             }
           }
         },
@@ -1155,7 +1161,7 @@
             "$ref": "#/components/responses/B2bCartFilled"
           },
           "400": {
-            "description": "`lines` is empty or longer than 500, or the body is malformed.",
+            "description": "`lines` is empty or longer than 500, or the body is malformed; or a file has no header naming `quantity` and `sku` or `variant_id`, no lines under it, more than 500, or a row the CSV parser cannot read.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1197,7 +1203,18 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "cart_id",
+            "in": "query",
+            "required": false,
+            "description": "With a `text/csv` body, the basket to fill; absent opens a new one. A JSON body names it in its own `cart_id`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/x/b2b/orders/{order_id}/reorder": {
@@ -4227,11 +4244,15 @@
               "insufficient_stock",
               "invalid"
             ],
-            "description": "`not_found`: no variant has that SKU or id. `inactive`: it is not for sale. `insufficient_stock`: more than is available. `invalid`: the quantity is under 1. `inactive` and `insufficient_stock` are the reasons a refused checkout gives for the same two things."
+            "description": "`not_found`: no variant has that SKU or id. `inactive`: it is not for sale. `insufficient_stock`: more than is available. `invalid`: the quantity is under 1, or a file's cell is not a number. `inactive` and `insufficient_stock` are the reasons a refused checkout gives for the same two things."
           },
           "message": {
             "type": "string",
             "description": "The reason in words, for a person: \"only 3 left in stock\"."
+          },
+          "row": {
+            "type": "integer",
+            "description": "From a file: the line's row, counting the header as row 1, as a spreadsheet numbers it. Absent for a JSON line."
           }
         }
       },

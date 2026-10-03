@@ -2,6 +2,7 @@ package b2b
 
 import (
 	"context"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -327,9 +328,21 @@ func (m *Module) handleCheckout(w http.ResponseWriter, r *http.Request, acct *id
 	gocommerce.Respond(w, http.StatusCreated, checkoutResponse{CheckoutResult: result})
 }
 
+// maxBulkFile bounds an uploaded order. Five hundred rows of SKU and quantity
+// are a few kilobytes; a megabyte leaves room for the titles and prices an
+// export carries beside them.
+const maxBulkFile = 1 << 20
+
 // handleAddLines answers 200 whatever was rejected: the basket exists and
-// holds what could go in, and rejected says what could not.
+// holds what could go in, and rejected says what could not. A body sent as
+// text/csv is a spreadsheet, with the basket named in ?cart_id.
 func (m *Module) handleAddLines(w http.ResponseWriter, r *http.Request, acct *identity.Customer) {
+	if ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); ct == "text/csv" {
+		fill, err := m.AddLinesCSV(r.Context(), acct, r.URL.Query().Get("cart_id"),
+			http.MaxBytesReader(w, r.Body, maxBulkFile))
+		respond(w, r, http.StatusOK, fill, err)
+		return
+	}
 	var in BulkRequest
 	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
 		gocommerce.RespondError(w, r, err)
