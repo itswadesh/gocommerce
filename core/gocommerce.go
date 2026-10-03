@@ -39,7 +39,7 @@ import (
 // contract are stable from here, and a break needs a major version rather than
 // a line in PLAN.md. The pre-1.0 breaks recorded there — D24, D25, D36, D38,
 // D46 — were free because nothing had been promised. That allowance is spent.
-const Version = "1.1.0"
+const Version = "1.2.0"
 
 // Defaults applied by [Config] when a field is left zero.
 const (
