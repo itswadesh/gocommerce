@@ -28,6 +28,7 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	app.HandleFunc("POST /x/b2b/checkout", m.session(m.handleCheckout))
 	app.HandleFunc("GET /x/b2b/statement", m.session(m.handleMyStatement))
 	app.HandleFunc("GET /x/b2b/catalogue", m.session(m.handleMyCatalogue))
+	app.HandleFunc("GET /x/b2b/catalogue/categories", m.session(m.handleMyCatalogueCategories))
 	app.HandleFunc("GET /x/b2b/orders", m.session(m.handleMyOrders))
 	app.HandleFunc("GET /x/b2b/orders/{order_id}", m.session(m.handleMyOrder))
 	app.HandleFunc("POST /x/b2b/orders/{order_id}/reorder", m.session(m.handleReorder))
@@ -902,6 +903,13 @@ func (m *Module) handleAdminDeleteCatalogue(w http.ResponseWriter, r *http.Reque
 // handleMyStatement is the buyer's own company's statement. What the company
 // owes is the business of whoever runs its account, so a plain buyer is
 // refused, as they are refused the company's leads.
+// handleMyCatalogueCategories is what the catalogue can be browsed by: the
+// categories holding something the buyer's company may buy.
+func (m *Module) handleMyCatalogueCategories(w http.ResponseWriter, r *http.Request, acct *identity.Customer) {
+	list, err := m.BuyerCatalogueCategories(r.Context(), acct)
+	respond(w, r, http.StatusOK, list, err)
+}
+
 func (m *Module) handleMyStatement(w http.ResponseWriter, r *http.Request, acct *identity.Customer) {
 	b, ok := m.buyer(w, r, acct)
 	if !ok {

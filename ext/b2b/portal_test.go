@@ -1,6 +1,7 @@
 package b2b
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"testing"
@@ -113,5 +114,92 @@ func TestARepeatOrderCanFillTheBasketTheBuyerAlreadyHas(t *testing.T) {
 	rec = gctest.SessionRequest(t, f.app, tok, http.MethodPost, path, map[string]any{"note": "same again"})
 	if rec.Code != http.StatusCreated {
 		t.Errorf("reorder with a field it does not know = %d, want 201 as before: %s", rec.Code, rec.Body)
+	}
+}
+
+// The portal's catalogue is browsed by category, and the categories offered
+// are the ones holding something the company may buy, each counting what is
+// under it at any depth — never a branch whose filter could only come back
+// empty.
+func TestTheCatalogueIsBrowsedByTheCategoriesItHolds(t *testing.T) {
+	f := newFixture(t)
+	s := f.shelves(t)
+	_, tok := f.member(t, "boss@acme.test", RoleBuyer)
+
+	read := func() map[string]int {
+		t.Helper()
+		rec := gctest.SessionRequest(t, f.app, tok, http.MethodGet, "/x/b2b/catalogue/categories", nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("categories = %d: %s", rec.Code, rec.Body)
+		}
+		var list []CatalogueCategory
+		gctest.DecodeData(t, rec, &list)
+		out := map[string]int{}
+		for _, c := range list {
+			out[c.FullName] = c.ProductCount
+		}
+		return out
+	}
+
+	all := read()
+	if all["Tools"] != 2 || all["Tools / Power tools"] != 1 || all["Paint"] != 1 || len(all) != 3 {
+		t.Errorf("with no catalogue = %v; want Tools 2 (its own and Power tools'), Power tools 1, Paint 1", all)
+	}
+	f.holdTo(t, s.power)
+	held := read()
+	if held["Tools / Power tools"] != 1 || held["Tools"] != 1 || len(held) != 2 {
+		t.Errorf("held to Power tools = %v; want Power tools and the Tools above it, and no Paint", held)
+	}
+	_, nobodyTok := f.account(t, "nobody@else.test", true)
+	if rec := gctest.SessionRequest(t, f.app, nobodyTok, http.MethodGet, "/x/b2b/catalogue/categories", nil); rec.Code != http.StatusForbidden {
+		t.Errorf("an account with no company = %d, want 403", rec.Code)
+	}
+}
+
+// A catalogue variant says whether it can be ordered now. Its available count
+// is zero for one whose stock is not counted, so that count cannot say it.
+func TestACatalogueVariantSaysWhetherItCanBeOrdered(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	_, tok := f.member(t, "boss@acme.test", RoleBuyer)
+	uncounted := gctest.CreateProduct(t, f.app, "GIFT-CARD", 2500, 0).Variants[0].ID
+	off := false
+	if _, err := f.app.Products().UpdateVariant(ctx, uncounted, gocommerce.VariantPatch{TrackInventory: &off}); err != nil {
+		t.Fatalf("stop counting: %v", err)
+	}
+	soldOut := gctest.CreateProduct(t, f.app, "SOLD-OUT", 900, 0).Variants[0].ID
+	// On sale, with its only variant switched off: nothing to buy, so not
+	// listed or counted.
+	withdrawn := gctest.CreateProduct(t, f.app, "WITHDRAWN", 900, 5)
+	f.deactivate(t, withdrawn.Variants[0].ID)
+
+	rec := gctest.SessionRequest(t, f.app, tok, http.MethodGet, "/x/b2b/catalogue", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("catalogue = %d: %s", rec.Code, rec.Body)
+	}
+	var list []CatalogueProduct
+	gctest.DecodeData(t, rec, &list)
+	var meta gocommerce.ListMeta
+	decodeMeta(t, rec.Body.String(), &meta)
+	got := map[int64]CatalogueVariant{}
+	for _, p := range list {
+		if p.ID == withdrawn.ID {
+			t.Errorf("a product with no variant on sale is listed: %+v", p)
+		}
+		for _, v := range p.Variants {
+			got[v.ID] = v
+		}
+	}
+	if meta.Total != len(list) || meta.Total != 3 {
+		t.Errorf("total = %d over %d listed, want 3: the widget, the gift card and the sold-out line", meta.Total, len(list))
+	}
+	if v := got[uncounted]; !v.InStock || v.Available != 0 {
+		t.Errorf("a variant whose stock is not counted = %+v; want in stock with nothing counted", v)
+	}
+	if v := got[soldOut]; v.InStock {
+		t.Errorf("a counted variant with none left = %+v; want not in stock", v)
+	}
+	if v := got[f.variant]; !v.InStock || v.Available != 100 {
+		t.Errorf("the widget = %+v; want 100 in stock", v)
 	}
 }
