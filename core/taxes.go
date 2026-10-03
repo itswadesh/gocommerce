@@ -125,7 +125,7 @@ func (s *Taxes) Create(ctx context.Context, in TaxRateInput) (*TaxRate, error) {
 			VALUES ($1,$2,$3,$4,$5,$6,$7)
 			RETURNING `+strings.ReplaceAll(taxRateColumns, "t.", ""),
 			in.Name, in.RateBP, strings.ToUpper(strings.TrimSpace(in.Country)),
-			strings.ToUpper(strings.TrimSpace(in.State)), in.CategoryID, active, meta))
+			StateCode(in.Country, in.State), in.CategoryID, active, meta))
 		if terr != nil {
 			return translateTaxErr(terr)
 		}
@@ -212,8 +212,14 @@ func (s *Taxes) Update(ctx context.Context, id int64, patch TaxRatePatch) (*TaxR
 	if patch.Country != nil {
 		add("country", strings.ToUpper(strings.TrimSpace(*patch.Country)))
 	}
+	// The state is stored as its code, which depends on the country — the
+	// one in this patch, or the rate's own when the patch leaves it alone,
+	// which is only known once the row is read below. Until then it holds
+	// the plain normalised text, so a patch can still be refused as empty.
+	stateArg := 0
 	if patch.State != nil {
-		add("state", strings.ToUpper(strings.TrimSpace(*patch.State)))
+		add("state", normalizeState(*patch.State))
+		stateArg = len(args) - 1
 	}
 	if patch.CategoryID.Present {
 		add("category_id", patch.CategoryID.Value)
@@ -243,6 +249,14 @@ func (s *Taxes) Update(ctx context.Context, id int64, patch TaxRatePatch) (*TaxR
 		}
 		if err != nil {
 			return err
+		}
+		if stateArg > 0 {
+			country := was.Country
+			if patch.Country != nil {
+				country = strings.ToUpper(strings.TrimSpace(*patch.Country))
+			}
+			args[stateArg] = StateCode(country, *patch.State)
+			after["state"] = args[stateArg]
 		}
 		before := map[string]any{}
 		for col, v := range map[string]any{
@@ -318,7 +332,9 @@ func (s *Taxes) ratesForProducts(ctx context.Context, tx *sql.Tx, country, state
 		return out, nil
 	}
 	country = strings.ToUpper(strings.TrimSpace(country))
-	state = strings.ToUpper(strings.TrimSpace(state))
+	// Every spelling of the address's state, so a rate saved as "CA" and one
+	// saved as "CALIFORNIA" before D72 both meet an address written either way.
+	states := stringArray(StateSpellings(country, state))
 
 	rows, err := tx.QueryContext(ctx, `
 		WITH RECURSIVE up AS (
@@ -340,7 +356,7 @@ func (s *Taxes) ratesForProducts(ctx context.Context, tx *sql.Tx, country, state
 		    JOIN tax_rates t ON t.category_id = up.category_id
 		    WHERE t.active
 		      AND (t.country = '' OR t.country = $2)
-		      AND (t.state   = '' OR t.state   = $3)
+		      AND (t.state   = '' OR t.state   = ANY($3::text[]))
 		  UNION ALL
 		    -- A rule with no category applies to every product in the basket.
 		    SELECT p.id, t.id, t.name, t.rate_bp, 1000000 AS depth,
@@ -350,12 +366,12 @@ func (s *Taxes) ratesForProducts(ctx context.Context, tx *sql.Tx, country, state
 		    CROSS JOIN tax_rates t
 		    WHERE p.id = ANY($1::bigint[]) AND t.category_id IS NULL AND t.active
 		      AND (t.country = '' OR t.country = $2)
-		      AND (t.state   = '' OR t.state   = $3)
+		      AND (t.state   = '' OR t.state   = ANY($3::text[]))
 		)
 		SELECT DISTINCT ON (product_id) product_id, name, rate_bp
 		FROM candidates
 		ORDER BY product_id, score DESC, depth ASC, id`,
-		int64Array(productIDs), country, state, MaxCategoryDepth)
+		int64Array(productIDs), country, states, MaxCategoryDepth)
 	if err != nil {
 		return nil, err
 	}

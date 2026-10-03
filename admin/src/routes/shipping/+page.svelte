@@ -95,9 +95,15 @@
         rateOpen = true;
     }
 
+    /* Commas separate states, because a state can be a name of more than one
+       word ("New York") now that the engine reads names as codes (D72). A list
+       with no commas is split on spaces only when every piece is a short code,
+       as in "KA MH", the way states were typed before. */
     function codes(raw) {
-        return raw
-            .split(/[\s,]+/)
+        const listed = raw.includes(",");
+        const pieces = listed ? raw.split(",") : raw.trim().split(/\s+/);
+        const allShort = pieces.every((p) => p.trim().length <= 3);
+        return (listed || allShort ? pieces : [raw])
             .map((c) => c.trim().toUpperCase())
             .filter(Boolean);
     }
@@ -386,8 +392,9 @@
                 <input id="zone-states" type="text" placeholder="KA, MH" bind:value={zoneForm.states} />
             </div>
             <div class="field-help">
-                Optional, and only useful with a country above. A zone naming a state beats one
-                that names only the country.
+                Optional, and only useful with a country above. Separate states with commas. In the
+                United States, Canada, Australia and India a name is saved as its code ("New York" as
+                NY). A zone naming a state beats one that names only the country.
             </div>
         </form>
         {#snippet footer()}

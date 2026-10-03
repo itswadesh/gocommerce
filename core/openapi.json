@@ -16014,7 +16014,7 @@
           },
           "state": {
             "type": "string",
-            "description": "Requires a country."
+            "description": "Requires a country. Stored as its code where the engine knows the country's states."
           },
           "category_id": {
             "type": "integer",
@@ -16064,7 +16064,7 @@
           },
           "state": {
             "type": "string",
-            "description": "Requires a country."
+            "description": "Requires a country. In the United States, Canada, Australia and India a state is read by its code or its name (\"California\", \"ca\" and \"US-CA\" are all `CA`) and stored as its code; an address matches by either. Elsewhere it is matched as written, case and spacing aside."
           },
           "category_id": {
             "type": "integer",
@@ -17484,7 +17484,7 @@
             "items": {
               "type": "string"
             },
-            "description": "ISO state codes. Empty means anywhere within the countries above."
+            "description": "State codes, where the engine knows the country's states; otherwise as written. Empty means anywhere within the countries above."
           },
           "created_at": {
             "type": "string",
@@ -17522,7 +17522,8 @@
             },
             "example": [
               "KA"
-            ]
+            ],
+            "description": "Each state is read against each of the zone's countries. In the United States, Canada, Australia and India a state is read by its code or its name (\"California\", \"ca\" and \"US-CA\" are all `CA`) and stored as its code; an address matches by either. Elsewhere it is matched as written, case and spacing aside."
           }
         }
       },

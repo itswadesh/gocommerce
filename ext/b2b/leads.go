@@ -73,10 +73,6 @@ type TerritoryInput struct {
 
 func normCountry(s string) string { return strings.ToUpper(strings.TrimSpace(s)) }
 
-// normState upper-cases a state and closes up its spaces, so "New South
-// Wales" and "new  south wales" are one territory and one match.
-func normState(s string) string { return strings.ToUpper(strings.Join(strings.Fields(s), " ")) }
-
 // normPostal keeps a postcode's letters and digits, upper-cased: "sw1a 1aa" is
 // SW1A1AA, and 94105-1234 starts with 941 whichever way it was typed.
 func normPostal(s string) string {
@@ -91,6 +87,17 @@ func normPostal(s string) string {
 
 func validCountry(s string) bool {
 	return len(s) == 2 && s[0] >= 'A' && s[0] <= 'Z' && s[1] >= 'A' && s[1] <= 'Z'
+}
+
+// textArray is a Postgres array literal, written the way core writes its own
+// array parameters.
+func textArray(values []string) string {
+	escape := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
+	quoted := make([]string, len(values))
+	for i, v := range values {
+		quoted[i] = `"` + escape.Replace(v) + `"`
+	}
+	return "{" + strings.Join(quoted, ",") + "}"
 }
 
 const territoryColumns = `t.id, t.company_id, c.name, t.country, t.state, t.postal_prefix, t.created_at`
@@ -149,7 +156,7 @@ func (m *Module) AddTerritory(ctx context.Context, companyID int64, in Territory
 		return nil, err
 	}
 	country := normCountry(in.Country)
-	state, prefix := stateIn(country, in.State), normPostal(in.PostalPrefix)
+	state, prefix := gocommerce.StateCode(country, in.State), normPostal(in.PostalPrefix)
 	switch {
 	case !validCountry(country):
 		return nil, gocommerce.Validationf("country is a two-letter ISO 3166-1 code, like \"US\"")
@@ -198,11 +205,15 @@ func (m *Module) DeleteTerritory(ctx context.Context, companyID, id int64) error
 // prefix — so {US, CA, 941} beats {US, CA}, which beats {US, -, 9}, which
 // beats {US}. A territory naming a state or a prefix matches only an enquiry
 // that gives one: a form that does not ask for the state reaches the
-// country's dealers and no state's. A state is compared as stateIn reads it,
-// so an enquiry from "California" reaches the dealer for CA.
+// country's dealers and no state's. A state is compared by every spelling
+// core knows for it (D72), so an enquiry from "California" reaches the dealer
+// for CA, and so does a territory saved as "CALIFORNIA" before codes were
+// stored.
 //
-// The unique key on the area means two matches can never rank equal: two
-// territories can only both match by differing in specificity.
+// The unique key on the area means two matches rarely rank equal. They can
+// only when one dealer's territory was saved under a state's name before D72
+// and another's under its code; the older territory wins then, by id, so the
+// answer is at least the same every time.
 func (m *Module) route(ctx context.Context, country, state, postal string) (*Company, error) {
 	if country == "" {
 		return nil, nil
@@ -211,10 +222,10 @@ func (m *Module) route(ctx context.Context, country, state, postal string) (*Com
 	err := m.db.QueryRowContext(ctx, `
 		SELECT t.company_id`+territoryFrom+`
 		WHERE t.country = $1 AND `+takesLeads+`
-		  AND (t.state = '' OR t.state = $2)
+		  AND (t.state = '' OR t.state = ANY($2::text[]))
 		  AND (t.postal_prefix = '' OR starts_with($3, t.postal_prefix))
-		ORDER BY t.state <> '' DESC, length(t.postal_prefix) DESC
-		LIMIT 1`, country, stateIn(country, state), normPostal(postal)).Scan(&id)
+		ORDER BY t.state <> '' DESC, length(t.postal_prefix) DESC, t.id
+		LIMIT 1`, country, textArray(gocommerce.StateSpellings(country, state)), normPostal(postal)).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

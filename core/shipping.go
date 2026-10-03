@@ -143,7 +143,7 @@ func (s *Shipping) CreateZone(ctx context.Context, in ShippingZoneInput) (*Shipp
 		INSERT INTO shipping_zones (name, countries, states)
 		VALUES ($1, $2::text[], $3::text[])
 		RETURNING `+zoneColumns,
-		name, stringArray(upperAll(in.Countries)), stringArray(upperAll(in.States)))
+		name, stringArray(upperAll(in.Countries)), stringArray(zoneStates(in.Countries, in.States)))
 	return scanZone(row)
 }
 
@@ -158,7 +158,7 @@ func (s *Shipping) UpdateZone(ctx context.Context, id int64, in ShippingZoneInpu
 		SET name = $2, countries = $3::text[], states = $4::text[], updated_at = now()
 		WHERE id = $1
 		RETURNING `+zoneColumns,
-		id, name, stringArray(upperAll(in.Countries)), stringArray(upperAll(in.States)))
+		id, name, stringArray(upperAll(in.Countries)), stringArray(zoneStates(in.Countries, in.States)))
 	z, err := scanZone(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, NotFoundf("no shipping zone %d", id)
@@ -353,7 +353,8 @@ func (s *Shipping) Quote(ctx context.Context, q ShippingQuery) ([]ShippingQuote,
 // under that lock is a rate that cannot move between the quote and the charge.
 func (s *Shipping) quote(ctx context.Context, q rowQuerier, in ShippingQuery) ([]ShippingQuote, error) {
 	country := strings.ToUpper(strings.TrimSpace(in.Country))
-	state := strings.ToUpper(strings.TrimSpace(in.State))
+	// Every spelling of the state, for zones saved with a name before D72.
+	states := stringArray(StateSpellings(country, in.State))
 
 	// The winning zone, by the same specificity tax uses: a state match beats a
 	// country match beats the catch-all. One row out, so the rates below can be
@@ -363,9 +364,9 @@ func (s *Shipping) quote(ctx context.Context, q rowQuerier, in ShippingQuery) ([
 		SELECT id
 		FROM shipping_zones
 		WHERE (cardinality(countries) = 0 OR $1 = ANY(countries))
-		  AND (cardinality(states) = 0 OR $2 = ANY(states))
+		  AND (cardinality(states) = 0 OR states && $2::text[])
 		ORDER BY (cardinality(states) > 0) DESC, (cardinality(countries) > 0) DESC, id
-		LIMIT 1`, country, state)
+		LIMIT 1`, country, states)
 	if qerr != nil {
 		return nil, qerr
 	}
@@ -423,6 +424,33 @@ func (s *Shipping) configured(ctx context.Context, q rowQuerier) (bool, error) {
 	}
 	defer rows.Close()
 	return rows.Next(), rows.Err()
+}
+
+// zoneStates stores each of a zone's states as its code. A zone can name
+// several countries and a state name belongs to one of them, so each state is
+// read against each country until one of them knows it; a state none of them
+// knows is kept as written.
+func zoneStates(countries, states []string) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, s := range states {
+		norm := normalizeState(s)
+		if norm == "" {
+			continue
+		}
+		code := norm
+		for _, c := range countries {
+			if got := StateCode(c, s); got != norm {
+				code = got
+				break
+			}
+		}
+		if !seen[code] {
+			seen[code] = true
+			out = append(out, code)
+		}
+	}
+	return out
 }
 
 func upperAll(in []string) []string {

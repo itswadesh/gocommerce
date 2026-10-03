@@ -86,8 +86,9 @@ A territory has one dealer — the area is unique — and both state and prefix 
 matched case-blind, the prefix with spaces and hyphens ignored. A state in the
 United States, Canada, Australia or India is read by its code or its name —
 "California", "ca" and "US-CA" are all `CA` — on both sides, and a territory
-given a name is stored as its code ([`subdivisions.go`](../ext/b2b/subdivisions.go));
-anywhere else a state is matched as written.
+given a name is stored as its code. This is core's rule for every state (D72,
+[`core/subdivisions.go`](../core/subdivisions.go)), the same one tax rates and
+shipping zones follow; anywhere else a state is matched as written.
 
 A storefront's dealer form posts to `POST /x/b2b/leads`, which needs no
 session. The lead goes to the most specific territory that covers the address:
@@ -157,9 +158,9 @@ dealer and starts the lead again at `new`.
 - **Expecting a state-scoped territory to catch a form that asks no state.** A
   territory naming a state matches only an enquiry naming it.
 - **Expecting a state name outside the four known countries to match its
-  code.** "Bayern" and "BY" are two states to the module. Add the country to
-  `subdivisions.go`, or have the storefront send the form's state the way the
-  territory was written.
+  code.** "Bayern" and "BY" are two states to the engine. Add the country to
+  `core/subdivisions.go` — which changes tax and shipping matching too — or have
+  the storefront send the form's state the way the territory was written.
 
 Related: [carts](carts.md), [checkout](checkout.md), [payments](payments.md),
 [team](team.md).

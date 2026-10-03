@@ -264,9 +264,9 @@
             // Typed as people say it, stored as basis points.
             rate_bp: Math.round((parseFloat(form.percent) || 0) * 100),
             country: form.country.trim(),
-            // Folded, because the engine matches a state literally: "ka",
-            // "KA" and " KA " would otherwise be three rules that each fire on
-            // a different spelling of the same place.
+            // Folded so the box shows what will be stored. The engine stores
+            // a state it knows by name as its code (D72) and matches every
+            // spelling of it, so "Karnataka" here is saved as KA.
             state: form.state.trim().toUpperCase(),
             category_id: form.category_id,
             active: form.active,
@@ -480,7 +480,10 @@
 
             <div class="page-header-primary-btns">
                 {#if mayWrite}
-                    <button type="button" class="btn" onclick={openNew}>
+                    <!-- Named on the button itself: below 550px layout.css hides
+                         the label beside an icon, and the button would be
+                         announced as nothing. -->
+                    <button type="button" class="btn" aria-label="New rate" onclick={openNew}>
                         <i class="ri-add-line" aria-hidden="true"></i>
                         <span class="txt">New rate</span>
                     </button>
@@ -839,7 +842,7 @@
                 <input
                     id="t-state"
                     type="text"
-                    maxlength="8"
+                    maxlength="60"
                     bind:value={form.state}
                     placeholder="KA"
                     oninput={(e) => (form.state = e.currentTarget.value.toUpperCase())}
@@ -848,8 +851,10 @@
         </div>
         <div class="field-help">
             Leave the country on <em>Anywhere</em> for a rule that applies wherever you ship; a
-            state needs the country it is in. The state is matched literally and upper-cased here,
-            so it has to be the code the checkout address carries — "KA", not "Karnataka".
+            state needs the country it is in. In the United States, Canada, Australia and India a
+            state can be typed as its code or its name — "Karnataka" is saved as KA — and an address
+            spelling it either way pays this rate. Elsewhere, type it the way the checkout address
+            carries it.
         </div>
 
         <div class="field m-t-sm">
