@@ -6843,6 +6843,44 @@ kbd + kbd {
     flex: 0 1 260px;
 }
 
+/*
+ * A select the height of the text boxes around it.
+ *
+ * PocketBase's select keeps metrics of its own — 5px of padding, a 38px floor,
+ * and a button inside whose chevron glyph is 1.2rem — so in a form of text
+ * boxes it stood 8 to 9px taller than each of them: 51px beside a 42px email
+ * box in the one-line forms, 69px under 61px fields in a drawer. These give it
+ * the padding a text box has in the same place (the skin's 1px/6px, form.css's
+ * 10px), and set the value's line to the font's natural height, which is what
+ * an input's line is whatever its line-height says. The chevron is taken out
+ * of the line's height and centred, so the glyph cannot make the box taller.
+ *
+ * Scoped to these forms and not to every select: the trigger is still
+ * PocketBase's markup on thirty screens, and the panel-wide answer is to
+ * detach it (rule 12), not to reach into it from here. The drawer forms are
+ * portalled outside the skin, hence the class of their own.
+ */
+.shopify-skin .b2b-inline-form .field > .input.select,
+.b2b-select-fit .field > .input.select {
+    min-height: 0;
+}
+.shopify-skin .b2b-inline-form .field > .input.select {
+    padding: 1px 0 6px;
+}
+.b2b-select-fit .field > .input.select {
+    padding: 10px 0;
+}
+.shopify-skin .b2b-inline-form .field > .input.select > .selected-container,
+.b2b-select-fit .field > .input.select > .selected-container {
+    padding-block: 0;
+    line-height: normal;
+}
+.shopify-skin .b2b-inline-form .field > .input.select > .selected-container::after,
+.b2b-select-fit .field > .input.select > .selected-container::after {
+    line-height: 0;
+    align-self: center;
+}
+
 .shopify-skin .b2b-total {
     display: flex;
     align-items: baseline;

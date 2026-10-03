@@ -150,7 +150,7 @@
 </script>
 
 <Drawer {open} size="sm" title={editing ? `Edit ${company.name}` : "New company"} {onclose}>
-    <form id="company-form" onsubmit={save} novalidate>
+    <form id="company-form" class="b2b-select-fit" onsubmit={save} novalidate>
         <div class="field required" class:error={!!errors.name}>
             <label for="co-name">Name</label>
             <input id="co-name" type="text" autocomplete="off" bind:value={form.name} />

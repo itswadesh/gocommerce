@@ -498,7 +498,7 @@
             </dl>
 
             {#if writable}
-                <form id="lead-form" onsubmit={save} novalidate>
+                <form id="lead-form" class="b2b-select-fit" onsubmit={save} novalidate>
                     <h6 class="section-title">
                         <i class="ri-route-line" aria-hidden="true"></i>
                         Route it

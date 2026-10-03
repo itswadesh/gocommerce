@@ -220,7 +220,6 @@
             <input
                 id="territory-prefix"
                 type="text"
-                class="txt-code"
                 autocomplete="off"
                 placeholder="Any"
                 bind:value={form.postal_prefix}
