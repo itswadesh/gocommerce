@@ -7350,6 +7350,1023 @@ kbd + kbd {
     }
 }
 
+/* --------------------------------------------------------------- portal */
+
+/*
+ * The trade portal (D77): the screens under /portal, where a business buyer
+ * and a dealer work. Every class is `.portal-*`; the shell borrows the
+ * store's `.app-*` sidebar, and the pages carry `.b2b-page.shopify-skin`, so
+ * the B2B screens' cards, facts and tiles reach them unchanged.
+ *
+ * Motion follows the panel's rule — 150 to 300ms, transform and opacity only
+ * — and answers every press, every state change and every page change. The
+ * reduced-motion block at the end keeps each answer as a fade or a colour and
+ * drops the travel.
+ */
+
+/* The shell is the page's flex row, so its wrapper must not be a box of its
+   own: `.app` lays out the sidebar and the page side by side. */
+.portal-shell {
+    display: contents;
+}
+
+.portal-brand {
+    min-width: 0;
+}
+.portal-company {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin: 0 4px 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--surfaceAlt1Color);
+    line-height: 1.3;
+}
+.portal-company-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--surfaceTxtColor);
+}
+
+/* A count beside a nav item, or over the basket on a phone. It re-mounts when
+   the number changes, so a new count pops once — the basket filling is the
+   one thing a buyer should see happen from anywhere in the portal. */
+.portal-nav-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    margin-left: auto;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: var(--foreground);
+    color: var(--background);
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    animation: portalPop 240ms ease-out;
+}
+.portal-nav-link > i {
+    transition: transform var(--animationSpeed) ease-out;
+}
+.portal-nav-link:hover > i,
+.portal-nav-link:focus-visible > i {
+    transform: translateX(2px);
+}
+.portal-nav-link:active {
+    transition-duration: var(--activeAnimationSpeed);
+    background: var(--surfaceAlt2Color);
+}
+.portal-topbar-basket {
+    position: relative;
+    margin-left: auto;
+}
+.portal-topbar-badge {
+    position: absolute;
+    top: 0;
+    right: -2px;
+    margin: 0;
+}
+.portal-account-menu .portal-account-email {
+    padding: 6px 12px 2px;
+    overflow-wrap: anywhere;
+}
+.portal-account-menu .portal-account-theme {
+    padding: 4px 6px;
+}
+
+@keyframes portalPop {
+    0% {
+        transform: scale(0.6);
+        opacity: 0.3;
+    }
+    70% {
+        transform: scale(1.15);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* Every button in the portal sinks a little under the finger: PocketBase's
+   press is a colour change, which a fast tap on a phone never shows. */
+.portal-press,
+.portal-page .btn,
+.portal-out .btn {
+    transition:
+        color var(--animationSpeed),
+        background var(--animationSpeed),
+        transform var(--activeAnimationSpeed) ease-out;
+}
+.portal-press:active:not(:disabled),
+.portal-page .btn:active:not(:disabled),
+.portal-out .btn:active:not(:disabled) {
+    transform: scale(0.97);
+}
+
+/* --- signed out ------------------------------------------------------- */
+
+.portal-out {
+    justify-content: center;
+}
+/* The gutter is the card's own: on a phone `.page` has none, and the fields
+   would otherwise run to the edge of the glass. */
+.portal-out-card {
+    width: 100%;
+    max-width: 452px;
+    padding: 0 16px var(--spacing);
+    animation: slideTop 240ms ease-out;
+}
+.portal-out-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    background: var(--primaryColor);
+    color: var(--primaryTxtColor);
+    font-size: 24px;
+}
+.portal-out-store {
+    margin: 12px 0 2px;
+    font-size: 22px;
+    line-height: 28px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    overflow-wrap: anywhere;
+}
+.portal-out-heading {
+    margin: 0 0 6px;
+    font-size: 17px;
+    line-height: 24px;
+    font-weight: 600;
+}
+.portal-out-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.portal-out-help a {
+    overflow-wrap: anywhere;
+}
+.portal-quiet-link {
+    font-size: 13px;
+    color: var(--surfaceTxtHintColor);
+    transition: color var(--animationSpeed);
+}
+.portal-quiet-link:hover,
+.portal-quiet-link:focus-visible {
+    color: var(--surfaceTxtColor);
+}
+
+/* Waiting on the store: the mark breathes rather than a spinner turning, so a
+   slow first load reads as "opening" and not as "stuck". */
+.portal-breathe {
+    animation: portalBreathe 1.6s ease-in-out infinite;
+}
+.portal-inline-mark {
+    display: inline-block;
+    margin-right: 4px;
+}
+@keyframes portalBreathe {
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.55;
+        transform: scale(0.94);
+    }
+}
+
+/* --- answers ----------------------------------------------------------- */
+
+/* Something that appeared because of what the buyer did arrives the way a
+   page does. */
+.portal-notice {
+    animation: slideTop 200ms ease-out;
+}
+/* A refusal shakes once where the buyer is looking: three small strokes,
+   240ms, transform only. */
+.portal-refusal {
+    animation: portalShake 240ms ease-out;
+}
+@keyframes portalShake {
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+    25% {
+        transform: translateX(-4px);
+    }
+    50% {
+        transform: translateX(3px);
+    }
+    75% {
+        transform: translateX(-2px);
+    }
+}
+/* A result settles from slightly larger: it is the answer to the button
+   just pressed, not one more notice on the page. */
+.portal-result {
+    animation: portalSettle 260ms ease-out;
+}
+@keyframes portalSettle {
+    from {
+        opacity: 0;
+        transform: scale(1.02);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+.alert .portal-inline-btn,
+.alert .portal-inline-link {
+    margin-left: 6px;
+    vertical-align: baseline;
+}
+
+/* An order placed and a request filed must never be mistaken for each other:
+   different colour, icon, heading and next step. */
+.portal-outcome {
+    display: flex;
+    gap: 14px;
+    margin-bottom: var(--spacing);
+    padding: 18px 20px;
+    border: 1px solid transparent;
+    border-radius: 14px;
+    animation: portalSettle 260ms ease-out;
+}
+/* Tinted from the card rather than PocketBase's surface fills: in dark mode
+   those are saturated enough to sink the secondary button and the icon. */
+.portal-outcome-order {
+    background: color-mix(in srgb, var(--successColor) 10%, var(--card));
+    border-color: color-mix(in srgb, var(--successColor) 55%, transparent);
+}
+.portal-outcome-approval {
+    background: color-mix(in srgb, var(--warningColor) 10%, var(--card));
+    border-color: color-mix(in srgb, var(--warningColor) 60%, transparent);
+}
+.portal-outcome-icon {
+    flex-shrink: 0;
+    font-size: 30px;
+    line-height: 1;
+    animation: portalPop 300ms ease-out;
+}
+.portal-outcome-order .portal-outcome-icon {
+    color: var(--successColor);
+}
+.portal-outcome-approval .portal-outcome-icon {
+    color: var(--warningColor);
+}
+.portal-outcome-body {
+    min-width: 0;
+}
+.portal-outcome-body > p {
+    margin: 0 0 12px;
+}
+.portal-outcome-title {
+    margin: 2px 0 6px;
+    font-size: 18px;
+    line-height: 24px;
+    font-weight: 600;
+}
+
+.portal-row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+.portal-center {
+    justify-content: center;
+}
+.portal-right {
+    text-align: right;
+}
+
+/* --- pages ------------------------------------------------------------- */
+
+/* What the route transition moves: the old page lifts away, the new one rises
+   into place, and the sidebar holds still. */
+.portal-page {
+    view-transition-name: portal-page;
+}
+:root.portal-vt::view-transition-old(root),
+:root.portal-vt::view-transition-new(root) {
+    animation: none;
+}
+::view-transition-old(portal-page) {
+    animation: portalPageOut 140ms ease-in both;
+}
+::view-transition-new(portal-page) {
+    animation: portalPageIn 220ms ease-out both;
+}
+@keyframes portalPageOut {
+    to {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+}
+@keyframes portalPageIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+}
+/* Where the transition runs, the page's own entrance would run inside it a
+   second time. */
+.portal-shell.has-vt .portal-page > .page-content {
+    animation: none;
+}
+
+/*
+ * A portal page scrolls as one column. `.page-content` is a flex column that
+ * scrolls itself, and a table wrapper drops its 130px floor once it has rows
+ * (the short-table rule above), so on a page taller than the window — a quote
+ * with its acceptance form open — the column shrank the lines table to
+ * nothing. Nothing here may shrink; the column scrolls instead.
+ */
+.portal-page > .page-content > * {
+    flex-shrink: 0;
+}
+
+.portal-title {
+    margin: 0;
+    font-size: inherit;
+    line-height: inherit;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.portal-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    text-decoration: none;
+}
+.portal-back > i {
+    transition: transform var(--animationSpeed) ease-out;
+}
+.portal-back:hover > i,
+.portal-back:focus-visible > i {
+    transform: translateX(-3px);
+}
+.shopify-skin .portal-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.portal-intro {
+    max-width: 72ch;
+}
+
+.portal-card-title {
+    margin: 0 0 14px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+/* --- overview ---------------------------------------------------------- */
+
+.shopify-skin .portal-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+    gap: 12px;
+}
+.portal-meter {
+    position: relative;
+    height: 6px;
+    overflow: hidden;
+    border-radius: 3px;
+    background: var(--surfaceAlt2Color);
+}
+.portal-meter-fill {
+    position: absolute;
+    inset: 0;
+    background: var(--foreground);
+    transform-origin: left center;
+    transition: transform 300ms ease-out;
+}
+.portal-meter-fill.is-high {
+    background: var(--warningColor);
+}
+
+.shopify-skin .portal-columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+    gap: 16px;
+    align-items: start;
+}
+.shopify-skin .portal-columns > section {
+    min-width: 0;
+}
+
+.portal-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow: hidden;
+    transition: opacity var(--animationSpeed);
+}
+.portal-list.faded {
+    opacity: 0.6;
+}
+.portal-list-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 12px;
+    padding: 11px 16px;
+    border-top: 1px solid var(--border);
+    color: inherit;
+    text-decoration: none;
+}
+.portal-list-row:first-child {
+    border-top: 0;
+}
+.portal-row-link {
+    position: relative;
+    animation: fadeIn var(--animationSpeed);
+}
+.portal-row-link::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--foreground);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--animationSpeed) ease-out;
+}
+.portal-row-link:hover::after,
+.portal-row-link:focus-visible::after {
+    opacity: 0.04;
+}
+.portal-row-link:active::after {
+    opacity: 0.08;
+    transition-duration: var(--activeAnimationSpeed);
+}
+.portal-list-main,
+.portal-list-side {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.portal-list-side {
+    align-items: flex-end;
+    text-align: right;
+}
+.portal-empty {
+    margin: 0;
+    padding: 18px 16px;
+}
+.portal-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 40px 16px;
+    text-align: center;
+}
+.portal-empty-state > i {
+    font-size: 2.2rem;
+    color: var(--surfaceTxtHintColor);
+}
+.portal-empty-state > h2 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 600;
+}
+.portal-empty-state > p {
+    margin: 0 0 8px;
+}
+
+/* --- quick order --------------------------------------------------------- */
+
+.portal-qo {
+    overflow: hidden;
+}
+.portal-qo-head,
+.portal-qo-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 110px 40px;
+    align-items: center;
+    gap: 8px 10px;
+    padding: 6px 12px;
+}
+.portal-qo-head {
+    padding-top: 10px;
+    padding-bottom: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+}
+.portal-qo-row {
+    border-top: 1px solid var(--border);
+    animation: slideTop 180ms ease-out;
+}
+.portal-qo-row.has-reason {
+    background: color-mix(in srgb, var(--dangerColor) 5%, transparent);
+}
+.shopify-skin .portal-qo-row .field {
+    margin: 0;
+}
+.portal-qo-reason {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin: -2px 0 4px;
+    animation: slideTop 200ms ease-out;
+}
+.portal-qo-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.portal-paste textarea {
+    font-family: var(--monospaceFontFamily);
+    font-size: 13px;
+}
+.portal-submit {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+/* A remove control turns a quarter as the pointer reaches it. */
+.portal-remove > i {
+    transition: transform var(--animationSpeed) ease-out;
+}
+.portal-remove:hover > i,
+.portal-remove:focus-visible > i {
+    transform: rotate(90deg);
+}
+
+/* --- basket ------------------------------------------------------------ */
+
+.shopify-skin .portal-basket-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(300px, 1fr);
+    gap: 20px;
+    align-items: start;
+}
+.portal-check-all,
+.portal-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    cursor: pointer;
+}
+.portal-lines {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    transition: opacity var(--animationSpeed);
+}
+.portal-lines.faded {
+    opacity: 0.6;
+}
+.portal-line {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) 84px minmax(80px, auto) 32px;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 12px 14px;
+    border-top: 1px solid var(--border);
+    transition: opacity var(--animationSpeed);
+    animation: fadeIn var(--animationSpeed);
+}
+.portal-line:first-child {
+    border-top: 0;
+}
+/* A line left out of this checkout stays readable, and plainly not chosen. */
+.portal-line.unpicked {
+    opacity: 0.55;
+}
+.portal-line.busy {
+    opacity: 0.5;
+}
+.portal-line-what {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.shopify-skin .portal-line-qty {
+    margin: 0;
+}
+.portal-line-total {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.portal-line-pick input,
+.portal-check-all input,
+.portal-toggle input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--foreground);
+}
+.portal-checkout {
+    padding: 18px 20px;
+}
+@media (min-width: 1025px) {
+    .shopify-skin .portal-checkout {
+        position: sticky;
+        top: 16px;
+    }
+}
+
+/* --- checkout details ---------------------------------------------------- */
+
+.portal-fieldset {
+    margin: 0 0 var(--smSpacing);
+    padding: 0;
+    border: 0;
+    min-width: 0;
+}
+.portal-fieldset > legend {
+    padding: 0;
+    margin-bottom: 6px;
+}
+.portal-choices {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.portal-choice {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition:
+        border-color var(--animationSpeed),
+        transform var(--activeAnimationSpeed) ease-out;
+}
+.portal-choice::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--foreground);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--animationSpeed) ease-out;
+}
+.portal-choice:hover::after {
+    opacity: 0.03;
+}
+.portal-choice:active:not(.disabled):not(:disabled) {
+    transform: scale(0.99);
+}
+/* The theme's foreground rather than PocketBase's primary, which is a dark
+   grey in dark mode and draws a selected border nobody can see. */
+.portal-choice.selected {
+    border-color: var(--foreground);
+    box-shadow: inset 0 0 0 1px var(--foreground);
+}
+.portal-choice:has(input:focus-visible),
+.portal-choice-btn:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+}
+.portal-choice.disabled,
+.portal-choice:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+.portal-choice.busy {
+    opacity: 0.6;
+}
+.portal-choice > input {
+    margin-top: 3px;
+    accent-color: var(--foreground);
+}
+.portal-choice-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.portal-choice-tick {
+    margin-left: auto;
+    color: var(--foreground);
+    font-size: 18px;
+    animation: portalPop 220ms ease-out;
+}
+.portal-add-address {
+    margin-top: 8px;
+    padding: 12px;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+}
+.portal-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 10px;
+}
+.portal-form-grid > .field {
+    margin: 0;
+}
+.portal-span-2 {
+    grid-column: 1 / -1;
+}
+
+/* --- lists, tabs, sums --------------------------------------------------- */
+
+.shopify-skin .portal-filters {
+    margin-top: 0;
+}
+.shopify-skin .portal-search {
+    flex: 1 1 260px;
+    max-width: 360px;
+    margin: 0;
+}
+
+.portal-tabs {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 10px;
+    background: var(--surfaceAlt1Color);
+}
+.portal-tabs-fill {
+    display: flex;
+}
+.portal-tabs-fill > .portal-tab {
+    flex: 1 1 0;
+}
+.portal-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--surfaceTxtHintColor);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+        color var(--animationSpeed),
+        background var(--animationSpeed),
+        transform var(--activeAnimationSpeed) ease-out;
+}
+.portal-tab:hover,
+.portal-tab:focus-visible {
+    color: var(--surfaceTxtColor);
+}
+.portal-tab:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+}
+.portal-tab:active {
+    transform: scale(0.97);
+}
+.portal-tab.active {
+    background: var(--surfaceColor);
+    color: var(--surfaceTxtColor);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+.portal-tab > .portal-nav-badge {
+    margin-left: 0;
+}
+
+.portal-sums {
+    display: grid;
+    gap: 4px;
+    width: min(100%, 340px);
+    margin-left: auto;
+}
+.portal-sums > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+.portal-sums dt {
+    color: var(--surfaceTxtHintColor);
+}
+.portal-sums dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+}
+.portal-sums-total {
+    margin-top: 4px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+    font-size: 16px;
+    font-weight: 700;
+}
+.portal-sums-total dt {
+    color: inherit;
+}
+.portal-plain-list {
+    margin: 0;
+    padding-left: 18px;
+}
+
+.portal-rejected {
+    margin: 10px 0 0;
+    padding: 0;
+    list-style: none;
+}
+.portal-rejected-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 4px 16px;
+    padding: 6px 0;
+    border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+    animation: slideTop 200ms ease-out;
+}
+.portal-rejected-what {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+/* --- quote request, leads ------------------------------------------------ */
+
+.portal-quote-line {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 96px 36px;
+    align-items: end;
+    gap: 6px 8px;
+    margin-bottom: 8px;
+    animation: slideTop 180ms ease-out;
+}
+.portal-quote-line > .field {
+    margin: 0;
+}
+.portal-quote-line > .portal-remove {
+    margin-bottom: 6px;
+}
+.portal-line-error {
+    grid-column: 1 / -1;
+    margin: 0;
+}
+
+.shopify-skin tr.portal-row-open {
+    background: var(--surfaceAlt1Color);
+}
+.portal-status-choices {
+    margin-top: 4px;
+}
+
+/* --- phone --------------------------------------------------------------- */
+
+@media (max-width: 1024px) {
+    .shopify-skin .portal-basket-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+@media (max-width: 600px) {
+    .portal-qo-head,
+    .portal-qo-row {
+        grid-template-columns: minmax(0, 1fr) 76px 36px;
+        padding-inline: 8px;
+    }
+    .portal-line {
+        grid-template-columns: 24px minmax(0, 1fr) auto;
+        grid-template-areas:
+            "pick what remove"
+            ". qty total";
+    }
+    .portal-line-pick {
+        grid-area: pick;
+    }
+    .portal-line-what {
+        grid-area: what;
+    }
+    .portal-line > .portal-remove {
+        grid-area: remove;
+    }
+    .shopify-skin .portal-line-qty {
+        grid-area: qty;
+        width: 96px;
+    }
+    .portal-line-total {
+        grid-area: total;
+        justify-self: end;
+    }
+    .portal-form-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .shopify-skin .portal-search {
+        max-width: none;
+    }
+    .portal-sums {
+        width: 100%;
+    }
+    .portal-right {
+        text-align: left;
+    }
+    .portal-outcome {
+        padding: 14px;
+    }
+    .portal-tabs {
+        display: flex;
+    }
+    .portal-tab {
+        flex: 1 1 auto;
+    }
+}
+
+/* The motion goes; the answer stays — as a fade, or as the colour change it
+   already carried. */
+@media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(portal-page) {
+        animation: portalFadeOut 120ms ease-out both;
+    }
+    ::view-transition-new(portal-page) {
+        animation: fadeIn 150ms ease-out both;
+    }
+    .portal-page.shopify-skin > .page-content,
+    .portal-out-card,
+    .portal-notice,
+    .portal-refusal,
+    .portal-result,
+    .portal-outcome,
+    .portal-qo-row,
+    .portal-qo-reason,
+    .portal-rejected-row,
+    .portal-quote-line,
+    .portal-row-link,
+    .portal-line,
+    .portal-page tbody tr {
+        animation: fadeIn var(--animationSpeed) ease-out;
+    }
+    .portal-nav-badge,
+    .portal-outcome-icon,
+    .portal-choice-tick {
+        animation: fadeIn var(--animationSpeed) ease-out;
+    }
+    .portal-breathe {
+        animation: portalFadePulse 1.6s ease-in-out infinite;
+    }
+    .portal-nav-link > i,
+    .portal-back > i,
+    .portal-remove > i,
+    .portal-meter-fill {
+        transition: none;
+    }
+    .portal-nav-link:hover > i,
+    .portal-nav-link:focus-visible > i,
+    .portal-back:hover > i,
+    .portal-back:focus-visible > i,
+    .portal-remove:hover > i,
+    .portal-remove:focus-visible > i,
+    .portal-press:active:not(:disabled),
+    .portal-page .btn:active:not(:disabled),
+    .portal-out .btn:active:not(:disabled),
+    .portal-choice:active:not(.disabled):not(:disabled),
+    .portal-tab:active {
+        transform: none;
+    }
+}
+@keyframes portalFadeOut {
+    to {
+        opacity: 0;
+    }
+}
+@keyframes portalFadePulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.55;
+    }
+}
+
 /* --------- @media print — KEEP LAST ---------
  *
  * Append your section ABOVE this block. These rules carry no `!important`, so a

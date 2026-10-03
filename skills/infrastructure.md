@@ -384,6 +384,16 @@ detaches domains, adds an owner, replaces the admin token and deletes. Every
 other path on a platform host is still a JSON 404. A binary built with
 `-tags no_admin` has no console; the API is unchanged.
 
+A store's own host serves its business buyers a portal at `/portal` when the
+binary runs `-b2b` (D77, [b2b](b2b.md#the-trade-portal)), on a platform as on a
+single store. Its links are the module URL settings above, written once for
+every store:
+`GOCOMMERCE_B2B_INVITE_URL=https://{domain}/portal/invitation?token={token}`,
+and `/portal/reset-password?token={token}` and
+`/portal/confirm-email?token={token}` for the identity reset and confirmation
+emails when the stores have no storefront of their own for accounts. Each
+store's portal is named from its own profile, through `GET /api/store`.
+
 What to know before running one:
 
 - **Every store runs the same modules**, the ones the binary was started

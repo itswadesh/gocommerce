@@ -48,8 +48,12 @@
      * The platform console is the other (D73). It has a shell and a sign-in of
      * its own, by platform token, and a store's login form over it would be
      * asking a platform operator for a credential no store issued them.
+     *
+     * The trade portal is the third (D77): the store's business buyers, who
+     * sign in with a shopper account and have no staff credential to give.
+     * Its own layout decides between its sign-in and its screens.
      */
-    const PUBLIC_PREFIXES = ["/accept-invite", "/platform"];
+    const PUBLIC_PREFIXES = ["/accept-invite", "/platform", "/portal"];
     const isPublic = $derived(
         PUBLIC_PREFIXES.some((prefix) =>
             page.url.pathname.replace(base, "").startsWith(prefix),

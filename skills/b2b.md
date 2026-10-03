@@ -169,3 +169,28 @@ dealer and starts the lead again at `new`.
 
 Related: [carts](carts.md), [checkout](checkout.md), [payments](payments.md),
 [team](team.md).
+
+## The trade portal
+
+A store running `-b2b` serves its buyers and dealers a portal at `/portal` on
+its own host (D77): the admin panel's build, with a shell of its own named by
+`GET /api/store`, signed in to with the buyer's identity account. Point the
+emails at it — `GOCOMMERCE_B2B_INVITE_URL=https://shop.example.com/portal/invitation?token={token}`,
+and, unless a storefront handles accounts, the identity reset and confirmation
+URLs at `/portal/reset-password?token={token}` and
+`/portal/confirm-email?token={token}`. On a platform, write `{domain}` for the
+host and one setting serves every store.
+
+What a buyer sees follows their role, because the routes above already refuse
+the rest: every member orders, quotes and reads approvals; approvers and admins
+decide requests and see every buyer's orders; only admins see Team; Leads
+appear for admins and approvers of a company with territories or with leads the
+store handed it. Two routes exist for the portal:
+`GET /x/b2b/orders/{order_id}` (an order's lines, by the order list's rule) and
+`cart_id` on the reorder body, so a repeat fills the basket already open.
+
+The portal's client is `admin/src/lib/trade.svelte.js`, and it never calls
+`/api/admin`; the screens are `admin/src/routes/portal/`. A new screen is a
+route there and a line in `NAV`: statements after Orders, the company's
+catalogue after Quick order, and a spreadsheet upload beside Paste a list on
+the Quick order screen, which marks the place.
