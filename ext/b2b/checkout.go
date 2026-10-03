@@ -91,12 +91,12 @@ func (m *Module) guard(ctx context.Context, a *gocommerce.CheckoutAttempt) error
 	}
 	// Read under the lock, so a limit lowered a moment ago is the one applied.
 	var status string
-	var limit, threshold sql.NullInt64
+	var limit, threshold, catalogue sql.NullInt64
 	var requirePO bool
 	if err := a.Tx.QueryRowContext(ctx, `
-		SELECT status, credit_limit_minor, approval_threshold_minor, require_po
+		SELECT status, credit_limit_minor, approval_threshold_minor, require_po, catalogue_id
 		FROM b2b_companies WHERE id = $1`, p.company.ID).
-		Scan(&status, &limit, &threshold, &requirePO); err != nil {
+		Scan(&status, &limit, &threshold, &requirePO, &catalogue); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return gocommerce.NotFoundf("that company no longer exists")
 		}
@@ -107,6 +107,16 @@ func (m *Module) guard(ctx context.Context, a *gocommerce.CheckoutAttempt) error
 		return gocommerce.Forbiddenf("%s's account is closed", p.company.Name)
 	case requirePO && strings.TrimSpace(p.po) == "":
 		return gocommerce.Validationf("%s requires a purchase order number on every order", p.company.Name)
+	}
+
+	// Before the approval threshold: a line the company may not buy is
+	// refused now, not filed for an approver whose yes would be refused here
+	// anyway. An approved basket and an accepted quote come through here too,
+	// so a catalogue narrowed since they were asked for still holds.
+	if catalogue.Valid {
+		if err := m.guardCatalogue(ctx, a, p.company, catalogue.Int64); err != nil {
+			return err
+		}
 	}
 
 	if !p.approved && p.member != nil && p.member.Role == RoleBuyer &&

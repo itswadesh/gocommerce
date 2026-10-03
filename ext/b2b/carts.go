@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -48,6 +49,9 @@ type RejectedLine struct {
 	Quantity  int    `json:"quantity"`
 	Reason    string `json:"reason"`
 	Message   string `json:"message"`
+	// Row is the line's row in an uploaded file, counting the header as row
+	// 1 the way a spreadsheet numbers it; absent for a line sent as JSON.
+	Row int `json:"row,omitempty"`
 }
 
 // CartFill is a basket after lines were put into it, and the lines that would
@@ -57,11 +61,15 @@ type CartFill struct {
 	Rejected []RejectedLine   `json:"rejected"`
 }
 
-// wantLine is a line somebody asked for, before it is looked up.
+// wantLine is a line somebody asked for, before it is looked up. invalid is a
+// file's row that could not be read as a line at all — a quantity of "two" —
+// reported with the rest rather than failing the file.
 type wantLine struct {
 	sku       string
 	variantID int64
 	quantity  int
+	row       int
+	invalid   string
 }
 
 // AddLines puts a pasted order into a buyer's basket, priced as them. A line
@@ -70,24 +78,82 @@ type wantLine struct {
 // paste must not fail at line thirty-seven and leave the buyer to work out
 // which lines made it.
 func (m *Module) AddLines(ctx context.Context, buyer *identity.Customer, req BulkRequest) (*CartFill, error) {
-	if _, _, err := m.orderingMember(ctx, buyer); err != nil {
-		return nil, err
-	}
-	switch {
-	case len(req.Lines) == 0:
-		return nil, gocommerce.Validationf("lines is empty")
-	case len(req.Lines) > maxBulkLines:
-		return nil, gocommerce.Validationf("at most %d lines at a time; send the rest in another request", maxBulkLines)
-	}
 	want := make([]wantLine, len(req.Lines))
 	for i, l := range req.Lines {
 		want[i] = wantLine{sku: strings.TrimSpace(l.SKU), variantID: l.VariantID, quantity: l.Quantity}
 	}
-	token, err := m.buyerCart(ctx, buyer, req.CartID)
+	return m.addLines(ctx, buyer, req.CartID, want)
+}
+
+// AddLinesCSV is AddLines from a spreadsheet: a header naming a sku or a
+// variant_id column and a quantity column, in any case and in any order, and
+// a row per line. Other columns are ignored, so a file exported with titles
+// and prices beside the SKUs still reads. It goes through core's CSV reader,
+// which drops a byte-order mark and the apostrophe an export put before a cell
+// beginning with = + - or @ (D62). Each line rejected carries its row.
+func (m *Module) AddLinesCSV(ctx context.Context, buyer *identity.Customer, cartID string, file io.Reader) (*CartFill, error) {
+	want, err := readBulkCSV(file)
 	if err != nil {
 		return nil, err
 	}
-	return m.fill(ctx, token, want)
+	if len(want) == 0 {
+		return nil, gocommerce.Validationf("the file has no lines under its header")
+	}
+	return m.addLines(ctx, buyer, cartID, want)
+}
+
+func readBulkCSV(file io.Reader) ([]wantLine, error) {
+	r, err := gocommerce.NewCSVReader(file)
+	if err != nil {
+		return nil, err
+	}
+	if !r.Has("quantity") || (!r.Has("sku") && !r.Has("variant_id")) {
+		return nil, gocommerce.Validationf("the file's first row must name its columns: quantity, and sku or variant_id")
+	}
+	var want []wantLine
+	for {
+		row, err := r.Next()
+		if errors.Is(err, io.EOF) {
+			return want, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		// A spreadsheet saves the empty rows under its last line; they are
+		// not lines anybody asked for.
+		if !row.Has("sku") && !row.Has("variant_id") && !row.Has("quantity") {
+			continue
+		}
+		if len(want) == maxBulkLines {
+			return nil, gocommerce.Validationf("at most %d lines at a time; send the rest in another file", maxBulkLines)
+		}
+		w := wantLine{sku: row.Get("sku"), row: row.Line()}
+		if w.variantID, err = row.Int64("variant_id", 0); err != nil {
+			w.invalid = "variant_id is not a number"
+		}
+		if w.quantity, err = row.Int("quantity", 0); err != nil {
+			w.invalid = "quantity is not a whole number"
+		}
+		want = append(want, w)
+	}
+}
+
+func (m *Module) addLines(ctx context.Context, buyer *identity.Customer, cartID string, want []wantLine) (*CartFill, error) {
+	_, company, err := m.orderingMember(ctx, buyer)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case len(want) == 0:
+		return nil, gocommerce.Validationf("lines is empty")
+	case len(want) > maxBulkLines:
+		return nil, gocommerce.Validationf("at most %d lines at a time; send the rest in another request", maxBulkLines)
+	}
+	token, err := m.buyerCart(ctx, buyer, cartID)
+	if err != nil {
+		return nil, err
+	}
+	return m.fill(ctx, token, want, company)
 }
 
 // Reorder puts a past order's lines into a new basket at today's prices. It
@@ -132,7 +198,7 @@ func (m *Module) ReorderInto(ctx context.Context, buyer *identity.Customer, orde
 	if err != nil {
 		return nil, err
 	}
-	return m.fill(ctx, token, want)
+	return m.fill(ctx, token, want, company)
 }
 
 // orderVisible says whether an order is in the company's ledger and the
@@ -222,11 +288,28 @@ func (m *Module) buyerCart(ctx context.Context, buyer *identity.Customer, token 
 
 // fill adds each line through core's AddLine and collects the ones that would
 // not go in. Only a failure that is not about the line — the database, say —
-// stops it.
-func (m *Module) fill(ctx context.Context, token string, lines []wantLine) (*CartFill, error) {
+// stops it. A line outside the company's catalogue never reaches the basket:
+// the checkout guard would refuse it, and a basket that cannot be checked out
+// is no help to anybody.
+func (m *Module) fill(ctx context.Context, token string, lines []wantLine, company *Company) (*CartFill, error) {
 	rejected := []RejectedLine{}
+	allowed := map[int64]bool{}
+	inCatalogue := func(productID int64) (bool, error) {
+		if company.CatalogueID == nil {
+			return true, nil
+		}
+		if ok, seen := allowed[productID]; seen {
+			return ok, nil
+		}
+		outside, err := outsideCatalogue(ctx, m.db, *company.CatalogueID, []int64{productID})
+		if err != nil {
+			return false, err
+		}
+		allowed[productID] = !outside[productID]
+		return allowed[productID], nil
+	}
 	for _, l := range lines {
-		r := RejectedLine{SKU: l.sku, Quantity: l.quantity}
+		r := RejectedLine{SKU: l.sku, Quantity: l.quantity, Row: l.row}
 		if l.variantID > 0 {
 			id := l.variantID
 			r.VariantID = &id
@@ -234,6 +317,10 @@ func (m *Module) fill(ctx context.Context, token string, lines []wantLine) (*Car
 		reject := func(reason, message string) {
 			r.Reason, r.Message = reason, message
 			rejected = append(rejected, r)
+		}
+		if l.invalid != "" {
+			reject(RejectInvalid, l.invalid)
+			continue
 		}
 		if l.quantity < 1 {
 			reject(RejectInvalid, "quantity must be at least 1")
@@ -252,6 +339,14 @@ func (m *Module) fill(ctx context.Context, token string, lines []wantLine) (*Car
 		r.VariantID = &id
 		if r.SKU == "" {
 			r.SKU = v.SKU
+		}
+		ok, err := inCatalogue(v.ProductID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			reject(RejectNotInCatalogue, "not in "+company.Name+"'s catalogue")
+			continue
 		}
 		if !v.Active {
 			reject(RejectInactive, "that variant is not available")

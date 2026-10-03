@@ -38,6 +38,8 @@
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
     import CompanyTerritories from "$lib/components/CompanyTerritories.svelte";
+    import CompanyStatement from "$lib/components/CompanyStatement.svelte";
+    import CompanyHistory from "$lib/components/CompanyHistory.svelte";
 
     const ORDERS_PER_PAGE = 25;
 
@@ -66,6 +68,8 @@
 
     let editorOpen = $state(false);
     let busy = $state(null);
+    /* Bumped by a save, so the terms history shows the change it just made. */
+    let historyVersion = $state(0);
 
     let addForm = $state({ email: "", role: "buyer" });
     let addError = $state("");
@@ -173,6 +177,7 @@
     async function saved(next) {
         editorOpen = false;
         company = next;
+        historyVersion++;
         loadGroupName();
         try {
             credit = await api.get(`/api/admin/x/b2b/companies/${id}/credit`);
@@ -387,6 +392,18 @@
                                     {groupName || "…"}
                                 {:else}
                                     <span class="txt-hint">None — the store's own prices</span>
+                                {/if}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt>Catalogue</dt>
+                            <dd>
+                                {#if company.catalogue_id}
+                                    <a class="b2b-more b2b-fact-link" href="{base}/b2b/catalogues/{company.catalogue_id}"
+                                        >{company.catalogue_name || `Catalogue ${company.catalogue_id}`} <span aria-hidden="true">→</span></a
+                                    >
+                                {:else}
+                                    <span class="txt-hint">Everything</span>
                                 {/if}
                             </dd>
                         </div>
@@ -769,6 +786,22 @@
                         />
                     </div>
                 {/if}
+
+                <h2 class="section-title">
+                    <i class="ri-file-text-line" aria-hidden="true"></i>
+                    Statement
+                </h2>
+                <p class="field-help m-b-sm">
+                    The account over a period, as {company.name} would be sent it: every order on account,
+                    every payment on the day the store recorded it, and what is owed by how late it is.
+                </p>
+                <CompanyStatement companyId={company.id} companyCode={company.code} />
+
+                <h2 class="section-title">
+                    <i class="ri-history-line" aria-hidden="true"></i>
+                    Terms history
+                </h2>
+                <CompanyHistory companyId={company.id} version={historyVersion} />
             {/if}
         </div>
     </div>

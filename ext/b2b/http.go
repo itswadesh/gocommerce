@@ -1,8 +1,10 @@
 package b2b
 
 import (
+	"context"
 	"encoding/json"
 	"io"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -24,6 +26,8 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	app.HandleFunc("POST /x/b2b/invitations/accept", m.session(m.handleAcceptInvitation))
 	app.HandleFunc("POST /x/b2b/cart/lines", m.session(m.handleAddLines))
 	app.HandleFunc("POST /x/b2b/checkout", m.session(m.handleCheckout))
+	app.HandleFunc("GET /x/b2b/statement", m.session(m.handleMyStatement))
+	app.HandleFunc("GET /x/b2b/catalogue", m.session(m.handleMyCatalogue))
 	app.HandleFunc("GET /x/b2b/orders", m.session(m.handleMyOrders))
 	app.HandleFunc("GET /x/b2b/orders/{order_id}", m.session(m.handleMyOrder))
 	app.HandleFunc("POST /x/b2b/orders/{order_id}/reorder", m.session(m.handleReorder))
@@ -51,6 +55,8 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	app.HandleAdminFunc("PATCH /api/admin/x/b2b/companies/{id}", m.handleAdminUpdateCompany, rightCompaniesWrite)
 	app.HandleAdminFunc("DELETE /api/admin/x/b2b/companies/{id}", m.handleAdminDeleteCompany, rightCompaniesWrite)
 	app.HandleAdminFunc("GET /api/admin/x/b2b/companies/{id}/credit", m.handleAdminCredit, rightCompaniesRead)
+	app.HandleAdminFunc("GET /api/admin/x/b2b/companies/{id}/history", m.handleAdminHistory, rightCompaniesRead)
+	app.HandleAdminFunc("GET /api/admin/x/b2b/companies/{id}/statement", m.handleAdminStatement, rightCompaniesRead)
 	app.HandleAdminFunc("GET /api/admin/x/b2b/companies/{id}/members", m.handleAdminMembers, rightCompaniesRead)
 	app.HandleAdminFunc("POST /api/admin/x/b2b/companies/{id}/members", m.handleAdminAddMember, rightCompaniesWrite)
 	app.HandleAdminFunc("PATCH /api/admin/x/b2b/companies/{id}/members/{customer_id}", m.handleAdminSetRole, rightCompaniesWrite)
@@ -62,6 +68,13 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	app.HandleAdminFunc("POST /api/admin/x/b2b/companies/{id}/territories", m.handleAdminAddTerritory, rightCompaniesWrite)
 	app.HandleAdminFunc("DELETE /api/admin/x/b2b/companies/{id}/territories/{territory_id}", m.handleAdminDeleteTerritory, rightCompaniesWrite)
 	app.HandleAdminFunc("GET /api/admin/x/b2b/territories", m.handleAdminAllTerritories, rightCompaniesRead)
+	// A catalogue is a company's term — what it may buy, set beside what it
+	// may owe — so it is read and written under the companies' rights.
+	app.HandleAdminFunc("GET /api/admin/x/b2b/catalogues", m.handleAdminCatalogues, rightCompaniesRead)
+	app.HandleAdminFunc("POST /api/admin/x/b2b/catalogues", m.handleAdminCreateCatalogue, rightCompaniesWrite)
+	app.HandleAdminFunc("GET /api/admin/x/b2b/catalogues/{id}", m.handleAdminCatalogue, rightCompaniesRead)
+	app.HandleAdminFunc("PATCH /api/admin/x/b2b/catalogues/{id}", m.handleAdminUpdateCatalogue, rightCompaniesWrite)
+	app.HandleAdminFunc("DELETE /api/admin/x/b2b/catalogues/{id}", m.handleAdminDeleteCatalogue, rightCompaniesWrite)
 	app.HandleAdminFunc("GET /api/admin/x/b2b/leads", m.handleAdminLeads, rightLeadsRead)
 	app.HandleAdminFunc("GET /api/admin/x/b2b/leads/{id}", m.handleAdminLead, rightLeadsRead)
 	app.HandleAdminFunc("PATCH /api/admin/x/b2b/leads/{id}", m.handleAdminUpdateLead, rightLeadsWrite)
@@ -326,9 +339,21 @@ func (m *Module) handleCheckout(w http.ResponseWriter, r *http.Request, acct *id
 	gocommerce.Respond(w, http.StatusCreated, checkoutResponse{CheckoutResult: result})
 }
 
+// maxBulkFile bounds an uploaded order. Five hundred rows of SKU and quantity
+// are a few kilobytes; a megabyte leaves room for the titles and prices an
+// export carries beside them.
+const maxBulkFile = 1 << 20
+
 // handleAddLines answers 200 whatever was rejected: the basket exists and
-// holds what could go in, and rejected says what could not.
+// holds what could go in, and rejected says what could not. A body sent as
+// text/csv is a spreadsheet, with the basket named in ?cart_id.
 func (m *Module) handleAddLines(w http.ResponseWriter, r *http.Request, acct *identity.Customer) {
+	if ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); ct == "text/csv" {
+		fill, err := m.AddLinesCSV(r.Context(), acct, r.URL.Query().Get("cart_id"),
+			http.MaxBytesReader(w, r.Body, maxBulkFile))
+		respond(w, r, http.StatusOK, fill, err)
+		return
+	}
 	var in BulkRequest
 	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
 		gocommerce.RespondError(w, r, err)
@@ -683,8 +708,18 @@ func (m *Module) handleAdminCreateCompany(w http.ResponseWriter, r *http.Request
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	c, err := m.CreateCompany(r.Context(), in)
+	c, err := m.CreateCompany(adminActor(r), in)
 	respond(w, r, http.StatusCreated, c, err)
+}
+
+// adminActor is the request's context with who is acting named for the terms
+// history. A request that reached an admin route with no operator on it was
+// authenticated by a static token — a script, not the engine.
+func adminActor(r *http.Request) context.Context {
+	if gocommerce.SuperuserFrom(r.Context()) != nil {
+		return r.Context()
+	}
+	return withActor(r.Context(), actor{kind: ActorToken})
 }
 
 func (m *Module) handleAdminCompany(w http.ResponseWriter, r *http.Request) {
@@ -706,8 +741,177 @@ func (m *Module) handleAdminUpdateCompany(w http.ResponseWriter, r *http.Request
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	c, err := m.UpdateCompany(r.Context(), id, in)
+	c, err := m.UpdateCompany(adminActor(r), id, in)
 	respond(w, r, http.StatusOK, c, err)
+}
+
+func (m *Module) handleAdminHistory(w http.ResponseWriter, r *http.Request) {
+	id, ok := idOr400(w, r, "id")
+	if !ok {
+		return
+	}
+	limit, offset, ok := page(w, r)
+	if !ok {
+		return
+	}
+	list, total, err := m.History(r.Context(), id, limit, offset)
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	// A company admin who changed terms is a shopper, masked on a demo store
+	// as every shopper's address is; an operator is the store's own.
+	for _, e := range list {
+		if e.ActorKind == ActorBuyer {
+			e.ActorEmail = m.app.MaskEmail(e.ActorEmail)
+		}
+	}
+	gocommerce.RespondList(w, list, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})
+}
+
+func (m *Module) handleAdminStatement(w http.ResponseWriter, r *http.Request) {
+	id, ok := idOr400(w, r, "id")
+	if !ok {
+		return
+	}
+	m.statement(w, r, id)
+}
+
+// statement answers a company's statement as JSON, or with format=csv as a
+// file through core's CSV writer.
+func (m *Module) statement(w http.ResponseWriter, r *http.Request, companyID int64) {
+	q := r.URL.Query()
+	format := q.Get("format")
+	if format != "" && format != "json" && format != "csv" {
+		gocommerce.RespondError(w, r, gocommerce.Validationf("format must be json or csv"))
+		return
+	}
+	lo, hi, err := m.StatementPeriod(r.Context(), q.Get("from"), q.Get("to"))
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	st, err := m.CompanyStatement(r.Context(), companyID, lo, hi)
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	if format != "csv" {
+		gocommerce.Respond(w, http.StatusOK, st)
+		return
+	}
+	name := "statement-" + st.Company.Code + "-" + st.From + "-to-" + st.Aging.AsOf + ".csv"
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	w.WriteHeader(http.StatusOK)
+	if err := WriteStatementCSV(w, st); err != nil {
+		// The header is gone; all that is left is to say so in the log.
+		m.app.Log().Error("b2b: writing a statement failed part-way", "company", companyID, "error", err)
+	}
+}
+
+// handleMyCatalogue lists what the buyer's company may buy, at their prices.
+// Any buyer may read it: it is what they order from. per_page is taken as
+// limit, the name the engine's other lists use.
+func (m *Module) handleMyCatalogue(w http.ResponseWriter, r *http.Request, acct *identity.Customer) {
+	q := r.URL.Query()
+	if pp := q.Get("per_page"); pp != "" && q.Get("limit") == "" {
+		q.Set("limit", pp)
+		r.URL.RawQuery = q.Encode()
+	}
+	limit, offset, ok := page(w, r)
+	if !ok {
+		return
+	}
+	var category int64
+	if v := q.Get("category_id"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n <= 0 {
+			gocommerce.RespondError(w, r, gocommerce.Validationf("category_id must be a positive integer"))
+			return
+		}
+		category = n
+	}
+	list, total, err := m.BuyerCatalogue(r.Context(), acct, CatalogueQuery{Search: q.Get("q"),
+		CategoryID: category, Limit: limit, Offset: offset})
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	gocommerce.RespondList(w, list, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})
+}
+
+func (m *Module) handleAdminCatalogues(w http.ResponseWriter, r *http.Request) {
+	limit, offset, ok := page(w, r)
+	if !ok {
+		return
+	}
+	list, total, err := m.Catalogues(r.Context(), r.URL.Query().Get("q"), limit, offset)
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	gocommerce.RespondList(w, list, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})
+}
+
+func (m *Module) handleAdminCreateCatalogue(w http.ResponseWriter, r *http.Request) {
+	var in CatalogueInput
+	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	c, err := m.CreateCatalogue(r.Context(), in)
+	respond(w, r, http.StatusCreated, c, err)
+}
+
+func (m *Module) handleAdminCatalogue(w http.ResponseWriter, r *http.Request) {
+	id, ok := idOr400(w, r, "id")
+	if !ok {
+		return
+	}
+	c, err := m.Catalogue(r.Context(), id)
+	respond(w, r, http.StatusOK, c, err)
+}
+
+func (m *Module) handleAdminUpdateCatalogue(w http.ResponseWriter, r *http.Request) {
+	id, ok := idOr400(w, r, "id")
+	if !ok {
+		return
+	}
+	var in CatalogueInput
+	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	c, err := m.UpdateCatalogue(r.Context(), id, in)
+	respond(w, r, http.StatusOK, c, err)
+}
+
+func (m *Module) handleAdminDeleteCatalogue(w http.ResponseWriter, r *http.Request) {
+	id, ok := idOr400(w, r, "id")
+	if !ok {
+		return
+	}
+	if err := m.DeleteCatalogue(r.Context(), id); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleMyStatement is the buyer's own company's statement. What the company
+// owes is the business of whoever runs its account, so a plain buyer is
+// refused, as they are refused the company's leads.
+func (m *Module) handleMyStatement(w http.ResponseWriter, r *http.Request, acct *identity.Customer) {
+	b, ok := m.buyer(w, r, acct)
+	if !ok {
+		return
+	}
+	if !b.can(RoleAdmin, RoleApprover) {
+		gocommerce.RespondError(w, r, gocommerce.Forbiddenf("only a company admin or approver may read its statement"))
+		return
+	}
+	m.statement(w, r, b.company.ID)
 }
 
 func (m *Module) handleAdminDeleteCompany(w http.ResponseWriter, r *http.Request) {

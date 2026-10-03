@@ -91,6 +91,10 @@ export const NAV = [
             // A price list is a rule about what somebody pays, worked in as
             // often as a promotion is, not vocabulary configured once.
             { href: "/pricing", label: "Price lists", right: "pricing.read", keywords: "trade wholesale b2b quantity breaks tiers" },
+            // What a business may buy, beside what it pays: a catalogue is a
+            // part of the range, chosen from products and categories, and a
+            // company is held to one from its own page.
+            { href: "/b2b/catalogues", label: "Catalogues", right: "companies.read", module: "b2b", keywords: "b2b catalog assortment allowed products categories company dealer range" },
             { href: "/reviews", label: "Reviews", right: "reviews.read", module: "reviews", keywords: "ratings moderation" },
             // Under Products because a vendor here is a seller of them, not a
             // person the shop deals with — Customers is the other side of the

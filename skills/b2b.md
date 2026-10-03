@@ -1,6 +1,6 @@
 ---
 name: b2b
-description: Use when selling to businesses — companies, buyer roles, orders on account, credit limits, approvals, quotes, quick and repeat orders, partial checkout, or dealer territories and lead routing — or when a trade price is reaching somebody it should not.
+description: Use when selling to businesses — companies, buyer roles, orders on account, credit limits, approvals, quotes, quick and repeat orders, partial checkout, catalogues, statements and terms history, or dealer territories and lead routing — or when a trade price is reaching somebody it should not.
 ---
 
 # B2B: companies, accounts, approvals, quotes and dealers
@@ -70,8 +70,13 @@ basket is checked out through `POST /x/b2b/checkout` like any other.
 - **Quick order:** `POST /x/b2b/cart/lines` with up to 500 lines by `sku` or
   `variant_id`, into `cart_id` or a new basket. A line that cannot go in comes
   back in `rejected` with a reason — `not_found`, `inactive`,
-  `insufficient_stock`, `invalid` — and the rest still go in; the answer is
-  200 either way.
+  `insufficient_stock`, `invalid`, `not_in_catalogue` — and the rest still go in; the answer is
+  200 either way. The same route takes a spreadsheet: `Content-Type: text/csv`,
+  the basket in `?cart_id=`, a header naming `quantity` and `sku` or
+  `variant_id` in any case, other columns ignored. It is read by core's
+  `CSVReader`, so a byte-order mark and an export's escaping apostrophe are
+  taken off (D62), and each rejected line carries its `row` — the header is
+  row 1, as a spreadsheet numbers it. A file with no such header is a 400.
 - **Repeat order:** `POST /x/b2b/orders/{order_id}/reorder` copies an order's
   lines into a new basket at today's prices, with the same `rejected` list. The
   order must be in the company's ledger and visible to the caller by the rule
@@ -82,6 +87,69 @@ basket is checked out through `POST /x/b2b/checkout` like any other.
   judges exactly those lines. They leave the buyer's basket only once they are
   an order; a request for approval filed instead leaves it untouched. Every
   line chosen is just a checkout of the whole basket.
+
+## Catalogues
+
+A company may be held to a **catalogue** (D75): categories, each with every
+product filed under it or under the categories beneath it, and products one by
+one. A company with none buys everything. The store manages them at
+`/api/admin/x/b2b/catalogues` (`companies.read` to read, `companies.write` to
+change) and holds a company to one with `catalogue_id` on the company, which
+the terms history records. One a company is held to cannot be deleted.
+
+It is held where the order is made. The checkout guard refuses a basket with a
+line outside the catalogue — `403 not_in_catalogue`, each such line in
+`details` — before the approval threshold, so it is never filed for an
+approver, and an approval or an accepted quote placed later is checked again.
+Quick order, a file and a repeat order leave such a line out with reason
+`not_in_catalogue`; a quote request, the store's pricing of a quote and its
+sending refuse one. The subtree is read from core's category tree when the
+check runs, so moving a category moves its products in or out.
+
+`GET /x/b2b/catalogue?q=&category_id=&page=&per_page=` lists what the buyer's
+company may buy, by title, each active variant with `price_minor` and
+`currency`: core's `Pricing.PriceInChannel` for the address the company's
+group holds for the buyer, on the default storefront a quick order's basket is
+opened on — what that basket would charge for one. `q` matches a title or a
+SKU; `per_page` is `limit`.
+
+## Statements and the terms history
+
+A company's **statement** is its account over a period (D74):
+`GET /api/admin/x/b2b/companies/{id}/statement?from=YYYY-MM-DD&to=YYYY-MM-DD`
+under `companies.read`, and `GET /x/b2b/statement` for the signed-in buyer's
+own company — its admins and approvers only; a plain buyer gets 403. `from` is
+the first day and `to` the day after the last, exclusive as every range in the
+engine is, both civil dates in the store's time zone (its profile's; UTC when
+it has none). Leaving both out is the month to date. It answers the opening
+balance, every order placed on account (a debit, with its PO number and due
+date), every payment (a credit), a payment taken back with core's mark-unpaid
+(`payment_reversed`, a debit), an order cancelled while still owed (a credit),
+the running and closing balances, and `aging` — what is owed at the end by
+whole days past due in the store's calendar. `format=csv` answers the same
+through core's CSV writer: one table, the opening balance its first row and
+the closing balance and aging buckets its last, each named in `kind`.
+
+**Where a payment's date comes from.** Core keeps an order's payment status and
+no time it was paid. The module subscribes to `order.paid`, `order.unpaid` and
+`order.cancelled` and files each order on account in `b2b_account_entries` at
+the event's `At` — the outbox row's `created_at`, the `now()` of the
+transaction that paid it — however late the event is delivered. Before a
+statement is read, and in the hourly pass, any order whose entries disagree
+with what core says of it now is read back from `Orders.Timeline`, whose audit
+rows and events carry the same instants. Only a transition with no record left
+anywhere — an order imported already paid — is filed at the moment the module
+noticed it, with `date_source: noticed`: it happened at or before then. Every
+other line is `recorded`.
+
+The **terms history** is `GET /api/admin/x/b2b/companies/{id}/history`
+(`companies.read`, newest first): a row per term that moved — status, credit
+limit, net days, approval threshold, PO rule, customer group, catalogue —
+written in the
+same transaction as the change, with the old and new value as the API takes
+them and who made it: `operator` (with their address), `token`, `buyer` (a
+company admin) or `system`. Creating a company records its first terms as
+`action: created`.
 
 ## Dealers and leads
 
@@ -136,6 +204,15 @@ dealer and starts the lead again at `new`.
   `Idempotency-Key` checks out the basket the first attempt built, which core
   then replays. The copy is emptied when it does not become an order, so the
   abandoned-cart sweep never writes about a basket the buyer never saw.
+- **A statement closes on the outstanding figure.** Owed is what the credit
+  check counts — on account, neither paid nor cancelled — and the statement
+  files whatever it missed before it is read, so a statement ending today and
+  `GET …/credit` never disagree.
+- **A catalogue is a control, not a filter.** The guard refuses what it leaves
+  out whatever filled the basket — the public cart routes included — and
+  approvals and quotes are checked again when they are placed.
+- **A term changes with its record or not at all.** `UpdateCompany` reads the
+  terms under the row's lock and writes the history in the same transaction.
 - **The lead form says nothing about where a lead went.** It answers
   `202 {"accepted": true}` whoever got it and whether anybody did; anything
   more maps the dealer network a postcode at a time.
@@ -154,6 +231,23 @@ dealer and starts the lead again at `new`.
 - **Expecting shipping or tax to be frozen in an approval.** The request keeps
   the lines and their prices; delivery and tax are worked out again when the
   approver places it, against the address in the request.
+- **Dating a payment from `orders.updated_at`, or from when an event was
+  delivered.** The first moves on every edit and the second on every retry.
+  The event's `At` and the order's timeline are when it was recorded; with
+  neither, the line says `noticed`.
+- **Expecting a catalogue to hide products on the storefront.** The public
+  listing knows nothing of companies (D22); a held buyer can see and add
+  anything there, and is refused at `POST /x/b2b/checkout`. A storefront that
+  wants the narrowed range lists `GET /x/b2b/catalogue` instead.
+- **Pricing the catalogue listing from the price lists yourself.**
+  `Pricing.PriceInChannel` is core's resolution — group, channel, quantity
+  break, base price — and a second copy of it drifts.
+- **Parsing an uploaded order with `encoding/csv` directly.** A SKU exported
+  as `'-RED` would arrive with its apostrophe and match nothing, and a header
+  saved by Excel would start with a byte-order mark. `gocommerce.NewCSVReader`
+  handles both.
+- **Reading `to` as the last day.** It is the day after, as in the reports and
+  the order list; a September statement is `from=2026-09-01&to=2026-10-01`.
 - **Placing a repeat order at the old prices.** The old order may have been a
   quote's prices or a list since changed. Reorder builds a basket; the buyer
   checks it out.

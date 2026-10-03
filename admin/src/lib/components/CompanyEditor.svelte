@@ -35,6 +35,8 @@
     let saving = $state(false);
     let groups = $state([]);
     let groupsLoaded = $state(false);
+    let catalogues = $state([]);
+    let cataloguesLoaded = $state(false);
 
     function blank() {
         return {
@@ -47,6 +49,7 @@
             net_days: "30",
             approval_threshold: "",
             require_po: false,
+            catalogue_id: "",
             notes: "",
         };
     }
@@ -72,12 +75,31 @@
                           ? fromMinor(c.approval_threshold.amount_minor, currency)
                           : "",
                       require_po: !!c.require_po,
+                      catalogue_id: c.catalogue_id ? String(c.catalogue_id) : "",
                       notes: c.notes ?? "",
                   }
                 : blank();
             if (groupsReadable && !groupsLoaded) loadGroups();
+            // Re-read each time: a catalogue made a minute ago in another tab
+            // is the one somebody came here to choose.
+            loadCatalogues();
         });
     });
+
+    async function loadCatalogues() {
+        try {
+            const result = await api.get("/api/admin/x/b2b/catalogues?limit=200");
+            catalogues = result.data ?? [];
+            cataloguesLoaded = true;
+        } catch (err) {
+            toast.error(err);
+        }
+    }
+
+    const catalogueOptions = $derived([
+        { value: "", label: "Everything — no catalogue" },
+        ...catalogues.map((c) => ({ value: String(c.id), label: c.name })),
+    ]);
 
     async function loadGroups() {
         try {
@@ -128,6 +150,9 @@
         // Only sent once the list it was chosen from has arrived: a form built
         // without it would otherwise send "no group" for a company that has one.
         if (groupsLoaded) body.group_id = form.group_id ? Number(form.group_id) : null;
+        // The same for the catalogue: sent before its list arrived, an empty
+        // select would take a company's catalogue away.
+        if (cataloguesLoaded) body.catalogue_id = form.catalogue_id ? Number(form.catalogue_id) : null;
 
         saving = true;
         try {
@@ -275,6 +300,15 @@
             {:else}
                 Your role cannot read customer groups, so this stays as it is.
             {/if}
+        </div>
+
+        <div class="field m-t-sm">
+            <label for="co-catalogue">Catalogue</label>
+            <Select id="co-catalogue" bind:value={form.catalogue_id} options={catalogueOptions} disabled={!cataloguesLoaded} />
+        </div>
+        <div class="field-help">
+            What its buyers may order. A line outside it is left out of a quick order, refused at checkout
+            and cannot be quoted. Everything is the store's whole range.
         </div>
 
         <div class="field m-t-sm">

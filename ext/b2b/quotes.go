@@ -215,7 +215,7 @@ func (m *Module) RequestQuote(ctx context.Context, buyer *identity.Customer, req
 		for i, l := range req.Lines {
 			stripped[i] = QuoteLineInput{VariantID: l.VariantID, Quantity: l.Quantity}
 		}
-		return m.writeQuoteLines(ctx, tx, id, stripped, false)
+		return m.writeQuoteLines(ctx, tx, id, stripped, false, company)
 	})
 	if err != nil {
 		return nil, err
@@ -225,10 +225,19 @@ func (m *Module) RequestQuote(ctx context.Context, buyer *identity.Customer, req
 
 // writeQuoteLines replaces a quote's lines, reading each variant's SKU and
 // title so the quote still says what it was for if the product is renamed.
-func (m *Module) writeQuoteLines(ctx context.Context, tx *sql.Tx, quoteID int64, lines []QuoteLineInput, needPrices bool) error {
+//
+// A line outside the company's catalogue is refused, whichever side wrote it:
+// the buyer could not accept a quote that holds one — the guard refuses its
+// order — so the store must not be able to send one either.
+func (m *Module) writeQuoteLines(ctx context.Context, tx *sql.Tx, quoteID int64, lines []QuoteLineInput, needPrices bool, company *Company) error {
 	if len(lines) == 0 {
 		return gocommerce.Validationf("a quote needs at least one line")
 	}
+	type written struct {
+		variantID, productID int64
+		sku                  string
+	}
+	var wrote []written
 	seen := map[int64]bool{}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM b2b_quote_lines WHERE quote_id = $1`, quoteID); err != nil {
 		return err
@@ -248,9 +257,10 @@ func (m *Module) writeQuoteLines(ctx context.Context, tx *sql.Tx, quoteID int64,
 			return gocommerce.Validationf("a price must not be negative")
 		}
 		var sku, title string
+		var productID int64
 		err := tx.QueryRowContext(ctx, `
-			SELECT v.sku, p.title FROM variants v JOIN products p ON p.id = v.product_id
-			WHERE v.id = $1`, l.VariantID).Scan(&sku, &title)
+			SELECT v.sku, p.title, p.id FROM variants v JOIN products p ON p.id = v.product_id
+			WHERE v.id = $1`, l.VariantID).Scan(&sku, &title, &productID)
 		if errors.Is(err, sql.ErrNoRows) {
 			return gocommerce.Validationf("variant %d does not exist", l.VariantID)
 		}
@@ -263,8 +273,26 @@ func (m *Module) writeQuoteLines(ctx context.Context, tx *sql.Tx, quoteID int64,
 			quoteID, l.VariantID, sku, title, l.Quantity, l.UnitPriceMinor, i); err != nil {
 			return err
 		}
+		wrote = append(wrote, written{variantID: l.VariantID, productID: productID, sku: sku})
 	}
-	return nil
+	if company == nil || company.CatalogueID == nil {
+		return nil
+	}
+	ids := make([]int64, len(wrote))
+	for i, w := range wrote {
+		ids[i] = w.productID
+	}
+	outside, err := outsideCatalogue(ctx, tx, *company.CatalogueID, ids)
+	if err != nil || len(outside) == 0 {
+		return err
+	}
+	var conflicts []gocommerce.LineConflict
+	for _, w := range wrote {
+		if outside[w.productID] {
+			conflicts = append(conflicts, gocommerce.LineConflict{VariantID: w.variantID, SKU: w.sku, Reason: RejectNotInCatalogue})
+		}
+	}
+	return notInCatalogue(company, conflicts)
 }
 
 // PriceQuote is the merchant answering a quote: prices, a reply and an
@@ -280,9 +308,13 @@ func (m *Module) PriceQuote(ctx context.Context, id int64, in QuoteReply) (*Quot
 	default:
 		return nil, gocommerce.Conflictf("quote %s is %s and can no longer be changed", q.Number, q.Status)
 	}
+	company, err := m.Company(ctx, q.CompanyID)
+	if err != nil {
+		return nil, err
+	}
 	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
 		if in.Lines != nil {
-			if err := m.writeQuoteLines(ctx, tx, id, in.Lines, false); err != nil {
+			if err := m.writeQuoteLines(ctx, tx, id, in.Lines, false, company); err != nil {
 				return err
 			}
 		}
@@ -320,6 +352,11 @@ func (m *Module) SendQuote(ctx context.Context, id int64) (*Quote, error) {
 	}
 	if q.Total == nil {
 		return nil, gocommerce.Validationf("every line needs a price before the quote can be sent")
+	}
+	// The catalogue may have narrowed since the lines were written, and a
+	// quote the buyer cannot accept is not worth sending.
+	if err := m.quoteInCatalogue(ctx, q); err != nil {
+		return nil, err
 	}
 	expires := time.Now().Add(m.cfg.QuoteTTL)
 	if q.ExpiresAt != nil {

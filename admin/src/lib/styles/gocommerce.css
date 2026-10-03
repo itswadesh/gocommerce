@@ -6949,6 +6949,141 @@ kbd + kbd {
 }
 
 /*
+ * A company's statement (D74). The period's two day boxes sit in the section
+ * heading at the select's height; the figures fade while a new period loads
+ * and fade back, both ways, rather than snapping when `.faded` comes off.
+ */
+.shopify-skin .b2b-statement-day {
+    width: 170px;
+}
+.shopify-skin .b2b-statement {
+    transition: opacity var(--animationSpeed) ease-out;
+}
+
+/* What is owed by how late it is: five cells in one bordered strip, the late
+   ones in the danger colour only when there is something in them. */
+.shopify-skin .b2b-aging {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) + 4px);
+    background: var(--card);
+    overflow: hidden;
+}
+.shopify-skin .b2b-aging-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    padding: 10px 16px;
+}
+.shopify-skin .b2b-aging-cell + .b2b-aging-cell {
+    border-left: 1px solid var(--border);
+}
+.shopify-skin .b2b-aging-value {
+    font-size: 15px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+.shopify-skin .b2b-aging-cell.is-bad .b2b-aging-value {
+    color: var(--dangerColor);
+}
+.shopify-skin .b2b-noticed {
+    margin-left: 6px;
+    cursor: help;
+}
+
+/* The terms history: one entry per save, its fields under it. A new entry
+   arrives the way a notice does, so a save's record reads as its answer. */
+.shopify-skin .b2b-history {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) + 4px);
+    background: var(--card);
+    transition: opacity var(--animationSpeed) ease-out;
+}
+.shopify-skin .b2b-history-item {
+    padding: 12px 16px;
+    animation: slideTop var(--animationSpeed) ease-out;
+}
+.shopify-skin .b2b-history-item + .b2b-history-item {
+    border-top: 1px solid var(--border);
+}
+.shopify-skin .b2b-history-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+}
+.shopify-skin .b2b-history-rows {
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 13px;
+}
+.shopify-skin .b2b-history-rows > li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 8px;
+    padding: 2px 0;
+}
+.shopify-skin .b2b-history-field {
+    min-width: 130px;
+    color: var(--muted-foreground);
+}
+.shopify-skin .b2b-history-arrow {
+    color: var(--muted-foreground);
+}
+
+/* A fact that is a link — a company's catalogue — reads at the size of the
+   facts beside it, and keeps the arrow's nudge. */
+.shopify-skin .b2b-more.b2b-fact-link {
+    font-size: var(--fontSize);
+    color: var(--foreground);
+}
+
+/* A catalogue's two pickers are as wide as a sentence of chips needs, not
+   the whole page. */
+.shopify-skin .b2b-catalogue-form {
+    max-width: 880px;
+}
+
+@media (max-width: 600px) {
+    .shopify-skin .b2b-statement-day {
+        width: 100%;
+    }
+    .shopify-skin .b2b-aging {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .shopify-skin .b2b-aging-cell + .b2b-aging-cell {
+        border-left: 0;
+    }
+    .shopify-skin .b2b-aging-cell {
+        border-top: 1px solid var(--border);
+    }
+    .shopify-skin .b2b-aging-cell:nth-child(-n + 2) {
+        border-top: 0;
+    }
+    .shopify-skin .b2b-aging-cell:nth-child(even) {
+        border-left: 1px solid var(--border);
+    }
+    /* Five into two columns leaves one over: it takes the row. */
+    .shopify-skin .b2b-aging-cell:last-child:nth-child(odd) {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .shopify-skin .b2b-history-item {
+        animation-name: fadeIn;
+    }
+}
+
+/*
  * On a phone a row becomes a card and every cell is captioned with its column
  * name. An action cell has no name worth printing, and PocketBase's own
  * `.col-meta` is hidden there outright — which would leave a buyer nobody can

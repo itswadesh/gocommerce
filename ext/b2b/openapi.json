@@ -441,7 +441,7 @@
             "$ref": "#/components/responses/B2bUnauthorized"
           },
           "403": {
-            "description": "The account buys for no company; the company is closed; `on_account` was chosen and the company is on hold or has no account; the order would take the company past its credit limit (`credit_limit_exceeded`, the message saying how much is available, in minor units); or the buyer's address is not confirmed (`email_unverified`).",
+            "description": "The account buys for no company; the company is closed; a line is outside the company's catalogue (`not_in_catalogue`, with each such line in `details` as `{variant_id, sku, reason}`); `on_account` was chosen and the company is on hold or has no account; the order would take the company past its credit limit (`credit_limit_exceeded`, the message saying how much is available, in minor units); or the buyer's address is not confirmed (`email_unverified`). A catalogue is checked before the approval threshold, so a basket holding a line outside it is refused rather than filed for an approver.",
             "content": {
               "application/json": {
                 "schema": {
@@ -469,6 +469,155 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/x/b2b/statement": {
+      "get": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "The company's statement",
+        "description": "The caller's company's account over a period, for its admins and approvers; a plain buyer is refused. Every order placed on account is a debit on the day it was placed; a payment is a credit on the day the store recorded it; a payment taken back as recorded in error (`payment_reversed`) is a debit again; and an order cancelled while still owed is a credit. A payment is dated from core's own record of it — the event written in the transaction that marked the order paid, delivered to the module or read back from the order's history — and `date_source` is `recorded`. A payment with no record left (an order imported already paid, an event deleted) is dated the moment the module first saw it and marked `noticed`: it was paid at or before then. What is owed is worked out as the credit check works it out — on account, neither paid nor cancelled — so a statement ending today closes on the outstanding figure.\n\n`from` is the first day and `to` the day after the last, as every date range in the engine is, both civil dates in the store's time zone (its profile's, UTC when it has none). Leaving both out is the month to date. `aging` is what is owed at the end, by whole days past due in the store's calendar: due on the 30th is current on the 30th.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/B2bStatementFrom"
+          },
+          {
+            "$ref": "#/components/parameters/B2bStatementTo"
+          },
+          {
+            "$ref": "#/components/parameters/B2bStatementFormat"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The statement. With `format=csv`, the same as a file: one table, the opening balance its first row and the closing balance and aging buckets its last, each named in `kind` with the amount in `balance_minor`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/B2bStatement"
+                    }
+                  }
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "description": "The account buys for no company, or is a plain buyer: a statement is for whoever runs the account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x/b2b/catalogue": {
+      "get": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "What the company may buy, at the buyer's prices",
+        "description": "The products on sale that the caller's company may buy — its catalogue's, or every one when it has none — by title, each with its active variants and what one costs in a basket priced as this buyer: core's own price resolution (`Pricing.PriceInChannel`) for the address the company's group holds for them, on the default storefront a quick order opens its basket on. A quantity break lowers it in the basket. Any buyer of the company may read it. A catalogue is what a company held to it may buy: every product filed under one of its categories or anything beneath them — read from core's category tree as it stands at the moment of the check — and its products one by one. A company with no catalogue buys everything. The checkout guard, quick order, a file, a repeat order and a quote all hold to it; the public storefront still lists every product to a signed-in company buyer, and the guard is what holds the line.",
+        "security": [
+          {
+            "customerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Part of the title or of a variant's SKU, in any case.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category_id",
+            "in": "query",
+            "required": false,
+            "description": "Only this category and everything under it. Anything but a positive integer is a 400.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "description": "The same as `limit`, which wins when both are sent.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of products the company may buy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/B2bCatalogueProduct"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/B2bUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/B2bNotABuyer"
           }
         }
       }
@@ -679,7 +828,7 @@
             "$ref": "#/components/responses/B2bUnauthorized"
           },
           "403": {
-            "description": "The account buys for no company or its role is `buyer` (`forbidden`); or placing the order was refused — the company is closed, or on hold with `on_account` chosen, or the order is over its credit limit (`credit_limit_exceeded`).",
+            "description": "The account buys for no company or its role is `buyer` (`forbidden`); or placing the order was refused — the company is closed; a line is outside the company's catalogue (`not_in_catalogue`, with each such line in `details` as `{variant_id, sku, reason}`), the catalogue having narrowed since the request was made; it is on hold with `on_account` chosen; or the order is over its credit limit (`credit_limit_exceeded`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -927,7 +1076,7 @@
             "$ref": "#/components/responses/B2bUnauthorized"
           },
           "403": {
-            "description": "The account buys for no company, or the company is closed (`forbidden`).",
+            "description": "The account buys for no company, or the company is closed (`forbidden`); or a line is outside the company's catalogue (`not_in_catalogue`, with each such line in `details` as `{variant_id, sku, reason}`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -1023,7 +1172,7 @@
             "$ref": "#/components/responses/B2bUnauthorized"
           },
           "403": {
-            "description": "The account buys for no company; or placing the order was refused — the company is closed, `on_account` was chosen and the company is on hold or has no account, or the order is over its credit limit (`credit_limit_exceeded`).",
+            "description": "The account buys for no company; or placing the order was refused — the company is closed; a line is outside the company's catalogue (`not_in_catalogue`, with each such line in `details` as `{variant_id, sku, reason}`); `on_account` was chosen and the company is on hold or has no account; or the order is over its credit limit (`credit_limit_exceeded`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -1113,8 +1262,8 @@
         "tags": [
           "b2b"
         ],
-        "summary": "Put a pasted order into the basket",
-        "description": "Quick order: up to 500 lines by SKU or variant id, added one by one through the same rules as the public cart routes, into the basket named by `cart_id` or a new one. The basket is priced as the buyer first, so every line goes in at their company's price.\n\nA line that cannot go in — a SKU nobody sells, something not for sale, more than is in stock, a quantity under 1 — is listed in `rejected` with its reason, and the rest still go in: the answer is 200 whatever was rejected. Adding a SKU already in the basket adds to its quantity.\n\nNothing is placed; check the basket out with `POST /x/b2b/checkout`.",
+        "summary": "Put a pasted order, or a spreadsheet, into the basket",
+        "description": "Quick order: up to 500 lines by SKU or variant id, added one by one through the same rules as the public cart routes, into the basket named by `cart_id` or a new one. The basket is priced as the buyer first, so every line goes in at their company's price.\n\nThe body is JSON, or a spreadsheet sent as `text/csv` with the basket named in the `cart_id` query parameter. A file's first row names its columns — `sku` or `variant_id`, and `quantity` — in any case and any order, with any byte-order mark ignored; other columns are ignored too, so an export with titles and prices beside the SKUs still reads. Empty rows are skipped. It is read by core's CSV reader, which takes off the apostrophe an export put before a cell beginning with `=`, `+`, `-` or `@`. A file with no such header, or that cannot be parsed, is a 400 naming the problem.\n\nA line that cannot go in — a SKU nobody sells, something not for sale, more than is in stock, a quantity under 1 or not a number, a product outside the company's catalogue (`not_in_catalogue`) — is listed in `rejected` with its reason, and from a file with its `row`; the rest still go in, and the answer is 200 whatever was rejected. Adding a SKU already in the basket adds to its quantity.\n\nNothing is placed; check the basket out with `POST /x/b2b/checkout`.",
         "security": [
           {
             "customerSession": []
@@ -1127,6 +1276,12 @@
               "schema": {
                 "$ref": "#/components/schemas/B2bBulkRequest"
               }
+            },
+            "text/csv": {
+              "schema": {
+                "type": "string"
+              },
+              "example": "sku,quantity\nTEE-M-BLK,12\nMUG-001,40\n"
             }
           }
         },
@@ -1135,7 +1290,7 @@
             "$ref": "#/components/responses/B2bCartFilled"
           },
           "400": {
-            "description": "`lines` is empty or longer than 500, or the body is malformed.",
+            "description": "`lines` is empty or longer than 500, or the body is malformed; or a file has no header naming `quantity` and `sku` or `variant_id`, no lines under it, more than 500, or a row the CSV parser cannot read.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1177,7 +1332,18 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "cart_id",
+            "in": "query",
+            "required": false,
+            "description": "With a `text/csv` body, the basket to fill; absent opens a new one. A JSON body names it in its own `cart_id`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/x/b2b/orders/{order_id}/reorder": {
@@ -1698,6 +1864,117 @@
                       "$ref": "#/components/schemas/B2bCredit"
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/companies/{id}/history": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "How a company's terms changed",
+        "description": "Requires companies.read. Every change to a company's terms — status, credit limit, net days, approval threshold, whether a PO is required, customer group and catalogue — newest first, written in the same transaction as the change: the field, its old and new value as the API takes them (`null` is none), who made it and when. A company's first terms are recorded as `action: created` with no old value. Money fields carry `currency`. `actor_kind` is `operator` (somebody signed in, or an API key, with their address), `token` (a static admin token), `buyer` (one of the company's own admins) or `system`.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bHistoryPage"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/companies/{id}/statement": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "A company's statement",
+        "description": "Requires companies.read. Every order placed on account is a debit on the day it was placed; a payment is a credit on the day the store recorded it; a payment taken back as recorded in error (`payment_reversed`) is a debit again; and an order cancelled while still owed is a credit. A payment is dated from core's own record of it — the event written in the transaction that marked the order paid, delivered to the module or read back from the order's history — and `date_source` is `recorded`. A payment with no record left (an order imported already paid, an event deleted) is dated the moment the module first saw it and marked `noticed`: it was paid at or before then. What is owed is worked out as the credit check works it out — on account, neither paid nor cancelled — so a statement ending today closes on the outstanding figure.\n\n`from` is the first day and `to` the day after the last, as every date range in the engine is, both civil dates in the store's time zone (its profile's, UTC when it has none). Leaving both out is the month to date. `aging` is what is owed at the end, by whole days past due in the store's calendar: due on the 30th is current on the 30th.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/B2bStatementFrom"
+          },
+          {
+            "$ref": "#/components/parameters/B2bStatementTo"
+          },
+          {
+            "$ref": "#/components/parameters/B2bStatementFormat"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The statement. With `format=csv`, the same as a file: one table, the opening balance its first row and the closing balance and aging buckets its last, each named in `kind` with the amount in `balance_minor`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/B2bStatement"
+                    }
+                  }
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -2494,7 +2771,14 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "$ref": "#/components/responses/Forbidden"
+            "description": "Requires quotes.write; or a line is outside the company's catalogue (`not_in_catalogue`, with each such line in `details` as `{variant_id, sku, reason}`): the buyer could not accept a quote holding one, so it cannot be written.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
@@ -2547,7 +2831,14 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "$ref": "#/components/responses/Forbidden"
+            "description": "Requires quotes.write; or a line is outside the company's catalogue (`not_in_catalogue`, with each such line in `details` as `{variant_id, sku, reason}`), the catalogue having narrowed since the quote was priced.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
@@ -2652,6 +2943,256 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/catalogues": {
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Catalogues",
+        "description": "Requires companies.read. Every catalogue by name, with how many categories, products and companies each has. `q` matches part of the name. A catalogue is what a company held to it may buy: every product filed under one of its categories or anything beneath them — read from core's category tree as it stands at the moment of the check — and its products one by one. A company with no catalogue buys everything. The checkout guard, quick order, a file, a repeat order and a quote all hold to it; the public storefront still lists every product to a signed-in company buyer, and the guard is what holds the line.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Part of the name, in any case.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of catalogues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/B2bCatalogueSummary"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Create a catalogue",
+        "description": "Requires companies.write. A name, unique, and the categories and products it allows. Every id must exist; repeats are dropped. At most 1000 categories and 5000 products.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/B2bCatalogueInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/B2bCatalogueResponse"
+          },
+          "400": {
+            "description": "No name; an id that is not a positive integer or names nothing; or more than the limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "A catalogue with that name already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/x/b2b/catalogues/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PathID"
+        }
+      ],
+      "get": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "A catalogue",
+        "description": "Requires companies.read. The catalogue with its ids, each named as core reads it now — a category by its full path — and `missing` on one deleted since, which allows nothing.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bCatalogueResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Change a catalogue",
+        "description": "Requires companies.write. Every field is optional; `category_ids` and `product_ids`, when given, replace the lists. A company held to it is held to the new lists from its next basket and its next checkout, and an approval or a quote placed afterwards is checked against them.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/B2bCatalogueInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/B2bCatalogueResponse"
+          },
+          "400": {
+            "description": "An empty name; an id that is not a positive integer or names nothing; or more than the limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Another catalogue has that name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin:b2b"
+        ],
+        "summary": "Delete a catalogue",
+        "description": "Requires companies.write. A catalogue a company is held to is refused, naming the companies: dropping it from under them would let them buy everything.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "A company is held to it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }
@@ -2979,6 +3520,39 @@
         "schema": {
           "type": "string"
         }
+      },
+      "B2bStatementFrom": {
+        "name": "from",
+        "in": "query",
+        "required": false,
+        "description": "The first day the statement covers, YYYY-MM-DD in the store's time zone. Defaults to the first of the month the period ends in.",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "B2bStatementTo": {
+        "name": "to",
+        "in": "query",
+        "required": false,
+        "description": "The day after the last one the statement covers — exclusive, as every range in the engine is — YYYY-MM-DD in the store's time zone. Defaults to tomorrow, so the statement runs to the end of today.",
+        "schema": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "B2bStatementFormat": {
+        "name": "format",
+        "in": "query",
+        "required": false,
+        "description": "`csv` answers the statement as a text/csv file. Anything but `json` or `csv` is a 400.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "json",
+            "csv"
+          ]
+        }
       }
     },
     "schemas": {
@@ -3043,6 +3617,16 @@
           "require_po": {
             "type": "boolean",
             "description": "Every order needs a purchase-order number."
+          },
+          "catalogue_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "The catalogue the company is held to; null lets it buy everything."
+          },
+          "catalogue_name": {
+            "type": "string",
+            "description": "The catalogue's name; absent when there is none."
           },
           "notes": {
             "type": "string",
@@ -3121,6 +3705,12 @@
           "require_po": {
             "type": "boolean",
             "default": false
+          },
+          "catalogue_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "A catalogue that exists. null: none, the company may buy everything. Recorded in the terms history."
           },
           "notes": {
             "type": "string"
@@ -3313,6 +3903,431 @@
           },
           "net_days": {
             "type": "integer"
+          }
+        }
+      },
+      "B2bHistoryEntry": {
+        "type": "object",
+        "description": "One of a company's terms changing, or set when the company was created.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "company_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "field": {
+            "type": "string",
+            "enum": [
+              "status",
+              "credit_limit_minor",
+              "net_days",
+              "approval_threshold_minor",
+              "require_po",
+              "group_id",
+              "catalogue_id"
+            ],
+            "description": "The term, named as the company's input names it."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "created",
+              "changed"
+            ]
+          },
+          "old_value": {
+            "nullable": true,
+            "description": "The value before, as the API takes it; null when it was none, and on a `created` entry."
+          },
+          "new_value": {
+            "nullable": true,
+            "description": "The value after; null is none — no account, no group."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Set on `credit_limit_minor` and `approval_threshold_minor`, whose values are minor units."
+          },
+          "actor_kind": {
+            "type": "string",
+            "enum": [
+              "operator",
+              "token",
+              "buyer",
+              "system"
+            ]
+          },
+          "actor_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "actor_email": {
+            "type": "string",
+            "description": "The operator's or buyer's address as it was; empty for a token or the system."
+          },
+          "changed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "B2bStatementEntry": {
+        "type": "object",
+        "description": "One line of a statement.",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "The civil date in the store's time zone."
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The instant."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "order",
+              "payment",
+              "payment_reversed",
+              "cancellation"
+            ]
+          },
+          "order_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "order_number": {
+            "type": "string"
+          },
+          "po_number": {
+            "type": "string"
+          },
+          "due_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "debit_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "credit_minor": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Zero for a cancellation of an order already paid: that money is a refund, settled on the order."
+          },
+          "balance_minor": {
+            "type": "integer",
+            "format": "int64",
+            "description": "What the company owed once this line was written."
+          },
+          "date_source": {
+            "type": "string",
+            "enum": [
+              "recorded",
+              "noticed"
+            ],
+            "description": "`recorded`: core's own record of the moment. `noticed`: no record survived, and the line is dated when the module first saw it — it happened at or before then."
+          }
+        }
+      },
+      "B2bStatement": {
+        "type": "object",
+        "description": "A company's account over a period. Amounts are minor units of `currency`.",
+        "properties": {
+          "company": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "code": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "currency": {
+            "type": "string"
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "The store's time zone, in which the dates are civil dates."
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date",
+            "description": "Exclusive: the day after the last one covered."
+          },
+          "opening_balance_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "closing_balance_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/B2bStatementEntry"
+            }
+          },
+          "aging": {
+            "type": "object",
+            "description": "What is owed at the end by whole days past due; the five sum to the closing balance.",
+            "properties": {
+              "as_of": {
+                "type": "string",
+                "format": "date",
+                "description": "The last day covered."
+              },
+              "current_minor": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "days_1_30_minor": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "days_31_60_minor": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "days_61_90_minor": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "days_over_90_minor": {
+                "type": "integer",
+                "format": "int64"
+              }
+            }
+          }
+        }
+      },
+      "B2bCatalogue": {
+        "type": "object",
+        "description": "What a company held to it may buy.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "category_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "product_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "A category's full path, or a product's title; empty when it is missing."
+                },
+                "missing": {
+                  "type": "boolean",
+                  "description": "Deleted from the store since: it allows nothing."
+                }
+              }
+            }
+          },
+          "products": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "A category's full path, or a product's title; empty when it is missing."
+                },
+                "missing": {
+                  "type": "boolean",
+                  "description": "Deleted from the store since: it allows nothing."
+                }
+              }
+            }
+          },
+          "company_count": {
+            "type": "integer",
+            "description": "How many companies are held to it."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "B2bCatalogueSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "category_count": {
+            "type": "integer"
+          },
+          "product_count": {
+            "type": "integer"
+          },
+          "company_count": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "B2bCatalogueInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "category_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Categories it allows, each with everything under it. Replaces the list."
+          },
+          "product_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Products it allows one by one. Replaces the list."
+          }
+        }
+      },
+      "B2bCatalogueProduct": {
+        "type": "object",
+        "description": "A product the buyer's company may buy.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "image_url": {
+            "type": "string"
+          },
+          "category": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "full_name": {
+                "type": "string"
+              }
+            }
+          },
+          "variants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "sku": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "available": {
+                  "type": "integer"
+                },
+                "price_minor": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "One, in a basket priced as this buyer."
+                },
+                "currency": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       },
@@ -3884,13 +4899,18 @@
               "not_found",
               "inactive",
               "insufficient_stock",
-              "invalid"
+              "invalid",
+              "not_in_catalogue"
             ],
-            "description": "`not_found`: no variant has that SKU or id. `inactive`: it is not for sale. `insufficient_stock`: more than is available. `invalid`: the quantity is under 1. `inactive` and `insufficient_stock` are the reasons a refused checkout gives for the same two things."
+            "description": "`not_found`: no variant has that SKU or id. `inactive`: it is not for sale. `insufficient_stock`: more than is available. `invalid`: the quantity is under 1, or a file's cell is not a number. `inactive` and `insufficient_stock` are the reasons a refused checkout gives for the same two things. `not_in_catalogue`: the company is held to a catalogue that leaves it out; the checkout would refuse it."
           },
           "message": {
             "type": "string",
             "description": "The reason in words, for a person: \"only 3 left in stock\"."
+          },
+          "row": {
+            "type": "integer",
+            "description": "From a file: the line's row, counting the header as row 1, as a spreadsheet numbers it. Absent for a JSON line."
           }
         }
       },
@@ -4283,6 +5303,42 @@
                 },
                 "meta": {
                   "$ref": "#/components/schemas/ListMeta"
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bHistoryPage": {
+        "description": "A page of a company's terms history, newest first.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/B2bHistoryEntry"
+                  }
+                },
+                "meta": {
+                  "$ref": "#/components/schemas/ListMeta"
+                }
+              }
+            }
+          }
+        }
+      },
+      "B2bCatalogueResponse": {
+        "description": "The catalogue.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/B2bCatalogue"
                 }
               }
             }
