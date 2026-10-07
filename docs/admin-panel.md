@@ -476,6 +476,43 @@ field that no human typed is worse than a blank, because a reader cannot tell
 the two apart. `kind`, `source`, the operator's email and the timestamp already
 say everything true about those rows.
 
+## Price lists, and putting prices on one
+
+The Price lists screen (`/pricing`) makes the list: its name, the customer group
+it applies to (or everyone), a start and end, a priority, and whether it is
+live. It does not yet put prices on one — the Prices column counts them, and
+nothing on the screen adds one. Until it does, prices go on through the API
+with any credential that holds `pricing.write`: the admin token, or the token
+`POST /api/admin/auth-with-password` returns for an operator.
+
+A price is one variant at one price from one quantity. Find the list's id and
+the variant's id, then put the price:
+
+```sh
+curl -s -H "Authorization: Bearer $TOKEN" $BASE/api/admin/price-lists
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/admin/products?limit=50"   # variants[].id
+
+# Variant 1689 costs 21.00 on list 3, at any quantity
+curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  $BASE/api/admin/price-lists/3/prices -d '{"variant_id": 1689, "amount_minor": 2100}'
+
+# ...and 19.00 each from ten
+curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  $BASE/api/admin/price-lists/3/prices -d '{"variant_id": 1689, "min_quantity": 10, "amount_minor": 1900}'
+```
+
+`amount_minor` is in the store currency's minor units, so 2100 is 21.00. A
+missing `min_quantity` means any quantity, which is 1. Putting the same variant
+and quantity again replaces that price rather than adding a second, which is
+why the verb is PUT. `GET /api/admin/price-lists/{id}/prices` lists what a list
+holds, and `DELETE /api/admin/price-lists/{id}/prices?variant_id=1689&min_quantity=10`
+removes one entry.
+
+A list prices nothing until it is live and today is inside its window, and a
+list tied to a group prices only that group's customers. When two live lists
+cover one line, the engine takes the most specific quantity break first, then
+the higher priority, then the cheaper of the two.
+
 ## Authentication
 
 Two kinds of credential exist, because scripts and people want different
@@ -637,6 +674,12 @@ payment cannot be completed from the panel, rather than implying it can.
 ## What it does not do yet
 
 Honest gaps, rather than a roadmap:
+
+- **A price list's prices cannot be edited from the panel.** The Price lists
+  screen makes, edits and deletes the list itself; the prices on it go on
+  through `PUT /api/admin/price-lists/{id}/prices`, as
+  [Price lists, and putting prices on one](#price-lists-and-putting-prices-on-one)
+  shows.
 
 - **An invoice row cannot link to its order.** An order still has no address of
   its own in the panel — it opens in a drawer over the list — so the Order
