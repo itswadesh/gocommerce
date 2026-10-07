@@ -365,6 +365,14 @@ custom domain attached to it, or a shared API host with the store named in the
 gocommerce -db "$DATABASE_URL" -base-domain shops.example.com   -platform-token "$GOCOMMERCE_PLATFORM_TOKEN" -b2b -resend platform
 ```
 
+With Docker, [`docker-compose.platform.yml`](../docker-compose.platform.yml)
+is the single-store compose file with `platform` in place of `serve`, and the
+same service and volume names, so an existing store's volume carries over.
+A custom domain may not sit under the base domain, and slugs such as `admin`
+and `platform` are reserved, so a store that must keep `admin.example.com`
+needs the base domain one level down (`shops.example.com`) and that host
+attached as a custom domain.
+
 The platform's own API is served only on `platform.<base domain>` (or
 `-platform-host`) and needs a platform token, which is not a store
 credential — it opens no store's admin API, and no store's token opens it.

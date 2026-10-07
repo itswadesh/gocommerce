@@ -1,0 +1,94 @@
+# Many stores: the engine in platform mode and its database (D70).
+#
+#   docker compose -f docker-compose.platform.yml up --build
+#
+# The single-store docker-compose.yml with `serve` swapped for `platform`. One
+# process serves every store, each in a schema of its own, and picks the store
+# by the host a request was sent to: <slug>.$GOCOMMERCE_BASE_DOMAIN, or a
+# custom domain attached to it. The console and the platform API answer on
+# platform.$GOCOMMERCE_BASE_DOMAIN, or $GOCOMMERCE_PLATFORM_HOST, signed in to
+# with GOCOMMERCE_PLATFORM_TOKEN.
+#
+# A custom domain cannot sit under the base domain, and slugs such as `admin`
+# are reserved for the platform. So a store that has to keep admin.example.com
+# needs a base domain one level down (shops.example.com), with
+# admin.example.com attached to it as a custom domain.
+#
+# On Dokploy, point the Compose service's path at this file and give every
+# host — the platform host and each store's domain — to the gocommerce service
+# on port 8080. Stores are created from the console, not from this file.
+#
+# The service, volume and database names match docker-compose.yml on purpose.
+# Switching an existing single store over keeps its volume, and its tables stay
+# where they were in the public schema, untouched: the platform's stores live
+# beside them, never on top of them.
+
+services:
+  gocommerce:
+    build:
+      context: .
+    restart: unless-stopped
+    # Every store on a platform runs the same compiled-in modules, so the list
+    # is the same as the single store's: each sits idle until a store
+    # configures it.
+    command:
+      - -addr
+      - 0.0.0.0:8080
+      - -identity
+      - -webhooks
+      - -menus
+      - -reviews
+      - -contact
+      - -newsletter
+      - -resend
+      - -sendgrid
+      - -twilio
+      - -msg91
+      - -invoices
+      - -cms
+      - -faq
+      - -wishlist
+      - -gateways
+      - -carriers
+      - -feeds
+      - -sitemaps
+      - -b2b
+      # Empty means platform.$GOCOMMERCE_BASE_DOMAIN. Set it when the console
+      # belongs somewhere else — say the base domain is shops.example.com, so
+      # stores are <slug>.shops.example.com, and the console is
+      # platform.example.com.
+      - -platform-host
+      - ${GOCOMMERCE_PLATFORM_HOST:-}
+      - platform
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://gocommerce:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/gocommerce?sslmode=disable
+      # Creates, suspends and deletes whole stores. It opens no store's admin
+      # API; each store gets its own token when it is created.
+      GOCOMMERCE_PLATFORM_TOKEN: ${GOCOMMERCE_PLATFORM_TOKEN:?set GOCOMMERCE_PLATFORM_TOKEN}
+      GOCOMMERCE_BASE_DOMAIN: ${GOCOMMERCE_BASE_DOMAIN:?set GOCOMMERCE_BASE_DOMAIN}
+    volumes:
+      - media:/data/media
+    ports:
+      - "${PORT:-8080}:8080"
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gocommerce
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: gocommerce
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gocommerce -d gocommerce"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  media:
+  pgdata:
