@@ -11,6 +11,34 @@ services:
     build:
       context: .
     restart: unless-stopped
+    # The binary installs no module unless told to, and the panel hides every
+    # screen whose module is missing, so a store started without these has no
+    # B2B, Invoices, Payouts or Abandoned carts and gives no hint why. Each
+    # module sits idle until it is configured, so installing them all costs
+    # nothing. -import-amazon is left out: it drives a real Chrome.
+    command:
+      - -addr
+      - 0.0.0.0:8080
+      - -identity
+      - -webhooks
+      - -menus
+      - -reviews
+      - -contact
+      - -newsletter
+      - -resend
+      - -sendgrid
+      - -twilio
+      - -msg91
+      - -invoices
+      - -cms
+      - -faq
+      - -wishlist
+      - -gateways
+      - -carriers
+      - -feeds
+      - -sitemaps
+      - -b2b
+      - serve
     depends_on:
       postgres:
         condition: service_healthy

@@ -98,7 +98,9 @@ after a clean shutdown, so any non-nil error is genuinely fatal.
 [`Dockerfile`](../Dockerfile) builds the panel from source, then a static binary,
 into a distroless image that runs as a non-root user — one file, no libc, no
 shell. [`docker-compose.yml`](../docker-compose.yml) adds PostgreSQL and a volume
-for uploads:
+for uploads, and starts the engine with every module this repository ships
+except `-import-amazon` — each idle until it is configured. Trim its `command:`
+to drop the ones a store will never use:
 
 ```sh
 POSTGRES_PASSWORD=... GOCOMMERCE_ADMIN_TOKEN=... GOCOMMERCE_ADMIN_PASSWORD=...   docker compose up --build
