@@ -63,7 +63,7 @@ produces it, and is never repurposed.
 
 | Event | When | Notes |
 |---|---|---|
-| `order.created` | An order was created at checkout | Inventory is reserved, or committed for cash on delivery |
+| `order.created` | An order was created at checkout | Inventory is reserved, or committed for cash on delivery. Payload carries `cart_id`, the row id of the basket it was checked out from — on this event alone |
 | `order.paid` | Money arrived | Also confirms a pending order, so it becomes shippable |
 | `order.shipped` | A parcel was booked | Fires once per parcel. Payload carries `tracking` and a `shipment` block naming what went in this one and what is still owed; `status` is `partial` while the order still owes units |
 | `order.unshipped` | A shipment recorded in error was removed | Payload carries the same `shipment` block, describing the parcel that came back; `status` is what is left — `partial` or `confirmed` |
@@ -86,8 +86,9 @@ The cart family has exactly one name for the same reason. There is no
 event per creation would make `outbox_events` the busiest table in the store to
 no consumer's benefit. There is no `cart.recovered`: a revival is already
 visible as the cart going back to `open` and, where it matters, as
-`order.created`, and emitting one would put an outbox write on `AddLine`, the
-hottest shopper-facing write path there is. And there is no `cart.purged`: a
+`order.created` — whose `cart_id` names the basket — and emitting one would
+put an outbox write on `AddLine`, the hottest shopper-facing write path there
+is. And there is no `cart.purged`: a
 deletion after retention is a retention action, not a business transition, and
 an event announcing that the evidence has gone is evidence nobody can act on.
 
@@ -96,8 +97,12 @@ an event announcing that the evidence has gone is evidence nobody can act on.
 would mean that on the first sweep after M28 every stale basket in the table
 with an email on it sends mail — and when and how often to chase an abandoned
 basket is a marketing decision with opt-out obligations attached, not an engine
-default shipped as a schema side effect. A recovery module subscribes to
-`cart.abandoned` and owns the schedule.
+default shipped as a schema side effect. A recovery module owns the schedule.
+`ext/cart-recovery` does not wait for `cart.abandoned` at all: core's TTL is
+thirty days, the right clock for retention and the wrong one for a reminder, so
+the module keeps its own record of baskets idle for minutes, and hears
+`order.created` for the `cart_id` that credits an order to the basket it chased
+(D82).
 
 **Stock movements are not events.** Every change to a stock balance is recorded
 in `stock_movements` (M26) — append-only, written inside the same transaction as

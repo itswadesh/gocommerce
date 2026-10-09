@@ -128,7 +128,7 @@ Every gateway and carrier module installs idle: `-gateways` and `-carriers` put 
 | `translations` | Catalogue content in the language a shopper asked for |
 | `identity` | Shopper accounts: sessions, saved addresses, order history, password reset, confirmed email addresses |
 | `b2b` | Companies and their buyers in roles, orders on account against a credit limit and net terms, purchase-order numbers, approval over a limit, and quotes priced for one buyer |
-| `cart-recovery` | Chases an abandoned basket with a link back to it |
+| `cart-recovery` | Abandoned checkouts: records baskets left idle, sends a sequence of reminders by email with a tracked link back, and credits the order that recovers each one |
 | `import-amazon` | A product, its variations and pictures from an Amazon URL, through a real Chrome; copy rewritten by Claude |
 | `mcp` | The store as tools for an AI agent, with an audit trail |
 | `search-meilisearch` | A Meilisearch index kept in step with the catalogue, and the storefront's search through it |

@@ -38,6 +38,7 @@ services:
       - -feeds
       - -sitemaps
       - -b2b
+      - -recovery
       - serve
     depends_on:
       postgres:

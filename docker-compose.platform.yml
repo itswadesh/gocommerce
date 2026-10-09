@@ -53,6 +53,7 @@ services:
       - -feeds
       - -sitemaps
       - -b2b
+      - -recovery
       # Empty means platform.$GOCOMMERCE_BASE_DOMAIN. Set it when the console
       # belongs somewhere else — say the base domain is shops.example.com, so
       # stores are <slug>.shops.example.com, and the console is

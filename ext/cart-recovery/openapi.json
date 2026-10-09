@@ -1,0 +1,362 @@
+{
+  "paths": {
+    "/x/cart-recovery/r/{token}": {
+      "get": {
+        "tags": ["cart-recovery"],
+        "summary": "Follow a recovery link",
+        "description": "Where a recovery email's link lands. Counts the click, then redirects to the storefront basket (`/cart/<token>`) — or to the storefront's home when the basket has become an order or no longer exists.",
+        "parameters": [
+          {"name": "token", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "302": {"description": "To the basket, or to the storefront's home."},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/api/admin/x/cart-recovery/abandonments": {
+      "get": {
+        "tags": ["cart-recovery"],
+        "summary": "Abandoned checkouts",
+        "description": "Every basket that sat idle past its threshold, newest first. Filters apply to `/summary` identically.",
+        "parameters": [
+          {"$ref": "#/components/parameters/Limit"},
+          {"$ref": "#/components/parameters/PageNumber"},
+          {"$ref": "#/components/parameters/Offset"},
+          {"$ref": "#/components/parameters/CartRecoveryStatus"},
+          {"$ref": "#/components/parameters/CartRecoveryKind"},
+          {"$ref": "#/components/parameters/CartRecoveryFrom"},
+          {"$ref": "#/components/parameters/CartRecoveryTo"},
+          {"$ref": "#/components/parameters/CartRecoveryQuery"},
+          {"$ref": "#/components/parameters/CartRecoveryMinValue"},
+          {"$ref": "#/components/parameters/CartRecoveryMaxValue"},
+          {"$ref": "#/components/parameters/CartRecoveryReachable"},
+          {"$ref": "#/components/parameters/CartRecoveryChannel"},
+          {"name": "sort", "in": "query", "schema": {"type": "string", "enum": ["abandoned_at", "value", "last_active_at"]}},
+          {"$ref": "#/components/parameters/SortOrder"}
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of records.",
+            "content": {"application/json": {"schema": {"type": "object", "properties": {
+              "data": {"type": "array", "items": {"$ref": "#/components/schemas/CartRecoveryAbandonment"}},
+              "meta": {"$ref": "#/components/schemas/ListMeta"}
+            }}}}
+          },
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      }
+    },
+    "/api/admin/x/cart-recovery/abandonments/{id}": {
+      "get": {
+        "tags": ["cart-recovery"],
+        "summary": "One abandoned checkout",
+        "description": "The record with the basket as it was beside the basket as it is, what the store knows about the address from its orders, the whole timeline, and which actions are possible right now.",
+        "parameters": [{"$ref": "#/components/parameters/PathID"}],
+        "responses": {
+          "200": {"description": "The record.", "content": {"application/json": {"schema": {"type": "object", "properties": {
+            "data": {"$ref": "#/components/schemas/CartRecoveryDetail"}}}}}},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/api/admin/x/cart-recovery/abandonments/{id}/send": {
+      "post": {
+        "tags": ["cart-recovery"],
+        "summary": "Send a recovery email now",
+        "description": "Every rule is re-checked at the moment of the request. A refusal is a 409 whose `details.reason` is one of `already_recovered` (with `order_number`), `suppressed`, `expired`, `no_contact`, `nothing_purchasable`, `no_email_provider`. A manual send does not advance the automated sequence.",
+        "parameters": [{"$ref": "#/components/parameters/PathID"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {
+          "channel": {"type": "string", "enum": ["email"]},
+          "template": {"type": "string", "enum": ["cart.recovery.1", "cart.recovery.2", "cart.recovery.3"]}
+        }}}}},
+        "responses": {
+          "200": {"description": "Sent.", "content": {"application/json": {"schema": {"type": "object", "properties": {
+            "data": {"type": "object", "properties": {
+              "sent_to": {"type": "string"},
+              "sent_at": {"type": "string", "format": "date-time"},
+              "abandonment": {"$ref": "#/components/schemas/CartRecoveryDetail"}
+            }}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"},
+          "502": {"description": "The email provider refused the message."}
+        }
+      }
+    },
+    "/api/admin/x/cart-recovery/abandonments/{id}/link": {
+      "post": {
+        "tags": ["cart-recovery"],
+        "summary": "Copy the recovery link",
+        "description": "The link a message carries, for an operator to paste to the shopper. A POST, and recorded on the timeline, because the link opens the basket for whoever holds it. `tracked` is false when the engine has no PanelURL, in which case the link goes straight to the storefront and clicks are not counted. 409 `no_storefront` when no storefront address is set.",
+        "parameters": [{"$ref": "#/components/parameters/PathID"}],
+        "responses": {
+          "200": {"description": "The link.", "content": {"application/json": {"schema": {"type": "object", "properties": {
+            "data": {"type": "object", "properties": {"url": {"type": "string"}, "tracked": {"type": "boolean"}}}}}}}},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"}
+        }
+      }
+    },
+    "/api/admin/x/cart-recovery/abandonments/{id}/suppress": {
+      "post": {
+        "tags": ["cart-recovery"],
+        "summary": "Suppress recovery",
+        "description": "Stops the reminders for this basket. The record stays in the list with its reason. Suppressing a suppressed record answers with it unchanged.",
+        "parameters": [{"$ref": "#/components/parameters/PathID"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["reason"], "properties": {
+          "reason": {"type": "string", "enum": ["contacted_manually", "requested_no_contact", "invalid_customer", "fraud_or_test", "other"]},
+          "note": {"type": "string", "maxLength": 500, "description": "Required when the reason is other."}
+        }}}}},
+        "responses": {
+          "200": {"description": "The record.", "content": {"application/json": {"schema": {"type": "object", "properties": {
+            "data": {"$ref": "#/components/schemas/CartRecoveryDetail"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"}
+        }
+      }
+    },
+    "/api/admin/x/cart-recovery/summary": {
+      "get": {
+        "tags": ["cart-recovery"],
+        "summary": "Recovery figures",
+        "description": "The list's records, counted. Takes the list's filters.",
+        "parameters": [
+          {"$ref": "#/components/parameters/CartRecoveryStatus"},
+          {"$ref": "#/components/parameters/CartRecoveryKind"},
+          {"$ref": "#/components/parameters/CartRecoveryFrom"},
+          {"$ref": "#/components/parameters/CartRecoveryTo"},
+          {"$ref": "#/components/parameters/CartRecoveryQuery"},
+          {"$ref": "#/components/parameters/CartRecoveryMinValue"},
+          {"$ref": "#/components/parameters/CartRecoveryMaxValue"},
+          {"$ref": "#/components/parameters/CartRecoveryReachable"},
+          {"$ref": "#/components/parameters/CartRecoveryChannel"}
+        ],
+        "responses": {
+          "200": {"description": "The figures.", "content": {"application/json": {"schema": {"type": "object", "properties": {
+            "data": {"$ref": "#/components/schemas/CartRecoverySummary"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"}
+        }
+      }
+    },
+    "/api/admin/x/cart-recovery/analytics": {
+      "get": {
+        "tags": ["cart-recovery"],
+        "summary": "Recovery analytics",
+        "description": "The summary, a funnel in which every stage is a subset of the one before, recovered revenue by period of abandonment, and the split between baskets and checkouts.",
+        "parameters": [
+          {"$ref": "#/components/parameters/CartRecoveryKind"},
+          {"$ref": "#/components/parameters/CartRecoveryFrom"},
+          {"$ref": "#/components/parameters/CartRecoveryTo"},
+          {"name": "group_by", "in": "query", "schema": {"type": "string", "enum": ["day", "week", "month"], "default": "day"}},
+          {"name": "tz", "in": "query", "schema": {"type": "string", "default": "UTC"}, "description": "IANA zone the periods are cut in."}
+        ],
+        "responses": {
+          "200": {"description": "The analytics.", "content": {"application/json": {"schema": {"type": "object", "properties": {
+            "data": {"$ref": "#/components/schemas/CartRecoveryAnalytics"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"}
+        }
+      }
+    },
+    "/api/admin/x/cart-recovery/settings": {
+      "get": {
+        "tags": ["cart-recovery"],
+        "summary": "The recovery automation",
+        "responses": {
+          "200": {"description": "The automation.", "content": {"application/json": {"schema": {"type": "object", "properties": {
+            "data": {"$ref": "#/components/schemas/CartRecoverySettingsView"}}}}}}
+        }
+      },
+      "put": {
+        "tags": ["cart-recovery"],
+        "summary": "Change the recovery automation",
+        "description": "Replaces both sequences. Saving re-plans every open record in the same transaction: switching a sequence off stops its reminders at once, and changing the waits moves every pending step.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CartRecoverySettings"}}}},
+        "responses": {
+          "200": {"description": "The automation as saved.", "content": {"application/json": {"schema": {"type": "object", "properties": {
+            "data": {"$ref": "#/components/schemas/CartRecoverySettingsView"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"}
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "CartRecoveryStatus": {"name": "status", "in": "query", "description": "Comma-separated: abandoned, scheduled, contacted, recovered, suppressed, expired.", "schema": {"type": "string"}},
+      "CartRecoveryKind": {"name": "kind", "in": "query", "description": "Comma-separated: cart, checkout.", "schema": {"type": "string"}},
+      "CartRecoveryFrom": {"name": "from", "in": "query", "description": "Abandoned on or after: a date or an RFC 3339 time.", "schema": {"type": "string"}},
+      "CartRecoveryTo": {"name": "to", "in": "query", "description": "Abandoned before; a bare date includes that whole day.", "schema": {"type": "string"}},
+      "CartRecoveryQuery": {"name": "q", "in": "query", "description": "Part of the email address.", "schema": {"type": "string"}},
+      "CartRecoveryMinValue": {"name": "min_value_minor", "in": "query", "schema": {"type": "integer", "format": "int64"}},
+      "CartRecoveryMaxValue": {"name": "max_value_minor", "in": "query", "schema": {"type": "integer", "format": "int64"}},
+      "CartRecoveryReachable": {"name": "reachable", "in": "query", "description": "true: has an email address.", "schema": {"type": "boolean"}},
+      "CartRecoveryChannel": {"name": "channel", "in": "query", "description": "email: at least one email was sent.", "schema": {"type": "string", "enum": ["email"]}}
+    },
+    "schemas": {
+      "CartRecoveryAbandonment": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer", "format": "int64"},
+          "cart_id": {"type": "integer", "format": "int64"},
+          "kind": {"type": "string", "enum": ["cart", "checkout"]},
+          "status": {"type": "string", "enum": ["abandoned", "scheduled", "contacted", "recovered", "suppressed", "expired"]},
+          "indicator": {"type": "string", "description": "purchased, clicked, email_sent, inventory_unavailable, send_failed, no_email_provider, scheduled, no_contact, automation_off, no_steps, before_install or sequence_done."},
+          "hold_reason": {"type": "string"},
+          "email": {"type": "string"},
+          "item_count": {"type": "integer"},
+          "subtotal": {"$ref": "#/components/schemas/Money"},
+          "discount_code": {"type": "string"},
+          "cart_created_at": {"type": "string", "format": "date-time"},
+          "last_active_at": {"type": "string", "format": "date-time"},
+          "abandoned_at": {"type": "string", "format": "date-time"},
+          "history": {"type": "boolean", "description": "Went idle before the module was installed: shown, never written to."},
+          "steps_sent": {"type": "integer"},
+          "steps_total": {"type": "integer"},
+          "messages_sent": {"type": "integer"},
+          "next_step_at": {"type": "string", "format": "date-time"},
+          "last_sent_at": {"type": "string", "format": "date-time"},
+          "clicks": {"type": "integer"},
+          "first_clicked_at": {"type": "string", "format": "date-time"},
+          "recovered_at": {"type": "string", "format": "date-time"},
+          "recovered_order": {"type": "object", "properties": {
+            "id": {"type": "integer", "format": "int64"},
+            "number": {"type": "string"},
+            "total": {"$ref": "#/components/schemas/Money"}}},
+          "recovered_after_message": {"type": "boolean"},
+          "suppression": {"type": "object", "properties": {
+            "reason": {"type": "string"}, "note": {"type": "string"},
+            "at": {"type": "string", "format": "date-time"}, "by": {"type": "string"}}},
+          "expired_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "CartRecoveryDetail": {
+        "allOf": [
+          {"$ref": "#/components/schemas/CartRecoveryAbandonment"},
+          {"type": "object", "properties": {
+            "lines": {"type": "array", "items": {"type": "object", "properties": {
+              "variant_id": {"type": "integer", "format": "int64"},
+              "product_id": {"type": "integer", "format": "int64"},
+              "sku": {"type": "string"}, "title": {"type": "string"}, "variant_label": {"type": "string"},
+              "quantity": {"type": "integer"},
+              "unit_price": {"$ref": "#/components/schemas/Money"},
+              "total": {"$ref": "#/components/schemas/Money"},
+              "current_price": {"$ref": "#/components/schemas/Money"},
+              "available": {"type": "integer", "description": "-1 when stock is not tracked."},
+              "price_changed": {"type": "boolean"},
+              "stock": {"type": "string", "enum": ["in_stock", "insufficient", "out_of_stock", "unavailable"]}}}},
+            "cart": {"type": "object", "properties": {
+              "exists": {"type": "boolean"}, "status": {"type": "string"},
+              "updated_at": {"type": "string", "format": "date-time"},
+              "expires_at": {"type": "string", "format": "date-time"}}},
+            "customer": {"type": "object", "properties": {
+              "email": {"type": "string"}, "orders": {"type": "integer"},
+              "lifetime_value": {"$ref": "#/components/schemas/Money"},
+              "last_order_at": {"type": "string", "format": "date-time"},
+              "last_order_number": {"type": "string"},
+              "last_order_id": {"type": "integer", "format": "int64"}}},
+            "timeline": {"type": "array", "items": {"type": "object", "properties": {
+              "at": {"type": "string", "format": "date-time"}, "kind": {"type": "string"},
+              "label": {"type": "string"}, "actor": {"type": "string"},
+              "detail": {"type": "object", "additionalProperties": true}}}},
+            "recovery": {"type": "object", "properties": {
+              "can_send": {"type": "boolean"}, "send_blocked_reason": {"type": "string"},
+              "can_copy_link": {"type": "boolean"}, "link_blocked_reason": {"type": "string"},
+              "can_suppress": {"type": "boolean"},
+              "templates": {"type": "array", "items": {"$ref": "#/components/schemas/CartRecoveryTemplate"}},
+              "default_template": {"type": "string"},
+              "channels": {"type": "array", "items": {"type": "object", "properties": {
+                "key": {"type": "string"}, "label": {"type": "string"},
+                "available": {"type": "boolean"}, "reason": {"type": "string"}}}},
+              "suppress_reasons": {"type": "array", "items": {"type": "object", "properties": {
+                "key": {"type": "string"}, "label": {"type": "string"}}}}}}
+          }}
+        ]
+      },
+      "CartRecoveryTemplate": {
+        "type": "object",
+        "properties": {
+          "event": {"type": "string"},
+          "title": {"type": "string"},
+          "customized": {"type": "boolean"}
+        }
+      },
+      "CartRecoverySummary": {
+        "type": "object",
+        "properties": {
+          "abandoned": {"type": "integer"},
+          "potential": {"$ref": "#/components/schemas/Money"},
+          "reachable": {"type": "integer"},
+          "messages_sent": {"type": "integer"},
+          "contacted": {"type": "integer"},
+          "clicked": {"type": "integer"},
+          "recovered": {"type": "integer"},
+          "recovered_revenue": {"$ref": "#/components/schemas/Money"},
+          "recovered_after_message": {"type": "integer"},
+          "recovered_after_message_revenue": {"$ref": "#/components/schemas/Money"},
+          "recovery_rate_bp": {"type": "integer", "description": "recovered / abandoned in basis points."}
+        }
+      },
+      "CartRecoveryAnalytics": {
+        "type": "object",
+        "properties": {
+          "summary": {"$ref": "#/components/schemas/CartRecoverySummary"},
+          "funnel": {"type": "array", "items": {"type": "object", "properties": {
+            "key": {"type": "string"}, "label": {"type": "string"}, "count": {"type": "integer"}}}},
+          "trend": {"type": "array", "items": {"type": "object", "properties": {
+            "period": {"type": "string", "format": "date"},
+            "abandoned": {"type": "integer"},
+            "potential": {"$ref": "#/components/schemas/Money"},
+            "recovered": {"type": "integer"},
+            "recovered_revenue": {"$ref": "#/components/schemas/Money"}}}},
+          "breakdown": {"type": "array", "items": {"type": "object", "properties": {
+            "key": {"type": "string"}, "abandoned": {"type": "integer"}, "recovered": {"type": "integer"},
+            "recovered_revenue": {"$ref": "#/components/schemas/Money"},
+            "recovery_rate_bp": {"type": "integer"}}}},
+          "group_by": {"type": "string"},
+          "tz": {"type": "string"}
+        }
+      },
+      "CartRecoveryAutomation": {
+        "type": "object",
+        "properties": {
+          "enabled": {"type": "boolean"},
+          "abandon_after_minutes": {"type": "integer", "minimum": 1, "maximum": 10080},
+          "steps": {"type": "array", "maxItems": 5, "items": {"type": "object", "properties": {
+            "wait_minutes": {"type": "integer", "minimum": 1, "maximum": 43200, "description": "From the step before; the first from the moment the basket was marked abandoned."},
+            "action": {"type": "string", "enum": ["send_email"]},
+            "template": {"type": "string", "enum": ["cart.recovery.1", "cart.recovery.2", "cart.recovery.3"]}}}}
+        }
+      },
+      "CartRecoverySettings": {
+        "type": "object",
+        "properties": {
+          "checkout": {"$ref": "#/components/schemas/CartRecoveryAutomation"},
+          "cart": {"$ref": "#/components/schemas/CartRecoveryAutomation"},
+          "storefront_url": {"type": "string", "description": "Absolute base URL; empty falls back to the module's Config."}
+        }
+      },
+      "CartRecoverySettingsView": {
+        "type": "object",
+        "properties": {
+          "settings": {"$ref": "#/components/schemas/CartRecoverySettings"},
+          "customized": {"type": "boolean"},
+          "defaults": {"$ref": "#/components/schemas/CartRecoverySettings"},
+          "installed_at": {"type": "string", "format": "date-time"},
+          "updated_at": {"type": "string", "format": "date-time"},
+          "updated_by": {"type": "string"},
+          "actions": {"type": "array", "items": {"type": "object", "properties": {
+            "key": {"type": "string"}, "label": {"type": "string"},
+            "available": {"type": "boolean"}, "reason": {"type": "string"}}}},
+          "templates": {"type": "array", "items": {"$ref": "#/components/schemas/CartRecoveryTemplate"}},
+          "storefront_fallback": {"type": "string"},
+          "email_delivers": {"type": "boolean"},
+          "tracked": {"type": "boolean"},
+          "guards": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}
