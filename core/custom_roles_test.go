@@ -210,3 +210,18 @@ func TestRoleRoutesMakeResetAndDelete(t *testing.T) {
 		t.Fatalf("delete held staff: %d %s, want 409 role_in_use", rec.Code, rec.Body)
 	}
 }
+
+// A role with nothing in it is an empty list, never null: the panel reads
+// .length on both, and vendor ships with no rights at all.
+func TestTheMatrixNeverSaysNullForASet(t *testing.T) {
+	app := newTestApp(t)
+	rec := do(t, app, "GET", "/api/admin/roles", withAdmin)
+	if rec.Code != 200 {
+		t.Fatalf("matrix: %d %s", rec.Code, rec.Body)
+	}
+	for _, bad := range []string{`"rights":null`, `"default":null`} {
+		if strings.Contains(rec.Body.String(), bad) {
+			t.Errorf("the matrix carries %s", bad)
+		}
+	}
+}

@@ -157,6 +157,11 @@ func (a *App) defaultRightsOf(role string) []Right {
 	// comes back sorted, and a matrix that compares owner's against it saw two
 	// orderings of the same rights and called them different.
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	// Empty, never nil: vendor ships with nothing, and a nil set reaches the
+	// panel as JSON null, where the roles screen reads its length and stops.
+	if out == nil {
+		out = []Right{}
+	}
 	return out
 }
 
