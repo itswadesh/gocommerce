@@ -8186,7 +8186,7 @@
         },
         "responses": {
           "200": {
-            "description": "The role as it now stands. It applies to every affected operator's next request; nobody is signed out.",
+            "description": "The role as the matrix shows it, holders and name included.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8216,7 +8216,7 @@
           "admin:roles"
         ],
         "summary": "Delete a role",
-        "description": "Removes a role nobody holds, with its grants and name (D80). Before D80 this verb reset a role to its defaults; that is now POST /api/admin/roles/{role}/reset. Refused: owner (403), and a role any operator or open invitation holds (409 `role_in_use`, the message counting both).",
+        "description": "Removes a role nobody holds, with its grants and name (D80). Before D80 this verb reset a role to its defaults; that is now POST /api/admin/roles/{role}/reset. Refused: owner and vendor (403; vendor logins are filed under the vendor key), a key the store does not have (400), and a role any operator, open invitation or unrevoked API key holds (409 `role_in_use`, the message counting each).",
         "security": [
           {
             "adminToken": []
@@ -8245,6 +8245,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "400": {
+            "description": "No role with this key in this store."
           }
         }
       },
@@ -13289,7 +13292,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The role, back on its defaults.",
+            "description": "The role as the matrix shows it, holders and name included.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13304,7 +13307,7 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/Validation"
+            "description": "A key the store does not have, or a store's own role, which has no defaults."
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"

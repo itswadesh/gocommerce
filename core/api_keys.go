@@ -97,7 +97,15 @@ func (k *APIKeys) Create(ctx context.Context, in APIKeyInput, by *Superuser) (*A
 		return nil, "", Validationf("the name is at most %d characters", MaxAPIKeyName)
 	}
 	role := strings.TrimSpace(in.Role)
+	// One of the engine's four (D80 leaves keys out of the store's own roles)
+	// and one this store still has: a deleted starting role is not a role to
+	// mint a key into.
 	if !isRole(role) {
+		return nil, "", Validationf("%q is not a role this store has", in.Role)
+	}
+	if ok, err := k.app.roles.Exists(ctx, role); err != nil {
+		return nil, "", err
+	} else if !ok {
 		return nil, "", Validationf("%q is not a role this store has", in.Role)
 	}
 

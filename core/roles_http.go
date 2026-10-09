@@ -71,7 +71,25 @@ func (a *App) handleSetRoleRights(w http.ResponseWriter, r *http.Request) {
 	}
 	a.log.Info("role rights changed", "role", set.Role,
 		"rights", set.Rights, "customized", set.Customized)
-	Respond(w, http.StatusOK, set)
+	a.respondRoleRow(w, r, set.Role)
+}
+
+// respondRoleRow answers with the role as the matrix shows it: holders, name
+// and all. The screen that saved a role swaps this into its list, and half a
+// row there forgot who held the role and offered to delete it.
+func (a *App) respondRoleRow(w http.ResponseWriter, r *http.Request, role string) {
+	matrix, err := a.roles.Matrix(r.Context())
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	for _, set := range matrix.Roles {
+		if set.Role == role {
+			Respond(w, http.StatusOK, set)
+			return
+		}
+	}
+	RespondError(w, r, NotFoundf("role %q", role))
 }
 
 // handleResetRoleRights drops the store's override so the role tracks the
@@ -83,7 +101,7 @@ func (a *App) handleResetRoleRights(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.log.Info("role rights reset to defaults", "role", set.Role)
-	Respond(w, http.StatusOK, set)
+	a.respondRoleRow(w, r, set.Role)
 }
 
 // handleSetRoleProfile renames a role and describes it.

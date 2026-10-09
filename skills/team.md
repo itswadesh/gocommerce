@@ -182,9 +182,10 @@ added if the set lacks it. A store's own role has no default: its rights are its
 grants, and there is nothing to reset it to.
 
 Deleting is refused while any operator or open invitation holds the role
-(409 `role_in_use`, counting both); the foreign keys from `superusers` and
-`superuser_invitations` are the last line under that. `owner` is never deleted.
-The starting roles can be, once empty. Vendor row-scoping stays tied to the role
+(409 `role_in_use`, counting operators, invitations and API keys); the foreign keys from `superusers` and
+`superuser_invitations` are the last line under that. `owner` and `vendor` are
+never deleted (vendor logins are filed under that key); the other starting roles
+can be, once empty. Vendor row-scoping stays tied to the role
 named `vendor`, and API keys keep the four built-in roles.
 
 ## Renaming a role

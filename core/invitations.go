@@ -148,11 +148,11 @@ func (s *Invitations) Invite(ctx context.Context, email, role string, invitedBy 
 			return Internalf(err, "clear the previous invitation")
 		}
 
-		return tx.QueryRowContext(ctx, `
+		return roleGone(tx.QueryRowContext(ctx, `
 			INSERT INTO superuser_invitations (email, role, token_hash, invited_by, expires_at)
 			VALUES ($1, $2, $3, $4, $5) RETURNING id`,
 			email, role, hashToken(token), invitedBy, time.Now().Add(invitationTTL),
-		).Scan(&id)
+		).Scan(&id), role)
 	})
 	if err != nil {
 		return nil, err

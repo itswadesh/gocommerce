@@ -2,10 +2,12 @@ package gocommerce
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The roles a store has are rows now, so the database — not a Go list — is
@@ -222,6 +224,139 @@ func TestTheMatrixNeverSaysNullForASet(t *testing.T) {
 	for _, bad := range []string{`"rights":null`, `"default":null`} {
 		if strings.Contains(rec.Body.String(), bad) {
 			t.Errorf("the matrix carries %s", bad)
+		}
+	}
+}
+
+// deleteRoleUncommitted deletes a role in a transaction it leaves open, so a
+// writer that checked the role a moment earlier blocks on the foreign key and
+// then meets the deletion when it commits.
+func deleteRoleUncommitted(t *testing.T, app *App, role string) *sql.Tx {
+	t.Helper()
+	ctx := context.Background()
+	tx, err := app.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`DELETE FROM role_profiles WHERE role = $1`,
+		`DELETE FROM roles WHERE key = $1`,
+	} {
+		if _, err := tx.ExecContext(ctx, q, role); err != nil {
+			_ = tx.Rollback()
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	return tx
+}
+
+func wantValidation(t *testing.T, what string, err error) {
+	t.Helper()
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Status != 400 {
+		t.Errorf("%s: %v, want a 400 naming the missing role", what, err)
+	}
+}
+
+// A role deleted while somebody is being put in it is the person's mistake to
+// correct, not a server failure: the writer meets the foreign key and says the
+// role is gone.
+func TestARoleDeletedMidAssignmentIsNotAServerError(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name  string
+		write func() error
+	}{
+		{"create", func() error {
+			_, err := app.Superusers().Create(ctx, "r@example.com", "a-long-password", "packer")
+			return err
+		}},
+		{"invite", func() error {
+			_, err := app.Team().Invite(ctx, "s@example.com", "packer", nil)
+			return err
+		}},
+		{"set role", func() error {
+			su, err := app.Superusers().Create(ctx, "u@example.com", "a-long-password", RoleStaff)
+			if err != nil {
+				return err
+			}
+			_, err = app.Superusers().SetRole(ctx, su.ID, "packer")
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			createRole(t, app, "packer", "Packer")
+			tx := deleteRoleUncommitted(t, app, "packer")
+			done := make(chan error, 1)
+			go func() { done <- tc.write() }()
+			time.Sleep(500 * time.Millisecond)
+			if err := tx.Commit(); err != nil {
+				t.Fatal(err)
+			}
+			wantValidation(t, tc.name, <-done)
+		})
+	}
+}
+
+// Vendor accounts are filed under the role named vendor; deleting it would
+// leave the vendor screens unable to make a login.
+func TestTheVendorRoleCannotBeDeleted(t *testing.T) {
+	app := newTestApp(t)
+	if err := app.Roles().Delete(context.Background(), RoleVendor); err == nil {
+		t.Fatal("deleted the vendor role")
+	}
+}
+
+// An API key acts in a role too. Deleting the role under it would leave an
+// integration refused everywhere, and a later role of the same name would
+// quietly hand it new rights.
+func TestARoleAnAPIKeyHoldsCannotBeDeleted(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	if _, _, err := app.APIKeys().Create(ctx, APIKeyInput{Name: "feed", Role: RoleStaff}, nil); err != nil {
+		t.Fatal(err)
+	}
+	err := app.Roles().Delete(ctx, RoleStaff)
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "role_in_use" {
+		t.Fatalf("delete staff with a key in it: %v, want role_in_use", err)
+	}
+	matrix, err := app.Roles().Matrix(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range matrix.Roles {
+		if row.Role == RoleStaff && row.Holders != 1 {
+			t.Errorf("staff holders = %d, want 1 (the key)", row.Holders)
+		}
+	}
+	// And a key cannot be minted into a role the store no longer has.
+	if err := app.Roles().Delete(ctx, RoleManager); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = app.APIKeys().Create(ctx, APIKeyInput{Name: "late", Role: RoleManager}, nil)
+	wantValidation(t, "key in a deleted role", err)
+}
+
+// Saving or resetting a role answers with the row as the list shows it —
+// holders, name and all — so the screen that saved it does not forget who
+// holds the role and offer to delete it.
+func TestSavingARoleAnswersWithItsHoldersAndName(t *testing.T) {
+	app := newTestApp(t)
+	signInAs(t, app, "staff@example.com", RoleStaff)
+	for _, req := range []struct{ method, path, body string }{
+		{"PUT", "/api/admin/roles/staff", `{"rights":["catalog.read","orders.read"]}`},
+		{"POST", "/api/admin/roles/staff/reset", ``},
+	} {
+		rec := doBody(t, app, req.method, req.path, req.body, withAdmin)
+		if rec.Code != 200 {
+			t.Fatalf("%s %s: %d %s", req.method, req.path, rec.Code, rec.Body)
+		}
+		for _, want := range []string{`"holders":1`, `"title":"Staff"`} {
+			if !strings.Contains(rec.Body.String(), want) {
+				t.Errorf("%s %s answered without %s: %s", req.method, req.path, want, rec.Body)
+			}
 		}
 	}
 }

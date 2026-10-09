@@ -113,3 +113,11 @@ test("a role's page deletes it only when nobody holds it", () => {
     // The starting roles reset; a store's own role has nothing to reset to.
     assert.match(detail, /builtin/);
 });
+
+// Vendor logins are filed under the vendor key, so the engine refuses to
+// delete it; the page must not offer a button that can only fail.
+test("the role page never offers to delete owner or vendor", () => {
+    const deletable = detail.match(/const deletable = \$derived\(([^;]*)\);/)?.[1] ?? "";
+    assert.match(deletable, /"owner"/);
+    assert.match(deletable, /"vendor"/);
+});

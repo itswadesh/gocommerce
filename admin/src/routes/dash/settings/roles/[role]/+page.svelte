@@ -246,7 +246,9 @@
      * a sentence saying who has to move first. Owner is never offered.
      */
     let deleteOpen = $state(false);
-    const deletable = $derived(!!row && row.role !== "owner" && row.holders === 0);
+    const deletable = $derived(
+        !!row && row.role !== "owner" && row.role !== "vendor" && row.holders === 0,
+    );
 
     async function doDelete() {
         busy = true;

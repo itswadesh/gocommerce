@@ -451,8 +451,8 @@ func (r *RoleRights) Keys(ctx context.Context) ([]string, error) {
 	return append(keys, own...), nil
 }
 
-// holders counts, per role, the operators in it and the open invitations into
-// it.
+// holders counts, per role, the operators in it, the open invitations into it
+// and the API keys acting in it: everything that stops it being deleted.
 func (r *RoleRights) holders(ctx context.Context) (map[string]int, error) {
 	rows, err := r.app.db.QueryContext(ctx, `
 		SELECT role, count(*) FROM (
@@ -460,6 +460,8 @@ func (r *RoleRights) holders(ctx context.Context) (map[string]int, error) {
 			UNION ALL
 			SELECT role FROM superuser_invitations
 			 WHERE accepted_at IS NULL AND expires_at > now()
+			UNION ALL
+			SELECT role FROM api_keys WHERE revoked_at IS NULL
 		) h GROUP BY role`)
 	if err != nil {
 		return nil, Internalf(err, "count role holders")
@@ -553,6 +555,11 @@ func (r *RoleRights) Delete(ctx context.Context, role string) error {
 	if role == RoleOwner {
 		return Forbiddenf("the owner role cannot be deleted")
 	}
+	// Vendor logins are filed under this key (M48's CHECK ties row-scoping
+	// to it), so a store without one would have no way to make them.
+	if role == RoleVendor {
+		return Forbiddenf("the vendor role belongs to vendor accounts and cannot be deleted")
+	}
 	if err := r.requireRole(ctx, role); err != nil {
 		return err
 	}
@@ -562,7 +569,7 @@ func (r *RoleRights) Delete(ctx context.Context, role string) error {
 			roleRightsLockKey, role); err != nil {
 			return Internalf(err, "lock the role")
 		}
-		var operators, invitations int
+		var operators, invitations, keys int
 		if err := tx.QueryRowContext(ctx, `
 			SELECT count(*) FROM (SELECT id FROM superusers WHERE role = $1 FOR UPDATE) s`,
 			role).Scan(&operators); err != nil {
@@ -574,8 +581,16 @@ func (r *RoleRights) Delete(ctx context.Context, role string) error {
 			role).Scan(&invitations); err != nil {
 			return Internalf(err, "count the role's invitations")
 		}
-		if operators+invitations > 0 {
-			return roleInUse(role, operators, invitations)
+		// An API key acts in a role as well. Deleting the role under it would
+		// leave an integration refused everywhere, and a later role of the
+		// same key would quietly hand it new rights.
+		if err := tx.QueryRowContext(ctx, `
+			SELECT count(*) FROM api_keys WHERE role = $1 AND revoked_at IS NULL`,
+			role).Scan(&keys); err != nil {
+			return Internalf(err, "count the role's API keys")
+		}
+		if operators+invitations+keys > 0 {
+			return roleInUse(role, operators, invitations, keys)
 		}
 		// Expired and accepted invitations still name the role. They are
 		// history, and the foreign key would otherwise keep the role alive
@@ -590,7 +605,7 @@ func (r *RoleRights) Delete(ctx context.Context, role string) error {
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM roles WHERE key = $1`, role); err != nil {
 			if isForeignKeyViolation(err) {
-				return roleInUse(role, 1, 0)
+				return roleInUse(role, 1, 0, 0)
 			}
 			return Internalf(err, "delete role")
 		}
@@ -598,12 +613,23 @@ func (r *RoleRights) Delete(ctx context.Context, role string) error {
 	})
 }
 
-func roleInUse(role string, operators, invitations int) *APIError {
+// roleGone turns the foreign key a writer meets, when a role is deleted
+// between the writer checking it and committing, into the answer requireRole
+// would have given a moment earlier. Only the role keys: any other foreign key
+// is left to the caller's own handling.
+func roleGone(err error, role string) error {
+	if err != nil && isForeignKeyViolation(err) && strings.Contains(err.Error(), "role_fkey") {
+		return Validationf("%q is not a role in this store", role)
+	}
+	return err
+}
+
+func roleInUse(role string, operators, invitations, keys int) *APIError {
 	return &APIError{
 		Status: http.StatusConflict,
 		Code:   "role_in_use",
-		Message: fmt.Sprintf("%d operator(s) and %d open invitation(s) hold %q; move them to another role first",
-			operators, invitations, role),
+		Message: fmt.Sprintf("%d operator(s), %d open invitation(s) and %d API key(s) hold %q; move or revoke them first",
+			operators, invitations, keys, role),
 	}
 }
 

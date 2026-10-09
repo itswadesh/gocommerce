@@ -295,6 +295,9 @@ func (s *Superusers) Create(ctx context.Context, email, password, role string) (
 			if isUniqueViolation(serr) {
 				return Conflictf("a superuser with email %q already exists", normalizeEmail(email))
 			}
+			if gone := roleGone(serr, role); gone != serr {
+				return gone
+			}
 			return Internalf(serr, "create superuser")
 		}
 		return writeAudit(ctx, tx, auditRecord{
@@ -1202,6 +1205,9 @@ func (s *Superusers) SetRole(ctx context.Context, id int64, role string) (*Super
 			WHERE id = $1 RETURNING `+superuserColumns, id, role)
 		su, err = scanSuperuser(row)
 		if err != nil {
+			if gone := roleGone(err, role); gone != err {
+				return gone
+			}
 			return Internalf(err, "set role")
 		}
 		// The single most consequential team action there is, and the
