@@ -210,7 +210,7 @@ New flag `-admin-host` (`GOCOMMERCE_ADMIN_HOST`), e.g. `admin.kitcommerce.store`
   session in `localStorage` (as a store session), the selected slug in
   `localStorage` under `gocommerce_store`. `api.js` adds `X-Store` when it is
   set; a single store (`serve`) never sets it and behaves as today.
-- After sign-in: **Select Store** — title "Select Store", "Select a store to
+- After sign-in: **Select Store** at `/select-store`, a dialog that cannot be dismissed — title "Select Store", "Select a store to
   continue to your dashboard.", a "Search stores..." box, one row per store
   (initial tile, name, address, role), the last store preselected, then
   **Create New Store** and **Logout**. Zero stores: "You are not part of any
