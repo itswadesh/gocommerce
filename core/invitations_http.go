@@ -89,7 +89,7 @@ func (a *App) acceptURL(r *http.Request, token string) string {
 	if fwd := r.Header.Get("X-Forwarded-Host"); fwd != "" {
 		host = fwd
 	}
-	return scheme + "://" + host + "/accept-invite/" + token
+	return scheme + "://" + host + "/admin/auth/accept-invite/" + token
 }
 
 func (a *App) handleRevokeInvitation(w http.ResponseWriter, r *http.Request) {

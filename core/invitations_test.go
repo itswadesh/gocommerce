@@ -2,6 +2,8 @@ package gocommerce
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -407,5 +409,16 @@ func TestDemotingSomebodyTakesEffectOnTheirOpenSession(t *testing.T) {
 	}
 	if DefaultCan(resolved.Role, RightTeamWrite) {
 		t.Error("the demoted operator still carries team.write on their open session")
+	}
+}
+
+// The link opens the panel's invitation screen, which lives under /admin/auth
+// with the panel's other signed-out screens.
+func TestAnInvitationLinkOpensTheAdminAuthScreen(t *testing.T) {
+	app := newTestApp(t)
+	r := httptest.NewRequest(http.MethodPost, "http://shop.example/api/admin/invitations", nil)
+	got := app.acceptURL(r, "tok")
+	if want := "http://shop.example/admin/auth/accept-invite/tok"; got != want {
+		t.Errorf("accept url = %q, want %q", got, want)
 	}
 }

@@ -221,7 +221,7 @@ func TestTheResetLinkComesFromConfigurationNotTheRequest(t *testing.T) {
 		t.Fatalf("got %d notifications, want 1", len(notes))
 	}
 	link := notes[0].Data["reset_url"]
-	if !strings.HasPrefix(link, "https://shop.example/reset-password/") {
+	if !strings.HasPrefix(link, "https://shop.example/admin/auth/reset-password/") {
 		t.Errorf("reset_url = %q, want it built from Config.PanelURL", link)
 	}
 	for key, value := range notes[0].Data {

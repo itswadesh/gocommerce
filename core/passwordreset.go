@@ -340,7 +340,7 @@ func (s *Superusers) resetURL(token string) string {
 	if s.app.cfg.PanelURL == "" {
 		return ""
 	}
-	return s.app.cfg.PanelURL + "/reset-password/" + token
+	return s.app.cfg.PanelURL + "/admin/auth/reset-password/" + token
 }
 
 // deliverReset sends the email off the request goroutine.
