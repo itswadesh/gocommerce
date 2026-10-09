@@ -18,7 +18,7 @@ Asked:
 - The chosen store is **remembered, not in the path**.
 - **The panel's URLs are kitcommerce-admin's**: `admin.kitcommerce.store/dash/orders`,
   as `admin.varnijewels.com/dash/orders` — every store screen under `/dash/`,
-  named as kitcommerce-admin names it (see *URLs* below).
+  keeping GoCommerce's screen names (see *URLs* below).
 - **Custom roles over today's rights**: a store creates, renames and deletes
   its own roles; each is a set of the rights the engine already has.
 - Team and permissions **the kitcommerce-admin way**.
@@ -45,43 +45,22 @@ Kept from GoCommerce, deliberately not copied:
 
 ## URLs (built first, before either part)
 
-Every store screen moves under `/dash/`, and where kitcommerce-admin has the
-same screen it takes kitcommerce-admin's path exactly. Screens kitcommerce-admin
-does not have keep their name under `/dash/`. The move is its own change,
-shipped before part 2, so the two parts land on the final paths.
+Every store screen moves under `/dash/`, as kitcommerce-admin's do, and keeps
+GoCommerce's own name there; Settings screens stay under `/dash/settings/`.
+Three screens take kitcommerce-admin's name instead, as asked: shipping,
+carts and locations. The move is its own change, shipped before part 2, so
+the two parts land on the final paths.
 
 | Today | Becomes |
 |---|---|
 | `/` (Home) | `/dash` |
-| `/orders`, `/orders/[id]` | `/dash/orders`, `/dash/orders/[id]` |
-| `/products`, `/products/[id]` | `/dash/products`, `/dash/products/[id]` |
-| `/categories`, `/collections` | `/dash/categories`, `/dash/collections` (+ `/[id]`) |
-| `/customers` | `/dash/customers` |
-| `/customers/groups` | `/dash/customer-groups` |
-| `/discounts` | `/dash/coupons` |
-| `/inventory`, `/invoices`, `/payouts` | `/dash/inventory`, `/dash/invoices`, `/dash/payouts` |
+| `/shipping` | `/dash/shipping-settings` |
+| `/shipping/providers` | `/dash/shipping-settings/providers` |
 | `/carts` | `/dash/checkouts` |
 | `/locations` | `/dash/warehouses` |
-| `/accounts` | `/dash/users` |
-| `/vendors`, `/vendors/[id]` | `/dash/vendors`, `/dash/vendors/[id]` |
-| `/reports`, `/reviews`, `/wishlists`, `/feeds`, `/plugins`, `/menus` | same names under `/dash/` |
-| `/cms`, `/cms/[id]` | `/dash/pages`, `/dash/pages/[id]` |
-| `/faq` | `/dash/faqs` |
-| `/sitemap` | `/dash/sitemaps` |
-| `/newsletter` | `/dash/newsletter-subscriptions` |
-| `/contact` | `/dash/contact-messages` |
-| `/jobs` | `/dash/background-jobs` |
-| `/data/import` | `/dash/import` |
-| `/notifications`, `/email`, `/sms` | `/dash/notifications`, `/dash/notifications/email`, `/dash/notifications/sms` |
-| `/shipping` | `/dash/shipping-settings` |
-| `/shipping/providers` | `/dash/shipping-providers` |
-| `/settings` | `/dash/settings` |
-| `/settings/superusers` | `/dash/teams` |
-| `/settings/roles`, `/settings/roles/[role]` | `/dash/roles`, `/dash/roles/[id]` |
-| `/settings/api-keys` | `/dash/api-keys` |
-| `/settings/webhooks` | `/dash/webhooks` |
-| `/settings/payments` | `/dash/payment-methods` |
-| everything else (`b2b/*`, `channels`, `data`, `media`, `pricing`, `taxes`, `orders/picking`, `orders/[id]/print`, `settings/account`, `settings/agent`, `settings/attributes`, `settings/audit`, `settings/diagnostics`, `settings/events`, `x/[slug]`) | the same path under `/dash/` |
+| `/settings/superusers` | `/dash/settings/teams` |
+| `/settings/roles`, `/settings/roles/[role]` | `/dash/settings/roles`, `/dash/settings/roles/[role]` |
+| every other screen — `/orders`, `/discounts`, `/cms`, `/settings/api-keys`, `/b2b/companies`, `/x/[slug]` and the rest | the same path under `/dash/`: `/dash/orders`, `/dash/discounts`, `/dash/cms`, `/dash/settings/api-keys`, `/dash/b2b/companies`, `/dash/x/[slug]` |
 | sign-in (the layout's `<Login>`) | `/admin/auth/login` |
 | `/reset-password/[[token]]` | `/admin/auth/reset-password` |
 | `/accept-invite/[token]` | `/admin/auth/accept-invite/[token]` (kitcommerce-admin has no equivalent) |
