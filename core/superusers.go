@@ -269,8 +269,8 @@ func (s *Superusers) Create(ctx context.Context, email, password, role string) (
 	if role == "" {
 		role = RoleOwner
 	}
-	if !ValidRole(role) {
-		return nil, Validationf("%q is not a role; the roles are %s", role, strings.Join(Roles, ", "))
+	if err := s.roles.requireRole(ctx, role); err != nil {
+		return nil, err
 	}
 	// A vendor account has to name its vendor, and this signature has nowhere
 	// to put one. Refused here rather than left to the CHECK so the message
@@ -1153,9 +1153,8 @@ func clientIP(r *http.Request) string {
 // team screen with no way back in short of the database. Refusing is the whole
 // of the protection; there is nothing else to check.
 func (s *Superusers) SetRole(ctx context.Context, id int64, role string) (*Superuser, error) {
-	if !ValidRole(role) {
-		return nil, Validationf("%q is not a role; the roles are %s",
-			role, strings.Join(Roles, ", "))
+	if err := s.roles.requireRole(ctx, role); err != nil {
+		return nil, err
 	}
 
 	rights, err := s.roles.All(ctx)

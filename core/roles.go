@@ -3,6 +3,9 @@ package gocommerce
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"net/http"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -62,6 +65,12 @@ type RoleSet struct {
 	// TitleCustomized is whether those words are the store's own rather than
 	// the engine's, so a screen can offer to put them back.
 	TitleCustomized bool `json:"title_customized"`
+	// Builtin is one of the engine's four, which have defaults to reset to; a
+	// store's own role has none (D81).
+	Builtin bool `json:"builtin"`
+	// Holders counts the operators in the role and the open invitations into
+	// it, which is what decides whether it can be deleted.
+	Holders int `json:"holders"`
 }
 
 // RoleMatrix is the whole model in one response: every role, the closed list of
@@ -91,6 +100,14 @@ func (r *RoleRights) Matrix(ctx context.Context) (*RoleMatrix, error) {
 	if err != nil {
 		return nil, err
 	}
+	keys, err := r.Keys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	holders, err := r.holders(ctx)
+	if err != nil {
+		return nil, err
+	}
 	out := &RoleMatrix{
 		// This build's rights, not core's: a module brings its own, and a grid
 		// drawn from core alone leaves that module's screens with no row and so
@@ -99,19 +116,29 @@ func (r *RoleRights) Matrix(ctx context.Context) (*RoleMatrix, error) {
 		Required:  append([]Right(nil), RequiredRights...),
 		Catalogue: r.app.RightsCatalogue(),
 	}
-	for _, role := range Roles {
-		def := r.app.defaultRightsOf(role)
+	for _, role := range keys {
 		label := profileOf(role, labels)
 		row := RoleSet{
-			Role: role, Rights: def, Default: def,
-			Configurable:    RoleConfigurable(role),
+			Role:            role,
+			Configurable:    role != RoleOwner,
 			Title:           label.Title,
 			Description:     label.Description,
 			TitleCustomized: label.Customized,
+			Builtin:         ValidRole(role),
+			Holders:         holders[role],
 		}
-		if set, ok := stored[role]; ok && row.Configurable {
-			row.Rights = set
-			row.Customized = !sameRights(set, def)
+		if row.Builtin {
+			def := r.app.defaultRightsOf(role)
+			row.Rights, row.Default = def, def
+			if set, ok := stored[role]; ok && row.Configurable {
+				row.Rights = set
+				row.Customized = !sameRights(set, def)
+			}
+		} else {
+			// A store's own role has no default to track or depart from; its
+			// grants are the whole of it.
+			row.Rights = withFloor(stored[role])
+			row.Default = []Right{}
 		}
 		out.Roles = append(out.Roles, row)
 	}
@@ -127,7 +154,7 @@ func (r *RoleRights) Of(ctx context.Context, role string) ([]Right, error) {
 	// The one lookup that needs no table at all. Owner is not storable, and
 	// resolving it without reading anything means a store whose role_rights is
 	// unreadable can still be signed into by the person who can fix it.
-	if !RoleConfigurable(role) {
+	if role == RoleOwner {
 		return r.app.defaultRightsOf(role), nil
 	}
 	all, err := r.All(ctx)
@@ -144,8 +171,16 @@ func (r *RoleRights) All(ctx context.Context) (map[string][]Right, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string][]Right, len(Roles))
-	for _, role := range Roles {
+	keys, err := r.Keys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string][]Right, len(keys))
+	for _, role := range keys {
+		if !ValidRole(role) {
+			out[role] = withFloor(stored[role])
+			continue
+		}
 		if set, ok := stored[role]; ok && RoleConfigurable(role) {
 			out[role] = set
 			continue
@@ -176,10 +211,10 @@ func (r *RoleRights) All(ctx context.Context) (map[string][]Right, error) {
 // by is the operator making the change, or nil for a static admin token, which
 // has no role to lock itself out of.
 func (r *RoleRights) Set(ctx context.Context, role string, rights []Right, by *Superuser) (*RoleSet, error) {
-	if !ValidRole(role) {
-		return nil, Validationf("%q is not a role; the roles are %s", role, strings.Join(Roles, ", "))
+	if err := r.requireRole(ctx, role); err != nil {
+		return nil, err
 	}
-	if !RoleConfigurable(role) {
+	if role == RoleOwner {
 		return nil, Forbiddenf("the owner role always carries every right and cannot be changed")
 	}
 
@@ -207,8 +242,13 @@ func (r *RoleRights) Set(ctx context.Context, role string, rights []Right, by *S
 	sort.Slice(clean, func(i, j int) bool { return clean[i] < clean[j] })
 
 	// Stored as the store's departure from the defaults, so a set that matches
-	// them is stored as no rows and the role goes back to tracking.
+	// them is stored as no rows and the role goes back to tracking. A store's
+	// own role has no defaults, so its set is always written down.
+	builtin := ValidRole(role)
 	def := r.app.defaultRightsOf(role)
+	if !builtin {
+		def = []Right{}
+	}
 	var grantedBy *int64
 	if by != nil {
 		grantedBy = &by.ID
@@ -228,24 +268,17 @@ func (r *RoleRights) Set(ctx context.Context, role string, rights []Right, by *S
 			`DELETE FROM role_rights WHERE role = $1`, role); err != nil {
 			return Internalf(err, "clear role rights")
 		}
-		if sameRights(clean, def) {
+		if builtin && sameRights(clean, def) {
 			return nil
 		}
-		for _, right := range clean {
-			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO role_rights (role, right_name, granted_by)
-				VALUES ($1, $2, $3)`, role, string(right), grantedBy); err != nil {
-				return Internalf(err, "grant %s to %s", right, role)
-			}
-		}
-		return nil
+		return grant(ctx, tx, role, clean, grantedBy)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &RoleSet{
 		Role: role, Rights: clean, Default: def,
-		Customized: !sameRights(clean, def), Configurable: true,
+		Customized: builtin && !sameRights(clean, def), Configurable: true, Builtin: builtin,
 	}, nil
 }
 
@@ -253,8 +286,11 @@ func (r *RoleRights) Set(ctx context.Context, role string, rights []Right, by *S
 // store's override rather than by writing the defaults down — so the role
 // tracks them again from here on.
 func (r *RoleRights) Reset(ctx context.Context, role string) (*RoleSet, error) {
+	if err := r.requireRole(ctx, role); err != nil {
+		return nil, err
+	}
 	if !ValidRole(role) {
-		return nil, Validationf("%q is not a role; the roles are %s", role, strings.Join(Roles, ", "))
+		return nil, Validationf("%q is this store's own role and has no defaults to go back to", role)
 	}
 	if !RoleConfigurable(role) {
 		return nil, Forbiddenf("the owner role always carries every right and cannot be changed")
@@ -275,7 +311,7 @@ func (r *RoleRights) Reset(ctx context.Context, role string) (*RoleSet, error) {
 		return nil, err
 	}
 	def := r.app.defaultRightsOf(role)
-	return &RoleSet{Role: role, Rights: def, Default: def, Configurable: true}, nil
+	return &RoleSet{Role: role, Rights: def, Default: def, Configurable: true, Builtin: true}, nil
 }
 
 // overrides loads every stored set, keyed by role and sorted.
@@ -317,4 +353,282 @@ func (r *RoleRights) overrides(ctx context.Context) (map[string][]Right, error) 
 // here, so this is an equality test and not a set comparison.
 func sameRights(a, b []Right) bool {
 	return slices.Equal(a, b)
+}
+
+// grant writes a role's set inside the caller's transaction. The caller has
+// cleared the old rows and holds the role's lock.
+func grant(ctx context.Context, tx *sql.Tx, role string, rights []Right, grantedBy *int64) error {
+	for _, right := range rights {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO role_rights (role, right_name, granted_by)
+			VALUES ($1, $2, $3)`, role, string(right), grantedBy); err != nil {
+			return Internalf(err, "grant %s to %s", right, role)
+		}
+	}
+	return nil
+}
+
+// withFloor is a store's own role as it resolves: its grants with the floor
+// added. Added rather than demanded, so a role made from a blank form signs in
+// to something, and a role whose every grant named a module since removed
+// still does.
+func withFloor(rights []Right) []Right {
+	out := append([]Right(nil), rights...)
+	for _, required := range RequiredRights {
+		if !slices.Contains(out, required) {
+			out = append(out, required)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+// ------------------------------------------------------------ custom roles
+
+// roleKeyRE is the shape of a role's key: the identifier written on every
+// superuser row, so it is lower-case, unspaced and permanent. What a person
+// reads is the title. The same pattern is the table's CHECK.
+var roleKeyRE = regexp.MustCompile(`^[a-z][a-z0-9_]{0,39}$`)
+
+// Exists reports whether this store has a role, built in or its own.
+func (r *RoleRights) Exists(ctx context.Context, role string) (bool, error) {
+	var ok bool
+	err := r.app.db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM roles WHERE key = $1)`, role).Scan(&ok)
+	if err != nil {
+		return false, Internalf(err, "look up role")
+	}
+	return ok, nil
+}
+
+// requireRole is the check every write that names a role makes first. It used
+// to be a lookup in a list compiled into the engine; the store's roles are its
+// own now (D81), so the answer is the store's.
+func (r *RoleRights) requireRole(ctx context.Context, role string) error {
+	ok, err := r.Exists(ctx, role)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return Validationf("%q is not a role in this store", role)
+	}
+	return nil
+}
+
+// Keys lists every role: the engine's four in their fixed order, then the
+// store's own in the order they were made, which is the order a screen shows.
+func (r *RoleRights) Keys(ctx context.Context) ([]string, error) {
+	rows, err := r.app.db.QueryContext(ctx,
+		`SELECT key, builtin FROM roles ORDER BY created_at, key`)
+	if err != nil {
+		return nil, Internalf(err, "list roles")
+	}
+	defer rows.Close()
+	var builtin, own []string
+	for rows.Next() {
+		var k string
+		var b bool
+		if err := rows.Scan(&k, &b); err != nil {
+			return nil, Internalf(err, "scan role")
+		}
+		if b {
+			builtin = append(builtin, k)
+		} else {
+			own = append(own, k)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, Internalf(err, "list roles")
+	}
+	// The engine's own in Roles order, and only those this store still has:
+	// a starting role it deleted stays deleted.
+	keys := make([]string, 0, len(builtin)+len(own))
+	for _, role := range Roles {
+		if slices.Contains(builtin, role) {
+			keys = append(keys, role)
+		}
+	}
+	return append(keys, own...), nil
+}
+
+// holders counts, per role, the operators in it and the open invitations into
+// it.
+func (r *RoleRights) holders(ctx context.Context) (map[string]int, error) {
+	rows, err := r.app.db.QueryContext(ctx, `
+		SELECT role, count(*) FROM (
+			SELECT role FROM superusers
+			UNION ALL
+			SELECT role FROM superuser_invitations
+			 WHERE accepted_at IS NULL AND expires_at > now()
+		) h GROUP BY role`)
+	if err != nil {
+		return nil, Internalf(err, "count role holders")
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var role string
+		var n int
+		if err := rows.Scan(&role, &n); err != nil {
+			return nil, Internalf(err, "scan role holders")
+		}
+		out[role] = n
+	}
+	return out, rows.Err()
+}
+
+// NewRole is what a store says when it makes a role.
+type NewRole struct {
+	Key         string  `json:"key"`
+	Title       string  `json:"title"`
+	Description string  `json:"description"`
+	Rights      []Right `json:"rights"`
+}
+
+// Create makes a role of the store's own (D81). The key is refused rather than
+// tidied when it is not already in shape, so the screen that shows the key
+// before saving shows exactly the identifier that will be stored.
+func (r *RoleRights) Create(ctx context.Context, in NewRole, by *Superuser) (*RoleSet, error) {
+	if !roleKeyRE.MatchString(in.Key) {
+		return nil, Validationf("a role's key is lower-case letters, digits and underscores, starting with a letter, at most 40 characters; got %q", in.Key)
+	}
+	title := strings.TrimSpace(in.Title)
+	description := strings.TrimSpace(in.Description)
+	if title == "" {
+		return nil, Validationf("a role needs a name")
+	}
+	if len([]rune(title)) > MaxRoleTitle {
+		return nil, Validationf("a role's name is at most %d characters", MaxRoleTitle)
+	}
+	if len([]rune(description)) > MaxRoleDescription {
+		return nil, Validationf("a role's description is at most %d characters", MaxRoleDescription)
+	}
+	clean := []Right{}
+	for _, right := range in.Rights {
+		if !r.app.hasRight(right) {
+			return nil, Validationf("%q is not a right this build has", right)
+		}
+		if !slices.Contains(clean, right) {
+			clean = append(clean, right)
+		}
+	}
+	clean = withFloor(clean)
+
+	var byID *int64
+	if by != nil {
+		byID = &by.ID
+	}
+	err := InTx(ctx, r.app.db, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO roles (key, created_by) VALUES ($1, $2)`, in.Key, byID); err != nil {
+			if isUniqueViolation(err) {
+				return Conflictf("there is already a role called %q", in.Key)
+			}
+			return Internalf(err, "create role")
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO role_profiles (role, title, description, updated_by)
+			VALUES ($1, $2, $3, $4)`, in.Key, title, description, byID); err != nil {
+			return Internalf(err, "name the role")
+		}
+		return grant(ctx, tx, in.Key, clean, byID)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &RoleSet{
+		Role: in.Key, Rights: clean, Default: []Right{}, Configurable: true,
+		Title: title, Description: description, TitleCustomized: true,
+	}, nil
+}
+
+// Delete removes a role nobody holds. Owner cannot go: it is the way back in.
+// The starting roles can, once empty — a store that does not want "Staff"
+// should not have to keep it.
+//
+// The holders are counted under the role's lock and with the operators' rows
+// locked, so an assignment racing the delete either lands first and is counted
+// or arrives after and meets the foreign key.
+func (r *RoleRights) Delete(ctx context.Context, role string) error {
+	if role == RoleOwner {
+		return Forbiddenf("the owner role cannot be deleted")
+	}
+	if err := r.requireRole(ctx, role); err != nil {
+		return err
+	}
+	return InTx(ctx, r.app.db, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`SELECT pg_advisory_xact_lock($1, hashtext($2))`,
+			roleRightsLockKey, role); err != nil {
+			return Internalf(err, "lock the role")
+		}
+		var operators, invitations int
+		if err := tx.QueryRowContext(ctx, `
+			SELECT count(*) FROM (SELECT id FROM superusers WHERE role = $1 FOR UPDATE) s`,
+			role).Scan(&operators); err != nil {
+			return Internalf(err, "count the role's operators")
+		}
+		if err := tx.QueryRowContext(ctx, `
+			SELECT count(*) FROM superuser_invitations
+			 WHERE role = $1 AND accepted_at IS NULL AND expires_at > now()`,
+			role).Scan(&invitations); err != nil {
+			return Internalf(err, "count the role's invitations")
+		}
+		if operators+invitations > 0 {
+			return roleInUse(role, operators, invitations)
+		}
+		// Expired and accepted invitations still name the role. They are
+		// history, and the foreign key would otherwise keep the role alive
+		// for a link nobody can use.
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM superuser_invitations WHERE role = $1`, role); err != nil {
+			return Internalf(err, "clear the role's old invitations")
+		}
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM role_profiles WHERE role = $1`, role); err != nil {
+			return Internalf(err, "clear the role's name")
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM roles WHERE key = $1`, role); err != nil {
+			if isForeignKeyViolation(err) {
+				return roleInUse(role, 1, 0)
+			}
+			return Internalf(err, "delete role")
+		}
+		return nil
+	})
+}
+
+func roleInUse(role string, operators, invitations int) *APIError {
+	return &APIError{
+		Status: http.StatusConflict,
+		Code:   "role_in_use",
+		Message: fmt.Sprintf("%d operator(s) and %d open invitation(s) hold %q; move them to another role first",
+			operators, invitations, role),
+	}
+}
+
+// RoleName is a role as the screens that hand one out need it.
+type RoleName struct {
+	Role        string `json:"role"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Builtin     bool   `json:"builtin"`
+}
+
+// Names lists every role with what the store calls it.
+func (r *RoleRights) Names(ctx context.Context) ([]RoleName, error) {
+	keys, err := r.Keys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	labels, err := r.profiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]RoleName, 0, len(keys))
+	for _, role := range keys {
+		p := profileOf(role, labels)
+		out = append(out, RoleName{Role: role, Title: p.Title, Description: p.Description, Builtin: ValidRole(role)})
+	}
+	return out, nil
 }

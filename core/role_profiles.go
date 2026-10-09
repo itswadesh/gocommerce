@@ -97,11 +97,16 @@ func profileOf(role string, stored map[string]RoleProfile) RoleProfile {
 // not something an operator meant to ask for. Clearing both drops the row, so
 // the role goes back to tracking the defaults the way a reset set does.
 func (r *RoleRights) SetProfile(ctx context.Context, role, title, description string, by *Superuser) (*RoleProfile, error) {
-	if !ValidRole(role) {
-		return nil, Validationf("%q is not a role; the roles are %s", role, strings.Join(Roles, ", "))
+	if err := r.requireRole(ctx, role); err != nil {
+		return nil, err
 	}
 	title = strings.TrimSpace(title)
 	description = strings.TrimSpace(description)
+	// Blank means "the engine's words", and a store's own role has none to go
+	// back to; cleared, it would be listed under its bare key.
+	if title == "" && !ValidRole(role) {
+		return nil, Validationf("a role of this store's own needs a name")
+	}
 	if len([]rune(title)) > MaxRoleTitle {
 		return nil, Validationf("a role's name is at most %d characters", MaxRoleTitle)
 	}

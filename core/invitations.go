@@ -119,8 +119,8 @@ func (s *Invitations) Invite(ctx context.Context, email, role string, invitedBy 
 	if role == "" {
 		role = RoleStaff
 	}
-	if !ValidRole(role) {
-		return nil, Validationf("%q is not a role; the roles are %s", role, strings.Join(Roles, ", "))
+	if err := s.app.roles.requireRole(ctx, role); err != nil {
+		return nil, err
 	}
 
 	token, err := newSessionToken()
