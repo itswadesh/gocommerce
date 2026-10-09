@@ -80,8 +80,8 @@
      * no link.
      */
     const ENTITY_HREF = {
-        order: (id) => `/orders/${id}`,
-        product: (id) => `/products/${id}`,
+        order: (id) => `/dash/orders/${id}`,
+        product: (id) => `/dash/products/${id}`,
     };
 
     /* The URL keys are the API's, so list.query() builds the request with no

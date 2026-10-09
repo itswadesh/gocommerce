@@ -2,7 +2,7 @@
     /**
      * The product list.
      *
-     * Editing moved to `/products/{id}` — a product now has media, an option
+     * Editing moved to `/dash/products/{id}` — a product now has media, an option
      * matrix, per-variant stock and an SEO listing, and a drawer that has to
      * hold all of that beside the row it belongs to stops being a drawer.
      *

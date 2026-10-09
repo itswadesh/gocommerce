@@ -337,7 +337,9 @@
         if (!ready || isPublic) return;
         if (!authenticated) {
             const here = page.url.pathname.replace(base, "") + page.url.search;
-            goto(`${base}${LOGIN}?next=${encodeURIComponent(here)}`, { replaceState: true });
+            // The fragment rides along: kitcommerce.store's demo button opens
+            // /#email=…&password=…, and the login form fills itself from it.
+            goto(`${base}${LOGIN}?next=${encodeURIComponent(here)}${page.url.hash}`, { replaceState: true });
         }
     });
     $effect(() => {

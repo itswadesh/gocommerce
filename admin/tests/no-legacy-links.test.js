@@ -21,6 +21,25 @@ function files(dir) {
 // {base}/x, ${base}/x, base + "/x", href: "/x", goto("/x")
 const LINK = /(?:\{base\}|\$\{base\}|base \+ ["'`]|href: ["'`]|goto\(["'`])(\/[a-z0-9\-_/]*)/g;
 
+// Links kept in data rather than markup — a lookup table, a function that
+// returns a path — escape the shapes above, so any string literal that starts
+// with a pre-/dash screen name counts too.
+const OLD_SCREENS = [
+    "orders", "products", "customers", "discounts", "notifications", "settings",
+    "shipping", "carts", "locations", "cms", "inventory", "reports", "b2b",
+];
+const LITERAL = new RegExp(`["'\`](\\/(?:${OLD_SCREENS.join("|")})(?:[\\/?"'\`$]|$)[^"'\`]*)`, "g");
+
+test("no string literal names a pre-/dash screen", () => {
+    const stale = [];
+    for (const file of files(fileURLToPath(new URL("../src", import.meta.url)))) {
+        if (file.endsWith("paths.js") || /routes[\\/](portal|platform)[\\/]/.test(file)) continue;
+        const src = readFileSync(file, "utf8");
+        for (const m of src.matchAll(LITERAL)) stale.push(`${file}: ${m[0]}`);
+    }
+    assert.deepEqual(stale, []);
+});
+
 test("every panel link points at its /dash address", () => {
     const stale = [];
     for (const file of files(fileURLToPath(new URL("../src", import.meta.url)))) {

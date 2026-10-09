@@ -195,7 +195,7 @@
     /** The vendor names on a channel, for "SendGrid is installed but…". */
     const vendorNames = (c) => vendorsOf(c).map((b) => b.name).join(" and ");
     /** Where a channel's key is typed in. */
-    const setupHref = (c) => (c.channel === "sms" ? "/notifications/sms" : "/notifications/email");
+    const setupHref = (c) => (c.channel === "sms" ? "/dash/notifications/sms" : "/dash/notifications/email");
 
     const CHANNEL_LABEL = { email: "Email", sms: "SMS" };
     const channelName = (code) => CHANNEL_LABEL[code] ?? code;

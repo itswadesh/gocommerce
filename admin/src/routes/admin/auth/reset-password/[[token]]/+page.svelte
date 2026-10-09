@@ -9,9 +9,9 @@
      * avoids.
      *
      * The token is an optional route parameter, so one file serves both ways a
-     * link arrives: a clicked link lands on /reset-password/<token> with the
+     * link arrives: a clicked link lands on /admin/auth/reset-password/<token> with the
      * field already filled, and an operator holding a pasted code — what a store
-     * with no Config.PanelURL sends — lands on /reset-password and types it in.
+     * with no Config.PanelURL sends — lands on /admin/auth/reset-password and types it in.
      *
      * Nothing here names the account. The lookup deliberately returns only an
      * expiry: an endpoint that turned a token into an address would be the one
