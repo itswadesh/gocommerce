@@ -303,7 +303,7 @@
                  that screen's own "Its history" button builds. -->
             <div class="field-help m-t-sm">
                 <a
-                    href="{base}/settings/audit{query({
+                    href="{base}/dash/settings/audit{query({
                         entity_type: entityTypeOf(kind),
                         entity_id: id,
                     })}"

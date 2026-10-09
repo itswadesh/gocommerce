@@ -337,7 +337,7 @@
         Scan or type a SKU and press Enter; the same SKU twice counts two.
         {#if can("data.import")}
             A whole delivery in a file goes through
-            <a href="{base}/data">the products importer</a> instead — its
+            <a href="{base}/dash/data">the products importer</a> instead — its
             <span class="txt-code"
                 >stock_on_hand{multi && shelf ? `:${shelf.code}` : ""}</span
             > column is a whole stock take, one row per SKU.

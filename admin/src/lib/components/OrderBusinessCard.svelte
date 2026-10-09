@@ -49,7 +49,7 @@
         <div class="order-line">
             <span class="txt-hint">Company</span>
             {#if companyId}
-                <a href="{base}/b2b/companies/{companyId}" class="txt-ellipsis">{companyName}</a>
+                <a href="{base}/dash/b2b/companies/{companyId}" class="txt-ellipsis">{companyName}</a>
             {:else}
                 <span>—</span>
             {/if}
@@ -88,7 +88,7 @@
             <div class="order-line">
                 <span class="txt-hint">From quote</span>
                 {#if can("quotes.read")}
-                    <a href="{base}/b2b/quotes/{quoteId}" class="txt-code">Q-{String(quoteId).padStart(6, "0")}</a>
+                    <a href="{base}/dash/b2b/quotes/{quoteId}" class="txt-code">Q-{String(quoteId).padStart(6, "0")}</a>
                 {:else}
                     <span class="txt-code">Q-{String(quoteId).padStart(6, "0")}</span>
                 {/if}
@@ -97,7 +97,7 @@
         {#if approvalId}
             <div class="order-line">
                 <span class="txt-hint">Approved request</span>
-                <a href="{base}/b2b/approvals?company_id={companyId}">#{approvalId}</a>
+                <a href="{base}/dash/b2b/approvals?company_id={companyId}">#{approvalId}</a>
             </div>
         {/if}
     </div>

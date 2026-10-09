@@ -116,7 +116,7 @@
     ]);
 
     const ordersHref = $derived(
-        customer ? `${base}/orders?email=${encodeURIComponent(customer.email)}` : `${base}/orders`,
+        customer ? `${base}/dash/orders?email=${encodeURIComponent(customer.email)}` : `${base}/dash/orders`,
     );
 
     /** The address as a parcel would carry it, or nothing at all. */
@@ -210,7 +210,7 @@
                                             <td>
                                                 <a
                                                     class="txt-code"
-                                                    href="{base}/orders?q={encodeURIComponent(
+                                                    href="{base}/dash/orders?q={encodeURIComponent(
                                                         row.number,
                                                     )}"
                                                 >

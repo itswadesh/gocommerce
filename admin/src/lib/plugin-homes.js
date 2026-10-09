@@ -21,24 +21,24 @@
 
 /** Whole categories whose members all live on one screen. */
 export const CATEGORY_HOMES = {
-    payments: { href: "/settings/payments", label: "Payment methods" },
-    shipping: { href: "/shipping/providers", label: "Shipping providers" },
+    payments: { href: "/dash/settings/payments", label: "Payment methods" },
+    shipping: { href: "/dash/shipping-settings/providers", label: "Shipping providers" },
 };
 
 /** Individual plugins with a screen of their own. */
 export const PLUGIN_HOMES = {
-    "product-feeds": { href: "/feeds", label: "Feeds" },
-    sitemap: { href: "/sitemap", label: "Sitemap" },
-    "email-sendgrid": { href: "/notifications/email", label: "Setup Email" },
-    "email-resend": { href: "/notifications/email", label: "Setup Email" },
-    "sms-msg91": { href: "/notifications/sms", label: "Setup SMS" },
-    "sms-twilio": { href: "/notifications/sms", label: "Setup SMS" },
-    navigation: { href: "/menus", label: "Menus" },
-    "product-reviews": { href: "/reviews", label: "Reviews" },
-    "contact-form": { href: "/contact", label: "Contact messages" },
-    faq: { href: "/faq", label: "FAQ" },
-    wishlist: { href: "/wishlists", label: "Wishlists" },
-    newsletter: { href: "/newsletter", label: "Newsletter" },
+    "product-feeds": { href: "/dash/feeds", label: "Feeds" },
+    sitemap: { href: "/dash/sitemap", label: "Sitemap" },
+    "email-sendgrid": { href: "/dash/notifications/email", label: "Setup Email" },
+    "email-resend": { href: "/dash/notifications/email", label: "Setup Email" },
+    "sms-msg91": { href: "/dash/notifications/sms", label: "Setup SMS" },
+    "sms-twilio": { href: "/dash/notifications/sms", label: "Setup SMS" },
+    navigation: { href: "/dash/menus", label: "Menus" },
+    "product-reviews": { href: "/dash/reviews", label: "Reviews" },
+    "contact-form": { href: "/dash/contact", label: "Contact messages" },
+    faq: { href: "/dash/faq", label: "FAQ" },
+    wishlist: { href: "/dash/wishlists", label: "Wishlists" },
+    newsletter: { href: "/dash/newsletter", label: "Newsletter" },
 };
 
 /**

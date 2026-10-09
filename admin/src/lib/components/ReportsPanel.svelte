@@ -618,7 +618,7 @@
                             <div class="row-name">
                                 {#if row.product_id}
                                     <a
-                                        href="{base}/products/{row.product_id}"
+                                        href="{base}/dash/products/{row.product_id}"
                                         class="txt-bold txt-ellipsis"
                                     >
                                         {row.title}
@@ -713,7 +713,7 @@
             </span>
             <div class="flex-fill"></div>
             <a
-                href="{base}/reports"
+                href="{base}/dash/reports"
                 class="tw:text-xs tw:text-muted-foreground tw:no-underline tw:transition-colors tw:hover:text-foreground"
             >
                 full report <span aria-hidden="true">→</span>

@@ -212,7 +212,7 @@
                                 <div class="row-name">
                                     <a
                                         class="txt-bold txt-ellipsis"
-                                        href="{base}/products/{product.id}"
+                                        href="{base}/dash/products/{product.id}"
                                     >
                                         {product.title}
                                     </a>

@@ -47,7 +47,7 @@ import { moduleScreens } from "$lib/screens.svelte.js";
 
 export const NAV = [
     {
-        href: "/",
+        href: "/dash",
         label: "Home",
         icon: "ri-home-5-line",
         exact: true,
@@ -55,80 +55,80 @@ export const NAV = [
         keywords: "dashboard overview sales revenue analytics",
     },
     {
-        href: "/orders",
+        href: "/dash/orders",
         label: "Orders",
         icon: "ri-shopping-bag-3-line",
         right: "orders.read",
         accent: "amber",
         keywords: "sales fulfilment shipments refunds returns",
         children: [
-            { href: "/carts", label: "Abandoned carts", right: "carts.read", keywords: "checkouts baskets" },
-            { href: "/invoices", label: "Invoices", right: "invoices.read", module: "invoices", keywords: "pdf tax invoice" },
+            { href: "/dash/checkouts", label: "Abandoned carts", right: "carts.read", keywords: "checkouts baskets" },
+            { href: "/dash/invoices", label: "Invoices", right: "invoices.read", module: "invoices", keywords: "pdf tax invoice" },
             // What each gateway took and what it is owed. Under Orders
             // because that is the money it counts, and an owner reconciling
             // a statement is already looking at orders.
-            { href: "/payouts", label: "Payouts", right: "payouts.read", keywords: "settlements gateways collected refunded reconcile" },
+            { href: "/dash/payouts", label: "Payouts", right: "payouts.read", keywords: "settlements gateways collected refunded reconcile" },
             // A business customer's side of selling, where Shopify keeps its
             // own: a quote is an order being priced, an approval is an order
             // waiting on the buyer's company, and receivables are orders not
             // yet paid for. The company itself is under Customers.
-            { href: "/b2b/quotes", label: "Quotes", right: "quotes.read", module: "b2b", keywords: "b2b quote requests price rfq" },
-            { href: "/b2b/approvals", label: "Approvals", right: "companies.read", module: "b2b", keywords: "b2b approval threshold waiting buyer" },
-            { href: "/b2b/receivables", label: "Receivables", right: "companies.read", module: "b2b", keywords: "b2b on account net terms owed overdue invoices due" },
+            { href: "/dash/b2b/quotes", label: "Quotes", right: "quotes.read", module: "b2b", keywords: "b2b quote requests price rfq" },
+            { href: "/dash/b2b/approvals", label: "Approvals", right: "companies.read", module: "b2b", keywords: "b2b approval threshold waiting buyer" },
+            { href: "/dash/b2b/receivables", label: "Receivables", right: "companies.read", module: "b2b", keywords: "b2b on account net terms owed overdue invoices due" },
         ],
     },
     {
-        href: "/products",
+        href: "/dash/products",
         label: "Products",
         icon: "ri-price-tag-3-line",
         right: "catalog.read",
         accent: "sky",
         keywords: "catalog catalogue variants sku",
         children: [
-            { href: "/collections", label: "Collections", right: "collections.read", keywords: "curated lists" },
-            { href: "/categories", label: "Categories", right: "categories.read", keywords: "taxonomy tree attributes" },
-            { href: "/inventory", label: "Inventory", right: "inventory.read", keywords: "stock levels ledger" },
+            { href: "/dash/collections", label: "Collections", right: "collections.read", keywords: "curated lists" },
+            { href: "/dash/categories", label: "Categories", right: "categories.read", keywords: "taxonomy tree attributes" },
+            { href: "/dash/inventory", label: "Inventory", right: "inventory.read", keywords: "stock levels ledger" },
             // A price list is a rule about what somebody pays, worked in as
             // often as a promotion is, not vocabulary configured once.
-            { href: "/pricing", label: "Price lists", right: "pricing.read", keywords: "trade wholesale b2b quantity breaks tiers" },
+            { href: "/dash/pricing", label: "Price lists", right: "pricing.read", keywords: "trade wholesale b2b quantity breaks tiers" },
             // What a business may buy, beside what it pays: a catalogue is a
             // part of the range, chosen from products and categories, and a
             // company is held to one from its own page.
-            { href: "/b2b/catalogues", label: "Catalogues", right: "companies.read", module: "b2b", keywords: "b2b catalog assortment allowed products categories company dealer range" },
-            { href: "/reviews", label: "Reviews", right: "reviews.read", module: "reviews", keywords: "ratings moderation" },
+            { href: "/dash/b2b/catalogues", label: "Catalogues", right: "companies.read", module: "b2b", keywords: "b2b catalog assortment allowed products categories company dealer range" },
+            { href: "/dash/reviews", label: "Reviews", right: "reviews.read", module: "reviews", keywords: "ratings moderation" },
             // Under Products because a vendor here is a seller of them, not a
             // person the shop deals with — Customers is the other side of the
             // counter. A store with no marketplace never opens this.
-            { href: "/vendors", label: "Vendors", right: "vendors.read", keywords: "sellers marketplace offers commission" },
+            { href: "/dash/vendors", label: "Vendors", right: "vendors.read", keywords: "sellers marketplace offers commission" },
         ],
     },
     {
-        href: "/customers",
+        href: "/dash/customers",
         label: "Customers",
         icon: "ri-user-3-line",
         right: "customers.read",
         accent: "teal",
         keywords: "buyers shoppers",
         children: [
-            { href: "/customers/groups", label: "Groups", right: "groups.read", keywords: "customer groups wholesale trade segments" },
+            { href: "/dash/customers/groups", label: "Groups", right: "groups.read", keywords: "customer groups wholesale trade segments" },
             // A business that buys here, with its buyers and its terms. Beside
             // Groups because a company's prices are a group's.
-            { href: "/b2b/companies", label: "Companies", right: "companies.read", module: "b2b", keywords: "b2b business trade accounts credit limit terms buyers dealers territories" },
+            { href: "/dash/b2b/companies", label: "Companies", right: "companies.read", module: "b2b", keywords: "b2b business trade accounts credit limit terms buyers dealers territories" },
             // Members of the public asking where to buy, and which dealer each
             // was sent to. Customers-to-be rather than orders, and read beside
             // the dealers they are routed to.
-            { href: "/b2b/leads", label: "Leads", right: "leads.read", module: "b2b", keywords: "b2b dealer enquiries find a dealer routing territory unrouted" },
-            { href: "/accounts", label: "Accounts", right: "accounts.read", module: "identity", keywords: "logins passwords sessions" },
+            { href: "/dash/b2b/leads", label: "Leads", right: "leads.read", module: "b2b", keywords: "b2b dealer enquiries find a dealer routing territory unrouted" },
+            { href: "/dash/accounts", label: "Accounts", right: "accounts.read", module: "identity", keywords: "logins passwords sessions" },
             // Both are the customers talking: the form and the signup box.
-            { href: "/contact", label: "Contact messages", right: "contact.read", module: "contact", keywords: "inbox enquiries" },
-            { href: "/newsletter", label: "Newsletter", right: "newsletter.read", module: "newsletter", keywords: "subscribers signups mailing list" },
+            { href: "/dash/contact", label: "Contact messages", right: "contact.read", module: "contact", keywords: "inbox enquiries" },
+            { href: "/dash/newsletter", label: "Newsletter", right: "newsletter.read", module: "newsletter", keywords: "subscribers signups mailing list" },
             // What shoppers wanted and did not buy: the shop's side of it is
             // a demand signal, which is why it sits with the customers.
-            { href: "/wishlists", label: "Wishlists", right: "wishlists.read", module: "wishlist", keywords: "saved wanted restock notify" },
+            { href: "/dash/wishlists", label: "Wishlists", right: "wishlists.read", module: "wishlist", keywords: "saved wanted restock notify" },
         ],
     },
     {
-        href: "/discounts",
+        href: "/dash/discounts",
         label: "Discounts",
         icon: "ri-price-tag-2-line",
         right: "discounts.read",
@@ -141,34 +141,34 @@ export const NAV = [
     // behind a settings page. Beneath it, where the messages come from and
     // what they say, as Litekart arranges it.
     {
-        href: "/notifications",
+        href: "/dash/notifications",
         label: "Notifications",
         icon: "ri-notification-3-line",
         right: "orders.read",
         accent: "amber",
         keywords: "email sms confirmation sent failed resend",
         children: [
-            { href: "/notifications/email", label: "Setup Email", right: "notifications.read", keywords: "sendgrid provider templates" },
-            { href: "/notifications/sms", label: "Setup SMS", right: "notifications.read", keywords: "msg91 provider templates" },
+            { href: "/dash/notifications/email", label: "Setup Email", right: "notifications.read", keywords: "sendgrid provider templates" },
+            { href: "/dash/notifications/sms", label: "Setup SMS", right: "notifications.read", keywords: "msg91 provider templates" },
         ],
     },
     // Shopify's Content: the words and pictures a storefront is made of that
     // are not products. The section lands on Files, which every store has;
     // the rest join when their modules are installed.
     {
-        href: "/media",
+        href: "/dash/media",
         label: "Content",
         icon: "ri-layout-line",
         right: "catalog.read",
         accent: "blue",
         keywords: "media files pages menus cms feeds sitemap",
         children: [
-            { href: "/media", label: "Files", right: "media.read", keywords: "media images pictures uploads" },
-            { href: "/cms", label: "Pages", right: "pages.read", module: "cms", keywords: "content copy about" },
-            { href: "/menus", label: "Menus", right: "menus.read", module: "navigation", keywords: "navigation header footer links" },
-            { href: "/feeds", label: "Feeds", right: "plugins.read", module: "feeds", keywords: "google merchant meta catalogue feed" },
-            { href: "/sitemap", label: "Sitemap", right: "plugins.read", module: "sitemaps", keywords: "sitemap.xml search console" },
-            { href: "/faq", label: "FAQ", right: "faq.read", module: "faq", keywords: "questions answers help support" },
+            { href: "/dash/media", label: "Files", right: "media.read", keywords: "media images pictures uploads" },
+            { href: "/dash/cms", label: "Pages", right: "pages.read", module: "cms", keywords: "content copy about" },
+            { href: "/dash/menus", label: "Menus", right: "menus.read", module: "navigation", keywords: "navigation header footer links" },
+            { href: "/dash/feeds", label: "Feeds", right: "plugins.read", module: "feeds", keywords: "google merchant meta catalogue feed" },
+            { href: "/dash/sitemap", label: "Sitemap", right: "plugins.read", module: "sitemaps", keywords: "sitemap.xml search console" },
+            { href: "/dash/faq", label: "FAQ", right: "faq.read", module: "faq", keywords: "questions answers help support" },
         ],
     },
     // "How much did we sell" and the full sales report — the by-period table,
@@ -176,7 +176,7 @@ export const NAV = [
     // arriving at the panel already sees them. This is the other kind of
     // report: a saved SELECT answering a question only this shop has.
     {
-        href: "/reports",
+        href: "/dash/reports",
         label: "Reports",
         icon: "ri-line-chart-line",
         right: "reports.read",
@@ -187,7 +187,7 @@ export const NAV = [
     // waiting to go out, deliveries that failed. One screen, because "is it
     // still running" is one question.
     {
-        href: "/jobs",
+        href: "/dash/jobs",
         label: "Jobs",
         icon: "ri-loader-4-line",
         right: "store.operate",
@@ -199,7 +199,7 @@ export const NAV = [
     // this store uses. plugins.read to see them and plugins.write to change
     // one, because a plugin's settings are where a gateway's live keys live.
     {
-        href: "/plugins",
+        href: "/dash/plugins",
         label: "Plugins",
         icon: "ri-puzzle-line",
         right: "plugins.read",
@@ -215,7 +215,7 @@ export const NAV = [
     // `health` is a field rather than an href comparison in the template,
     // so the badge's owner is declared beside the link it rides on.
     {
-        href: "/settings",
+        href: "/dash/settings",
         label: "Settings",
         icon: "ri-settings-3-line",
         accent: "orange",
@@ -226,28 +226,28 @@ export const NAV = [
         // then the platform underneath. The sub-sidebar is gone — one
         // navigation is enough, and two was a menu inside a menu.
         children: [
-            { href: "/settings", label: "Store", exact: true, keywords: "currency languages version providers" },
-            { href: "/settings/superusers", label: "Team", right: "team.read", keywords: "operators staff invitations" },
-            { href: "/settings/roles", label: "Roles", right: "roles.write", keywords: "permissions rights" },
-            { href: "/settings/account", label: "Your account", keywords: "password profile sessions" },
-            { href: "/settings/payments", label: "Payment methods", right: "plugins.read", keywords: "gateways stripe razorpay cod checkout" },
-            { href: "/shipping", label: "Shipping and delivery", right: "shipping.read", keywords: "zones rates methods" },
-            { href: "/shipping/providers", label: "Shipping providers", right: "plugins.read", keywords: "carriers aggregators delhivery shiprocket" },
-            { href: "/taxes", label: "Taxes", right: "taxes.read", keywords: "vat gst rates" },
-            { href: "/locations", label: "Locations", right: "locations.read", keywords: "warehouse store pickup" },
-            { href: "/channels", label: "Channels", right: "channels.read", keywords: "storefronts selling" },
-            { href: "/settings/attributes", label: "Attribute dictionary", right: "categories.read", keywords: "fields taxonomy vocabulary" },
+            { href: "/dash/settings", label: "Store", exact: true, keywords: "currency languages version providers" },
+            { href: "/dash/settings/teams", label: "Team", right: "team.read", keywords: "operators staff invitations" },
+            { href: "/dash/settings/roles", label: "Roles", right: "roles.write", keywords: "permissions rights" },
+            { href: "/dash/settings/account", label: "Your account", keywords: "password profile sessions" },
+            { href: "/dash/settings/payments", label: "Payment methods", right: "plugins.read", keywords: "gateways stripe razorpay cod checkout" },
+            { href: "/dash/shipping-settings", label: "Shipping and delivery", right: "shipping.read", keywords: "zones rates methods" },
+            { href: "/dash/shipping-settings/providers", label: "Shipping providers", right: "plugins.read", keywords: "carriers aggregators delhivery shiprocket" },
+            { href: "/dash/taxes", label: "Taxes", right: "taxes.read", keywords: "vat gst rates" },
+            { href: "/dash/warehouses", label: "Locations", right: "locations.read", keywords: "warehouse store pickup" },
+            { href: "/dash/channels", label: "Channels", right: "channels.read", keywords: "storefronts selling" },
+            { href: "/dash/settings/attributes", label: "Attribute dictionary", right: "categories.read", keywords: "fields taxonomy vocabulary" },
             // The store as a running system rather than as a shop.
-            { href: "/settings/diagnostics", label: "Diagnostics", right: "store.operate", health: true, keywords: "health checks doctor" },
-            { href: "/settings/events", label: "Event log", right: "store.operate", keywords: "outbox execution history dead letters" },
-            { href: "/settings/api-keys", label: "API keys", right: "apikeys.read", keywords: "token credential integration machine partner bearer" },
-            { href: "/settings/webhooks", label: "Webhooks", right: "webhooks.read", module: "webhooks", keywords: "endpoints deliveries integrations" },
-            { href: "/settings/audit", label: "Audit trail", right: "store.operate", keywords: "who did what history" },
-            { href: "/settings/agent", label: "Agent activity", right: "agent.read", module: "mcp", keywords: "mcp ai tools" },
+            { href: "/dash/settings/diagnostics", label: "Diagnostics", right: "store.operate", health: true, keywords: "health checks doctor" },
+            { href: "/dash/settings/events", label: "Event log", right: "store.operate", keywords: "outbox execution history dead letters" },
+            { href: "/dash/settings/api-keys", label: "API keys", right: "apikeys.read", keywords: "token credential integration machine partner bearer" },
+            { href: "/dash/settings/webhooks", label: "Webhooks", right: "webhooks.read", module: "webhooks", keywords: "endpoints deliveries integrations" },
+            { href: "/dash/settings/audit", label: "Audit trail", right: "store.operate", keywords: "who did what history" },
+            { href: "/dash/settings/agent", label: "Agent activity", right: "agent.read", module: "mcp", keywords: "mcp ai tools" },
             // Two entries, because they are two rights: one link gated on
             // data.export left an operator who may only import with no way in.
-            { href: "/data", label: "Export", exact: true, right: "data.export", keywords: "csv shopify download products orders" },
-            { href: "/data/import", label: "Import", right: "data.import", keywords: "csv shopify upload taxonomy products orders" },
+            { href: "/dash/data", label: "Export", exact: true, right: "data.export", keywords: "csv shopify download products orders" },
+            { href: "/dash/data/import", label: "Import", right: "data.import", keywords: "csv shopify upload taxonomy products orders" },
         ],
     },
 ];
@@ -289,13 +289,13 @@ function withModuleScreens(items) {
     const extra = moduleScreens();
     if (!extra.length || items !== NAV) return items;
     return items.map((item) =>
-        item.href === "/settings"
+        item.href === "/dash/settings"
             ? {
                   ...item,
                   children: [
                       ...item.children,
                       ...extra.map((s) => ({
-                          href: `/x/${s.slug}`,
+                          href: `/dash/x/${s.slug}`,
                           label: s.title,
                           right: s.right,
                           keywords: s.module ?? "",

@@ -308,14 +308,14 @@
 
     const navAlert = $derived(
         health.visible
-            ? { show: true, href: "/settings/diagnostics", label: "A health check is failing" }
+            ? { show: true, href: "/dash/settings/diagnostics", label: "A health check is failing" }
             : deadLetters > 0
               ? {
                     show: true,
-                    href: "/settings/events",
+                    href: "/dash/settings/events",
                     label: `${deadLetters} event${deadLetters === 1 ? "" : "s"} could not be delivered`,
                 }
-              : { show: false, href: "/settings", label: "" },
+              : { show: false, href: "/dash/settings", label: "" },
     );
 
     function onAuthenticated() {
@@ -378,7 +378,7 @@
         size the stylesheet already had a class for. The mark is remixicon, the
         icon set every other glyph in this panel comes from.
     -->
-    <a href="{base}/" class="app-brand" aria-label="GoCommerce">
+    <a href="{base}/dash" class="app-brand" aria-label="GoCommerce">
         <i class="ri-shopping-bag-3-fill app-brand-mark" aria-hidden="true"></i>
         <span class="app-brand-name">GoCommerce</span>
     </a>
@@ -463,7 +463,7 @@
                  right, and this is the shortest way to it. -->
             <a
                 class="dropdown-item"
-                href="{base}/settings/account"
+                href="{base}/dash/settings/account"
                 onclick={() => document.getElementById("logged-user-dropdown")?.hidePopover()}
             >
                 <i class="ri-user-settings-line" aria-hidden="true"></i>
@@ -472,7 +472,7 @@
             {#if can("team.read")}
                 <a
                     class="dropdown-item"
-                    href="{base}/settings/superusers"
+                    href="{base}/dash/settings/teams"
                     onclick={() => document.getElementById("logged-user-dropdown")?.hidePopover()}
                 >
                     <i class="ri-group-line" aria-hidden="true"></i>
@@ -481,7 +481,7 @@
             {/if}
             <a
                 class="dropdown-item"
-                href="{base}/docs"
+                href="{base}/dash/docs"
                 target="_blank"
                 rel="noreferrer"
                 onclick={() => document.getElementById("logged-user-dropdown")?.hidePopover()}

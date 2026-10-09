@@ -61,7 +61,7 @@
                 {/if}
             </p>
 
-            <a href="{base}/" class="btn secondary m-t-sm">
+            <a href="{base}/dash" class="btn secondary m-t-sm">
                 <span class="txt">Back to the dashboard</span>
             </a>
         </div>

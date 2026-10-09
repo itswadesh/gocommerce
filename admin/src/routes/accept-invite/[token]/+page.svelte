@@ -65,7 +65,7 @@
             // `goto`, not a document load: the shell reads the session from a
             // rune now, so signing in re-renders it. This was a full reload for
             // as long as the shell decided once, on mount, from localStorage.
-            await goto(base + "/");
+            await goto(base + "/dash");
         } catch (err) {
             error = err.message;
         } finally {
@@ -93,7 +93,7 @@
                 <p>{problem}</p>
                 <p>Ask whoever invited you to send a new one.</p>
             </div>
-            <a href="{base}/" class="btn lg block secondary">
+            <a href="{base}/dash" class="btn lg block secondary">
                 <span class="txt">Go to the sign-in page</span>
             </a>
         {:else}

@@ -278,7 +278,7 @@
                             <td class="col-field-name-id" data-name="Entry">
                                 <div class="row-name row-name-stacked">
                                     <span class:txt-bold={entry.kind === "order"}>{KIND[entry.kind] ?? entry.kind}</span>
-                                    <a href="{base}/orders/{entry.order_id}" class="txt-hint txt-sm txt-code">{entry.order_number}</a>
+                                    <a href="{base}/dash/orders/{entry.order_id}" class="txt-hint txt-sm txt-code">{entry.order_number}</a>
                                 </div>
                             </td>
                             <td class="min-width" data-name="PO number">

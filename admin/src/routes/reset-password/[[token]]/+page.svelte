@@ -87,7 +87,7 @@
             toast.success(`Your password has been changed, ${record.email}`);
             // `goto`, not a document load: the shell reads the session from a
             // rune, so signing in re-renders it.
-            await goto(base + "/");
+            await goto(base + "/dash");
         } catch (err) {
             error = err.message;
         } finally {
@@ -115,7 +115,7 @@
                 <p>{problem}</p>
                 <p>Ask for a new link from the sign-in page.</p>
             </div>
-            <a href="{base}/" class="btn lg block secondary">
+            <a href="{base}/dash" class="btn lg block secondary">
                 <span class="txt">Go to the sign-in page</span>
             </a>
         {:else if !token}
@@ -139,7 +139,7 @@
                     </button>
                 </div>
             </form>
-            <a href="{base}/" class="btn lg block transparent">
+            <a href="{base}/dash" class="btn lg block transparent">
                 <span class="txt">Back to sign in</span>
             </a>
         {:else}

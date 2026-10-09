@@ -26,8 +26,8 @@ import { readFileSync } from "node:fs";
 import { RIGHT_ORDER } from "../src/lib/rights.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
-const list = read("../src/routes/settings/roles/+page.svelte");
-const detail = read("../src/routes/settings/roles/[role]/+page.svelte");
+const list = read("../src/routes/dash/settings/roles/+page.svelte");
+const detail = read("../src/routes/dash/settings/roles/[role]/+page.svelte");
 
 test("neither roles screen carries a rights table of its own", () => {
     for (const [name, source] of [

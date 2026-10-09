@@ -473,7 +473,7 @@
 
     <div class="field-help">
         The first file leads. Removing one detaches it from this product and keeps it in your
-        <a href="{base}/media">media library</a>, which is where a file is renamed, described or
+        <a href="{base}/dash/media">media library</a>, which is where a file is renamed, described or
         deleted for good.
     </div>
 </div>

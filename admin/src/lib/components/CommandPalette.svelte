@@ -63,7 +63,7 @@
                 return (res.data ?? []).map((row) => ({
                     title: row.title,
                     subtitle: row.slug,
-                    href: `/products/${row.id}`,
+                    href: `/dash/products/${row.id}`,
                 }));
             },
         },
@@ -79,7 +79,7 @@
                     subtitle: [row.name || row.email, formatMoney(row.total)]
                         .filter(Boolean)
                         .join(" · "),
-                    href: `/orders/${row.id}`,
+                    href: `/dash/orders/${row.id}`,
                 }));
             },
         },
@@ -96,7 +96,7 @@
                     // No customer route exists and D22 says there will not be
                     // one; this is the filtered list, which is one row and a
                     // click from the drawer.
-                    href: `/customers?q=${encodeURIComponent(row.email)}`,
+                    href: `/dash/customers?q=${encodeURIComponent(row.email)}`,
                 }));
             },
         },
@@ -110,7 +110,7 @@
                 return (res.data ?? []).map((row) => ({
                     title: row.code || row.title,
                     subtitle: row.code ? row.title : "Automatic",
-                    href: `/discounts?q=${encodeURIComponent(row.code || row.title)}`,
+                    href: `/dash/discounts?q=${encodeURIComponent(row.code || row.title)}`,
                 }));
             },
         },
@@ -124,7 +124,7 @@
                 return (res.data ?? []).map((row) => ({
                     title: row.full_name || row.title,
                     subtitle: row.slug,
-                    href: `/categories?q=${encodeURIComponent(row.title)}`,
+                    href: `/dash/categories?q=${encodeURIComponent(row.title)}`,
                 }));
             },
         },
@@ -138,7 +138,7 @@
                 return (res.data ?? []).map((row) => ({
                     title: row.filename || row.alt || `#${row.id}`,
                     subtitle: row.alt && row.filename ? row.alt : row.mime,
-                    href: `/media?q=${encodeURIComponent(row.filename || row.alt || "")}`,
+                    href: `/dash/media?q=${encodeURIComponent(row.filename || row.alt || "")}`,
                 }));
             },
         },
@@ -266,7 +266,7 @@
                     icon: "ri-barcode-line",
                     title: product.title,
                     subtitle: `SKU ${q}`,
-                    href: `/products/${product.id}`,
+                    href: `/dash/products/${product.id}`,
                 },
             ];
         } catch {
