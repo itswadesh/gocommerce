@@ -237,6 +237,15 @@ right before its module and would answer with the rights explanation anyway.
 A screen whose module is absent is hidden from the nav and, if its URL is typed
 or bookmarked, says so instead of firing four requests that 404.
 
+A screen gated on a right its module declares (D65) turns that order round.
+In a binary without `ext/cart-recovery` nobody holds `abandonment.read`, the
+owner included, so checking the right first told an owner "your role does not
+carry it" about a store that was simply built without the module. Its four
+screens therefore say the module is missing before they say anything about the
+role, and its probe is made for anyone holding `abandonment.read` or
+`orders.read`; for an operator with neither, "not installed" is not known and
+the rights answer is the one shown.
+
 Two things worth knowing about the screens themselves. **Accounts is not
 Customers.** Accounts are shoppers who registered with this store, from
 `identity_customers`; Customers is every order grouped by the address that
@@ -358,6 +367,74 @@ state rather than applied silently — the engine applies no default of its own,
 and a filter that quietly drops rows is worse than a noisy one. Filters and the
 page live in the URL through `listState`, and the footer is the shared
 `Pager`.
+
+## Abandoned checkouts, and the Marketing section
+
+`ext/cart-recovery` keeps its own record of every basket that sat idle past a
+threshold measured in minutes, writes to the shopper on a schedule, and credits
+the order the basket became. Four screens read it, all on `abandonment.read`:
+**Orders → Abandoned checkouts** (`/dash/abandoned`) and its record page, and a
+**Marketing** section after Discounts — Shopify's place for it — holding
+**Automations** and **Recovery analytics**. Everything in Marketing is this
+module's today, so a binary without it has no Marketing section at all. The
+screen that used to be called "Abandoned carts" is **Carts** in the nav, which
+is what it always called itself: it lists every basket that has not become an
+order, live ones included, and the recovery records are a different thing read
+a step later.
+
+**The list** draws `GET …/abandonments`, and its six figures are `GET …/summary`
+sent exactly the filters the table sends, so the cards can never count a
+different set from the rows under them. The filters, the ordering and the page
+are in the URL. The date range is sent as instants at the reader's own
+midnights, because the engine reads a bare date at UTC midnight, and `to` is
+the midnight after the last day wanted. Status is several at once (contacted
+*or* recovered is a real question), so it is a row of toggles rather than a
+select. The one secondary fact the module chooses for a record — `indicator`,
+"Link opened", "No email provider" — is small text under the status chip, never
+a second chip. A row's menu offers what its status allows; the dialogs then
+fetch the record, because what a send may use (channels, messages, the step the
+sequence would send next) is on the record's own `recovery` block and nowhere
+else.
+
+**The record** is a page, for the reason the order screen gives, and it is one
+request: the basket as it was beside the basket as it is, a reading of the
+orders placed with the address (the store keeps no customer record, and the card
+says so), the timeline already worded by the module, and which actions are
+possible now. The panel renders the timeline's sentences and adds only an icon
+and who did it; it never rebuilds one. An action the record does not allow is
+shown disabled with the module's sentence beside it, not only in a tooltip a
+phone never shows; an action the role lacks is disabled with the right named.
+The page re-reads itself every thirty seconds while its tab is visible and at
+once when the tab comes back, and nothing depends on that: every write is
+re-checked by the module when it lands, a refusal (409, `details.reason`) is
+shown in the dialog with the module's own words, and the record is re-read
+behind it. Copy link is a POST because handing the link out is recorded — it
+opens the basket for whoever holds it — and the panel never builds a link of
+its own.
+
+**The automation editors** edit one sequence each, but the engine replaces the
+whole settings object, so each sends its own half from the form and the other
+half exactly as it read it. Waits are typed in minutes, hours or days and sent
+as `wait_minutes`, refused at the box when they are not whole numbers rather
+than rounded. The action list is the module's, with the actions it cannot take
+yet shown disabled and its reason under each — the screen is built around a list
+of actions, not around email. A refused save names its field in the engine's
+sentence ("checkout step 2: wait_minutes must be …") and is put under that box.
+"Edit wording" opens Notifications › Setup Email with `?template=<event>`, which
+opens that message's editor and then drops the parameter, since it is an
+instruction rather than state.
+
+**Recovery analytics** is `GET …/analytics` with the browser's zone as `tz`. The
+funnel is drawn as proportional bars with a table under it carrying the counts
+and both ratios; the trend reuses the Reports chart's bars, with the quiet
+periods put back as zero columns so neighbouring bars are neighbouring days.
+Both drawings are `aria-hidden` and the tables are their accessible copy.
+
+Motion on these screens is transform and opacity only: the bars grow by scale
+rather than by height, a new timeline entry or step rises in, a refusal shakes
+once, "Copied" pops on the button that did it, and the save bar leaves as it
+arrived. Under `prefers-reduced-motion` each of these keeps its fade and loses
+its movement.
 
 ## Stock history
 
@@ -772,6 +849,12 @@ Honest gaps, rather than a roadmap:
   raw error string and can carry an upstream URL or a fragment of a key.
 - **A note is not versioned.** Saving replaces it, and the previous text lives
   only in the audit row underneath the History card's `Note written` line.
+- **The abandoned-checkout status toggles carry no counts.** `GET …/summary`
+  counts the filtered set as a whole, not per status, so a count beside each
+  toggle would be one request per status or a number the screen made up.
+- **A list row's actions are chosen from its status.** Whether a send or a link
+  is actually possible is on the record's `recovery` block, which the listing
+  does not carry; the dialog fetches the record and says so when it is not.
 
 - **A variant's option combination cannot be changed.** The axes and their
   values can — `PUT /api/admin/products/{id}/options` reconciles the whole

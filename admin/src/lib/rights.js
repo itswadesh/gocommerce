@@ -189,13 +189,41 @@ export const RIGHT_SCOPES = {
 
 /** rightLabel is the imperative gloss: what holding this right lets you do. */
 export function rightLabel(right) {
-    return RIGHT_LABELS[right] || fromServer[right]?.label || right;
+    return RIGHT_LABELS[right] || fromServer[right]?.label || MODULE_RIGHTS[right]?.label || right;
 }
 
 /** rightScope is the scope sentence: what the right covers. */
 export function rightScope(right) {
-    return RIGHT_SCOPES[right] || fromServer[right]?.scope || right;
+    return RIGHT_SCOPES[right] || fromServer[right]?.scope || MODULE_RIGHTS[right]?.scope || right;
 }
+
+/*
+ * Words for a module's rights that this panel's own screens explain — "your
+ * role does not carry …" under a disabled button — before the server has sent
+ * its catalogue. That catalogue arrives only on the Roles screen (the route is
+ * behind roles.write), so an operator who has never been there read the
+ * dotted identifier instead. The server's words win whenever they are known;
+ * these are copied from the module's own RegisterRight calls so the two say
+ * the same thing, and a right that is not here still falls back to its name.
+ */
+const MODULE_RIGHTS = {
+    "abandonment.read": {
+        label: "See abandoned checkouts",
+        scope: "Baskets left behind, what was sent about them, and the recovery figures",
+    },
+    "abandonment.contact": {
+        label: "Send recovery messages",
+        scope: "Sending a reminder by hand and copying a basket's recovery link",
+    },
+    "abandonment.suppress": {
+        label: "Suppress recovery",
+        scope: "Stopping the reminders for one basket, with a reason",
+    },
+    "abandonment.automate": {
+        label: "Change the recovery automation",
+        scope: "Whether reminders go out, when a basket counts as abandoned, and the sequence",
+    },
+};
 
 /*
  * The same rights, read as a grid.
@@ -270,6 +298,7 @@ export const RESOURCE_LABELS = {
     companies: "Companies",
     quotes: "Quotes",
     leads: "Dealer leads",
+    abandonment: "Abandoned checkouts",
 };
 
 export const VERB_LABELS = {
@@ -283,6 +312,12 @@ export const VERB_LABELS = {
     export: "Export",
     import: "Import",
     operate: "Operate",
+    // ext/cart-recovery's three actions, which are not reads or writes of a
+    // record: writing to a shopper, stopping the reminders, and changing what
+    // the store sends to everybody.
+    contact: "Contact",
+    suppress: "Suppress",
+    automate: "Automate",
 };
 
 const titleCase = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
@@ -310,7 +345,10 @@ export function verbLabel(verb) {
  * because this table has not caught up.
  */
 export const RIGHT_SECTIONS = [
-    { section: "Orders", resources: ["orders", "carts", "invoices", "payouts", "quotes"] },
+    // Abandoned checkouts sit with carts because the screen does, under
+    // Orders; the Marketing section's two screens read under the same right,
+    // so it needs no block of its own.
+    { section: "Orders", resources: ["orders", "abandonment", "carts", "invoices", "payouts", "quotes"] },
     {
         section: "Products",
         resources: ["catalog", "collections", "categories", "inventory", "pricing", "reviews"],

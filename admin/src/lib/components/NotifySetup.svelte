@@ -16,6 +16,8 @@
      * setting, so that side asks plugins.write. Pasting a delivery key and rewording
      * a confirmation are both operating the store, not selling.
      */
+    import { goto } from "$app/navigation";
+    import { page } from "$app/state";
     import { can, request } from "$lib/api.js";
     import { formatDate } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
@@ -61,6 +63,7 @@
             backends = settings.notifier_channels?.find((c) => c.channel === channel)?.backends ?? [];
             plugins = all ?? [];
             templates = list ?? [];
+            openLinkedTemplate();
         } catch (err) {
             toast.error(err);
         } finally {
@@ -111,6 +114,23 @@
     function openTemplate(t) {
         tpl = t;
         draft = { subject: t.subject ?? "", body: t.body ?? "" };
+    }
+
+    /*
+     * `?template=<event>` opens that message's editor, so a screen that sends
+     * one — the recovery automation's "Edit wording" — can link straight to
+     * its words rather than to a list of thirty. The parameter is taken off
+     * once it has done its job: it is an instruction, not state, and leaving
+     * it would reopen the editor on every refresh after the operator closed it.
+     */
+    function openLinkedTemplate() {
+        const wanted = page.url.searchParams.get("template");
+        if (!wanted) return;
+        const t = templates.find((x) => x.event === wanted);
+        if (t) openTemplate(t);
+        const url = new URL(page.url);
+        url.searchParams.delete("template");
+        goto(url, { replaceState: true, keepFocus: true, noScroll: true });
     }
 
     async function saveTemplate() {

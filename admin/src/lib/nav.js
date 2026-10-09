@@ -8,8 +8,8 @@
  * shipped six months ago.
  *
  * The shape is Shopify's: a short list of sections in Shopify's order — Home,
- * Orders, Products, Customers, Discounts, Content, Settings — each with its
- * own screens beneath it, shown only while the section is open. Twenty-five
+ * Orders, Products, Customers, Discounts, Marketing, Content, Settings — each
+ * with its own screens beneath it, shown only while the section is open. Twenty-five
  * screens in one flat column had stopped reading as a menu; sections that
  * unfold are what an operator who has used Shopify already knows. A few items
  * are ours rather than Shopify's, and deliberately: Notifications sits in the
@@ -62,7 +62,20 @@ export const NAV = [
         accent: "amber",
         keywords: "sales fulfilment shipments refunds returns",
         children: [
-            { href: "/dash/checkouts", label: "Abandoned carts", right: "carts.read", keywords: "checkouts baskets" },
+            // Shopify's place for it, first under Orders: a basket somebody
+            // left is the order closest to happening. The record, what was
+            // sent about it and the order it became are ext/cart-recovery's.
+            {
+                href: "/dash/abandoned",
+                label: "Abandoned checkouts",
+                right: "abandonment.read",
+                module: "cart-recovery",
+                keywords: "abandoned checkouts carts baskets recovery reminders emails left behind",
+            },
+            // Every basket that has not become an order, live ones included —
+            // the raw table the recovery records are read from. "Carts",
+            // because that is what the screen calls itself and what it lists.
+            { href: "/dash/checkouts", label: "Carts", right: "carts.read", keywords: "abandoned carts checkouts baskets live" },
             { href: "/dash/invoices", label: "Invoices", right: "invoices.read", module: "invoices", keywords: "pdf tax invoice" },
             // What each gateway took and what it is owed. Under Orders
             // because that is the money it counts, and an owner reconciling
@@ -134,6 +147,36 @@ export const NAV = [
         right: "discounts.read",
         accent: "rose",
         keywords: "codes promotions coupons",
+    },
+    // Shopify's Marketing, after Discounts where Shopify keeps it: what the
+    // store sends to shoppers unasked, and whether it works. Everything in it
+    // today is ext/cart-recovery's, so a binary without that module has no
+    // Marketing section at all — the section's own module and right make it
+    // unreachable, and its children are filtered the same way.
+    {
+        href: "/dash/marketing/automations",
+        label: "Marketing",
+        icon: "ri-megaphone-line",
+        right: "abandonment.read",
+        module: "cart-recovery",
+        accent: "fuchsia",
+        keywords: "marketing automations campaigns recovery emails",
+        children: [
+            {
+                href: "/dash/marketing/automations",
+                label: "Automations",
+                right: "abandonment.read",
+                module: "cart-recovery",
+                keywords: "abandoned checkout cart recovery sequence reminder emails workflow",
+            },
+            {
+                href: "/dash/marketing/recovery",
+                label: "Recovery analytics",
+                right: "abandonment.read",
+                module: "cart-recovery",
+                keywords: "abandoned checkout recovery rate funnel recovered revenue report",
+            },
+        ],
     },
     // What the store told its shoppers, and whether it arrived. In the main
     // list rather than under Settings: an operator with a shopper on the
