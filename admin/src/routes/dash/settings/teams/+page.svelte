@@ -8,7 +8,7 @@
      * that operator out everywhere, which is stated on the form rather than
      * discovered afterwards.
      */
-    import { auth, can, getRecord } from "$lib/api.js";
+    import { auth, can, getRecord, roles as rolesApi } from "$lib/api.js";
     import { rowKey } from "$lib/rowkey.js";
     import { listState } from "$lib/liststate.svelte.js";
     import { pageSlice } from "$lib/clientpage.js";
@@ -23,6 +23,9 @@
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
+    import { portal } from "$lib/portal.js";
+    import { trapFocus } from "$lib/focus.js";
+    import { dismissable } from "$lib/dismiss.js";
 
     /*
      * team.read is the sidebar's gate on this screen; team.write is what every
@@ -61,17 +64,24 @@
     let form = $state({ email: "", password: "", role: "staff" });
 
     /*
-     * The roles, and what each is for in one line — the picker is where an
-     * operator decides how much of the store somebody gets, and a bare list of
-     * three words is not enough to decide on. The engine owns the actual
-     * rights (rights.go); these are the sentences.
+     * The store's roles, from the store (D81). A store names and makes its own
+     * now, so a list compiled into the panel would offer roles that do not
+     * exist and miss the ones that do. Each option carries the store's own
+     * sentence for the role, because the picker is where an operator decides
+     * how much of the store somebody gets. Vendor is left out: a vendor's
+     * login is made from the vendor's page, which knows whose it is.
      */
-    const ROLES = [
-        { value: "owner", short: "Owner", label: "Owner — everything, including the team" },
-        { value: "manager", short: "Manager", label: "Manager — the catalog, orders and refunds" },
-        { value: "staff", short: "Staff", label: "Staff — sees the shop, moves orders along" },
-    ];
-    const roleName = (role) => ({ owner: "Owner", manager: "Manager", staff: "Staff" })[role] ?? role;
+    let roleNames = $state([]);
+    const roleOptions = $derived(
+        roleNames
+            .filter((n) => n.role !== "vendor")
+            .map((n) => ({
+                value: n.role,
+                short: n.title,
+                label: n.description ? `${n.title} — ${n.description}` : n.title,
+            })),
+    );
+    const roleName = (role) => roleNames.find((n) => n.role === role)?.title ?? role;
     let errors = $state({});
 
     let confirmOpen = $state(false);
@@ -92,9 +102,14 @@
         }
         loading = true;
         try {
-            const [people, invites] = await Promise.all([auth.list(), auth.invitations()]);
+            const [people, invites, names] = await Promise.all([
+                auth.list(),
+                auth.invitations(),
+                rolesApi.names(),
+            ]);
             superusers = people.data;
             invitations = invites.data ?? [];
+            roleNames = names ?? [];
         } catch (err) {
             toast.error(err);
         } finally {
@@ -229,8 +244,81 @@
 
     const anyDirty = $derived(editorDirty || inviteDirty);
 
+    /*
+     * Adding somebody, the KitCommerce admin's way: an email and a role first,
+     * and only then — when the address has no account — a choice between
+     * making one now and sending a link. On a single store an "account" is an
+     * operator of this store; once accounts span stores (D80) the same check
+     * asks the platform instead, and an address that already has one joins
+     * without either.
+     */
+    let chooseOpen = $state(false);
+    let how = $state("invite"); // "create" | "invite"
+    let newPassword = $state("");
+    let proceeding = $state(false);
+
+    function continueAdd(event) {
+        event?.preventDefault();
+        errors = {};
+        const email = invite.email.trim().toLowerCase();
+        if (!email) {
+            errors.invite = "An email is required.";
+            return;
+        }
+        if (superusers.some((su) => su.email.toLowerCase() === email)) {
+            errors.invite = `${email} is already on the team.`;
+            return;
+        }
+        if (!roleOptions.some((r) => r.value === invite.role)) {
+            errors.invite = "Choose a role.";
+            return;
+        }
+        how = "invite";
+        newPassword = "";
+        chooseOpen = true;
+    }
+
+    async function proceed() {
+        if (proceeding) return;
+        errors = {};
+        if (how === "create" && newPassword.length < 8) {
+            errors.choose = "A password of at least 8 characters is required.";
+            return;
+        }
+        proceeding = true;
+        try {
+            if (how === "create") {
+                await auth.create(invite.email.trim(), newPassword, invite.role);
+                toast.success("User created and added to team");
+                chooseOpen = false;
+                closeInvite({ deliberate: true });
+                await load();
+            } else {
+                await sendInvite();
+                if (issued) {
+                    toast.success("Invite sent");
+                    chooseOpen = false;
+                } else if (errors.invite) {
+                    errors.choose = errors.invite;
+                }
+            }
+        } catch (err) {
+            errors.choose = err.message;
+        } finally {
+            proceeding = false;
+        }
+    }
+
+    /* Staff by default, the least a new person can be given; a store that
+       deleted Staff gets its first role short of owner instead. */
+    const defaultRole = $derived(
+        roleOptions.find((r) => r.value === "staff")?.value ??
+            roleOptions.find((r) => r.value !== "owner")?.value ??
+            "",
+    );
+
     function openInvite() {
-        invite = { email: "", role: "staff" };
+        invite = { email: "", role: defaultRole };
         issued = null;
         copied = false;
         reissued = false;
@@ -404,15 +492,6 @@
         }
     }
 
-    function openCreate() {
-        editing = null;
-        // Staff by default: the least a new person can be given, and the
-        // easiest thing to widen once you know what they need.
-        form = { email: "", password: "", role: "staff" };
-        errors = {};
-        editorOpen = true;
-    }
-
     function openEdit(su) {
         editing = su;
         form = { email: su.email, password: "", role: su.role };
@@ -438,7 +517,7 @@
          * So the create path refuses to send one it cannot name, rather than
          * letting a blank travel and be read as the most powerful answer.
          */
-        if (!editing && !ROLES.some((r) => r.value === form.role)) {
+        if (!editing && !roleOptions.some((r) => r.value === form.role)) {
             errors.role = "Choose a role.";
         }
         if (Object.keys(errors).length) return;
@@ -524,19 +603,13 @@
             </div>
 
             <div class="page-header-primary-btns">
-                <!-- Secondary, because inviting is what you should nearly always
-                     do: choosing somebody else's password means two people know
-                     it from the moment it exists. Creating stays for the cases
-                     invitations cannot serve — a shared account, or somebody
-                     with no reachable inbox. -->
+                <!-- One entry point, as in the KitCommerce admin: the email
+                     and role come first, and how the person arrives (an
+                     account made now, or a link they open) is asked after. -->
                 {#if writable}
-                    <button type="button" class="btn secondary" onclick={openCreate}>
-                        <i class="ri-add-line" aria-hidden="true"></i>
-                        <span class="txt">Create directly</span>
-                    </button>
                     <button type="button" class="btn" onclick={openInvite}>
-                        <i class="ri-mail-send-line" aria-hidden="true"></i>
-                        <span class="txt">Invite</span>
+                        <i class="ri-user-add-line" aria-hidden="true"></i>
+                        <span class="txt">Add team member</span>
                     </button>
                 {/if}
             </div>
@@ -623,7 +696,7 @@
                                             ariaLabel="Role for {su.email}"
                                             value={su.role}
                                             onchange={(role) => changeRole(su, role)}
-                                            options={ROLES}
+                                            options={roleOptions}
                                         />
                                     </div>
                                 {:else}
@@ -933,7 +1006,7 @@
         {#if !editing}
             <div class="field m-t-sm required">
                 <label for="su-role">Role</label>
-                <Select id="su-role" bind:value={form.role} options={ROLES} />
+                <Select id="su-role" bind:value={form.role} options={roleOptions} />
             </div>
             {#if errors.role}
                 <div class="field-help error">{errors.role}</div>
@@ -964,7 +1037,7 @@
 
 <Drawer
     open={inviteOpen}
-    title={issued ? "Send this link" : "Invite somebody"}
+    title={issued ? "Send this link" : "Add team member"}
     size="sm"
     onclose={() => closeInvite()}
 >
@@ -999,7 +1072,7 @@
             )}.
         </div>
     {:else}
-        <form id="invite-form" onsubmit={sendInvite}>
+        <form id="invite-form" onsubmit={continueAdd}>
             <div class="field required" class:error={!!errors.invite}>
                 <label for="invite-email">Email</label>
                 <!-- svelte-ignore a11y_autofocus -->
@@ -1016,11 +1089,11 @@
 
             <div class="field m-t-sm">
                 <label for="invite-role">Role</label>
-                <Select id="invite-role" bind:value={invite.role} options={ROLES} />
+                <Select id="invite-role" bind:value={invite.role} options={roleOptions} />
             </div>
             <div class="field-help">
-                They pick their own password, so nobody else ever knows it. You get a link to
-                send them.
+                Next you choose how they arrive: an account you make now, or a link they open
+                and set their own password with.
             </div>
         </form>
     {/if}
@@ -1053,11 +1126,86 @@
                 class:loading={inviting}
                 disabled={inviting}
             >
-                <span class="txt">Create invitation</span>
+                <span class="txt">Continue</span>
             </button>
         {/if}
     {/snippet}
 </Drawer>
+
+<!-- The KitCommerce admin's "User Account Not Found" choice. Built on the
+     panel's modal (the same markup Confirm uses), so it opens, closes, traps
+     focus and honours reduced motion the way every other dialog here does. -->
+<div
+    class="modal popup sm"
+    data-modal-state={chooseOpen ? "open" : "closed"}
+    inert={!chooseOpen}
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="choose-title"
+    tabindex="-1"
+    use:portal
+    use:trapFocus={chooseOpen}
+    use:dismissable={{ onclose: () => (chooseOpen = false), enabled: chooseOpen && !proceeding }}
+>
+    <div class="modal-content">
+        <h5 id="choose-title" class="m-b-sm">User Account Not Found</h5>
+        <p class="txt-hint m-b-base">
+            The email {invite.email.trim()} does not have a registered account yet. Choose how you
+            would like to proceed.
+        </p>
+        <div class="choice-cards" role="radiogroup" aria-label="How they join">
+            <button
+                type="button"
+                class="choice-card"
+                role="radio"
+                aria-checked={how === "create"}
+                onclick={() => (how = "create")}
+            >
+                <i class="ri-user-add-line" aria-hidden="true"></i>
+                <span class="choice-title">Create Account</span>
+                <span class="choice-sub">Enter a password</span>
+            </button>
+            <button
+                type="button"
+                class="choice-card"
+                role="radio"
+                aria-checked={how === "invite"}
+                onclick={() => (how = "invite")}
+            >
+                <i class="ri-mail-send-line" aria-hidden="true"></i>
+                <span class="choice-title">Send Invite</span>
+                <span class="choice-sub">Send a registration link</span>
+            </button>
+        </div>
+        {#if how === "create"}
+            <div class="field required m-t-base" class:error={!!errors.choose}>
+                <label for="choose-password">Password</label>
+                <input
+                    id="choose-password"
+                    type="password"
+                    autocomplete="new-password"
+                    minlength="8"
+                    bind:value={newPassword}
+                />
+            </div>
+            <div class="field-help">At least 8 characters. Tell them, and ask them to change it.</div>
+        {:else}
+            <p class="txt-hint m-t-base">
+                An invitation link will be made for {invite.email.trim()}. They open it, set their own
+                password and join the team; nobody else ever knows it.
+            </p>
+        {/if}
+        {#if errors.choose}<div class="field-help error m-t-sm">{errors.choose}</div>{/if}
+    </div>
+    <footer class="modal-footer">
+        <button type="button" class="btn transparent m-r-auto" onclick={() => (chooseOpen = false)}>
+            <span class="txt">Cancel</span>
+        </button>
+        <button type="button" class="btn" class:loading={proceeding} disabled={proceeding} onclick={proceed}>
+            <span class="txt">{proceeding ? "Processing…" : "Confirm & Proceed"}</span>
+        </button>
+    </footer>
+</div>
 
 <Confirm
     bind:open={confirmOpen}
@@ -1084,6 +1232,74 @@
 {/if}
 
 <style>
+    /*
+     * The two ways a person joins, as the KitCommerce admin draws them: a
+     * pair of cards, one checked. Feedback on hover, press and focus, and the
+     * checked state lands in 150ms on transform and colour; with reduced
+     * motion the movement goes and the change of state stays.
+     */
+    .choice-cards {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+    .choice-card {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        padding: 12px;
+        text-align: left;
+        border: 1px solid var(--borderColor);
+        border-radius: var(--borderRadius);
+        background: var(--baseColor);
+        color: var(--txtPrimaryColor);
+        cursor: pointer;
+        transition:
+            transform 150ms ease,
+            border-color 150ms ease,
+            box-shadow 150ms ease;
+    }
+    .choice-card:hover {
+        border-color: var(--inputBorderColor);
+        transform: translateY(-1px);
+    }
+    .choice-card:active {
+        transform: translateY(0) scale(0.99);
+    }
+    .choice-card:focus-visible {
+        outline: 2px solid var(--primaryColor);
+        outline-offset: 2px;
+    }
+    .choice-card[aria-checked="true"] {
+        border-color: var(--primaryColor);
+        box-shadow: 0 0 0 1px var(--primaryColor);
+    }
+    .choice-card i {
+        font-size: 1.25rem;
+        margin-bottom: 4px;
+    }
+    .choice-title {
+        font-weight: 600;
+    }
+    .choice-sub {
+        font-size: var(--smFontSize);
+        color: var(--txtHintColor);
+    }
+    @media (max-width: 420px) {
+        .choice-cards {
+            grid-template-columns: 1fr;
+        }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .choice-card,
+        .choice-card:hover,
+        .choice-card:active {
+            transform: none;
+            transition: border-color 150ms ease, box-shadow 150ms ease;
+        }
+    }
+
     /*
      * A checkbox as one item in a `.list-item` row.
      *
