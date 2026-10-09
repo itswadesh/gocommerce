@@ -5,10 +5,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -21,7 +23,7 @@ const platformToken = "platform-token-for-tests-only"
 // newPlatform boots a platform in a namespace of its own on the test
 // database, so it cannot meet another test's stores, and drops every schema
 // it made when the test ends.
-func newPlatform(t *testing.T) *Platform {
+func newPlatform(t *testing.T, opts ...func(*Config)) *Platform {
 	t.Helper()
 	dsn := os.Getenv("GOCOMMERCE_TEST_DB")
 	if dsn == "" {
@@ -31,7 +33,7 @@ func newPlatform(t *testing.T) *Platform {
 	rand.Read(b)
 	ns := "pt" + hex.EncodeToString(b)
 	quiet := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
-	p, err := New(Config{
+	cfg := Config{
 		DBURL:      dsn,
 		Namespace:  ns,
 		BaseDomain: "shops.test",
@@ -40,7 +42,11 @@ func newPlatform(t *testing.T) *Platform {
 		Store:      gocommerce.Config{Logger: quiet},
 		MediaRoot:  t.TempDir(),
 		Logger:     quiet,
-	})
+	}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	p, err := New(cfg)
 	if err != nil {
 		t.Fatalf("platform: %v", err)
 	}
@@ -64,6 +70,23 @@ func newPlatform(t *testing.T) *Platform {
 		rows.Close()
 		for _, s := range schemas {
 			admin.Exec(`DROP SCHEMA IF EXISTS ` + s + ` CASCADE`)
+		}
+		// Per-store reports roles are cluster-global, so they outlive a dropped
+		// schema; drop this namespace's own after its schemas (D79). The shared
+		// base role is left alone — other tests use it.
+		rrows, err := admin.Query(`SELECT rolname FROM pg_roles WHERE rolname LIKE $1`, ns+`\_reports\_%`)
+		if err != nil {
+			return
+		}
+		var roles []string
+		for rrows.Next() {
+			var r string
+			rrows.Scan(&r)
+			roles = append(roles, r)
+		}
+		rrows.Close()
+		for _, r := range roles {
+			admin.Exec(`DROP ROLE IF EXISTS ` + r)
 		}
 	})
 	if err := p.Start(context.Background()); err != nil {
@@ -460,5 +483,125 @@ func TestThePlatformHostServesTheConsole(t *testing.T) {
 	// A store's host still serves its own panel at its root.
 	if rec := call(t, p, "acme.shops.test", http.MethodGet, "/", "", nil); rec.Code != http.StatusOK {
 		t.Errorf("a store's root = %d, want its panel", rec.Code)
+	}
+}
+
+// withTestReports configures a platform with a least-privileged reports login.
+// It is a template: the platform clones a role per store from it (D79). The
+// base role is the DSN's user — cluster-global and shared with the core tests,
+// so created idempotently — and the platform never grants it a schema.
+func withTestReports(t *testing.T, dsn string) func(*Config) {
+	t.Helper()
+	admin, err := gocommerce.OpenDB(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("open admin db: %v", err)
+	}
+	defer admin.Close()
+	if _, err := admin.ExecContext(context.Background(), `
+		DO $$
+		BEGIN
+			IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'gctest_reports') THEN
+				CREATE ROLE gctest_reports LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+			END IF;
+		EXCEPTION WHEN duplicate_object THEN
+			NULL;
+		END $$;`); err != nil {
+		t.Fatalf("create reports role: %v", err)
+	}
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatalf("parse dsn: %v", err)
+	}
+	u.User = url.User("gctest_reports")
+	reportsURL := u.String()
+	return func(c *Config) {
+		c.ReportsDBURL = reportsURL
+		c.ReportsRole = "gctest_reports"
+	}
+}
+
+// A store provisioned on a platform with reports configured runs custom reports
+// as its own least-privileged role, against its own schema. The platform
+// creates the role and grants it SELECT on the schema when it boots the store,
+// so a report reads the store's tables and nothing it was not granted (D78).
+func TestAStoreRunsReportsAsAReadOnlyRole(t *testing.T) {
+	dsn := os.Getenv("GOCOMMERCE_TEST_DB")
+	if dsn == "" {
+		t.Skip("set GOCOMMERCE_TEST_DB to a PostgreSQL URL to run integration tests")
+	}
+	p := newPlatform(t, withTestReports(t, dsn))
+	provision(t, p, "acme")
+
+	app := p.App("acme")
+	if app == nil {
+		t.Fatal("no app for the provisioned store")
+	}
+	ctx := context.Background()
+
+	// The role is not a superuser, and it can read the store's own tables.
+	out, err := app.CustomReports().Run(ctx, "SELECT current_setting('is_superuser') AS v")
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(out.Rows) != 1 || out.Rows[0][0] == nil || *out.Rows[0][0] != "off" {
+		t.Fatal("a store's reports role is a superuser; the barrier is gone")
+	}
+	if _, err := app.CustomReports().Run(ctx, "SELECT count(*) FROM products"); err != nil {
+		t.Fatalf("reading the store's own table: %v", err)
+	}
+
+	// And it still cannot reach past reading.
+	if _, err := app.CustomReports().Run(ctx, "SELECT pg_read_file('/etc/passwd')"); err == nil {
+		t.Error("a store's report read a file off the server")
+	}
+}
+
+// One store's custom report cannot read another store's data. Each store runs
+// its reports as its own role, a member of no other, so naming another store's
+// schema outright — or trying to switch into its role mid-query — is refused by
+// PostgreSQL, not by the parser (D79). search_path keeps unqualified names in
+// the store's own schema but is not a privilege boundary.
+func TestOneStoresReportCannotReadAnother(t *testing.T) {
+	dsn := os.Getenv("GOCOMMERCE_TEST_DB")
+	if dsn == "" {
+		t.Skip("set GOCOMMERCE_TEST_DB to a PostgreSQL URL to run integration tests")
+	}
+	p := newPlatform(t, withTestReports(t, dsn))
+	provision(t, p, "alpha")
+	b := provision(t, p, "beta")
+	ctx := context.Background()
+
+	// Give beta a product worth reading, and confirm beta reads it itself.
+	if rec := call(t, p, "beta.shops.test", http.MethodPost, "/api/admin/products", b.AdminToken, map[string]any{
+		"title": "Beta secret", "status": "active", "sku": "BETA-SECRET", "price_minor": 1000, "stock": 1,
+	}); rec.Code != http.StatusCreated {
+		t.Fatalf("create product in beta = %d: %s", rec.Code, rec.Body)
+	}
+	out, err := p.App("beta").CustomReports().Run(ctx, "SELECT title FROM products")
+	if err != nil {
+		t.Fatalf("beta reading its own product: %v", err)
+	}
+	if len(out.Rows) != 1 || out.Rows[0][0] == nil || *out.Rows[0][0] != "Beta secret" {
+		t.Fatalf("beta read %d rows of its own product, want its one title", len(out.Rows))
+	}
+
+	alpha := p.App("alpha")
+	betaSchema := p.schemaFor("beta")
+
+	// (1) Alpha names beta's schema outright. Its role has no USAGE there.
+	if _, err := alpha.CustomReports().Run(ctx, fmt.Sprintf("SELECT title FROM %s.products", betaSchema)); err == nil {
+		t.Error("alpha's report read beta's products by qualified name")
+	}
+
+	// (2) The escape that slips past the parser: a plain SELECT that switches
+	// role. Alpha's session role is its own, a member of no other, so the
+	// switch is refused — the role is the barrier, not the parse.
+	bt, err := p.Tenant(ctx, "beta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	betaRole := p.reportsRoleFor(bt.ID)
+	if _, err := alpha.CustomReports().Run(ctx, fmt.Sprintf("SELECT set_config('role', '%s', false)", betaRole)); err == nil {
+		t.Errorf("alpha's report switched into beta's role %q", betaRole)
 	}
 }

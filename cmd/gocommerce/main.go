@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -110,6 +111,12 @@ flags:
 		fmt.Fprint(fs.Output(), `
 environment:
   DATABASE_URL      PostgreSQL connection string, used when -db is not given
+  GOCOMMERCE_REPORTS_DATABASE_URL
+                    PostgreSQL connection string for a read-only role that
+                    custom reports run as, used when -reports-db is not given.
+                    It must name a non-superuser role granted only SELECT (see
+                    scripts/reports-role.sql). Leaving it unset disables custom
+                    reports: saving and listing still work, running one does not
   GOCOMMERCE_ADMIN_TOKEN
                     admin bearer token, used when -admin-token is not given
                     (several may be given, comma-separated)
@@ -149,6 +156,7 @@ environment:
 
 	var (
 		dbURL        = fs.String("db", "", "PostgreSQL URL (default $DATABASE_URL)")
+		reportsDB    = fs.String("reports-db", "", "PostgreSQL URL for a read-only role custom reports run as; leaving it unset disables custom reports (default $GOCOMMERCE_REPORTS_DATABASE_URL)")
 		addr         = fs.String("addr", ":8080", "listen address")
 		tokens       = fs.String("admin-token", "", "admin bearer token(s), comma-separated (default $GOCOMMERCE_ADMIN_TOKEN)")
 		currency     = fs.String("currency", gocommerce.DefaultCurrency, "store settlement currency (ISO 4217)")
@@ -212,6 +220,9 @@ environment:
 	if *dbURL == "" {
 		return errors.New("no database URL: pass -db or set DATABASE_URL")
 	}
+	if *reportsDB == "" {
+		*reportsDB = os.Getenv("GOCOMMERCE_REPORTS_DATABASE_URL")
+	}
 	if *tokens == "" {
 		*tokens = os.Getenv("GOCOMMERCE_ADMIN_TOKEN")
 	}
@@ -225,12 +236,13 @@ environment:
 
 	languages := splitList(*langs)
 	cfg := gocommerce.Config{
-		DBURL:       *dbURL,
-		Addr:        *addr,
-		Currency:    *currency,
-		Languages:   languages,
-		AdminTokens: splitList(*tokens),
-		Dev:         *dev || offline,
+		DBURL:        *dbURL,
+		ReportsDBURL: *reportsDB,
+		Addr:         *addr,
+		Currency:     *currency,
+		Languages:    languages,
+		AdminTokens:  splitList(*tokens),
+		Dev:          *dev || offline,
 		// Not or-ed with offline the way Dev is: masking is about what the HTTP
 		// surface publishes, and a store that is a demo is one whichever command
 		// is running against it.
@@ -581,6 +593,17 @@ func superuserCmd(ctx context.Context, app *gocommerce.App, args []string) error
 	return fmt.Errorf("no superuser with email %q", email)
 }
 
+// dsnUser returns the username a URL-style DSN logs in as, or "" if there is
+// none or the DSN does not parse. Used to learn the reports role's name from
+// the reports DSN in platform mode.
+func dsnUser(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil || u.User == nil {
+		return ""
+	}
+	return u.User.Username()
+}
+
 func splitList(s string) []string {
 	if strings.TrimSpace(s) == "" {
 		return nil
@@ -712,8 +735,20 @@ func platformCmd(cfg gocommerce.Config, f platformFlags, buildModules func(strin
 	if f.baseDomain == "" {
 		f.baseDomain = os.Getenv("GOCOMMERCE_BASE_DOMAIN")
 	}
+	// In platform mode the reports DSN is a template: the platform gives each
+	// store its own role cloned from it (D79). ReportsRole names that template
+	// login — the one the DSN logs in as — read straight out of the DSN rather
+	// than asked for a second time.
+	var reportsRole string
+	if cfg.ReportsDBURL != "" {
+		if reportsRole = dsnUser(cfg.ReportsDBURL); reportsRole == "" {
+			return errors.New("platform: GOCOMMERCE_REPORTS_DATABASE_URL must name the reports login as its user")
+		}
+	}
 	p, err := platform.New(platform.Config{
 		DBURL:         cfg.DBURL,
+		ReportsDBURL:  cfg.ReportsDBURL,
+		ReportsRole:   reportsRole,
 		Addr:          cfg.Addr,
 		BaseDomain:    f.baseDomain,
 		PlatformHosts: splitList(f.platformHosts),

@@ -44,6 +44,15 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://gocommerce:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/gocommerce?sslmode=disable
+      # Custom reports run arbitrary operator SQL, so they run as a separate,
+      # read-only role — never the engine's own (a superuser here), which could
+      # terminate connections or read files off the server (D78). Leave this
+      # unset and custom reports are simply disabled; saving and listing still
+      # work. To turn them on, set REPORTS_DB_PASSWORD below (the postgres
+      # service creates the gocommerce_reports role from it on a fresh volume)
+      # and set this URL to match. For an existing database, run
+      # scripts/reports-role.sql once instead.
+      GOCOMMERCE_REPORTS_DATABASE_URL: ${GOCOMMERCE_REPORTS_DATABASE_URL:-}
       # The credential scripts use. A person signs in with the email and
       # password below instead; the engine accepts either on the same routes.
       GOCOMMERCE_ADMIN_TOKEN: ${GOCOMMERCE_ADMIN_TOKEN:?set GOCOMMERCE_ADMIN_TOKEN}
@@ -63,8 +72,15 @@ services:
       POSTGRES_USER: gocommerce
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: gocommerce
+      # Used only on a fresh volume, by the init script below, to create the
+      # read-only custom-reports role (D78). Unset means no role and reports
+      # stay disabled. It must match the password in GOCOMMERCE_REPORTS_DATABASE_URL.
+      REPORTS_DB_PASSWORD: ${REPORTS_DB_PASSWORD:-}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Runs once, on first init of the volume, to create gocommerce_reports.
+      - ./scripts/reports-role.sql:/opt/gocommerce/reports-role.sql:ro
+      - ./scripts/initdb-reports-role.sh:/docker-entrypoint-initdb.d/10-reports-role.sh:ro
     healthcheck:
       # The engine applies its migrations on boot, so it must not start against
       # a database that is still initialising.

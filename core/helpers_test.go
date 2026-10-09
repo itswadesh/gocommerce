@@ -24,6 +24,14 @@ const testDSNEnv = "GOCOMMERCE_TEST_DB"
 
 const testAdminToken = "test-admin-token"
 
+// testReportsRole is the least-privileged login custom reports run as in tests,
+// mirroring the production role in scripts/reports-role.sql: it can connect and
+// SELECT and nothing else. It is a cluster-global object shared by every
+// concurrently-running test schema, created once and granted per schema; a
+// schema's grants vanish with it when the schema is dropped. Trust auth on the
+// test container lets it log in without a password (see pg_hba).
+const testReportsRole = "gctest_reports"
+
 // requireDB returns a connection string pointing at a PostgreSQL schema
 // created for this test alone, dropped when the test finishes.
 //
@@ -57,6 +65,29 @@ func requireDB(t *testing.T) string {
 	if _, err := db.ExecContext(context.Background(), `CREATE SCHEMA `+schema); err != nil {
 		t.Fatalf("create test schema: %v", err)
 	}
+	// Provision the reports role and grant it read on this schema. The role is
+	// created idempotently because packages run concurrently and share it; the
+	// default-privileges grant has to precede the migrations New() will run, so
+	// every table they create is readable by the role without a second grant.
+	if _, err := db.ExecContext(context.Background(), `
+		DO $$
+		BEGIN
+			IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '`+testReportsRole+`') THEN
+				CREATE ROLE `+testReportsRole+` LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+			END IF;
+		EXCEPTION WHEN duplicate_object THEN
+			NULL;
+		END $$;`); err != nil {
+		t.Fatalf("create reports role: %v", err)
+	}
+	for _, stmt := range []string{
+		`GRANT USAGE ON SCHEMA ` + schema + ` TO ` + testReportsRole,
+		`ALTER DEFAULT PRIVILEGES IN SCHEMA ` + schema + ` GRANT SELECT ON TABLES TO ` + testReportsRole,
+	} {
+		if _, err := db.ExecContext(context.Background(), stmt); err != nil {
+			t.Fatalf("grant to reports role: %v", err)
+		}
+	}
 	t.Cleanup(func() {
 		cleanup, err := sql.Open("pgx", base)
 		if err != nil {
@@ -82,6 +113,22 @@ func requireDB(t *testing.T) string {
 // resetSchema is a no-op now that every test gets its own schema. It remains
 // so the call sites read the same as before.
 func resetSchema(t *testing.T, dsn string) { t.Helper() }
+
+// reportsDSN rewrites an admin test DSN to log in as the least-privileged
+// reports role, keeping the same schema (the options= parameter is preserved).
+// It is how a test app's ReportsDBURL is derived, so the reports pool lands in
+// the same schema the engine migrated and reads the tables it created.
+func reportsDSN(adminDSN string) string {
+	u, err := url.Parse(adminDSN)
+	if err != nil {
+		// The test DSNs are URL-style; a parse failure is a test-setup bug, and
+		// returning the admin DSN unchanged would silently defeat the isolation
+		// the reports role exists to prove, so make it fail loudly instead.
+		panic("reportsDSN: cannot parse test DSN: " + err.Error())
+	}
+	u.User = url.User(testReportsRole)
+	return u.String()
+}
 
 // dsnDatabase extracts the database name from a URL- or keyword-style DSN,
 // well enough for the safety guard above.
@@ -113,9 +160,10 @@ func quietLogger() *slog.Logger {
 
 func testConfig(dsn string) Config {
 	return Config{
-		DBURL:       dsn,
-		AdminTokens: []string{testAdminToken},
-		Logger:      quietLogger(),
+		DBURL:        dsn,
+		ReportsDBURL: reportsDSN(dsn),
+		AdminTokens:  []string{testAdminToken},
+		Logger:       quietLogger(),
 	}
 }
 

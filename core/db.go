@@ -25,6 +25,30 @@ const (
 	pingTimeout     = 10 * time.Second
 )
 
+// Reports pool sizing. The custom-report pool is small and, unusually, keeps
+// no idle connections: SetMaxIdleConns(0) means every connection is closed
+// when it is returned rather than handed to the next report. A report is
+// arbitrary operator SQL, and a session-level advisory lock or a plain SET it
+// leaves behind would outlive the rolled-back transaction and reach whoever
+// borrowed the connection next; closing the connection is what guarantees one
+// report cannot see another's session state (D78).
+const maxReportsOpenConns = 4
+
+// OpenReportsDB opens the least-privileged pool custom reports run in. It is a
+// distinct pool from the engine's so a report's connection carries none of the
+// engine's database rights, and it is drained after each use (see
+// maxReportsOpenConns).
+func OpenReportsDB(ctx context.Context, dsn string) (*sql.DB, error) {
+	db, err := OpenDB(ctx, dsn)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(maxReportsOpenConns)
+	db.SetMaxIdleConns(0)
+	db.SetConnMaxLifetime(connMaxLifetime)
+	return db, nil
+}
+
 // OpenDB opens and verifies a PostgreSQL connection pool.
 func OpenDB(ctx context.Context, dsn string) (*sql.DB, error) {
 	if dsn == "" {

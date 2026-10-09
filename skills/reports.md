@@ -177,21 +177,51 @@ POST   /api/admin/reports/custom/run       reports.write  run without saving
 ```
 
 It is the one place a person's own SQL reaches the database, so what matters is
-what it refuses, and there are two layers.
+what it refuses, and there are three layers (D78).
 
-- **A read-only transaction**, which is what actually holds. Every run is
+- **The database role**, which is what actually holds. A report never runs on
+  the engine's own connection: it runs on a second pool (`App.reportsDB`) that
+  logs in as a role granted nothing but `SELECT`. A read-only transaction is not
+  a sandbox — it stops writes and DDL, but PostgreSQL's maintenance functions
+  (`pg_terminate_backend`, `pg_create_physical_replication_slot`,
+  `pg_read_file`) are plain `SELECT`s it allows, and under the engine's own role
+  (a superuser in both compose files) a report could end connections, create
+  replication slots or read files off the server. Only a role that was never
+  granted those rights refuses them. A test proves it: it asserts `is_superuser`
+  is off and that each of those functions is denied.
+- **The read-only transaction**, defence in depth under the role. Every run is
   `BEGIN` … `SET TRANSACTION READ ONLY` with a 15-second `statement_timeout`,
-  always rolled back. PostgreSQL refuses every write and every DDL inside it, so
-  a bug in the layer below is a bad error message rather than a lost table. A
-  test proves it by calling `runInReadOnlyTx` directly with an `UPDATE`.
-- **A parse**, which exists for the error message. It strips comments first —
-  so a verb cannot hide behind one — then requires a single statement beginning
-  `SELECT` or `WITH`, and rejects a writing verb anywhere in it, which is how
-  a CTE smuggles a `DELETE` past a first-word check. An operator who pastes an
-  `UPDATE` reads "a report may only read" instead of a driver error.
+  always rolled back, so nothing a report does outlives it.
+- **A parse**, which exists only for the error message. It strips comments first
+  — so a verb cannot hide behind one — then requires a single statement
+  beginning `SELECT` or `WITH`, and rejects a writing verb anywhere in it, which
+  is how a CTE smuggles a `DELETE` past a first-word check. An operator who
+  pastes an `UPDATE` reads "a report may only read" instead of a driver error.
 
-What it does **not** do is sandbox reading. A report selects anything the
-engine's database user can, which is everything.
+**The feature fails closed.** With no reports role configured
+(`GOCOMMERCE_REPORTS_DATABASE_URL` unset), running a report returns
+`reports_disabled` rather than falling back to the engine's connection — the
+fallback would be the whole hole. Saving and listing reports still work, because
+they touch only `custom_reports`. Create the role with
+[`scripts/reports-role.sql`](../scripts/reports-role.sql); the compose files
+create it on a fresh volume from `REPORTS_DB_PASSWORD`, and `gocommerce doctor`
+fails on a superuser reports role and warns when the feature is off.
+
+**On a platform (D70, D79) a report reads one store because its login can reach
+one store.** The `GOCOMMERCE_REPORTS_DATABASE_URL` the platform is given is a
+template: when it boots a store it creates a login granted read on only that
+store's schema — its password cloned from the template — and points the store's
+reports pool at it. The report then authenticates as a role that is a member of
+no other store's, so it cannot reach another schema by qualified name
+(`SELECT … FROM other_store.customers`) or by switching role mid-query;
+`search_path` resolves unqualified names and is not a privilege boundary. A
+single shared login granted every schema would be exactly that cross-store hole.
+The per-store role is created and granted on boot (so it heals a store made
+before this), and dropped when the store is deleted. The platform's database
+role needs `CREATEROLE`.
+
+What it does **not** do is sandbox reading. The reports role selects every table
+the store has, which is everything.
 
 - **`reports.write` is owner's alone.** Saving a report is deciding what
   everybody with `reports.read` may look at, including tables holding buyers'

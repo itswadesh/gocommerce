@@ -18,25 +18,34 @@ import (
 // promotion actually cost — and no fixed screen can enumerate those.
 //
 // It is the one place in this engine where a person's own SQL reaches the
-// database, so the interesting part is what it refuses, and there are two
-// layers.
+// database, so the interesting part is what it refuses, and there are three
+// layers (D78).
 //
-// The outer one is a parse. It accepts a single statement beginning SELECT or
-// WITH, with comments stripped first so a verb cannot hide behind one, and
-// rejects a WITH whose body writes — which is the one way a statement starting
-// with WITH can change data. It exists for the error message: an operator who
-// pastes an UPDATE should read "a report may only read" rather than a driver
-// error about a read-only transaction.
+// The one that actually holds is the database role. A report never runs on the
+// engine's own connection: it runs on a separate pool (App.reportsDB) that
+// logs in as a role granted nothing but SELECT. That matters because a
+// read-only transaction is not a sandbox — it stops INSERT, UPDATE, DELETE and
+// DDL, but PostgreSQL's maintenance functions are plain SELECTs it allows, and
+// under the engine's own role (a superuser in both compose files) a report
+// could terminate connections, create replication slots or read files off the
+// server. Only a role that was never granted those rights refuses them. So the
+// feature fails closed: with no reports role configured, a report will not run
+// at all, because running it on the engine's connection is the hole this
+// exists to close.
 //
-// The inner one is the read-only transaction, and that is what actually holds.
-// Every run happens inside BEGIN ... SET TRANSACTION READ ONLY with a
-// statement timeout, and the transaction is always rolled back. PostgreSQL
-// refuses INSERT, UPDATE, DELETE, and every DDL inside it, so a parse bug is a
-// bad error message rather than a lost table. A test proves that by going
-// round the parse on purpose.
+// The second layer is the read-only transaction. Every run happens inside
+// BEGIN ... SET TRANSACTION READ ONLY with a statement timeout, always rolled
+// back. It is defence in depth under the role, and it is also what makes a run
+// cheap to reason about: nothing a report does outlives its rollback.
 //
-// What this does NOT do is sandbox reading. A report can select anything the
-// engine's database user can select, which is everything — so reports.write is
+// The third is a parse, and it exists only for the error message. It accepts a
+// single statement beginning SELECT or WITH, with comments stripped first so a
+// verb cannot hide behind one, and rejects a WITH whose body writes. An
+// operator who pastes an UPDATE reads "a report may only read" rather than a
+// permission error from the database.
+//
+// What none of this does is sandbox reading. The reports role can select every
+// table in the store, including buyers' addresses — so reports.write is
 // owner's alone, and the note on the screen says that saving a report is
 // deciding what everyone with reports.read may look at.
 
@@ -156,10 +165,23 @@ func (r *CustomReports) Run(ctx context.Context, query string) (*ReportResult, e
 	return r.runInReadOnlyTx(ctx, checked)
 }
 
-// runInReadOnlyTx is the layer that actually holds, and is called directly by
-// the test that proves a write cannot land even when the parse is bypassed.
+// runInReadOnlyTx runs a query on the least-privileged reports pool, inside a
+// read-only transaction. It is called directly by the test that proves a write
+// cannot land even when the parse is bypassed.
 func (r *CustomReports) runInReadOnlyTx(ctx context.Context, query string) (*ReportResult, error) {
-	tx, err := r.app.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if r.app.reportsDB == nil {
+		// Fail closed. Running the query on r.app.db instead would hand an
+		// operator's SQL the engine's own database rights, which is the whole
+		// problem this guards against (D78). A 4xx, not a 5xx, so the message
+		// reaches the operator rather than being scrubbed as a server error;
+		// its own code so a client can tell "feature off" from "bad SQL".
+		return nil, &APIError{
+			Status:  http.StatusBadRequest,
+			Code:    "reports_disabled",
+			Message: "custom reports are turned off on this store: an operator must configure a read-only reports database (see scripts/reports-role.sql and set GOCOMMERCE_REPORTS_DATABASE_URL)",
+		}
+	}
+	tx, err := r.app.reportsDB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, Internalf(err, "start the report")
 	}

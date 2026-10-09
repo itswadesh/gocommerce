@@ -171,8 +171,14 @@ func (p *Platform) Provision(ctx context.Context, in ProvisionInput) (*Provision
 				return err
 			}
 		}
-		_, err := tx.ExecContext(ctx, `CREATE SCHEMA `+schema)
-		return err
+		if _, err := tx.ExecContext(ctx, `CREATE SCHEMA `+schema); err != nil {
+			return err
+		}
+		// The store's own least-privileged reports role is created by boot, not
+		// here, so it exists for a store provisioned before per-store roles did
+		// too (D79). It reads only this schema, and boot runs it before the
+		// migrations so their tables are covered.
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -182,6 +188,12 @@ func (p *Platform) Provision(ctx context.Context, in ProvisionInput) (*Provision
 		p.forget(in.Slug)
 		if _, err := p.db.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS `+schema+` CASCADE`); err != nil {
 			p.log.Error("platform: could not drop a half-made store's schema", "store", in.Slug, "error", err)
+		}
+		// After the schema, so the role carries no grants and drops cleanly (D79).
+		if role := p.reportsRoleFor(id); role != "" {
+			if _, err := p.db.ExecContext(context.Background(), `DROP ROLE IF EXISTS `+role); err != nil {
+				p.log.Error("platform: could not drop a half-made store's reports role", "store", in.Slug, "role", role, "error", err)
+			}
 		}
 		if _, err := p.db.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, id); err != nil {
 			p.log.Error("platform: could not delete a half-made store", "store", in.Slug, "error", err)
@@ -297,6 +309,15 @@ func (p *Platform) Delete(ctx context.Context, slug string) error {
 	p.retire(slug)
 	if _, err := p.db.ExecContext(ctx, `DROP SCHEMA IF EXISTS `+t.schema+` CASCADE`); err != nil {
 		return err
+	}
+	// The store's reports role, after its schema so it drops cleanly (D79).
+	// retire closed the store's engine, so no session holds it open. A leftover
+	// could log in but was granted only the schema now gone, so it reads
+	// nothing; warn rather than fail the delete over it.
+	if role := p.reportsRoleFor(t.ID); role != "" {
+		if _, err := p.db.ExecContext(ctx, `DROP ROLE IF EXISTS `+role); err != nil {
+			p.log.Warn("platform: could not drop a deleted store's reports role", "store", slug, "role", role, "error", err)
+		}
 	}
 	if _, err := p.db.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, t.ID); err != nil {
 		return err

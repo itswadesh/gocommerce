@@ -311,10 +311,11 @@ ORDER BY units DESC`;
                             ></textarea>
                         </div>
                         <div class="field-help">
-                            SELECT only, one statement, inside a read-only transaction with a
-                            fifteen-second limit — it cannot change anything. It <em>can</em> read
-                            every table in this store, so treat a saved report as something you
-                            have published to everybody who can read reports.
+                            SELECT only, one statement, with a fifteen-second limit. Reports run
+                            as a read-only database role, so they cannot change anything — but
+                            that role <em>can</em> read every table in this store, so treat a
+                            saved report as something you have published to everybody who can
+                            read reports.
                         </div>
 
                         <div class="feed-form-actions">

@@ -72,6 +72,23 @@ const (
 type Config struct {
 	// DBURL is the PostgreSQL connection string. Required.
 	DBURL string
+	// ReportsDBURL is a second connection string, used for one thing only:
+	// running the SQL an operator saves as a custom report. It must name a
+	// login role that is NOT a superuser and can do nothing but read — see
+	// scripts/reports-role.sql and D78. Leave it empty and custom reports are
+	// disabled: the save and list routes still work, but running one returns
+	// an error saying how to turn the feature on.
+	//
+	// The reason it is a separate login rather than a SET ROLE on the main
+	// pool is that a SET ROLE a query can issue it can also RESET. A read-only
+	// transaction stops writes and DDL, but PostgreSQL's maintenance functions
+	// — terminating a backend, creating a replication slot, reading a file —
+	// are plain SELECTs that a read-only transaction allows, and under the
+	// engine's own superuser role (the default in both compose files) they do
+	// real damage. Only a role that was never granted those rights refuses
+	// them, so the barrier has to be the login, not anything the query sits
+	// inside.
+	ReportsDBURL string
 	// MaxOpenConns caps this store's connection pool. Zero keeps the engine's
 	// default of 25, which is right for a store with the process to itself
 	// and wrong for a hundred stores sharing one PostgreSQL behind a platform:
@@ -260,8 +277,12 @@ func (c *Config) applyDefaults() error {
 type App struct {
 	cfg Config
 	db  *sql.DB
-	log *slog.Logger
-	mux *http.ServeMux
+	// reportsDB runs custom reports under a least-privileged login, kept apart
+	// from db so a report can never reach the engine's own database rights
+	// (D78). Nil when Config.ReportsDBURL is empty, which disables the feature.
+	reportsDB *sql.DB
+	log       *slog.Logger
+	mux       *http.ServeMux
 
 	modules []Module
 	// screens are the admin screens modules contributed, in registration
@@ -422,9 +443,22 @@ func New(cfg Config, mods ...Module) (*App, error) {
 		db.SetMaxIdleConns(min(maxIdleConns, cfg.MaxOpenConns))
 	}
 
+	// The reports pool is opened only when configured. A store that never
+	// turns custom reports on carries no second pool; one that does gets a
+	// least-privileged connection that a report cannot escape (D78).
+	var reportsDB *sql.DB
+	if cfg.ReportsDBURL != "" {
+		reportsDB, err = OpenReportsDB(context.Background(), cfg.ReportsDBURL)
+		if err != nil {
+			db.Close()
+			return nil, fmt.Errorf("gocommerce: open reports database: %w", err)
+		}
+	}
+
 	a := &App{
 		cfg:               cfg,
 		db:                db,
+		reportsDB:         reportsDB,
 		log:               cfg.Logger,
 		mux:               http.NewServeMux(),
 		modules:           mods,
@@ -433,8 +467,16 @@ func New(cfg Config, mods ...Module) (*App, error) {
 	}
 	a.buildServices()
 
-	if err := a.migrate(context.Background()); err != nil {
+	// From here on an error must close both pools, not just the engine's.
+	fail := func() {
 		db.Close()
+		if reportsDB != nil {
+			reportsDB.Close()
+		}
+	}
+
+	if err := a.migrate(context.Background()); err != nil {
+		fail()
 		return nil, err
 	}
 
@@ -444,7 +486,7 @@ func New(cfg Config, mods ...Module) (*App, error) {
 	a.subscribeNotifications()
 	a.mountCoreRoutes()
 	if a.regErr != nil {
-		db.Close()
+		fail()
 		return nil, fmt.Errorf("gocommerce: wiring core routes: %w", a.regErr)
 	}
 
@@ -453,7 +495,7 @@ func New(cfg Config, mods ...Module) (*App, error) {
 		err := m.Register(a)
 		a.current = ""
 		if err != nil {
-			db.Close()
+			fail()
 			return nil, fmt.Errorf("gocommerce: module %q: Register: %w", m.Name(), err)
 		}
 		// Screens are collected after Register so a module can decide what it
@@ -461,18 +503,18 @@ func New(cfg Config, mods ...Module) (*App, error) {
 		// later: a malformed descriptor shows up as a blank page long after the
 		// mistake, which is the worst place to find it.
 		if err := a.registerScreens(m.Name(), m); err != nil {
-			db.Close()
+			fail()
 			return nil, fmt.Errorf("gocommerce: module %q: %w", m.Name(), err)
 		}
 		if a.regErr != nil {
-			db.Close()
+			fail()
 			return nil, fmt.Errorf("gocommerce: module %q: %w", m.Name(), a.regErr)
 		}
 		a.log.Info("module registered", "module", m.Name(), "routes", a.routeCount(m.Name()))
 	}
 
 	if err := a.buildSpec(); err != nil {
-		db.Close()
+		fail()
 		return nil, fmt.Errorf("gocommerce: %w", err)
 	}
 	a.startBackgroundWork()
@@ -789,6 +831,9 @@ func (a *App) ListenAndServe() error {
 	select {
 	case err := <-errc:
 		a.shutdownHooks(context.Background())
+		if a.reportsDB != nil {
+			_ = a.reportsDB.Close()
+		}
 		a.db.Close()
 		return err
 	case <-ctx.Done():
@@ -800,6 +845,9 @@ func (a *App) ListenAndServe() error {
 
 	err := a.srv.Shutdown(sctx)
 	a.shutdownHooks(sctx)
+	if a.reportsDB != nil {
+		_ = a.reportsDB.Close()
+	}
 	if cerr := a.db.Close(); err == nil {
 		err = cerr
 	}
@@ -850,5 +898,10 @@ func (a *App) shutdownHooks(ctx context.Context) {
 // ListenAndServe does its own cleanup.
 func (a *App) Close() error {
 	a.shutdownHooks(context.Background())
+	// The reports pool first: closing it cannot fail in a way the caller acts
+	// on, and the engine's own pool is the one whose error is worth returning.
+	if a.reportsDB != nil {
+		_ = a.reportsDB.Close()
+	}
 	return a.db.Close()
 }

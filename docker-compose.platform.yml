@@ -69,6 +69,13 @@ services:
       # API; each store gets its own token when it is created.
       GOCOMMERCE_PLATFORM_TOKEN: ${GOCOMMERCE_PLATFORM_TOKEN:?set GOCOMMERCE_PLATFORM_TOKEN}
       GOCOMMERCE_BASE_DOMAIN: ${GOCOMMERCE_BASE_DOMAIN:?set GOCOMMERCE_BASE_DOMAIN}
+      # Custom reports run as a read-only role, never the engine's own (D78).
+      # In platform mode this URL is a template: the platform gives each store
+      # its own login cloned from it, granted read on only that store's schema,
+      # so one store's report cannot read another's (D79). The DSN points at the
+      # shared database; its user and password are the template. Unset leaves
+      # custom reports disabled for every store; set REPORTS_DB_PASSWORD to match.
+      GOCOMMERCE_REPORTS_DATABASE_URL: ${GOCOMMERCE_REPORTS_DATABASE_URL:-}
     volumes:
       - media:/data/media
     ports:
@@ -81,8 +88,18 @@ services:
       POSTGRES_USER: gocommerce
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: gocommerce
+      # Creates the template custom-reports login on a fresh volume (D78). In
+      # platform mode this role is never granted a store's schema and reports do
+      # not run as it — the platform clones a per-store login from it and grants
+      # that (D79) — so the init script is told to skip the schema grants. The
+      # platform's own database role (POSTGRES_USER, a superuser here) creates
+      # those per-store roles, which needs CREATEROLE.
+      REPORTS_DB_PASSWORD: ${REPORTS_DB_PASSWORD:-}
+      REPORTS_GRANT_SCHEMA: "no"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./scripts/reports-role.sql:/opt/gocommerce/reports-role.sql:ro
+      - ./scripts/initdb-reports-role.sh:/docker-entrypoint-initdb.d/10-reports-role.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gocommerce -d gocommerce"]
       interval: 5s

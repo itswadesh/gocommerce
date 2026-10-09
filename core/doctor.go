@@ -101,6 +101,7 @@ func (a *App) Diagnose(ctx context.Context) Report {
 	add(a.checkReturns(ctx))
 	add(a.checkLedger(ctx))
 	add(a.checkDiscounts(ctx))
+	add(a.checkCustomReports(ctx))
 
 	rep.OK = true
 	for _, c := range rep.Checks {
@@ -787,5 +788,59 @@ func (a *App) checkDiscounts(ctx context.Context) Diagnostic {
 
 	d.Status = StatusOK
 	d.Detail = fmt.Sprintf("%d scoped discount(s), all targeted", scoped)
+	return d
+}
+
+// checkCustomReports reports whether custom reports are configured and, if so,
+// whether the role they run as is actually constrained. A report is operator
+// SQL reaching the database directly, and the only thing standing between it
+// and the whole server is that role: a superuser one, or one shared with the
+// engine, is no barrier at all (D78).
+func (a *App) checkCustomReports(ctx context.Context) Diagnostic {
+	d := Diagnostic{Name: "custom reports"}
+	if a.reportsDB == nil {
+		// Off is a safe state, not a broken one: the save and list routes work
+		// and running a report returns a clear error. A warn so an operator who
+		// meant to turn it on sees that they have not.
+		d.Status = StatusWarn
+		d.Detail = "disabled: no reports database role is configured"
+		d.Hint = "to run saved SQL reports, create a read-only role (scripts/reports-role.sql) " +
+			"and set GOCOMMERCE_REPORTS_DATABASE_URL; leaving it unset keeps the feature off"
+		return d
+	}
+
+	var superuser bool
+	if err := a.reportsDB.QueryRowContext(ctx,
+		`SELECT current_setting('is_superuser')::bool`).Scan(&superuser); err != nil {
+		d.Status, d.Detail, d.Cause = StatusWarn, "cannot inspect the reports role", err.Error()
+		d.Hint = "check GOCOMMERCE_REPORTS_DATABASE_URL points at a reachable role"
+		return d
+	}
+	if superuser {
+		d.Status = StatusFail
+		d.Detail = "the custom-reports role is a superuser"
+		d.Hint = "point GOCOMMERCE_REPORTS_DATABASE_URL at a non-superuser, read-only role " +
+			"(scripts/reports-role.sql); a report running as a superuser can do anything the database can"
+		return d
+	}
+
+	// A non-superuser role that is nonetheless the engine's own role has every
+	// grant the engine has — it can write every core table. Isolation means a
+	// different, weaker role, so flag the case where the two coincide.
+	var reportsUser, engineUser string
+	if err := a.reportsDB.QueryRowContext(ctx, `SELECT current_user`).Scan(&reportsUser); err != nil {
+		d.Status, d.Detail, d.Cause = StatusWarn, "cannot read the reports role name", err.Error()
+		return d
+	}
+	if err := a.db.QueryRowContext(ctx, `SELECT current_user`).Scan(&engineUser); err == nil && reportsUser == engineUser {
+		d.Status = StatusWarn
+		d.Detail = fmt.Sprintf("custom reports run as %q, the engine's own database role", reportsUser)
+		d.Hint = "give reports a separate read-only role (scripts/reports-role.sql); " +
+			"sharing the engine's role means a report has every right the engine does"
+		return d
+	}
+
+	d.Status = StatusOK
+	d.Detail = fmt.Sprintf("reports run as %q, a non-superuser role", reportsUser)
 	return d
 }

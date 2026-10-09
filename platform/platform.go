@@ -78,11 +78,32 @@ const (
 
 var slugRE = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
+// reportsRoleRE bounds the reports role name, which is interpolated into GRANT
+// statements rather than passed as a parameter (an identifier cannot be). A
+// bare SQL identifier has nothing to escape.
+var reportsRoleRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
 // Config configures a platform.
 type Config struct {
 	// DBURL is the database every store and the platform share. Each store
 	// gets a schema in it.
 	DBURL string
+	// ReportsDBURL is the template connection custom reports run as: a
+	// least-privileged, read-only login (D78, D79). It is a template, not the
+	// connection itself — the platform gives each store its OWN role, cloned
+	// from this one (same password, host and database), granted read on only
+	// that store's schema, and a report authenticates as it. One shared login
+	// granted every schema would let one store's report read another's by
+	// qualified name or by SET ROLE, neither of which search_path can bound, so
+	// the login a report runs as has to be a member of no other store's role.
+	// Empty disables custom reports across the platform.
+	ReportsDBURL string
+	// ReportsRole is the login named in ReportsDBURL: the template whose password
+	// each store's own reports role is cloned from, and the role the setup script
+	// and doctor check name. The platform does NOT grant it any store's schema —
+	// in platform mode a report never runs as it (D79). Required when ReportsDBURL
+	// is set, ignored otherwise; a bare SQL identifier because it names a role.
+	ReportsRole string
 	// Addr is the listen address. Defaults to ":8080".
 	Addr string
 	// BaseDomain gives every store a host of its own, <slug>.<BaseDomain>,
@@ -102,9 +123,9 @@ type Config struct {
 	// whose API anybody can call creates stores for anybody.
 	Tokens []string
 	// Store is the template every store's engine is configured from. DBURL,
-	// AdminTokens, MediaDir, Addr and MaxOpenConns are the platform's to set
-	// and ignored here; the currency and languages are defaults a store may
-	// override when it is created.
+	// ReportsDBURL, AdminTokens, MediaDir, Addr and MaxOpenConns are the
+	// platform's to set and ignored here; the currency and languages are
+	// defaults a store may override when it is created.
 	Store gocommerce.Config
 	// MediaRoot holds each store's uploads, in MediaRoot/<slug>. Empty
 	// disables uploads for every store.
@@ -219,6 +240,14 @@ func New(cfg Config) (*Platform, error) {
 	if cfg.Namespace != "" && !namespaceRE.MatchString(cfg.Namespace) {
 		return nil, errors.New("platform: Config.Namespace is lower-case letters, digits and underscores, starting with a letter")
 	}
+	if cfg.ReportsDBURL != "" {
+		if cfg.ReportsRole == "" {
+			return nil, errors.New("platform: Config.ReportsRole is required when Config.ReportsDBURL is set: it names the template reports login")
+		}
+		if !reportsRoleRE.MatchString(cfg.ReportsRole) {
+			return nil, errors.New("platform: Config.ReportsRole is a bare SQL identifier: letters, digits and underscores, starting with a letter or underscore")
+		}
+	}
 	schema := platformSchemaName
 	if cfg.Namespace != "" {
 		schema = cfg.Namespace + "_" + platformSchemaName
@@ -270,6 +299,21 @@ func (p *Platform) load(ctx context.Context) error {
 func (p *Platform) boot(ctx context.Context, t *Tenant) error {
 	cfg := p.cfg.Store
 	cfg.DBURL = withSearchPath(p.cfg.DBURL, t.schema)
+	// Custom reports run as this store's OWN least-privileged role, created and
+	// granted read on only this schema here (D78, D79). Authenticating as a role
+	// that is a member of no other store's is what isolates reports: a report
+	// cannot reach another schema by qualified name or by SET ROLE, neither of
+	// which search_path bounds — it only resolves unqualified names. If the role
+	// cannot be set up the store still serves, with its custom reports disabled
+	// (empty DSN), the same fail-closed default as a store with none configured.
+	if p.cfg.ReportsDBURL != "" {
+		if err := p.ensureReportsRole(ctx, t.ID, t.schema); err != nil {
+			p.log.Error("platform: a store's reports role could not be set up; its custom reports are disabled",
+				"store", t.Slug, "role", p.reportsRoleFor(t.ID), "error", err)
+		} else {
+			cfg.ReportsDBURL = withSearchPath(withReportsUser(p.cfg.ReportsDBURL, p.reportsRoleFor(t.ID)), t.schema)
+		}
+	}
 	// A store's static token is its own and nobody else's: the template's
 	// tokens are deliberately dropped, because one token opening every store
 	// would be a platform credential wearing a store's name.
@@ -612,6 +656,111 @@ func (p *Platform) schemaFor(slug string) string {
 		s = p.cfg.Namespace + "_" + s
 	}
 	return s
+}
+
+// reportsRoleFor names a store's own reports login, the role its custom reports
+// authenticate as. Each store has its own so the role is a member of no other
+// store's and cannot cross into another schema (D79). The name carries the
+// namespace, because roles are cluster-global and two platforms sharing one
+// cluster must not collide as their schemas do not, and the tenant id, which is
+// unique within a platform and keeps the name short — a schema-derived name can
+// pass PostgreSQL's 63-byte limit and be truncated into a collision, where
+// <namespace (≤21)>_reports_<id> cannot. Empty when reports are off, so callers
+// guard on it.
+func (p *Platform) reportsRoleFor(tenantID int64) string {
+	if p.cfg.ReportsDBURL == "" {
+		return ""
+	}
+	if p.cfg.Namespace != "" {
+		return fmt.Sprintf("%s_reports_%d", p.cfg.Namespace, tenantID)
+	}
+	return fmt.Sprintf("reports_%d", tenantID)
+}
+
+// ensureReportsRole creates a store's reports login if it is missing and makes
+// sure it can read that store's schema and nothing else. Idempotent: it serves
+// a new store and one provisioned before per-store roles existed alike, and
+// runs on every boot. It must run before the store's migrations so its default
+// privileges cover the tables they create, which is why boot calls it before
+// building the engine. The password is cloned from the platform's reports DSN
+// so one credential still serves every store; with none — a trust-authenticated
+// test database — the role is created without one.
+func (p *Platform) ensureReportsRole(ctx context.Context, tenantID int64, schema string) error {
+	role := p.reportsRoleFor(tenantID)
+	if role == "" {
+		return nil
+	}
+	var exists bool
+	if err := p.db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)`, role).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		// format quotes the identifier (%I) and the password (%L): the role name
+		// is ours and already safe, the password is the operator's. A role that
+		// can log in but was granted nothing can read nothing, so even a setup
+		// that fails after this leaks nothing — it fails closed.
+		password, hasPassword := reportsPassword(p.cfg.ReportsDBURL)
+		var create string
+		var err error
+		if hasPassword {
+			err = p.db.QueryRowContext(ctx,
+				`SELECT format('CREATE ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS', $1::text, $2::text)`,
+				role, password).Scan(&create)
+		} else {
+			err = p.db.QueryRowContext(ctx,
+				`SELECT format('CREATE ROLE %I LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS', $1::text)`,
+				role).Scan(&create)
+		}
+		if err != nil {
+			return err
+		}
+		// A concurrent boot of the same store may have won the race; its role is
+		// the same role, so a duplicate is success, not failure.
+		if _, err := p.db.ExecContext(ctx, create); err != nil && !strings.Contains(err.Error(), "already exists") {
+			return err
+		}
+	}
+	// USAGE and SELECT on the tables there now, and default privileges so the
+	// tables the migrations create next are readable without a later grant. All
+	// three are schema-qualified, so the connection's search_path does not
+	// matter; the role and schema names are safe identifiers.
+	for _, stmt := range []string{
+		`GRANT USAGE ON SCHEMA ` + schema + ` TO ` + role,
+		`GRANT SELECT ON ALL TABLES IN SCHEMA ` + schema + ` TO ` + role,
+		`ALTER DEFAULT PRIVILEGES IN SCHEMA ` + schema + ` GRANT SELECT ON TABLES TO ` + role,
+	} {
+		if _, err := p.db.ExecContext(ctx, stmt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// withReportsUser swaps the user in a reports DSN for a store's own role,
+// keeping the password and everything else, so the connection authenticates as
+// that role rather than the shared template (D79).
+func withReportsUser(dsn, user string) string {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return dsn
+	}
+	if pw, ok := u.User.Password(); ok {
+		u.User = url.UserPassword(user, pw)
+	} else {
+		u.User = url.User(user)
+	}
+	return u.String()
+}
+
+// reportsPassword reads the password from a reports DSN, to clone onto each
+// store's own role. Absent under trust authentication, where none is needed.
+func reportsPassword(dsn string) (string, bool) {
+	u, err := url.Parse(dsn)
+	if err != nil || u.User == nil {
+		return "", false
+	}
+	return u.User.Password()
 }
 
 func normalizeHost(h string) string {

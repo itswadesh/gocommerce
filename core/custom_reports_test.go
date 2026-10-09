@@ -2,6 +2,7 @@ package gocommerce
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -109,8 +110,9 @@ func TestTheTwoShapesThatRun(t *testing.T) {
 	}
 }
 
-// The transaction is the real enforcement, so a write that somehow gets past
-// the parse still cannot land. Proven by going around the parse deliberately.
+// A write that gets past the parse still cannot land: the reports role cannot
+// write and the transaction is read-only, so two layers refuse it below the
+// parse. Proven by going around the parse deliberately.
 func TestTheTransactionRefusesAWriteTheParseMissed(t *testing.T) {
 	app := newTestApp(t)
 	ctx := context.Background()
@@ -134,6 +136,73 @@ func TestTheTransactionRefusesAWriteTheParseMissed(t *testing.T) {
 	}
 	if title == "changed" {
 		t.Fatal("the write landed; the read-only transaction is not doing anything")
+	}
+}
+
+// The real barrier is the database role, not the read-only transaction. A
+// read-only transaction stops writes and DDL but allows PostgreSQL's
+// maintenance functions, which under a superuser role can terminate
+// connections, create replication slots or read files off the server. The
+// reports role was granted nothing but SELECT, so the database itself refuses
+// them. If a change ever ran reports on the engine's own (superuser)
+// connection, the is_superuser assertion and these refusals would start to
+// fail — which is the regression this test exists to catch (D72).
+func TestAReportRunsAsALeastPrivilegedRole(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+
+	out, err := app.CustomReports().Run(ctx, "SELECT current_setting('is_superuser') AS v")
+	if err != nil {
+		t.Fatalf("reading is_superuser: %v", err)
+	}
+	if len(out.Rows) != 1 || out.Rows[0][0] == nil || *out.Rows[0][0] != "off" {
+		t.Fatal("the reports role is a superuser; the barrier is gone")
+	}
+
+	// Each of these needs a privilege the reports role was never granted, so
+	// the database denies it even though every one is a plain SELECT a
+	// read-only transaction would wave through.
+	for _, q := range []string{
+		"SELECT pg_read_file('/etc/passwd')",
+		"SELECT pg_ls_dir('.')",
+		"SELECT pg_create_physical_replication_slot('gctest_probe')",
+		"SELECT pg_reload_conf()",
+	} {
+		if _, err := app.CustomReports().Run(ctx, q); err == nil {
+			t.Errorf("%q was permitted; a report can do more than read", q)
+		}
+	}
+}
+
+// With no reports role configured the feature fails closed: saving and listing
+// still work, but running a report returns a clear error rather than falling
+// back to the engine's own connection — which is the hole the role closes.
+func TestCustomReportsFailClosedWithoutARole(t *testing.T) {
+	dsn := requireDB(t)
+	cfg := testConfig(dsn)
+	cfg.ReportsDBURL = "" // this store never configured a reports role
+	app, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = app.Close() })
+	ctx := context.Background()
+
+	saved, err := app.CustomReports().Save(ctx, CustomReportInput{Name: "Later", SQL: "SELECT 1 AS n"}, nil)
+	if err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if rows, err := app.CustomReports().Saved(ctx); err != nil || len(rows) != 1 {
+		t.Fatalf("saved = %d, %v; save and list must work with reports off", len(rows), err)
+	}
+
+	_, err = app.CustomReports().Run(ctx, saved.SQL)
+	if err == nil {
+		t.Fatal("a report ran with no reports role configured")
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "reports_disabled" {
+		t.Fatalf("error = %v, want code reports_disabled", err)
 	}
 }
 
