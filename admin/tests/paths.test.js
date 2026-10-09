@@ -41,6 +41,8 @@ test("new paths, other apps and assets are left alone", () => {
         "/platform", "/platform/acme", "/portal", "/portal/orders",
         "/_app/immutable/x.js", "/images/logo.svg", "/fonts/inter.woff2",
         "/favicon.svg", "/theme.js", "/api/admin/orders",
+        // Served by the engine, not the panel: the API reference and liveness.
+        "/docs", "/doc", "/health",
     ]) {
         assert.equal(dashPath(p), null, p);
     }

@@ -25,8 +25,13 @@ test("the layout treats /admin/auth as public and sends signed-out visitors ther
     assert.match(layout, /safeNext\(/);
 });
 
-test("old addresses redirect through dashPath, keeping the query", () => {
-    const load = read("../src/routes/+layout.js");
+// A catch-all route rather than the root layout's load: an address with no
+// route is a 404 to the router before any layout runs, so a redirect there
+// arrives after "Not found" has already been logged.
+test("old addresses redirect through dashPath from a catch-all route, keeping the query", () => {
+    const load = read("../src/routes/[...legacy]/+page.js");
     assert.match(load, /dashPath\(/);
     assert.match(load, /url\.search/);
+    assert.match(load, /error\(404/);
+    assert.doesNotMatch(read("../src/routes/+layout.js"), /dashPath/);
 });

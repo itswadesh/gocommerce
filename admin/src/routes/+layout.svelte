@@ -509,7 +509,7 @@
             {/if}
             <a
                 class="dropdown-item"
-                href="{base}/dash/docs"
+                href="{base}/docs"
                 target="_blank"
                 rel="noreferrer"
                 onclick={() => document.getElementById("logged-user-dropdown")?.hidePopover()}

@@ -28,6 +28,8 @@ const RENAMED = [
 const STAYS = [
     "/dash", "/admin", "/select-store", "/stores", "/platform", "/portal",
     "/_app", "/images", "/fonts", "/favicon.svg", "/theme.js", "/api",
+    // The engine's own pages beside the panel: the API reference and liveness.
+    "/docs", "/doc", "/health",
 ];
 
 function under(path, prefix) {
