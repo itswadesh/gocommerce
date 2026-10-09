@@ -9,7 +9,7 @@
      * question, which is the one an operator actually arrives with, and hands
      * the first to the role's own screen where there is room for it.
      *
-     * A store makes roles of its own here (D81), the KitCommerce admin's way:
+     * A store makes roles of its own here (D80), the KitCommerce admin's way:
      * a name first, then the rights on the role's own page, where there is
      * room for the matrix. Deleting is on that page too, offered only once
      * nobody holds the role, which is why the list counts holders.
@@ -185,7 +185,7 @@
                 </div>
 
                 <div class="btns-group">
-                    <button type="button" class="btn" onclick={openAdd}>
+                    <button type="button" class="btn" aria-label="Add role" title="Add role" onclick={openAdd}>
                         <i class="ri-add-line" aria-hidden="true"></i>
                         <span class="txt">Add role</span>
                     </button>

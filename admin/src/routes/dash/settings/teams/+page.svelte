@@ -64,7 +64,7 @@
     let form = $state({ email: "", password: "", role: "staff" });
 
     /*
-     * The store's roles, from the store (D81). A store names and makes its own
+     * The store's roles, from the store (D80). A store names and makes its own
      * now, so a list compiled into the panel would offer roles that do not
      * exist and miss the ones that do. Each option carries the store's own
      * sentence for the role, because the picker is where an operator decides
@@ -248,7 +248,7 @@
      * Adding somebody, the KitCommerce admin's way: an email and a role first,
      * and only then — when the address has no account — a choice between
      * making one now and sending a link. On a single store an "account" is an
-     * operator of this store; once accounts span stores (D80) the same check
+     * operator of this store; once accounts span stores (D81) the same check
      * asks the platform instead, and an address that already has one joins
      * without either.
      */
@@ -607,7 +607,13 @@
                      and role come first, and how the person arrives (an
                      account made now, or a link they open) is asked after. -->
                 {#if writable}
-                    <button type="button" class="btn" onclick={openInvite}>
+                    <button
+                        type="button"
+                        class="btn"
+                        aria-label="Add team member"
+                        title="Add team member"
+                        onclick={openInvite}
+                    >
                         <i class="ri-user-add-line" aria-hidden="true"></i>
                         <span class="txt">Add team member</span>
                     </button>
@@ -1250,10 +1256,10 @@
         gap: 2px;
         padding: 12px;
         text-align: left;
-        border: 1px solid var(--borderColor);
+        border: 1px solid var(--inputBorderColor);
         border-radius: var(--borderRadius);
-        background: var(--baseColor);
-        color: var(--txtPrimaryColor);
+        background: var(--surfaceColor);
+        color: var(--surfaceTxtColor);
         cursor: pointer;
         transition:
             transform 150ms ease,
@@ -1261,7 +1267,7 @@
             box-shadow 150ms ease;
     }
     .choice-card:hover {
-        border-color: var(--inputBorderColor);
+        border-color: var(--surfaceTxtHintColor);
         transform: translateY(-1px);
     }
     .choice-card:active {
@@ -1271,9 +1277,23 @@
         outline: 2px solid var(--primaryColor);
         outline-offset: 2px;
     }
+    /* The surface's text colour, not --primaryColor: primary is near-black in
+       the dark theme and a checked card drawn in it disappears into the
+       dialog. (--txt*Color and --borderColor are not set on these screens.) */
+    .choice-card {
+        position: relative;
+    }
     .choice-card[aria-checked="true"] {
-        border-color: var(--primaryColor);
-        box-shadow: 0 0 0 1px var(--primaryColor);
+        border-color: var(--surfaceTxtColor);
+        box-shadow: 0 0 0 1px var(--surfaceTxtColor);
+    }
+    .choice-card[aria-checked="true"]::after {
+        content: "\2713";
+        position: absolute;
+        top: 8px;
+        right: 10px;
+        font-weight: 700;
+        color: var(--surfaceTxtColor);
     }
     .choice-card i {
         font-size: 1.25rem;
@@ -1284,7 +1304,7 @@
     }
     .choice-sub {
         font-size: var(--smFontSize);
-        color: var(--txtHintColor);
+        color: var(--surfaceTxtHintColor);
     }
     @media (max-width: 420px) {
         .choice-cards {

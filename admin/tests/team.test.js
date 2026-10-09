@@ -26,3 +26,22 @@ test("adding a member asks for email and role, then how to bring them in", () =>
     assert.match(team, />\s*Send Invite\s*</);
     assert.match(team, /Confirm &amp; Proceed|Confirm & Proceed/);
 });
+
+// Below 550px the page header shows its buttons as bare icons, so the name a
+// screen reader announces has to be on the button itself.
+test("the header's add buttons keep a name when they shrink to an icon", () => {
+    assert.match(team, /aria-label="Add team member"/);
+    const list = readFileSync(
+        new URL("../src/routes/dash/settings/roles/+page.svelte", import.meta.url),
+        "utf8",
+    );
+    assert.match(list, /aria-label="Add role"/);
+});
+
+// --primaryColor is near-black in the dark theme; a checked card drawn in it
+// vanished into the dialog, and the unchecked one looked chosen instead.
+test("the checked way-to-join card is drawn in a colour both themes can see", () => {
+    const checked = team.match(/\.choice-card\[aria-checked="true"\] \{[^}]*\}/)?.[0] ?? "";
+    assert.match(checked, /--surfaceTxtColor/);
+    assert.doesNotMatch(checked, /--primaryColor/);
+});
