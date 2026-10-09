@@ -162,7 +162,7 @@ instead of collapsing into one invented bestseller.
 ## Custom reports: a saved SELECT
 
 Everything above answers "how much did we sell", which every shop asks, and it
-lives on the dashboard. `/reports` is the other kind: the questions only this
+lives on the dashboard. `/dash/reports` is the other kind: the questions only this
 shop has — which wholesale customers have not ordered since March, what the
 Tuesday promotion actually cost — written as SQL once and run by whoever needs
 the answer (M45).

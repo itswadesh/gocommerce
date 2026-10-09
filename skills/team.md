@@ -296,7 +296,7 @@ fall back to the identifier — but as a dotted name nobody can act on.
 
 Invite them. `POST /api/admin/invitations` returns a `token` and an `accept_url`
 **once** — only the SHA-256 is stored, exactly as with a session — and the
-invitee sets their own password at `/accept-invite/<token>`, which signs them in.
+invitee sets their own password at `/admin/auth/accept-invite/<token>`, which signs them in.
 
 The alternative, which this engine did until M18 and still supports for the cases
 invitations cannot serve, is an owner choosing somebody else's password and then

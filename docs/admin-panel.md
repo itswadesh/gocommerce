@@ -478,7 +478,7 @@ say everything true about those rows.
 
 ## Price lists, and putting prices on one
 
-The Price lists screen (`/pricing`) makes the list: its name, the customer group
+The Price lists screen (`/dash/pricing`) makes the list: its name, the customer group
 it applies to (or everyone), a start and end, a priority, and whether it is
 live. It does not yet put prices on one — the Prices column counts them, and
 nothing on the screen adds one. Until it does, prices go on through the API
@@ -594,10 +594,19 @@ Mounted at the **root**. The API lives entirely under `/api`, `/health`, `/doc`
 and a module's `/x/`, so nothing competes for `/` — and the store's address is
 the dashboard's address.
 
+The screens themselves sit under **`/dash`** — `/dash/orders`,
+`/dash/settings/teams`, `/dash/shipping-settings` — and signing in, resetting a
+password and accepting an invitation under `/admin/auth`. Those are the
+KitCommerce admin's addresses, so a person who works in both finds an order at
+the same place. `/` sends a visitor to `/dash`, or to `/admin/auth/login` first.
+Every address from before the move redirects to its new one with the query
+kept (`$lib/paths.js` holds the whole mapping), so bookmarks and links already
+emailed keep working.
+
 - `GET /{path...}` serves the embedded files. Go's `ServeMux` prefers the most
   specific pattern, so every real API route still wins over this catch-all.
 - An unknown path with no file extension returns `index.html`, so refreshing on
-  `/orders` works. A missing *asset* returns 404 — answering a missing `.js`
+  `/dash/orders` works. A missing *asset* returns 404 — answering a missing `.js`
   with HTML would turn a build problem into a baffling syntax error.
 - **An unmatched path under an API namespace returns the JSON 404**, not the
   panel. This is the one guard the root mount makes necessary: without it,
