@@ -166,7 +166,7 @@
                 </p>
                 <p>
                     The email may carry a code instead of a link; paste it at
-                    <code>/reset-password</code>. Nothing arrived? Check the spam folder, or ask an
+                    <code>/admin/auth/reset-password</code>. Nothing arrived? Check the spam folder, or ask an
                     owner to send you one from Settings &rarr; Team.
                 </p>
             </div>

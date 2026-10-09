@@ -11,6 +11,7 @@
     import "../app.css";
     import { base } from "$app/paths";
     import { page } from "$app/state";
+    import { goto } from "$app/navigation";
     import { auth, events, getToken, can, session } from "$lib/api.js";
     import { clearProfile, clearSettings, loadProfile, loadSettings } from "$lib/settings.svelte.js";
     import { forgetModules, loadModules } from "$lib/modules.svelte.js";
@@ -18,6 +19,7 @@
     import { health } from "$lib/health.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
     import { NAV, visibleNav as allowedNav } from "$lib/nav.js";
+    import { safeNext } from "$lib/paths.js";
     import { isBareKey, isTypingTarget, modalIsOpen, NEW_EVENT } from "$lib/shortcuts.js";
     import Toasts from "$lib/components/Toasts.svelte";
     import Login from "$lib/components/Login.svelte";
@@ -52,8 +54,14 @@
      * The trade portal is the third (D77): the store's business buyers, who
      * sign in with a shopper account and have no staff credential to give.
      * Its own layout decides between its sign-in and its screens.
+     *
+     * The invitation, password-reset and sign-in screens all sit under
+     * /admin/auth, where the KitCommerce admin keeps its own: every screen a
+     * person reaches before they have a session, at one prefix.
      */
-    const PUBLIC_PREFIXES = ["/accept-invite", "/platform", "/portal"];
+    const PUBLIC_PREFIXES = ["/admin/auth", "/platform", "/portal"];
+    const LOGIN = "/admin/auth/login";
+    const onLogin = $derived(page.url.pathname.replace(base, "") === LOGIN);
     const isPublic = $derived(
         PUBLIC_PREFIXES.some((prefix) =>
             page.url.pathname.replace(base, "").startsWith(prefix),
@@ -318,6 +326,26 @@
               : { show: false, href: "/dash/settings", label: "" },
     );
 
+    /*
+     * Sign-in has an address of its own, /admin/auth/login, as the KitCommerce
+     * admin's does. A signed-out visit to a store screen goes there carrying
+     * the screen in `next`; once a session exists the login address sends the
+     * visitor on to it. Both directions live here, beside the session they
+     * read, so no screen has to know it can be reached signed out.
+     */
+    $effect(() => {
+        if (!ready || isPublic) return;
+        if (!authenticated) {
+            const here = page.url.pathname.replace(base, "") + page.url.search;
+            goto(`${base}${LOGIN}?next=${encodeURIComponent(here)}`, { replaceState: true });
+        }
+    });
+    $effect(() => {
+        if (ready && authenticated && onLogin) {
+            goto(base + safeNext(page.url.searchParams.get("next")), { replaceState: true });
+        }
+    });
+
     function onAuthenticated() {
         // auth.login has already written the session; the shell only reacts to
         // it. Forced, because the boot attempt ran with no token — or failed.
@@ -505,7 +533,21 @@
          way back if it throws. +error.svelte cannot cover either half — there
          is no `load` in this panel, so it only ever fires for a missing route. -->
     <svelte:boundary>
-        {#if isPublic}
+        {#if onLogin}
+            <div class="page">
+                <!-- Why the login form is back, when it is back because a
+                     credential stopped resolving mid-session rather than
+                     because nobody has signed in yet. -->
+                {#if session.expired}
+                    <div class="alert warning m-b-base">
+                        <p>Your session ended. Sign in to continue.</p>
+                    </div>
+                {/if}
+                {#if ready && !authenticated}
+                    <Login onauthenticated={onAuthenticated} />
+                {/if}
+            </div>
+        {:else if isPublic}
             <!-- No header, no nav: there is nothing yet to navigate as. -->
             {@render children?.()}
         {:else if ready && authenticated}
@@ -577,18 +619,6 @@
                  explain to somebody who has not signed in. -->
             <CommandPalette bind:open={paletteOpen} />
             <ShortcutHelp bind:open={helpOpen} />
-        {:else if ready}
-            <div class="page">
-                <!-- Why the login form is back, when it is back because a
-                     credential stopped resolving mid-session rather than
-                     because nobody has signed in yet. -->
-                {#if session.expired}
-                    <div class="alert warning m-b-base">
-                        <p>Your session ended. Sign in to continue.</p>
-                    </div>
-                {/if}
-                <Login onauthenticated={onAuthenticated} />
-            </div>
         {:else}
             <div class="page"></div>
         {/if}
