@@ -1,8 +1,8 @@
 # One sign-in across stores, and custom roles
 
-Status: design, awaiting review. Two parts, built and shipped in this order:
-part 2 (custom roles and the team flow) first, because it stands on a single
-store and is smaller; part 1 (accounts and the store switcher) second.
+Status: design, awaiting review. Built and shipped in this order: the URL
+move to `/dash/`; part 2 (custom roles and the team flow), because it stands
+on a single store and is smaller; part 1 (accounts and the store switcher).
 
 The reference is the KitCommerce admin (`kitcommerce-admin`): one sign-in, a
 "Select Store" dialog, a switch in the account menu, roles a store names
@@ -15,8 +15,10 @@ Asked:
 
 - Sign in once at **admin.kitcommerce.store** and change store from a
   dropdown, as Shopify's admin does.
-- The chosen store is **remembered, not in the path**: the address stays
-  `admin.kitcommerce.store/orders`.
+- The chosen store is **remembered, not in the path**.
+- **The panel's URLs are kitcommerce-admin's**: `admin.kitcommerce.store/dash/orders`,
+  as `admin.varnijewels.com/dash/orders` — every store screen under `/dash/`,
+  named as kitcommerce-admin names it (see *URLs* below).
 - **Custom roles over today's rights**: a store creates, renames and deletes
   its own roles; each is a set of the rights the engine already has.
 - Team and permissions **the kitcommerce-admin way**.
@@ -40,6 +42,61 @@ Kept from GoCommerce, deliberately not copied:
   and the like), not kitcommerce-admin's `list/view/save/del` per module.
 - **owner** stays a fixed role that holds every right and cannot be edited,
   and the last owner of a store still cannot be removed or demoted.
+
+## URLs (built first, before either part)
+
+Every store screen moves under `/dash/`, and where kitcommerce-admin has the
+same screen it takes kitcommerce-admin's path exactly. Screens kitcommerce-admin
+does not have keep their name under `/dash/`. The move is its own change,
+shipped before part 2, so the two parts land on the final paths.
+
+| Today | Becomes |
+|---|---|
+| `/` (Home) | `/dash` |
+| `/orders`, `/orders/[id]` | `/dash/orders`, `/dash/orders/[id]` |
+| `/products`, `/products/[id]` | `/dash/products`, `/dash/products/[id]` |
+| `/categories`, `/collections` | `/dash/categories`, `/dash/collections` (+ `/[id]`) |
+| `/customers` | `/dash/customers` |
+| `/customers/groups` | `/dash/customer-groups` |
+| `/discounts` | `/dash/coupons` |
+| `/inventory`, `/invoices`, `/payouts` | `/dash/inventory`, `/dash/invoices`, `/dash/payouts` |
+| `/carts` | `/dash/checkouts` |
+| `/locations` | `/dash/warehouses` |
+| `/accounts` | `/dash/users` |
+| `/vendors`, `/vendors/[id]` | `/dash/vendors`, `/dash/vendors/[id]` |
+| `/reports`, `/reviews`, `/wishlists`, `/feeds`, `/plugins`, `/menus` | same names under `/dash/` |
+| `/cms`, `/cms/[id]` | `/dash/pages`, `/dash/pages/[id]` |
+| `/faq` | `/dash/faqs` |
+| `/sitemap` | `/dash/sitemaps` |
+| `/newsletter` | `/dash/newsletter-subscriptions` |
+| `/contact` | `/dash/contact-messages` |
+| `/jobs` | `/dash/background-jobs` |
+| `/data/import` | `/dash/import` |
+| `/notifications`, `/email`, `/sms` | `/dash/notifications`, `/dash/notifications/email`, `/dash/notifications/sms` |
+| `/shipping` | `/dash/shipping-settings` |
+| `/shipping/providers` | `/dash/shipping-providers` |
+| `/settings` | `/dash/settings` |
+| `/settings/superusers` | `/dash/teams` |
+| `/settings/roles`, `/settings/roles/[role]` | `/dash/roles`, `/dash/roles/[id]` |
+| `/settings/api-keys` | `/dash/api-keys` |
+| `/settings/webhooks` | `/dash/webhooks` |
+| `/settings/payments` | `/dash/payment-methods` |
+| everything else (`b2b/*`, `channels`, `data`, `media`, `pricing`, `taxes`, `orders/picking`, `orders/[id]/print`, `settings/account`, `settings/agent`, `settings/attributes`, `settings/audit`, `settings/diagnostics`, `settings/events`, `x/[slug]`) | the same path under `/dash/` |
+| sign-in (the layout's `<Login>`) | `/admin/auth/login` |
+| `/reset-password/[[token]]` | `/admin/auth/reset-password` |
+| `/accept-invite/[token]` | `/admin/auth/accept-invite/[token]` (kitcommerce-admin has no equivalent) |
+| — (part 1) | `/select-store`, `/stores/create` |
+
+`/platform` and `/portal` do not move: they are other people's screens.
+
+- Every old path redirects to its new one, query string kept, so bookmarks
+  and links already sent keep working.
+- Links the server writes — the invitation `accept_url`, password-reset
+  emails, notification emails that link into the panel, a module's
+  `Screen` paths (D57), `nav.js` — move with it. Module screens keep their
+  module-chosen slug under `/dash/x/[slug]`.
+- Root `/` redirects to `/dash` when signed in and to `/admin/auth/login`
+  when not.
 
 ## Part 2 — custom roles, and the team flow
 
@@ -209,6 +266,9 @@ session sign-in with 409 `use_admin_host`.
   dialog paths, Roles add/delete; desktop, dark and mobile; no console
   errors, no horizontal overflow.
 - `scripts/smoke.ps1` unchanged and passing on a single store.
+- URLs: every row of the table above opens its screen at the new path, and
+  its old path redirects there with the query string kept; the invitation
+  and reset links the server writes open the new paths.
 
 ## Out of scope
 
