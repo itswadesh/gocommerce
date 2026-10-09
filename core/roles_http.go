@@ -14,8 +14,17 @@ import "net/http"
 // the first without the second.
 func (a *App) mountRoleRoutes() {
 	a.HandleAdminFunc("GET /api/admin/roles", a.handleListRoles, RightRolesWrite)
+	a.HandleAdminFunc("POST /api/admin/roles", a.handleCreateRole, RightRolesWrite)
+	// The names alone, for the screens that hand a role out. Behind team.read,
+	// not roles.write: choosing somebody's role is staffing the shop, and a
+	// store may let a manager staff it without letting them redraw the rules.
+	a.HandleAdminFunc("GET /api/admin/roles/names", a.handleRoleNames, RightTeamRead)
 	a.HandleAdminFunc("PUT /api/admin/roles/{role}", a.handleSetRoleRights, RightRolesWrite)
-	a.HandleAdminFunc("DELETE /api/admin/roles/{role}", a.handleResetRoleRights, RightRolesWrite)
+	// DELETE removes the role now that a store can make one (D81); going back
+	// to the engine's defaults is its own verb, and only the starting roles
+	// have defaults to go back to.
+	a.HandleAdminFunc("DELETE /api/admin/roles/{role}", a.handleDeleteRole, RightRolesWrite)
+	a.HandleAdminFunc("POST /api/admin/roles/{role}/reset", a.handleResetRoleRights, RightRolesWrite)
 	// What the store calls the role, apart from what the role may do. PATCH
 	// rather than folding it into the PUT above: the two are edited at
 	// different moments and by different intentions, and a screen that saved a
@@ -66,8 +75,7 @@ func (a *App) handleSetRoleRights(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleResetRoleRights drops the store's override so the role tracks the
-// engine's defaults again. A DELETE, because what it removes is the override
-// and not the role.
+// engine's defaults again.
 func (a *App) handleResetRoleRights(w http.ResponseWriter, r *http.Request) {
 	set, err := a.roles.Reset(r.Context(), r.PathValue("role"))
 	if err != nil {
@@ -119,4 +127,41 @@ func (a *App) handleSetRoleProfile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	RespondError(w, r, NotFoundf("role %q", role))
+}
+
+// handleCreateRole makes a role of the store's own.
+func (a *App) handleCreateRole(w http.ResponseWriter, r *http.Request) {
+	var in NewRole
+	if err := DecodeJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	set, err := a.roles.Create(r.Context(), in, SuperuserFrom(r.Context()))
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	a.log.Info("role created", "role", set.Role, "rights", set.Rights)
+	Respond(w, http.StatusCreated, set)
+}
+
+// handleDeleteRole removes a role nobody holds.
+func (a *App) handleDeleteRole(w http.ResponseWriter, r *http.Request) {
+	role := r.PathValue("role")
+	if err := a.roles.Delete(r.Context(), role); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	a.log.Info("role deleted", "role", role)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleRoleNames lists every role with what the store calls it.
+func (a *App) handleRoleNames(w http.ResponseWriter, r *http.Request) {
+	names, err := a.roles.Names(r.Context())
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, names)
 }

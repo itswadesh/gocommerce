@@ -331,15 +331,16 @@ func TestRoleRoutes(t *testing.T) {
 		t.Errorf("PUT on the owner role = %d, want 403", rec.Code)
 	}
 
-	if rec := do(t, app, "DELETE", "/api/admin/roles/staff", withAdmin); rec.Code != http.StatusOK {
-		t.Errorf("DELETE /api/admin/roles/staff = %d: %s", rec.Code, rec.Body)
+	// Reset is its own verb now that DELETE removes a role (D81).
+	if rec := do(t, app, "POST", "/api/admin/roles/staff/reset", withAdmin); rec.Code != http.StatusOK {
+		t.Errorf("POST /api/admin/roles/staff/reset = %d: %s", rec.Code, rec.Body)
 	}
 	rights, err := app.Roles().Of(context.Background(), RoleStaff)
 	if err != nil {
 		t.Fatalf("Of: %v", err)
 	}
 	if !slices.Equal(rights, DefaultRightsOf(RoleStaff)) {
-		t.Errorf("after DELETE the role carries %v, want the default", rights)
+		t.Errorf("after reset the role carries %v, want the default", rights)
 	}
 }
 

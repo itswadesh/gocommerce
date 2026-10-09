@@ -8064,6 +8064,57 @@
             "$ref": "#/components/responses/Forbidden"
           }
         }
+      },
+      "post": {
+        "tags": [
+          "admin:roles"
+        ],
+        "summary": "Make a role of the store's own",
+        "description": "A store's own role is a named set of the rights this build has (D81); catalog.read is added if the set lacks it. Refused: a key not shaped `^[a-z][a-z0-9_]{0,39}$` or a blank name (400), a key the store already has (409), and a right this build does not have (400).",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewRole"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RoleSet"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid key, name or right."
+          },
+          "409": {
+            "description": "The store already has a role with this key."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
       }
     },
     "/api/admin/roles/{role}": {
@@ -8085,11 +8136,7 @@
             "required": true,
             "description": "The role to configure. Owner is refused: it always carries every right.",
             "schema": {
-              "type": "string",
-              "enum": [
-                "manager",
-                "staff"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -8168,8 +8215,8 @@
         "tags": [
           "admin:roles"
         ],
-        "summary": "Return a role to the engine's defaults",
-        "description": "Removes the store's override rather than writing the defaults down, so the role tracks them again from here on. Idempotent: a role that was never customised is already in this state.",
+        "summary": "Delete a role",
+        "description": "Removes a role nobody holds, with its grants and name (D81). Before D81 this verb reset a role to its defaults; that is now POST /api/admin/roles/{role}/reset. Refused: owner (403), and a role any operator or open invitation holds (409 `role_in_use`, the message counting both).",
         "security": [
           {
             "adminToken": []
@@ -8180,34 +8227,18 @@
             "name": "role",
             "in": "path",
             "required": true,
-            "description": "The role to configure. Owner is refused: it always carries every right.",
+            "description": "The role's key. Owner is refused: it always carries every right and is never deleted.",
             "schema": {
-              "type": "string",
-              "enum": [
-                "manager",
-                "staff"
-              ]
+              "type": "string"
             }
           }
         ],
         "responses": {
-          "200": {
-            "description": "The role, back on its defaults.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/RoleSet"
-                    }
-                  }
-                }
-              }
-            }
+          "204": {
+            "description": "Deleted."
           },
-          "400": {
-            "$ref": "#/components/responses/Validation"
+          "409": {
+            "description": "`role_in_use`: somebody holds the role; move them first."
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -8234,12 +8265,7 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "enum": [
-                "owner",
-                "manager",
-                "staff"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -13237,6 +13263,97 @@
           }
         }
       }
+    },
+    "/api/admin/roles/{role}/reset": {
+      "post": {
+        "tags": [
+          "admin:roles"
+        ],
+        "summary": "Return a role to the engine's defaults",
+        "description": "Removes the store's override rather than writing the defaults down, so the role tracks them again from here on. Only the starting roles (manager, staff, vendor) have defaults; a store's own role is refused (400). Idempotent. Was DELETE /api/admin/roles/{role} before D81.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "role",
+            "in": "path",
+            "required": true,
+            "description": "The role's key. Owner is refused: it always carries every right and is never deleted.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The role, back on its defaults.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RoleSet"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/roles/names": {
+      "get": {
+        "tags": [
+          "admin:roles"
+        ],
+        "summary": "Every role's key and name",
+        "description": "For the screens that hand a role out. Behind `team.read` rather than `roles.write`: choosing somebody's role is staffing the shop, which a store may allow without allowing its rules to be redrawn.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The engine's roles first, then the store's own in the order they were made.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RoleName"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -16550,6 +16667,14 @@
           "title_customized": {
             "type": "boolean",
             "description": "Whether those words are the store's own rather than the engine's."
+          },
+          "builtin": {
+            "type": "boolean",
+            "description": "One of the engine's four (owner, manager, staff, vendor), which have defaults to reset to. A store's own role has none (D81)."
+          },
+          "holders": {
+            "type": "integer",
+            "description": "Operators in the role plus open invitations into it. A role is deletable only at zero."
           }
         }
       },
@@ -18838,6 +18963,53 @@
           "variant_id": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "NewRole": {
+        "type": "object",
+        "required": [
+          "key",
+          "title"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$",
+            "description": "The role's identifier, written on every operator in it. Permanent."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "What the store calls the role."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 600
+          },
+          "rights": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Rights this build has. catalog.read is added if missing."
+          }
+        }
+      },
+      "RoleName": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "builtin": {
+            "type": "boolean"
           }
         }
       }

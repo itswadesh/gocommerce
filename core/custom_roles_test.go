@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -175,5 +176,37 @@ func TestACustomRoleNeverResolvesBelowTheFloor(t *testing.T) {
 	got, err := app.Roles().Of(ctx, "packer")
 	if err != nil || !slices.Contains(got, RightCatalogRead) {
 		t.Errorf("packer = %v %v, want at least %s", got, err, RightCatalogRead)
+	}
+}
+
+func TestRoleRoutesMakeResetAndDelete(t *testing.T) {
+	app := newTestApp(t)
+	rec := doBody(t, app, "POST", "/api/admin/roles",
+		`{"key":"packer","title":"Packer","rights":["orders.read"]}`, withAdmin)
+	if rec.Code != 201 {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, app, "GET", "/api/admin/roles/names", withAdmin); rec.Code != 200 ||
+		!strings.Contains(rec.Body.String(), `"packer"`) {
+		t.Fatalf("names: %d %s", rec.Code, rec.Body)
+	}
+	// The names are for whoever staffs the shop, not only whoever redraws
+	// the rules: team.read is enough.
+	staff := signInAs(t, app, "staff@example.com", RoleStaff)
+	if rec := do(t, app, "GET", "/api/admin/roles/names", bearer(staff)); rec.Code != 403 {
+		t.Fatalf("names as staff (no team.read) = %d, want 403", rec.Code)
+	}
+	if rec := do(t, app, "POST", "/api/admin/roles/manager/reset", withAdmin); rec.Code != 200 {
+		t.Fatalf("reset manager: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, app, "DELETE", "/api/admin/roles/packer", withAdmin); rec.Code != 204 {
+		t.Fatalf("delete: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, app, "DELETE", "/api/admin/roles/owner", withAdmin); rec.Code != 403 {
+		t.Fatalf("delete owner: %d, want 403", rec.Code)
+	}
+	if rec := do(t, app, "DELETE", "/api/admin/roles/staff", withAdmin); rec.Code != 409 ||
+		!strings.Contains(rec.Body.String(), "role_in_use") {
+		t.Fatalf("delete held staff: %d %s, want 409 role_in_use", rec.Code, rec.Body)
 	}
 }
