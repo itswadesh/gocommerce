@@ -9,10 +9,10 @@
      * question, which is the one an operator actually arrives with, and hands
      * the first to the role's own screen where there is room for it.
      *
-     * A role is not created or deleted here, because the engine's roles are
-     * fixed (rights.go): owner, manager, staff. What a store changes is what
-     * each one carries, which is what the row's chips show and what the
-     * screen behind it edits.
+     * A store makes roles of its own here (D81), the KitCommerce admin's way:
+     * a name first, then the rights on the role's own page, where there is
+     * room for the matrix. Deleting is on that page too, offered only once
+     * nobody holds the role, which is why the list counts holders.
      */
     import { base } from "$app/paths";
     import { goto } from "$app/navigation";
@@ -20,6 +20,7 @@
     import { learnRights, rightLabel } from "$lib/rights.js";
     import { toast } from "$lib/toast.svelte.js";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import Drawer from "$lib/components/Drawer.svelte";
 
     let loading = $state(true);
     let matrix = $state(null);
@@ -95,6 +96,53 @@
     }
 
 
+    /* The new-role drawer. The key is shown before saving because it is
+       permanent (written on every operator in the role) and the engine
+       refuses rather than tidies one that is not already in shape. */
+    let addOpen = $state(false);
+    let creating = $state(false);
+    let draft = $state({ name: "", description: "" });
+    let draftError = $state("");
+    const draftKey = $derived(
+        draft.name
+            .toLowerCase()
+            .trim()
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^[^a-z]+|_+$/g, "")
+            .slice(0, 40),
+    );
+
+    function openAdd() {
+        draft = { name: "", description: "" };
+        draftError = "";
+        addOpen = true;
+    }
+
+    async function createRole(event) {
+        event.preventDefault();
+        if (!draft.name.trim() || !draftKey) {
+            draftError = "Give the role a name that starts with a letter.";
+            return;
+        }
+        creating = true;
+        draftError = "";
+        try {
+            await rolesApi.create({
+                key: draftKey,
+                title: draft.name.trim(),
+                description: draft.description.trim(),
+                rights: [],
+            });
+            toast.success("Role created");
+            addOpen = false;
+            open(draftKey);
+        } catch (err) {
+            draftError = err?.message ?? String(err);
+        } finally {
+            creating = false;
+        }
+    }
+
     function open(role) {
         goto(`${base}/dash/settings/roles/${role}`);
     }
@@ -136,6 +184,13 @@
                     </button>
                 </div>
 
+                <div class="btns-group">
+                    <button type="button" class="btn" onclick={openAdd}>
+                        <i class="ri-add-line" aria-hidden="true"></i>
+                        <span class="txt">Add role</span>
+                    </button>
+                </div>
+
                 <!-- Inside the header, which is where .fields.searchbar is
                      laid out; below it the icon and the input stack. -->
                 <div class="fields searchbar">
@@ -160,15 +215,13 @@
                 </div>
             </header>
 
-            <!-- No "Add role" button, and that is the engine rather than an
-                 omission: the roles are fixed in rights.go, and a store
-                 changes what they carry rather than how many there are. -->
             <div class="page-table-wrapper tw:rounded-xl tw:border">
                 <table class="table responsive-table">
                     <thead class="sticky">
                         <tr>
                             <th class="col-field-name-id">Name</th>
                             <th>Rights</th>
+                            <th class="col-field-type-number min-width">Holders</th>
                             <th class="col-field-type-number min-width">Against defaults</th>
                         </tr>
                     </thead>
@@ -203,9 +256,14 @@
                                         </div>
                                     {/if}
                                 </td>
+                                <td class="col-field-type-number min-width" data-name="Holders">
+                                    {row.holders ?? 0}
+                                </td>
                                 <td class="col-field-type-number min-width" data-name="Against defaults">
                                     {#if !row.configurable}
                                         <span class="txt-hint" title="The engine fixes this role.">Fixed</span>
+                                    {:else if !row.builtin}
+                                        <span class="txt-hint" title="This store's own role.">Own role</span>
                                     {:else if row.customised}
                                         <span class="label">Customised</span>
                                     {:else}
@@ -216,10 +274,10 @@
                         {/each}
 
                         {#if loading && !matrix}
-                            <tr><td colspan="3"><span class="skeleton-loader"></span></td></tr>
+                            <tr><td colspan="4"><span class="skeleton-loader"></span></td></tr>
                         {:else if !rows.length}
                             <tr>
-                                <td colspan="3" class="txt-center txt-hint p-base">
+                                <td colspan="4" class="txt-center txt-hint p-base">
                                     No role matches that.
                                 </td>
                             </tr>
@@ -237,4 +295,38 @@
             </footer>
         </div>
     </div>
+
+    <Drawer open={addOpen} title="New role" size="sm" onclose={() => (addOpen = false)}>
+        <form id="role-form" onsubmit={createRole}>
+            <div class="field required" class:error={!!draftError}>
+                <label for="role_name">Name</label>
+                <!-- svelte-ignore a11y_autofocus -->
+                <input id="role_name" type="text" maxlength="60" required autofocus bind:value={draft.name} />
+                {#if draftKey}
+                    <div class="field-help">
+                        Key: <code>{draftKey}</code>. It is permanent, written on everybody in the role.
+                    </div>
+                {/if}
+                {#if draftError}<div class="help-block help-block-error">{draftError}</div>{/if}
+            </div>
+            <div class="field">
+                <label for="role_description">Description</label>
+                <textarea id="role_description" rows="3" maxlength="600" bind:value={draft.description}
+                ></textarea>
+                <div class="field-help">
+                    You choose its rights on the next screen. It starts with seeing the catalogue,
+                    which every role keeps.
+                </div>
+            </div>
+        </form>
+
+        {#snippet footer()}
+            <button type="button" class="btn transparent m-r-auto" onclick={() => (addOpen = false)}>
+                <span class="txt">Cancel</span>
+            </button>
+            <button type="submit" form="role-form" class="btn" class:loading={creating} disabled={creating}>
+                <span class="txt">Create role</span>
+            </button>
+        {/snippet}
+    </Drawer>
 {/if}

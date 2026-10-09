@@ -29,6 +29,8 @@
     import { toast } from "$lib/toast.svelte.js";
     import DirtyGuard from "$lib/components/DirtyGuard.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import Confirm from "$lib/components/Confirm.svelte";
+    import { goto } from "$app/navigation";
 
     const role = $derived(page.params.role);
 
@@ -180,7 +182,8 @@
 
     /** How one button departs from the default: "added", "removed" or "". */
     function diff(right) {
-        if (!row?.configurable) return "";
+        // A store's own role has no default to depart from (D81).
+        if (!row?.configurable || !row?.builtin) return "";
         const inDraft = has(right);
         const inDefault = defaults.includes(right);
         if (inDraft && !inDefault) return "added";
@@ -237,6 +240,27 @@
         }
     }
 
+    /*
+     * Deleting. Offered only when nobody holds the role (holders === 0): the
+     * engine refuses otherwise, and a button that can only fail is worse than
+     * a sentence saying who has to move first. Owner is never offered.
+     */
+    let deleteOpen = $state(false);
+    const deletable = $derived(!!row && row.role !== "owner" && row.holders === 0);
+
+    async function doDelete() {
+        busy = true;
+        try {
+            await rolesApi.remove(role);
+            toast.success(`Deleted the ${label} role`);
+            goto(`${base}/dash/settings/roles`);
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            busy = false;
+        }
+    }
+
     function applySaved(set) {
         if (!set?.role) return;
         matrix.roles = matrix.roles.map((r) => (r.role === set.role ? set : r));
@@ -282,21 +306,36 @@
                 </nav>
 
                 <div class="page-header-primary-btns">
+                    {#if deletable}
+                        <button
+                            type="button"
+                            class="btn secondary danger"
+                            disabled={busy}
+                            onclick={() => (deleteOpen = true)}
+                        >
+                            <i class="ri-delete-bin-line" aria-hidden="true"></i>
+                            <span class="txt">Delete role</span>
+                        </button>
+                    {/if}
                     {#if row?.configurable}
                         <!-- Both carry an icon, because the page header
                              collapses its buttons to bare circles below
                              550px and a circle with only a word in it shows
                              a clipped word. -->
-                        <button
-                            type="button"
-                            class="btn secondary"
-                            disabled={busy || isDefault}
-                            title={resetTitle()}
-                            onclick={reset}
-                        >
-                            <i class="ri-restart-line" aria-hidden="true"></i>
-                            <span class="txt">Reset to defaults</span>
-                        </button>
+                        {#if row?.builtin}
+                            <!-- Only the starting roles have defaults; a
+                                 store's own role is its grants and no more. -->
+                            <button
+                                type="button"
+                                class="btn secondary"
+                                disabled={busy || isDefault}
+                                title={resetTitle()}
+                                onclick={reset}
+                            >
+                                <i class="ri-restart-line" aria-hidden="true"></i>
+                                <span class="txt">Reset to defaults</span>
+                            </button>
+                        {/if}
                         <button type="button" class="btn" disabled={busy || !dirty} onclick={save}>
                             <i class="ri-save-line" aria-hidden="true"></i>
                             <span class="txt">{busy ? "Saving…" : "Save"}</span>
@@ -364,7 +403,13 @@
                     engine's own words back.
                 </div>
 
-                {#if row?.configurable && (added.length || removed.length)}
+                {#if row && row.role !== "owner" && row.holders > 0}
+                    <div class="field-help m-b-base">
+                        Held by {row.holders}. Move them to another role to delete it.
+                    </div>
+                {/if}
+
+                {#if row?.configurable && row?.builtin && (added.length || removed.length)}
                     <div class="alert info m-b-base">
                         <p>
                             Against what the engine ships for {label}:
@@ -437,4 +482,13 @@
             </footer>
         </div>
     </div>
+
+    <Confirm
+        bind:open={deleteOpen}
+        title="Delete the {label} role?"
+        message="It goes with its rights and its name. Nobody holds it, so nobody loses access. This cannot be undone."
+        confirmLabel="Delete role"
+        danger
+        onconfirm={doDelete}
+    />
 {/if}

@@ -309,8 +309,14 @@ export const storeProfile = {
 
 export const roles = {
     matrix: () => api.get("/api/admin/roles"),
+    // Every role's key and name, for the screens that hand one out. Behind
+    // team.read, so an operator who staffs the shop can see what to pick.
+    names: () => api.get("/api/admin/roles/names"),
+    create: (role) => request("POST", "/api/admin/roles", { body: role }),
     save: (role, rights) => request("PUT", `/api/admin/roles/${role}`, { body: { rights } }),
-    reset: (role) => api.delete(`/api/admin/roles/${role}`),
+    // Back to the engine's defaults; only the starting roles have any (D81).
+    reset: (role) => request("POST", `/api/admin/roles/${role}/reset`, {}),
+    remove: (role) => api.delete(`/api/admin/roles/${role}`),
     // What the store calls the role, apart from what it may do. Blank either
     // field to put the engine's own words back.
     rename: (role, title, description) =>

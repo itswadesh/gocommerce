@@ -88,3 +88,28 @@ test("a role's name and description are editable, and saved apart from its right
         "the description should be a textarea, not a single-line box",
     );
 });
+
+// A store makes and deletes roles of its own (D81); the screens grow the two
+// verbs, and say who holds each role, since that decides whether it can go.
+const apiSource = read("../src/lib/api.js");
+
+test("the roles client makes, deletes, resets and names roles", () => {
+    assert.match(apiSource, /create: \(role\) => request\("POST", "\/api\/admin\/roles"/);
+    assert.match(apiSource, /remove: \(role\) => api\.delete\(`\/api\/admin\/roles\/\$\{role\}`\)/);
+    assert.match(apiSource, /reset: \(role\) => request\("POST", `\/api\/admin\/roles\/\$\{role\}\/reset`/);
+    assert.match(apiSource, /names: \(\) => api\.get\("\/api\/admin\/roles\/names"\)/);
+});
+
+test("the roles list offers Add role and shows who holds each role", () => {
+    assert.match(list, />\s*Add role\s*</);
+    assert.match(list, /Holders/);
+    // The screens import the client as rolesApi.
+    assert.match(list, /rolesApi\.create\(/);
+});
+
+test("a role's page deletes it only when nobody holds it", () => {
+    assert.match(detail, /rolesApi\.remove\(/);
+    assert.match(detail, /holders === 0/);
+    // The starting roles reset; a store's own role has nothing to reset to.
+    assert.match(detail, /builtin/);
+});
