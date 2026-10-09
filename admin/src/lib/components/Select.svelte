@@ -98,8 +98,10 @@
         }
     }
 
+    /* Only the options that can be chosen: a disabled button refuses focus, so
+       counting one here would leave the arrow keys stuck on the row above it. */
     function optionButtons() {
-        return [...(dropdown?.querySelectorAll(".select-option") ?? [])];
+        return [...(dropdown?.querySelectorAll(".select-option:not(:disabled)") ?? [])];
     }
 
     function focusOption(index) {
@@ -197,15 +199,27 @@
         </div>
 
         {#each visible as option (option.value)}
+            <!-- `disabled` with a `note` is an option this store cannot use yet,
+                 shown with the reason rather than left out: the list is what
+                 the operator learns the choices from, and a shorter list
+                 explains nothing. -->
             <button
                 type="button"
                 role="option"
                 aria-selected={option.value === value}
+                aria-disabled={option.disabled || undefined}
+                disabled={option.disabled}
+                title={option.disabled && option.note ? option.note : undefined}
                 class="select-option"
                 class:active={option.value === value}
                 onclick={() => pick(option)}
             >
-                <span class="select-option-label">{option.label ?? option.value}</span>
+                <span class="select-option-label">
+                    {option.label ?? option.value}
+                    {#if option.note}
+                        <span class="select-option-note">{option.note}</span>
+                    {/if}
+                </span>
                 <!-- A count is about the option, not part of its name: kept out
                      of the label so the search box matches words rather than
                      digits, and so an option with no count is not padded with a

@@ -161,7 +161,57 @@ item count, subtotal in minor units, the discount code, the lines as
 shopper's last touch, which the sweep deliberately does not overwrite) and
 `abandoned_at`. Core's notifier is **not** subscribed to it: when and how often
 to chase an abandoned basket is a marketing decision, not an engine default. A
-recovery module subscribes and owns the schedule.
+recovery module owns the schedule.
+
+## Chasing a basket: ext/cart-recovery
+
+The module (`-recovery` on the reference binary) does not wait for
+`cart.abandoned`. Core's clock is the TTL — thirty days — which is right for
+retention and useless for a reminder, so the module keeps a clock of its own
+and never touches core's: a basket idle past `abandon_after_minutes` (10 for a
+checkout, 30 for a basket by default) gets a row in
+`cart_recovery_abandonments`, one per cart for its whole life (D82).
+
+```
+abandoned ──first step planned──► scheduled ──sent──► contacted
+    │                                  │                  │
+    └── held: hold_reason says why ◄───┴──────────────────┤
+                                                          ├─order.created(cart_id)─► recovered  (terminal)
+any open status ──operator──► suppressed                  └─cart row deleted───────► expired
+```
+
+- **Kind.** `checkout` when the basket carries a typed email — on a guest
+  storefront that only happens at checkout's first step — and `cart`
+  otherwise. A `cart` is reachable only through a signed-in account's
+  `verified_email`, and is recorded either way: the screen counts what was left
+  behind, not only what can be chased.
+- **Nothing is decided early.** Every send re-reads the basket and re-checks
+  that it still exists, is not converted, has something buyable, has an
+  address, that the automation is on and that the shopper has not been in the
+  basket within the threshold. A step that finds the shopper mid-visit moves to
+  when the visit counts as over rather than failing.
+- **Install guard.** `cart_recovery_settings.installed_at` is set by the
+  migration. A basket idle since before it is recorded with `history = true`
+  and never written to.
+- **Attribution** comes from `order.created`, whose `cart_id` names the basket.
+  `recovered_after_message` separates the orders a message preceded from the
+  shoppers who came back on their own; the funnel counts only the first.
+- **The link** a message carries is `PanelURL/x/cart-recovery/r/<link_token>`,
+  which counts the click and redirects to `<storefront>/cart/<token>`. Without
+  `Config.PanelURL` it goes straight to the storefront and clicks go uncounted;
+  without a storefront address the message carries `cart_token` and no
+  `recovery_url`. `link_token` opens the basket as surely as the cart token,
+  so the admin reveals it only through `POST …/link`, which the timeline
+  records.
+- **Manual operations** (send, copy link, suppress) write a
+  `cart_recovery_events` row naming the operator; that table is the audit
+  trail for this module, because a module cannot write core's (D26).
+
+Routes are under `/api/admin/x/cart-recovery/` — `abandonments`, `summary`,
+`analytics`, `settings` — gated on the module's own rights:
+`abandonment.read`, `abandonment.contact`, `abandonment.suppress`,
+`abandonment.automate`. The wording of the three reminders is the store's, on
+Notifications › Setup Email (`cart.recovery.1` to `.3`).
 
 ## What an operator can see
 

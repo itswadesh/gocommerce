@@ -8793,6 +8793,804 @@ kbd + kbd {
     }
 }
 
+/* --------- abandoned checkouts, automations and recovery analytics ---------
+ *
+ * ext/cart-recovery's four screens: /dash/abandoned and its record page,
+ * Marketing › Automations with the two sequence editors, and Marketing ›
+ * Recovery analytics. They are migrated screens (DESIGN.md) built from the
+ * panel's own parts — `.order-card` and `.order-history` for the record,
+ * `.card` and `.save-bar` for the editors, the Reports screen's `.report-*`
+ * bars for the trend — so this section is only what those parts do not say.
+ *
+ * Every motion here is a transform or an opacity, and every one of them has a
+ * reduced-motion answer at the foot of the section: the movement goes, the
+ * feedback stays as a fade or as the colour change it already carried.
+ */
+
+/* A figure that changes — a filter applied, a window moved — arrives rather
+   than swapping silently. Keyed in the markup, so the element is new. */
+.recovery-figure {
+    animation: recoveryFigureIn 220ms ease-out;
+}
+@keyframes recoveryFigureIn {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+}
+
+/* -------------------------------------------------------------- the list */
+
+/* The filters under the tiles: one row of controls, each as wide as what it
+   holds, wrapping on a narrow window rather than squeezing. */
+.recovery-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.recovery-filters .field {
+    width: auto;
+    min-width: 150px;
+    flex: 0 0 auto;
+    margin: 0;
+}
+.recovery-filters .field.recovery-value {
+    min-width: 0;
+    width: 120px;
+}
+.recovery-value-error {
+    margin-top: -4px;
+}
+
+/* Status is several at once, so it is a row of toggles — the Carts screen's
+   chip, pressed or not — with the status's own colour as a dot beside the
+   word rather than as the whole chip. */
+.recovery-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 4px 0 12px;
+}
+.recovery-chip {
+    gap: 6px;
+}
+.recovery-dot {
+    display: inline-block;
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--surfaceTxtHintColor);
+}
+.recovery-dot.success {
+    background: var(--successColor);
+}
+.recovery-dot.warning {
+    background: var(--warningColor);
+}
+.recovery-dot.info {
+    background: var(--infoColor);
+}
+.recovery-dot.danger {
+    background: var(--dangerColor);
+}
+
+/* The order a basket became, as a link that reads as the number it is. */
+.recovery-order-link {
+    color: inherit;
+    text-decoration: none;
+    transition: opacity var(--animationSpeed) ease-out;
+}
+.recovery-order-link:hover,
+.recovery-order-link:focus-visible {
+    text-decoration: underline;
+}
+.recovery-order-link:active {
+    opacity: 0.6;
+    transition-duration: var(--activeAnimationSpeed);
+}
+
+/* DESIGN.md's secondary navigation: a muted text link with an arrow that
+   moves toward where it goes. The arrow travels; the text only darkens. */
+.recovery-arrow-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--smFontSize);
+    color: var(--surfaceTxtHintColor);
+    text-decoration: none;
+    border-radius: 3px;
+    transition: color var(--animationSpeed) ease-out;
+}
+.recovery-arrow-link > span[aria-hidden],
+.recovery-arrow-link > i {
+    display: inline-block;
+    transition: transform var(--animationSpeed) ease-out;
+}
+.recovery-arrow-link:hover,
+.recovery-arrow-link:focus-visible {
+    color: var(--surfaceTxtColor);
+    text-decoration: none;
+}
+.recovery-arrow-link:hover > span[aria-hidden],
+.recovery-arrow-link:focus-visible > span[aria-hidden],
+.recovery-arrow-link:hover > i,
+.recovery-arrow-link:focus-visible > i {
+    transform: translateX(3px);
+}
+.recovery-arrow-link:active {
+    opacity: 0.6;
+    transition-duration: var(--activeAnimationSpeed);
+}
+.recovery-arrow-link:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+}
+/* On an alert's tinted ground the hint colour is too faint to read; the link
+   takes the alert's own ink and says it is a link with an underline. */
+.alert .recovery-arrow-link {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+/* An option a picker cannot take yet, with the reason on a line of its own. */
+.select-option-label:has(.select-option-note) {
+    white-space: normal;
+}
+.select-option-note {
+    display: block;
+    font-size: var(--smFontSize);
+    line-height: var(--smLineHeight);
+    color: var(--muted-foreground);
+}
+
+/* ------------------------------------------------------------ the record */
+
+/* The status chip re-arrives when the status moves — suppressed, recovered —
+   so the change is seen where it happened. */
+.recovery-status-badge {
+    animation: recoveryPop 220ms ease-out;
+}
+@keyframes recoveryPop {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+}
+
+/* "Copied" is said by the button that did it, for two seconds. */
+.recovery-copy.is-copied > i {
+    color: var(--successColor);
+    animation: recoveryPop 220ms ease-out;
+}
+
+/* The items table may be wider than the rail leaves it on a phone; it scrolls
+   inside the card rather than pushing the page sideways. */
+.recovery-lines-scroll {
+    overflow-x: auto;
+}
+.recovery-lines {
+    min-width: 460px;
+}
+.recovery-lines th {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--surfaceTxtHintColor);
+}
+.recovery-lines td {
+    vertical-align: top;
+}
+/* Shown on a phone in place of the two price columns. */
+.recovery-line-compact {
+    display: none;
+}
+.recovery-line-notes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+/* The timeline is the order screen's History, as an ordered list: a story
+   reads top to bottom, and it is one. */
+.recovery-timeline {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    /* list.css paints a list with the page surface, which in dark is a step
+       below the card it sits in. */
+    background: none;
+}
+/* base.css spaces every list item 5px apart; the rail is the spacing here. */
+.recovery-timeline > li {
+    margin: 0;
+}
+/* The time sits at the row's end; there is no spacer element, so on a phone
+   the phrase keeps the whole line when the time drops under it. */
+.recovery-timeline time {
+    margin-left: auto;
+    text-align: right;
+}
+.recovery-timeline .list-item.is-danger > i {
+    color: var(--dangerColor);
+    border-color: var(--dangerColor);
+}
+.recovery-timeline .list-item.is-success > i {
+    color: var(--successColor);
+    border-color: var(--successColor);
+}
+
+/* How the story ended, at the top of the Recovery card: bought, suppressed or
+   expired. A tinted ground for the good outcome, the plain step for the rest. */
+.recovery-outcome {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    border-radius: var(--borderRadius);
+    background: var(--surfaceAlt1Color);
+    border: 1px solid var(--surfaceAlt2Color);
+}
+.recovery-outcome > i {
+    font-size: 18px;
+    line-height: 20px;
+    color: var(--surfaceTxtHintColor);
+}
+/* A tint mixed from the card, not PocketBase's success surface: that one is a
+   saturated green in dark, and the figure on it stopped being readable. */
+.recovery-outcome.is-success {
+    background: color-mix(in srgb, var(--successColor) 10%, var(--cardFace));
+    border-color: color-mix(in srgb, var(--successColor), transparent 55%);
+}
+.recovery-outcome .order-total {
+    color: var(--surfaceTxtColor);
+}
+.recovery-outcome.is-success > i {
+    color: var(--successColor);
+}
+.recovery-note {
+    margin: 4px 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.recovery-facts {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    font-size: var(--smFontSize);
+}
+.recovery-facts > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+}
+.recovery-facts dt {
+    color: var(--surfaceTxtHintColor);
+}
+.recovery-facts dd {
+    margin: 0;
+    text-align: right;
+}
+
+/* Why an action is not available, said under the facts rather than only in a
+   tooltip a phone never shows. */
+.recovery-blocked {
+    display: flex;
+    gap: 6px;
+    margin: 10px 0 0;
+    font-size: var(--smFontSize);
+    color: var(--surfaceTxtHintColor);
+}
+.recovery-blocked > i {
+    flex: none;
+}
+
+.recovery-email {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+
+/* ------------------------------------------------------------ the dialogs */
+
+.recovery-choices {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+}
+.recovery-legend {
+    margin-bottom: 4px;
+    padding: 0;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--surfaceTxtHintColor);
+}
+/* form.css lays a checkbox label out as a flex row; the reason a choice is
+   unavailable goes on a line of its own under the choice's name. */
+.recovery-choices .field label {
+    flex-wrap: wrap;
+}
+.recovery-choice-note {
+    display: block;
+    flex-basis: 100%;
+    margin-top: 2px;
+    font-size: var(--smFontSize);
+    color: var(--surfaceTxtHintColor);
+}
+.recovery-dialog .alert {
+    margin-bottom: 12px;
+}
+/* A refusal shakes once where the operator is looking: the answer is "no",
+   said beside the button that asked. */
+.recovery-refusal {
+    animation: recoveryShake 280ms ease-out;
+}
+@keyframes recoveryShake {
+    20% {
+        transform: translateX(-4px);
+    }
+    45% {
+        transform: translateX(3px);
+    }
+    70% {
+        transform: translateX(-2px);
+    }
+}
+
+/* ------------------------------------------------------------ automations */
+
+/* min() rather than a plain cap: on `.wrapper` this replaces PocketBase's
+   `max-width: 100%`, and without the 100% the wrapper keeps its 850px on a
+   390px phone. */
+.recovery-page {
+    max-width: min(960px, 100%);
+}
+.recovery-banner {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin-bottom: 12px;
+}
+.recovery-banner > i {
+    flex: none;
+    font-size: 18px;
+    line-height: 22px;
+}
+
+.recovery-automations {
+    overflow: hidden;
+}
+.recovery-automation {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 20px;
+    color: inherit;
+    text-decoration: none;
+    transition: background var(--animationSpeed) ease-out;
+}
+.recovery-automation + .recovery-automation {
+    border-top: 1px solid var(--border);
+}
+a.recovery-automation:hover {
+    background: var(--accent-bg);
+    text-decoration: none;
+}
+a.recovery-automation:active {
+    background: var(--surfaceAlt2Color);
+    transition-duration: var(--activeAnimationSpeed);
+}
+a.recovery-automation:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: -2px;
+}
+.recovery-automation-icon {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) - 2px);
+    color: var(--muted-foreground);
+    font-size: 18px;
+}
+.recovery-automation-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.recovery-automation-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+}
+.recovery-automation-facts {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-top: 4px;
+}
+.recovery-automation-go {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.recovery-automation-go > i {
+    transition: transform var(--animationSpeed) ease-out;
+}
+a.recovery-automation:hover .recovery-automation-go > i,
+a.recovery-automation:focus-visible .recovery-automation-go > i {
+    transform: translateX(3px);
+}
+
+/* On or off, as DESIGN.md's status pill: a dot and a word, never colour alone. */
+.recovery-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 1px 9px;
+    font-size: var(--smFontSize);
+    font-weight: 500;
+    line-height: 20px;
+    white-space: nowrap;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--surfaceTxtHintColor);
+}
+.recovery-state.is-on {
+    color: var(--surfaceTxtColor);
+}
+
+/* ------------------------------------------------------------ the editor */
+
+/* "A checkout counts as abandoned after [10] [minutes] without activity" —
+   the boxes sit in the sentence they complete. */
+.recovery-sentence {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+.recovery-sentence .field,
+.recovery-step-row .field {
+    width: auto;
+    margin: 0;
+    flex: 0 0 auto;
+}
+.shopify-skin .recovery-num {
+    width: 76px;
+}
+.shopify-skin .recovery-unit {
+    width: 96px;
+}
+.shopify-skin .recovery-action {
+    width: 140px;
+}
+.shopify-skin .recovery-template {
+    width: 184px;
+}
+
+.recovery-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0 0 10px;
+    padding: 0;
+    list-style: none;
+}
+.recovery-step {
+    margin: 0;
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--cardFace);
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+    transition: border-color var(--animationSpeed) ease-out;
+}
+.recovery-step.has-error {
+    border-color: var(--dangerColor);
+}
+.recovery-step-n {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    margin-top: 4px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    font-size: var(--smFontSize);
+    font-variant-numeric: tabular-nums;
+    color: var(--muted-foreground);
+}
+.recovery-step-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+.recovery-step-word,
+.recovery-step-arrow {
+    color: var(--surfaceTxtHintColor);
+}
+.recovery-step-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px 12px;
+    margin-top: 6px;
+}
+.recovery-step-foot .field-help {
+    margin: 0;
+    padding: 0;
+}
+.recovery-step-tools {
+    display: flex;
+    gap: 2px;
+}
+.recovery-add-step {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.recovery-guards .section-title .label {
+    font-weight: normal;
+    text-transform: none;
+}
+.recovery-guard-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.recovery-guard-list > li {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    margin: 0;
+    line-height: 20px;
+}
+.recovery-guard-list > li > i {
+    color: var(--successColor);
+}
+
+/* The save bar leaves as it arrived. Its entrance is the shared slideTop; the
+   exit is this screen's, scoped here so the four other editors that share the
+   bar are not touched. `allow-discrete` lets `hidden`'s display flip wait for
+   the fade. */
+.recovery-editor .save-bar {
+    transition:
+        opacity 180ms ease-out,
+        transform 180ms ease-out,
+        display 180ms allow-discrete;
+}
+.recovery-editor .save-bar[hidden] {
+    opacity: 0;
+    transform: translateY(-8px);
+}
+
+/* ------------------------------------------------------------ analytics */
+
+.recovery-controls .field {
+    width: auto;
+    min-width: 150px;
+    flex: 0 0 auto;
+    margin: 0;
+}
+
+/* The funnel: one proportional bar per stage, drawn as a scale so it grows
+   from the left on the compositor. The table under it is the readable copy. */
+.recovery-funnel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 20px;
+}
+.recovery-funnel-row {
+    display: grid;
+    grid-template-columns: minmax(120px, 210px) minmax(0, 1fr) 56px;
+    align-items: center;
+    gap: 12px;
+    font-size: var(--smFontSize);
+}
+.recovery-funnel-label {
+    color: var(--surfaceTxtHintColor);
+}
+.recovery-funnel-count {
+    text-align: right;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+.recovery-funnel-track,
+.recovery-rate-track {
+    display: block;
+    height: 12px;
+    border-radius: 999px;
+    background: var(--muted);
+    overflow: hidden;
+}
+.recovery-funnel-fill {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: var(--primary);
+    transform: scaleX(var(--w, 0));
+    transform-origin: left center;
+    transition: transform 320ms ease-out;
+}
+@starting-style {
+    .recovery-funnel-fill {
+        transform: scaleX(0);
+    }
+}
+.recovery-rate {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.recovery-rate-track {
+    width: 56px;
+    height: 6px;
+}
+
+/* The trend uses the Reports chart, with one change: a column's height is a
+   scale rather than a height, so a new window moves the bars without laying
+   the row out again every frame. */
+.recovery-chart .recovery-bar {
+    height: 100%;
+    min-height: 0;
+    transform: scaleY(max(var(--k, 0), 0.012));
+    transform-origin: bottom center;
+    transition: transform 260ms ease-out;
+}
+@starting-style {
+    .recovery-chart .recovery-bar {
+        transform: scaleY(0);
+    }
+}
+.recovery-seg-back,
+.report-key.recovery-key-back {
+    background: var(--successColor);
+}
+.recovery-segmented {
+    display: inline-flex;
+    gap: 4px;
+    font-weight: normal;
+}
+
+.recovery-empty-block {
+    padding: 32px 20px;
+    text-align: center;
+}
+.recovery-empty-block > i {
+    font-size: 32px;
+    color: var(--surfaceTxtHintColor);
+}
+
+@media (max-width: 700px) {
+    /* The list is a document on a phone: six tiles, the filters and the table
+       stacked and scrolled as one, rather than the table squeezed into
+       whatever height the tiles leave. */
+    .page-abandoned .page-content.full-height {
+        display: block;
+    }
+    .page-abandoned .page-table-wrapper {
+        min-height: 0;
+    }
+    /* The record's items lose their two price columns, which say themselves
+       under the item instead. */
+    .recovery-lines {
+        min-width: 0;
+    }
+    .recovery-lines .recovery-price-col {
+        display: none;
+    }
+    .recovery-line-compact {
+        display: block;
+    }
+    /* Under the phrase, where order-history puts a time on a phone. */
+    .recovery-timeline time {
+        margin-left: 0;
+        text-align: left;
+    }
+}
+
+@media (max-width: 600px) {
+    .recovery-automation {
+        padding: 14px;
+        align-items: flex-start;
+    }
+    .recovery-automation-go {
+        display: none;
+    }
+    .recovery-funnel {
+        padding: 12px;
+    }
+    .recovery-funnel-row {
+        grid-template-columns: minmax(0, 1fr) 48px;
+        row-gap: 4px;
+    }
+    .recovery-funnel-track {
+        grid-column: 1 / -1;
+        grid-row: 2;
+    }
+    .recovery-step {
+        grid-template-columns: 24px minmax(0, 1fr);
+    }
+    .recovery-step-tools {
+        grid-column: 2;
+    }
+    .shopify-skin .recovery-action,
+    .shopify-skin .recovery-template {
+        width: 100%;
+    }
+}
+
+/* The movement goes; the feedback stays, as a fade. */
+@media (prefers-reduced-motion: reduce) {
+    .recovery-figure,
+    .recovery-status-badge,
+    .recovery-copy.is-copied > i,
+    .recovery-refusal {
+        animation: fadeIn var(--animationSpeed) ease-out;
+    }
+    .recovery-funnel-fill,
+    .recovery-chart .recovery-bar {
+        transition: none;
+        animation: fadeIn var(--animationSpeed) ease-out;
+    }
+    .recovery-arrow-link > span[aria-hidden],
+    .recovery-arrow-link > i,
+    .recovery-automation-go > i {
+        transition: none;
+    }
+    .recovery-arrow-link:hover > span[aria-hidden],
+    .recovery-arrow-link:focus-visible > span[aria-hidden],
+    .recovery-arrow-link:hover > i,
+    .recovery-arrow-link:focus-visible > i,
+    a.recovery-automation:hover .recovery-automation-go > i,
+    a.recovery-automation:focus-visible .recovery-automation-go > i {
+        transform: none;
+    }
+    .recovery-editor .save-bar {
+        transition:
+            opacity 150ms ease-out,
+            display 150ms allow-discrete;
+    }
+    .recovery-editor .save-bar[hidden] {
+        transform: none;
+    }
+}
+
 /* --------- @media print — KEEP LAST ---------
  *
  * Append your section ABOVE this block. These rules carry no `!important`, so a

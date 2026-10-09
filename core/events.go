@@ -46,8 +46,9 @@ const (
 	EventOrderUnreturned  = "order.unreturned"
 
 	// The cart family. One name, because a recovered cart is already visible as
-	// the cart going back to open and, where it matters, as order.created, and
-	// a purged one is a retention action nothing downstream can act on.
+	// the cart going back to open and, where it matters, as order.created —
+	// whose cart_id names the basket — and a purged one is a retention action
+	// nothing downstream can act on.
 	EventCartAbandoned = "cart.abandoned"
 
 	// The catalogue announcing itself.
@@ -157,7 +158,14 @@ type OrderEvent struct {
 	// the part of the story the order itself does not tell, because the order
 	// says what was sold — and its status and payment_status are deliberately
 	// unchanged by a return, so nothing else in this payload says it happened.
-	Return   *ReturnEvent      `json:"return,omitempty"`
+	Return *ReturnEvent `json:"return,omitempty"`
+	// CartID is set on order.created alone: the row id of the basket this
+	// order was checked out from. The cart's own move to converted announces
+	// nothing, so without it a consumer that chased a basket could not tell
+	// which order brought it back, short of matching on an email address that
+	// two baskets can share. The id and never the token — the token is dead
+	// once the cart is converted, but it is still a credential in a log.
+	CartID   int64             `json:"cart_id,omitempty"`
 	Metadata map[string]any    `json:"metadata,omitempty"`
 	Extra    map[string]string `json:"extra,omitempty"`
 }

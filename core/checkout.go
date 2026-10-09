@@ -504,7 +504,9 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 				Total:     money(l.CurrentPrice*int64(l.Quantity), currency),
 			})
 		}
-		return s.app.outbox.write(ctx, tx, EventOrderCreated, AggregateOrder, orderID, s.eventPayload(o))
+		ev := s.eventPayload(o)
+		ev.CartID = cartID
+		return s.app.outbox.write(ctx, tx, EventOrderCreated, AggregateOrder, orderID, ev)
 	})
 
 	if err != nil {

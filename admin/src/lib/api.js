@@ -384,6 +384,34 @@ export const webhooks = {
 };
 
 /**
+ * recovery is ext/cart-recovery: baskets left behind, what was sent about
+ * them, and the automation that sends it.
+ *
+ * Every write re-checks its rules at the moment of the request, because the
+ * screen it was pressed on may be minutes old — so a 409 here is the module
+ * saying the basket moved on (bought, suppressed, deleted), and its
+ * `details.reason` is a fixed word a screen can branch on. `link` is a POST
+ * because handing out the link is recorded on the timeline: it opens the
+ * basket for whoever holds it, exactly as the cart token does.
+ */
+const RECOVERY = "/api/admin/x/cart-recovery";
+
+export const recovery = {
+    list: (params) => api.get(`${RECOVERY}/abandonments` + query(params)),
+    summary: (params) => api.get(`${RECOVERY}/summary` + query(params)),
+    analytics: (params) => api.get(`${RECOVERY}/analytics` + query(params)),
+    get: (id) => api.get(`${RECOVERY}/abandonments/${id}`),
+    send: (id, body) => api.post(`${RECOVERY}/abandonments/${id}/send`, body),
+    link: (id) => api.post(`${RECOVERY}/abandonments/${id}/link`, {}),
+    suppress: (id, body) => api.post(`${RECOVERY}/abandonments/${id}/suppress`, body),
+    settings: () => api.get(`${RECOVERY}/settings`),
+    // The whole object, both sequences and the storefront address: the engine
+    // replaces it whole, so a screen editing one sequence sends the other back
+    // exactly as it read it.
+    saveSettings: (settings) => api.put(`${RECOVERY}/settings`, settings),
+};
+
+/**
  * shipping is where this store delivers and what it charges to.
  *
  * Zones come back with their rates already attached rather than as two lists:

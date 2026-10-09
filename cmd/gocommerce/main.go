@@ -21,6 +21,7 @@ import (
 
 	"github.com/itswadesh/gocommerce/core"
 	"github.com/itswadesh/gocommerce/ext/b2b"
+	cartrecovery "github.com/itswadesh/gocommerce/ext/cart-recovery"
 	"github.com/itswadesh/gocommerce/ext/cms"
 	"github.com/itswadesh/gocommerce/ext/contact"
 	"github.com/itswadesh/gocommerce/ext/faq"
@@ -123,6 +124,12 @@ environment:
   GOCOMMERCE_ADMIN_EMAIL, GOCOMMERCE_ADMIN_PASSWORD
                     if set, "serve" creates this superuser when the database
                     has none, so an unattended deploy comes up signed-in-able
+  GOCOMMERCE_PANEL_URL
+                    where this store's panel is reached, e.g.
+                    https://shop.example.com: the base of a password-reset
+                    link, and of a recovery email's link, which counts the
+                    click before sending the shopper to their basket. Single
+                    store only: platform mode gives each store its own host
   GOCOMMERCE_MEDIA_DIR
                     where uploaded media is written, used when -media-dir is
                     not given; leaving it unset disables uploads and the media
@@ -176,6 +183,7 @@ environment:
 		withReviews  = fs.Bool("reviews", false, "install the reviews module: product ratings and reviews, moderated from the Reviews screen")
 		withContact  = fs.Bool("contact", false, "install the contact module: the storefront's contact form and its inbox (CONTACT_EMAIL, or the Plugins screen)")
 		withNews     = fs.Bool("newsletter", false, "install the newsletter module: the storefront's signup box and its list")
+		withRecovery = fs.Bool("recovery", false, "install the cart-recovery module: abandoned checkouts, a reminder sequence by email, and the recovery figures (STOREFRONT_URL, or the automation screen)")
 		withResend   = fs.Bool("resend", false, "install the Resend module: the store's emails through Resend, and the one to reach for first — an API key is the only required setting (RESEND_API_KEY, RESEND_FROM, or Notifications › Setup Email)")
 		withSendgrid = fs.Bool("sendgrid", false, "install the SendGrid module: the store's emails through SendGrid (SENDGRID_API_KEY, SENDGRID_FROM, or Notifications › Setup Email)")
 		withTwilio   = fs.Bool("twilio", false, "install the Twilio module: the store's SMS through Twilio, with the wording from Notifications › Setup SMS (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM)")
@@ -255,7 +263,11 @@ environment:
 		// The one account a demo visitor becomes. Env only: it names an
 		// operator that has to exist, which is a deployment fact, not a flag.
 		DemoAccount: os.Getenv("GOCOMMERCE_DEMO_ACCOUNT"),
-		Logger:      log,
+		// Env only, like the demo account: where the panel is reached is a fact
+		// about the deployment. It is the base of a password-reset link and of a
+		// recovery email's tracked link; platform mode fills it per store.
+		PanelURL: os.Getenv("GOCOMMERCE_PANEL_URL"),
+		Logger:   log,
 	}
 	if *mediaDir == "" {
 		*mediaDir = os.Getenv("GOCOMMERCE_MEDIA_DIR")
@@ -332,6 +344,9 @@ environment:
 		}
 		if *withNews {
 			modules = append(modules, newsletter.New(newsletter.Config{}))
+		}
+		if *withRecovery {
+			modules = append(modules, cartrecovery.New(cartrecovery.Config{StorefrontURL: env("STOREFRONT_URL")}))
 		}
 		// The delivery backends. With nothing in the environment they are
 		// installed idle and wait for the Setup Email / Setup SMS screens.
@@ -414,6 +429,10 @@ environment:
 	}
 
 	if command == "platform" {
+		// One panel address for every store would send each store's reset and
+		// recovery links to the same host; the platform derives each from the
+		// store's own primary domain, and only does so while this is empty.
+		cfg.PanelURL = ""
 		return platformCmd(cfg, platformFlags{
 			baseDomain: *baseDomain, platformHosts: *platformHosts, apiHosts: *apiHosts,
 			tokens: *platformTokens, namespace: *namespace,

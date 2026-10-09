@@ -113,7 +113,7 @@ if ($All) {
     $serveArgs += @(
         '-identity', '-webhooks', '-menus', '-reviews', '-contact', '-newsletter',
         '-resend', '-sendgrid', '-twilio', '-msg91', '-invoices', '-cms', '-faq', '-wishlist',
-        '-gateways', '-carriers', '-feeds', '-sitemaps', '-b2b'
+        '-gateways', '-carriers', '-feeds', '-sitemaps', '-b2b', '-recovery'
     )
 } else {
     if ($Identity) { $serveArgs += '-identity' }

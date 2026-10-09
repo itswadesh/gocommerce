@@ -64,6 +64,18 @@ const PROBES = {
     // reason to ask. The path is the companies list either way: an operator
     // holding only leads.read gets a 403 there, which still means installed.
     b2b: { path: "/api/admin/x/b2b/companies?limit=1", right: ["companies.read", "leads.read", "quotes.read"] },
+    // Abandoned checkouts and the Marketing section. Its settings route rather
+    // than the listing, because reading one row is the cheapest thing it
+    // serves and the listing counts the whole table.
+    //
+    // orders.read as well as the module's own right, because that right is
+    // the module's (D65): in a binary without the module nobody holds it, not
+    // even the owner, so a probe gated on it alone is never made and a typed
+    // /dash/abandoned could only say "your role does not carry…" to an owner
+    // whose store simply was not built with it. Anyone who reads orders may
+    // be told the truth; the probe answers 403 for them when it is installed,
+    // which still reads as present.
+    "cart-recovery": { path: "/api/admin/x/cart-recovery/settings", right: ["abandonment.read", "orders.read"] },
     // Plugin-only modules have no admin routes of their own; the plugin's
     // row is the proof they are installed.
     feeds: { path: "/api/admin/plugins/product-feeds", right: "store.operate" },

@@ -821,6 +821,34 @@ func TestOutboxRetriesUntilTheConsumerRecovers(t *testing.T) {
 	}
 }
 
+// order.created names the basket it was checked out from, which is how a
+// recovery module credits an order to the basket it chased; the cart's own
+// move to converted announces nothing.
+func TestOrderCreatedNamesItsCart(t *testing.T) {
+	app := newTestApp(t, &gatewayModule{})
+	ctx := context.Background()
+
+	product := simpleProduct(t, app, "CARTID-1", 1000, 4)
+	cart := newCart(t, app)
+	addToCart(t, app, cart.Token, product.DefaultVariant().ID, 1)
+	if _, err := app.Order().Checkout(ctx, "testgateway", checkoutInput(cart.Token), ""); err != nil {
+		t.Fatalf("checkout: %v", err)
+	}
+
+	var cartID, named int64
+	if err := app.DB().QueryRowContext(ctx, `SELECT id FROM carts WHERE token = $1`, cart.Token).Scan(&cartID); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.DB().QueryRowContext(ctx, `
+		SELECT (payload->>'cart_id')::bigint FROM outbox_events
+		WHERE event_name = $1`, EventOrderCreated).Scan(&named); err != nil {
+		t.Fatalf("read order.created: %v", err)
+	}
+	if named != cartID {
+		t.Errorf("order.created cart_id = %d, want %d", named, cartID)
+	}
+}
+
 // flakyModule fails a fixed number of deliveries, then succeeds.
 type flakyModule struct {
 	failures int
