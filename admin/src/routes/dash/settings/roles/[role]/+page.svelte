@@ -182,7 +182,7 @@
 
     /** How one button departs from the default: "added", "removed" or "". */
     function diff(right) {
-        // A store's own role has no default to depart from (D81).
+        // A store's own role has no default to depart from (D80).
         if (!row?.configurable || !row?.builtin) return "";
         const inDraft = has(right);
         const inDefault = defaults.includes(right);

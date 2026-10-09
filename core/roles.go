@@ -66,7 +66,7 @@ type RoleSet struct {
 	// the engine's, so a screen can offer to put them back.
 	TitleCustomized bool `json:"title_customized"`
 	// Builtin is one of the engine's four, which have defaults to reset to; a
-	// store's own role has none (D81).
+	// store's own role has none (D80).
 	Builtin bool `json:"builtin"`
 	// Holders counts the operators in the role and the open invitations into
 	// it, which is what decides whether it can be deleted.
@@ -403,7 +403,7 @@ func (r *RoleRights) Exists(ctx context.Context, role string) (bool, error) {
 
 // requireRole is the check every write that names a role makes first. It used
 // to be a lookup in a list compiled into the engine; the store's roles are its
-// own now (D81), so the answer is the store's.
+// own now (D80), so the answer is the store's.
 func (r *RoleRights) requireRole(ctx context.Context, role string) error {
 	ok, err := r.Exists(ctx, role)
 	if err != nil {
@@ -485,7 +485,7 @@ type NewRole struct {
 	Rights      []Right `json:"rights"`
 }
 
-// Create makes a role of the store's own (D81). The key is refused rather than
+// Create makes a role of the store's own (D80). The key is refused rather than
 // tidied when it is not already in shape, so the screen that shows the key
 // before saving shows exactly the identifier that will be stored.
 func (r *RoleRights) Create(ctx context.Context, in NewRole, by *Superuser) (*RoleSet, error) {

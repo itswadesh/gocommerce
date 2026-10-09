@@ -7,10 +7,12 @@ description: Use when adding a right, gating a route, changing what a role may d
 
 ## The model
 
-One enumerated list of rights, three fixed roles drawn from it, and one place
-that decides — [`rights.go`](../core/rights.go). **Nothing outside that file may
-invent a right.** What each role *carries* is the store's to change
-([`roles.go`](../core/roles.go)); the list itself is not.
+One enumerated list of rights, roles drawn from it, and one place that decides —
+[`rights.go`](../core/rights.go). **Nothing outside that file may invent a
+right.** The roles are the store's: the engine seeds `owner`, `manager`, `staff`
+and `vendor` into a `roles` table, and a store makes, renames and deletes its own
+([`roles.go`](../core/roles.go), D80). What each role *carries* is the store's to
+change; the list of rights is not.
 
 ```
 catalog.read      products, variants, categories, collections, media
@@ -162,10 +164,33 @@ Three things follow, and each was a bug before it was a rule:
 table for a module it was never built beside; the roles matrix carries them
 in `catalogue` and the Roles screen reads them from there.
 
+## Making and deleting a role
+
+A store makes a role of its own with a key, a name and a set of rights (D80):
+
+```http
+POST   /api/admin/roles             # { "key": "packer", "title": "Packer", "rights": ["orders.read"] }
+DELETE /api/admin/roles/{role}      # only when nobody holds it
+GET    /api/admin/roles/names       # every role's key and name, behind team.read
+```
+
+In Go it is `app.Roles().Create`, `Delete`, `Names`, and `Exists` for the check
+every write that names a role makes first. The key matches
+`^[a-z][a-z0-9_]{0,39}$` and is refused rather than tidied, so the panel shows the
+exact key before saving. A new role always keeps the floor (`catalog.read`),
+added if the set lacks it. A store's own role has no default: its rights are its
+grants, and there is nothing to reset it to.
+
+Deleting is refused while any operator or open invitation holds the role
+(409 `role_in_use`, counting both); the foreign keys from `superusers` and
+`superuser_invitations` are the last line under that. `owner` is never deleted.
+The starting roles can be, once empty. Vendor row-scoping stays tied to the role
+named `vendor`, and API keys keep the four built-in roles.
+
 ## Renaming a role
 
-The set of roles is fixed and the *key* of each is an identifier — `owner`, `manager` and `staff` are written on every superuser row and in
-`role_rights`, so renaming one would orphan accounts. What a store may change
+The *key* of each role is an identifier — it is written on every superuser row
+and in `role_rights`, so renaming one would orphan accounts. What a store may change
 is what it **calls** a role, and what it says the role is for:
 
 ```http
@@ -179,20 +204,24 @@ the row and the role goes back to tracking the defaults, exactly as a reset
 right-set does — improving a shipped sentence then reaches every store that
 never edited it (M41).
 
-All three roles are renameable, `owner` included. That is not an inconsistency with
+Every role is renameable, `owner` included; a store's own role cannot have its
+name cleared, because there are no engine words to fall back to. That is not an inconsistency with
 the rule below that owner's rights are unstorable: that rule exists so a store
 cannot narrow its own way back in, and a title locks nobody out of anything.
 
 ## Re-cutting a role
 
-A store may widen or narrow `manager` and `staff` — Settings → Roles in the
+A store may widen or narrow any role but `owner` — Settings → Roles in the
 panel, or:
 
 ```http
-GET    /api/admin/roles           # the matrix: every role, the catalogue, the floor
-PUT    /api/admin/roles/{role}    # the whole set the role should carry
-DELETE /api/admin/roles/{role}    # drop the override; the role tracks defaults again
+GET    /api/admin/roles                # the matrix: every role, the catalogue, the floor
+PUT    /api/admin/roles/{role}         # the whole set the role should carry
+POST   /api/admin/roles/{role}/reset   # starting roles only: track the defaults again
 ```
+
+Before D80 the reset was `DELETE /api/admin/roles/{role}`; that verb now deletes
+the role.
 
 In Go it is `app.Roles()` — `Matrix`, `Of`, `Set`, `Reset`.
 
@@ -293,6 +322,11 @@ still renders — the matrix falls through to an "Other" group and both lookups
 fall back to the identifier — but as a dotted name nobody can act on.
 
 ## How somebody joins
+
+In the panel, Settings → Team → **Add team member** takes an email and a role,
+then asks how the person arrives — **Create Account** (you set a password now) or
+**Send Invite** (the link below) — as the KitCommerce admin does. An address
+already on the team is refused before either.
 
 Invite them. `POST /api/admin/invitations` returns a `token` and an `accept_url`
 **once** — only the SHA-256 is stored, exactly as with a session — and the

@@ -314,7 +314,7 @@ export const roles = {
     names: () => api.get("/api/admin/roles/names"),
     create: (role) => request("POST", "/api/admin/roles", { body: role }),
     save: (role, rights) => request("PUT", `/api/admin/roles/${role}`, { body: { rights } }),
-    // Back to the engine's defaults; only the starting roles have any (D81).
+    // Back to the engine's defaults; only the starting roles have any (D80).
     reset: (role) => request("POST", `/api/admin/roles/${role}/reset`, {}),
     remove: (role) => api.delete(`/api/admin/roles/${role}`),
     // What the store calls the role, apart from what it may do. Blank either

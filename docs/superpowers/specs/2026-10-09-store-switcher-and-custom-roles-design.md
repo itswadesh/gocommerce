@@ -79,7 +79,7 @@ the two parts land on the final paths.
 
 ## Part 2 — custom roles, and the team flow
 
-### Roles (D81, replacing D24's refusal of custom roles)
+### Roles (D80, replacing D24's refusal of custom roles)
 
 D24 declined custom roles because a fixed set kept the matrix legible and the
 role names stable for code that switched on them. D64 (role keys are
@@ -140,7 +140,7 @@ Matches kitcommerce-admin's `/dash/teams` flow, on the existing Team screen:
   Create Account makes the platform account and Send Invite's link opens the
   admin host.
 
-## Part 1 — accounts and the store switcher (D80)
+## Part 1 — accounts and the store switcher (D81)
 
 D70 keeps two kinds of administrator apart — platform operators and a store's
 operators — and that stays. What is new is a third thing that was never

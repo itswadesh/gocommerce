@@ -2424,7 +2424,7 @@ CREATE INDEX orders_tax_exempt_group_idx ON orders (tax_exempt_group_id)
 `
 
 // migration0052CustomRoles makes the roles a store has a table rather than a
-// list compiled into the engine (D81).
+// list compiled into the engine (D80).
 //
 // The four the engine ships are seeded as rows so every existing superuser,
 // invitation and grant has a role to point at the moment the foreign keys

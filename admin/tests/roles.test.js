@@ -89,7 +89,7 @@ test("a role's name and description are editable, and saved apart from its right
     );
 });
 
-// A store makes and deletes roles of its own (D81); the screens grow the two
+// A store makes and deletes roles of its own (D80); the screens grow the two
 // verbs, and say who holds each role, since that decides whether it can go.
 const apiSource = read("../src/lib/api.js");
 

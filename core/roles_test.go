@@ -331,7 +331,7 @@ func TestRoleRoutes(t *testing.T) {
 		t.Errorf("PUT on the owner role = %d, want 403", rec.Code)
 	}
 
-	// Reset is its own verb now that DELETE removes a role (D81).
+	// Reset is its own verb now that DELETE removes a role (D80).
 	if rec := do(t, app, "POST", "/api/admin/roles/staff/reset", withAdmin); rec.Code != http.StatusOK {
 		t.Errorf("POST /api/admin/roles/staff/reset = %d: %s", rec.Code, rec.Body)
 	}

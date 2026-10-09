@@ -8070,7 +8070,7 @@
           "admin:roles"
         ],
         "summary": "Make a role of the store's own",
-        "description": "A store's own role is a named set of the rights this build has (D81); catalog.read is added if the set lacks it. Refused: a key not shaped `^[a-z][a-z0-9_]{0,39}$` or a blank name (400), a key the store already has (409), and a right this build does not have (400).",
+        "description": "A store's own role is a named set of the rights this build has (D80); catalog.read is added if the set lacks it. Refused: a key not shaped `^[a-z][a-z0-9_]{0,39}$` or a blank name (400), a key the store already has (409), and a right this build does not have (400).",
         "security": [
           {
             "adminToken": []
@@ -8216,7 +8216,7 @@
           "admin:roles"
         ],
         "summary": "Delete a role",
-        "description": "Removes a role nobody holds, with its grants and name (D81). Before D81 this verb reset a role to its defaults; that is now POST /api/admin/roles/{role}/reset. Refused: owner (403), and a role any operator or open invitation holds (409 `role_in_use`, the message counting both).",
+        "description": "Removes a role nobody holds, with its grants and name (D80). Before D80 this verb reset a role to its defaults; that is now POST /api/admin/roles/{role}/reset. Refused: owner (403), and a role any operator or open invitation holds (409 `role_in_use`, the message counting both).",
         "security": [
           {
             "adminToken": []
@@ -13270,7 +13270,7 @@
           "admin:roles"
         ],
         "summary": "Return a role to the engine's defaults",
-        "description": "Removes the store's override rather than writing the defaults down, so the role tracks them again from here on. Only the starting roles (manager, staff, vendor) have defaults; a store's own role is refused (400). Idempotent. Was DELETE /api/admin/roles/{role} before D81.",
+        "description": "Removes the store's override rather than writing the defaults down, so the role tracks them again from here on. Only the starting roles (manager, staff, vendor) have defaults; a store's own role is refused (400). Idempotent. Was DELETE /api/admin/roles/{role} before D80.",
         "security": [
           {
             "adminToken": []
@@ -16670,7 +16670,7 @@
           },
           "builtin": {
             "type": "boolean",
-            "description": "One of the engine's four (owner, manager, staff, vendor), which have defaults to reset to. A store's own role has none (D81)."
+            "description": "One of the engine's four (owner, manager, staff, vendor), which have defaults to reset to. A store's own role has none (D80)."
           },
           "holders": {
             "type": "integer",

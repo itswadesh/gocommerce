@@ -20,7 +20,7 @@ func (a *App) mountRoleRoutes() {
 	// store may let a manager staff it without letting them redraw the rules.
 	a.HandleAdminFunc("GET /api/admin/roles/names", a.handleRoleNames, RightTeamRead)
 	a.HandleAdminFunc("PUT /api/admin/roles/{role}", a.handleSetRoleRights, RightRolesWrite)
-	// DELETE removes the role now that a store can make one (D81); going back
+	// DELETE removes the role now that a store can make one (D80); going back
 	// to the engine's defaults is its own verb, and only the starting roles
 	// have defaults to go back to.
 	a.HandleAdminFunc("DELETE /api/admin/roles/{role}", a.handleDeleteRole, RightRolesWrite)

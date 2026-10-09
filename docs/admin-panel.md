@@ -447,6 +447,22 @@ deleted, so a dash means nobody is signed in at the moment and never that nobody
 ever has been; the panel must not let the column be read as a last sign-in,
 because the data cannot support that.
 
+## Roles a store names, and people added by email
+
+Settings → Roles lists every role with a Holders column and an **Add role**
+button: a name (the permanent key is shown under it before saving), then the
+role's own page, where the rights matrix grants what it may do (D80). That page
+offers **Delete role** only when nobody holds it, and says who has to move
+first when somebody does; **Reset to defaults** appears only on the starting
+roles, which have defaults.
+
+Settings → Team adds people the KitCommerce admin's way. **Add team member**
+asks for an email and a role, then a **User Account Not Found** dialog offers
+**Create Account** (a password now) or **Send Invite** (the one-time link). The
+role picker lists the store's own roles from `GET /api/admin/roles/names`, which
+sits behind `team.read` so an operator who staffs the shop need not also hold
+`roles.write`.
+
 ## Trying a discount, and what one cost
 
 The discount drawer gained two sections below the form. "Try it" posts a basket
