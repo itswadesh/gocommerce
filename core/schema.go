@@ -60,6 +60,7 @@ func coreMigrations() []Migration {
 		{ID: "0049_cart_verified_email", SQL: migration0049CartVerifiedEmail},
 		{ID: "0050_agreed_line_price", SQL: migration0050AgreedLinePrice},
 		{ID: "0051_group_shipping_and_tax", SQL: migration0051GroupShippingAndTax},
+		{ID: "0052_custom_roles", SQL: migration0052CustomRoles},
 	}
 }
 
@@ -2420,4 +2421,44 @@ ALTER TABLE orders
 -- a scan of every order the store has taken.
 CREATE INDEX orders_tax_exempt_group_idx ON orders (tax_exempt_group_id)
     WHERE tax_exempt_group_id IS NOT NULL;
+`
+
+// migration0052CustomRoles makes the roles a store has a table rather than a
+// list compiled into the engine (D81).
+//
+// The four the engine ships are seeded as rows so every existing superuser,
+// invitation and grant has a role to point at the moment the foreign keys
+// arrive. The CHECK lists M13, M19 and M48 wrote are dropped: the keys are
+// the store's now, and the foreign key is the stronger form of the same
+// guarantee. Owner stays out of role_rights, for the reason M19 gave.
+//
+// RESTRICT from superusers and invitations, so a role somebody holds cannot
+// vanish under them; the service refuses first with a message that counts
+// them, and this is the last line. CASCADE from role_rights, because a
+// role's grants mean nothing once the role is gone.
+const migration0052CustomRoles = `
+CREATE TABLE roles (
+    key        text        PRIMARY KEY CHECK (key ~ '^[a-z][a-z0-9_]{0,39}$'),
+    builtin    boolean     NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    created_by bigint      REFERENCES superusers (id) ON DELETE SET NULL
+);
+INSERT INTO roles (key, builtin) VALUES
+    ('owner', true), ('manager', true), ('staff', true), ('vendor', true);
+
+ALTER TABLE superusers DROP CONSTRAINT superusers_role_check;
+ALTER TABLE superusers
+    ADD CONSTRAINT superusers_role_fkey
+        FOREIGN KEY (role) REFERENCES roles (key) ON DELETE RESTRICT;
+
+ALTER TABLE superuser_invitations
+    ADD CONSTRAINT superuser_invitations_role_fkey
+        FOREIGN KEY (role) REFERENCES roles (key) ON DELETE RESTRICT;
+
+ALTER TABLE role_rights DROP CONSTRAINT role_rights_role_check;
+ALTER TABLE role_rights
+    ADD CONSTRAINT role_rights_role_check CHECK (role <> 'owner');
+ALTER TABLE role_rights
+    ADD CONSTRAINT role_rights_role_fkey
+        FOREIGN KEY (role) REFERENCES roles (key) ON DELETE CASCADE;
 `
