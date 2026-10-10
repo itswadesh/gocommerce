@@ -28,9 +28,13 @@ const testAdminToken = "test-admin-token"
 // mirroring the production role in scripts/reports-role.sql: it can connect and
 // SELECT and nothing else. It is a cluster-global object shared by every
 // concurrently-running test schema, created once and granted per schema; a
-// schema's grants vanish with it when the schema is dropped. Trust auth on the
-// test container lets it log in without a password (see pg_hba).
+// schema's grants vanish with it when the schema is dropped.
 const testReportsRole = "gctest_reports"
+
+// testReportsPassword is the reports role's password. A database that checks
+// passwords (CI's does; a trust-auth container does not) refuses a login that
+// has none, so the role is made with one and the reports DSN carries it.
+const testReportsPassword = "gctest_reports"
 
 // requireDB returns a connection string pointing at a PostgreSQL schema
 // created for this test alone, dropped when the test finishes.
@@ -73,7 +77,7 @@ func requireDB(t *testing.T) string {
 		DO $$
 		BEGIN
 			IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '`+testReportsRole+`') THEN
-				CREATE ROLE `+testReportsRole+` LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+				CREATE ROLE `+testReportsRole+` LOGIN PASSWORD '`+testReportsPassword+`' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
 			END IF;
 		EXCEPTION WHEN duplicate_object THEN
 			NULL;
@@ -126,7 +130,7 @@ func reportsDSN(adminDSN string) string {
 		// the reports role exists to prove, so make it fail loudly instead.
 		panic("reportsDSN: cannot parse test DSN: " + err.Error())
 	}
-	u.User = url.User(testReportsRole)
+	u.User = url.UserPassword(testReportsRole, testReportsPassword)
 	return u.String()
 }
 

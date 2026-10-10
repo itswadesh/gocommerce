@@ -501,7 +501,7 @@ func withTestReports(t *testing.T, dsn string) func(*Config) {
 		DO $$
 		BEGIN
 			IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'gctest_reports') THEN
-				CREATE ROLE gctest_reports LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+				CREATE ROLE gctest_reports LOGIN PASSWORD 'gctest_reports' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
 			END IF;
 		EXCEPTION WHEN duplicate_object THEN
 			NULL;
@@ -512,7 +512,10 @@ func withTestReports(t *testing.T, dsn string) func(*Config) {
 	if err != nil {
 		t.Fatalf("parse dsn: %v", err)
 	}
-	u.User = url.User("gctest_reports")
+	// The password is the same one core's tests give the role; each store's
+	// role is made with it cloned on, which a database that checks passwords
+	// needs and a trust-auth one ignores.
+	u.User = url.UserPassword("gctest_reports", "gctest_reports")
 	reportsURL := u.String()
 	return func(c *Config) {
 		c.ReportsDBURL = reportsURL
