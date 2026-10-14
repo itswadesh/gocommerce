@@ -85,7 +85,7 @@ go live. Each part gets its own implementation plan.
 |---|---|
 | `stores` | `id text` (`store_<ulid>`), `slug` unique, `name`, `status` (`active`, `suspended`), `created_at` |
 | `store_domains` | host → store (`host` unique, `store_id`); verification arrives in Part 4 |
-| `store_members` | `(store_id, superuser_id)` primary key, `role_id` → that store's `roles` |
+| `store_members` | `(store_id, superuser_id)` primary key, `role` → that store's `roles (store_id, key)`, `vendor_id` (the seller a vendor login acts for). `superusers.role` and `superusers.vendor_id` move here. |
 | `store_counters` | `(store_id, name)` primary key, `value bigint` — see order numbers |
 | `api_key_index` | `prefix` primary key → `store_id`, written in the same transaction as the key |
 | `superusers`, `superuser_sessions`, `superuser_password_resets` | People, not one store's staff |
@@ -98,7 +98,11 @@ go live. Each part gets its own implementation plan.
 Every other core table gets
 `store_id text NOT NULL REFERENCES stores(id) ON DELETE CASCADE`, including
 outbox events, idempotency keys, audit, API keys, invitations, roles,
-notifications and custom reports.
+notifications and custom reports. The column's default is
+`NULLIF(current_setting('gocommerce.store_id', true), '')`: an insert that
+forgets `store_id` takes the bound store, and with no store bound it fails
+on `NOT NULL`. Code still names `store_id` on every insert; the default is
+the net, not the rule.
 
 **Uniqueness is per store.** Each of the 38 `UNIQUE` constraints and unique
 indexes in `core/schema.go` gains a leading `store_id`:
@@ -124,8 +128,9 @@ even if the code builds one.
 order's id (`core/checkout.go:412`), which on a shared sequence would give a
 new store's first order a number like `GC-004817`. The checkout transaction
 instead bumps `store_counters (store_id, 'order')` and formats
-`prefix + %06d`. The prefix moves from config into store settings, default
-`GC-`. Existing orders keep their numbers; store #1's counter starts after
+`prefix + %06d`. The prefix is `stores.order_prefix`; while it is null the
+store uses `Config.OrderPrefix` (default `GC-`), so an existing install's
+configured prefix keeps working. Existing orders keep their numbers; store #1's counter starts after
 its highest.
 
 ### Row-Level Security
@@ -154,24 +159,39 @@ reports get a different policy (Part 4).
 1. An API key: its prefix → `api_key_index` → store. If a header names a
    different store: 403.
 2. Header `x-litekart-store` (id) or `X-Store` (slug or id).
-3. Cookie `litekart_store_id`.
-4. Host: `<slug>.<base domain>` or a row in `store_domains`.
+3. Query parameter `store` (id or slug) — for callers that cannot set a
+   header, chiefly payment providers' webhooks and invitation links.
+4. Cookie `litekart_store_id`.
+5. Host: `<slug>.<base domain>` or a row in `store_domains`.
+6. A signed-in person who belongs to exactly one store: that store.
+7. An install with exactly one store: that store. An upgraded single-store
+   install therefore needs no client change at all.
+
+Every step that names a store still passes the membership check: naming a
+store never grants access to it.
 
 Exempt routes skip resolution: sign-in and sign-out, password reset,
 `/api/stores/my`, `/api/stores/create`, health, docs and the panel's static
 files.
 
-**Binding.** Middleware takes one pooled connection for the request, runs
-`SELECT set_config('gocommerce.store_id', $1, false)`, and puts it in the
-request context. Every database call goes through `app.q(ctx)`, which returns
-that connection (or the transaction open on it). When the request ends the
-connection runs `RESET gocommerce.store_id` before returning to the pool; if
-the reset fails the connection is closed, not reused.
+**Binding.** Middleware puts the store id in the request context
+(`gocommerce.WithStore`). The engine's pool is opened through a thin
+`database/sql` driver wrapper: before every statement, transaction begin and
+prepared-statement run, it compares the context's store with the one last
+set on that connection and, when they differ, runs
+`SELECT set_config('gocommerce.store_id', $1, false)` first. A context with
+no store sets the empty string. So a connection can never carry one
+store's setting into another's statement, whichever pooled connection the
+statement lands on, and a rolled-back transaction forgets what it set. The
+~440 existing call sites keep `*sql.DB`, `InTx` and `App.DB()` unchanged:
+the store travels in the `ctx` they already pass. A test fails on any
+database call that does not take a context (`Query`, `Exec`, `QueryRow`,
+`Begin`, `Prepare` without `Context`).
 
-**The raw pool is private.** About 440 call sites use `a.db` directly today;
-all move to `app.q(ctx)`. `App.DB()` is removed from the public API. A test
-walks the Go AST of `core/` and `ext/` and fails on any use of `*sql.DB`
-outside the database layer.
+**Embedding and tests.** `Config.DefaultStore` names a store that a context
+with no store is bound to. It exists for an application that embeds the
+engine for one store, and for the test suite. `gocommerce serve` never sets
+it, so in the product unbound work sees nothing.
 
 **Queries say their store too.** As in kitcommerce-api, every query carries
 `WHERE store_id = $n` and every insert sets `store_id`. RLS is the net under
@@ -180,10 +200,12 @@ so the filter is also the fast path.
 
 **Background work.** `app.ForEachStore(ctx, fn)` binds each active store in
 turn on a dedicated connection. The scheduler, cart recovery, webhook
-retries and the outbox dispatcher run through it. The outbox dispatcher is
-woken by `NOTIFY outbox, '<store_id>'` so idle stores cost nothing. This is
-sized for hundreds of stores; past that, a global work queue is the next
-step and is out of scope here.
+retries and the outbox dispatcher run through it. A dispatcher pass walks
+every active store and drains each; an idle store costs one indexed query
+per pass, and the in-process nudge after a write still makes delivery
+immediate. This is sized for hundreds of stores; past that, a global work
+queue (or `LISTEN/NOTIFY` per store) is the next step and is out of scope
+here.
 
 **Errors.**
 
@@ -224,7 +246,9 @@ from Part 1 until Part 4.
 ## Part 2 — Modules
 
 The same treatment for the 37 tables under `ext/`: `store_id`, per-store
-unique keys, composite foreign keys, RLS, `app.q(ctx)`. Module settings and
+unique keys, composite foreign keys, RLS, explicit `store_id` in every
+statement. Modules call the exported `gocommerce.ScopeTables` from a
+migration of their own. Module settings and
 "plugin on/off" become per store. Module jobs run through
 `ForEachStore`. Modules still never write core tables (AGENTS.md rule 1).
 
@@ -334,8 +358,10 @@ store behaves as before.
   → 404; cookie and host fallbacks; resolution order.
 - Background work: an outbox event, a scheduled job and a cart reminder in A
   run bound to A and never touch B.
-- Connection reuse: a request for A followed by one for B on the same pooled
-  connection sees only B.
+- Connection reuse: on a pool of one connection, a statement for A, then one
+  for B, then one with no store, each sees only its own rows (none for the
+  last); a rolled-back transaction that bound A leaves the connection
+  unbound.
 
 **RLS on its own.** A raw connection as the engine's login, with no store
 set, runs `SELECT` against every store table (listed from
