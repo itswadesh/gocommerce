@@ -189,6 +189,9 @@ environment:
 		// A store is found by host as well as by header and cookie: a request
 		// to <slug>.<base-domain> is that store's (D83).
 		baseDomain = fs.String("base-domain", "", "every store also answers at <slug>.<base-domain> (default $GOCOMMERCE_BASE_DOMAIN)")
+		// The store a one-shot command works on: superuser, doctor, taxonomy,
+		// attributes. Unneeded while the install has one store.
+		storeFlag  = fs.String("store", "", "the store (id or slug) superuser, doctor, taxonomy and attributes act on; default: the only store")
 		withAmazon = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or IMPORT_AMAZON_LLM_URL + IMPORT_AMAZON_LLM_MODEL for a local model rewrite the copy; IMPORT_AMAZON_HEADED=1 shows the browser)")
 	)
 	if err := fs.Parse(args); err != nil {
@@ -423,6 +426,12 @@ environment:
 		return err
 	}
 
+	// One-shot commands act on one store. Resolved after New, which has
+	// applied the migrations that create the store table.
+	inStore := func() (context.Context, error) {
+		return commandStore(context.Background(), app, *storeFlag)
+	}
+
 	switch command {
 	case "migrate":
 		defer app.Close()
@@ -436,11 +445,19 @@ environment:
 
 	case "superuser":
 		defer app.Close()
-		return superuserCmd(context.Background(), app, fs.Args()[1:])
+		ctx, err := inStore()
+		if err != nil {
+			return err
+		}
+		return superuserCmd(ctx, app, fs.Args()[1:])
 
 	case "doctor":
 		defer app.Close()
-		return doctorCmd(context.Background(), app, *jsonOut)
+		ctx, err := inStore()
+		if err != nil {
+			return err
+		}
+		return doctorCmd(ctx, app, *jsonOut)
 
 	case "spec":
 		defer app.Close()
@@ -449,14 +466,29 @@ environment:
 
 	case "taxonomy":
 		defer app.Close()
-		return taxonomyCmd(context.Background(), app, fs.Args()[1:], log)
+		ctx, err := inStore()
+		if err != nil {
+			return err
+		}
+		return taxonomyCmd(ctx, app, fs.Args()[1:], log)
 
 	case "attributes":
 		defer app.Close()
-		return attributesCmd(context.Background(), app, fs.Args()[1:], log)
+		ctx, err := inStore()
+		if err != nil {
+			return err
+		}
+		return attributesCmd(ctx, app, fs.Args()[1:], log)
 
 	case "serve":
-		if err := bootstrapSuperuser(context.Background(), app, log); err != nil {
+		// The first operator belongs to the first store: the one a fresh
+		// install has, and an upgraded install's own.
+		first, err := commandStore(context.Background(), app, "first")
+		if err != nil {
+			app.Close()
+			return err
+		}
+		if err := bootstrapSuperuser(first, app, log); err != nil {
 			app.Close()
 			return err
 		}
@@ -472,6 +504,34 @@ environment:
 // container can come up with a usable panel and no manual step. It is
 // deliberately create-only: if a superuser already exists, a stale environment
 // variable must not silently reset that operator's password.
+// commandStore binds ctx to the store a one-shot command acts on: the one
+// named by id or slug, "first" for the oldest, or with none named the
+// install's only store. With several stores and none named it refuses rather
+// than guess which store a new operator or a taxonomy import belongs to.
+func commandStore(ctx context.Context, app *gocommerce.App, name string) (context.Context, error) {
+	stores, err := app.Stores().Active(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(stores) == 0 {
+		return nil, errors.New("this database has no active store")
+	}
+	switch {
+	case name == "first":
+		return gocommerce.WithStore(ctx, stores[0].ID), nil
+	case name == "" && len(stores) == 1:
+		return gocommerce.WithStore(ctx, stores[0].ID), nil
+	case name == "":
+		return nil, fmt.Errorf("this install has %d stores; name one with -store <id or slug>", len(stores))
+	}
+	for _, st := range stores {
+		if st.ID == name || st.Slug == strings.ToLower(name) {
+			return gocommerce.WithStore(ctx, st.ID), nil
+		}
+	}
+	return nil, fmt.Errorf("no active store %q", name)
+}
+
 func bootstrapSuperuser(ctx context.Context, app *gocommerce.App, log *slog.Logger) error {
 	email := os.Getenv("GOCOMMERCE_ADMIN_EMAIL")
 	password := os.Getenv("GOCOMMERCE_ADMIN_PASSWORD")

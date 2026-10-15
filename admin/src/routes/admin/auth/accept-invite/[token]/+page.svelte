@@ -16,6 +16,9 @@
     import { toast } from "$lib/toast.svelte.js";
 
     const token = $derived(page.params.token);
+    // The store that sent the link. An install serves many stores (D83), and
+    // the invitation, and the team it joins, are that store's.
+    const store = $derived(page.url.searchParams.get("store") ?? "");
 
     let loading = $state(true);
     let invitation = $state(null);
@@ -28,14 +31,14 @@
     let error = $state("");
 
     $effect(() => {
-        load(token);
+        load(token, store);
     });
 
-    async function load(t) {
+    async function load(t, s) {
         loading = true;
         problem = "";
         try {
-            invitation = await auth.invitation(t);
+            invitation = await auth.invitation(t, s);
         } catch (err) {
             // A dead link is the expected failure here, not an exception: it
             // has been used, revoked, or left too long. The engine's message
@@ -49,14 +52,16 @@
     async function submit(e) {
         e.preventDefault();
         if (submitting) return;
-        if (password !== confirm) {
+        // Somebody who already has an account proves it with the password
+        // they have; there is nothing to type twice.
+        if (!invitation.has_account && password !== confirm) {
             error = "The two passwords do not match.";
             return;
         }
         submitting = true;
         error = "";
         try {
-            const record = await auth.accept(token, password);
+            const record = await auth.accept(token, password, store);
             // Accepting signs you in, so there is nowhere to send them but in.
             // They have typed this password once already and asking them to
             // prove it immediately is how a first impression goes wrong.
@@ -102,8 +107,12 @@
                     {invitation.invited_by
                         ? `${invitation.invited_by} invited you`
                         : "You have been invited"}
-                    as <strong>{invitation.role}</strong>. Choose a password — nobody else
-                    will ever see it.
+                    as <strong>{invitation.role}</strong>.
+                    {#if invitation.has_account}
+                        You already have an account: enter its password to join.
+                    {:else}
+                        Choose a password — nobody else will ever see it.
+                    {/if}
                 </small>
             </div>
 
@@ -120,14 +129,16 @@
                 <div class="col-12">
                     <div class="fields">
                         <div class="field required" class:error={!!error}>
-                            <label for="invite_pass">Password</label>
+                            <label for="invite_pass"
+                                >{invitation.has_account ? "Your current password" : "Password"}</label
+                            >
                             <!-- svelte-ignore a11y_autofocus -->
                             <input
                                 id="invite_pass"
                                 required
                                 autofocus
                                 type={showPassword ? "text" : "password"}
-                                autocomplete="new-password"
+                                autocomplete={invitation.has_account ? "current-password" : "new-password"}
                                 bind:value={password}
                                 oninput={() => (error = "")}
                             />
@@ -149,6 +160,7 @@
                     </div>
                 </div>
 
+                {#if !invitation.has_account}
                 <div class="col-12">
                     <div class="field required" class:error={!!error}>
                         <label for="invite_confirm">Password again</label>
@@ -164,6 +176,9 @@
                     {#if error}<div class="field-help error">{error}</div>{/if}
                     <div class="field-help">At least 8 characters.</div>
                 </div>
+                {:else if error}
+                    <div class="col-12"><div class="field-help error">{error}</div></div>
+                {/if}
 
                 <div class="col-12">
                     <button

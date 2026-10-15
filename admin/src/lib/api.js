@@ -72,6 +72,11 @@ function refuse(status, code, message, details) {
     return err;
 }
 
+/** storeQuery is "?store=<id>" for a non-empty store, else nothing. */
+function storeQuery(store) {
+    return store ? "?store=" + encodeURIComponent(store) : "";
+}
+
 /**
  * request performs one API call and unwraps the {"data": ...} envelope.
  *
@@ -200,9 +205,15 @@ export const auth = {
         return beginSession(result);
     },
 
-    /** invitation says who a link is for, before asking for a password. */
-    async invitation(token) {
-        const result = await api.get(`/api/admin/invitations/accept/${token}`, { admin: false });
+    /**
+     * invitation says who a link is for, before asking for a password. store
+     * is the one the link names: an install serves many stores, and the
+     * invitation lives in the one that sent it.
+     */
+    async invitation(token, store = "") {
+        const result = await api.get(`/api/admin/invitations/accept/${token}${storeQuery(store)}`, {
+            admin: false,
+        });
         return result.data ?? result;
     },
 
@@ -211,9 +222,9 @@ export const auth = {
      * engine returns the same shape login does, so arriving by invitation and
      * arriving by password end in exactly the same state.
      */
-    async accept(token, password) {
+    async accept(token, password, store = "") {
         const result = await api.post(
-            `/api/admin/invitations/accept/${token}`,
+            `/api/admin/invitations/accept/${token}${storeQuery(store)}`,
             { password },
             { admin: false },
         );
@@ -270,7 +281,10 @@ export const auth = {
     // response is the only one that carries the link, so a caller that drops it
     // has to issue a new invitation.
     invitations: () => api.get("/api/admin/invitations"),
-    invite: (email, role) => api.post("/api/admin/invitations", { email, role }),
+    // sendEmail false asks for the link to copy instead of an email; either
+    // way any earlier link for the address stops working.
+    invite: (email, role, sendEmail = true) =>
+        api.post("/api/admin/invitations", { email, role, send_email: sendEmail }),
     revokeInvitation: (id) => api.delete(`/api/admin/invitations/${id}`),
 
     // Ending sessions. Somebody else's is team management; your own is the
