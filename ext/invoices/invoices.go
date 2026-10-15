@@ -88,7 +88,9 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			    year integer PRIMARY KEY,
 			    next integer NOT NULL
 			);`,
-	}}
+	},
+		gocommerce.ScopeMigration("0002_store_scope", "invoices_counters", "invoices_documents"),
+	}
 }
 
 // Register implements gocommerce.Module.
@@ -173,7 +175,7 @@ func (m *Module) issue(ctx context.Context, orderID int64) error {
 		// stays gapless.
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO invoices_counters (year, next) VALUES ($1, 1)
-			 ON CONFLICT (year) DO NOTHING`, year); err != nil {
+			 ON CONFLICT (store_id, year) DO NOTHING`, year); err != nil {
 			return err
 		}
 		var seq int
@@ -187,7 +189,7 @@ func (m *Module) issue(ctx context.Context, orderID int64) error {
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO invoices_documents (order_id, number, year, sequence, total_minor, currency, snapshot)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)
-			ON CONFLICT (order_id) DO NOTHING`,
+			ON CONFLICT (store_id, order_id) DO NOTHING`,
 			orderID, number, year, seq, order.Total.AmountMinor, order.Currency, snapshot)
 		if err != nil {
 			return err

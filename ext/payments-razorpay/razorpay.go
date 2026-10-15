@@ -135,7 +135,9 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			    order_id    bigint,
 			    received_at timestamptz NOT NULL DEFAULT now()
 			);`,
-	}}
+	},
+		gocommerce.ScopeMigration("0002_store_scope", "payments_razorpay_events"),
+	}
 }
 
 // Register implements gocommerce.Module.

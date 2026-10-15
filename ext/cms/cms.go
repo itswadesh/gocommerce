@@ -91,7 +91,9 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			    UNIQUE (slug, language)
 			);
 			CREATE INDEX cms_pages_published_idx ON cms_pages (status, published_at DESC);`,
-	}}
+	},
+		gocommerce.ScopeMigration("0002_store_scope", "cms_pages"),
+	}
 }
 
 // Register implements gocommerce.Module.

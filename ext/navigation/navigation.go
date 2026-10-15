@@ -139,7 +139,9 @@ JOIN (VALUES ('Search', 'url', '/search', 0), ('Contact us', 'url', '/contact', 
     AS v (title, kind, target, position) ON true
 WHERE m.handle = 'footer' AND NOT EXISTS (SELECT 1 FROM navigation_items i WHERE i.menu_id = m.id);
 `,
-	}}
+	},
+		gocommerce.ScopeMigration("0003_store_scope", "navigation_menus", "navigation_items"),
+	}
 }
 
 var handleRE = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)

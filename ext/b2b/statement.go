@@ -395,7 +395,7 @@ func (m *Module) fileEntry(ctx context.Context, orderID int64, kind string, at t
 	_, err := m.db.ExecContext(ctx, `
 		INSERT INTO b2b_account_entries (order_id, kind, at, date_source, event_id)
 		VALUES ($1, $2, $3, $4, nullif($5, ''))
-		ON CONFLICT (order_id, kind, at) DO NOTHING`, orderID, kind, at, source, eventID)
+		ON CONFLICT (store_id, order_id, kind, at) DO NOTHING`, orderID, kind, at, source, eventID)
 	return err
 }
 

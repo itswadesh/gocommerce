@@ -106,7 +106,9 @@ CREATE TABLE contact_messages (
 );
 CREATE INDEX contact_messages_status_idx ON contact_messages (status, id DESC);
 `,
-	}}
+	},
+		gocommerce.ScopeMigration("0002_store_scope", "contact_messages"),
+	}
 }
 
 // Register implements gocommerce.Module.

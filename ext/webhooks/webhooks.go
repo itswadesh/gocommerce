@@ -150,7 +150,9 @@ CREATE INDEX webhook_deliveries_claim
     WHERE delivered_at IS NULL AND NOT dead;
 
 CREATE INDEX webhook_deliveries_endpoint ON webhook_deliveries (endpoint_id, id DESC);`,
-	}}
+	},
+		gocommerce.ScopeMigration("0002_store_scope", "webhook_endpoints", "webhook_deliveries"),
+	}
 }
 
 // Register implements gocommerce.Module.

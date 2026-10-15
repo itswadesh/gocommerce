@@ -48,7 +48,7 @@ func (m *Module) requestApproval(ctx context.Context, p *placement, kind string,
 		                           currency, lines, subtotal_minor, total_minor, payment_method,
 		                           po_number, checkout, idempotency_key)
 		VALUES ($1, $2, $13, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-		ON CONFLICT (requested_by, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
+		ON CONFLICT (store_id, requested_by, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
 		RETURNING id`,
 		p.company.ID, p.buyer.ID, kind, quote, a.Total.Currency, linesJSON,
 		a.Subtotal.AmountMinor, a.Total.AmountMinor, method, p.po, snapshotOf(in), key,

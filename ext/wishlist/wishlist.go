@@ -137,7 +137,9 @@ CREATE UNIQUE INDEX wishlist_items_once_idx
     ON wishlist_items (wishlist_id, product_id, coalesce(variant_id, 0));
 CREATE INDEX wishlist_items_product_idx ON wishlist_items (product_id);
 `,
-	}}
+	},
+		gocommerce.ScopeMigration("0002_store_scope", "wishlists", "wishlist_items"),
+	}
 }
 
 // Register implements gocommerce.Module.

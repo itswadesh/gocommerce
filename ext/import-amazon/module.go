@@ -185,7 +185,9 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			);
 			CREATE INDEX import_amazon_jobs_created_idx
 			    ON import_amazon_jobs (created_at DESC);`,
-	}}
+	},
+		gocommerce.ScopeMigration("0002_store_scope", "import_amazon_jobs"),
+	}
 }
 
 // Register implements gocommerce.Module.

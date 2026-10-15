@@ -82,7 +82,9 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			    updated_at timestamptz NOT NULL DEFAULT now(),
 			    PRIMARY KEY (kind, entity_id, language)
 			);`,
-	}}
+	},
+		gocommerce.ScopeMigration("0002_store_scope", "translations_entries"),
+	}
 }
 
 // Register implements gocommerce.Module.
@@ -307,7 +309,7 @@ func (m *Module) handlePut(w http.ResponseWriter, r *http.Request) {
 	if err := m.db.QueryRowContext(r.Context(), `
 		INSERT INTO translations_entries (kind, entity_id, language, fields)
 		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (kind, entity_id, language)
+		ON CONFLICT (store_id, kind, entity_id, language)
 		DO UPDATE SET fields = excluded.fields, updated_at = now()
 		RETURNING kind, entity_id, language, fields, updated_at`,
 		kind, id, language, encoded,

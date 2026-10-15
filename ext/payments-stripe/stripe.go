@@ -143,7 +143,9 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			);
 			CREATE INDEX payments_stripe_events_received_idx
 			    ON payments_stripe_events (received_at);`,
-	}}
+	},
+		gocommerce.ScopeMigration("0002_store_scope", "payments_stripe_events"),
+	}
 }
 
 // Register implements gocommerce.Module.

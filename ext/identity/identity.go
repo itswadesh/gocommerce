@@ -316,7 +316,9 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			    created_at  timestamptz NOT NULL DEFAULT now()
 			);
 			CREATE INDEX identity_email_verifications_customer_idx ON identity_email_verifications (customer_id);`,
-	}}
+	},
+		gocommerce.ScopeMigration("0003_store_scope", "identity_customers", "identity_addresses", "identity_sessions", "identity_email_verifications", "identity_password_resets", "identity_orders"),
+	}
 }
 
 // Register implements gocommerce.Module.
@@ -1387,7 +1389,7 @@ func (m *Module) ClaimOrder(ctx context.Context, customerID int64, number, acces
 	res, err := m.db.ExecContext(ctx, `
 		INSERT INTO identity_orders (customer_id, order_id, order_number)
 		VALUES ($1, $2, $3)
-		ON CONFLICT (customer_id, order_id) DO NOTHING`, customerID, o.ID, o.Number)
+		ON CONFLICT (store_id, customer_id, order_id) DO NOTHING`, customerID, o.ID, o.Number)
 	if isUniqueViolation(err, "identity_orders_order_idx") {
 		return nil, false, gocommerce.Conflictf("order %s already belongs to another account", o.Number)
 	}
