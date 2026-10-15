@@ -7,13 +7,21 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/itswadesh/gocommerce/internal/testdb"
 )
 
 // newStrictTestApp boots an engine the way `serve` runs it: no default store,
 // so work that names no store sees none.
 func newStrictTestApp(t *testing.T) *App {
 	t.Helper()
-	cfg := testConfig(requireDB(t))
+	cfg := testConfig(testdb.Clone(t, "core:", func(dsn string) error {
+		app, err := New(testConfig(dsn))
+		if err != nil {
+			return err
+		}
+		return app.Close()
+	}))
 	cfg.DefaultStore = ""
 	app, err := New(cfg)
 	if err != nil {

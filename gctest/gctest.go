@@ -34,6 +34,7 @@ import (
 	"testing"
 
 	"github.com/itswadesh/gocommerce/core"
+	"github.com/itswadesh/gocommerce/internal/testdb"
 )
 
 // DSNEnv names the environment variable holding the PostgreSQL URL used by
@@ -56,7 +57,20 @@ func NewWithConfig(t *testing.T, cfg gocommerce.Config, mods ...gocommerce.Modul
 	t.Helper()
 
 	if cfg.DBURL == "" {
-		cfg.DBURL = IsolatedDSN(t)
+		// A database of its own, copied from one migrated once for this set
+		// of modules: far cheaper than migrating per test.
+		cfg.DBURL = testdb.Clone(t, "gctest:"+moduleKey(mods), func(dsn string) error {
+			app, err := gocommerce.New(gocommerce.Config{
+				DBURL:        dsn,
+				AdminTokens:  []string{AdminToken},
+				Logger:       slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError})),
+				DefaultStore: "first",
+			}, mods...)
+			if err != nil {
+				return err
+			}
+			return app.Close()
+		})
 	}
 	if len(cfg.AdminTokens) == 0 {
 		cfg.AdminTokens = []string{AdminToken}
@@ -77,6 +91,23 @@ func NewWithConfig(t *testing.T, cfg gocommerce.Config, mods ...gocommerce.Modul
 	}
 	t.Cleanup(func() { _ = app.Close() })
 	return app
+}
+
+// moduleKey names everything that decides a test app's schema: the modules,
+// in order, and their migrations.
+func moduleKey(mods []gocommerce.Module) string {
+	var b strings.Builder
+	for _, m := range mods {
+		if m == nil {
+			continue
+		}
+		b.WriteString(m.Name())
+		for _, mig := range m.Migrations() {
+			b.WriteString("/" + mig.ID)
+		}
+		b.WriteString(";")
+	}
+	return b.String()
 }
 
 // IsolatedDSN returns a connection string pointing at a PostgreSQL schema
