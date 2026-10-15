@@ -43,7 +43,13 @@ type authResponse struct {
 // database has no superuser, and the panel needs to know that *before*
 // rendering a login form nobody could satisfy.
 func (a *App) handleAuthState(w http.ResponseWriter, r *http.Request) {
-	n, err := a.superusers.Count(r.Context())
+	// Asked before anybody has a session, so usually before any store is
+	// named. Then "can anybody sign in" is about the install: anybody at all.
+	count := a.superusers.Count
+	if _, bound := StoreFrom(r.Context()); !bound {
+		count = a.superusers.CountPeople
+	}
+	n, err := count(r.Context())
 	if err != nil {
 		RespondError(w, r, err)
 		return
@@ -117,6 +123,16 @@ func (a *App) handleAuthWithPassword(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		RespondError(w, r, err)
 		return
+	}
+	// Signed in with no store named: a person who works in exactly one store
+	// is answered with their standing there, as every later request of theirs
+	// will be (storeMW's sole-membership rule).
+	if _, bound := StoreFrom(r.Context()); !bound {
+		if ms, err := a.stores.MembershipsOf(r.Context(), su.ID); err == nil && len(ms) == 1 {
+			if here, err := a.superusers.Get(WithStore(r.Context(), ms[0].StoreID), su.ID); err == nil {
+				su = here
+			}
+		}
 	}
 	Respond(w, http.StatusOK, authResponse{
 		Token:     sess.Token,

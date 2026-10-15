@@ -81,6 +81,7 @@ commands:
   serve      apply migrations, then serve the API (default)
   migrate    apply migrations and exit
   superuser  create or update an admin-panel operator, then exit
+  store      create a store: store create <slug> [name], then exit
   doctor     run operational diagnostics and exit (-json for agents)
   spec       print the OpenAPI contract and exit
   taxonomy   import a product category tree, then exit
@@ -443,6 +444,10 @@ environment:
 		log.Info("migrations up to date")
 		return nil
 
+	case "store":
+		defer app.Close()
+		return storeCmd(context.Background(), app, fs.Args()[1:])
+
 	case "superuser":
 		defer app.Close()
 		ctx, err := inStore()
@@ -504,6 +509,22 @@ environment:
 // container can come up with a usable panel and no manual step. It is
 // deliberately create-only: if a superuser already exists, a stale environment
 // variable must not silently reset that operator's password.
+// storeCmd opens a new store, seeded so it can stock and sell. Its first
+// operator is added with `superuser create` and -store.
+func storeCmd(ctx context.Context, app *gocommerce.App, args []string) error {
+	if len(args) < 2 || args[0] != "create" {
+		return errors.New("usage: gocommerce store create <slug> [name]")
+	}
+	name := strings.Join(args[2:], " ")
+	st, err := app.Stores().Create(ctx, name, args[1])
+	if err != nil {
+		return err
+	}
+	fmt.Printf("created store %s (%s)\nadd its first operator: gocommerce -store %s superuser create <email> <password> owner\n",
+		st.Slug, st.ID, st.Slug)
+	return nil
+}
+
 // commandStore binds ctx to the store a one-shot command acts on: the one
 // named by id or slug, "first" for the oldest, or with none named the
 // install's only store. With several stores and none named it refuses rather

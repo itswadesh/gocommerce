@@ -283,3 +283,34 @@ func (s *Stores) Seed(ctx context.Context, storeID string) error {
 		return nil
 	})
 }
+
+// Create opens a new store and seeds it (Seed), so it can stock and sell from
+// its first minute. The slug is how the store is named in a header and in its
+// host, so it is checked here rather than left to the table's CHECK.
+func (s *Stores) Create(ctx context.Context, name, slug string) (*Store, error) {
+	slug = strings.ToLower(strings.TrimSpace(slug))
+	name = strings.TrimSpace(name)
+	if !storeSlugRE.MatchString(slug) {
+		return nil, Validationf("a store's slug is lowercase letters, digits and hyphens, starting with a letter or digit")
+	}
+	if name == "" {
+		name = slug
+	}
+	id, err := NewStoreID()
+	if err != nil {
+		return nil, Internalf(err, "make a store id")
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO stores (id, slug, name) VALUES ($1, $2, $3)`, id, slug, name); err != nil {
+		if isUniqueViolation(err) {
+			return nil, Conflictf("there is already a store called %q", slug)
+		}
+		return nil, Internalf(err, "create store")
+	}
+	if err := s.Seed(ctx, id); err != nil {
+		// The store row without its seeds cannot sell; take it back out.
+		_, _ = s.db.ExecContext(context.WithoutCancel(ctx), `DELETE FROM stores WHERE id = $1`, id)
+		return nil, err
+	}
+	return s.Get(ctx, id)
+}

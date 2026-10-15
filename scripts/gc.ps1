@@ -5,11 +5,21 @@
 
 $script:GCBase  = if ($env:GC_BASE)  { $env:GC_BASE }  else { 'http://127.0.0.1:8080' }
 $script:GCToken = if ($env:GC_TOKEN) { $env:GC_TOKEN } else { 'dev-token' }
+# The store every request names, by id or slug (D83). Empty is fine while the
+# install has one store.
+$script:GCStore = if ($env:GC_STORE) { $env:GC_STORE } else { '' }
 
 function Get-GCBase { $script:GCBase }
 # For the one call Invoke-GC cannot make: a multipart upload, where the header
 # has to be handed to curl.exe rather than built here.
 function Get-GCToken { $script:GCToken }
+# For a call made by hand with a session's own token: the same store header
+# Invoke-GC sends, so a multi-store install knows which store it is for.
+function Get-GCSessionHeaders([string]$Token) {
+    $h = @{ Authorization = "Bearer $Token" }
+    if ($script:GCStore) { $h['x-litekart-store'] = $script:GCStore }
+    $h
+}
 
 # Invoke-GC sends one API request and returns the decoded "data" member.
 #
@@ -38,6 +48,9 @@ function Invoke-GC {
         Headers     = $Headers.Clone()
     }
     if ($Admin) { $params.Headers['Authorization'] = "Bearer $script:GCToken" }
+    if ($script:GCStore -and -not $params.Headers.ContainsKey('x-litekart-store')) {
+        $params.Headers['x-litekart-store'] = $script:GCStore
+    }
     if ($null -ne $Body) {
         $text = if ($Body -is [string]) { $Body } else { $Body | ConvertTo-Json -Depth 10 -Compress }
         # Encoded to bytes here rather than handed over as a string.

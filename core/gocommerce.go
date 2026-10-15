@@ -907,6 +907,18 @@ func (a *App) Start(ctx context.Context) error {
 	if a.started {
 		return nil
 	}
+	// A login that passes the row policies is a warning with one store and a
+	// refusal with several: a statement that leans on the policy to find
+	// "this store's" default location would find another store's (D83).
+	if d := a.checkRowSecurity(ctx); d.Status == StatusFail {
+		n, err := a.stores.Count(ctx)
+		if err != nil {
+			return err
+		}
+		if n > 1 {
+			return fmt.Errorf("gocommerce: refusing to serve %d stores without row security: %s; %s", n, d.Detail, d.Hint)
+		}
+	}
 	a.started = true
 	runCtx, cancel := context.WithCancel(ctx)
 	a.stopRun = cancel

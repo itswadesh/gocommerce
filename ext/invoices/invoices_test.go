@@ -182,6 +182,8 @@ func TestReconcileIssuesMissingInvoices(t *testing.T) {
 		DBURL:       dsn,
 		AdminTokens: []string{gctest.AdminToken},
 		Logger:      plain.Config().Logger,
+		// One store, as gctest boots it: unbound reads are that store's.
+		DefaultStore: "first",
 	}, mod)
 	if err != nil {
 		t.Fatalf("boot with the invoices module: %v", err)

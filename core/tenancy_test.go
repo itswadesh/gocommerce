@@ -2,6 +2,7 @@ package gocommerce
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -241,5 +242,34 @@ func TestAPluginIsSwitchedOnPerStore(t *testing.T) {
 	}
 	if enabled, err := app.Plugins().Enabled(ctxA, "fake-mail"); err != nil || !enabled {
 		t.Fatalf("store A's fake-mail enabled=%v err=%v", enabled, err)
+	}
+}
+
+func TestCreatingAStoreGivesItWhatItNeedsToSell(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	st, err := app.Stores().Create(ctx, "Corner Shop", "corner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ValidStoreID(st.ID) || st.Slug != "corner" || st.Name != "Corner Shop" || st.Status != "active" {
+		t.Fatalf("store = %+v", st)
+	}
+	bound := WithStore(ctx, st.ID)
+	var roles, locations, profiles int
+	if err := app.db.QueryRowContext(bound, `SELECT
+		(SELECT count(*) FROM roles WHERE builtin),
+		(SELECT count(*) FROM locations WHERE is_default),
+		(SELECT count(*) FROM store_profile)`).Scan(&roles, &locations, &profiles); err != nil {
+		t.Fatal(err)
+	}
+	if roles != 4 || locations != 1 || profiles != 1 {
+		t.Fatalf("roles=%d default locations=%d profiles=%d; want 4, 1, 1", roles, locations, profiles)
+	}
+	if _, err := app.Stores().Create(ctx, "Again", "corner"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("a second store with the same slug: %v, want a conflict", err)
+	}
+	if _, err := app.Stores().Create(ctx, "Bad", "Not A Slug!"); !errors.Is(err, ErrValidation) {
+		t.Fatalf("a malformed slug: %v, want a validation error", err)
 	}
 }

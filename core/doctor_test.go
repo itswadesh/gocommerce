@@ -3,6 +3,8 @@ package gocommerce
 import (
 	"context"
 	"encoding/json"
+	"net/url"
+	"os"
 	"strings"
 	"testing"
 )
@@ -345,5 +347,43 @@ func TestDoctorFailsWhenTheEngineCanBypassRowSecurity(t *testing.T) {
 	}
 	if d := app.checkRowSecurity(context.Background()); d.Status != StatusOK {
 		t.Fatalf("the test login fails the check: %+v", d)
+	}
+}
+
+// With more than one store, a login that passes every row policy does not
+// just leak: a statement that leans on the policy to pick "this store's"
+// default location picks another store's. So the engine refuses to start;
+// with one store it only warns, so an existing install can upgrade first.
+func TestServingSeveralStoresAsASuperuserIsRefused(t *testing.T) {
+	engineDSN := requireDB(t)
+	u, err := url.Parse(engineDSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := url.Parse(os.Getenv(testDSNEnv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.User = base.User // the cluster's superuser, into the same test schema
+	cfg := testConfig(u.String())
+	cfg.DefaultStore = ""
+	app, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+	if err := app.Start(context.Background()); err != nil {
+		t.Fatalf("one store under a superuser should start, with a warning: %v", err)
+	}
+	app.Close()
+
+	app2, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app2.Close()
+	addTestStore(t, app2, "second")
+	if err := app2.Start(context.Background()); err == nil || !strings.Contains(err.Error(), "row security") {
+		t.Fatalf("two stores under a superuser started: %v", err)
 	}
 }

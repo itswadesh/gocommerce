@@ -862,6 +862,16 @@ func (s *Superusers) Count(ctx context.Context) (int, error) {
 	return n, nil
 }
 
+// CountPeople is how many people can sign in to this install, whatever
+// store they work in.
+func (s *Superusers) CountPeople(ctx context.Context) (int, error) {
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM superusers`).Scan(&n); err != nil {
+		return 0, Internalf(err, "count people")
+	}
+	return n, nil
+}
+
 // Superusers exposes the operator-identity service, so a host program can
 // create the first operator at boot without going through HTTP.
 func (a *App) Superusers() *Superusers { return a.superusers }

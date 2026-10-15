@@ -8,12 +8,16 @@
 
 param(
     [string]$BaseUrl = $env:GC_BASE,
-    [string]$Token   = $env:GC_TOKEN
+    [string]$Token   = $env:GC_TOKEN,
+    # The store to walk, by id or slug. Needed once the install has more than
+    # one store; run once per store to walk each.
+    [string]$Store   = $env:GC_STORE
 )
 
 $ErrorActionPreference = 'Stop'
 if ($BaseUrl) { $env:GC_BASE = $BaseUrl }
 if ($Token)   { $env:GC_TOKEN = $Token }
+if ($Store)   { $env:GC_STORE = $Store }
 . "$PSScriptRoot\gc.ps1"
 
 $run = (Get-Date -Format 'HHmmss') + (Get-Random -Maximum 999)
@@ -242,17 +246,17 @@ if ($authState.installed) {
         # The session token must open an admin route, exactly as the static
         # token does.
         $viaSession = Invoke-WebRequest "$(Get-GCBase)/api/admin/products?limit=1" `
-            -Headers @{ Authorization = "Bearer $($session.token)" } -UseBasicParsing
+            -Headers (Get-GCSessionHeaders $session.token) -UseBasicParsing
         Confirm-GC 'a session token opens an admin route' 200 $viaSession.StatusCode
 
         # Invoke-GC only knows the configured admin token, and this call has to
         # present the session's own, so it goes out by hand.
         Invoke-WebRequest "$(Get-GCBase)/api/admin/auth-logout" -Method POST `
-            -Headers @{ Authorization = "Bearer $($session.token)" } -UseBasicParsing | Out-Null
+            -Headers (Get-GCSessionHeaders $session.token) -UseBasicParsing | Out-Null
         $revoked = 0
         try {
             Invoke-WebRequest "$(Get-GCBase)/api/admin/products?limit=1" `
-                -Headers @{ Authorization = "Bearer $($session.token)" } -UseBasicParsing | Out-Null
+                -Headers (Get-GCSessionHeaders $session.token) -UseBasicParsing | Out-Null
         } catch { $revoked = $_.Exception.Response.StatusCode.value__ }
         Confirm-GC 'logging out revokes the session' 401 $revoked
     }
