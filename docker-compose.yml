@@ -44,9 +44,13 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://gocommerce:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/gocommerce?sslmode=disable
+      # gocommerce_app, not the superuser: every store's rows share one set of
+      # tables behind row-level-security policies, and a superuser passes
+      # every policy (D83). The postgres service creates this login on a fresh
+      # volume; for an existing one, run scripts/engine-login.sql once.
+      DATABASE_URL: postgres://gocommerce_app:${ENGINE_DB_PASSWORD:-${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}}@postgres:5432/gocommerce?sslmode=disable
       # Custom reports run arbitrary operator SQL, so they run as a separate,
-      # read-only role — never the engine's own (a superuser here), which could
+      # read-only role — never the engine's own, which owns every table and could
       # terminate connections or read files off the server (D78). Leave this
       # unset and custom reports are simply disabled; saving and listing still
       # work. To turn them on, set REPORTS_DB_PASSWORD below (the postgres
@@ -77,9 +81,14 @@ services:
       # read-only custom-reports role (D78). Unset means no role and reports
       # stay disabled. It must match the password in GOCOMMERCE_REPORTS_DATABASE_URL.
       REPORTS_DB_PASSWORD: ${REPORTS_DB_PASSWORD:-}
+      # The engine's login (gocommerce_app). Defaults to POSTGRES_PASSWORD.
+      ENGINE_DB_PASSWORD: ${ENGINE_DB_PASSWORD:-}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # Runs once, on first init of the volume, to create gocommerce_reports.
+      # Run once, on first init of the volume: the engine's own login, then
+      # gocommerce_reports.
+      - ./scripts/engine-login.sql:/opt/gocommerce/engine-login.sql:ro
+      - ./scripts/initdb-engine-login.sh:/docker-entrypoint-initdb.d/05-engine-login.sh:ro
       - ./scripts/reports-role.sql:/opt/gocommerce/reports-role.sql:ro
       - ./scripts/initdb-reports-role.sh:/docker-entrypoint-initdb.d/10-reports-role.sh:ro
     healthcheck:

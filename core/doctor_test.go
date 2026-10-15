@@ -326,3 +326,24 @@ func TestDoctorFlagsScopedDiscountTrouble(t *testing.T) {
 		}
 	})
 }
+
+// PostgreSQL lets a superuser, or a role with BYPASSRLS, past every row
+// policy, and the policy is what keeps one store's rows out of another's.
+func TestDoctorFailsWhenTheEngineCanBypassRowSecurity(t *testing.T) {
+	app := newTestApp(t)
+	for _, c := range []struct {
+		super, bypass bool
+		want          string
+	}{{true, false, StatusFail}, {false, true, StatusFail}, {false, false, StatusOK}} {
+		d := app.rowSecurityVerdict(c.super, c.bypass)
+		if d.Status != c.want {
+			t.Errorf("super=%v bypass=%v: status %s, want %s", c.super, c.bypass, d.Status, c.want)
+		}
+		if d.Status == StatusFail && d.Hint == "" {
+			t.Error("a failing check must say what to do")
+		}
+	}
+	if d := app.checkRowSecurity(context.Background()); d.Status != StatusOK {
+		t.Fatalf("the test login fails the check: %+v", d)
+	}
+}
