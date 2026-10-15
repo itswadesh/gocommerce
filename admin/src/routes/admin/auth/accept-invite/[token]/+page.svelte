@@ -53,9 +53,7 @@
     async function submit(e) {
         e.preventDefault();
         if (submitting) return;
-        // Somebody who already has an account proves it with the password
-        // they have; there is nothing to type twice.
-        if (!invitation.has_account && password !== confirm) {
+        if (password !== confirm) {
             error = "The two passwords do not match.";
             return;
         }
@@ -110,12 +108,9 @@
                     {invitation.invited_by
                         ? `${invitation.invited_by} invited you`
                         : "You have been invited"}
-                    as <strong>{invitation.role}</strong>.
-                    {#if invitation.has_account}
-                        You already have an account: enter its password to join.
-                    {:else}
-                        Choose a password — nobody else will ever see it.
-                    {/if}
+                    as <strong>{invitation.role}</strong>. Choose a password — nobody else
+                    will ever see it. If you already work in another store on this
+                    platform, use the password you sign in with there.
                 </small>
             </div>
 
@@ -132,16 +127,14 @@
                 <div class="col-12">
                     <div class="fields">
                         <div class="field required" class:error={!!error}>
-                            <label for="invite_pass"
-                                >{invitation.has_account ? "Your current password" : "Password"}</label
-                            >
+                            <label for="invite_pass">Password</label>
                             <!-- svelte-ignore a11y_autofocus -->
                             <input
                                 id="invite_pass"
                                 required
                                 autofocus
                                 type={showPassword ? "text" : "password"}
-                                autocomplete={invitation.has_account ? "current-password" : "new-password"}
+                                autocomplete="new-password"
                                 bind:value={password}
                                 oninput={() => (error = "")}
                             />
@@ -163,7 +156,6 @@
                     </div>
                 </div>
 
-                {#if !invitation.has_account}
                 <div class="col-12">
                     <div class="field required" class:error={!!error}>
                         <label for="invite_confirm">Password again</label>
@@ -179,9 +171,6 @@
                     {#if error}<div class="field-help error">{error}</div>{/if}
                     <div class="field-help">At least 8 characters.</div>
                 </div>
-                {:else if error}
-                    <div class="col-12"><div class="field-help error">{error}</div></div>
-                {/if}
 
                 <div class="col-12">
                     <button

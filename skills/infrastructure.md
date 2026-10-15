@@ -365,6 +365,14 @@ names (`gocommerce.WithStore`), so a query that forgets to filter sees only
 its own store's rows, and an insert takes its store from the column default.
 With no store bound, a statement sees nothing and an insert fails.
 
+**Provider keys in the environment are every store's default.** A key set
+for the install — `RESEND_API_KEY`, a Stripe key in a module's `Config` — is
+what each store uses until it enters its own on its Plugins screen, and the
+store's own wins from then on. So a new store can send email and take
+payment from its first minute, through the install's accounts. A store whose
+customers' money must not pass through the install's payment account enters
+its own keys before it sells.
+
 **Pool connections in session mode only.** The engine sets the store on a
 connection and remembers it, so a statement for the same store skips setting
 it again. A pooler in transaction or statement mode (PgBouncer's default for

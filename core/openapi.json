@@ -16587,10 +16587,6 @@
             "type": "string",
             "format": "date-time"
           },
-          "has_account": {
-            "type": "boolean",
-            "description": "Whether the invitee already signs in to another store. The accept page then asks for that password instead of a new one. Filled on the accept lookup only."
-          },
           "emailed": {
             "type": "boolean",
             "description": "On the creating response only: whether the link went out by the store's email provider."
