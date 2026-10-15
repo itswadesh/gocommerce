@@ -777,6 +777,9 @@ func (a *App) Routes() []Route {
 func (a *App) Handler() http.Handler {
 	var h http.Handler = a.mux
 	h = a.fallbackJSON(h)
+	// Before the demo guard and logging, so both see the store the request
+	// is for; after the fallback, so an unknown route still answers JSON.
+	h = a.storeMW(h)
 	// Outside the fallback on purpose: a frozen family is frozen for every
 	// method, including ones no route serves, so the answer is 403 and not a
 	// 404 that invites trying the next verb.

@@ -124,10 +124,18 @@ func (k *APIKeys) Create(ctx context.Context, in APIKeyInput, by *Superuser) (*A
 		createdBy = &by.ID
 	}
 	var out APIKey
+	// The index row that routes a request bearing this key to its store goes
+	// in with the key, in one statement: a key without it would be refused
+	// everywhere, and an index row without its key would route nothing.
 	err = k.app.db.QueryRowContext(ctx, `
-		INSERT INTO api_keys (name, prefix, token_hash, secret, role, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, name, prefix, role, created_at, created_by`,
+		WITH k AS (
+			INSERT INTO api_keys (name, prefix, token_hash, secret, role, created_by)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			RETURNING id, name, prefix, role, created_at, created_by, store_id
+		), routed AS (
+			INSERT INTO api_key_index (prefix, store_id) SELECT prefix, store_id FROM k
+		)
+		SELECT id, name, prefix, role, created_at, created_by FROM k`,
 		name, prefix, hashAPIKey(presented), presented, role, createdBy,
 	).Scan(&out.ID, &out.Name, &out.Prefix, &out.Role, &out.CreatedAt, &out.CreatedBy)
 	if err != nil {

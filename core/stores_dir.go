@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -67,6 +68,9 @@ func (a *App) resolveDefaultStore(ctx context.Context) error {
 }
 
 const storeColumns = `id, slug, name, status, order_prefix, created_at`
+
+// storeSlugRE is the shape the stores table's CHECK allows.
+var storeSlugRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 func scanStore(row interface{ Scan(...any) error }) (*Store, error) {
 	var st Store
