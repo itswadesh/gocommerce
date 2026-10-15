@@ -104,8 +104,21 @@ func IsolatedDSN(t *testing.T) string {
 	}
 	defer admin.Close()
 
+	// The engine runs as an ordinary login: PostgreSQL lets superusers past
+	// Row-Level Security, so a test run as one would prove no store isolation.
+	if _, err := admin.ExecContext(context.Background(), `
+		DO $$
+		BEGIN
+			IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '`+engineRole+`') THEN
+				CREATE ROLE `+engineRole+` LOGIN PASSWORD '`+enginePassword+`' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+			END IF;
+		EXCEPTION WHEN duplicate_object THEN
+			NULL;
+		END $$;`); err != nil {
+		t.Fatalf("gctest: create the engine role: %v", err)
+	}
 	if _, err := admin.ExecContext(context.Background(),
-		`CREATE SCHEMA `+schema); err != nil {
+		`CREATE SCHEMA `+schema+` AUTHORIZATION `+engineRole); err != nil {
 		t.Fatalf("gctest: create the test schema: %v", err)
 	}
 	t.Cleanup(func() {
@@ -120,8 +133,19 @@ func IsolatedDSN(t *testing.T) string {
 		}
 	})
 
-	return withSearchPath(base, schema)
+	u, err := url.Parse(withSearchPath(base, schema))
+	if err != nil {
+		t.Fatalf("gctest: parse the test DSN: %v", err)
+	}
+	u.User = url.UserPassword(engineRole, enginePassword)
+	return u.String()
 }
+
+// The login test engines run as; see IsolatedDSN.
+const (
+	engineRole     = "gctest_engine"
+	enginePassword = "gctest_engine"
+)
 
 // withSearchPath points a DSN at one schema. libpq's `options` is applied per
 // connection, so every connection in the pool lands in the same place — which
