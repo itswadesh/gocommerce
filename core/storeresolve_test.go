@@ -326,3 +326,40 @@ func TestAResetLinkNeverTravelsThroughAnotherStoresMail(t *testing.T) {
 		t.Fatalf("resets sent under %v, want %v: store A's owner's link must not go through store B's mail", mail.under, want)
 	}
 }
+
+// probeModule serves a public module route that reports the store it ran in.
+type probeModule struct{}
+
+func (probeModule) Name() string            { return "probe" }
+func (probeModule) Migrations() []Migration { return nil }
+func (probeModule) Register(app *App) error {
+	app.HandleFunc("GET /x/probe/store", func(w http.ResponseWriter, r *http.Request) {
+		s, _ := StoreFrom(r.Context())
+		Respond(w, http.StatusOK, map[string]string{"store": s})
+	})
+	return nil
+}
+
+// A module's public routes (/x/…) are a store's as much as /api/ is: a
+// storefront's search, pages and wishlists. Under `serve` they find their
+// store the same way, or they would see nothing at all.
+func TestModuleRoutesFindTheirStoreToo(t *testing.T) {
+	cfg := testConfig(requireDB(t))
+	cfg.DefaultStore = ""
+	app, err := New(cfg, probeModule{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = app.Close() })
+	one := firstStore(t, app)
+	if rec := do(t, app, http.MethodGet, "/x/probe/store"); !strings.Contains(rec.Body.String(), one) {
+		t.Fatalf("one store, nothing named: %d %s", rec.Code, rec.Body)
+	}
+	two := addTestStore(t, app, "two")
+	if rec := do(t, app, http.MethodGet, "/x/probe/store", header("x-litekart-store", two)); !strings.Contains(rec.Body.String(), two) {
+		t.Fatalf("store two named: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, app, http.MethodGet, "/x/probe/store"); rec.Code != http.StatusBadRequest {
+		t.Fatalf("two stores, nothing named = %d, want 400", rec.Code)
+	}
+}

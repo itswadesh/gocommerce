@@ -197,47 +197,20 @@ func (m *Module) connection(ctx context.Context) (connection, error) {
 		host:      strings.TrimRight(first(str("host"), m.cfg.Host), "/"),
 		apiKey:    first(str("api_key"), m.cfg.APIKey),
 		searchKey: first(str("search_key"), m.cfg.SearchKey),
-		index:     str("index"),
-	}
-	// The field's own default reads as "not chosen": a store that never
-	// named an index gets one of its own below.
-	if c.index == defaultIndex {
-		c.index = ""
-	}
-	if c.index == "" {
-		// Two stores in one index would undo each other: a full sync removes
-		// every document its own catalogue lacks. The oldest store keeps the
-		// plain name, which is an upgraded install's existing index; every
-		// other store's default is suffixed with its slug.
-		c.index = first(m.cfg.Index, defaultIndex)
-		if suffix, err := m.indexSuffix(ctx); err != nil {
-			return connection{}, err
-		} else if suffix != "" {
-			c.index += "-" + suffix
-		}
+		// One index for every store: each document carries its store_id, a
+		// search is filtered to the asking store, and a full sync removes only
+		// its own store's documents (D83).
+		index: first(str("index"), m.cfg.Index, defaultIndex),
 	}
 	return c, nil
 }
 
-// indexSuffix is "" for the oldest store and the store's slug for any other.
-func (m *Module) indexSuffix(ctx context.Context) (string, error) {
-	store, ok := gocommerce.StoreFrom(ctx)
-	if !ok {
-		store = m.app.DefaultStore()
+// storeOf is the store ctx is bound to, or the engine's default.
+func (m *Module) storeOf(ctx context.Context) string {
+	if store, ok := gocommerce.StoreFrom(ctx); ok {
+		return store
 	}
-	stores, err := m.app.Stores().Active(ctx)
-	if err != nil {
-		return "", err
-	}
-	for i, st := range stores {
-		if st.ID == store {
-			if i == 0 {
-				return "", nil
-			}
-			return st.Slug, nil
-		}
-	}
-	return "", nil
+	return m.app.DefaultStore()
 }
 
 func first(values ...string) string {
@@ -397,7 +370,7 @@ func (m *Module) Sync(ctx context.Context, full bool) (indexed, removed int, err
 					return indexed, removed, err
 				}
 			}
-			batch = append(batch, m.document(p))
+			batch = append(batch, m.document(ctx, p))
 			if len(batch) >= pageSize {
 				if err := flush(); err != nil {
 					return indexed, removed, err
@@ -439,7 +412,9 @@ func (m *Module) Sync(ctx context.Context, full bool) (indexed, removed int, err
 // document is a product as the index holds it: what a shopper searches by,
 // what a result card shows, and what a storefront filters and sorts on.
 type document struct {
-	ID          int64    `json:"id"`
+	ID int64 `json:"id"`
+	// StoreID is whose product this is: every store shares the one index.
+	StoreID     string   `json:"store_id"`
 	Slug        string   `json:"slug"`
 	Title       string   `json:"title"`
 	Description string   `json:"description"`
@@ -466,9 +441,9 @@ func plainText(html string) string {
 	return strings.Join(strings.Fields(text), " ")
 }
 
-func (m *Module) document(p *gocommerce.Product) document {
+func (m *Module) document(ctx context.Context, p *gocommerce.Product) document {
 	d := document{
-		ID: p.ID, Slug: p.Slug, Title: p.Title, Description: plainText(p.Description),
+		ID: p.ID, StoreID: m.storeOf(ctx), Slug: p.Slug, Title: p.Title, Description: plainText(p.Description),
 		Vendor: p.Vendor, ProductType: p.ProductType, Tags: p.Tags, Image: p.ImageURL,
 		Currency: p.Currency, UpdatedAt: p.UpdatedAt.Unix(),
 	}
@@ -567,7 +542,7 @@ func (m *Module) ensureIndex(ctx context.Context, conn connection) error {
 	}
 	_, _, err = m.call(ctx, conn, conn.apiKey, http.MethodPatch, "/indexes/"+conn.index+"/settings", map[string]any{
 		"searchableAttributes": []string{"title", "skus", "vendor", "product_type", "tags", "category", "options", "description"},
-		"filterableAttributes": []string{"vendor", "product_type", "tags", "category", "in_stock", "price_minor", "options"},
+		"filterableAttributes": []string{"store_id", "vendor", "product_type", "tags", "category", "in_stock", "price_minor", "options"},
 		"sortableAttributes":   []string{"price_minor", "updated_at", "title"},
 	})
 	return err
@@ -583,26 +558,32 @@ func (m *Module) deleteDocuments(ctx context.Context, conn connection, ids []str
 	return err
 }
 
-// documentIDs is every id the index holds.
+// documentIDs (this store's documents only) is every id the index holds.
 func (m *Module) documentIDs(ctx context.Context, conn connection) ([]string, error) {
 	var out []string
 	for offset := 0; ; offset += 1000 {
 		payload, _, err := m.call(ctx, conn, conn.apiKey, http.MethodGet,
-			fmt.Sprintf("/indexes/%s/documents?fields=id&limit=1000&offset=%d", conn.index, offset), nil)
+			fmt.Sprintf("/indexes/%s/documents?fields=id,store_id&limit=1000&offset=%d", conn.index, offset), nil)
 		if err != nil {
 			return nil, err
 		}
 		var page struct {
 			Results []struct {
-				ID json.Number `json:"id"`
+				ID      json.Number `json:"id"`
+				StoreID string      `json:"store_id"`
 			} `json:"results"`
 			Total int `json:"total"`
 		}
 		if err := json.Unmarshal(payload, &page); err != nil {
 			return nil, fmt.Errorf("meilisearch: could not read the document list: %w", err)
 		}
+		// Only this store's documents: the index is shared, and what another
+		// store's catalogue holds is not this store's to call stale.
+		store := m.storeOf(ctx)
 		for _, r := range page.Results {
-			out = append(out, r.ID.String())
+			if r.StoreID == store {
+				out = append(out, r.ID.String())
+			}
 		}
 		if len(page.Results) < 1000 || offset+1000 >= page.Total {
 			break
@@ -674,9 +655,13 @@ func (m *Module) handleSearch(w http.ResponseWriter, r *http.Request) {
 		offset = 0
 	}
 	body := map[string]any{"q": q.Get("q"), "limit": limit, "offset": offset}
+	// Always the asking store's documents, and the storefront's own filter
+	// on top of that: Meilisearch ANDs the entries of a filter array.
+	filters := []any{fmt.Sprintf("store_id = %q", m.storeOf(r.Context()))}
 	if f := q.Get("filter"); f != "" {
-		body["filter"] = f
+		filters = append(filters, f)
 	}
+	body["filter"] = filters
 	if s := q.Get("sort"); s != "" {
 		body["sort"] = strings.Split(s, ",")
 	}
