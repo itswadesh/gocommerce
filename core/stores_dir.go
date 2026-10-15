@@ -53,8 +53,16 @@ func (a *App) storeOf(ctx context.Context) string {
 	return a.defaultStore
 }
 
+// NoDefaultStore, as Config.DefaultStore, runs the engine as `serve` does,
+// with no default store, where a caller that fills in a default (gctest)
+// would otherwise choose one.
+const NoDefaultStore = "none"
+
 func (a *App) resolveDefaultStore(ctx context.Context) error {
 	a.defaultStore = a.cfg.DefaultStore
+	if a.defaultStore == NoDefaultStore {
+		a.defaultStore = ""
+	}
 	if a.defaultStore == "first" {
 		if err := a.db.QueryRowContext(ctx,
 			`SELECT id FROM stores ORDER BY created_at, id LIMIT 1`).Scan(&a.defaultStore); err != nil {

@@ -485,6 +485,12 @@ func TestRewriteThroughTheOtherDoors(t *testing.T) {
 
 func newHarness(t *testing.T, cfg Config, withLLM bool) *harness {
 	t.Helper()
+	return newHarnessWith(t, cfg, withLLM, gocommerce.Config{})
+}
+
+// newHarnessWith is newHarness with engine settings of the test's own.
+func newHarnessWith(t *testing.T, cfg Config, withLLM bool, appCfg gocommerce.Config) *harness {
+	t.Helper()
 	img := jpegBytes(t)
 	images := gctest.StubHTTP(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/missing.jpg") {
@@ -524,7 +530,8 @@ func newHarness(t *testing.T, cfg Config, withLLM bool) *harness {
 	mod := New(cfg)
 	mod.newFetcher = func(context.Context) (pageFetcher, error) { return fx, nil }
 
-	app := gctest.NewWithConfig(t, gocommerce.Config{Currency: "USD", MediaDir: t.TempDir()}, mod)
+	appCfg.Currency, appCfg.MediaDir = "USD", t.TempDir()
+	app := gctest.NewWithConfig(t, appCfg, mod)
 	return &harness{app: app, fx: fx, images: images, llm: llm}
 }
 
@@ -1211,4 +1218,15 @@ func (c *wsConn) writeServerFrame(opcode byte, payload []byte) error {
 func base64Sum(s string) string {
 	sum := sha1.Sum([]byte(s))
 	return base64.StdEncoding.EncodeToString(sum[:])
+}
+
+// Under `serve` nothing has a default store, and the import runs on its own
+// goroutine after the request that started it has answered: it must still
+// work in the store that asked for it.
+func TestAnImportRunsInItsStoreUnderServe(t *testing.T) {
+	h := newHarnessWith(t, Config{}, false, gocommerce.Config{DefaultStore: gocommerce.NoDefaultStore})
+	job := h.wait(t, h.start(t, map[string]any{"url": h.listingWithVariants()}).ID)
+	if job.Status != StatusDone {
+		t.Fatalf("status = %s: %s", job.Status, job.Message)
+	}
 }

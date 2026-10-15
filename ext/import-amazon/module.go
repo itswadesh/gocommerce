@@ -349,7 +349,9 @@ func (m *Module) handleCreate(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "record the import"))
 		return
 	}
-	go m.run(id)
+	// The job runs after this answers, so it carries the store with it.
+	store, _ := gocommerce.StoreFrom(r.Context())
+	go m.run(store, id)
 
 	job, err := m.load(r.Context(), id)
 	if err != nil {
@@ -449,7 +451,7 @@ func (m *Module) finish(ctx context.Context, id int64, status string, productID 
 // ------------------------------------------------------------------ running
 
 // run is one import, start to finish, on its own goroutine.
-func (m *Module) run(id int64) {
+func (m *Module) run(store string, id int64) {
 	select {
 	case m.sem <- struct{}{}:
 	case <-m.ctx.Done():
@@ -457,7 +459,13 @@ func (m *Module) run(id int64) {
 	}
 	defer func() { <-m.sem }()
 
-	ctx, cancel := context.WithTimeout(m.ctx, m.cfg.JobTimeout)
+	bind := func(ctx context.Context) context.Context {
+		if store == "" {
+			return ctx
+		}
+		return gocommerce.WithStore(ctx, store)
+	}
+	ctx, cancel := context.WithTimeout(bind(m.ctx), m.cfg.JobTimeout)
 	defer cancel()
 
 	job, err := m.load(ctx, id)
@@ -467,7 +475,7 @@ func (m *Module) run(id int64) {
 	}
 	// The outcome is written with a context that outlives the job's: a job
 	// that timed out still needs its failure recorded.
-	record := context.Background()
+	record := bind(context.Background())
 
 	m.progress(ctx, id, StatusRunning, "fetching", "Opening the listing in Chrome")
 	fetcher, err := m.getFetcher(ctx)

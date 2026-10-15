@@ -345,3 +345,34 @@ func TestDisabledIsSilent(t *testing.T) {
 		t.Errorf("a disabled module submitted %d times", rec.count()-before)
 	}
 }
+
+// Under `serve` nothing has a default store: the submission, which runs after
+// the request that caused it has gone, must still know whose settings and
+// whose storefront it is submitting.
+func TestASubmissionKnowsItsStoreUnderServe(t *testing.T) {
+	rec := &recorder{release: make(chan struct{}, 4)}
+	srv := httptest.NewServer(rec.handler())
+	t.Cleanup(srv.Close)
+	m := New(Config{Endpoint: srv.URL, Window: 100 * time.Millisecond, HTTP: srv.Client()})
+	app := gctest.NewWithConfig(t, gocommerce.Config{DefaultStore: gocommerce.NoDefaultStore}, m)
+	stores, err := app.Stores().Active(context.Background())
+	if err != nil || len(stores) != 1 {
+		t.Fatalf("stores = %v, %v", stores, err)
+	}
+	ctx := gocommerce.WithStore(context.Background(), stores[0].ID)
+	on := true
+	if _, err := app.Plugins().Update(ctx, pluginKey, gocommerce.PluginPatch{
+		Enabled: &on, Settings: map[string]any{"storefront_url": "https://shop.example"}}); err != nil {
+		t.Fatal(err)
+	}
+	price := int64(2500)
+	if _, err := app.Products().CreateProduct(ctx, gocommerce.ProductInput{Title: "One", Status: "active", PriceMinor: &price}); err != nil {
+		t.Fatal(err)
+	}
+	gctest.DrainOutbox(t, app)
+	select {
+	case <-rec.release:
+	case <-time.After(10 * time.Second):
+		t.Fatal("nothing was submitted: the flush ran with no store and found nothing configured")
+	}
+}

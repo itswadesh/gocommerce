@@ -89,14 +89,17 @@ type Module struct {
 	app *gocommerce.App
 	cfg Config
 
-	mu      sync.Mutex
-	pending map[string]struct{}
+	mu sync.Mutex
+	// pending is each store's URLs, by store id: one engine serves every
+	// store (D83), and a submission goes out under the store whose pages it
+	// names, with that store's key and storefront.
+	pending map[string]map[string]struct{}
 	timer   *time.Timer
 }
 
 // New builds the module.
 func New(cfg ...Config) *Module {
-	m := &Module{pending: map[string]struct{}{}}
+	m := &Module{pending: map[string]map[string]struct{}{}}
 	if len(cfg) > 0 {
 		m.cfg = cfg[0]
 	}
@@ -351,12 +354,12 @@ func (m *Module) onProduct(ctx context.Context, e gocommerce.Event) error {
 	if err != nil || !s.enabled || s.storefront == "" {
 		return nil
 	}
-	m.queue(pageURL(s.storefront, s.product, p.Slug))
+	m.queue(ctx, pageURL(s.storefront, s.product, p.Slug))
 	// A rename leaves an address behind. Submitting it too is what asks a
 	// search engine to look at the 404 and drop it, rather than keeping a dead
 	// URL in the index until it happens to recrawl.
 	if p.PreviousSlug != "" && p.PreviousSlug != p.Slug {
-		m.queue(pageURL(s.storefront, s.product, p.PreviousSlug))
+		m.queue(ctx, pageURL(s.storefront, s.product, p.PreviousSlug))
 	}
 	return nil
 }
@@ -370,7 +373,7 @@ func (m *Module) onCollection(ctx context.Context, e gocommerce.Event) error {
 	if err != nil || !s.enabled || s.storefront == "" {
 		return nil
 	}
-	m.queue(pageURL(s.storefront, s.collection, p.Slug))
+	m.queue(ctx, pageURL(s.storefront, s.collection, p.Slug))
 	return nil
 }
 
@@ -384,13 +387,17 @@ func pageURL(storefront, path, slug string) string {
 // queue collects a URL and starts the window if it is not already running.
 //
 // A set, so an operator saving the same product four times submits it once.
-func (m *Module) queue(target string) {
+func (m *Module) queue(ctx context.Context, target string) {
 	if target == "" {
 		return
 	}
+	store, _ := gocommerce.StoreFrom(ctx)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.pending[target] = struct{}{}
+	if m.pending[store] == nil {
+		m.pending[store] = map[string]struct{}{}
+	}
+	m.pending[store][target] = struct{}{}
 	if m.timer == nil {
 		m.timer = time.AfterFunc(m.cfg.Window, m.flush)
 	}
@@ -399,14 +406,22 @@ func (m *Module) queue(target string) {
 // flush submits everything collected.
 func (m *Module) flush() {
 	m.mu.Lock()
-	urls := make([]string, 0, len(m.pending))
-	for u := range m.pending {
-		urls = append(urls, u)
-	}
-	m.pending = map[string]struct{}{}
+	byStore := m.pending
+	m.pending = map[string]map[string]struct{}{}
 	m.timer = nil
 	m.mu.Unlock()
 
+	for store, set := range byStore {
+		urls := make([]string, 0, len(set))
+		for u := range set {
+			urls = append(urls, u)
+		}
+		m.submitFor(store, urls)
+	}
+}
+
+// submitFor sends one store's URLs, bound to that store.
+func (m *Module) submitFor(store string, urls []string) {
 	if len(urls) == 0 {
 		return
 	}
@@ -414,6 +429,9 @@ func (m *Module) flush() {
 	// and hanging this off it would cancel every submission.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	if store != "" {
+		ctx = gocommerce.WithStore(ctx, store)
+	}
 	if err := m.Submit(ctx, urls); err != nil {
 		// Logged and dropped. A failed ping means a page is indexed on the
 		// crawler's own schedule instead of sooner, which is where every store
