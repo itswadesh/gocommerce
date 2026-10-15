@@ -57,3 +57,104 @@ func TestAnOperatorsRoleLivesOnTheirMembership(t *testing.T) {
 		t.Fatal("superusers still carries role/vendor_id; a person's role belongs to a store")
 	}
 }
+
+// storeTables lists tables in the test schema that must be scoped: every
+// table except the global ones. It reads the catalog, not a hand-kept list, so
+// a table added later without a policy fails here.
+func storeTables(t *testing.T, app *App) []string {
+	t.Helper()
+	global := map[string]bool{"stores": true, "store_domains": true, "store_members": true,
+		"store_counters": true, "api_key_index": true, "superusers": true,
+		"superuser_sessions": true, "superuser_password_resets": true, "gocommerce_migrations": true}
+	rows, err := app.db.QueryContext(context.Background(),
+		`SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY 1`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if !global[n] {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func TestEveryStoreTableIsForcedBehindTheStorePolicy(t *testing.T) {
+	app := newTestApp(t)
+	for _, tbl := range storeTables(t, app) {
+		var rls, force bool
+		var policies int
+		if err := app.db.QueryRowContext(context.Background(), `
+			SELECT c.relrowsecurity, c.relforcerowsecurity,
+			       (SELECT count(*) FROM pg_policies p WHERE p.schemaname = current_schema()
+			          AND p.tablename = c.relname AND p.policyname = 'store_scope')
+			FROM pg_class c WHERE c.oid = $1::regclass`, tbl).Scan(&rls, &force, &policies); err != nil {
+			t.Fatal(err)
+		}
+		if !rls || !force || policies != 1 {
+			t.Errorf("%s: rls=%v force=%v store_scope policies=%d", tbl, rls, force, policies)
+		}
+	}
+}
+
+func TestAnUnboundConnectionSeesNoStoreRows(t *testing.T) {
+	app := newTestApp(t)
+	simpleProduct(t, app, "UNBOUND-1", 1000, 3)
+	db, err := OpenDB(context.Background(), app.cfg.DBURL) // a pool with no fallback
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, tbl := range storeTables(t, app) {
+		var n int
+		if err := db.QueryRowContext(context.Background(), `SELECT count(*) FROM `+tbl).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			t.Errorf("%s: an unbound connection sees %d rows", tbl, n)
+		}
+	}
+	if _, err := db.ExecContext(context.Background(),
+		`INSERT INTO collections (title, slug) VALUES ('x', 'x')`); err == nil {
+		t.Error("an unbound insert succeeded")
+	}
+}
+
+func TestKeysAreUniquePerStore(t *testing.T) {
+	app := newTestApp(t)
+	b := addTestStore(t, app, "second")
+	ctxA := WithStore(context.Background(), app.DefaultStore())
+	ctxB := WithStore(context.Background(), b)
+	for _, ctx := range []context.Context{ctxA, ctxB} {
+		if _, err := app.db.ExecContext(ctx, `INSERT INTO collections (store_id, title, slug)
+			VALUES (current_setting('gocommerce.store_id'), 'Sale', 'sale')`); err != nil {
+			t.Fatalf("the same slug in two stores: %v", err)
+		}
+	}
+	if _, err := app.db.ExecContext(ctxA, `INSERT INTO collections (store_id, title, slug)
+		VALUES (current_setting('gocommerce.store_id'), 'Sale', 'sale')`); err == nil {
+		t.Fatal("a duplicate slug inside one store was accepted")
+	}
+}
+
+func TestARowCannotReferenceAnotherStoresRow(t *testing.T) {
+	app := newTestApp(t)
+	b := addTestStore(t, app, "second")
+	ctxA := WithStore(context.Background(), app.DefaultStore())
+	var productA int64
+	if err := app.db.QueryRowContext(ctxA, `INSERT INTO products (store_id, title, slug, currency)
+		VALUES (current_setting('gocommerce.store_id'), 'P', 'p', 'USD') RETURNING id`).Scan(&productA); err != nil {
+		t.Fatal(err)
+	}
+	ctxB := WithStore(context.Background(), b)
+	if _, err := app.db.ExecContext(ctxB, `INSERT INTO variants (store_id, product_id, sku, price_minor)
+		VALUES (current_setting('gocommerce.store_id'), $1, 'X', 100)`, productA); err == nil {
+		t.Fatal("store B created a variant of store A's product")
+	}
+}

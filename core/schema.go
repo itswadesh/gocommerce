@@ -62,6 +62,7 @@ func coreMigrations() []Migration {
 		{ID: "0051_group_shipping_and_tax", SQL: migration0051GroupShippingAndTax},
 		{ID: "0052_custom_roles", SQL: migration0052CustomRoles},
 		{ID: "0053_stores", Run: migrate0053Stores},
+		{ID: "0054_store_scope", Run: migrate0054StoreScope},
 	}
 }
 
