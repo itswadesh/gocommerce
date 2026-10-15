@@ -185,6 +185,12 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			    ON payments_paddle_events (received_at);`,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "payments_paddle_events"),
+		{
+			// Two stores on one provider account each receive every event, so
+			// the claim on an event id is each store's own (D83).
+			ID:  "0003_events_per_store",
+			SQL: `ALTER TABLE payments_paddle_events DROP CONSTRAINT payments_paddle_events_pkey, ADD PRIMARY KEY (store_id, id);`,
+		},
 	}
 }
 
@@ -423,7 +429,7 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	res, err := m.db.ExecContext(r.Context(), `
 		INSERT INTO payments_paddle_events (id, type, order_id)
 		VALUES ($1, $2, nullif($3, 0))
-		ON CONFLICT (id) DO NOTHING`, event.EventID, event.EventType, orderID)
+		ON CONFLICT (store_id, id) DO NOTHING`, event.EventID, event.EventType, orderID)
 	if err != nil {
 		m.log.Error("could not record the Paddle event", "event_id", event.EventID, "error", err)
 		http.Error(w, "storage error", http.StatusInternalServerError)
@@ -435,6 +441,16 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// An event for another store's order: two stores on one provider account
+	// each receive every event. Acknowledged, and the claim given back, so it
+	// is left for the store whose order it is.
+	if orderID != 0 {
+		if _, err := m.app.Order().Get(r.Context(), orderID); errors.Is(err, gocommerce.ErrNotFound) {
+			m.releaseClaim(r.Context(), event.EventID)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+	}
 	if orderID == 0 {
 		// An event for something we did not start — a subscription renewal
 		// billed in Paddle's own dashboard, say. Acknowledge it rather than

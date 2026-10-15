@@ -196,6 +196,12 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			    ON payments_revenuecat_events (received_at);`,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "payments_revenuecat_events"),
+		{
+			// Two stores on one provider account each receive every event, so
+			// the claim on an event id is each store's own (D83).
+			ID:  "0003_events_per_store",
+			SQL: `ALTER TABLE payments_revenuecat_events DROP CONSTRAINT payments_revenuecat_events_pkey, ADD PRIMARY KEY (store_id, id);`,
+		},
 	}
 }
 
@@ -333,7 +339,7 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	res, err := m.db.ExecContext(r.Context(), `
 		INSERT INTO payments_revenuecat_events (id, type)
 		VALUES ($1, $2)
-		ON CONFLICT (id) DO NOTHING`, event.ID, event.Type)
+		ON CONFLICT (store_id, id) DO NOTHING`, event.ID, event.Type)
 	if err != nil {
 		m.log.Error("could not record the RevenueCat event", "event_id", event.ID, "error", err)
 		http.Error(w, "storage error", http.StatusInternalServerError)

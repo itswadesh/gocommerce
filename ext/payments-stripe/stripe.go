@@ -147,6 +147,12 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			    ON payments_stripe_events (received_at);`,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "payments_stripe_events"),
+		{
+			// Two stores on one provider account each receive every event, so
+			// the claim on an event id is each store's own (D83).
+			ID:  "0003_events_per_store",
+			SQL: `ALTER TABLE payments_stripe_events DROP CONSTRAINT payments_stripe_events_pkey, ADD PRIMARY KEY (store_id, id);`,
+		},
 	}
 }
 
@@ -319,7 +325,7 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	res, err := m.db.ExecContext(r.Context(), `
 		INSERT INTO payments_stripe_events (id, type, order_id)
 		VALUES ($1, $2, nullif($3, 0))
-		ON CONFLICT (id) DO NOTHING`, event.ID, event.Type, orderID)
+		ON CONFLICT (store_id, id) DO NOTHING`, event.ID, event.Type, orderID)
 	if err != nil {
 		m.log.Error("could not record the Stripe event", "event_id", event.ID, "error", err)
 		http.Error(w, "storage error", http.StatusInternalServerError)
@@ -331,6 +337,16 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// An event for another store's order: two stores on one provider account
+	// each receive every event. Acknowledged, and the claim given back, so it
+	// is left for the store whose order it is.
+	if orderID != 0 {
+		if _, err := m.app.Order().Get(r.Context(), orderID); errors.Is(err, gocommerce.ErrNotFound) {
+			m.releaseClaim(r.Context(), event.ID)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+	}
 	if orderID == 0 {
 		// An event for something we did not start — a dashboard refund, say.
 		// Acknowledge it rather than making Stripe retry what we will never
