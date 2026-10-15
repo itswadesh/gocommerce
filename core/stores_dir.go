@@ -44,8 +44,9 @@ func (a *App) Stores() *Stores { return a.stores }
 func (a *App) DefaultStore() string { return a.defaultStore }
 
 // storeOf is the store a statement run with ctx is bound to: the context's
-// own, else the default. Code passes it as the explicit store_id parameter
-// every statement on a store table carries.
+// own, else the default. Row security does the filtering (D83); this is for
+// the few places that need the id itself, such as a link that names the
+// store or the sequence a store's order numbers come from.
 func (a *App) storeOf(ctx context.Context) string {
 	if s, ok := StoreFrom(ctx); ok {
 		return s
@@ -282,6 +283,10 @@ func (s *Stores) Seed(ctx context.Context, storeID string) error {
 			INSERT INTO store_profile (store_id) VALUES ($1) ON CONFLICT (store_id) DO NOTHING`, storeID); err != nil {
 			return Internalf(err, "seed store profile")
 		}
+		if _, err := tx.ExecContext(ctx,
+			`CREATE SEQUENCE IF NOT EXISTS `+orderSequence(storeID)); err != nil {
+			return Internalf(err, "seed order numbers")
+		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO locations (store_id, code, name, is_default, priority)
 			VALUES ($1, 'default', 'Main location', true, 0)
@@ -301,6 +306,12 @@ func (s *Stores) Seed(ctx context.Context, storeID string) error {
 		}
 	}
 	return nil
+}
+
+// orderSequence names the sequence a store's order numbers come from. Store
+// ids are [0-9A-Z] after "store_", so the name needs no quoting.
+func orderSequence(storeID string) string {
+	return "order_number_" + strings.ToLower(storeID)
 }
 
 // StoreSeeder is a module with rows a new store starts with — what its

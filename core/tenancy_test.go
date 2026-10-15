@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestTheEngineCannotBypassRowLevelSecurity(t *testing.T) {
@@ -271,5 +272,45 @@ func TestCreatingAStoreGivesItWhatItNeedsToSell(t *testing.T) {
 	}
 	if _, err := app.Stores().Create(ctx, "Bad", "Not A Slug!"); !errors.Is(err, ErrValidation) {
 		t.Fatalf("a malformed slug: %v, want a validation error", err)
+	}
+}
+
+// Taking an order number holds nothing until commit: a checkout that has its
+// number and is still finishing does not make the store's next checkout wait.
+func TestTakingAnOrderNumberDoesNotHoldUpTheNextCheckout(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	held, err := app.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Rollback()
+	if _, err := app.orderNumber(ctx, held); err != nil {
+		t.Fatal(err)
+	}
+	price, stock := int64(1200), 5
+	p, err := app.Products().CreateProduct(ctx, ProductInput{Title: "Not waiting", Status: ProductActive, SKU: "NOT-WAITING", PriceMinor: &price, Stock: &stock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cart, err := app.Cart().Create(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Cart().AddLine(ctx, cart.Token, p.DefaultVariant().ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := app.Order().Checkout(ctx, CodeCOD, checkoutInput(cart.Token), "")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("checkout: %v", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("the checkout waited for another transaction's order number to commit")
 	}
 }

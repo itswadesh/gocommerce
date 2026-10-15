@@ -22,6 +22,42 @@ var coreStoreTables = []string{
 	"custom_reports", "vendors", "vendor_offers", "roles",
 }
 
+// migrate0056OrderNumberSequences gives every existing store its own order
+// number sequence, starting after the number its counter row reached, so the
+// next order continues the store's numbering.
+func migrate0056OrderNumberSequences(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT st.id, COALESCE(c.value, 0)
+		FROM stores st LEFT JOIN store_counters c ON c.store_id = st.id AND c.name = 'order'`)
+	if err != nil {
+		return err
+	}
+	type next struct {
+		store string
+		after int64
+	}
+	var all []next
+	for rows.Next() {
+		var n next
+		if err := rows.Scan(&n.store, &n.after); err != nil {
+			rows.Close()
+			return err
+		}
+		all = append(all, n)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, n := range all {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(
+			`CREATE SEQUENCE IF NOT EXISTS %s START WITH %d`, orderSequence(n.store), n.after+1)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // migrate0054StoreScope puts every core table under its store (scope.go)
 // and finishes what 0053 could not do before the tables had a store: the
 // membership keys become per-store, and each store's order counter starts

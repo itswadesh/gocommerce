@@ -64,6 +64,9 @@ func TestASingleStoreInstallUpgradesInPlace(t *testing.T) {
 	if counter != 7 {
 		t.Fatalf("store #1's order counter = %d, want 7 so the next order cannot reuse a number", counter)
 	}
+	if got := placeOrderIn(t, app, ctx, "AFTER-UPGRADE").Number; got != "GC-000008" {
+		t.Fatalf("the first order after the upgrade is %s, want GC-000008", got)
+	}
 	var role string
 	if err := app.db.QueryRowContext(ctx, `SELECT m.role FROM store_members m JOIN superusers s ON s.id = m.superuser_id
 		WHERE s.email = 'owner@example.com'`).Scan(&role); err != nil {

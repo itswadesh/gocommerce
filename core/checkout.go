@@ -409,27 +409,10 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 			`SELECT nextval(pg_get_serial_sequence('orders', 'id'))`).Scan(&orderID); err != nil {
 			return err
 		}
-		// The number counts this store's orders, not the install's: ids come
-		// from one sequence every store shares, so a new store's first order
-		// would otherwise be numbered after everybody else's. The counter row
-		// is locked by the bump, which serialises a store's checkouts on it
-		// and on nothing else.
-		var seq int64
-		var prefix sql.NullString
-		if err := tx.QueryRowContext(ctx, `
-			WITH bumped AS (
-				INSERT INTO store_counters (store_id, name, value)
-				VALUES (current_setting('gocommerce.store_id'), 'order', 1)
-				ON CONFLICT (store_id, name) DO UPDATE SET value = store_counters.value + 1
-				RETURNING store_id, value
-			)
-			SELECT b.value, st.order_prefix FROM bumped b JOIN stores st ON st.id = b.store_id`).Scan(&seq, &prefix); err != nil {
+		number, err := s.app.orderNumber(ctx, tx)
+		if err != nil {
 			return err
 		}
-		if !prefix.Valid {
-			prefix.String = s.app.cfg.OrderPrefix
-		}
-		number := fmt.Sprintf("%s%06d", prefix.String, seq)
 		accessToken, err := token()
 		if err != nil {
 			return err
@@ -920,4 +903,28 @@ func (s *Orders) Create(ctx context.Context, in NewOrderInput) (*CheckoutResult,
 		Metadata:       in.Metadata,
 		ShippingRateID: in.ShippingRateID,
 	}, "")
+}
+
+// orderNumber is the next human order number in the store ctx is bound to:
+// the store's prefix and its own count, so a new store's first order is
+// GC-000001 whatever the install's ids have reached.
+//
+// The count is a sequence per store rather than a counter row: a sequence
+// hands out a value and holds nothing, where a row stays locked until the
+// checkout commits and queues the store's next one behind it. The price is a
+// gap in the numbers when a checkout fails after taking one, as the shared id
+// sequence always left.
+func (a *App) orderNumber(ctx context.Context, tx *sql.Tx) (string, error) {
+	store := a.storeOf(ctx)
+	var seq int64
+	var prefix sql.NullString
+	if err := tx.QueryRowContext(ctx,
+		`SELECT nextval($1::regclass), (SELECT order_prefix FROM stores WHERE id = $2)`,
+		orderSequence(store), store).Scan(&seq, &prefix); err != nil {
+		return "", err
+	}
+	if !prefix.Valid {
+		prefix.String = a.cfg.OrderPrefix
+	}
+	return fmt.Sprintf("%s%06d", prefix.String, seq), nil
 }

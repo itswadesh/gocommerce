@@ -507,9 +507,11 @@ func (s *Orders) getWhere(ctx context.Context, where string, arg any) (*Order, e
 var orderSorts = SortSpec{
 	Tiebreak: "o.id",
 	Columns: map[string]sortField{
-		// The number is the id under a prefix and %06d, so ordering by the id IS
-		// ordering by the number — and stays true past six digits, where a text
-		// sort puts P1000000 before P999999.
+		// Ordered by id, which is when the order was placed. Within a store
+		// that is the number's order too, save two checkouts that took their
+		// number and their id in opposite turns, and numbers carried in by an
+		// import. A text sort on the number itself would put P1000000 before
+		// P999999.
 		"number":         {"o.id ASC", "o.id DESC"},
 		"status":         {"o.status ASC", "o.status DESC"},
 		"payment_status": {"o.payment_status ASC", "o.payment_status DESC"},
