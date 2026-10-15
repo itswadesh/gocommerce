@@ -327,9 +327,10 @@ func (s *Superusers) Create(ctx context.Context, email, password, role string) (
 	// enters a changes payload — they are the credential.
 	var su *Superuser
 	err = InTx(ctx, s.db, func(tx *sql.Tx) error {
-		// A person who already works in another store keeps their own
-		// password: they are added here, and the password given is ignored
-		// rather than allowed to replace theirs.
+		// A person who already has an account joins by accepting an
+		// invitation, with their own password: adding them here would put
+		// them, and through them another store's owner, within reach of this
+		// store's team screen without their say.
 		var id int64
 		err := tx.QueryRowContext(ctx, `SELECT id FROM superusers WHERE email = $1 FOR UPDATE`,
 			normalizeEmail(email)).Scan(&id)
@@ -342,6 +343,8 @@ func (s *Superusers) Create(ctx context.Context, email, password, role string) (
 			}
 		case err != nil:
 			return Internalf(err, "look up superuser")
+		default:
+			return Conflictf("%s already has an account; send them an invitation to join this store instead", normalizeEmail(email))
 		}
 		if err := joinStore(ctx, tx, id, role, nil); err != nil {
 			if isUniqueViolation(err) {
@@ -795,6 +798,15 @@ func (s *Superusers) RevokeAll(ctx context.Context, id int64) (int, error) {
 	}
 	if err != nil {
 		return 0, Internalf(err, "read superuser")
+	}
+
+	// Sessions are the person's, across every store they work in; ending
+	// them from one store's team screen would let that store sign another
+	// store's owner out at will.
+	if others, err := otherStores(ctx, s.db, id); err != nil {
+		return 0, Internalf(err, "count stores")
+	} else if others > 0 {
+		return 0, Forbiddenf("this person also works in other stores; only they can sign themselves out everywhere")
 	}
 
 	var n int64

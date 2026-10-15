@@ -3,6 +3,7 @@ package gocommerce
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -157,14 +158,12 @@ func TestOneStoreCannotTakeOverAnotherStoresPerson(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.Superusers().Create(ctxA, "owner-b@example.com", "ignored-password", RoleStaff); err != nil {
+	inv := invite(t, app, "owner-b@example.com", RoleStaff, nil)
+	if _, _, err := app.invitations.Accept(ctxA, inv.Token, "a-long-enough-password"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := app.Superusers().Update(ctxA, both.ID, "", "a-new-long-password"); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("store A changed the password of store B's owner: %v", err)
-	}
-	if _, _, err := app.Superusers().Authenticate(ctxB, "owner-b@example.com", "ignored-password", "127.0.0.1"); err == nil {
-		t.Fatal("joining a second store replaced the person's password")
 	}
 	onlyB, err := app.Superusers().Create(ctxB, "staff-b@example.com", "a-long-enough-password", RoleStaff)
 	if err != nil {
@@ -211,5 +210,63 @@ func TestSigningInNeedsNoStoreNamed(t *testing.T) {
 	app.Handler().ServeHTTP(out, req)
 	if out.Code != http.StatusOK || !strings.Contains(out.Body.String(), `"role":"manager"`) {
 		t.Fatalf("sign-in with no store named = %d %s, want the person's role in their one store", out.Code, out.Body)
+	}
+}
+
+// Accepting as an existing account checks that account's password, so it is
+// a sign-in, and it is throttled like one: otherwise any store owner could mint
+// invitations for somebody else's address and guess at their password freely.
+func TestAcceptingAsAnExistingAccountIsThrottledLikeASignIn(t *testing.T) {
+	app := newTestApp(t)
+	b := addTestStore(t, app, "second")
+	if _, err := app.Superusers().Create(WithStore(context.Background(), b), "victim@example.com", "the-real-password", RoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	inv := invite(t, app, "victim@example.com", RoleStaff, nil)
+	for i := 0; i <= throttleFreeAttempts; i++ { // the free attempts, then one that starts the delay
+		if _, _, err := app.invitations.AcceptFrom(context.Background(), inv.Token, fmt.Sprintf("guess-%d-long-enough", i), "203.0.113.9"); err == nil {
+			t.Fatal("a wrong password was accepted")
+		}
+	}
+	_, _, err := app.invitations.AcceptFrom(context.Background(), inv.Token, "the-real-password", "203.0.113.9")
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusTooManyRequests {
+		t.Fatalf("after %d wrong passwords the right one was let through: %v", throttleFreeAttempts+1, err)
+	}
+}
+
+// Somebody who already has an account joins another store by accepting an
+// invitation, not by being added: adding them would put another store's
+// owner within reach of this store's team screen (sign them out everywhere,
+// mail them reset links) without their say.
+func TestAnExistingPersonIsInvitedNotAdded(t *testing.T) {
+	app := newTestApp(t)
+	b := addTestStore(t, app, "second")
+	ctxB := WithStore(context.Background(), b)
+	if _, err := app.Superusers().Create(ctxB, "owner-b@example.com", "a-long-enough-password", RoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	_, err := app.Superusers().Create(context.Background(), "owner-b@example.com", "any-long-password", RoleStaff)
+	if !errors.Is(err, ErrConflict) || !strings.Contains(err.Error(), "invit") {
+		t.Fatalf("adding another store's owner directly: %v, want a conflict that says to invite them", err)
+	}
+}
+
+// A person who works in another store cannot be signed out of every store
+// from this one's team screen.
+func TestSigningSomebodyOutEverywhereStaysInThisStoresLane(t *testing.T) {
+	app := newTestApp(t)
+	b := addTestStore(t, app, "second")
+	ctxB := WithStore(context.Background(), b)
+	both, err := app.Superusers().Create(ctxB, "both@example.com", "a-long-enough-password", RoleOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv := invite(t, app, "both@example.com", RoleStaff, nil)
+	if _, _, err := app.invitations.Accept(context.Background(), inv.Token, "a-long-enough-password"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Superusers().RevokeAll(context.Background(), both.ID); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("store A signed store B's owner out everywhere: %v", err)
 	}
 }

@@ -132,7 +132,7 @@ func (a *App) handleAcceptInvitation(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	su, sess, err := a.invitations.Accept(r.Context(), r.PathValue("token"), in.Password)
+	su, sess, err := a.invitations.AcceptFrom(r.Context(), r.PathValue("token"), in.Password, clientIP(r))
 	if err != nil {
 		RespondError(w, r, err)
 		return

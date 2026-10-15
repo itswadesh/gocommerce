@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -329,6 +331,14 @@ func usableInvitation(inv *Invitation) error {
 // conditional UPDATE, so two people opening the same link at once cannot both
 // become operators.
 func (s *Invitations) Accept(ctx context.Context, token, password string) (*Superuser, *Session, error) {
+	return s.AcceptFrom(ctx, token, password, "")
+}
+
+// AcceptFrom is Accept with the caller's address, which the sign-in throttle
+// counts by. Accepting as an existing account checks that account's password,
+// so it is a sign-in and is limited like one: inviters can mint tokens for any
+// address, and an unthrottled check would let them guess at its password.
+func (s *Invitations) AcceptFrom(ctx context.Context, token, password, clientIP string) (*Superuser, *Session, error) {
 	rights, err := s.app.roles.All(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -376,8 +386,20 @@ func (s *Invitations) Accept(ctx context.Context, token, password string) (*Supe
 			}
 		case err != nil:
 			return Internalf(err, "look up superuser")
-		case !verifyPassword(existingHash, password):
-			return Forbiddenf("%s already has an account; accept with its current password", inv.Email)
+		default:
+			throttle := s.app.superusers.throttle
+			if retryAfter, blocked := throttle.blocked(inv.Email, clientIP); blocked {
+				return &APIError{
+					Status:  http.StatusTooManyRequests,
+					Code:    "too_many_attempts",
+					Message: fmt.Sprintf("too many failed attempts; try again in %s", retryAfter.Round(time.Second)),
+				}
+			}
+			if !verifyPassword(existingHash, password) {
+				throttle.fail(inv.Email, clientIP)
+				return Forbiddenf("%s already has an account; accept with its current password", inv.Email)
+			}
+			throttle.succeed(inv.Email, clientIP)
 		}
 		if err := joinStore(ctx, tx, id, inv.Role, nil); err != nil {
 			if isUniqueViolation(err) {
