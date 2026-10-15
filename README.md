@@ -239,6 +239,27 @@ curl -X POST localhost:8080/api/checkout/cod \
        "address":{"line1":"1 High St","city":"Town","postal_code":"12345","country":"US"}}'
 ```
 
+### More than one store
+
+The same process serves every store in the database (D83). Open another with
+
+```sh
+gocommerce store create corner Corner Shop
+gocommerce -store corner superuser create owner@corner.example a-long-password owner
+```
+
+and name it on requests with `x-litekart-store: <id>` (or `X-Store: corner`,
+`?store=corner`, or its host, `corner.<-base-domain>`). A person signs in once
+and works in each store they belong to.
+
+Stores are kept apart by PostgreSQL row-level security, so **the engine must
+not connect as a superuser**: `gocommerce doctor` fails if it does, and
+`serve` refuses to start with more than one store. `docker-compose.yml`
+creates an ordinary login, `gocommerce_app`, on a fresh volume. For an
+existing database, run `scripts/engine-login.sql` once as the superuser and
+point `DATABASE_URL` at `gocommerce_app`. Upgrading a single-store install
+needs nothing else: it becomes store #1 with every id unchanged.
+
 ## The admin panel
 
 One executable serves both the API and a full admin panel. Run the binary,

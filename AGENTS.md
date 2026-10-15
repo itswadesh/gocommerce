@@ -198,7 +198,10 @@ unlayered. Put the utilities in a layer and they lose to a bare `a` selector.
 
 ### 13. Tests run against a real PostgreSQL
 
-`GOCOMMERCE_TEST_DB` points at it; each test gets its own schema. There is no
+`GOCOMMERCE_TEST_DB` points at it; each test gets a database of its own,
+copied from one migrated once for its set of modules (`internal/testdb`), and
+runs as `gctest_engine`, an ordinary login — a superuser would pass the row
+policies rule 15 depends on and prove nothing. There is no
 in-memory substitute and no mock database — the engine's correctness lives in
 `FOR UPDATE SKIP LOCKED`, advisory locks and CHECK constraints, none of which a
 fake reproduces.
@@ -208,6 +211,18 @@ fake reproduces.
 The code says what it does. A comment earns its place by explaining a
 constraint, a trade-off, or a bug that is not visible from the surrounding
 lines. Do not narrate.
+
+### 15. Every table a store owns is behind the store policy
+
+One engine serves every store from one set of tables (D83). A store-owned
+table has `store_id`, and row-level security shows and accepts only the rows
+of the store the statement's context is bound to. A module puts its tables
+there by appending `gocommerce.ScopeMigration("000N_store_scope", "my_table",
+…)` after the migrations that create them; `ext/alltest` fails for any table
+that is not. Every database call takes the caller's `ctx` — one without a
+context runs unbound and sees nothing — and background work runs through
+`app.ForEachStore`. An `ON CONFLICT` target names `store_id` first, as the
+rewritten keys do.
 
 ---
 
