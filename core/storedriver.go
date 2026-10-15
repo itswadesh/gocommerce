@@ -165,7 +165,15 @@ type storeTx struct {
 	conn  *storeConn
 }
 
-func (t *storeTx) Commit() error { return t.inner.Commit() }
+// Commit can fail (a deferred constraint, a serialisation failure), and then
+// the transaction is rolled back after all, undoing any set_config it ran.
+func (t *storeTx) Commit() error {
+	err := t.inner.Commit()
+	if err != nil {
+		t.conn.current = unknownStore
+	}
+	return err
+}
 
 // Rollback undoes any set_config the transaction ran, so what the server
 // holds is no longer known; the next statement sets it again.
