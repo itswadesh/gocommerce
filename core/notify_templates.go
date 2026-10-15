@@ -393,6 +393,19 @@ We have received your return of {{.return_units}} item(s) from order {{.order_nu
 We will be in touch about anything owed to you.`,
 	},
 	{
+		Channel: ChannelEmail, Event: EventSuperuserInvitation, Title: "Team invitation",
+		Description: "To somebody invited to join the store's team. The link works for two days.",
+		Variables:   []string{"invite_url", "store_name", "role", "invited_by", "expires_in_hours"},
+		Subject:     "Join {{if .store_name}}{{.store_name}}{{else}}the team{{end}} on GoCommerce",
+		Body: `{{if .invited_by}}{{.invited_by}} has invited you{{else}}You have been invited{{end}} to join {{if .store_name}}{{.store_name}}{{else}}the team{{end}} as {{.role}}.
+
+Accept within {{.expires_in_hours}} hours:
+
+{{.invite_url}}
+
+If you were not expecting this, you can ignore it; nothing happens unless the link is opened.`,
+	},
+	{
 		Channel: ChannelEmail, Event: EventSuperuserPasswordReset, Title: "Operator password reset",
 		Description: "To a member of the team who asked to reset their panel password.",
 		Variables:   []string{"operator_email", "reset_url", "reset_token", "expires_in_minutes"},

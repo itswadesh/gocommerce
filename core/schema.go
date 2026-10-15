@@ -63,8 +63,19 @@ func coreMigrations() []Migration {
 		{ID: "0052_custom_roles", SQL: migration0052CustomRoles},
 		{ID: "0053_stores", Run: migrate0053Stores},
 		{ID: "0054_store_scope", Run: migrate0054StoreScope},
+		{ID: "0055_invitation_revoked", SQL: migration0055InvitationRevoked},
 	}
 }
+
+// M55 — a revoked invitation is kept, marked, rather than deleted, so the
+// team screen can list what was sent and what became of it, as it already
+// does for accepted ones. The one-open-invitation rule now skips revoked rows.
+const migration0055InvitationRevoked = `
+ALTER TABLE superuser_invitations ADD COLUMN revoked_at timestamptz;
+DROP INDEX superuser_invitations_open;
+CREATE UNIQUE INDEX superuser_invitations_open
+    ON superuser_invitations (store_id, email) WHERE accepted_at IS NULL AND revoked_at IS NULL;
+`
 
 // M1 — catalog. A product is the merchandising concept; a variant is the
 // sellable unit. Everything downstream (cart lines, order lines, inventory)

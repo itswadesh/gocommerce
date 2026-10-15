@@ -47,6 +47,9 @@ const (
 	// listing it there would promise consumers an audit trail that the sibling
 	// operator changes — Update, UpdateSelf, SetRole, Delete — do not emit.
 	EventSuperuserPasswordReset = "superuser.password_reset"
+	// EventSuperuserInvitation is the email carrying a team invitation's
+	// link. Like the reset, a notification name and not an outbox event.
+	EventSuperuserInvitation = "superuser.invitation"
 
 	// What a 202 says about this store's ability to send anything at all.
 	DeliveryEmail = "email"

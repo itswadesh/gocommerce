@@ -2,6 +2,7 @@ package gocommerce
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -48,6 +49,10 @@ func (a *App) handleCreateInvitation(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Email string `json:"email"`
 		Role  string `json:"role"`
+		// SendEmail defaults to true: the link goes out by the store's email
+		// provider. False is "give me the link to copy", which also cancels
+		// the previous link.
+		SendEmail *bool `json:"send_email"`
 	}
 	if err := DecodeJSON(w, r, &in); err != nil {
 		RespondError(w, r, err)
@@ -71,6 +76,13 @@ func (a *App) handleCreateInvitation(w http.ResponseWriter, r *http.Request) {
 	// HTTP layer knows what this store is reached at. It is returned once and
 	// never again.
 	inv.AcceptURL = a.acceptURL(r, inv.Token)
+	if in.SendEmail == nil || *in.SendEmail {
+		emailed, problem := a.invitations.email(r.Context(), inv)
+		inv.Emailed, inv.EmailError = &emailed, problem
+	} else {
+		no := false
+		inv.Emailed = &no
+	}
 	// Masked like the listing it is about to appear in. The link and the token
 	// are what this response exists to hand over, and neither is an address.
 	a.maskInvitations([]*Invitation{inv})
@@ -89,7 +101,9 @@ func (a *App) acceptURL(r *http.Request, token string) string {
 	if fwd := r.Header.Get("X-Forwarded-Host"); fwd != "" {
 		host = fwd
 	}
-	return scheme + "://" + host + "/admin/auth/accept-invite/" + token
+	// The store rides on the link, so the accept page talks to the store
+	// that sent it however many stores this install serves (D83).
+	return scheme + "://" + host + "/admin/auth/accept-invite/" + token + "?store=" + url.QueryEscape(a.storeOf(r.Context()))
 }
 
 func (a *App) handleRevokeInvitation(w http.ResponseWriter, r *http.Request) {

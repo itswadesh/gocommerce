@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -31,7 +32,10 @@ func (a *App) Team() *Invitations { return a.invitations }
 // How long an invitation link works for. Long enough to survive a weekend and
 // a holiday; short enough that a link forgotten in an inbox is not a permanent
 // way into the store.
-const invitationTTL = 7 * 24 * time.Hour
+// invitationTTL is how long a link works: two days, as Dokploy's do. Long
+// enough to reach somebody over a weekend, short enough that a forwarded
+// email is not a standing way in.
+const invitationTTL = 48 * time.Hour
 
 // Invitation is an outstanding or historical invitation to join the team.
 type Invitation struct {
@@ -56,6 +60,15 @@ type Invitation struct {
 	CreatedAt     time.Time  `json:"created_at"`
 	ExpiresAt     time.Time  `json:"expires_at"`
 	AcceptedAt    *time.Time `json:"accepted_at,omitempty"`
+	RevokedAt     *time.Time `json:"revoked_at,omitempty"`
+	// HasAccount tells the accept page what to ask for: somebody who already
+	// signs in to another store accepts with that password, anybody else
+	// chooses one. Filled by Lookup only.
+	HasAccount bool `json:"has_account"`
+	// Emailed and EmailError report, on the response that created the
+	// invitation only, whether the link went out by email.
+	Emailed    *bool  `json:"emailed,omitempty"`
+	EmailError string `json:"email_error,omitempty"`
 	// Status is the one field the panel actually renders, because "expired" is
 	// a fact about now rather than a column.
 	Status string `json:"status"`
@@ -66,10 +79,11 @@ const (
 	InvitationPending  = "pending"
 	InvitationAccepted = "accepted"
 	InvitationExpired  = "expired"
+	InvitationRevoked  = "revoked"
 )
 
 const invitationColumns = `i.id, i.email, i.role, i.invited_by,
-	coalesce(s.email, ''), i.created_at, i.expires_at, i.accepted_at`
+	coalesce(s.email, ''), i.created_at, i.expires_at, i.accepted_at, i.revoked_at`
 
 // scanInvitation reads one invitation. rights is the store's resolved matrix,
 // passed in rather than looked up here so that listing a page of invitations
@@ -78,10 +92,13 @@ const invitationColumns = `i.id, i.email, i.role, i.invited_by,
 func scanInvitation(row scanner, rights map[string][]Right) (*Invitation, error) {
 	inv := &Invitation{}
 	var invitedBy sql.NullInt64
-	var accepted sql.NullTime
+	var accepted, revoked sql.NullTime
 	if err := row.Scan(&inv.ID, &inv.Email, &inv.Role, &invitedBy,
-		&inv.InvitedByName, &inv.CreatedAt, &inv.ExpiresAt, &accepted); err != nil {
+		&inv.InvitedByName, &inv.CreatedAt, &inv.ExpiresAt, &accepted, &revoked); err != nil {
 		return nil, err
+	}
+	if revoked.Valid {
+		inv.RevokedAt = &revoked.Time
 	}
 	if invitedBy.Valid {
 		inv.InvitedByID = &invitedBy.Int64
@@ -90,14 +107,16 @@ func scanInvitation(row scanner, rights map[string][]Right) (*Invitation, error)
 		inv.AcceptedAt = &accepted.Time
 	}
 	inv.Rights = rights[inv.Role]
-	inv.Status = invitationStatus(inv.ExpiresAt, accepted)
+	inv.Status = invitationStatus(inv.ExpiresAt, accepted, revoked)
 	return inv, nil
 }
 
-func invitationStatus(expires time.Time, accepted sql.NullTime) string {
+func invitationStatus(expires time.Time, accepted, revoked sql.NullTime) string {
 	switch {
 	case accepted.Valid:
 		return InvitationAccepted
+	case revoked.Valid:
+		return InvitationRevoked
 	case time.Now().After(expires):
 		return InvitationExpired
 	default:
@@ -143,7 +162,7 @@ func (s *Invitations) Invite(ctx context.Context, email, role string, invitedBy 
 		// old one to stop working, and two live links for one person is exactly
 		// what the index exists to prevent.
 		if _, err := tx.ExecContext(ctx,
-			`DELETE FROM superuser_invitations WHERE email = $1 AND accepted_at IS NULL`,
+			`DELETE FROM superuser_invitations WHERE email = $1 AND accepted_at IS NULL AND revoked_at IS NULL`,
 			email); err != nil {
 			return Internalf(err, "clear the previous invitation")
 		}
@@ -221,23 +240,29 @@ func (s *Invitations) List(ctx context.Context) ([]*Invitation, error) {
 // Revoke closes an outstanding invitation. An accepted one is history and
 // cannot be revoked: the way to undo that is to remove the operator.
 func (s *Invitations) Revoke(ctx context.Context, id int64) error {
+	// Marked rather than deleted: the list keeps what was sent and what became
+	// of it, and the link stops working either way.
 	res, err := s.app.db.ExecContext(ctx,
-		`DELETE FROM superuser_invitations WHERE id = $1 AND accepted_at IS NULL`, id)
+		`UPDATE superuser_invitations SET revoked_at = now()
+		 WHERE id = $1 AND accepted_at IS NULL AND revoked_at IS NULL`, id)
 	if err != nil {
 		return Internalf(err, "revoke invitation")
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		// Distinguish the two, because they need different actions: one is a
 		// stale screen, the other is "remove the person instead".
-		var accepted bool
+		var accepted, revoked bool
 		err := s.app.db.QueryRowContext(ctx,
-			`SELECT accepted_at IS NOT NULL FROM superuser_invitations WHERE id = $1`,
-			id).Scan(&accepted)
+			`SELECT accepted_at IS NOT NULL, revoked_at IS NOT NULL FROM superuser_invitations WHERE id = $1`,
+			id).Scan(&accepted, &revoked)
 		if errors.Is(err, sql.ErrNoRows) {
 			return NotFoundf("invitation %d does not exist", id)
 		}
 		if err != nil {
 			return Internalf(err, "read invitation")
+		}
+		if revoked {
+			return nil // already off, which is what the caller wanted
 		}
 		return Conflictf("this invitation was already accepted; remove the operator instead")
 	}
@@ -271,6 +296,10 @@ func (s *Invitations) Lookup(ctx context.Context, token string) (*Invitation, er
 	if err := usableInvitation(inv); err != nil {
 		return nil, err
 	}
+	if err := s.app.db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM superusers WHERE email = $1)`, inv.Email).Scan(&inv.HasAccount); err != nil {
+		return nil, Internalf(err, "look up the invitee")
+	}
 	return inv, nil
 }
 
@@ -280,6 +309,8 @@ func usableInvitation(inv *Invitation) error {
 	switch inv.Status {
 	case InvitationAccepted:
 		return Conflictf("this invitation has already been used")
+	case InvitationRevoked:
+		return Conflictf("this invitation was withdrawn")
 	case InvitationExpired:
 		return Conflictf("this invitation expired on %s; ask for a new one",
 			inv.ExpiresAt.Format("2 January 2006"))
@@ -385,4 +416,43 @@ func (s *Invitations) Accept(ctx context.Context, token, password string) (*Supe
 		return nil, nil, err
 	}
 	return su, sess, nil
+}
+
+// invitationEmailTimeout bounds the send the inviter is waiting on. It is
+// shorter than a reset's because a person is watching the dialog.
+const invitationEmailTimeout = 15 * time.Second
+
+// email sends inv's link to the invitee through the store's email provider
+// — Resend, on a store that installed it; there is no provider to pick. It
+// reports whether the email went, and if not, why, in words for the dialog:
+// the link is still there to copy either way.
+func (s *Invitations) email(ctx context.Context, inv *Invitation) (bool, string) {
+	if !s.app.notifier.delivers(ctx, ChannelEmail) {
+		return false, "No email provider is set up for this store, so nothing was sent. Copy the link and send it yourself, or add Resend under Notifications."
+	}
+	store := ""
+	if st, err := s.app.stores.Get(ctx, s.app.storeOf(ctx)); err == nil {
+		store = st.Name
+	}
+	ctx, cancel := context.WithTimeout(ctx, invitationEmailTimeout)
+	defer cancel()
+	err := s.app.notifier.send(ctx, Notification{
+		Event:    EventSuperuserInvitation,
+		Channel:  ChannelEmail,
+		To:       inv.Email,
+		Language: s.app.cfg.DefaultLanguage,
+		Data: map[string]string{
+			"invite_url":       inv.AcceptURL,
+			"store_name":       store,
+			"role":             inv.Role,
+			"invited_by":       inv.InvitedByName,
+			"expires_in_hours": strconv.Itoa(int(invitationTTL / time.Hour)),
+		},
+	})
+	if err != nil {
+		// The link is never logged: it is a credential until it is used.
+		s.app.log.Error("invitation email failed", "invitation", inv.ID, "error", err)
+		return false, "The email could not be sent. Copy the link and send it yourself."
+	}
+	return true, ""
 }

@@ -413,12 +413,12 @@ func TestDemotingSomebodyTakesEffectOnTheirOpenSession(t *testing.T) {
 }
 
 // The link opens the panel's invitation screen, which lives under /admin/auth
-// with the panel's other signed-out screens.
+// with the panel's other signed-out screens, and names the store it is for.
 func TestAnInvitationLinkOpensTheAdminAuthScreen(t *testing.T) {
 	app := newTestApp(t)
 	r := httptest.NewRequest(http.MethodPost, "http://shop.example/api/admin/invitations", nil)
 	got := app.acceptURL(r, "tok")
-	if want := "http://shop.example/admin/auth/accept-invite/tok"; got != want {
+	if want := "http://shop.example/admin/auth/accept-invite/tok?store=" + app.DefaultStore(); got != want {
 		t.Errorf("accept url = %q, want %q", got, want)
 	}
 }
