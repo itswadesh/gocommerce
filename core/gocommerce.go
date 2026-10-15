@@ -834,6 +834,7 @@ func (a *App) ListenAndServe() error {
 		if a.reportsDB != nil {
 			_ = a.reportsDB.Close()
 		}
+		connectors.Delete(a.db)
 		a.db.Close()
 		return err
 	case <-ctx.Done():
@@ -848,6 +849,7 @@ func (a *App) ListenAndServe() error {
 	if a.reportsDB != nil {
 		_ = a.reportsDB.Close()
 	}
+	connectors.Delete(a.db)
 	if cerr := a.db.Close(); err == nil {
 		err = cerr
 	}
@@ -903,5 +905,6 @@ func (a *App) Close() error {
 	if a.reportsDB != nil {
 		_ = a.reportsDB.Close()
 	}
+	connectors.Delete(a.db)
 	return a.db.Close()
 }

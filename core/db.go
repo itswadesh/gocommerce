@@ -54,10 +54,14 @@ func OpenDB(ctx context.Context, dsn string) (*sql.DB, error) {
 	if dsn == "" {
 		return nil, errors.New("gocommerce: empty database URL")
 	}
-	db, err := sql.Open("pgx", dsn)
+	// Opened through the store connector, so every statement is bound to the
+	// store its context names (storedriver.go).
+	conn, err := newStoreConnector(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("gocommerce: open database: %w", err)
 	}
+	db := sql.OpenDB(conn)
+	connectors.Store(db, conn)
 	db.SetMaxOpenConns(maxOpenConns)
 	db.SetMaxIdleConns(maxIdleConns)
 	db.SetConnMaxLifetime(connMaxLifetime)
@@ -66,6 +70,7 @@ func OpenDB(ctx context.Context, dsn string) (*sql.DB, error) {
 	pctx, cancel := context.WithTimeout(ctx, pingTimeout)
 	defer cancel()
 	if err := db.PingContext(pctx); err != nil {
+		connectors.Delete(db)
 		db.Close()
 		return nil, fmt.Errorf("gocommerce: connect to database: %w", err)
 	}
