@@ -26,8 +26,6 @@ var coreStoreTables = []string{
 // and finishes what 0053 could not do before the tables had a store: the
 // membership keys become per-store, and each store's order counter starts
 // after its highest order.
-//
-//storelint:global converts the core tables to per-store
 func migrate0054StoreScope(ctx context.Context, tx *sql.Tx) error {
 	// store_members points at roles(key) and vendors(id). Those keys are about
 	// to lead with store_id, so the global table's keys come off first and go

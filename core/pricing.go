@@ -385,7 +385,7 @@ func (p *Pricing) AddMember(ctx context.Context, groupID int64, email string) er
 	}
 	res, err := p.app.db.ExecContext(ctx, `
 		INSERT INTO customer_group_members (group_id, email) VALUES ($1, $2)
-		ON CONFLICT (group_id, email) DO NOTHING`, groupID, folded)
+		ON CONFLICT (store_id, group_id, email) DO NOTHING`, groupID, folded)
 	if err != nil {
 		return translatePricingErr(err)
 	}
@@ -608,7 +608,7 @@ func (p *Pricing) SetPrice(ctx context.Context, listID int64, row PriceRow) erro
 	res, err := p.app.db.ExecContext(ctx, `
 		INSERT INTO price_list_prices (price_list_id, variant_id, min_quantity, amount_minor)
 		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (price_list_id, variant_id, min_quantity)
+		ON CONFLICT (store_id, price_list_id, variant_id, min_quantity)
 		DO UPDATE SET amount_minor = excluded.amount_minor`,
 		listID, row.VariantID, row.MinQuantity, row.AmountMinor)
 	if err != nil {

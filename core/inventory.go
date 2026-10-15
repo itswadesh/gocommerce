@@ -211,7 +211,7 @@ func restockStock(ctx context.Context, tx *sql.Tx, variantID, locationID int64, 
 func ensureStockRow(ctx context.Context, tx *sql.Tx, variantID, locationID int64) error {
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO variant_stock (variant_id, location_id) VALUES ($1, $2)
-		ON CONFLICT (variant_id, location_id) DO NOTHING`, variantID, locationID)
+		ON CONFLICT (store_id, variant_id, location_id) DO NOTHING`, variantID, locationID)
 	return translateCatalogErr(err)
 }
 

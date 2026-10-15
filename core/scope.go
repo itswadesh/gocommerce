@@ -28,8 +28,6 @@ var globalUniqueKeys = map[string][]string{
 // keys they point at are about to be rebuilt; then each table gets its column
 // and keys; then the foreign keys come back including the store; the policy
 // goes on last.
-//
-//storelint:global converts tables to per-store
 func ScopeTables(ctx context.Context, tx *sql.Tx, tables ...string) error {
 	var first string
 	if err := tx.QueryRowContext(ctx,

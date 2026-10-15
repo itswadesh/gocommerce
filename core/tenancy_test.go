@@ -158,3 +158,25 @@ func TestARowCannotReferenceAnotherStoresRow(t *testing.T) {
 		t.Fatal("store B created a variant of store A's product")
 	}
 }
+
+func TestTheSameSKUCanBeSoldByTwoStores(t *testing.T) {
+	app := newTestApp(t)
+	b := addTestStore(t, app, "second")
+	ctxB := WithStore(context.Background(), b)
+	price, stock := int64(1000), 5
+	in := ProductInput{Title: "Tee", Status: ProductActive, SKU: "SKU-1", PriceMinor: &price, Stock: &stock}
+	pa, err := app.Products().CreateProduct(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pb, err := app.Products().CreateProduct(ctxB, in)
+	if err != nil {
+		t.Fatalf("store B could not use a SKU store A uses: %v", err)
+	}
+	if _, err := app.Products().GetProduct(ctxB, pa.ID); err == nil {
+		t.Fatal("store B read store A's product by id")
+	}
+	if got, err := app.Products().GetProduct(ctxB, pb.ID); err != nil || got.ID != pb.ID {
+		t.Fatalf("store B cannot read its own product: %v", err)
+	}
+}

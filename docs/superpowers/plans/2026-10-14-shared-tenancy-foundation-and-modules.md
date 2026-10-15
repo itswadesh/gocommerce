@@ -1360,6 +1360,14 @@ git commit -m "Lint that every statement on a store table names its store" -m "U
 
 ---
 
+> **Revised 2026-10-15 (owner's decision: rely on RLS).** The statement
+> rewrite in Tasks 7, 9, 10 and 11, and the statement lint from Task 6, are
+> dropped. What remains of those tasks: `ON CONFLICT` targets gain
+> `store_id`; new stores are seeded (`Stores.Seed`); Task 9's per-store order
+> numbers; Task 8 (resolution) unchanged. `TestDatabaseCallsTakeAContext`
+> stays. Platform removal (Task 14) moves ahead of Task 8, since its tests
+> exercise a mode that is going away.
+
 ### Tasks 7–11: Name the store in every core statement
 
 These five tasks share one procedure and differ in their file set. Each is one commit. The rules:

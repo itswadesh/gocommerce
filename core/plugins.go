@@ -338,7 +338,7 @@ func (p *Plugins) Update(ctx context.Context, key string, patch PluginPatch) (*P
 		if err := tx.QueryRowContext(ctx, `
 			INSERT INTO plugins (key, enabled, settings, updated_at)
 			VALUES ($1, $2, $3, now())
-			ON CONFLICT (key) DO UPDATE SET enabled = EXCLUDED.enabled, settings = EXCLUDED.settings, updated_at = now()
+			ON CONFLICT (store_id, key) DO UPDATE SET enabled = EXCLUDED.enabled, settings = EXCLUDED.settings, updated_at = now()
 			RETURNING updated_at`, key, enabled, encoded).Scan(&at); err != nil {
 			return Internalf(err, "write plugin")
 		}

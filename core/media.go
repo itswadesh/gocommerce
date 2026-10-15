@@ -645,7 +645,7 @@ func (m *Media) SetProductMedia(ctx context.Context, productID int64, mediaIDs [
 			if _, err := tx.ExecContext(ctx, `
 				INSERT INTO product_media (product_id, media_id, position)
 				VALUES ($1, $2, $3)
-				ON CONFLICT (product_id, media_id) DO UPDATE SET position = EXCLUDED.position`,
+				ON CONFLICT (store_id, product_id, media_id) DO UPDATE SET position = EXCLUDED.position`,
 				productID, id, i); err != nil {
 				if isForeignKeyViolation(err) {
 					return Validationf("media %d does not exist", id)
@@ -737,7 +737,7 @@ func (m *Media) SetVariantMedia(ctx context.Context, variantID int64, mediaIDs [
 			if _, err := tx.ExecContext(ctx, `
 				INSERT INTO variant_media (variant_id, media_id, position)
 				VALUES ($1, $2, $3)
-				ON CONFLICT (variant_id, media_id) DO UPDATE SET position = EXCLUDED.position`,
+				ON CONFLICT (store_id, variant_id, media_id) DO UPDATE SET position = EXCLUDED.position`,
 				variantID, id, i); err != nil {
 				return Internalf(err, "set variant media")
 			}
