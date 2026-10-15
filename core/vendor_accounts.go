@@ -46,16 +46,25 @@ func (s *Superusers) CreateForVendor(ctx context.Context, vendorID int64, email,
 			return Internalf(err, "read vendor")
 		}
 
-		row := tx.QueryRowContext(ctx, `
-			INSERT INTO superusers (email, password_hash, role, vendor_id)
-			VALUES ($1, $2, $3, $4)
-			RETURNING `+superuserColumns, normalizeEmail(email), hash, RoleVendor, vendorID)
-		var serr error
-		if su, serr = scanSuperuser(row); serr != nil {
-			if isUniqueViolation(serr) {
+		// A seller's login is a new person: an address that already signs in
+		// somewhere is refused, because a vendor login sees only its seller
+		// and must not inherit anybody's standing elsewhere.
+		var id int64
+		if err := tx.QueryRowContext(ctx, `
+			INSERT INTO superusers (email, password_hash) VALUES ($1, $2) RETURNING id`,
+			normalizeEmail(email), hash).Scan(&id); err != nil {
+			if isUniqueViolation(err) {
 				return Conflictf("a superuser with email %q already exists", normalizeEmail(email))
 			}
-			return Internalf(serr, "create vendor account")
+			return Internalf(err, "create vendor account")
+		}
+		if err := joinStore(ctx, tx, id, RoleVendor, &vendorID); err != nil {
+			return Internalf(err, "add vendor account to store")
+		}
+		var serr error
+		if su, serr = scanSuperuser(tx.QueryRowContext(ctx,
+			`SELECT `+superuserColumns+` FROM superusers WHERE id = $1`, id)); serr != nil {
+			return Internalf(serr, "read vendor account")
 		}
 		return writeAudit(ctx, tx, auditRecord{
 			Action: AuditSuperuserCreate, Entity: AuditEntitySuperuser,
@@ -74,7 +83,7 @@ func (s *Superusers) CreateForVendor(ctx context.Context, vendorID int64, email,
 // Get returns one operator by id.
 func (s *Superusers) Get(ctx context.Context, id int64) (*Superuser, error) {
 	su, err := scanSuperuser(s.db.QueryRowContext(ctx,
-		`SELECT `+superuserColumns+` FROM superusers WHERE id = $1`, id))
+		`SELECT `+superuserColumns+` FROM superusers WHERE id = $1 AND `+memberHere, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, NotFoundf("superuser %d not found", id)
 	}

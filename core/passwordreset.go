@@ -151,8 +151,10 @@ func (s *Superusers) RequestReset(ctx context.Context, email, clientIP string) (
 // enumerate, and no throttle for the same reason.
 func (s *Superusers) RequestResetFor(ctx context.Context, id int64) (ResetRequest, error) {
 	var email string
+	// Only this store's staff: one store's team screen has no business mailing
+	// links to people who work only elsewhere.
 	err := s.db.QueryRowContext(ctx,
-		`SELECT email FROM superusers WHERE id = $1`, id).Scan(&email)
+		`SELECT email FROM superusers WHERE id = $1 AND `+memberHere, id).Scan(&email)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ResetRequest{}, NotFoundf("superuser %d not found", id)
 	}

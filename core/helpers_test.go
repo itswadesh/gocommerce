@@ -192,6 +192,7 @@ func testConfig(dsn string) Config {
 		ReportsDBURL: reportsDSN(dsn),
 		AdminTokens:  []string{testAdminToken},
 		Logger:       quietLogger(),
+		DefaultStore: "first",
 	}
 }
 

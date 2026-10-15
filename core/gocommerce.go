@@ -158,6 +158,13 @@ type Config struct {
 	OrderTTL time.Duration
 	// OrderPrefix prefixes human order numbers. Defaults to "GC-".
 	OrderPrefix string
+	// DefaultStore binds work that names no store to this one. It is for an
+	// application that embeds the engine for a single store, and for tests;
+	// "first" means the oldest store. `gocommerce serve` leaves it empty, so
+	// in the product a statement that forgot its store sees nothing.
+	DefaultStore string
+	// BaseDomain, when set, lets a store answer at <slug>.<BaseDomain>.
+	BaseDomain string
 	// PricesIncludeTax says whether the prices in the catalog already contain
 	// tax. It changes what every figure on an order means, so it is snapshotted
 	// onto each order as it is placed: switching a live store must not rewrite
@@ -322,6 +329,10 @@ type App struct {
 	notifyTemplates *NotifyTemplates
 	superusers      *Superusers
 	roles           *RoleRights
+	stores          *Stores
+	// defaultStore is Config.DefaultStore resolved to an id ("first" becomes
+	// the oldest store's); empty under `serve`.
+	defaultStore string
 	media           *Media
 	discounts       *Discounts
 	locations       *Locations
@@ -479,6 +490,10 @@ func New(cfg Config, mods ...Module) (*App, error) {
 		fail()
 		return nil, err
 	}
+	if err := a.resolveDefaultStore(context.Background()); err != nil {
+		fail()
+		return nil, err
+	}
 
 	// Core wiring first, in plain code, readable top to bottom — and mounted
 	// before any module, so a core route always exists before something else
@@ -556,6 +571,7 @@ func (a *App) buildServices() {
 	// Before superusers: identity resolves rights through it on every scan.
 	a.roles = &RoleRights{app: a}
 	a.superusers = newSuperusers(a)
+	a.stores = &Stores{app: a, db: a.db}
 	a.media = &Media{app: a}
 	a.discounts = &Discounts{app: a}
 	a.locations = &Locations{app: a}

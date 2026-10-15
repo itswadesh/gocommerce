@@ -220,7 +220,44 @@ func validateCredentials(email, password string) error {
 	return validatePassword(password)
 }
 
-const superuserColumns = `id, email, password_hash, role, vendor_id, created_at, updated_at`
+// A person is global; their role and seller are their membership of the
+// store the connection is bound to (store_members). Read through correlated
+// subqueries so the same list works after FROM, after a JOIN and in a
+// RETURNING clause. No membership reads as role "": the person is not staff
+// here, and an empty role carries no rights.
+const (
+	memberRoleColumn = `COALESCE((SELECT m.role FROM store_members m
+		WHERE m.superuser_id = superusers.id AND m.store_id = current_setting('gocommerce.store_id', true)), '')`
+	memberVendorColumn = `(SELECT m.vendor_id FROM store_members m
+		WHERE m.superuser_id = superusers.id AND m.store_id = current_setting('gocommerce.store_id', true))`
+	superuserColumns = `superusers.id, superusers.email, superusers.password_hash, ` +
+		memberRoleColumn + `, ` + memberVendorColumn + `, superusers.created_at, superusers.updated_at`
+	// memberHere is true for a person who is staff of the bound store.
+	memberHere = `EXISTS (SELECT 1 FROM store_members m
+		WHERE m.superuser_id = superusers.id AND m.store_id = current_setting('gocommerce.store_id', true))`
+)
+
+// joinStore makes a person staff of the bound store. With no store bound the
+// setting is empty and the stores foreign key refuses the row.
+func joinStore(ctx context.Context, tx *sql.Tx, superuserID int64, role string, vendorID *int64) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO store_members (store_id, superuser_id, role, vendor_id)
+		VALUES (current_setting('gocommerce.store_id', true), $1, $2, $3)`, superuserID, role, vendorID)
+	return err
+}
+
+// otherStores counts the stores besides the bound one a person works in. A
+// person's email and password are theirs everywhere, so one store's team
+// screen must not be able to change them for another store's owner.
+func otherStores(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, superuserID int64) (int, error) {
+	var n int
+	err := q.QueryRowContext(ctx, `
+		SELECT count(*) FROM store_members
+		WHERE superuser_id = $1 AND store_id <> current_setting('gocommerce.store_id', true)`, superuserID).Scan(&n)
+	return n, err
+}
 
 // scanSuperuser reads the row and nothing else. It leaves Rights empty, which
 // is why every caller goes through scan or fills them from a resolved map: an
@@ -251,6 +288,9 @@ func (s *Superusers) scan(ctx context.Context, row interface{ Scan(...any) error
 	su, err := scanSuperuser(row)
 	if err != nil {
 		return nil, err
+	}
+	if su.Role == "" {
+		return su, nil // not staff of this store: no rights here
 	}
 	rights, err := s.roles.Of(ctx, su.Role)
 	if err != nil {
@@ -287,18 +327,35 @@ func (s *Superusers) Create(ctx context.Context, email, password, role string) (
 	// enters a changes payload — they are the credential.
 	var su *Superuser
 	err = InTx(ctx, s.db, func(tx *sql.Tx) error {
-		row := tx.QueryRowContext(ctx, `
-			INSERT INTO superusers (email, password_hash, role) VALUES ($1, $2, $3)
-			RETURNING `+superuserColumns, normalizeEmail(email), hash, role)
-		var serr error
-		if su, serr = scanSuperuser(row); serr != nil {
-			if isUniqueViolation(serr) {
+		// A person who already works in another store keeps their own
+		// password: they are added here, and the password given is ignored
+		// rather than allowed to replace theirs.
+		var id int64
+		err := tx.QueryRowContext(ctx, `SELECT id FROM superusers WHERE email = $1 FOR UPDATE`,
+			normalizeEmail(email)).Scan(&id)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			if err := tx.QueryRowContext(ctx, `
+				INSERT INTO superusers (email, password_hash) VALUES ($1, $2) RETURNING id`,
+				normalizeEmail(email), hash).Scan(&id); err != nil {
+				return Internalf(err, "create superuser")
+			}
+		case err != nil:
+			return Internalf(err, "look up superuser")
+		}
+		if err := joinStore(ctx, tx, id, role, nil); err != nil {
+			if isUniqueViolation(err) {
 				return Conflictf("a superuser with email %q already exists", normalizeEmail(email))
 			}
-			if gone := roleGone(serr, role); gone != serr {
+			if gone := roleGone(err, role); gone != err {
 				return gone
 			}
-			return Internalf(serr, "create superuser")
+			return Internalf(err, "add to store")
+		}
+		var serr error
+		if su, serr = scanSuperuser(tx.QueryRowContext(ctx,
+			`SELECT `+superuserColumns+` FROM superusers WHERE id = $1`, id)); serr != nil {
+			return Internalf(serr, "read superuser")
 		}
 		return writeAudit(ctx, tx, auditRecord{
 			Action: AuditSuperuserCreate, Entity: AuditEntitySuperuser,
@@ -401,7 +458,7 @@ func (s *Superusers) List(ctx context.Context) ([]*Superuser, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+superuserColumns+` FROM superusers ORDER BY id`)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+superuserColumns+` FROM superusers WHERE `+memberHere+` ORDER BY id`)
 	if err != nil {
 		return nil, Internalf(err, "list superusers")
 	}
@@ -478,8 +535,13 @@ func (s *Superusers) Update(ctx context.Context, id int64, email, password strin
 
 	var su *Superuser
 	err = InTx(ctx, s.db, func(tx *sql.Tx) error {
+		if others, err := otherStores(ctx, tx, id); err != nil {
+			return Internalf(err, "count stores")
+		} else if others > 0 {
+			return Forbiddenf("this person also works in other stores; only they can change their email or password")
+		}
 		row := tx.QueryRowContext(ctx, `UPDATE superusers SET `+strings.Join(sets, ", ")+
-			fmt.Sprintf(" WHERE id = $%d RETURNING ", len(args))+superuserColumns, args...)
+			fmt.Sprintf(" WHERE id = $%d AND "+memberHere+" RETURNING ", len(args))+superuserColumns, args...)
 		var err error
 		if su, err = scanSuperuser(row); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -525,7 +587,8 @@ func (s *Superusers) Delete(ctx context.Context, id int64) error {
 		// count of two, each pass the guard, and each commit — leaving a panel
 		// nobody can sign in to, which is precisely what the guard exists to
 		// prevent. Counting under FOR UPDATE serialises the pair.
-		rows, err := tx.QueryContext(ctx, `SELECT id FROM superusers ORDER BY id FOR UPDATE`)
+		rows, err := tx.QueryContext(ctx, `SELECT superuser_id FROM store_members
+			WHERE store_id = current_setting('gocommerce.store_id', true) ORDER BY superuser_id FOR UPDATE`)
 		if err != nil {
 			return Internalf(err, "lock superusers")
 		}
@@ -565,13 +628,13 @@ func (s *Superusers) Delete(ctx context.Context, id int64) error {
 		// The email comes off the same already-locked row the role does, and it
 		// is read now because after the DELETE nothing can say who this was.
 		if err := tx.QueryRowContext(ctx,
-			`SELECT role, email FROM superusers WHERE id = $1`, id).Scan(&role, &email); err != nil {
+			`SELECT `+memberRoleColumn+`, email FROM superusers WHERE id = $1`, id).Scan(&role, &email); err != nil {
 			return Internalf(err, "read superuser")
 		}
 		if role == RoleOwner {
 			var owners int
-			if err := tx.QueryRowContext(ctx,
-				`SELECT count(*) FROM superusers WHERE role = $1`, RoleOwner).Scan(&owners); err != nil {
+			if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM store_members
+				WHERE store_id = current_setting('gocommerce.store_id', true) AND role = $1`, RoleOwner).Scan(&owners); err != nil {
 				return Internalf(err, "count owners")
 			}
 			if owners <= 1 {
@@ -579,7 +642,14 @@ func (s *Superusers) Delete(ctx context.Context, id int64) error {
 					"this is the only owner; make somebody else an owner before removing this one")
 			}
 		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM superusers WHERE id = $1`, id); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM store_members
+			WHERE store_id = current_setting('gocommerce.store_id', true) AND superuser_id = $1`, id); err != nil {
+			return Internalf(err, "remove from store")
+		}
+		// The person goes with their last store; until then they keep working
+		// in the others.
+		if _, err := tx.ExecContext(ctx, `DELETE FROM superusers
+			WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM store_members WHERE superuser_id = $1)`, id); err != nil {
 			return Internalf(err, "delete superuser")
 		}
 		// The rows this person wrote keep their actor_id, which now points at
@@ -719,7 +789,7 @@ func (s *Superusers) RevokeAll(ctx context.Context, id int64) (int, error) {
 	// means the caller should go and look at what they clicked.
 	var exists bool
 	err := s.db.QueryRowContext(ctx,
-		`SELECT true FROM superusers WHERE id = $1`, id).Scan(&exists)
+		`SELECT true FROM superusers WHERE id = $1 AND `+memberHere, id).Scan(&exists)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, NotFoundf("superuser %d not found", id)
 	}
@@ -785,7 +855,8 @@ func (s *Superusers) Sessions(ctx context.Context, id int64) (int, *time.Time, e
 // instead of demanding credentials that do not exist yet.
 func (s *Superusers) Count(ctx context.Context) (int, error) {
 	var n int
-	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM superusers`).Scan(&n); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM store_members
+		WHERE store_id = current_setting('gocommerce.store_id', true)`).Scan(&n); err != nil {
 		return 0, Internalf(err, "count superusers")
 	}
 	return n, nil
@@ -948,9 +1019,9 @@ func (s *Superusers) Resolve(ctx context.Context, token string) (*Superuser, boo
 	// superuserColumns: scanSuperuser reads a fixed shape, and a list that
 	// drifts from it surfaces as "unknown token" rather than as an error.
 	row := s.db.QueryRowContext(ctx, `
-		SELECT s.id, s.email, s.password_hash, s.role, s.vendor_id, s.created_at, s.updated_at
+		SELECT `+superuserColumns+`
 		FROM superuser_sessions ss
-		JOIN superusers s ON s.id = ss.superuser_id
+		JOIN superusers ON superusers.id = ss.superuser_id
 		WHERE ss.token_hash = $1 AND ss.expires_at > now()`, hashToken(token))
 	su, err := s.scan(ctx, row)
 	if err != nil {
@@ -1173,8 +1244,8 @@ func (s *Superusers) SetRole(ctx context.Context, id int64, role string) (*Super
 		// FOR UPDATE — PostgreSQL refuses that combination, and locking the rows
 		// is what actually serialises two requests each demoting one of the last
 		// two owners.
-		rows, err := tx.QueryContext(ctx,
-			`SELECT id FROM superusers WHERE role = $1 FOR UPDATE`, RoleOwner)
+		rows, err := tx.QueryContext(ctx, `SELECT superuser_id FROM store_members
+			WHERE store_id = current_setting('gocommerce.store_id', true) AND role = $1 FOR UPDATE`, RoleOwner)
 		if err != nil {
 			return Internalf(err, "lock owners")
 		}
@@ -1188,8 +1259,8 @@ func (s *Superusers) SetRole(ctx context.Context, id int64, role string) (*Super
 		}
 		rows.Close()
 		var current string
-		if err := tx.QueryRowContext(ctx,
-			`SELECT role FROM superusers WHERE id = $1`, id).Scan(&current); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT role FROM store_members
+			WHERE store_id = current_setting('gocommerce.store_id', true) AND superuser_id = $1`, id).Scan(&current); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return NotFoundf("superuser %d does not exist", id)
 			}
@@ -1200,9 +1271,16 @@ func (s *Superusers) SetRole(ctx context.Context, id int64, role string) (*Super
 				"this is the only owner; make somebody else an owner before changing this one")
 		}
 
+		if _, err := tx.ExecContext(ctx, `UPDATE store_members SET role = $2
+			WHERE store_id = current_setting('gocommerce.store_id', true) AND superuser_id = $1`, id, role); err != nil {
+			if gone := roleGone(err, role); gone != err {
+				return gone
+			}
+			return Internalf(err, "set role")
+		}
 		row := tx.QueryRowContext(ctx, `
-			UPDATE superusers SET role = $2, updated_at = now()
-			WHERE id = $1 RETURNING `+superuserColumns, id, role)
+			UPDATE superusers SET updated_at = now()
+			WHERE id = $1 RETURNING `+superuserColumns, id)
 		su, err = scanSuperuser(row)
 		if err != nil {
 			if gone := roleGone(err, role); gone != err {

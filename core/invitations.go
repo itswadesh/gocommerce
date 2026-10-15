@@ -132,7 +132,7 @@ func (s *Invitations) Invite(ctx context.Context, email, role string, invitedBy 
 	err = InTx(ctx, s.app.db, func(tx *sql.Tx) error {
 		var exists bool
 		if err := tx.QueryRowContext(ctx,
-			`SELECT true FROM superusers WHERE email = $1`, email).Scan(&exists); err == nil {
+			`SELECT true FROM superusers WHERE email = $1 AND `+memberHere, email).Scan(&exists); err == nil {
 			return Conflictf("%s is already on the team; change their role instead", email)
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return Internalf(err, "look up superuser")
@@ -329,17 +329,37 @@ func (s *Invitations) Accept(ctx context.Context, token, password string) (*Supe
 			return Internalf(err, "hash password")
 		}
 
-		created := tx.QueryRowContext(ctx, `
-			INSERT INTO superusers (email, password_hash, role) VALUES ($1, $2, $3)
-			RETURNING `+superuserColumns, inv.Email, hash, inv.Role)
-		// scanSuperuser rather than the resolving scan: this is inside a
-		// transaction, and that one would take a second pool connection.
-		su, err = scanSuperuser(created)
-		if err != nil {
+		// Somebody who already signs in to another store accepts with the
+		// password they have; anything else would let whoever holds the link
+		// set a new password on an existing account.
+		var id int64
+		var existingHash string
+		err = tx.QueryRowContext(ctx, `SELECT id, password_hash FROM superusers WHERE email = $1 FOR UPDATE`,
+			inv.Email).Scan(&id, &existingHash)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			if err := tx.QueryRowContext(ctx, `
+				INSERT INTO superusers (email, password_hash) VALUES ($1, $2) RETURNING id`,
+				inv.Email, hash).Scan(&id); err != nil {
+				return Internalf(err, "create superuser")
+			}
+		case err != nil:
+			return Internalf(err, "look up superuser")
+		case !verifyPassword(existingHash, password):
+			return Forbiddenf("%s already has an account; accept with its current password", inv.Email)
+		}
+		if err := joinStore(ctx, tx, id, inv.Role, nil); err != nil {
 			if isUniqueViolation(err) {
 				return Conflictf("%s is already on the team; sign in instead", inv.Email)
 			}
-			return Internalf(err, "create superuser")
+			return Internalf(err, "add to store")
+		}
+		// scanSuperuser rather than the resolving scan: this is inside a
+		// transaction, and that one would take a second pool connection.
+		su, err = scanSuperuser(tx.QueryRowContext(ctx,
+			`SELECT `+superuserColumns+` FROM superusers WHERE id = $1`, id))
+		if err != nil {
+			return Internalf(err, "read superuser")
 		}
 
 		res, err := tx.ExecContext(ctx, `
