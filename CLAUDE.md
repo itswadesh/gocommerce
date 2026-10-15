@@ -105,6 +105,20 @@ wrong, say so in a trailer: `Update: fix`, `Update: feature`, or
 `Update: skip` for a change readers would not care about. The subject is
 what the public reads, so write it for them.
 
+## Every merged pull request is a release
+
+Nothing is pushed to `main` directly: work reaches it through a pull request.
+Merging one runs `.github/workflows/release.yml`, which tags the merge commit
+with the next version — a patch bump, or minor/major when the pull request is
+labelled `release:minor` or `release:major` — builds the binaries with that
+version stamped in (`core.Version`), and publishes a GitHub release whose
+notes are the pull request's title and description. So write the description
+for the people reading the release.
+
+CI (`.github/workflows/ci.yml`) runs only when started by hand. Run the checks
+in "Verifying a change" before opening a pull request, and say in its
+description what ran.
+
 ## Working style
 
 - Read `PLAN.md` §5 before proposing anything structural. The decisions have
