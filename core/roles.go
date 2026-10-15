@@ -456,7 +456,7 @@ func (r *RoleRights) Keys(ctx context.Context) ([]string, error) {
 func (r *RoleRights) holders(ctx context.Context) (map[string]int, error) {
 	rows, err := r.app.db.QueryContext(ctx, `
 		SELECT role, count(*) FROM (
-			SELECT role FROM superusers
+			SELECT role FROM store_members WHERE store_id = current_setting('gocommerce.store_id', true)
 			UNION ALL
 			SELECT role FROM superuser_invitations
 			 WHERE accepted_at IS NULL AND expires_at > now()
@@ -571,7 +571,8 @@ func (r *RoleRights) Delete(ctx context.Context, role string) error {
 		}
 		var operators, invitations, keys int
 		if err := tx.QueryRowContext(ctx, `
-			SELECT count(*) FROM (SELECT id FROM superusers WHERE role = $1 FOR UPDATE) s`,
+			SELECT count(*) FROM (SELECT superuser_id FROM store_members
+			 WHERE store_id = current_setting('gocommerce.store_id', true) AND role = $1 FOR UPDATE) s`,
 			role).Scan(&operators); err != nil {
 			return Internalf(err, "count the role's operators")
 		}
