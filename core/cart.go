@@ -589,7 +589,7 @@ func (c *Carts) AddLine(ctx context.Context, tok string, variantID int64, qty in
 			-- The price moves when the quantity does, and only then — see the
 			-- rule above this statement, which decides whether the value bound
 			-- here is the newly resolved price or the one already stored.
-			ON CONFLICT (cart_id, variant_id) DO UPDATE
+			ON CONFLICT (store_id, cart_id, variant_id) DO UPDATE
 			SET quantity = cart_line_items.quantity + EXCLUDED.quantity,
 			    unit_price_minor = EXCLUDED.unit_price_minor,
 			    updated_at = now()`,

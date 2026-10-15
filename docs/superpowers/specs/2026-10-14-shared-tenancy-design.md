@@ -99,10 +99,8 @@ Every other core table gets
 `store_id text NOT NULL REFERENCES stores(id) ON DELETE CASCADE`, including
 outbox events, idempotency keys, audit, API keys, invitations, roles,
 notifications and custom reports. The column's default is
-`NULLIF(current_setting('gocommerce.store_id', true), '')`: an insert that
-forgets `store_id` takes the bound store, and with no store bound it fails
-on `NOT NULL`. Code still names `store_id` on every insert; the default is
-the net, not the rule.
+`NULLIF(current_setting('gocommerce.store_id', true), '')`: an insert takes the
+bound store, and with no store bound it fails on `NOT NULL`.
 
 **Uniqueness is per store.** Each of the 38 `UNIQUE` constraints and unique
 indexes in `core/schema.go` gains a leading `store_id`:
@@ -193,10 +191,17 @@ with no store is bound to. It exists for an application that embeds the
 engine for one store, and for the test suite. `gocommerce serve` never sets
 it, so in the product unbound work sees nothing.
 
-**Queries say their store too.** As in kitcommerce-api, every query carries
-`WHERE store_id = $n` and every insert sets `store_id`. RLS is the net under
-that, not a replacement for it; the composite indexes start with `store_id`
-so the filter is also the fast path.
+**Row security is the filter.** (Revised 2026-10-15, owner's decision.) An
+earlier draft also put `WHERE store_id = $n` in every statement, as
+kitcommerce-api does. That meant hand-editing about 1,000 statements for no
+isolation the policy does not already give: a statement sees only the bound
+store's rows, an insert takes the bound store from the column default, and
+the policy's predicate uses the `store_id` indexes. So statements are not
+rewritten; only `ON CONFLICT` targets gain `store_id` (they must name the
+rewritten keys). What keeps this safe is the rest of this section: the
+engine's login cannot bypass row security (`doctor` fails if it can), every
+store table is forced behind the policy (a test reads the catalog), and the
+two-store isolation suite exercises the API.
 
 **Background work.** `app.ForEachStore(ctx, fn)` binds each active store in
 turn on a dedicated connection. The scheduler, cart recovery, webhook
@@ -246,8 +251,7 @@ from Part 1 until Part 4.
 ## Part 2 — Modules
 
 The same treatment for the 37 tables under `ext/`: `store_id`, per-store
-unique keys, composite foreign keys, RLS, explicit `store_id` in every
-statement. Modules call the exported `gocommerce.ScopeTables` from a
+unique keys, composite foreign keys, RLS. Modules call the exported `gocommerce.ScopeTables` from a
 migration of their own. Module settings and
 "plugin on/off" become per store. Module jobs run through
 `ForEachStore`. Modules still never write core tables (AGENTS.md rule 1).

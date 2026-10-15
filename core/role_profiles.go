@@ -126,7 +126,7 @@ func (r *RoleRights) SetProfile(ctx context.Context, role, title, description st
 		_, err := tx.ExecContext(ctx, `
 			INSERT INTO role_profiles (role, title, description, updated_by)
 			VALUES ($1, $2, $3, $4)
-			ON CONFLICT (role) DO UPDATE
+			ON CONFLICT (store_id, role) DO UPDATE
 			SET title = EXCLUDED.title,
 			    description = EXCLUDED.description,
 			    updated_at = now(),

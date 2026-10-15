@@ -286,5 +286,8 @@ func addTestStore(t *testing.T, app *App, slug string) string {
 		`INSERT INTO stores (id, slug, name) VALUES ($1, $2, $2)`, id, slug); err != nil {
 		t.Fatal(err)
 	}
+	if err := app.Stores().Seed(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
 	return id
 }

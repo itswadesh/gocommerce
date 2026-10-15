@@ -364,7 +364,7 @@ func (s *Collections) SetProductCollections(ctx context.Context, productID int64
 				       coalesce((SELECT max(pc.member_position) + 1 FROM product_collections pc
 				                 WHERE pc.collection_id = ids.collection_id), 0)
 				FROM unnest($2::bigint[]) WITH ORDINALITY AS ids(collection_id, ord)
-				ON CONFLICT (product_id, collection_id)
+				ON CONFLICT (store_id, product_id, collection_id)
 				DO UPDATE SET position = excluded.position`,
 				productID, int64Array(ids)); err != nil {
 				return err
@@ -495,7 +495,7 @@ func (s *Collections) SetCollectionProducts(ctx context.Context, collectionID in
 				                 WHERE pc.product_id = ids.product_id), 0),
 				       ids.ord - 1
 				FROM unnest($2::bigint[]) WITH ORDINALITY AS ids(product_id, ord)
-				ON CONFLICT (product_id, collection_id)
+				ON CONFLICT (store_id, product_id, collection_id)
 				DO UPDATE SET member_position = excluded.member_position`,
 				collectionID, int64Array(ids)); err != nil {
 				return err

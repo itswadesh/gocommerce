@@ -254,7 +254,7 @@ func (t *NotifyTemplates) Set(ctx context.Context, channel, event, subject, body
 		if err := tx.QueryRowContext(ctx, `
 			INSERT INTO notification_templates (channel, event, subject, body, updated_at)
 			VALUES ($1, $2, $3, $4, now())
-			ON CONFLICT (channel, event) DO UPDATE SET subject = EXCLUDED.subject, body = EXCLUDED.body, updated_at = now()
+			ON CONFLICT (store_id, channel, event) DO UPDATE SET subject = EXCLUDED.subject, body = EXCLUDED.body, updated_at = now()
 			RETURNING updated_at`, channel, event, subject, body).Scan(&at); err != nil {
 			return Internalf(err, "store notification template")
 		}

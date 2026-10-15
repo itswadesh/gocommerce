@@ -222,7 +222,7 @@ func (s *Categories) ImportCategoryAttributes(ctx context.Context, r io.Reader) 
 			SELECT d->>'handle', d->>'label',
 			       ARRAY(SELECT jsonb_array_elements_text(d->'choices'))
 			FROM jsonb_array_elements($1::jsonb) AS d
-			ON CONFLICT (handle) DO UPDATE
+			ON CONFLICT (store_id, handle) DO UPDATE
 			SET label = excluded.label,
 			    choices = excluded.choices,
 			    updated_at = now()`, encodedDefs); err != nil {

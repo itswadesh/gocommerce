@@ -171,8 +171,6 @@ func (s *Stores) MembershipsOf(ctx context.Context, superuserID int64) ([]Member
 // migrate0053Stores adds the global store tables, makes the install as it was
 // into store #1, and moves each operator's role and seller from the person
 // onto their membership of that store.
-//
-//storelint:global creates the store directory
 func migrate0053Stores(ctx context.Context, tx *sql.Tx) error {
 	id, err := NewStoreID()
 	if err != nil {
@@ -254,3 +252,30 @@ CREATE TABLE store_members (
 );
 CREATE INDEX store_members_superuser_idx ON store_members (superuser_id);
 `
+
+// Seed gives a new store the rows the migrations gave store #1: the four
+// built-in roles, an empty store profile and the default location. Without
+// the location a product cannot be stocked, and without the roles nobody can
+// be made its owner.
+func (s *Stores) Seed(ctx context.Context, storeID string) error {
+	ctx = WithStore(ctx, storeID)
+	return InTx(ctx, s.db, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO roles (store_id, key, builtin)
+			VALUES ($1, 'owner', true), ($1, 'manager', true), ($1, 'staff', true), ($1, 'vendor', true)
+			ON CONFLICT (store_id, key) DO NOTHING`, storeID); err != nil {
+			return Internalf(err, "seed roles")
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO store_profile (store_id) VALUES ($1) ON CONFLICT (store_id) DO NOTHING`, storeID); err != nil {
+			return Internalf(err, "seed store profile")
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO locations (store_id, code, name, is_default, priority)
+			VALUES ($1, 'default', 'Main location', true, 0)
+			ON CONFLICT DO NOTHING`, storeID); err != nil {
+			return Internalf(err, "seed location")
+		}
+		return nil
+	})
+}
