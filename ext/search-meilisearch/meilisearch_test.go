@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
 	"github.com/itswadesh/gocommerce/gctest"
@@ -200,3 +201,34 @@ func TestMeilisearchRoutesAreDocumentedAndGated(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// One engine serves every store, so two stores must never sync into one
+// index — a full sync of one removes what the other wrote — and one store's
+// last sync time is not the other's.
+func TestEachStoreHasItsOwnIndexAndSyncState(t *testing.T) {
+	mod := New(Config{Host: "http://127.0.0.1:1", APIKey: "k"})
+	app := gctest.New(t, mod)
+	b, err := app.Stores().Create(context.Background(), "Second", "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctxA, ctxB := context.Background(), gocommerce.WithStore(context.Background(), b.ID)
+	a, err := mod.connection(ctxA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bc, err := mod.connection(ctxB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.index != defaultIndex {
+		t.Errorf("the first store's index = %q, want %q so an upgraded install keeps its index", a.index, defaultIndex)
+	}
+	if bc.index == a.index {
+		t.Fatalf("both stores sync into %q", a.index)
+	}
+	mod.stateFor(ctxA).lastSync = time.Now()
+	if !mod.stateFor(ctxB).lastSync.IsZero() {
+		t.Fatal("store A's sync time became store B's")
+	}
+}

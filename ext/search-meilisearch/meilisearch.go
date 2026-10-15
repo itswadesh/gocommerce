@@ -83,6 +83,33 @@ type Status struct {
 	LastError  string     `json:"last_error,omitempty"`
 }
 
+// syncState is one store's sync.
+type syncState struct {
+	syncing  bool
+	lastSync time.Time
+	indexed  int
+	removed  int
+	lastErr  string
+}
+
+// stateFor is the sync state of the store ctx is bound to. Callers hold m.mu
+// for anything but a fresh read in a test.
+func (m *Module) stateFor(ctx context.Context) *syncState {
+	store, ok := gocommerce.StoreFrom(ctx)
+	if !ok {
+		store = m.app.DefaultStore()
+	}
+	if m.states == nil {
+		m.states = map[string]*syncState{}
+	}
+	st := m.states[store]
+	if st == nil {
+		st = &syncState{}
+		m.states[store] = st
+	}
+	return st
+}
+
 // Module is the sync worker and the routes.
 type Module struct {
 	cfg    Config
@@ -90,15 +117,13 @@ type Module struct {
 	log    *slog.Logger
 	client *http.Client
 
-	mu       sync.Mutex
-	syncing  bool
-	lastSync time.Time
-	indexed  int
-	removed  int
-	lastErr  string
-	polls    int
-	stop     chan struct{}
-	done     chan struct{}
+	mu sync.Mutex
+	// states is each store's sync, by store id (D83): one store's last sync
+	// is not the "since" of another's, nor its counts or its last error.
+	states map[string]*syncState
+	polls  int
+	stop   chan struct{}
+	done   chan struct{}
 }
 
 // New constructs the module.
@@ -172,9 +197,47 @@ func (m *Module) connection(ctx context.Context) (connection, error) {
 		host:      strings.TrimRight(first(str("host"), m.cfg.Host), "/"),
 		apiKey:    first(str("api_key"), m.cfg.APIKey),
 		searchKey: first(str("search_key"), m.cfg.SearchKey),
-		index:     first(str("index"), m.cfg.Index, defaultIndex),
+		index:     str("index"),
+	}
+	// The field's own default reads as "not chosen": a store that never
+	// named an index gets one of its own below.
+	if c.index == defaultIndex {
+		c.index = ""
+	}
+	if c.index == "" {
+		// Two stores in one index would undo each other: a full sync removes
+		// every document its own catalogue lacks. The oldest store keeps the
+		// plain name, which is an upgraded install's existing index; every
+		// other store's default is suffixed with its slug.
+		c.index = first(m.cfg.Index, defaultIndex)
+		if suffix, err := m.indexSuffix(ctx); err != nil {
+			return connection{}, err
+		} else if suffix != "" {
+			c.index += "-" + suffix
+		}
 	}
 	return c, nil
+}
+
+// indexSuffix is "" for the oldest store and the store's slug for any other.
+func (m *Module) indexSuffix(ctx context.Context) (string, error) {
+	store, ok := gocommerce.StoreFrom(ctx)
+	if !ok {
+		store = m.app.DefaultStore()
+	}
+	stores, err := m.app.Stores().Active(ctx)
+	if err != nil {
+		return "", err
+	}
+	for i, st := range stores {
+		if st.ID == store {
+			if i == 0 {
+				return "", nil
+			}
+			return st.Slug, nil
+		}
+	}
+	return "", nil
 }
 
 func first(values ...string) string {
@@ -257,24 +320,25 @@ func (m *Module) tickStore(ctx context.Context, full bool) {
 // removed, and is safe to call from anywhere — two at once take turns.
 func (m *Module) Sync(ctx context.Context, full bool) (indexed, removed int, err error) {
 	m.mu.Lock()
-	if m.syncing {
+	state := m.stateFor(ctx)
+	if state.syncing {
 		m.mu.Unlock()
 		return 0, 0, errors.New("a sync is already running")
 	}
-	m.syncing = true
-	since := m.lastSync
+	state.syncing = true
+	since := state.lastSync
 	m.mu.Unlock()
 	started := time.Now()
 	defer func() {
 		m.mu.Lock()
-		m.syncing = false
+		state.syncing = false
 		if err != nil {
-			m.lastErr = err.Error()
+			state.lastErr = err.Error()
 		} else {
-			m.lastErr = ""
-			m.lastSync = started
-			m.indexed += indexed
-			m.removed += removed
+			state.lastErr = ""
+			state.lastSync = started
+			state.indexed += indexed
+			state.removed += removed
 		}
 		m.mu.Unlock()
 	}()
@@ -565,12 +629,13 @@ func (m *Module) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.mu.Lock()
+	state := m.stateFor(r.Context())
 	st := Status{
 		Enabled: conn.enabled, Configured: conn.configured(), Host: conn.host, Index: conn.index,
-		Syncing: m.syncing, Indexed: m.indexed, Removed: m.removed, LastError: m.lastErr,
+		Syncing: state.syncing, Indexed: state.indexed, Removed: state.removed, LastError: state.lastErr,
 	}
-	if !m.lastSync.IsZero() {
-		at := m.lastSync
+	if !state.lastSync.IsZero() {
+		at := state.lastSync
 		st.LastSync = &at
 	}
 	m.mu.Unlock()
