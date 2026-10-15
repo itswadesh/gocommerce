@@ -263,7 +263,7 @@ CREATE INDEX store_members_superuser_idx ON store_members (superuser_id);
 // be made its owner.
 func (s *Stores) Seed(ctx context.Context, storeID string) error {
 	ctx = WithStore(ctx, storeID)
-	return InTx(ctx, s.db, func(tx *sql.Tx) error {
+	if err := InTx(ctx, s.db, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO roles (store_id, key, builtin)
 			VALUES ($1, 'owner', true), ($1, 'manager', true), ($1, 'staff', true), ($1, 'vendor', true)
@@ -281,7 +281,25 @@ func (s *Stores) Seed(ctx context.Context, storeID string) error {
 			return Internalf(err, "seed location")
 		}
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	// Then each module's own starting rows, for modules that have any.
+	for _, mod := range s.app.modules {
+		if seeder, ok := mod.(StoreSeeder); ok {
+			if err := seeder.SeedStore(ctx); err != nil {
+				return Internalf(err, "seed %s", mod.Name())
+			}
+		}
+	}
+	return nil
+}
+
+// StoreSeeder is a module with rows a new store starts with — what its
+// migrations seeded for the stores that existed when they ran. SeedStore is
+// called once per store opened afterwards, bound to that store.
+type StoreSeeder interface {
+	SeedStore(ctx context.Context) error
 }
 
 // Create opens a new store and seeds it (Seed), so it can stock and sell from

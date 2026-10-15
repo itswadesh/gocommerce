@@ -152,9 +152,16 @@ func (m *Module) loadSettings(ctx context.Context) (*settingsRow, error) {
 	var updatedAt sql.NullTime
 	var updatedBy sql.NullString
 	row := &settingsRow{}
+	// A store opened after the module was installed has no row from the
+	// migration; it starts here, which is also when its recovery starts.
+	if _, err := m.app.DB().ExecContext(ctx,
+		`INSERT INTO cart_recovery_settings DEFAULT VALUES ON CONFLICT (store_id) DO NOTHING`); err != nil {
+		return nil, fmt.Errorf("cart-recovery: start settings: %w", err)
+	}
 	err := m.app.DB().QueryRowContext(ctx, `
 		SELECT installed_at, settings, updated_at, updated_by
-		FROM cart_recovery_settings WHERE id = 1`).
+		FROM cart_recovery_settings
+		WHERE store_id = current_setting('gocommerce.store_id', true)`).
 		Scan(&row.InstalledAt, &raw, &updatedAt, &updatedBy)
 	if err != nil {
 		return nil, fmt.Errorf("cart-recovery: read settings: %w", err)
@@ -203,7 +210,7 @@ func (m *Module) saveSettings(ctx context.Context, s Settings, by string) error 
 	if err := tx.QueryRowContext(ctx, `
 		UPDATE cart_recovery_settings
 		SET settings = $1, updated_at = now(), updated_by = $2
-		WHERE id = 1
+		WHERE store_id = current_setting('gocommerce.store_id', true)
 		RETURNING installed_at`, raw, by).Scan(&installedAt); err != nil {
 		return err
 	}

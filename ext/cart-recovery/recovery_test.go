@@ -656,3 +656,31 @@ func (m notifierModule) Register(app *gocommerce.App) error {
 	app.RegisterNotifier(gocommerce.ChannelEmail, m.rec)
 	return nil
 }
+
+// A store opened after the module was installed has no settings row from the
+// migration; it gets its own the first time it is read, and a pass over it
+// works rather than failing on a missing row.
+func TestANewStoreHasItsOwnRecoverySettings(t *testing.T) {
+	h := newHarness(t, Config{}, testAppConfig())
+	st, err := h.app.Stores().Create(context.Background(), "Second", "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctxB := gocommerce.WithStore(context.Background(), st.ID)
+	set, err := h.mod.loadSettings(ctxB)
+	if err != nil {
+		t.Fatalf("store B's settings: %v", err)
+	}
+	if set.Customized {
+		t.Fatal("a new store's settings should be the defaults")
+	}
+	if _, err := h.mod.Pass(ctxB); err != nil {
+		t.Fatalf("a pass over store B: %v", err)
+	}
+	if err := h.mod.saveSettings(ctxB, set.Settings, "tester"); err != nil {
+		t.Fatalf("saving store B's settings: %v", err)
+	}
+	if a, err := h.mod.loadSettings(context.Background()); err != nil || a.Customized {
+		t.Fatalf("store B's save reached store A: customized=%v err=%v", a != nil && a.Customized, err)
+	}
+}

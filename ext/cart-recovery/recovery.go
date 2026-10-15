@@ -192,6 +192,15 @@ CREATE TABLE cart_recovery_events (
 CREATE INDEX cart_recovery_events_of ON cart_recovery_events (abandonment_id, at, id);`,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "cart_recovery_abandonments", "cart_recovery_events", "cart_recovery_settings"),
+		{
+			// One settings row per store, not per install: the store id is the
+			// key now, and a store opened later gets its row when first read.
+			ID: "0003_settings_per_store",
+			SQL: `ALTER TABLE cart_recovery_settings
+			    DROP CONSTRAINT cart_recovery_settings_id_check,
+			    DROP CONSTRAINT cart_recovery_settings_pkey,
+			    ADD PRIMARY KEY (store_id);`,
+		},
 	}
 }
 

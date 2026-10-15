@@ -98,3 +98,21 @@ func TestNavigationRoutesAreDocumentedAndGated(t *testing.T) {
 	gctest.AssertAdminRoutesDeclareRights(t, app, "navigation")
 	gctest.AssertSpecCoversModuleRoutes(t, app, "navigation")
 }
+
+// A store opened after the module was installed gets the same starting
+// menus the first store got from the migration.
+func TestANewStoreStartsWithTheDefaultMenus(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	st, err := app.Stores().Create(context.Background(), "Second", "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var menus int
+	if err := app.DB().QueryRowContext(gocommerce.WithStore(context.Background(), st.ID),
+		`SELECT count(*) FROM navigation_menus WHERE handle IN ('header', 'footer')`).Scan(&menus); err != nil {
+		t.Fatal(err)
+	}
+	if menus != 2 {
+		t.Fatalf("store B has %d of the two default menus", menus)
+	}
+}
