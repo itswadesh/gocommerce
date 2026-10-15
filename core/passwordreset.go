@@ -139,7 +139,7 @@ func (s *Superusers) RequestReset(ctx context.Context, email, clientIP string) (
 	if err != nil {
 		return ResetRequest{}, err
 	}
-	s.deliverReset(ctx, email, token)
+	s.deliverReset(ctx, id, email, token)
 	return ResetRequest{Accepted: true, Delivery: DeliveryEmail}, nil
 }
 
@@ -173,7 +173,7 @@ func (s *Superusers) RequestResetFor(ctx context.Context, id int64) (ResetReques
 	if err != nil {
 		return ResetRequest{}, err
 	}
-	s.deliverReset(ctx, email, token)
+	s.deliverReset(ctx, id, email, token)
 	return ResetRequest{Accepted: true, Delivery: DeliveryEmail}, nil
 }
 
@@ -358,7 +358,8 @@ func (s *Superusers) resetURL(token string) string {
 //
 // A failure is logged and never returned. The row is written and the operator
 // can ask again; what must not happen is a 500 that says the address exists.
-func (s *Superusers) deliverReset(reqCtx context.Context, email, token string) {
+func (s *Superusers) deliverReset(reqCtx context.Context, id int64, email, token string) {
+	sendCtx := s.identityMailScope(reqCtx, id)
 	data := map[string]string{
 		// Deliberately not customer_email or customer_name: the recipient is an
 		// operator, and reusing the order vocabulary would let an order
@@ -375,9 +376,8 @@ func (s *Superusers) deliverReset(reqCtx context.Context, email, token string) {
 	s.deliveries.Add(1)
 	go func() {
 		defer s.deliveries.Done()
-		// Detached from the request, which ends with the 202, but still bound
-		// to its store: the template and the email backend are that store's.
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(reqCtx), resetNotifyTimeout)
+		// Detached from the request, which ends with the 202.
+		ctx, cancel := context.WithTimeout(sendCtx, resetNotifyTimeout)
 		defer cancel()
 		if err := s.app.notifier.send(ctx, Notification{
 			Event:    EventSuperuserPasswordReset,
@@ -407,4 +407,27 @@ func (s *Superusers) waitForResetDelivery(max time.Duration) {
 	case <-done:
 	case <-time.After(max):
 	}
+}
+
+// installScope binds a context to no store at all, even where a default store
+// would otherwise apply: a statement run with it sees no store's rows, so a
+// notification sent with it uses the built-in template and the email provider
+// configured for the install (its environment), which no store can edit or
+// read.
+const installScope = "install"
+
+// identityMailScope is the store an email carrying a credential for person id
+// may go out under. A reset link is good for every store the person works in,
+// and a store's template and provider account are its owner's to edit and
+// read, so the store the request came through may carry it only when that is
+// the person's one store — its owner can already do anything there. Anyone
+// else's goes by the install's own channel.
+func (s *Superusers) identityMailScope(reqCtx context.Context, id int64) context.Context {
+	detached := context.WithoutCancel(reqCtx)
+	here := s.app.storeOf(reqCtx)
+	ms, err := s.app.stores.MembershipsOf(reqCtx, id)
+	if err == nil && here != "" && len(ms) == 1 && ms[0].StoreID == here {
+		return WithStore(detached, here)
+	}
+	return WithStore(detached, installScope)
 }

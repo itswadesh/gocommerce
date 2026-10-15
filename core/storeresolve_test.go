@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/itswadesh/gocommerce/internal/testdb"
 )
@@ -268,5 +271,58 @@ func TestSigningSomebodyOutEverywhereStaysInThisStoresLane(t *testing.T) {
 	}
 	if _, err := app.Superusers().RevokeAll(context.Background(), both.ID); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("store A signed store B's owner out everywhere: %v", err)
+	}
+}
+
+// storeSeeingMail records which store each email was sent under: that store's
+// template and provider account are what carried it.
+type storeSeeingMail struct {
+	mu    sync.Mutex
+	under []string
+}
+
+func (m *storeSeeingMail) Name() string            { return "seeing-mail" }
+func (m *storeSeeingMail) Migrations() []Migration { return nil }
+func (m *storeSeeingMail) Register(app *App) error {
+	app.RegisterNotifier(ChannelEmail, notifierFunc(func(ctx context.Context, n Notification) error {
+		s, _ := StoreFrom(ctx)
+		m.mu.Lock()
+		m.under = append(m.under, n.Event+"@"+s)
+		m.mu.Unlock()
+		return nil
+	}))
+	return nil
+}
+
+// A reset link is a credential for the person everywhere they work. Store B's
+// template and email account are B's owner's to read, so they may carry the
+// link only for somebody who works in B alone; anybody else's goes by the
+// install's own channel.
+func TestAResetLinkNeverTravelsThroughAnotherStoresMail(t *testing.T) {
+	mail := &storeSeeingMail{}
+	app := newTestApp(t, mail)
+	b := addTestStore(t, app, "second")
+	ctxB := WithStore(context.Background(), b)
+	// The victim owns store A; store B is somebody else's.
+	if _, err := app.Superusers().Create(context.Background(), "owner-a@example.com", "a-long-enough-password", RoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Superusers().Create(ctxB, "only-b@example.com", "a-long-enough-password", RoleStaff); err != nil {
+		t.Fatal(err)
+	}
+	for _, email := range []string{"owner-a@example.com", "only-b@example.com"} {
+		if _, err := app.Superusers().RequestReset(ctxB, email, "198.51.100.7"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	app.superusers.waitForResetDelivery(5 * time.Second)
+	mail.mu.Lock()
+	defer mail.mu.Unlock()
+	want := []string{EventSuperuserPasswordReset + "@" + installScope, EventSuperuserPasswordReset + "@" + b}
+	got := slices.Clone(mail.under)
+	slices.Sort(got)
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Fatalf("resets sent under %v, want %v: store A's owner's link must not go through store B's mail", mail.under, want)
 	}
 }
