@@ -2,16 +2,13 @@
  * The trade portal's session, and the one client that carries it (D77).
  *
  * A buyer's session is an ext/identity shopper session, and it never shares a
- * code path with the store's staff session (api.js) or the platform's token
- * (platform.svelte.js). Each client holds its own credential under its own
+ * code path with the store's staff session (api.js). Each client holds its own credential under its own
  * key and ends only its own: a 401 here signs the buyer out and touches
  * nothing of a staff session open in another tab of the same browser. The
  * client also refuses to call /api/admin at all, so a buyer's token cannot be
  * sent there by a slip of a path.
  *
- * The session is kept in localStorage, not in sessionStorage as the platform
- * token is. That token never expires and creates and deletes whole stores;
- * this one expires on its own (thirty days without use, sliding), is
+ * The session is kept in localStorage, not sessionStorage. It expires on its own (thirty days without use, sliding), is
  * refreshed rather than rotated so every open tab keeps working, is revoked
  * on the server when the buyer signs out, and can only buy inside the limits
  * the company's credit, threshold and approvers set. A buyer opens the portal

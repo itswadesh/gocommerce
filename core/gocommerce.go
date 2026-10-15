@@ -89,10 +89,8 @@ type Config struct {
 	// them, so the barrier has to be the login, not anything the query sits
 	// inside.
 	ReportsDBURL string
-	// MaxOpenConns caps this store's connection pool. Zero keeps the engine's
-	// default of 25, which is right for a store with the process to itself
-	// and wrong for a hundred stores sharing one PostgreSQL behind a platform:
-	// a hundred pools of 25 is past any server's max_connections (D70).
+	// MaxOpenConns caps the engine's connection pool. Zero keeps the default
+	// of 25. Every store shares the one pool (D83).
 	MaxOpenConns int
 	// Addr is the listen address. Defaults to ":8080".
 	Addr string
@@ -877,8 +875,7 @@ func (a *App) ListenAndServe() error {
 
 // Start runs the OnStart hooks — the outbox dispatcher, the sweepers, every
 // module's background work — without serving. ListenAndServe calls it; so
-// does a process that serves the App's Handler itself, such as a platform
-// hosting one App per store (D70). The work runs until ctx ends or Close is
+// does a process that serves the App's Handler itself. The work runs until ctx ends or Close is
 // called. A second call does nothing.
 func (a *App) Start(ctx context.Context) error {
 	if a.started {
@@ -912,8 +909,7 @@ func (a *App) shutdownHooks(ctx context.Context) {
 }
 
 // Close stops the background work Start began, runs the OnStop hooks and
-// closes the database. Tests use it, and so does a platform retiring a store;
-// ListenAndServe does its own cleanup.
+// closes the database. Tests use it; ListenAndServe does its own cleanup.
 func (a *App) Close() error {
 	a.shutdownHooks(context.Background())
 	// The reports pool first: closing it cannot fail in a way the caller acts

@@ -351,73 +351,31 @@ The masking is a display rule, not storage: the rows still hold what the
 shopper typed, and turning the flag off shows it again. Somewhere that needs
 the data to be genuinely absent wants seeded data, not this.
 
-## Running many stores: platform mode
+## Running many stores
 
-`gocommerce platform` serves many stores from one process and one database
-(D70, [`platform/`](../platform/platform.go)). Each store is an ordinary
-engine in a schema of its own — `store_<slug>` — with its own operators,
-admin panel, admin token, media directory and module instances. A request
-reaches a store by the host it was sent to: `<slug>.<base domain>`, any
-custom domain attached to it, or a shared API host with the store named in the
-`X-Store` header.
+One `gocommerce serve` serves every store in the database (D83). There is no
+separate mode: an install that has only ever had one store is simply an
+install with one store.
 
-```
-gocommerce -db "$DATABASE_URL" -base-domain shops.example.com   -platform-token "$GOCOMMERCE_PLATFORM_TOKEN" -b2b -resend platform
-```
+**Every row carries its store.** Each store-owned table has a `store_id`
+column, and every one of them is behind a forced row-level-security policy
+that shows and accepts only the rows of the store the connection is bound
+to. The engine binds each statement to the store its `context.Context`
+names (`gocommerce.WithStore`), so a query that forgets to filter sees only
+its own store's rows, and an insert takes its store from the column default.
+With no store bound, a statement sees nothing and an insert fails.
 
-With Docker, [`docker-compose.platform.yml`](../docker-compose.platform.yml)
-is the single-store compose file with `platform` in place of `serve`, and the
-same service and volume names, so an existing store's volume carries over.
-A custom domain may not sit under the base domain, and slugs such as `admin`
-and `platform` are reserved, so a store that must keep `admin.example.com`
-needs the base domain one level down (`shops.example.com`) and that host
-attached as a custom domain.
+**The engine's login must not bypass row security.** PostgreSQL lets a
+superuser, or a role with `BYPASSRLS`, past every policy. `gocommerce doctor`
+fails on such a login; the Compose file creates an ordinary one.
 
-The platform's own API is served only on `platform.<base domain>` (or
-`-platform-host`) and needs a platform token, which is not a store
-credential — it opens no store's admin API, and no store's token opens it.
-`POST /api/platform/tenants` creates a store all or nothing — schema,
-migrations, first owner, domains — and returns the owner's generated password
-and the store's admin token once. A store is suspended with
-`PATCH /api/platform/tenants/{slug}` (its hosts answer 503
-`store_unavailable`) and deleted only once suspended, with the slug repeated
-as `?confirm=<slug>`. The whole surface is in `GET /api/platform/doc`.
+**A request finds its store**, first match wins: the API key's store, the
+`x-litekart-store` header (or `X-Store`, slug or id), a `?store=` parameter,
+the `litekart_store_id` cookie, the host (`<slug>.<-base-domain>` or an
+attached domain), the signed-in person's only store, and the install's only
+store. Naming a store never grants access to it: staff must be members of it.
 
-The same hosts serve a console (D73): open the platform host in a browser and
-`/` goes to `/platform`, the admin panel's own screens for the API above,
-signed in to with a platform token that the tab keeps until it closes. It lists
-the stores with the health report's running and failed-to-start counts, opens
-new ones, and on a store's page renames, suspends and resumes, attaches and
-detaches domains, adds an owner, replaces the admin token and deletes. Every
-other path on a platform host is still a JSON 404. A binary built with
-`-tags no_admin` has no console; the API is unchanged.
-
-A store's own host serves its business buyers a portal at `/portal` when the
-binary runs `-b2b` (D77, [b2b](b2b.md#the-trade-portal)), on a platform as on a
-single store. Its links are the module URL settings above, written once for
-every store:
-`GOCOMMERCE_B2B_INVITE_URL=https://{domain}/portal/invitation?token={token}`,
-and `/portal/reset-password?token={token}` and
-`/portal/confirm-email?token={token}` for the identity reset and confirmation
-emails when the stores have no storefront of their own for accounts. Each
-store's portal is named from its own profile, through `GET /api/store`.
-
-What to know before running one:
-
-- **Every store runs the same modules**, the ones the binary was started
-  with. A provider key in the environment (`RESEND_API_KEY`) is shared by
-  every store until a store sets its own on its Plugins screen. URL settings
-  may contain `{domain}`, filled with each store's host.
-- **A pool per store**, four connections by default
-  (`MaxOpenConnsPerStore`). A hundred stores is up to 400 connections; past a
-  few hundred, put PgBouncer in front.
-- **TLS for custom domains is the proxy's.** Point it at
-  `GET /api/platform/tls/allowed?domain=` — Caddy's `on_demand_tls { ask … }`
-  — so it issues certificates only for hosts the platform serves.
-- **`-namespace`** prefixes every schema the platform creates, so a staging
-  platform can share a database with production, and the tests run beside both.
-
-## Common mistakes
+## Common mistakes## Common mistakes
 
 - **Pointing liveness at `/health/ready`.** A database hiccup should take a
   process out of the load balancer, not restart it. `/health` touches nothing.

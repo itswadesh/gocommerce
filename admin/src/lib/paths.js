@@ -23,10 +23,10 @@ const RENAMED = [
 ];
 
 // Paths that are already where they belong, belong to another app (the
-// platform console, the trade portal), or are files rather than screens.
+// trade portal), or are files rather than screens.
 // Returning null for these is what keeps the redirect from looping.
 const STAYS = [
-    "/dash", "/admin", "/select-store", "/stores", "/platform", "/portal",
+    "/dash", "/admin", "/select-store", "/stores", "/portal",
     "/_app", "/images", "/fonts", "/favicon.svg", "/theme.js", "/api",
     // The engine's own pages beside the panel: the API reference and liveness.
     "/docs", "/doc", "/health",

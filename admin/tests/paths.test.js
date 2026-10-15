@@ -38,7 +38,7 @@ test("auth screens move under /admin/auth", () => {
 test("new paths, other apps and assets are left alone", () => {
     for (const p of [
         "/dash", "/dash/orders", "/admin/auth/login", "/select-store", "/stores/create",
-        "/platform", "/platform/acme", "/portal", "/portal/orders",
+        "/portal", "/portal/orders",
         "/_app/immutable/x.js", "/images/logo.svg", "/fonts/inter.woff2",
         "/favicon.svg", "/theme.js", "/api/admin/orders",
         // Served by the engine, not the panel: the API reference and liveness.
@@ -54,7 +54,6 @@ test("safeNext only ever returns a path inside /dash on this origin", () => {
     assert.equal(safeNext(""), "/dash");
     assert.equal(safeNext("//evil.example/dash"), "/dash");
     assert.equal(safeNext("https://evil.example/dash"), "/dash");
-    assert.equal(safeNext("/platform"), "/dash");
     assert.equal(safeNext("/orders"), "/dash/orders");
     assert.equal(safeNext("/dash/orders?a=1#top"), "/dash/orders?a=1#top");
 });

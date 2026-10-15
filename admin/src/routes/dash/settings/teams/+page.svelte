@@ -247,10 +247,9 @@
     /*
      * Adding somebody, the KitCommerce admin's way: an email and a role first,
      * and only then — when the address has no account — a choice between
-     * making one now and sending a link. On a single store an "account" is an
-     * operator of this store; once accounts span stores (D81) the same check
-     * asks the platform instead, and an address that already has one joins
-     * without either.
+     * making one now and sending a link. An account is one person across every
+     * store (D83): an address that already has one joins this store straight
+     * away, keeping the password it has.
      */
     let chooseOpen = $state(false);
     let how = $state("invite"); // "create" | "invite"
