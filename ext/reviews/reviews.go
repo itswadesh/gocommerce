@@ -125,7 +125,9 @@ CREATE TABLE reviews (
 CREATE INDEX reviews_product_idx ON reviews (product_id, status, id DESC);
 CREATE INDEX reviews_status_idx  ON reviews (status, id DESC);
 `,
-	}}
+	},
+		gocommerce.ScopeMigration("0002_store_scope", "reviews"),
+	}
 }
 
 // Register implements gocommerce.Module.

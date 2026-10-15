@@ -243,7 +243,7 @@ func (m *Module) record(ctx context.Context, set *settingsRow, cartID int64) (bo
 		     next_step_at, link_token)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
 		        CASE WHEN $14::int > 0 THEN now() + make_interval(mins => $14::int) END, $15)
-		ON CONFLICT (cart_id) DO NOTHING
+		ON CONFLICT (store_id, cart_id) DO NOTHING
 		RETURNING id`,
 		cartID, kind, status, nullString(contact), d.Currency, d.ItemCount, d.Subtotal.AmountMinor,
 		lines, nullString(d.DiscountCode), d.CreatedAt, d.UpdatedAt, history, nullString(hold),

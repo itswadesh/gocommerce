@@ -107,7 +107,9 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			    called_at timestamptz NOT NULL DEFAULT now()
 			);
 			CREATE INDEX mcp_audit_called_idx ON mcp_audit (called_at DESC);`,
-	}}
+	},
+		gocommerce.ScopeMigration("0002_store_scope", "mcp_audit"),
+	}
 }
 
 // Register implements gocommerce.Module.

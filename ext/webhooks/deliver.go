@@ -47,7 +47,7 @@ func (m *Module) onEvent(ctx context.Context, e gocommerce.Event) error {
 		       OR pattern = $2
 		       OR (right(pattern, 2) = '.*' AND $2 LIKE left(pattern, -1) || '%')
 		)
-		ON CONFLICT (endpoint_id, event_id) DO NOTHING`,
+		ON CONFLICT (store_id, endpoint_id, event_id) DO NOTHING`,
 		e.ID, e.Name, payload)
 	return err
 }

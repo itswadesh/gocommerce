@@ -179,7 +179,9 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			);
 			CREATE INDEX payments_hyperswitch_events_received_idx
 			    ON payments_hyperswitch_events (received_at);`,
-	}}
+	},
+		gocommerce.ScopeMigration("0002_store_scope", "payments_hyperswitch_events"),
+	}
 }
 
 // Register implements gocommerce.Module.

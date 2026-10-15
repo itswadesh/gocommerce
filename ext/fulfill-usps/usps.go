@@ -268,7 +268,9 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			);
 			CREATE INDEX fulfill_usps_labels_order_idx
 			    ON fulfill_usps_labels (order_id);`,
-	}}
+	},
+		gocommerce.ScopeMigration("0002_store_scope", "fulfill_usps_labels"),
+	}
 }
 
 // Register implements gocommerce.Module.
@@ -387,7 +389,7 @@ func (m *Module) store(ctx context.Context, tracking string, orderID int64, imag
 	_, err := m.db.ExecContext(ctx, `
 		INSERT INTO fulfill_usps_labels (tracking, order_id, content_type, image)
 		VALUES ($1, $2, 'application/pdf', $3)
-		ON CONFLICT (tracking) DO UPDATE SET image = excluded.image`,
+		ON CONFLICT (store_id, tracking) DO UPDATE SET image = excluded.image`,
 		tracking, orderID, image)
 	return err
 }

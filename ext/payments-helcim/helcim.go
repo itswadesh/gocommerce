@@ -178,7 +178,9 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			);
 			CREATE INDEX payments_helcim_events_received_idx
 			    ON payments_helcim_events (received_at);`,
-	}}
+	},
+		gocommerce.ScopeMigration("0002_store_scope", "payments_helcim_events"),
+	}
 }
 
 // Register implements gocommerce.Module.

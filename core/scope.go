@@ -323,3 +323,12 @@ func enableStorePolicy(ctx context.Context, tx *sql.Tx, t string) error {
 	}
 	return err
 }
+
+// ScopeMigration is a module's migration that puts its tables under their
+// store (D83): one line in a module's Migrations, appended after the
+// migrations that create the tables.
+func ScopeMigration(id string, tables ...string) Migration {
+	return Migration{ID: id, Run: func(ctx context.Context, tx *sql.Tx) error {
+		return ScopeTables(ctx, tx, tables...)
+	}}
+}

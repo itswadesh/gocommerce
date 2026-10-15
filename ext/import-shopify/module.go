@@ -90,7 +90,9 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			);
 			CREATE INDEX import_shopify_jobs_recent ON import_shopify_jobs (id DESC);
 		`,
-	}}
+	},
+		gocommerce.ScopeMigration("0002_store_scope", "import_shopify_jobs"),
+	}
 }
 
 // Register implements gocommerce.Module.

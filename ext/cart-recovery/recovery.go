@@ -190,7 +190,9 @@ CREATE TABLE cart_recovery_events (
     actor          text        NOT NULL DEFAULT 'system'
 );
 CREATE INDEX cart_recovery_events_of ON cart_recovery_events (abandonment_id, at, id);`,
-	}}
+	},
+		gocommerce.ScopeMigration("0002_store_scope", "cart_recovery_abandonments", "cart_recovery_events", "cart_recovery_settings"),
+	}
 }
 
 func (m *Module) Register(app *gocommerce.App) error {

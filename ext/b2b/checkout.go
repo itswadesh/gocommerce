@@ -690,7 +690,7 @@ func (m *Module) recordOrder(ctx context.Context, p *placement, o *gocommerce.Or
 		INSERT INTO b2b_orders (order_id, order_number, company_id, customer_id, po_number,
 		                        on_account, due_at, approval_id, quote_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, 0), nullif($9, 0))
-		ON CONFLICT (order_id) DO NOTHING`,
+		ON CONFLICT (store_id, order_id) DO NOTHING`,
 		o.ID, o.Number, p.company.ID, customer, p.po, method == CodeOnAccount, due,
 		p.approvalID, p.quoteID)
 	return err
@@ -717,7 +717,7 @@ func (m *Module) reconcileOrders(ctx context.Context) error {
 		JOIN b2b_companies c ON c.id = (o.metadata -> 'b2b' ->> 'company_id')::bigint
 		WHERE o.metadata ? 'b2b'
 		  AND NOT EXISTS (SELECT 1 FROM b2b_orders bo WHERE bo.order_id = o.id)
-		ON CONFLICT (order_id) DO NOTHING`, CodeOnAccount)
+		ON CONFLICT (store_id, order_id) DO NOTHING`, CodeOnAccount)
 	return err
 }
 

@@ -89,7 +89,9 @@ CREATE TABLE newsletter_subscriptions (
 );
 CREATE INDEX newsletter_subscriptions_status_idx ON newsletter_subscriptions (status, id DESC);
 `,
-	}}
+	},
+		gocommerce.ScopeMigration("0002_store_scope", "newsletter_subscriptions"),
+	}
 }
 
 // Register implements gocommerce.Module.
@@ -156,7 +158,7 @@ func (m *Module) subscribe(ctx context.Context, in SubscribeInput) (*Subscriptio
 	err = m.db.QueryRowContext(ctx, `
 		INSERT INTO newsletter_subscriptions (email, name, source, token)
 		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (email) DO UPDATE SET
+		ON CONFLICT (store_id, email) DO UPDATE SET
 		    status = 'subscribed', unsubscribed_at = NULL,
 		    name = CASE WHEN EXCLUDED.name <> '' THEN EXCLUDED.name ELSE newsletter_subscriptions.name END,
 		    source = CASE WHEN newsletter_subscriptions.status = 'unsubscribed' THEN EXCLUDED.source ELSE newsletter_subscriptions.source END
