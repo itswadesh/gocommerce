@@ -38,6 +38,13 @@ module mounts nothing, and the webhook route hands over the raw body with no
 body-consuming middleware and no engine-imposed size limit, because signature
 verification needs the bytes exactly as they were sent.
 
+**The webhook URL names the store.** One engine serves every store (D83), and
+a gateway calls back with no header saying which. Give the gateway the URL
+with the store on it — `https://<host>/api/checkout/stripe/webhook?store=<store
+id>` — or use the store's own host (`<slug>.<base domain>` or an attached
+domain), which names it already. Without either, an install with more than
+one store answers 400 `store_required` and the gateway retries.
+
 `Initiate` returns a `PaymentIntent` telling the client what to do next:
 
 | `kind` | Meaning | Checkout's response |

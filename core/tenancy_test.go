@@ -224,3 +224,22 @@ func TestAStoreCanChooseItsOrderPrefix(t *testing.T) {
 		t.Fatalf("number = %s, want SB-000001", got)
 	}
 }
+
+// A plugin's switch and its settings — an email provider's key, say — are one
+// store's, not the install's.
+func TestAPluginIsSwitchedOnPerStore(t *testing.T) {
+	app := newTestApp(t, fakePlugin{})
+	b := addTestStore(t, app, "second")
+	ctxA, ctxB := context.Background(), WithStore(context.Background(), b)
+	on := true
+	if _, err := app.Plugins().Update(ctxA, "fake-mail", PluginPatch{
+		Enabled: &on, Settings: map[string]any{"api_key": "store-a-secret"}}); err != nil {
+		t.Fatal(err)
+	}
+	if enabled, err := app.Plugins().Enabled(ctxB, "fake-mail"); err != nil || enabled {
+		t.Fatalf("store B's fake-mail enabled=%v err=%v; store A switched it on, not B", enabled, err)
+	}
+	if enabled, err := app.Plugins().Enabled(ctxA, "fake-mail"); err != nil || !enabled {
+		t.Fatalf("store A's fake-mail enabled=%v err=%v", enabled, err)
+	}
+}
