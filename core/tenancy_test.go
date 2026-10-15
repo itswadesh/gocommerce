@@ -180,3 +180,47 @@ func TestTheSameSKUCanBeSoldByTwoStores(t *testing.T) {
 		t.Fatalf("store B cannot read its own product: %v", err)
 	}
 }
+
+// placeOrderIn sells one unit of a fresh product in the store ctx is bound to.
+func placeOrderIn(t *testing.T, app *App, ctx context.Context, sku string) *Order {
+	t.Helper()
+	price, stock := int64(1200), 5
+	p, err := app.Products().CreateProduct(ctx, ProductInput{Title: sku, Status: ProductActive, SKU: sku, PriceMinor: &price, Stock: &stock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cart, err := app.Cart().Create(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Cart().AddLine(ctx, cart.Token, p.DefaultVariant().ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	res, err := app.Order().Checkout(ctx, CodeCOD, checkoutInput(cart.Token), "")
+	if err != nil {
+		t.Fatalf("checkout: %v", err)
+	}
+	return res.Order
+}
+
+func TestEachStoreNumbersItsOwnOrders(t *testing.T) {
+	app := newTestApp(t)
+	b := addTestStore(t, app, "second")
+	a1 := placeOrderIn(t, app, context.Background(), "A-1")
+	b1 := placeOrderIn(t, app, WithStore(context.Background(), b), "B-1")
+	a2 := placeOrderIn(t, app, context.Background(), "A-2")
+	if a1.Number != "GC-000001" || b1.Number != "GC-000001" || a2.Number != "GC-000002" {
+		t.Fatalf("numbers = %s, %s, %s; want GC-000001 in each store, then GC-000002", a1.Number, b1.Number, a2.Number)
+	}
+}
+
+func TestAStoreCanChooseItsOrderPrefix(t *testing.T) {
+	app := newTestApp(t)
+	b := addTestStore(t, app, "second")
+	if _, err := app.db.ExecContext(context.Background(), `UPDATE stores SET order_prefix = 'SB-' WHERE id = $1`, b); err != nil {
+		t.Fatal(err)
+	}
+	if got := placeOrderIn(t, app, WithStore(context.Background(), b), "B-1").Number; got != "SB-000001" {
+		t.Fatalf("number = %s, want SB-000001", got)
+	}
+}
