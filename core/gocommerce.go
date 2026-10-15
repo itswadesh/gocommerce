@@ -39,7 +39,12 @@ import (
 // contract are stable from here, and a break needs a major version rather than
 // a line in PLAN.md. The pre-1.0 breaks recorded there — D24, D25, D36, D38,
 // D46 — were free because nothing had been promised. That allowance is spent.
-const Version = "1.2.0"
+//
+// A variable rather than a constant so the release build can stamp the tag it
+// publishes: every merged pull request is a release (.github/workflows/
+// release.yml), built with -ldflags "-X …/core.Version=<tag>". A build from
+// source without that flag reports the version written here.
+var Version = "1.2.0"
 
 // Defaults applied by [Config] when a field is left zero.
 const (
