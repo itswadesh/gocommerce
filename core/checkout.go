@@ -409,7 +409,27 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 			`SELECT nextval(pg_get_serial_sequence('orders', 'id'))`).Scan(&orderID); err != nil {
 			return err
 		}
-		number := fmt.Sprintf("%s%06d", s.app.cfg.OrderPrefix, orderID)
+		// The number counts this store's orders, not the install's: ids come
+		// from one sequence every store shares, so a new store's first order
+		// would otherwise be numbered after everybody else's. The counter row
+		// is locked by the bump, which serialises a store's checkouts on it
+		// and on nothing else.
+		var seq int64
+		var prefix sql.NullString
+		if err := tx.QueryRowContext(ctx, `
+			WITH bumped AS (
+				INSERT INTO store_counters (store_id, name, value)
+				VALUES (current_setting('gocommerce.store_id'), 'order', 1)
+				ON CONFLICT (store_id, name) DO UPDATE SET value = store_counters.value + 1
+				RETURNING store_id, value
+			)
+			SELECT b.value, st.order_prefix FROM bumped b JOIN stores st ON st.id = b.store_id`).Scan(&seq, &prefix); err != nil {
+			return err
+		}
+		if !prefix.Valid {
+			prefix.String = s.app.cfg.OrderPrefix
+		}
+		number := fmt.Sprintf("%s%06d", prefix.String, seq)
 		accessToken, err := token()
 		if err != nil {
 			return err
