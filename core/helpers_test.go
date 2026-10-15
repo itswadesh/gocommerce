@@ -273,3 +273,18 @@ func (m *testModule) Register(app *App) error {
 }
 
 func (m *testModule) OpenAPI() []byte { return m.spec }
+
+// addTestStore creates another store directly, as Part 3's endpoint will,
+// and returns its id.
+func addTestStore(t *testing.T, app *App, slug string) string {
+	t.Helper()
+	id, err := NewStoreID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.db.ExecContext(context.Background(),
+		`INSERT INTO stores (id, slug, name) VALUES ($1, $2, $2)`, id, slug); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
