@@ -299,6 +299,8 @@ func (p *Platform) load(ctx context.Context) error {
 func (p *Platform) boot(ctx context.Context, t *Tenant) error {
 	cfg := p.cfg.Store
 	cfg.DBURL = withSearchPath(p.cfg.DBURL, t.schema)
+	// Each tenant schema holds exactly one store; its engine runs bound to it.
+	cfg.DefaultStore = "first"
 	// Custom reports run as this store's OWN least-privileged role, created and
 	// granted read on only this schema here (D78, D79). Authenticating as a role
 	// that is a member of no other store's is what isolates reports: a report

@@ -50,8 +50,8 @@ func New(t *testing.T, mods ...gocommerce.Module) *gocommerce.App {
 	return NewWithConfig(t, gocommerce.Config{}, mods...)
 }
 
-// NewWithConfig is New with configuration of your own. DBURL, AdminTokens and
-// Logger are filled in if you leave them empty.
+// NewWithConfig is New with configuration of your own. DBURL, AdminTokens,
+// DefaultStore and Logger are filled in if you leave them empty.
 func NewWithConfig(t *testing.T, cfg gocommerce.Config, mods ...gocommerce.Module) *gocommerce.App {
 	t.Helper()
 
@@ -63,6 +63,12 @@ func NewWithConfig(t *testing.T, cfg gocommerce.Config, mods ...gocommerce.Modul
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
+	}
+	// A test that never names a store works in the install's first one, as an
+	// embedded single-store engine does. A test of multi-store behaviour sets
+	// DefaultStore to something else, or binds contexts with WithStore.
+	if cfg.DefaultStore == "" {
+		cfg.DefaultStore = "first"
 	}
 
 	app, err := gocommerce.New(cfg, mods...)
