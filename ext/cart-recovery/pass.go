@@ -435,16 +435,17 @@ type claimed struct {
 
 func (m *Module) sendDue(ctx context.Context, set *settingsRow, res *PassResult) error {
 	rows, err := m.app.DB().QueryContext(ctx, `
-		UPDATE cart_recovery_abandonments a
-		SET claimed_until = now() + make_interval(secs => $2), send_attempts = a.send_attempts + 1
-		FROM (
+		WITH due AS MATERIALIZED (
 			SELECT id FROM cart_recovery_abandonments
 			WHERE next_step_at <= now() AND status IN ('scheduled', 'contacted')
 			  AND (claimed_until IS NULL OR claimed_until < now())
 			ORDER BY next_step_at
 			FOR UPDATE SKIP LOCKED
 			LIMIT $1
-		) AS due
+		)
+		UPDATE cart_recovery_abandonments a
+		SET claimed_until = now() + make_interval(secs => $2), send_attempts = a.send_attempts + 1
+		FROM due
 		WHERE a.id = due.id
 		RETURNING a.id, a.cart_id, a.kind, a.steps_sent, a.send_attempts, a.link_token`,
 		sendBatch, claimWindow.Seconds())
@@ -519,8 +520,8 @@ func purchasable(d *gocommerce.CartDetail) bool {
 // other than the logger, Notify succeeds and nobody receives anything — a
 // sequence that "sent" three reminders into a log file is worse than one that
 // says it is waiting for a provider.
-func (m *Module) emailDelivers() bool {
-	for _, c := range m.app.NotifierChannels() {
+func (m *Module) emailDelivers(ctx context.Context) bool {
+	for _, c := range m.app.NotifierChannelsFor(ctx) {
 		if c.Channel == gocommerce.ChannelEmail {
 			return c.Delivers
 		}
@@ -568,7 +569,7 @@ func (m *Module) sendStep(ctx context.Context, set *settingsRow, c claimed, res 
 	case len(cur.detail.Lines) == 0 || !purchasable(cur.detail):
 		res.Held++
 		return m.hold(ctx, c.id, holdNothingPurchasable, c.stepsSent+1)
-	case !m.emailDelivers():
+	case !m.emailDelivers(ctx):
 		res.Held++
 		return m.hold(ctx, c.id, holdNoProvider, c.stepsSent+1)
 	}

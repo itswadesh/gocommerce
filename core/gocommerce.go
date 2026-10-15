@@ -544,7 +544,8 @@ func New(cfg Config, mods ...Module) (*App, error) {
 func (a *App) buildServices() {
 	a.bus = &eventBus{log: a.log, timeout: a.cfg.HandlerTimeout}
 	a.outbox = &outbox{
-		db: a.db, bus: a.bus, log: a.log,
+		app: a,
+		db:  a.db, bus: a.bus, log: a.log,
 		batchSize: a.cfg.OutboxBatchSize, poll: a.cfg.OutboxPoll,
 		delivered: make(chan struct{}, 1),
 		wake:      make(chan struct{}, 1),
@@ -620,7 +621,23 @@ func (a *App) runSweepers(ctx context.Context) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	sweep := func() {
+	sweep := func() { a.runSweepOnce(ctx) }
+
+	sweep()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sweep()
+		}
+	}
+}
+
+// runSweepOnce is one pass of the sweepers over every store, each bound to
+// its own.
+func (a *App) runSweepOnce(ctx context.Context) {
+	_ = a.ForEachStore(ctx, func(ctx context.Context) error {
 		// Abandonment first, so the log reads in the order things happen.
 		// Correctness does not depend on it: the three predicates are mutually
 		// exclusive, so no two phases can claim the same row.
@@ -642,16 +659,15 @@ func (a *App) runSweepers(ctx context.Context) {
 		if _, err := a.orders.SweepUnpaid(ctx); err != nil {
 			a.log.Error("unpaid order sweep failed", "error", err)
 		}
-	}
+		return nil
+	})
+}
 
-	sweep()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			sweep()
-		}
+// deliverOutboxOnce drains every store's outbox once; tests call it instead
+// of waiting on the dispatcher's timer.
+func (a *App) deliverOutboxOnce(ctx context.Context) {
+	if _, err := a.outbox.pass(ctx); err != nil {
+		a.log.Error("outbox pass failed", "error", err)
 	}
 }
 

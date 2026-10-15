@@ -126,7 +126,10 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// crash, and an invoice that was never issued is an accounting hole. So
 	// the module also reconciles against the orders table at startup rather
 	// than trusting that it saw every event.
-	app.OnStart(m.reconcile)
+	app.OnStart(func(ctx context.Context) error {
+		// Every store's paid orders, each bound to its own store (D83).
+		return app.ForEachStore(ctx, m.reconcile)
+	})
 	return nil
 }
 

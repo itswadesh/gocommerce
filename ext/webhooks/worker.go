@@ -42,16 +42,17 @@ type pending struct {
 // wait out a ticker.
 func (m *Module) DeliverPass(ctx context.Context) (int, error) {
 	rows, err := m.db.QueryContext(ctx, `
-		UPDATE webhook_deliveries d
-		SET attempts = d.attempts + 1,
-		    available_at = now() + make_interval(secs => $2)
-		FROM (
+		WITH claimed AS MATERIALIZED (
 			SELECT id FROM webhook_deliveries
 			WHERE delivered_at IS NULL AND NOT dead AND available_at <= now()
 			ORDER BY id
 			FOR UPDATE SKIP LOCKED
 			LIMIT $1
-		) AS claimed
+		)
+		UPDATE webhook_deliveries d
+		SET attempts = d.attempts + 1,
+		    available_at = now() + make_interval(secs => $2)
+		FROM claimed
 		WHERE d.id = claimed.id
 		RETURNING d.id, d.event_name, d.payload, d.attempts,
 		          (SELECT url FROM webhook_endpoints e WHERE e.id = d.endpoint_id),
@@ -208,7 +209,12 @@ func (m *Module) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if _, err := m.DeliverPass(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			// One pass per store, each bound to its own (D83).
+			err := m.app.ForEachStore(ctx, func(ctx context.Context) error {
+				_, err := m.DeliverPass(ctx)
+				return err
+			})
+			if err != nil && !errors.Is(err, context.Canceled) {
 				m.log.Error("webhook delivery pass failed", "error", err)
 			}
 		}

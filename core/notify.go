@@ -64,14 +64,14 @@ func (n *notifierSet) forChannel(channel string) []notifierEntry {
 // is aspirational rather than what the code does. Somebody locked out of the
 // panel needs to know whether an email is really coming, not whether a line
 // will be written to a log they cannot read.
-func (n *notifierSet) delivers(channel string) bool {
+func (n *notifierSet) delivers(ctx context.Context, channel string) bool {
 	// Snapshot, then ask: Configured reads the plugins table, and a module's
 	// code is not something to run under this lock.
 	for _, e := range n.forChannel(channel) {
 		if _, isLog := e.notifier.(logNotifier); isLog {
 			continue
 		}
-		if ready(context.Background(), e.notifier) {
+		if ready(ctx, e.notifier) {
 			return true
 		}
 	}
@@ -81,7 +81,7 @@ func (n *notifierSet) delivers(channel string) bool {
 // describe reports one channel and what stands behind it, for the settings
 // response and the doctor. Both ask the same question, so neither gets to
 // answer it differently.
-func (n *notifierSet) describe(channel string) NotifierChannelInfo {
+func (n *notifierSet) describe(ctx context.Context, channel string) NotifierChannelInfo {
 	// Snapshot under the lock and ask the backends outside it: DisplayName is a
 	// module's code, and the read lock is not something to hand to a third
 	// party — a notifier that registered another one from it would deadlock the
@@ -97,7 +97,7 @@ func (n *notifierSet) describe(channel string) NotifierChannelInfo {
 			// does, and what it does is the whole point of this row.
 			b.Name = "log"
 		} else {
-			b.Delivers = ready(context.Background(), e.notifier)
+			b.Delivers = ready(ctx, e.notifier)
 			info.Delivers = info.Delivers || b.Delivers
 			if named, ok := e.notifier.(Named); ok && named.DisplayName() != "" {
 				b.Name = named.DisplayName()

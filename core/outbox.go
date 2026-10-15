@@ -32,6 +32,7 @@ const (
 // keeping the order — a paid order nobody was told about. Writing the event to
 // a table inside the same transaction makes that gap impossible.
 type outbox struct {
+	app       *App
 	db        *sql.DB
 	bus       *eventBus
 	log       *slog.Logger
@@ -80,7 +81,7 @@ func (o *outbox) run(ctx context.Context) {
 	defer timer.Stop()
 
 	for {
-		n, err := o.deliverBatch(ctx)
+		n, err := o.pass(ctx)
 		switch {
 		case err != nil && ctx.Err() == nil:
 			o.log.Error("outbox pass failed", "error", err)
@@ -106,6 +107,19 @@ func (o *outbox) run(ctx context.Context) {
 	}
 }
 
+// pass delivers one batch from every store's outbox, each bound to its store
+// so a handler runs in the store its event belongs to. It returns how many
+// events were claimed in all.
+func (o *outbox) pass(ctx context.Context) (int, error) {
+	total := 0
+	err := o.app.ForEachStore(ctx, func(ctx context.Context) error {
+		n, err := o.deliverBatch(ctx)
+		total += n
+		return err
+	})
+	return total, err
+}
+
 // deliverBatch claims a batch of unpublished events and delivers them,
 // returning how many were claimed.
 //
@@ -114,16 +128,17 @@ func (o *outbox) run(ctx context.Context) {
 // with no coordination beyond the database.
 func (o *outbox) deliverBatch(ctx context.Context) (int, error) {
 	rows, err := o.db.QueryContext(ctx, `
-		UPDATE outbox_events o
-		SET attempts = o.attempts + 1,
-		    available_at = now() + make_interval(secs => $2)
-		FROM (
+		WITH claimed AS MATERIALIZED (
 			SELECT id FROM outbox_events
 			WHERE published_at IS NULL AND NOT dead AND available_at <= now()
 			ORDER BY id
 			FOR UPDATE SKIP LOCKED
 			LIMIT $1
-		) AS claimed
+		)
+		UPDATE outbox_events o
+		SET attempts = o.attempts + 1,
+		    available_at = now() + make_interval(secs => $2)
+		FROM claimed
 		WHERE o.id = claimed.id
 		RETURNING o.id, o.event_id, o.event_name, o.event_version,
 		          o.aggregate_type, o.aggregate_id, o.payload, o.created_at, o.attempts`,
@@ -231,10 +246,17 @@ func (o *outbox) signal() {
 // It cannot recover a dead-lettered row: deliverBatch's claim filters NOT
 // dead, deliberately, so a parked row is invisible to the dispatcher forever.
 // RequeueEvent is what un-parks one.
+//
+// A context bound to a store drains that store; one bound to none drains
+// every store.
 func (a *App) DrainOutbox(ctx context.Context) (int, error) {
+	batch := a.outbox.deliverBatch
+	if _, bound := StoreFrom(ctx); !bound && a.defaultStore == "" {
+		batch = a.outbox.pass
+	}
 	total := 0
 	for {
-		n, err := a.outbox.deliverBatch(ctx)
+		n, err := batch(ctx)
 		if err != nil {
 			return total, err
 		}

@@ -33,5 +33,5 @@ func (a *App) mountSettingsRoutes() {
 }
 
 func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
-	Respond(w, http.StatusOK, a.Settings())
+	Respond(w, http.StatusOK, a.SettingsFor(r.Context()))
 }

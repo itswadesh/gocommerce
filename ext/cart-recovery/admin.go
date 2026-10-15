@@ -927,7 +927,7 @@ func (m *Module) options(ctx context.Context, set *settingsRow, a *Abandonment, 
 	} else if len(steps) > 0 {
 		o.DefaultTemplate = steps[len(steps)-1].Template
 	}
-	if err := m.sendable(a, cur); err != nil {
+	if err := m.sendable(ctx, a, cur); err != nil {
 		o.SendBlockedReason = err.Message
 	} else {
 		o.CanSend = true
@@ -972,7 +972,7 @@ func terminal(a *Abandonment, cur *cartNow) *gocommerce.APIError {
 	return nil
 }
 
-func (m *Module) sendable(a *Abandonment, cur *cartNow) *gocommerce.APIError {
+func (m *Module) sendable(ctx context.Context, a *Abandonment, cur *cartNow) *gocommerce.APIError {
 	if err := terminal(a, cur); err != nil {
 		return err
 	}
@@ -984,7 +984,7 @@ func (m *Module) sendable(a *Abandonment, cur *cartNow) *gocommerce.APIError {
 		return conflict("no_contact", "There is no email address to send to.", nil)
 	case len(cur.detail.Lines) == 0 || !purchasable(cur.detail):
 		return conflict("nothing_purchasable", "Nothing in this basket can be bought right now.", nil)
-	case !m.emailDelivers():
+	case !m.emailDelivers(ctx):
 		return conflict("no_email_provider",
 			"No email provider is set up. Add one under Notifications › Setup Email.", nil)
 	}
@@ -1048,7 +1048,7 @@ func (m *Module) handleSend(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	if apiErr := m.sendable(a, cur); apiErr != nil {
+	if apiErr := m.sendable(ctx, a, cur); apiErr != nil {
 		gocommerce.RespondError(w, r, apiErr)
 		return
 	}
@@ -1305,7 +1305,7 @@ func (m *Module) settingsView(ctx context.Context) (*SettingsView, error) {
 		Settings: set.Settings, Customized: set.Customized, Defaults: DefaultSettings(),
 		InstalledAt: set.InstalledAt, UpdatedAt: set.UpdatedAt, UpdatedBy: set.UpdatedBy,
 		Actions: actions, Templates: m.templateOptions(ctx),
-		StorefrontFallback: m.cfg.StorefrontURL, EmailDelivers: m.emailDelivers(),
+		StorefrontFallback: m.cfg.StorefrontURL, EmailDelivers: m.emailDelivers(ctx),
 		Tracked: m.app.Config().PanelURL != "", Guards: guards,
 	}, nil
 }

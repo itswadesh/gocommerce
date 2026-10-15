@@ -93,7 +93,7 @@ func (a *App) Diagnose(ctx context.Context) Report {
 	add(a.checkReservations(ctx))
 	add(a.checkCarts(ctx))
 	add(a.checkCatalog(ctx))
-	add(a.checkProviders())
+	add(a.checkProviders(ctx))
 	add(a.checkContract())
 	add(a.checkAdminRights())
 	add(a.checkFulfillment(ctx))
@@ -201,7 +201,7 @@ func (a *App) checkAdminAccess(ctx context.Context) Diagnostic {
 	// them, and both of these configurations look healthy from every other angle.
 	if d.Status == StatusOK {
 		switch {
-		case !a.notifier.delivers(ChannelEmail):
+		case !a.notifier.delivers(ctx, ChannelEmail):
 			d.Status = StatusWarn
 			d.Detail += "; no email delivery, so a locked-out operator cannot reset their own password"
 			d.Hint = "register an email notifier (ext/notify-sendgrid) and set Config.PanelURL, " +
@@ -381,7 +381,7 @@ func (a *App) checkCatalog(ctx context.Context) Diagnostic {
 	return d
 }
 
-func (a *App) checkProviders() Diagnostic {
+func (a *App) checkProviders(ctx context.Context) Diagnostic {
 	d := Diagnostic{Name: "providers"}
 
 	pay := make([]string, 0, len(a.payments.providers))
@@ -426,7 +426,7 @@ func (a *App) checkProviders() Diagnostic {
 	// sends no SMS is a legitimate configuration, and the doctor's exit code
 	// gates deployments.
 	var silent []string
-	for _, c := range a.NotifierChannels() {
+	for _, c := range a.NotifierChannelsFor(ctx) {
 		if !c.Delivers {
 			silent = append(silent, c.Channel)
 		}
