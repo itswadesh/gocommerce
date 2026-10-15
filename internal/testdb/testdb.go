@@ -42,6 +42,9 @@ const (
 	ReportsPassword = "gctest_reports"
 )
 
+// buildLockKey serialises template builds across processes ("gctpl" + 1).
+const buildLockKey int64 = 0x6763_74706c01
+
 // staleAfter is how old a leftover database from a crashed run must be before
 // a later run drops it.
 const staleAfter = 3 * time.Hour
@@ -168,6 +171,20 @@ func Clone(t testing.TB, key string, build func(dsn string) error) string {
 	sweep(db)
 	tpl, ok := templates[key]
 	if !ok {
+		// One template is built at a time across every test process: a
+		// migration that scopes every table takes a lock per table, index
+		// and constraint, and a dozen packages doing it at once exhaust the
+		// server's shared lock table ("out of shared memory"). Copies stay
+		// concurrent; only building waits.
+		conn, err := db.Conn(context.Background())
+		if err != nil {
+			t.Fatalf("testdb: lock connection: %v", err)
+		}
+		defer conn.Close()
+		if _, err := conn.ExecContext(context.Background(), `SELECT pg_advisory_lock($1)`, buildLockKey); err != nil {
+			t.Fatalf("testdb: take the build lock: %v", err)
+		}
+		defer conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock($1)`, buildLockKey)
 		EnsureRoles(t, db)
 		tpl = "gctpl_" + suffix()
 		if _, err := db.ExecContext(context.Background(),
