@@ -7862,6 +7862,11 @@
                       "staff"
                     ],
                     "default": "staff"
+                  },
+                  "send_email": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Email the link to the invitee through the store's email provider. False returns the link to copy instead; either way any earlier link for this address stops working."
                   }
                 }
               }
@@ -16573,9 +16578,26 @@
             "enum": [
               "pending",
               "accepted",
-              "expired"
+              "expired",
+              "revoked"
             ],
-            "description": "Expiry is a fact about now rather than a column, so it is resolved on the way out."
+            "description": "Expiry is a fact about now rather than a column, so it is resolved on the way out. A revoked invitation is kept and listed as revoked."
+          },
+          "revoked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "has_account": {
+            "type": "boolean",
+            "description": "Whether the invitee already signs in to another store. The accept page then asks for that password instead of a new one. Filled on the accept lookup only."
+          },
+          "emailed": {
+            "type": "boolean",
+            "description": "On the creating response only: whether the link went out by the store's email provider."
+          },
+          "email_error": {
+            "type": "string",
+            "description": "On the creating response only, when `emailed` is false because sending was asked for and failed or no provider is set up. Written for the person in the dialog."
           }
         }
       },
