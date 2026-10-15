@@ -425,7 +425,22 @@ func ServeStdio(app *gocommerce.App, m *Module) error {
 	if m.app == nil {
 		return errors.New("mcp: the module must be registered with the app before serving stdio")
 	}
+	// One agent, one store: the engine's default, or the install's only one.
+	// With several and no default the agent would act on whichever a
+	// statement happened to see, so it is refused instead (D83).
 	ctx := context.Background()
+	if store := app.DefaultStore(); store != "" {
+		ctx = gocommerce.WithStore(ctx, store)
+	} else {
+		stores, err := app.Stores().Active(ctx)
+		if err != nil {
+			return err
+		}
+		if len(stores) != 1 {
+			return fmt.Errorf("mcp: this install has %d stores; set Config.DefaultStore to the one the agent works in", len(stores))
+		}
+		ctx = gocommerce.WithStore(ctx, stores[0].ID)
+	}
 	reader := bufio.NewScanner(os.Stdin)
 	reader.Buffer(make([]byte, 0, 64*1024), 1<<20)
 	writer := json.NewEncoder(os.Stdout)
