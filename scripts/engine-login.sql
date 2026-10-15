@@ -34,6 +34,11 @@ BEGIN
     FOR r IN SELECT c.relname, c.relkind FROM pg_class c
              JOIN pg_namespace n ON n.oid = c.relnamespace
              WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+               -- A serial column's sequence belongs to its table and moves
+               -- with it; PostgreSQL refuses to move it on its own.
+               AND NOT (c.relkind = 'S' AND EXISTS (
+                   SELECT 1 FROM pg_depend d
+                   WHERE d.objid = c.oid AND d.classid = 'pg_class'::regclass AND d.deptype IN ('a', 'i')))
     LOOP
         EXECUTE format('ALTER %s public.%I OWNER TO gocommerce_app',
             CASE r.relkind WHEN 'S' THEN 'SEQUENCE' WHEN 'v' THEN 'VIEW'
