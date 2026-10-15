@@ -36,6 +36,14 @@ const testReportsRole = "gctest_reports"
 // has none, so the role is made with one and the reports DSN carries it.
 const testReportsPassword = "gctest_reports"
 
+// testEngineRole is the login every test app runs as. It must not be a
+// superuser: PostgreSQL skips Row-Level Security for superusers even when a
+// table forces it, so a test run as one would prove no isolation at all.
+const (
+	testEngineRole     = "gctest_engine"
+	testEnginePassword = "gctest_engine"
+)
+
 // requireDB returns a connection string pointing at a PostgreSQL schema
 // created for this test alone, dropped when the test finishes.
 //
@@ -66,7 +74,18 @@ func requireDB(t *testing.T) string {
 		t.Fatalf("open test database: %v", err)
 	}
 	defer db.Close()
-	if _, err := db.ExecContext(context.Background(), `CREATE SCHEMA `+schema); err != nil {
+	if _, err := db.ExecContext(context.Background(), `
+		DO $$
+		BEGIN
+			IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '`+testEngineRole+`') THEN
+				CREATE ROLE `+testEngineRole+` LOGIN PASSWORD '`+testEnginePassword+`' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+			END IF;
+		EXCEPTION WHEN duplicate_object THEN
+			NULL;
+		END $$;`); err != nil {
+		t.Fatalf("create engine role: %v", err)
+	}
+	if _, err := db.ExecContext(context.Background(), `CREATE SCHEMA `+schema+` AUTHORIZATION `+testEngineRole); err != nil {
 		t.Fatalf("create test schema: %v", err)
 	}
 	// Provision the reports role and grant it read on this schema. The role is
@@ -86,7 +105,7 @@ func requireDB(t *testing.T) string {
 	}
 	for _, stmt := range []string{
 		`GRANT USAGE ON SCHEMA ` + schema + ` TO ` + testReportsRole,
-		`ALTER DEFAULT PRIVILEGES IN SCHEMA ` + schema + ` GRANT SELECT ON TABLES TO ` + testReportsRole,
+		`ALTER DEFAULT PRIVILEGES FOR ROLE ` + testEngineRole + ` IN SCHEMA ` + schema + ` GRANT SELECT ON TABLES TO ` + testReportsRole,
 	} {
 		if _, err := db.ExecContext(context.Background(), stmt); err != nil {
 			t.Fatalf("grant to reports role: %v", err)
@@ -111,7 +130,12 @@ func requireDB(t *testing.T) string {
 	if strings.Contains(base, "?") {
 		separator = "&"
 	}
-	return base + separator + "options=" + url.QueryEscape("-csearch_path="+schema)
+	u, err := url.Parse(base + separator + "options=" + url.QueryEscape("-csearch_path="+schema))
+	if err != nil {
+		t.Fatalf("parse test DSN: %v", err)
+	}
+	u.User = url.UserPassword(testEngineRole, testEnginePassword)
+	return u.String()
 }
 
 // resetSchema is a no-op now that every test gets its own schema. It remains
