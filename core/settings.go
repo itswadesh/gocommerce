@@ -101,9 +101,13 @@ type NotifierChannelInfo struct {
 // it wants the currency and what else is installed, rather than re-deriving it
 // from Config.
 //
-// A value snapshot like Config(), with no ctx and no error: it touches no
-// database, so it cannot fail.
-func (a *App) Settings() StoreSettings {
+// Whether a provider is configured is a per-store fact, so this answers for
+// the store the engine's default binds to; a request or a job asks
+// SettingsFor with its own context.
+func (a *App) Settings() StoreSettings { return a.SettingsFor(context.Background()) }
+
+// SettingsFor is Settings for the store ctx is bound to.
+func (a *App) SettingsFor(ctx context.Context) StoreSettings {
 	// Copied rather than shared: a caller that sorted or appended to the
 	// returned slice would be editing the running config through the snapshot.
 	// make with a concrete length also keeps the JSON [] rather than null in
@@ -125,10 +129,10 @@ func (a *App) Settings() StoreSettings {
 		CartTTLSeconds:       int64(a.cfg.CartTTL / time.Second),
 		OrderTTLSeconds:      int64(a.cfg.OrderTTL / time.Second),
 		MediaUploadsEnabled:  a.mediaUploadsEnabled(),
-		PaymentMethods:       a.paymentInfo(),
-		FulfillmentProviders: a.fulfillmentInfo(),
+		PaymentMethods:       a.paymentInfo(ctx),
+		FulfillmentProviders: a.fulfillmentInfo(ctx),
 		Modules:              a.Modules(),
-		NotifierChannels:     a.NotifierChannels(),
+		NotifierChannels:     a.NotifierChannelsFor(ctx),
 	}
 }
 
@@ -153,10 +157,16 @@ func (a *App) Modules() []string {
 // and in a fixed order: a channel with no backend at all still has to appear,
 // because "sms is not configured" is an answer and a missing row is not.
 func (a *App) NotifierChannels() []NotifierChannelInfo {
+	return a.NotifierChannelsFor(context.Background())
+}
+
+// NotifierChannelsFor is NotifierChannels for the store ctx is bound to: a
+// backend is configured per store, on its Plugins screen.
+func (a *App) NotifierChannelsFor(ctx context.Context) []NotifierChannelInfo {
 	channels := []string{ChannelEmail, ChannelSMS}
 	out := make([]NotifierChannelInfo, 0, len(channels))
 	for _, c := range channels {
-		out = append(out, a.notifier.describe(c))
+		out = append(out, a.notifier.describe(ctx, c))
 	}
 	return out
 }
@@ -168,7 +178,7 @@ func (a *App) NotifierChannels() []NotifierChannelInfo {
 // while New runs, before the server accepts a request. That is an invariant a
 // hot-reloadable provider would break, so it is written down rather than left
 // to be inferred from the absence of a mutex.
-func (a *App) paymentInfo() []ProviderInfo {
+func (a *App) paymentInfo(ctx context.Context) []ProviderInfo {
 	// installed rather than Methods: the settings list every gateway this
 	// build carries, ready or not, which is what a screen that sets them up
 	// needs; Methods is the shopper's list and leaves the idle ones out.
@@ -178,7 +188,7 @@ func (a *App) paymentInfo() []ProviderInfo {
 		// No fallback for a missing owner: the provider and its owner are
 		// written on adjacent lines in RegisterPayment, so a blank module is a
 		// wiring bug and inventing "core" for it would hide one.
-		info := ProviderInfo{Code: code, Name: code, Module: a.paymentOwners[code], Configured: configured(context.Background(), a.payments.providers[code])}
+		info := ProviderInfo{Code: code, Name: code, Module: a.paymentOwners[code], Configured: configured(ctx, a.payments.providers[code])}
 		if named, ok := a.payments.providers[code].(Named); ok && named.DisplayName() != "" {
 			info.Name = named.DisplayName()
 		}
@@ -192,11 +202,11 @@ func (a *App) paymentInfo() []ProviderInfo {
 // Two explicit walks rather than one generic helper over an interface: this
 // engine has no reflection and no container, and the second reader of either
 // method wants to see which map it reads.
-func (a *App) fulfillmentInfo() []ProviderInfo {
+func (a *App) fulfillmentInfo(ctx context.Context) []ProviderInfo {
 	codes := a.fulfillment.Providers()
 	out := make([]ProviderInfo, 0, len(codes))
 	for _, code := range codes {
-		info := ProviderInfo{Code: code, Name: code, Module: a.fulfillmentOwners[code], Configured: configured(context.Background(), a.fulfillment.providers[code])}
+		info := ProviderInfo{Code: code, Name: code, Module: a.fulfillmentOwners[code], Configured: configured(ctx, a.fulfillment.providers[code])}
 		if named, ok := a.fulfillment.providers[code].(Named); ok && named.DisplayName() != "" {
 			info.Name = named.DisplayName()
 		}

@@ -1,6 +1,7 @@
 package gocommerce
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"slices"
@@ -393,7 +394,7 @@ func TestSettingsReportsAChannelThatDeliversNothing(t *testing.T) {
 func TestDoctorWarnsAboutASilentChannel(t *testing.T) {
 	find := func(t *testing.T, app *App) Diagnostic {
 		t.Helper()
-		d := app.checkProviders()
+		d := app.checkProviders(context.Background())
 		if d.Name != "providers" {
 			t.Fatalf("checkProviders returned %q", d.Name)
 		}

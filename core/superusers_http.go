@@ -57,7 +57,7 @@ func (a *App) handleAuthState(w http.ResponseWriter, r *http.Request) {
 		// logger does not count — a link written to a log file is no use to
 		// somebody who cannot sign in to read it — and a Forgot-password button
 		// that 202s into silence is worse than no button at all.
-		"password_reset": a.notifier.delivers(ChannelEmail),
+		"password_reset": a.notifier.delivers(r.Context(), ChannelEmail),
 	})
 }
 

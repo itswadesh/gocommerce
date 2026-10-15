@@ -228,14 +228,24 @@ func (m *Module) shutdown(ctx context.Context) error {
 func (m *Module) tick() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	conn, err := m.connection(ctx)
-	if err != nil || !conn.enabled || !conn.configured() {
-		return
-	}
+	// Counted per tick, not per store, so every store gets its full
+	// reconciliation on the same poll.
 	m.mu.Lock()
 	full := m.polls%fullEvery == 0
 	m.polls++
 	m.mu.Unlock()
+	// Each store has its own connection settings and catalogue (D83).
+	_ = m.app.ForEachStore(ctx, func(ctx context.Context) error {
+		m.tickStore(ctx, full)
+		return nil
+	})
+}
+
+func (m *Module) tickStore(ctx context.Context, full bool) {
+	conn, err := m.connection(ctx)
+	if err != nil || !conn.enabled || !conn.configured() {
+		return
+	}
 	if _, _, err := m.Sync(ctx, full); err != nil {
 		m.log.Warn("meilisearch sync failed", "error", err)
 	}

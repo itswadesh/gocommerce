@@ -903,16 +903,17 @@ func (c *Carts) Abandon(ctx context.Context) (int, error) {
 	var claimed int
 	err := InTx(ctx, c.app.db, func(tx *sql.Tx) error {
 		rows, err := tx.QueryContext(ctx, `
-			UPDATE carts c
-			SET status = 'abandoned', abandoned_at = now()
-			FROM (
+			WITH claimed AS MATERIALIZED (
 				SELECT id FROM carts
 				WHERE status = 'open' AND expires_at < now()
 				  AND EXISTS (SELECT 1 FROM cart_line_items l WHERE l.cart_id = carts.id)
 				ORDER BY expires_at
 				FOR UPDATE SKIP LOCKED
 				LIMIT $1
-			) AS claimed
+			)
+			UPDATE carts c
+			SET status = 'abandoned', abandoned_at = now()
+			FROM claimed
 			WHERE c.id = claimed.id
 			-- updated_at is deliberately absent from the SET list: it means
 			-- "when the shopper last changed this", and the report exists to
@@ -1045,15 +1046,16 @@ func (c *Carts) SweepExpired(ctx context.Context) (int64, error) {
 // unlike the unpaid sweep's: a DELETE cannot half-remove a row.
 func (c *Carts) SweepExpiredPass(ctx context.Context) (removed int64, capped bool, err error) {
 	res, err := c.app.db.ExecContext(ctx, `
-		DELETE FROM carts c
-		USING (
+		WITH claimed AS MATERIALIZED (
 			SELECT id FROM carts
 			WHERE status = 'open' AND expires_at < now()
 			  AND NOT EXISTS (SELECT 1 FROM cart_line_items l WHERE l.cart_id = carts.id)
 			ORDER BY expires_at
 			FOR UPDATE SKIP LOCKED
 			LIMIT $1
-		) AS claimed
+		)
+		DELETE FROM carts c
+		USING claimed
 		WHERE c.id = claimed.id`, cartSweepBatch)
 	if err != nil {
 		return 0, false, err
@@ -1130,15 +1132,16 @@ func (c *Carts) SweepPass(ctx context.Context) (CartSweep, error) {
 // has already gone.
 func (c *Carts) PurgeAbandoned(ctx context.Context) (int64, error) {
 	res, err := c.app.db.ExecContext(ctx, `
-		DELETE FROM carts c
-		USING (
+		WITH aged AS MATERIALIZED (
 			SELECT id FROM carts
 			WHERE status = 'abandoned'
 			  AND abandoned_at < now() - make_interval(secs => $1)
 			ORDER BY abandoned_at
 			FOR UPDATE SKIP LOCKED
 			LIMIT $2
-		) AS aged
+		)
+		DELETE FROM carts c
+		USING aged
 		WHERE c.id = aged.id`,
 		c.app.cfg.CartRetention.Seconds(), cartSweepBatch)
 	if err != nil {

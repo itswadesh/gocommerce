@@ -117,7 +117,7 @@ func (s *Superusers) RequestReset(ctx context.Context, email, clientIP string) (
 	// A link nobody can be sent is an hour of live credential bought for
 	// nothing. The branch is on configuration, which is the same for every
 	// caller, so it enumerates nothing.
-	if !s.app.notifier.delivers(ChannelEmail) {
+	if !s.app.notifier.delivers(ctx, ChannelEmail) {
 		return ResetRequest{Accepted: true, Delivery: DeliveryNone}, nil
 	}
 
@@ -136,7 +136,7 @@ func (s *Superusers) RequestReset(ctx context.Context, email, clientIP string) (
 	if err != nil {
 		return ResetRequest{}, err
 	}
-	s.deliverReset(email, token)
+	s.deliverReset(ctx, email, token)
 	return ResetRequest{Accepted: true, Delivery: DeliveryEmail}, nil
 }
 
@@ -162,7 +162,7 @@ func (s *Superusers) RequestResetFor(ctx context.Context, id int64) (ResetReques
 		return ResetRequest{}, Internalf(err, "look up superuser")
 	}
 
-	if !s.app.notifier.delivers(ChannelEmail) {
+	if !s.app.notifier.delivers(ctx, ChannelEmail) {
 		return ResetRequest{Accepted: true, Delivery: DeliveryNone}, nil
 	}
 
@@ -170,7 +170,7 @@ func (s *Superusers) RequestResetFor(ctx context.Context, id int64) (ResetReques
 	if err != nil {
 		return ResetRequest{}, err
 	}
-	s.deliverReset(email, token)
+	s.deliverReset(ctx, email, token)
 	return ResetRequest{Accepted: true, Delivery: DeliveryEmail}, nil
 }
 
@@ -355,7 +355,7 @@ func (s *Superusers) resetURL(token string) string {
 //
 // A failure is logged and never returned. The row is written and the operator
 // can ask again; what must not happen is a 500 that says the address exists.
-func (s *Superusers) deliverReset(email, token string) {
+func (s *Superusers) deliverReset(reqCtx context.Context, email, token string) {
 	data := map[string]string{
 		// Deliberately not customer_email or customer_name: the recipient is an
 		// operator, and reusing the order vocabulary would let an order
@@ -372,7 +372,9 @@ func (s *Superusers) deliverReset(email, token string) {
 	s.deliveries.Add(1)
 	go func() {
 		defer s.deliveries.Done()
-		ctx, cancel := context.WithTimeout(context.Background(), resetNotifyTimeout)
+		// Detached from the request, which ends with the 202, but still bound
+		// to its store: the template and the email backend are that store's.
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(reqCtx), resetNotifyTimeout)
 		defer cancel()
 		if err := s.app.notifier.send(ctx, Notification{
 			Event:    EventSuperuserPasswordReset,

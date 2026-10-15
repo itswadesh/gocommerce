@@ -235,7 +235,12 @@ func (m *Module) start(ctx context.Context) error {
 		t := time.NewTicker(m.tick)
 		defer t.Stop()
 		for {
-			if _, err := m.Pass(ctx); err != nil && ctx.Err() == nil {
+			// One pass per store, each bound to its own (D83).
+			err := m.app.ForEachStore(ctx, func(ctx context.Context) error {
+				_, err := m.Pass(ctx)
+				return err
+			})
+			if err != nil && ctx.Err() == nil {
 				m.log.Error("cart-recovery: pass failed", "error", err)
 			}
 			select {

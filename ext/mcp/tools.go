@@ -32,7 +32,7 @@ func (m *Module) builtinTools() []Tool {
 					"currency":              cfg.Currency,
 					"default_language":      cfg.DefaultLanguage,
 					"languages":             cfg.Languages,
-					"payment_methods":       m.app.Pay().Methods(),
+					"payment_methods":       m.app.Pay().MethodsFor(ctx),
 					"fulfillment_providers": m.app.Ship().Providers(),
 					"engine_version":        gocommerce.Version,
 				}, nil

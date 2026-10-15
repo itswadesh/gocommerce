@@ -593,7 +593,8 @@ func (m *Module) registerRights(app *gocommerce.App) {
 // deleted — identity sends no event for either.
 func (m *Module) start(ctx context.Context) error {
 	m.stop = make(chan struct{})
-	if err := m.reconcile(ctx); err != nil {
+	// Every store's companies, each bound to its own store (D83).
+	if err := m.app.ForEachStore(ctx, m.reconcile); err != nil {
 		m.app.Log().Warn("b2b reconcile failed", "error", err)
 	}
 	m.done.Add(1)
@@ -606,7 +607,7 @@ func (m *Module) start(ctx context.Context) error {
 			case <-m.stop:
 				return
 			case <-t.C:
-				if err := m.reconcile(context.Background()); err != nil {
+				if err := m.app.ForEachStore(context.Background(), m.reconcile); err != nil {
 					m.app.Log().Warn("b2b reconcile failed", "error", err)
 				}
 			}

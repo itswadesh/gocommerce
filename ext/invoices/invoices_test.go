@@ -188,7 +188,8 @@ func TestReconcileIssuesMissingInvoices(t *testing.T) {
 	}
 	defer app.Close()
 
-	if err := mod.reconcile(ctx); err != nil {
+	// As startup runs it: once per store, bound to each.
+	if err := app.ForEachStore(ctx, mod.reconcile); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 	if count := invoiceCount(t, app); count != 1 {
