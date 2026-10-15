@@ -139,6 +139,12 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			);`,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "payments_razorpay_events"),
+		{
+			// Two stores on one provider account each receive every event, so
+			// the claim on an event id is each store's own (D83).
+			ID:  "0003_events_per_store",
+			SQL: `ALTER TABLE payments_razorpay_events DROP CONSTRAINT payments_razorpay_events_pkey, ADD PRIMARY KEY (store_id, id);`,
+		},
 	}
 }
 
@@ -329,7 +335,7 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	res, err := m.db.ExecContext(r.Context(), `
 		INSERT INTO payments_razorpay_events (id, event, order_id)
 		VALUES ($1, $2, nullif($3, 0))
-		ON CONFLICT (id) DO NOTHING`, eventKey, event.Event, orderID)
+		ON CONFLICT (store_id, id) DO NOTHING`, eventKey, event.Event, orderID)
 	if err != nil {
 		http.Error(w, "storage error", http.StatusInternalServerError)
 		return
@@ -337,6 +343,16 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	if n, _ := res.RowsAffected(); n == 0 {
 		w.WriteHeader(http.StatusOK) // already handled
 		return
+	}
+	// An event for another store's order: two stores on one provider account
+	// each receive every event. Acknowledged, and the claim given back, so it
+	// is left for the store whose order it is.
+	if orderID != 0 {
+		if _, err := m.app.Order().Get(r.Context(), orderID); errors.Is(err, gocommerce.ErrNotFound) {
+			m.releaseClaim(r.Context(), eventKey)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 	}
 	if orderID == 0 {
 		w.WriteHeader(http.StatusOK)

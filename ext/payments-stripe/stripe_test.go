@@ -347,3 +347,38 @@ func TestEachStoreUsesItsOwnStripeAccount(t *testing.T) {
 		t.Fatalf("store B would charge with %q", got)
 	}
 }
+
+// Two stores on one Stripe account each receive every event. Store B getting
+// store A's event must acknowledge it and leave it for A, not answer 500 (and
+// have Stripe disable its endpoint) nor claim it so A's copy is ignored.
+func TestAnotherStoresEventIsAcknowledgedAndLeftForIt(t *testing.T) {
+	app, _ := newApp(t)
+	ctx := context.Background()
+	b, err := app.Stores().Create(ctx, "Second", "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := gctest.PlaceOrder(t, app, "stripe") // in store A
+	body := fmt.Sprintf(
+		`{"id":"evt_shared","type":"payment_intent.succeeded","data":{"object":{"id":"pi_test_123","metadata":{"order_id":"%d"}}}}`,
+		result.Order.ID)
+
+	toB := httptest.NewRequest(http.MethodPost, "/api/checkout/stripe/webhook?store="+b.ID, strings.NewReader(body))
+	toB.Header.Set("Stripe-Signature", sign(body, testSecret, time.Now()))
+	rec := httptest.NewRecorder()
+	app.Handler().ServeHTTP(rec, toB)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("store B's endpoint answered %d to store A's event: %s", rec.Code, rec.Body)
+	}
+
+	if rec := postWebhook(t, app, body, sign(body, testSecret, time.Now())); rec.Code != http.StatusOK {
+		t.Fatalf("store A's endpoint = %d: %s", rec.Code, rec.Body)
+	}
+	order, err := app.Order().Get(ctx, result.Order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if order.PaymentStatus != gocommerce.PaymentPaid {
+		t.Fatalf("store A's order is %q: its event was swallowed by store B", order.PaymentStatus)
+	}
+}

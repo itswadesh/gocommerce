@@ -184,6 +184,12 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			    ON payments_adyen_events (received_at);`,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "payments_adyen_events"),
+		{
+			// Two stores on one provider account each receive every event, so
+			// the claim on an event id is each store's own (D83).
+			ID:  "0003_events_per_store",
+			SQL: `ALTER TABLE payments_adyen_events DROP CONSTRAINT payments_adyen_events_pkey, ADD PRIMARY KEY (store_id, id);`,
+		},
 	}
 }
 
@@ -425,7 +431,7 @@ func (m *Module) apply(ctx context.Context, item notificationItem) error {
 	res, err := m.db.ExecContext(ctx, `
 		INSERT INTO payments_adyen_events (id, type, order_id)
 		VALUES ($1, $2, nullif($3, 0))
-		ON CONFLICT (id) DO NOTHING`, claim, item.EventCode, orderID)
+		ON CONFLICT (store_id, id) DO NOTHING`, claim, item.EventCode, orderID)
 	if err != nil {
 		return fmt.Errorf("record the event: %w", err)
 	}

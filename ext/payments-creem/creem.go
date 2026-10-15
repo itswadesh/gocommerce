@@ -208,6 +208,12 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			    ON payments_creem_events (received_at);`,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "payments_creem_events"),
+		{
+			// Two stores on one provider account each receive every event, so
+			// the claim on an event id is each store's own (D83).
+			ID:  "0003_events_per_store",
+			SQL: `ALTER TABLE payments_creem_events DROP CONSTRAINT payments_creem_events_pkey, ADD PRIMARY KEY (store_id, id);`,
+		},
 	}
 }
 
@@ -450,7 +456,7 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	res, err := m.db.ExecContext(r.Context(), `
 		INSERT INTO payments_creem_events (id, type, order_id, transaction_id)
 		VALUES ($1, $2, nullif($3, 0), $4)
-		ON CONFLICT (id) DO NOTHING`,
+		ON CONFLICT (store_id, id) DO NOTHING`,
 		claim, ev.EventType, orderID, ev.Object.Order.Transaction)
 	if err != nil {
 		m.log.Error("could not record the Creem event", "claim", claim, "error", err)
@@ -463,6 +469,16 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// An event for another store's order: two stores on one provider account
+	// each receive every event. Acknowledged, and the claim given back, so it
+	// is left for the store whose order it is.
+	if orderID != 0 {
+		if _, err := m.app.Order().Get(r.Context(), orderID); errors.Is(err, gocommerce.ErrNotFound) {
+			m.releaseClaim(r.Context(), claim)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+	}
 	if orderID == 0 {
 		// An event for something this store did not start — a subscription
 		// renewal, a payment link used elsewhere. Acknowledged rather than

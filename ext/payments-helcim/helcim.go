@@ -182,6 +182,12 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			    ON payments_helcim_events (received_at);`,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "payments_helcim_events"),
+		{
+			// Two stores on one provider account each receive every event, so
+			// the claim on an event id is each store's own (D83).
+			ID:  "0003_events_per_store",
+			SQL: `ALTER TABLE payments_helcim_events DROP CONSTRAINT payments_helcim_events_pkey, ADD PRIMARY KEY (store_id, id);`,
+		},
 	}
 }
 
@@ -350,7 +356,7 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	res, err := m.db.ExecContext(r.Context(), `
 		INSERT INTO payments_helcim_events (id, type)
 		VALUES ($1, $2)
-		ON CONFLICT (id) DO NOTHING`, claim, event.Type)
+		ON CONFLICT (store_id, id) DO NOTHING`, claim, event.Type)
 	if err != nil {
 		m.log.Error("could not record the Helcim event", "claim", claim, "error", err)
 		http.Error(w, "storage error", http.StatusInternalServerError)
