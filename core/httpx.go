@@ -413,6 +413,12 @@ func (a *App) bearerAuth(next http.Handler) http.Handler {
 			return
 		}
 		if su, ok := a.superusers.Resolve(r.Context(), token); ok {
+			// A real person, but not on this store's team: the store was
+			// named, the person was recognised, and the answer is no.
+			if su.Role == "" {
+				RespondError(w, r, ErrNotAMember)
+				return
+			}
 			next.ServeHTTP(w, withSuperuser(r, su))
 			return
 		}
