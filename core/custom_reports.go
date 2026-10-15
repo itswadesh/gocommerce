@@ -352,10 +352,14 @@ func (a *App) mountCustomReportRoutes() {
 	// Running a saved one is reports.read: the point of saving a report is
 	// that somebody else can run it, and its SQL was reviewed by whoever could
 	// write it.
-	a.HandleAdminFunc("POST /api/admin/reports/custom/{id}/run", a.handleRunSavedReport, RightReportsRead)
+	//
+	// Both run routes answer ErrReportsUnavailable while stores share tables
+	// (D83); handleRunSavedReport and handleRunAdhocReport come back with
+	// per-store reporting logins.
+	a.HandleAdminFunc("POST /api/admin/reports/custom/{id}/run", a.handleReportsUnavailable, RightReportsRead)
 	// Running unsaved SQL is reports.write, because that is writing a report —
 	// it just has not been kept.
-	a.HandleAdminFunc("POST /api/admin/reports/custom/run", a.handleRunAdhocReport, RightReportsWrite)
+	a.HandleAdminFunc("POST /api/admin/reports/custom/run", a.handleReportsUnavailable, RightReportsWrite)
 }
 
 func (a *App) handleListCustomReports(w http.ResponseWriter, r *http.Request) {
@@ -431,6 +435,21 @@ func (a *App) handleRunAdhocReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.respondReportRun(w, r, in.SQL)
+}
+
+// ErrReportsUnavailable is the answer to running a report while stores share
+// tables (D83): a report is SQL its author writes, and that SQL could call
+// set_config and read another store's rows. Reports come back once each store
+// runs them as a login of its own that the row policy is tied to.
+var ErrReportsUnavailable = &APIError{
+	Status: http.StatusServiceUnavailable,
+	Code:   "reports_unavailable",
+	Message: "Custom SQL reports are switched off while stores share one database; " +
+		"they return once each store has its own reporting login.",
+}
+
+func (a *App) handleReportsUnavailable(w http.ResponseWriter, r *http.Request) {
+	RespondError(w, r, ErrReportsUnavailable)
 }
 
 func (a *App) respondReportRun(w http.ResponseWriter, r *http.Request, query string) {

@@ -3,6 +3,8 @@ package gocommerce
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -16,6 +18,7 @@ import (
 // fooled. The second is the one that actually holds; the first exists so the
 // operator gets "a report may only read" instead of a Postgres error.
 func TestACustomReportRunsAndReturnsRows(t *testing.T) {
+	t.Skip("custom reports are off while stores share tables; they return with per-store reporting logins (D83, Part 4)")
 	app := newTestApp(t)
 	ctx := context.Background()
 	price := int64(1500)
@@ -58,6 +61,7 @@ func TestACustomReportRunsAndReturnsRows(t *testing.T) {
 // Everything that is not a single read is refused, and the message says why
 // rather than leaking a driver error.
 func TestACustomReportMayOnlyRead(t *testing.T) {
+	t.Skip("custom reports are off while stores share tables; they return with per-store reporting logins (D83, Part 4)")
 	app := newTestApp(t)
 	ctx := context.Background()
 
@@ -91,6 +95,7 @@ func TestACustomReportMayOnlyRead(t *testing.T) {
 
 // A plain SELECT and a read-only CTE are the two shapes that do run.
 func TestTheTwoShapesThatRun(t *testing.T) {
+	t.Skip("custom reports are off while stores share tables; they return with per-store reporting logins (D83, Part 4)")
 	app := newTestApp(t)
 	ctx := context.Background()
 
@@ -114,6 +119,7 @@ func TestTheTwoShapesThatRun(t *testing.T) {
 // write and the transaction is read-only, so two layers refuse it below the
 // parse. Proven by going around the parse deliberately.
 func TestTheTransactionRefusesAWriteTheParseMissed(t *testing.T) {
+	t.Skip("custom reports are off while stores share tables; they return with per-store reporting logins (D83, Part 4)")
 	app := newTestApp(t)
 	ctx := context.Background()
 	price := int64(1000)
@@ -210,6 +216,7 @@ func TestCustomReportsFailClosedWithoutARole(t *testing.T) {
 // back a prefix, which is the difference between a number an operator can
 // trust and one they cannot.
 func TestTooManyRowsIsReportedRatherThanHidden(t *testing.T) {
+	t.Skip("custom reports are off while stores share tables; they return with per-store reporting logins (D83, Part 4)")
 	app := newTestApp(t)
 	ctx := context.Background()
 
@@ -284,5 +291,23 @@ func TestWhoMayWriteAReport(t *testing.T) {
 	}
 	if !defaultRightsHas(RoleManager, RightReportsRead) {
 		t.Error("manager should be able to run a report somebody saved")
+	}
+}
+
+// A report is SQL its author writes, and under shared tenancy that SQL could
+// call set_config and read another store's rows. Until each store runs its
+// reports as a login of its own that the row policy is tied to (Part 4 of
+// D83), running one answers 503 and says why.
+func TestCustomReportsAreOffUntilEachStoreHasItsOwnLogin(t *testing.T) {
+	app := newTestApp(t)
+	for _, path := range []string{"/api/admin/reports/custom/run", "/api/admin/reports/custom/1/run"} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"sql":"SELECT 1"}`))
+		req.Header.Set("Content-Type", "application/json")
+		withAdmin(req)
+		rec := httptest.NewRecorder()
+		app.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "reports_unavailable") {
+			t.Fatalf("%s = %d: %s", path, rec.Code, rec.Body)
+		}
 	}
 }
