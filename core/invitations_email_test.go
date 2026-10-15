@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -93,7 +94,10 @@ func TestARevokedInvitationIsKeptAsRevoked(t *testing.T) {
 	}
 }
 
-func TestTheAcceptPageKnowsWhetherTheInviteeHasAnAccount(t *testing.T) {
+// The invitation page tells whoever holds the link nothing about whether its
+// address already has an account: inviters can mint links for any address,
+// and a difference here would be a way to find out who uses the platform.
+func TestTheInvitePageSaysNothingAboutAnExistingAccount(t *testing.T) {
 	app := newTestApp(t)
 	b := addTestStore(t, app, "second")
 	if _, err := app.Superusers().Create(WithStore(context.Background(), b), "known@example.com", "a-long-enough-password", RoleOwner); err != nil {
@@ -101,16 +105,29 @@ func TestTheAcceptPageKnowsWhetherTheInviteeHasAnAccount(t *testing.T) {
 	}
 	known := invite(t, app, "known@example.com", RoleStaff, nil)
 	fresh := invite(t, app, "fresh@example.com", RoleStaff, nil)
-	for _, c := range []struct {
-		token string
-		want  bool
-	}{{known.Token, true}, {fresh.Token, false}} {
-		got, err := app.invitations.Lookup(context.Background(), c.token)
-		if err != nil {
+	var shapes []string
+	for _, tok := range []string{known.Token, fresh.Token} {
+		rec := do(t, app, http.MethodGet, "/api/admin/invitations/accept/"+tok)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("lookup = %d: %s", rec.Code, rec.Body)
+		}
+		var env struct {
+			Data map[string]any `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
 			t.Fatal(err)
 		}
-		if got.HasAccount != c.want {
-			t.Errorf("%s: has_account = %v, want %v", got.Email, got.HasAccount, c.want)
+		if _, ok := env.Data["has_account"]; ok {
+			t.Fatalf("the lookup says whether %v has an account", env.Data["email"])
 		}
+		keys := make([]string, 0, len(env.Data))
+		for k := range env.Data {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+		shapes = append(shapes, strings.Join(keys, ","))
+	}
+	if shapes[0] != shapes[1] {
+		t.Fatalf("an existing account's invitation reads differently: %s / %s", shapes[0], shapes[1])
 	}
 }

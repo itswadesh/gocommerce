@@ -63,10 +63,6 @@ type Invitation struct {
 	ExpiresAt     time.Time  `json:"expires_at"`
 	AcceptedAt    *time.Time `json:"accepted_at,omitempty"`
 	RevokedAt     *time.Time `json:"revoked_at,omitempty"`
-	// HasAccount tells the accept page what to ask for: somebody who already
-	// signs in to another store accepts with that password, anybody else
-	// chooses one. Filled by Lookup only.
-	HasAccount bool `json:"has_account"`
 	// Emailed and EmailError report, on the response that created the
 	// invitation only, whether the link went out by email.
 	Emailed    *bool  `json:"emailed,omitempty"`
@@ -298,10 +294,9 @@ func (s *Invitations) Lookup(ctx context.Context, token string) (*Invitation, er
 	if err := usableInvitation(inv); err != nil {
 		return nil, err
 	}
-	if err := s.app.db.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM superusers WHERE email = $1)`, inv.Email).Scan(&inv.HasAccount); err != nil {
-		return nil, Internalf(err, "look up the invitee")
-	}
+	// Deliberately silent on whether the address already has an account:
+	// inviters can mint links for any address. The page asks for a password
+	// either way, and Accept checks it against the account if there is one.
 	return inv, nil
 }
 
