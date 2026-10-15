@@ -333,12 +333,12 @@ type App struct {
 	// defaultStore is Config.DefaultStore resolved to an id ("first" becomes
 	// the oldest store's); empty under `serve`.
 	defaultStore string
-	media           *Media
-	discounts       *Discounts
-	locations       *Locations
-	invitations     *Invitations
-	taxes           *Taxes
-	shipping        *Shipping
+	media        *Media
+	discounts    *Discounts
+	locations    *Locations
+	invitations  *Invitations
+	taxes        *Taxes
+	shipping     *Shipping
 	// reports is a reading of the orders: it owns no table and writes nothing,
 	// so it has no ordering constraint against anything built here.
 	reports *Reports
