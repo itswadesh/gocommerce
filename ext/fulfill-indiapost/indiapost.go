@@ -47,7 +47,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
-	"sync/atomic"
+	"sync"
 
 	"github.com/itswadesh/gocommerce/core"
 )
@@ -69,7 +69,7 @@ type Config struct {
 // Module is the India Post fulfillment provider.
 type Module struct {
 	cfg  Config
-	live atomic.Pointer[Config]
+	live sync.Map // store id → *Config: each store has its own account
 	app  *gocommerce.App
 	log  *slog.Logger
 }
@@ -86,9 +86,10 @@ var errNotConfigured = errors.New("indiapost: not set up — activate and config
 
 // conf is the effective configuration: the last one refresh computed, or
 // Config alone before the first use.
-func (m *Module) conf() *Config {
-	if c := m.live.Load(); c != nil {
-		return c
+func (m *Module) conf(ctx context.Context) *Config {
+	store, _ := gocommerce.StoreFrom(ctx)
+	if c, ok := m.live.Load(store); ok {
+		return c.(*Config)
 	}
 	return &m.cfg
 }
@@ -107,7 +108,8 @@ func (m *Module) refresh(ctx context.Context) bool {
 		}
 	}
 	m.finish(&c)
-	m.live.Store(&c)
+	store, _ := gocommerce.StoreFrom(ctx)
+	m.live.Store(store, &c)
 	return on && m.complete(&c)
 }
 
@@ -167,7 +169,7 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 		return gocommerce.Shipment{}, errors.New(
 			"india-post: a consignment number is required — this provider records a booking made at the counter or in the Department of Posts portal, it does not make one")
 	}
-	if !m.conf().AcceptAnyNumber && !s10.MatchString(tracking) {
+	if !m.conf(ctx).AcceptAnyNumber && !s10.MatchString(tracking) {
 		// Caught here rather than a week later, when the customer follows a
 		// link that goes nowhere and reads it as a lost parcel.
 		return gocommerce.Shipment{}, fmt.Errorf(

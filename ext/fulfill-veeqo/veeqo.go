@@ -54,7 +54,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/itswadesh/gocommerce/core"
@@ -93,7 +93,7 @@ type Config struct {
 // Module is the Veeqo fulfillment provider.
 type Module struct {
 	cfg    Config
-	live   atomic.Pointer[Config]
+	live   sync.Map // store id → *Config: each store has its own account
 	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
@@ -111,9 +111,10 @@ var errNotConfigured = errors.New("veeqo: not set up — activate and configure 
 
 // conf is the effective configuration: the last one refresh computed, or
 // Config alone before the first use.
-func (m *Module) conf() *Config {
-	if c := m.live.Load(); c != nil {
-		return c
+func (m *Module) conf(ctx context.Context) *Config {
+	store, _ := gocommerce.StoreFrom(ctx)
+	if c, ok := m.live.Load(store); ok {
+		return c.(*Config)
 	}
 	return &m.cfg
 }
@@ -132,7 +133,8 @@ func (m *Module) refresh(ctx context.Context) bool {
 		}
 	}
 	m.finish(&c)
-	m.live.Store(&c)
+	store, _ := gocommerce.StoreFrom(ctx)
+	m.live.Store(store, &c)
 	return on && m.complete(&c)
 }
 
@@ -216,7 +218,7 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 		return gocommerce.Shipment{}, err
 	}
 
-	carrierID := m.conf().CarrierID
+	carrierID := m.conf(ctx).CarrierID
 	if raw := req.Meta["carrier_id"]; raw != "" {
 		if parsed, convErr := strconv.Atoi(raw); convErr == nil && parsed > 0 {
 			carrierID = parsed
@@ -229,8 +231,8 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 		"shipment": map[string]any{
 			"tracking_number_attributes": map[string]any{"tracking_number": tracking},
 			"carrier_id":                 carrierID,
-			"notify_customer":            m.conf().NotifyCustomer,
-			"update_remote_order":        m.conf().UpdateRemoteOrder,
+			"notify_customer":            m.conf(ctx).NotifyCustomer,
+			"update_remote_order":        m.conf(ctx).UpdateRemoteOrder,
 		},
 	}
 
@@ -377,11 +379,11 @@ func (m *Module) do(ctx context.Context, method, path string, payload any, out a
 		}
 		reader = bytes.NewReader(encoded)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, m.conf().BaseURL+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, m.conf(ctx).BaseURL+path, reader)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("x-api-key", m.conf().APIKey)
+	req.Header.Set("x-api-key", m.conf(ctx).APIKey)
 	req.Header.Set("Accept", "application/json")
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")

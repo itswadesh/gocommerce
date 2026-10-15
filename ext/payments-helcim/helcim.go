@@ -54,7 +54,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
@@ -93,7 +93,7 @@ type Config struct {
 // Module is the Helcim payment provider.
 type Module struct {
 	cfg    Config
-	live   atomic.Pointer[Config]
+	live   sync.Map // store id → *Config: each store has its own account
 	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
@@ -114,9 +114,10 @@ var errNotConfigured = errors.New("helcim: not set up — activate and configure
 
 // conf is the effective configuration: the last one refresh computed, or
 // Config alone before the first use.
-func (m *Module) conf() *Config {
-	if c := m.live.Load(); c != nil {
-		return c
+func (m *Module) conf(ctx context.Context) *Config {
+	store, _ := gocommerce.StoreFrom(ctx)
+	if c, ok := m.live.Load(store); ok {
+		return c.(*Config)
 	}
 	return &m.cfg
 }
@@ -135,7 +136,8 @@ func (m *Module) refresh(ctx context.Context) bool {
 		}
 	}
 	m.finish(&c)
-	m.live.Store(&c)
+	store, _ := gocommerce.StoreFrom(ctx)
+	m.live.Store(store, &c)
 	return on && m.complete(&c)
 }
 
@@ -288,7 +290,7 @@ func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Orde
 	body := map[string]any{
 		"originalTransactionId": original,
 		"amount":                decimal(amountMinor),
-		"ipAddress":             m.conf().ServerIP,
+		"ipAddress":             m.conf(ctx).ServerIP,
 		"ecommerce":             true,
 	}
 
@@ -313,6 +315,7 @@ func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Orde
 func (m *Module) Webhook() http.Handler { return http.HandlerFunc(m.handleWebhook) }
 
 func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	// A notification for a provider nobody has set up cannot be verified,
 	// and an unverifiable notification is refused.
 	if !m.refresh(r.Context()) {
@@ -328,7 +331,7 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		r.Header.Get("webhook-id"),
 		r.Header.Get("webhook-timestamp"),
 		r.Header.Get("webhook-signature"),
-		m.conf().verifierBytes, time.Now()); err != nil {
+		m.conf(ctx).verifierBytes, time.Now()); err != nil {
 		m.log.Warn("rejected a Helcim webhook", "error", err)
 		http.Error(w, "invalid signature", http.StatusBadRequest)
 		return
@@ -531,11 +534,11 @@ func (m *Module) do(ctx context.Context, method, path string, body any, idempote
 		reader = bytes.NewReader(encoded)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, m.conf().BaseURL+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, m.conf(ctx).BaseURL+path, reader)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("api-token", m.conf().APIToken)
+	req.Header.Set("api-token", m.conf(ctx).APIToken)
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

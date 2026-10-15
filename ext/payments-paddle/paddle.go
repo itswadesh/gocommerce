@@ -47,7 +47,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
@@ -94,7 +94,7 @@ type Config struct {
 // Module is the Paddle payment provider.
 type Module struct {
 	cfg    Config
-	live   atomic.Pointer[Config]
+	live   sync.Map // store id → *Config: each store has its own account
 	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
@@ -114,9 +114,10 @@ var errNotConfigured = errors.New("paddle: not set up — activate and configure
 
 // conf is the effective configuration: the last one refresh computed, or
 // Config alone before the first use.
-func (m *Module) conf() *Config {
-	if c := m.live.Load(); c != nil {
-		return c
+func (m *Module) conf(ctx context.Context) *Config {
+	store, _ := gocommerce.StoreFrom(ctx)
+	if c, ok := m.live.Load(store); ok {
+		return c.(*Config)
 	}
 	return &m.cfg
 }
@@ -135,7 +136,8 @@ func (m *Module) refresh(ctx context.Context) bool {
 		}
 	}
 	m.finish(&c)
-	m.live.Store(&c)
+	store, _ := gocommerce.StoreFrom(ctx)
+	m.live.Store(store, &c)
 	return on && m.complete(&c)
 }
 
@@ -380,6 +382,7 @@ func (m *Module) Webhook() http.Handler {
 }
 
 func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	// A notification for a provider nobody has set up cannot be verified,
 	// and an unverifiable notification is refused.
 	if !m.refresh(r.Context()) {
@@ -392,7 +395,7 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := verifySignature(body, r.Header.Get("Paddle-Signature"),
-		m.conf().WebhookSecret, time.Now(), m.conf().WebhookTolerance); err != nil {
+		m.conf(ctx).WebhookSecret, time.Now(), m.conf(ctx).WebhookTolerance); err != nil {
 		m.log.Warn("rejected a Paddle webhook", "error", err)
 		http.Error(w, "invalid signature", http.StatusBadRequest)
 		return
@@ -548,11 +551,11 @@ func (m *Module) do(ctx context.Context, method, path string, body any, out any)
 		reader = bytes.NewReader(encoded)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, m.conf().BaseURL+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, m.conf(ctx).BaseURL+path, reader)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+m.conf().APIKey)
+	req.Header.Set("Authorization", "Bearer "+m.conf(ctx).APIKey)
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

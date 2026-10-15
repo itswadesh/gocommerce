@@ -31,7 +31,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/itswadesh/gocommerce/core"
@@ -61,7 +61,7 @@ type Config struct {
 // Module is the Stripe payment provider.
 type Module struct {
 	cfg    Config
-	live   atomic.Pointer[Config]
+	live   sync.Map // store id → *Config: each store has its own account
 	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
@@ -82,9 +82,10 @@ var errNotConfigured = errors.New("stripe: not set up — activate and configure
 
 // conf is the effective configuration: the last one refresh computed, or
 // Config alone before the first use.
-func (m *Module) conf() *Config {
-	if c := m.live.Load(); c != nil {
-		return c
+func (m *Module) conf(ctx context.Context) *Config {
+	store, _ := gocommerce.StoreFrom(ctx)
+	if c, ok := m.live.Load(store); ok {
+		return c.(*Config)
 	}
 	return &m.cfg
 }
@@ -103,7 +104,8 @@ func (m *Module) refresh(ctx context.Context) bool {
 		}
 	}
 	m.finish(&c)
-	m.live.Store(&c)
+	store, _ := gocommerce.StoreFrom(ctx)
+	m.live.Store(store, &c)
 	return on && m.complete(&c)
 }
 
@@ -276,6 +278,7 @@ func (m *Module) Webhook() http.Handler {
 }
 
 func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	// A notification for a provider nobody has set up cannot be verified,
 	// and an unverifiable notification is refused.
 	if !m.refresh(r.Context()) {
@@ -287,7 +290,7 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not read body", http.StatusBadRequest)
 		return
 	}
-	if err := verifySignature(body, r.Header.Get("Stripe-Signature"), m.conf().WebhookSecret, time.Now()); err != nil {
+	if err := verifySignature(body, r.Header.Get("Stripe-Signature"), m.conf(ctx).WebhookSecret, time.Now()); err != nil {
 		m.log.Warn("rejected a Stripe webhook", "error", err)
 		http.Error(w, "invalid signature", http.StatusBadRequest)
 		return
@@ -426,11 +429,11 @@ func verifySignature(body []byte, header, secret string, now time.Time) error {
 // post sends a form-encoded request and decodes the JSON reply.
 func (m *Module) post(ctx context.Context, path string, form url.Values, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		m.conf().BaseURL+path, strings.NewReader(form.Encode()))
+		m.conf(ctx).BaseURL+path, strings.NewReader(form.Encode()))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+m.conf().SecretKey)
+	req.Header.Set("Authorization", "Bearer "+m.conf(ctx).SecretKey)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := m.client.Do(req)

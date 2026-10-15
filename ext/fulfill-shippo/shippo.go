@@ -48,7 +48,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/itswadesh/gocommerce/core"
@@ -113,7 +113,7 @@ type Config struct {
 // Module is the Shippo fulfillment provider.
 type Module struct {
 	cfg    Config
-	live   atomic.Pointer[Config]
+	live   sync.Map // store id → *Config: each store has its own account
 	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
@@ -131,9 +131,10 @@ var errNotConfigured = errors.New("shippo: not set up — activate and configure
 
 // conf is the effective configuration: the last one refresh computed, or
 // Config alone before the first use.
-func (m *Module) conf() *Config {
-	if c := m.live.Load(); c != nil {
-		return c
+func (m *Module) conf(ctx context.Context) *Config {
+	store, _ := gocommerce.StoreFrom(ctx)
+	if c, ok := m.live.Load(store); ok {
+		return c.(*Config)
 	}
 	return &m.cfg
 }
@@ -152,7 +153,8 @@ func (m *Module) refresh(ctx context.Context) bool {
 		}
 	}
 	m.finish(&c)
-	m.live.Store(&c)
+	store, _ := gocommerce.StoreFrom(ctx)
+	m.live.Store(store, &c)
 	return on && m.complete(&c)
 }
 
@@ -240,8 +242,8 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 	if !m.refresh(ctx) {
 		return gocommerce.Shipment{}, errNotConfigured
 	}
-	service := firstNonEmpty(req.Meta["servicelevel_token"], m.conf().ServicelevelToken)
-	account := firstNonEmpty(req.Meta["carrier_account"], m.conf().CarrierAccount)
+	service := firstNonEmpty(req.Meta["servicelevel_token"], m.conf(ctx).ServicelevelToken)
+	account := firstNonEmpty(req.Meta["carrier_account"], m.conf(ctx).CarrierAccount)
 
 	body := map[string]any{
 		"carrier_account":    account,
@@ -252,13 +254,13 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 		"async":    false,
 		"metadata": "Order " + order.Number,
 		"shipment": map[string]any{
-			"address_from": addressBody(m.conf().From),
+			"address_from": addressBody(m.conf(ctx).From),
 			"address_to":   m.toAddress(order),
-			"parcels":      []any{m.parcelBody(req)},
+			"parcels":      []any{m.parcelBody(ctx, req)},
 		},
 	}
-	if m.conf().LabelFileType != "" {
-		body["label_file_type"] = m.conf().LabelFileType
+	if m.conf(ctx).LabelFileType != "" {
+		body["label_file_type"] = m.conf(ctx).LabelFileType
 	}
 
 	var out struct {
@@ -336,21 +338,21 @@ func (m *Module) toAddress(order *gocommerce.Order) map[string]any {
 // parcelBody is the box, in the units the engine already keeps: grams and
 // millimetres, both of which Shippo accepts, so nothing is converted here and
 // nothing can be rounded wrongly.
-func (m *Module) parcelBody(req gocommerce.ShipRequest) map[string]any {
+func (m *Module) parcelBody(ctx context.Context, req gocommerce.ShipRequest) map[string]any {
 	var units int
 	for _, line := range req.Lines {
 		units += line.Quantity
 	}
 
-	weight := m.conf().DefaultWeightGrams * max(units, 1)
+	weight := m.conf(ctx).DefaultWeightGrams * max(units, 1)
 	if req.Parcel.Measured && req.Parcel.WeightGrams > 0 {
 		weight = req.Parcel.WeightGrams
 	}
 
 	return map[string]any{
-		"length":        side(req.Parcel.Dimensions.Length, m.conf().DefaultLengthMM),
-		"width":         side(req.Parcel.Dimensions.Width, m.conf().DefaultWidthMM),
-		"height":        side(req.Parcel.Dimensions.Height, m.conf().DefaultHeightMM),
+		"length":        side(req.Parcel.Dimensions.Length, m.conf(ctx).DefaultLengthMM),
+		"width":         side(req.Parcel.Dimensions.Width, m.conf(ctx).DefaultWidthMM),
+		"height":        side(req.Parcel.Dimensions.Height, m.conf(ctx).DefaultHeightMM),
 		"distance_unit": "mm",
 		"weight":        weight,
 		"mass_unit":     "g",
@@ -389,11 +391,11 @@ func (m *Module) post(ctx context.Context, path string, payload any, out any) er
 	if err != nil {
 		return fmt.Errorf("shippo: could not encode the request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.conf().BaseURL+path, bytes.NewReader(encoded))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.conf(ctx).BaseURL+path, bytes.NewReader(encoded))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "ShippoToken "+m.conf().APIKey)
+	req.Header.Set("Authorization", "ShippoToken "+m.conf(ctx).APIKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("SHIPPO-API-VERSION", apiVersion)
 

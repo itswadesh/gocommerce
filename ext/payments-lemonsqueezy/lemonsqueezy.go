@@ -53,7 +53,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
@@ -88,7 +88,7 @@ type Config struct {
 // Module is the Lemon Squeezy payment provider.
 type Module struct {
 	cfg    Config
-	live   atomic.Pointer[Config]
+	live   sync.Map // store id → *Config: each store has its own account
 	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
@@ -108,9 +108,10 @@ var errNotConfigured = errors.New("lemonsqueezy: not set up — activate and con
 
 // conf is the effective configuration: the last one refresh computed, or
 // Config alone before the first use.
-func (m *Module) conf() *Config {
-	if c := m.live.Load(); c != nil {
-		return c
+func (m *Module) conf(ctx context.Context) *Config {
+	store, _ := gocommerce.StoreFrom(ctx)
+	if c, ok := m.live.Load(store); ok {
+		return c.(*Config)
 	}
 	return &m.cfg
 }
@@ -129,7 +130,8 @@ func (m *Module) refresh(ctx context.Context) bool {
 		}
 	}
 	m.finish(&c)
-	m.live.Store(&c)
+	store, _ := gocommerce.StoreFrom(ctx)
+	m.live.Store(store, &c)
 	return on && m.complete(&c)
 }
 
@@ -244,8 +246,8 @@ func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts goc
 			"checkout_data": checkoutData,
 		},
 		"relationships": map[string]any{
-			"store":   resource("stores", m.conf().StoreID),
-			"variant": resource("variants", m.conf().VariantID),
+			"store":   resource("stores", m.conf(ctx).StoreID),
+			"variant": resource("variants", m.conf(ctx).VariantID),
 		},
 	}}
 
@@ -327,6 +329,7 @@ func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Orde
 func (m *Module) Webhook() http.Handler { return http.HandlerFunc(m.handleWebhook) }
 
 func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	// A notification for a provider nobody has set up cannot be verified,
 	// and an unverifiable notification is refused.
 	if !m.refresh(r.Context()) {
@@ -338,7 +341,7 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not read body", http.StatusBadRequest)
 		return
 	}
-	if err := verifySignature(body, r.Header.Get("X-Signature"), m.conf().WebhookSecret); err != nil {
+	if err := verifySignature(body, r.Header.Get("X-Signature"), m.conf(ctx).WebhookSecret); err != nil {
 		m.log.Warn("rejected a Lemon Squeezy webhook", "error", err)
 		http.Error(w, "invalid signature", http.StatusBadRequest)
 		return
@@ -457,11 +460,11 @@ func (m *Module) do(ctx context.Context, method, path string, body any, out any)
 		reader = bytes.NewReader(encoded)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, m.conf().BaseURL+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, m.conf(ctx).BaseURL+path, reader)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+m.conf().APIKey)
+	req.Header.Set("Authorization", "Bearer "+m.conf(ctx).APIKey)
 	req.Header.Set("Accept", mediaType)
 	if body != nil {
 		req.Header.Set("Content-Type", mediaType)

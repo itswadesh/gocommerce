@@ -48,7 +48,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/itswadesh/gocommerce/core"
@@ -84,7 +84,7 @@ type Config struct {
 // Module is the Onfleet fulfillment provider.
 type Module struct {
 	cfg    Config
-	live   atomic.Pointer[Config]
+	live   sync.Map // store id → *Config: each store has its own account
 	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
@@ -102,9 +102,10 @@ var errNotConfigured = errors.New("onfleet: not set up — activate and configur
 
 // conf is the effective configuration: the last one refresh computed, or
 // Config alone before the first use.
-func (m *Module) conf() *Config {
-	if c := m.live.Load(); c != nil {
-		return c
+func (m *Module) conf(ctx context.Context) *Config {
+	store, _ := gocommerce.StoreFrom(ctx)
+	if c, ok := m.live.Load(store); ok {
+		return c.(*Config)
 	}
 	return &m.cfg
 }
@@ -123,7 +124,8 @@ func (m *Module) refresh(ctx context.Context) bool {
 		}
 	}
 	m.finish(&c)
-	m.live.Store(&c)
+	store, _ := gocommerce.StoreFrom(ctx)
+	m.live.Store(store, &c)
 	return on && m.complete(&c)
 }
 
@@ -199,7 +201,7 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 		TrackingURL string `json:"trackingURL"`
 		State       int    `json:"state"`
 	}
-	if err := m.post(ctx, "/tasks", m.taskBody(order, req), &out); err != nil {
+	if err := m.post(ctx, "/tasks", m.taskBody(ctx, order, req), &out); err != nil {
 		return gocommerce.Shipment{}, err
 	}
 	if out.ShortID == "" && out.ID == "" {
@@ -222,7 +224,7 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 	}, nil
 }
 
-func (m *Module) taskBody(order *gocommerce.Order, req gocommerce.ShipRequest) map[string]any {
+func (m *Module) taskBody(ctx context.Context, order *gocommerce.Order, req gocommerce.ShipRequest) map[string]any {
 	addr := order.Address
 
 	byLine := make(map[int64]gocommerce.OrderLine, len(order.Lines))
@@ -282,15 +284,15 @@ func (m *Module) taskBody(order *gocommerce.Order, req gocommerce.ShipRequest) m
 		},
 		"quantity": units,
 	}
-	if m.conf().AutoAssign {
+	if m.conf(ctx).AutoAssign {
 		assign := map[string]any{"mode": "distance"}
-		if m.conf().TeamID != "" {
-			assign["team"] = m.conf().TeamID
+		if m.conf(ctx).TeamID != "" {
+			assign["team"] = m.conf(ctx).TeamID
 		}
 		body["autoAssign"] = assign
 	}
-	if m.conf().ServiceTimeMinutes > 0 {
-		body["serviceTime"] = m.conf().ServiceTimeMinutes
+	if m.conf(ctx).ServiceTimeMinutes > 0 {
+		body["serviceTime"] = m.conf(ctx).ServiceTimeMinutes
 	}
 	return body
 }
@@ -308,14 +310,14 @@ func (m *Module) post(ctx context.Context, path string, payload any, out any) er
 	if err != nil {
 		return fmt.Errorf("onfleet: could not encode the request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.conf().BaseURL+path, bytes.NewReader(encoded))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.conf(ctx).BaseURL+path, bytes.NewReader(encoded))
 	if err != nil {
 		return err
 	}
 	// The API key is the username and the password is empty, which is what
 	// Onfleet documents — not a bearer token.
 	req.Header.Set("Authorization", "Basic "+
-		base64.StdEncoding.EncodeToString([]byte(m.conf().APIKey+":")))
+		base64.StdEncoding.EncodeToString([]byte(m.conf(ctx).APIKey+":")))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := m.client.Do(req)

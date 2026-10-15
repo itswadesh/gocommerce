@@ -48,7 +48,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/itswadesh/gocommerce/core"
@@ -96,7 +96,7 @@ type Config struct {
 // Module is the Delhivery fulfillment provider.
 type Module struct {
 	cfg    Config
-	live   atomic.Pointer[Config]
+	live   sync.Map // store id → *Config: each store has its own account
 	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
@@ -114,9 +114,10 @@ var errNotConfigured = errors.New("delhivery: not set up — activate and config
 
 // conf is the effective configuration: the last one refresh computed, or
 // Config alone before the first use.
-func (m *Module) conf() *Config {
-	if c := m.live.Load(); c != nil {
-		return c
+func (m *Module) conf(ctx context.Context) *Config {
+	store, _ := gocommerce.StoreFrom(ctx)
+	if c, ok := m.live.Load(store); ok {
+		return c.(*Config)
 	}
 	return &m.cfg
 }
@@ -135,7 +136,8 @@ func (m *Module) refresh(ctx context.Context) bool {
 		}
 	}
 	m.finish(&c)
-	m.live.Store(&c)
+	store, _ := gocommerce.StoreFrom(ctx)
+	m.live.Store(store, &c)
 	return on && m.complete(&c)
 }
 
@@ -217,8 +219,8 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 		return gocommerce.Shipment{}, errNotConfigured
 	}
 	payload := map[string]any{
-		"pickup_location": map[string]any{"name": m.conf().PickupLocation},
-		"shipments":       []any{m.shipmentBody(order, req)},
+		"pickup_location": map[string]any{"name": m.conf(ctx).PickupLocation},
+		"shipments":       []any{m.shipmentBody(ctx, order, req)},
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
@@ -281,7 +283,7 @@ func remarks(raw json.RawMessage, fallback string) string {
 	return firstNonEmpty(fallback, "Delhivery gave no reason")
 }
 
-func (m *Module) shipmentBody(order *gocommerce.Order, req gocommerce.ShipRequest) map[string]any {
+func (m *Module) shipmentBody(ctx context.Context, order *gocommerce.Order, req gocommerce.ShipRequest) map[string]any {
 	addr := order.Address
 
 	byLine := make(map[int64]gocommerce.OrderLine, len(order.Lines))
@@ -338,18 +340,18 @@ func (m *Module) shipmentBody(order *gocommerce.Order, req gocommerce.ShipReques
 		"total_amount":    minorToRupees(valueMinor),
 		"products_desc":   strings.Join(descriptions, ", "),
 		"quantity":        units,
-		"weight":          m.weight(req, units),
-		"shipment_length": m.side(req.Parcel.Dimensions.Length, m.conf().DefaultLengthCM),
-		"shipment_width":  m.side(req.Parcel.Dimensions.Width, m.conf().DefaultWidthCM),
-		"shipment_height": m.side(req.Parcel.Dimensions.Height, m.conf().DefaultHeightCM),
-		"seller_name":     m.conf().SellerName,
-		"seller_add":      m.conf().SellerAddress,
+		"weight":          m.weight(ctx, req, units),
+		"shipment_length": m.side(req.Parcel.Dimensions.Length, m.conf(ctx).DefaultLengthCM),
+		"shipment_width":  m.side(req.Parcel.Dimensions.Width, m.conf(ctx).DefaultWidthCM),
+		"shipment_height": m.side(req.Parcel.Dimensions.Height, m.conf(ctx).DefaultHeightCM),
+		"seller_name":     m.conf(ctx).SellerName,
+		"seller_add":      m.conf(ctx).SellerAddress,
 	}
-	if m.conf().SellerGSTIN != "" {
-		body["seller_gst_tin"] = m.conf().SellerGSTIN
+	if m.conf(ctx).SellerGSTIN != "" {
+		body["seller_gst_tin"] = m.conf(ctx).SellerGSTIN
 	}
-	if m.conf().HSNCode != "" {
-		body["hsn_code"] = m.conf().HSNCode
+	if m.conf(ctx).HSNCode != "" {
+		body["hsn_code"] = m.conf(ctx).HSNCode
 	}
 	// A waybill the operator has already pulled from Delhivery's pool. Passing
 	// one is how a store prints labels ahead of manifesting them.
@@ -365,11 +367,11 @@ func (m *Module) shipmentBody(order *gocommerce.Order, req gocommerce.ShipReques
 // Measured is false has a weight that is a floor, not the parcel's, and
 // declaring a floor to a carrier is how a shipment comes back with a
 // reweighing charge.
-func (m *Module) weight(req gocommerce.ShipRequest, units int) int {
+func (m *Module) weight(ctx context.Context, req gocommerce.ShipRequest, units int) int {
 	if req.Parcel.Measured && req.Parcel.WeightGrams > 0 {
 		return req.Parcel.WeightGrams
 	}
-	return m.conf().DefaultWeightGrams * max(units, 1)
+	return m.conf(ctx).DefaultWeightGrams * max(units, 1)
 }
 
 // side converts one of the engine's millimetre sides to centimetres, keeping
@@ -388,11 +390,11 @@ func minorToRupees(minor int64) float64 { return float64(minor) / 100 }
 
 func (m *Module) post(ctx context.Context, path string, form url.Values, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		m.conf().BaseURL+path, strings.NewReader(form.Encode()))
+		m.conf(ctx).BaseURL+path, strings.NewReader(form.Encode()))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Token "+m.conf().Token)
+	req.Header.Set("Authorization", "Token "+m.conf(ctx).Token)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 

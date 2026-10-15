@@ -61,7 +61,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
@@ -94,7 +94,7 @@ type Config struct {
 // Module is the Adyen payment provider.
 type Module struct {
 	cfg    Config
-	live   atomic.Pointer[Config]
+	live   sync.Map // store id → *Config: each store has its own account
 	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
@@ -115,9 +115,10 @@ var errNotConfigured = errors.New("adyen: not set up — activate and configure 
 
 // conf is the effective configuration: the last one refresh computed, or
 // Config alone before the first use.
-func (m *Module) conf() *Config {
-	if c := m.live.Load(); c != nil {
-		return c
+func (m *Module) conf(ctx context.Context) *Config {
+	store, _ := gocommerce.StoreFrom(ctx)
+	if c, ok := m.live.Load(store); ok {
+		return c.(*Config)
 	}
 	return &m.cfg
 }
@@ -136,7 +137,8 @@ func (m *Module) refresh(ctx context.Context) bool {
 		}
 	}
 	m.finish(&c)
-	m.live.Store(&c)
+	store, _ := gocommerce.StoreFrom(ctx)
+	m.live.Store(store, &c)
 	return on && m.complete(&c)
 }
 
@@ -229,7 +231,7 @@ func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts goc
 		return gocommerce.PaymentIntent{}, errNotConfigured
 	}
 	body := map[string]any{
-		"merchantAccount": m.conf().MerchantAccount,
+		"merchantAccount": m.conf(ctx).MerchantAccount,
 		"amount": map[string]any{
 			// Minor units both sides, so there is nothing to round.
 			"currency": strings.ToUpper(order.Total.Currency),
@@ -240,7 +242,7 @@ func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts goc
 		"reference":   order.Number,
 		"description": "Order " + order.Number,
 	}
-	if returnURL := firstNonEmpty(opts.ReturnURL, m.conf().ReturnURL); returnURL != "" {
+	if returnURL := firstNonEmpty(opts.ReturnURL, m.conf(ctx).ReturnURL); returnURL != "" {
 		body["returnUrl"] = returnURL
 	}
 	if order.Email != "" {
@@ -305,7 +307,7 @@ func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Orde
 	}
 
 	body := map[string]any{
-		"merchantAccount": m.conf().MerchantAccount,
+		"merchantAccount": m.conf(ctx).MerchantAccount,
 		"amount": map[string]any{
 			"currency": strings.ToUpper(order.Total.Currency),
 			"value":    amountMinor,
@@ -348,6 +350,7 @@ type notificationItem struct {
 }
 
 func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	// A notification for a provider nobody has set up cannot be verified,
 	// and an unverifiable notification is refused.
 	if !m.refresh(r.Context()) {
@@ -378,7 +381,7 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	// Every item is verified before any of them is acted on. A batch with one
 	// forged item in it is a forged batch.
 	for _, wrapper := range batch.NotificationItems {
-		if err := verifyItem(wrapper.Item, m.conf().hmacBytes); err != nil {
+		if err := verifyItem(wrapper.Item, m.conf(ctx).hmacBytes); err != nil {
 			m.log.Warn("rejected an Adyen notification", "error", err,
 				"psp_reference", wrapper.Item.PSPReference)
 			http.Error(w, "invalid signature", http.StatusBadRequest)
@@ -528,11 +531,11 @@ func (m *Module) do(ctx context.Context, method, path string, body any, out any)
 		reader = bytes.NewReader(encoded)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, m.conf().BaseURL+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, m.conf(ctx).BaseURL+path, reader)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("X-API-Key", m.conf().APIKey)
+	req.Header.Set("X-API-Key", m.conf(ctx).APIKey)
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

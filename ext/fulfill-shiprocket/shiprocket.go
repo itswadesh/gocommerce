@@ -27,7 +27,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/itswadesh/gocommerce/core"
@@ -67,7 +66,7 @@ type Config struct {
 // Module is the Shiprocket fulfillment provider.
 type Module struct {
 	cfg    Config
-	live   atomic.Pointer[Config]
+	live   sync.Map // store id → *Config: each store has its own account
 	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
@@ -89,9 +88,10 @@ var errNotConfigured = errors.New("shiprocket: not set up — activate and confi
 
 // conf is the effective configuration: the last one refresh computed, or
 // Config alone before the first use.
-func (m *Module) conf() *Config {
-	if c := m.live.Load(); c != nil {
-		return c
+func (m *Module) conf(ctx context.Context) *Config {
+	store, _ := gocommerce.StoreFrom(ctx)
+	if c, ok := m.live.Load(store); ok {
+		return c.(*Config)
 	}
 	return &m.cfg
 }
@@ -110,7 +110,8 @@ func (m *Module) refresh(ctx context.Context) bool {
 		}
 	}
 	m.finish(&c)
-	m.live.Store(&c)
+	store, _ := gocommerce.StoreFrom(ctx)
+	m.live.Store(store, &c)
 	return on && m.complete(&c)
 }
 
@@ -259,7 +260,7 @@ func (m *Module) createOrder(ctx context.Context, order *gocommerce.Order, req g
 	payload := map[string]any{
 		"order_id":              externalID,
 		"order_date":            order.CreatedAt.UTC().Format("2006-01-02 15:04"),
-		"pickup_location":       m.conf().PickupLocation,
+		"pickup_location":       m.conf(ctx).PickupLocation,
 		"billing_customer_name": first,
 		"billing_last_name":     last,
 		"billing_address":       addr.Line1,
@@ -280,10 +281,10 @@ func (m *Module) createOrder(ctx context.Context, order *gocommerce.Order, req g
 		// figure comes before the default because a catalogue somebody took
 		// the trouble to weigh should not be overruled by a guess â€” which is
 		// exactly what this module used to do.
-		"length":  m.dimension(req.Meta, "length_cm", centimetres(req.Parcel.Dimensions.Length, m.conf().DefaultLengthCm)),
-		"breadth": m.dimension(req.Meta, "breadth_cm", centimetres(req.Parcel.Dimensions.Width, m.conf().DefaultBreadthCm)),
-		"height":  m.dimension(req.Meta, "height_cm", centimetres(req.Parcel.Dimensions.Height, m.conf().DefaultHeightCm)),
-		"weight":  m.dimension(req.Meta, "weight_kg", m.weight(req.Parcel, units)),
+		"length":  m.dimension(req.Meta, "length_cm", centimetres(req.Parcel.Dimensions.Length, m.conf(ctx).DefaultLengthCm)),
+		"breadth": m.dimension(req.Meta, "breadth_cm", centimetres(req.Parcel.Dimensions.Width, m.conf(ctx).DefaultBreadthCm)),
+		"height":  m.dimension(req.Meta, "height_cm", centimetres(req.Parcel.Dimensions.Height, m.conf(ctx).DefaultHeightCm)),
+		"weight":  m.dimension(req.Meta, "weight_kg", m.weight(ctx, req.Parcel, units)),
 	}
 
 	var created struct {
@@ -358,14 +359,14 @@ func paymentMethodFor(order *gocommerce.Order) string {
 // declaring a floor to a carrier is how a shipment comes back with a
 // reweighing charge. In that case the configured default per unit is the more
 // honest guess, because it is at least a guess about a whole parcel.
-func (m *Module) weight(parcel gocommerce.Parcel, units int) float64 {
+func (m *Module) weight(ctx context.Context, parcel gocommerce.Parcel, units int) float64 {
 	if parcel.Measured && parcel.WeightGrams > 0 {
 		return float64(parcel.WeightGrams) / 1000
 	}
 	// Rounded to the gram, which is all the precision a weight ever has here.
 	// Without it, 0.4 kg three times is 1.2000000000000002 on the wire â€” not
 	// wrong, but not something to put in front of a carrier either.
-	return math.Round(m.conf().DefaultWeightKg*float64(max(units, 1))*1000) / 1000
+	return math.Round(m.conf(ctx).DefaultWeightKg*float64(max(units, 1))*1000) / 1000
 }
 
 // centimetres converts one of the engine's millimetre sides, falling back when
@@ -397,13 +398,13 @@ func (m *Module) authToken(ctx context.Context) (string, error) {
 		return m.token, nil
 	}
 
-	payload := map[string]string{"email": m.conf().Email, "password": m.conf().Password}
+	payload := map[string]string{"email": m.conf(ctx).Email, "password": m.conf(ctx).Password}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		m.conf().BaseURL+"/v1/external/auth/login", bytes.NewReader(encoded))
+		m.conf(ctx).BaseURL+"/v1/external/auth/login", bytes.NewReader(encoded))
 	if err != nil {
 		return "", err
 	}
@@ -438,7 +439,7 @@ func (m *Module) post(ctx context.Context, path string, payload any, out any) er
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.conf().BaseURL+path, bytes.NewReader(encoded))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.conf(ctx).BaseURL+path, bytes.NewReader(encoded))
 	if err != nil {
 		return err
 	}
