@@ -13,6 +13,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/itswadesh/gocommerce/internal/testdb"
 )
 
 // testDSNEnv names the environment variable holding the PostgreSQL URL used
@@ -196,11 +198,31 @@ func testConfig(dsn string) Config {
 	}
 }
 
-// newTestApp boots an engine against a freshly emptied test database.
+// moduleKey names everything that decides a test app's schema: the modules,
+// in order, and their migrations.
+func moduleKey(mods []Module) string {
+	var b strings.Builder
+	for _, m := range mods {
+		b.WriteString(m.Name())
+		for _, mig := range m.Migrations() {
+			b.WriteString("/" + mig.ID)
+		}
+		b.WriteString(";")
+	}
+	return b.String()
+}
+
+// newTestApp boots an engine against a database of its own, copied from one
+// migrated once for this set of modules (internal/testdb).
 func newTestApp(t *testing.T, mods ...Module) *App {
 	t.Helper()
-	dsn := requireDB(t)
-	resetSchema(t, dsn)
+	dsn := testdb.Clone(t, "core:"+moduleKey(mods), func(dsn string) error {
+		app, err := New(testConfig(dsn), mods...)
+		if err != nil {
+			return err
+		}
+		return app.Close()
+	})
 
 	app, err := New(testConfig(dsn), mods...)
 	if err != nil {
