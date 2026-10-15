@@ -6,9 +6,9 @@
 -- ordinary login, which owns the tables it creates and is held to their
 -- policies. `gocommerce doctor` fails while it is not.
 --
--- A fresh Compose volume runs this from scripts/initdb-engine-login.sh. For an
--- existing database, run it once by hand as the superuser, then point
--- DATABASE_URL at gocommerce_app:
+-- docker-compose.yml runs this on every start (the engine-login service), on
+-- a fresh volume and an existing one alike. Without Compose, run it once as the
+-- superuser, then point DATABASE_URL at gocommerce_app:
 --
 --   psql -U gocommerce -d gocommerce -v engine_password='...' -f engine-login.sql
 --

@@ -26,7 +26,7 @@ than on the first request. The pool is fixed at 25 open / 5 idle connections,
 a 1-hour connection lifetime and a 5-minute idle timeout — constants, not
 configuration. Twenty-five per process is a working ceiling for a commerce
 workload; if you run many processes behind PgBouncer, size the pooler, not
-this. There is no application-level write serialization anywhere: concurrency
+this — and run it in session mode (see "Running many stores"). There is no application-level write serialization anywhere: concurrency
 control is the database's job, done with row locks inside transactions.
 
 `InTx(ctx, db, fn)` is the only sanctioned way to write core state. It commits
@@ -364,6 +364,13 @@ to. The engine binds each statement to the store its `context.Context`
 names (`gocommerce.WithStore`), so a query that forgets to filter sees only
 its own store's rows, and an insert takes its store from the column default.
 With no store bound, a statement sees nothing and an insert fails.
+
+**Pool connections in session mode only.** The engine sets the store on a
+connection and remembers it, so a statement for the same store skips setting
+it again. A pooler in transaction or statement mode (PgBouncer's default for
+many hosts) hands those statements to other server connections carrying
+another store's setting. Use `pool_mode = session`, or no pooler: the engine's
+own pool is sized for it.
 
 **The engine's login must not bypass row security.** PostgreSQL lets a
 superuser, or a role with `BYPASSRLS`, past every policy. `gocommerce doctor`

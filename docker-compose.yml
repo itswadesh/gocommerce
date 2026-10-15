@@ -43,11 +43,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # The engine's login must exist before the engine signs in with it.
+      engine-login:
+        condition: service_completed_successfully
     environment:
       # gocommerce_app, not the superuser: every store's rows share one set of
       # tables behind row-level-security policies, and a superuser passes
-      # every policy (D83). The postgres service creates this login on a fresh
-      # volume; for an existing one, run scripts/engine-login.sql once.
+      # every policy (D83). The engine-login service below creates it, on a
+      # fresh volume and an existing one alike.
       DATABASE_URL: postgres://gocommerce_app:${ENGINE_DB_PASSWORD:-${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}}@postgres:5432/gocommerce?sslmode=disable
       # Custom reports run arbitrary operator SQL, so they run as a separate,
       # read-only role — never the engine's own, which owns every table and could
@@ -70,6 +73,29 @@ services:
     ports:
       - "${PORT:-8080}:8080"
 
+  # Makes sure the engine's own login exists and owns the tables, on every
+  # start. Idempotent, so an existing volume — one made before the engine
+  # stopped signing in as the superuser — is brought up to date without
+  # anyone running a script by hand.
+  engine-login:
+    image: postgres:17-alpine
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - ./scripts/engine-login.sql:/opt/gocommerce/engine-login.sql:ro
+    command:
+      - psql
+      - --host=postgres
+      - --username=gocommerce
+      - --dbname=gocommerce
+      - --set=ON_ERROR_STOP=1
+      - --set=engine_password=${ENGINE_DB_PASSWORD:-${POSTGRES_PASSWORD}}
+      - --file=/opt/gocommerce/engine-login.sql
+
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -85,10 +111,7 @@ services:
       ENGINE_DB_PASSWORD: ${ENGINE_DB_PASSWORD:-}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # Run once, on first init of the volume: the engine's own login, then
-      # gocommerce_reports.
-      - ./scripts/engine-login.sql:/opt/gocommerce/engine-login.sql:ro
-      - ./scripts/initdb-engine-login.sh:/docker-entrypoint-initdb.d/05-engine-login.sh:ro
+      # Runs once, on first init of the volume, to create gocommerce_reports.
       - ./scripts/reports-role.sql:/opt/gocommerce/reports-role.sql:ro
       - ./scripts/initdb-reports-role.sh:/docker-entrypoint-initdb.d/10-reports-role.sh:ro
     healthcheck:

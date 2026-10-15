@@ -143,7 +143,7 @@ func (a *App) rowSecurityVerdict(super, bypass bool) Diagnostic {
 		d.Detail = "the engine's database login is held to the row policies"
 		return d
 	}
-	d.Hint = "connect as an ordinary login that owns the tables (docker-compose.yml creates gocommerce_app; see scripts/db-init/01-engine-login.sql)"
+	d.Hint = "connect as an ordinary login that owns the tables (docker-compose.yml creates gocommerce_app; for an existing database run scripts/engine-login.sql once)"
 	return d
 }
 

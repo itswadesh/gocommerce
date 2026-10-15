@@ -162,3 +162,38 @@ func TestTheFallbackBindsAnUnboundContext(t *testing.T) {
 		t.Fatal("an explicit store lost to the fallback")
 	}
 }
+
+// A transaction that switched store and then failed to commit leaves the
+// server on the store it had before; the driver must not go on believing the
+// switch happened, or the next statement for that store would skip binding
+// and run as the previous one.
+func TestAFailedCommitForgetsItsStore(t *testing.T) {
+	db := openOneConn(t)
+	boundTable(t, db)
+	if _, err := db.ExecContext(context.Background(), `
+		CREATE TABLE drv_parent (id int PRIMARY KEY);
+		CREATE TABLE drv_child (parent int REFERENCES drv_parent DEFERRABLE INITIALLY DEFERRED)`); err != nil {
+		t.Fatal(err)
+	}
+	a := WithStore(context.Background(), "store_A")
+	if _, err := db.ExecContext(a, `INSERT INTO drv_rows VALUES ('store_A', 'x')`); err != nil {
+		t.Fatal(err)
+	}
+	// Begun as A, switched to B inside the transaction (as 0054 does): the
+	// switch is transactional, so a failed commit undoes it.
+	b := WithStore(context.Background(), "store_B")
+	tx, err := db.BeginTx(a, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.ExecContext(b, `INSERT INTO drv_child VALUES (42)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err == nil {
+		t.Fatal("the deferred foreign key let the commit through")
+	}
+	// The server is back on store A; a statement for B must set B again.
+	if got := countDrvRows(t, b, db); got != 0 {
+		t.Fatalf("after a failed commit, store B sees %d of store A's rows", got)
+	}
+}
