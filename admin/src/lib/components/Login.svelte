@@ -19,7 +19,8 @@
     import { api, auth } from "$lib/api.js";
     import { toast } from "$lib/toast.svelte.js";
 
-    let { onauthenticated } = $props();
+    // notice is a line said above the form, such as why the form is back.
+    let { onauthenticated, notice = "" } = $props();
 
     let identity = $state("");
     let password = $state("");
@@ -140,6 +141,12 @@
                 superuser{:else}Superuser login{/if}
         </h5>
     </header>
+
+    {#if notice}
+        <div class="alert warning m-b-base login-notice" role="status">
+            <p>{notice}</p>
+        </div>
+    {/if}
 
     {#if installed === null}
         <div class="block txt-center"><span class="loader lg"></span></div>
@@ -301,3 +308,34 @@
         </form>
     {/if}
 </div>
+
+<style>
+    /* The notice arrives with the card rather than snapping in: 200ms, transform
+       and opacity only. With reduced motion it only fades. */
+    .login-notice {
+        animation: login-notice-in 200ms ease-out;
+    }
+    @keyframes login-notice-in {
+        from {
+            opacity: 0;
+            transform: translateY(-4px);
+        }
+        to {
+            opacity: 1;
+            transform: none;
+        }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .login-notice {
+            animation: login-notice-fade 150ms ease-out;
+        }
+        @keyframes login-notice-fade {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+    }
+</style>
