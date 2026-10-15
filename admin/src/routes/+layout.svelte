@@ -47,11 +47,7 @@
      * what decides whether a login form appears — a page cannot opt out of a
      * layout that has already replaced it.
      *
-     * The platform console is the other (D73). It has a shell and a sign-in of
-     * its own, by platform token, and a store's login form over it would be
-     * asking a platform operator for a credential no store issued them.
-     *
-     * The trade portal is the third (D77): the store's business buyers, who
+     * The trade portal is the other (D77): the store's business buyers, who
      * sign in with a shopper account and have no staff credential to give.
      * Its own layout decides between its sign-in and its screens.
      *
@@ -59,7 +55,7 @@
      * /admin/auth, where the KitCommerce admin keeps its own: every screen a
      * person reaches before they have a session, at one prefix.
      */
-    const PUBLIC_PREFIXES = ["/admin/auth", "/platform", "/portal"];
+    const PUBLIC_PREFIXES = ["/admin/auth", "/portal"];
     const LOGIN = "/admin/auth/login";
     const onLogin = $derived(page.url.pathname.replace(base, "") === LOGIN);
     const isPublic = $derived(

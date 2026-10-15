@@ -149,12 +149,12 @@ navigation; leave it out and it does not.
 Cash on delivery and manual fulfillment are built in, because they need no
 third party — a store can sell and ship before it has integrated anything.
 
-**Many stores from one install.** `gocommerce platform` serves any number of
-stores from one process and one PostgreSQL database — a supplier's dealers, an
-agency's clients — each an ordinary store in a schema of its own, with its own
-operators and admin panel, reached at `<slug>.<base domain>` or its own domain.
-A platform API, with credentials of its own, creates, suspends and deletes them
-([platform mode](skills/infrastructure.md#running-many-stores-platform-mode)).
+**Many stores from one install.** `gocommerce serve` serves every store the
+database holds — a supplier's dealers, an agency's clients — from one set of
+tables. Every row carries its store, and PostgreSQL row-level security keeps
+one store's rows out of another's even when a query forgets to filter. A
+person signs in once and works in any store they belong to, with a role in
+each ([many stores](skills/infrastructure.md#running-many-stores)).
 
 ## API
 

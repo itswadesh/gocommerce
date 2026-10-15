@@ -33,7 +33,7 @@ const LITERAL = new RegExp(`["'\`](\\/(?:${OLD_SCREENS.join("|")})(?:[\\/?"'\`$]
 test("no string literal names a pre-/dash screen", () => {
     const stale = [];
     for (const file of files(fileURLToPath(new URL("../src", import.meta.url)))) {
-        if (file.endsWith("paths.js") || /routes[\\/](portal|platform)[\\/]/.test(file)) continue;
+        if (file.endsWith("paths.js") || /routes[\\/]portal[\\/]/.test(file)) continue;
         const src = readFileSync(file, "utf8");
         for (const m of src.matchAll(LITERAL)) stale.push(`${file}: ${m[0]}`);
     }

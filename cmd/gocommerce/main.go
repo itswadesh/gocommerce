@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -61,7 +60,6 @@ import (
 	"github.com/itswadesh/gocommerce/ext/sitemaps"
 	webhooks "github.com/itswadesh/gocommerce/ext/webhooks"
 	"github.com/itswadesh/gocommerce/ext/wishlist"
-	"github.com/itswadesh/gocommerce/platform"
 )
 
 func main() {
@@ -81,8 +79,6 @@ usage:
 
 commands:
   serve      apply migrations, then serve the API (default)
-  platform   serve many stores from one database, each in a schema of its
-             own, routed by host; the platform API creates them (D70)
   migrate    apply migrations and exit
   superuser  create or update an admin-panel operator, then exit
   doctor     run operational diagnostics and exit (-json for agents)
@@ -128,8 +124,7 @@ environment:
                     where this store's panel is reached, e.g.
                     https://shop.example.com: the base of a password-reset
                     link, and of a recovery email's link, which counts the
-                    click before sending the shopper to their basket. Single
-                    store only: platform mode gives each store its own host
+                    click before sending the shopper to their basket
   GOCOMMERCE_MEDIA_DIR
                     where uploaded media is written, used when -media-dir is
                     not given; leaving it unset disables uploads and the media
@@ -143,13 +138,9 @@ environment:
   GOCOMMERCE_B2B_INVITE_URL
                     with -b2b, the storefront page a company invitation links
                     to, with {token} where the token goes
-  GOCOMMERCE_PLATFORM_TOKEN
-                    with "platform", the platform operators' token(s),
-                    comma-separated, used when -platform-token is not given
   GOCOMMERCE_BASE_DOMAIN
-                    with "platform", used when -base-domain is not given
-  In platform mode, {domain} in the URL variables above (and STOREFRONT_URL)
-  is replaced with each store's own host, so one setting serves every store.
+                    used when -base-domain is not given: every store also
+                    answers at <slug>.<base domain>
   GOCOMMERCE_DEMO   same as -demo. Off when unset, empty, "0", "false", "no"
                     or "off"; any other value is on
   GOCOMMERCE_DEMO_ACCOUNT
@@ -195,13 +186,10 @@ environment:
 		withFAQ      = fs.Bool("faq", false, "install the faq module: the shop's questions and answers at /x/faq, edited on the FAQ screen")
 		withWishlist = fs.Bool("wishlist", false, "install the wishlist module: shoppers save products, and the Wishlists screen shows what is wanted most")
 		withB2B      = fs.Bool("b2b", false, "install the b2b module: companies, buyer roles, orders on account against a credit limit, approvals and quotes (implies -identity)")
-		// Platform mode, the "platform" command (D70).
-		baseDomain     = fs.String("base-domain", "", "platform: every store answers at <slug>.<base-domain> (default $GOCOMMERCE_BASE_DOMAIN)")
-		platformHosts  = fs.String("platform-host", "", "platform: host(s) serving the platform API, comma-separated (default platform.<base-domain>)")
-		apiHosts       = fs.String("api-host", "", "platform: shared host(s) where the X-Store header names the store, comma-separated")
-		platformTokens = fs.String("platform-token", "", "platform: the platform operators' token(s), comma-separated (default $GOCOMMERCE_PLATFORM_TOKEN)")
-		namespace      = fs.String("namespace", "", "platform: a prefix for every schema the platform creates, so two platforms can share a database")
-		withAmazon     = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or IMPORT_AMAZON_LLM_URL + IMPORT_AMAZON_LLM_MODEL for a local model rewrite the copy; IMPORT_AMAZON_HEADED=1 shows the browser)")
+		// A store is found by host as well as by header and cookie: a request
+		// to <slug>.<base-domain> is that store's (D83).
+		baseDomain = fs.String("base-domain", "", "every store also answers at <slug>.<base-domain> (default $GOCOMMERCE_BASE_DOMAIN)")
+		withAmazon = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or IMPORT_AMAZON_LLM_URL + IMPORT_AMAZON_LLM_MODEL for a local model rewrite the copy; IMPORT_AMAZON_HEADED=1 shows the browser)")
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -240,7 +228,7 @@ environment:
 	// diagnostic command refuses to run on precisely the store it exists to
 	// diagnose: one whose operators are superusers and which has no static
 	// token at all.
-	offline := command != "serve" && command != "platform"
+	offline := command != "serve"
 
 	languages := splitList(*langs)
 	cfg := gocommerce.Config{
@@ -265,7 +253,7 @@ environment:
 		DemoAccount: os.Getenv("GOCOMMERCE_DEMO_ACCOUNT"),
 		// Env only, like the demo account: where the panel is reached is a fact
 		// about the deployment. It is the base of a password-reset link and of a
-		// recovery email's tracked link; platform mode fills it per store.
+		// recovery email's tracked link.
 		PanelURL: os.Getenv("GOCOMMERCE_PANEL_URL"),
 		Logger:   log,
 	}
@@ -281,12 +269,9 @@ environment:
 	// proves the engine boots on its own. Accounts are the one capability a
 	// storefront asks for often enough that a flag beats a fork of main().
 	//
-	// A factory rather than a list, because platform mode builds one set per
-	// store: a module holds the engine it registered with, so one instance
-	// shared between two stores would answer one store's requests from the
-	// other's tables. domain is the store's host on a platform and empty for
-	// a single store; it fills {domain} in the URL settings so one
-	// environment serves every store's links.
+	// A factory rather than a list: domain fills {domain} in the URL
+	// settings. One engine serves every store (D83), so it is called once,
+	// with no domain.
 	buildModules := func(domain string) []gocommerce.Module {
 		env := func(key string) string {
 			v := os.Getenv(key)
@@ -428,16 +413,10 @@ environment:
 		return modules
 	}
 
-	if command == "platform" {
-		// One panel address for every store would send each store's reset and
-		// recovery links to the same host; the platform derives each from the
-		// store's own primary domain, and only does so while this is empty.
-		cfg.PanelURL = ""
-		return platformCmd(cfg, platformFlags{
-			baseDomain: *baseDomain, platformHosts: *platformHosts, apiHosts: *apiHosts,
-			tokens: *platformTokens, namespace: *namespace,
-		}, buildModules, log)
+	if *baseDomain == "" {
+		*baseDomain = os.Getenv("GOCOMMERCE_BASE_DOMAIN")
 	}
+	cfg.BaseDomain = *baseDomain
 
 	app, err := gocommerce.New(cfg, buildModules("")...)
 	if err != nil {
@@ -612,17 +591,6 @@ func superuserCmd(ctx context.Context, app *gocommerce.App, args []string) error
 	return fmt.Errorf("no superuser with email %q", email)
 }
 
-// dsnUser returns the username a URL-style DSN logs in as, or "" if there is
-// none or the DSN does not parse. Used to learn the reports role's name from
-// the reports DSN in platform mode.
-func dsnUser(dsn string) string {
-	u, err := url.Parse(dsn)
-	if err != nil || u.User == nil {
-		return ""
-	}
-	return u.User.Username()
-}
-
 func splitList(s string) []string {
 	if strings.TrimSpace(s) == "" {
 		return nil
@@ -737,50 +705,4 @@ func envTrue(name string) bool {
 		return false
 	}
 	return true
-}
-
-type platformFlags struct {
-	baseDomain, platformHosts, apiHosts, tokens, namespace string
-}
-
-// platformCmd serves many stores from one database (D70). The single-store
-// configuration built above is the template every store starts from — its
-// currency, languages, demo and dev settings — while each store gets its own
-// schema, admin token, media directory and modules from the platform.
-func platformCmd(cfg gocommerce.Config, f platformFlags, buildModules func(string) []gocommerce.Module, log *slog.Logger) error {
-	if f.tokens == "" {
-		f.tokens = os.Getenv("GOCOMMERCE_PLATFORM_TOKEN")
-	}
-	if f.baseDomain == "" {
-		f.baseDomain = os.Getenv("GOCOMMERCE_BASE_DOMAIN")
-	}
-	// In platform mode the reports DSN is a template: the platform gives each
-	// store its own role cloned from it (D79). ReportsRole names that template
-	// login — the one the DSN logs in as — read straight out of the DSN rather
-	// than asked for a second time.
-	var reportsRole string
-	if cfg.ReportsDBURL != "" {
-		if reportsRole = dsnUser(cfg.ReportsDBURL); reportsRole == "" {
-			return errors.New("platform: GOCOMMERCE_REPORTS_DATABASE_URL must name the reports login as its user")
-		}
-	}
-	p, err := platform.New(platform.Config{
-		DBURL:         cfg.DBURL,
-		ReportsDBURL:  cfg.ReportsDBURL,
-		ReportsRole:   reportsRole,
-		Addr:          cfg.Addr,
-		BaseDomain:    f.baseDomain,
-		PlatformHosts: splitList(f.platformHosts),
-		APIHosts:      splitList(f.apiHosts),
-		Tokens:        splitList(f.tokens),
-		Namespace:     f.namespace,
-		Store:         cfg,
-		MediaRoot:     cfg.MediaDir,
-		Modules:       func(t platform.Tenant) []gocommerce.Module { return buildModules(t.Host) },
-		Logger:        log,
-	})
-	if err != nil {
-		return err
-	}
-	return p.ListenAndServe()
 }

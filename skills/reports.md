@@ -207,6 +207,12 @@ they touch only `custom_reports`. Create the role with
 create it on a fresh volume from `REPORTS_DB_PASSWORD`, and `gocommerce doctor`
 fails on a superuser reports role and warns when the feature is off.
 
+**Custom reports are switched off while stores share tables (D83).** A report
+runs SQL its author writes, and that SQL could name another store; they come
+back once each store has a reporting login of its own that the row-security
+policy is tied to. What follows describes the schema-per-store design they
+ran under before.
+
 **On a platform (D70, D79) a report reads one store because its login can reach
 one store.** The `GOCOMMERCE_REPORTS_DATABASE_URL` the platform is given is a
 template: when it boots a store it creates a login granted read on only that
