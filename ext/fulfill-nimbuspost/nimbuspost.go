@@ -45,7 +45,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/itswadesh/gocommerce/core"
@@ -100,7 +99,7 @@ type Config struct {
 // Module is the NimbusPost fulfillment provider.
 type Module struct {
 	cfg    Config
-	live   atomic.Pointer[Config]
+	live   sync.Map // store id → *Config: each store has its own account
 	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
@@ -122,9 +121,10 @@ var errNotConfigured = errors.New("nimbuspost: not set up — activate and confi
 
 // conf is the effective configuration: the last one refresh computed, or
 // Config alone before the first use.
-func (m *Module) conf() *Config {
-	if c := m.live.Load(); c != nil {
-		return c
+func (m *Module) conf(ctx context.Context) *Config {
+	store, _ := gocommerce.StoreFrom(ctx)
+	if c, ok := m.live.Load(store); ok {
+		return c.(*Config)
 	}
 	return &m.cfg
 }
@@ -143,7 +143,8 @@ func (m *Module) refresh(ctx context.Context) bool {
 		}
 	}
 	m.finish(&c)
-	m.live.Store(&c)
+	store, _ := gocommerce.StoreFrom(ctx)
+	m.live.Store(store, &c)
 	return on && m.complete(&c)
 }
 
@@ -238,7 +239,7 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 			Label       string      `json:"label"`
 		} `json:"data"`
 	}
-	if err := m.post(ctx, "/shipments", m.shipmentBody(order, req), &out); err != nil {
+	if err := m.post(ctx, "/shipments", m.shipmentBody(ctx, order, req), &out); err != nil {
 		return gocommerce.Shipment{}, err
 	}
 	if out.Data.AWBNumber == "" {
@@ -255,7 +256,7 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 	}, nil
 }
 
-func (m *Module) shipmentBody(order *gocommerce.Order, req gocommerce.ShipRequest) map[string]any {
+func (m *Module) shipmentBody(ctx context.Context, order *gocommerce.Order, req gocommerce.ShipRequest) map[string]any {
 	addr := order.Address
 
 	byLine := make(map[int64]gocommerce.OrderLine, len(order.Lines))
@@ -300,7 +301,7 @@ func (m *Module) shipmentBody(order *gocommerce.Order, req gocommerce.ShipReques
 	}
 
 	autoPickup := "no"
-	if m.conf().AutoPickup {
+	if m.conf(ctx).AutoPickup {
 		autoPickup = "yes"
 	}
 
@@ -308,10 +309,10 @@ func (m *Module) shipmentBody(order *gocommerce.Order, req gocommerce.ShipReques
 		"order_number":        externalID,
 		"payment_type":        paymentType,
 		"order_amount":        float64(valueMinor) / 100,
-		"package_weight":      m.weight(req, units),
-		"package_length":      m.side(req.Parcel.Dimensions.Length, m.conf().DefaultLengthCM),
-		"package_breadth":     m.side(req.Parcel.Dimensions.Width, m.conf().DefaultBreadthCM),
-		"package_height":      m.side(req.Parcel.Dimensions.Height, m.conf().DefaultHeightCM),
+		"package_weight":      m.weight(ctx, req, units),
+		"package_length":      m.side(req.Parcel.Dimensions.Length, m.conf(ctx).DefaultLengthCM),
+		"package_breadth":     m.side(req.Parcel.Dimensions.Width, m.conf(ctx).DefaultBreadthCM),
+		"package_height":      m.side(req.Parcel.Dimensions.Height, m.conf(ctx).DefaultHeightCM),
 		"request_auto_pickup": autoPickup,
 		"consignee": map[string]any{
 			"name":      firstNonEmpty(addr.Name, order.Name, "Customer"),
@@ -323,13 +324,13 @@ func (m *Module) shipmentBody(order *gocommerce.Order, req gocommerce.ShipReques
 			"phone":     firstNonEmpty(addr.Phone, order.Phone),
 		},
 		"pickup": map[string]any{
-			"warehouse_name": m.conf().WarehouseName,
-			"name":           firstNonEmpty(m.conf().PickupName, m.conf().WarehouseName),
-			"address":        m.conf().PickupAddress,
-			"city":           m.conf().PickupCity,
-			"state":          m.conf().PickupState,
-			"pincode":        m.conf().PickupPincode,
-			"phone":          m.conf().PickupPhone,
+			"warehouse_name": m.conf(ctx).WarehouseName,
+			"name":           firstNonEmpty(m.conf(ctx).PickupName, m.conf(ctx).WarehouseName),
+			"address":        m.conf(ctx).PickupAddress,
+			"city":           m.conf(ctx).PickupCity,
+			"state":          m.conf(ctx).PickupState,
+			"pincode":        m.conf(ctx).PickupPincode,
+			"phone":          m.conf(ctx).PickupPhone,
 		},
 		"order_items": items,
 	}
@@ -347,11 +348,11 @@ func (m *Module) shipmentBody(order *gocommerce.Order, req gocommerce.ShipReques
 // Measured is false has a weight that is a floor, not the parcel's, and
 // declaring a floor to a carrier is how a shipment comes back with a
 // reweighing charge.
-func (m *Module) weight(req gocommerce.ShipRequest, units int) int {
+func (m *Module) weight(ctx context.Context, req gocommerce.ShipRequest, units int) int {
 	if req.Parcel.Measured && req.Parcel.WeightGrams > 0 {
 		return req.Parcel.WeightGrams
 	}
-	return m.conf().DefaultWeightGrams * max(units, 1)
+	return m.conf(ctx).DefaultWeightGrams * max(units, 1)
 }
 
 // side converts a millimetre side to centimetres, keeping the tenth.
@@ -408,13 +409,13 @@ func (m *Module) authToken(ctx context.Context) (string, error) {
 	}
 
 	encoded, err := json.Marshal(map[string]string{
-		"email": m.conf().Email, "password": m.conf().Password,
+		"email": m.conf(ctx).Email, "password": m.conf(ctx).Password,
 	})
 	if err != nil {
 		return "", err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		m.conf().BaseURL+"/users/login", bytes.NewReader(encoded))
+		m.conf(ctx).BaseURL+"/users/login", bytes.NewReader(encoded))
 	if err != nil {
 		return "", err
 	}
@@ -456,7 +457,7 @@ func (m *Module) post(ctx context.Context, path string, payload any, out any) er
 		return fmt.Errorf("nimbuspost: could not encode the request: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		m.conf().BaseURL+path, bytes.NewReader(encoded))
+		m.conf(ctx).BaseURL+path, bytes.NewReader(encoded))
 	if err != nil {
 		return err
 	}

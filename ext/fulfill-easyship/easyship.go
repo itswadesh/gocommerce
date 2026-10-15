@@ -60,7 +60,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/itswadesh/gocommerce/core"
@@ -129,7 +129,7 @@ type Config struct {
 // Module is the Easyship fulfillment provider.
 type Module struct {
 	cfg    Config
-	live   atomic.Pointer[Config]
+	live   sync.Map // store id → *Config: each store has its own account
 	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
@@ -147,9 +147,10 @@ var errNotConfigured = errors.New("easyship: not set up — activate and configu
 
 // conf is the effective configuration: the last one refresh computed, or
 // Config alone before the first use.
-func (m *Module) conf() *Config {
-	if c := m.live.Load(); c != nil {
-		return c
+func (m *Module) conf(ctx context.Context) *Config {
+	store, _ := gocommerce.StoreFrom(ctx)
+	if c, ok := m.live.Load(store); ok {
+		return c.(*Config)
 	}
 	return &m.cfg
 }
@@ -168,7 +169,8 @@ func (m *Module) refresh(ctx context.Context) bool {
 		}
 	}
 	m.finish(&c)
-	m.live.Store(&c)
+	store, _ := gocommerce.StoreFrom(ctx)
+	m.live.Store(store, &c)
 	return on && m.complete(&c)
 }
 
@@ -257,10 +259,10 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 		return gocommerce.Shipment{}, errNotConfigured
 	}
 	body := map[string]any{
-		"origin_address":      addressBody(m.conf().From),
+		"origin_address":      addressBody(m.conf(ctx).From),
 		"destination_address": m.toAddress(order),
-		"courier_service_id":  firstNonEmpty(req.Meta["courier_service_id"], m.conf().CourierServiceID),
-		"parcels":             []any{m.parcelBody(order, req)},
+		"courier_service_id":  firstNonEmpty(req.Meta["courier_service_id"], m.conf(ctx).CourierServiceID),
+		"parcels":             []any{m.parcelBody(ctx, order, req)},
 		"buy_label":           true,
 		"order_data": map[string]any{
 			"platform_name":         "gocommerce",
@@ -268,8 +270,8 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 			"order_created_at":      order.CreatedAt.UTC().Format(time.RFC3339),
 		},
 	}
-	if m.conf().Incoterms != "" {
-		body["incoterms"] = m.conf().Incoterms
+	if m.conf(ctx).Incoterms != "" {
+		body["incoterms"] = m.conf(ctx).Incoterms
 	}
 
 	var out struct {
@@ -362,7 +364,7 @@ func (m *Module) toAddress(order *gocommerce.Order) map[string]any {
 	})
 }
 
-func (m *Module) parcelBody(order *gocommerce.Order, req gocommerce.ShipRequest) map[string]any {
+func (m *Module) parcelBody(ctx context.Context, order *gocommerce.Order, req gocommerce.ShipRequest) map[string]any {
 	byLine := make(map[int64]gocommerce.OrderLine, len(order.Lines))
 	for _, line := range order.Lines {
 		byLine[line.ID] = line
@@ -388,28 +390,28 @@ func (m *Module) parcelBody(order *gocommerce.Order, req gocommerce.ShipRequest)
 		})
 	}
 
-	grams := m.conf().DefaultWeightGrams * max(units, 1)
+	grams := m.conf(ctx).DefaultWeightGrams * max(units, 1)
 	if req.Parcel.Measured && req.Parcel.WeightGrams > 0 {
 		grams = req.Parcel.WeightGrams
 	}
 
 	return map[string]any{
 		"items":               items,
-		"total_actual_weight": m.weight(grams),
+		"total_actual_weight": m.weight(ctx, grams),
 		"box": map[string]any{
 			"type": "box",
 			"outer_dimensions": map[string]any{
-				"length": m.length(req.Parcel.Dimensions.Length, m.conf().DefaultLengthMM),
-				"width":  m.length(req.Parcel.Dimensions.Width, m.conf().DefaultWidthMM),
-				"height": m.length(req.Parcel.Dimensions.Height, m.conf().DefaultHeightMM),
+				"length": m.length(ctx, req.Parcel.Dimensions.Length, m.conf(ctx).DefaultLengthMM),
+				"width":  m.length(ctx, req.Parcel.Dimensions.Width, m.conf(ctx).DefaultWidthMM),
+				"height": m.length(ctx, req.Parcel.Dimensions.Height, m.conf(ctx).DefaultHeightMM),
 			},
 		},
 	}
 }
 
 // weight converts grams to the unit the Easyship account reads.
-func (m *Module) weight(grams int) float64 {
-	if m.conf().Imperial {
+func (m *Module) weight(ctx context.Context, grams int) float64 {
+	if m.conf(ctx).Imperial {
 		return round(float64(grams)/gramsPerPound, 3)
 	}
 	return round(float64(grams)/1000, 3)
@@ -417,12 +419,12 @@ func (m *Module) weight(grams int) float64 {
 
 // length converts a millimetre side to the unit the Easyship account reads,
 // falling back when the engine had no unambiguous answer.
-func (m *Module) length(mm *int, fallback int) float64 {
+func (m *Module) length(ctx context.Context, mm *int, fallback int) float64 {
 	value := fallback
 	if mm != nil && *mm > 0 {
 		value = *mm
 	}
-	if m.conf().Imperial {
+	if m.conf(ctx).Imperial {
 		return round(float64(value)/millimetresPerInch, 2)
 	}
 	return round(float64(value)/10, 2)
@@ -477,11 +479,11 @@ func (m *Module) post(ctx context.Context, path string, payload any, out any) er
 	if err != nil {
 		return fmt.Errorf("easyship: could not encode the request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.conf().BaseURL+path, bytes.NewReader(encoded))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.conf(ctx).BaseURL+path, bytes.NewReader(encoded))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+m.conf().Token)
+	req.Header.Set("Authorization", "Bearer "+m.conf(ctx).Token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 

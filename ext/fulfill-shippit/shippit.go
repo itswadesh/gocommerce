@@ -57,7 +57,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/itswadesh/gocommerce/core"
@@ -100,7 +100,7 @@ type Config struct {
 // Module is the Shippit fulfillment provider.
 type Module struct {
 	cfg    Config
-	live   atomic.Pointer[Config]
+	live   sync.Map // store id → *Config: each store has its own account
 	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
@@ -118,9 +118,10 @@ var errNotConfigured = errors.New("shippit: not set up — activate and configur
 
 // conf is the effective configuration: the last one refresh computed, or
 // Config alone before the first use.
-func (m *Module) conf() *Config {
-	if c := m.live.Load(); c != nil {
-		return c
+func (m *Module) conf(ctx context.Context) *Config {
+	store, _ := gocommerce.StoreFrom(ctx)
+	if c, ok := m.live.Load(store); ok {
+		return c.(*Config)
 	}
 	return &m.cfg
 }
@@ -139,7 +140,8 @@ func (m *Module) refresh(ctx context.Context) bool {
 		}
 	}
 	m.finish(&c)
-	m.live.Store(&c)
+	store, _ := gocommerce.StoreFrom(ctx)
+	m.live.Store(store, &c)
 	return on && m.complete(&c)
 }
 
@@ -226,7 +228,7 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 		} `json:"response"`
 	}
 	if err := m.do(ctx, http.MethodPost, "/orders",
-		map[string]any{"order": m.orderBody(order, req)}, &booked); err != nil {
+		map[string]any{"order": m.orderBody(ctx, order, req)}, &booked); err != nil {
 		return gocommerce.Shipment{}, err
 	}
 	tracking := strings.TrimSpace(booked.Response.TrackingNumber)
@@ -261,12 +263,12 @@ func (m *Module) label(ctx context.Context, tracking string) string {
 	return out.Response.QualifiedURL
 }
 
-func (m *Module) orderBody(order *gocommerce.Order, req gocommerce.ShipRequest) map[string]any {
+func (m *Module) orderBody(ctx context.Context, order *gocommerce.Order, req gocommerce.ShipRequest) map[string]any {
 	addr := order.Address
 	first, last := splitName(firstNonEmpty(addr.Name, order.Name, "Customer"))
 
 	authority := "No"
-	if m.conf().AuthorityToLeave {
+	if m.conf(ctx).AuthorityToLeave {
 		authority = "Yes"
 	}
 	// The shopper's answer, if the storefront collected one, beats the store's
@@ -280,7 +282,7 @@ func (m *Module) orderBody(order *gocommerce.Order, req gocommerce.ShipRequest) 
 	}
 
 	body := map[string]any{
-		"courier_type":            firstNonEmpty(req.Meta["courier_type"], m.conf().CourierType),
+		"courier_type":            firstNonEmpty(req.Meta["courier_type"], m.conf(ctx).CourierType),
 		"delivery_address":        strings.TrimSpace(addr.Line1 + " " + addr.Line2),
 		"delivery_suburb":         addr.City,
 		"delivery_state":          addr.State,
@@ -298,7 +300,7 @@ func (m *Module) orderBody(order *gocommerce.Order, req gocommerce.ShipRequest) 
 			"last_name":  last,
 			"mobile":     firstNonEmpty(addr.Phone, order.Phone),
 		},
-		"parcel_attributes": []any{m.parcelBody(req)},
+		"parcel_attributes": []any{m.parcelBody(ctx, req)},
 	}
 	if instructions := req.Meta["delivery_instructions"]; instructions != "" {
 		body["delivery_instructions"] = instructions
@@ -310,13 +312,13 @@ func (m *Module) orderBody(order *gocommerce.Order, req gocommerce.ShipRequest) 
 	return body
 }
 
-func (m *Module) parcelBody(req gocommerce.ShipRequest) map[string]any {
+func (m *Module) parcelBody(ctx context.Context, req gocommerce.ShipRequest) map[string]any {
 	var units int
 	for _, line := range req.Lines {
 		units += line.Quantity
 	}
 
-	grams := m.conf().DefaultWeightGrams * max(units, 1)
+	grams := m.conf(ctx).DefaultWeightGrams * max(units, 1)
 	if req.Parcel.Measured && req.Parcel.WeightGrams > 0 {
 		grams = req.Parcel.WeightGrams
 	}
@@ -326,9 +328,9 @@ func (m *Module) parcelBody(req gocommerce.ShipRequest) map[string]any {
 		// lines, and telling Shippit "three" would book three boxes.
 		"qty":    1,
 		"weight": kilograms(grams),
-		"length": metres(req.Parcel.Dimensions.Length, m.conf().DefaultLengthMM),
-		"width":  metres(req.Parcel.Dimensions.Width, m.conf().DefaultWidthMM),
-		"depth":  metres(req.Parcel.Dimensions.Height, m.conf().DefaultHeightMM),
+		"length": metres(req.Parcel.Dimensions.Length, m.conf(ctx).DefaultLengthMM),
+		"width":  metres(req.Parcel.Dimensions.Width, m.conf(ctx).DefaultWidthMM),
+		"depth":  metres(req.Parcel.Dimensions.Height, m.conf(ctx).DefaultHeightMM),
 	}
 }
 
@@ -395,11 +397,11 @@ func (m *Module) do(ctx context.Context, method, path string, payload any, out a
 		}
 		reader = bytes.NewReader(encoded)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, m.conf().BaseURL+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, m.conf(ctx).BaseURL+path, reader)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+m.conf().APIKey)
+	req.Header.Set("Authorization", "Bearer "+m.conf(ctx).APIKey)
 	req.Header.Set("Accept", "application/json")
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")

@@ -317,3 +317,33 @@ func TestInstalledIdleUntilConfigured(t *testing.T) {
 		t.Fatal("configured from the panel, the gateway should be offered")
 	}
 }
+
+// Each store has its own Stripe account. One store's settings, loaded for
+// one request, must never be what another store's request charges with.
+func TestEachStoreUsesItsOwnStripeAccount(t *testing.T) {
+	mod := New(Config{})
+	app := gctest.New(t, mod)
+	ctxA := context.Background()
+	b, err := app.Stores().Create(ctxA, "Second", "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctxB := gocommerce.WithStore(context.Background(), b.ID)
+	on := true
+	for ctx, key := range map[context.Context]string{ctxA: "sk_test_store_a", ctxB: "sk_test_store_b"} {
+		if _, err := app.Plugins().Update(ctx, PluginKey, gocommerce.PluginPatch{Enabled: &on,
+			Settings: map[string]any{"secret_key": key, "webhook_secret": "whsec_" + key}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A loads its settings, then B's request loads B's — as two requests
+	// interleaving would — and A goes on to use what it loaded.
+	mod.refresh(ctxA)
+	mod.refresh(ctxB)
+	if got := mod.conf(ctxA).SecretKey; got != "sk_test_store_a" {
+		t.Fatalf("store A would charge with %q", got)
+	}
+	if got := mod.conf(ctxB).SecretKey; got != "sk_test_store_b" {
+		t.Fatalf("store B would charge with %q", got)
+	}
+}

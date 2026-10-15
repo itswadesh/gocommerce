@@ -28,7 +28,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/itswadesh/gocommerce/core"
@@ -59,7 +59,7 @@ type Config struct {
 // Module is the Razorpay payment provider.
 type Module struct {
 	cfg    Config
-	live   atomic.Pointer[Config]
+	live   sync.Map // store id → *Config: each store has its own account
 	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
@@ -79,9 +79,10 @@ var errNotConfigured = errors.New("razorpay: not set up — activate and configu
 
 // conf is the effective configuration: the last one refresh computed, or
 // Config alone before the first use.
-func (m *Module) conf() *Config {
-	if c := m.live.Load(); c != nil {
-		return c
+func (m *Module) conf(ctx context.Context) *Config {
+	store, _ := gocommerce.StoreFrom(ctx)
+	if c, ok := m.live.Load(store); ok {
+		return c.(*Config)
 	}
 	return &m.cfg
 }
@@ -100,7 +101,8 @@ func (m *Module) refresh(ctx context.Context) bool {
 		}
 	}
 	m.finish(&c)
-	m.live.Store(&c)
+	store, _ := gocommerce.StoreFrom(ctx)
+	m.live.Store(store, &c)
 	return on && m.complete(&c)
 }
 
@@ -207,12 +209,12 @@ func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts goc
 		Reference: created.ID,
 		ClientData: map[string]string{
 			"razorpay_order_id": created.ID,
-			"key_id":            m.conf().KeyID,
+			"key_id":            m.conf(ctx).KeyID,
 			"amount":            strconv.FormatInt(created.Amount, 10),
 			"currency":          created.Currency,
 		},
 	}
-	if m.conf().Hosted {
+	if m.conf(ctx).Hosted {
 		// The hosted page needs somewhere to send the shopper back to.
 		intent.Kind = gocommerce.IntentRedirect
 		if opts.ReturnURL != "" {
@@ -283,6 +285,7 @@ func (m *Module) paymentIDFor(ctx context.Context, orderID int64) (string, error
 func (m *Module) Webhook() http.Handler { return http.HandlerFunc(m.handleWebhook) }
 
 func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	// A notification for a provider nobody has set up cannot be verified,
 	// and an unverifiable notification is refused.
 	if !m.refresh(r.Context()) {
@@ -294,7 +297,7 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not read body", http.StatusBadRequest)
 		return
 	}
-	if !validSignature(body, r.Header.Get("X-Razorpay-Signature"), m.conf().WebhookSecret) {
+	if !validSignature(body, r.Header.Get("X-Razorpay-Signature"), m.conf(ctx).WebhookSecret) {
 		m.log.Warn("rejected a Razorpay webhook with an invalid signature")
 		http.Error(w, "invalid signature", http.StatusBadRequest)
 		return
@@ -385,11 +388,11 @@ func (m *Module) post(ctx context.Context, path string, payload any, out any) er
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.conf().BaseURL+path, bytes.NewReader(encoded))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.conf(ctx).BaseURL+path, bytes.NewReader(encoded))
 	if err != nil {
 		return err
 	}
-	req.SetBasicAuth(m.conf().KeyID, m.conf().KeySecret)
+	req.SetBasicAuth(m.conf(ctx).KeyID, m.conf(ctx).KeySecret)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := m.client.Do(req)

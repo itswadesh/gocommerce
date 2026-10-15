@@ -72,7 +72,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/itswadesh/gocommerce/core"
@@ -157,7 +156,7 @@ type Config struct {
 // Module is the USPS fulfillment provider.
 type Module struct {
 	cfg    Config
-	live   atomic.Pointer[Config]
+	live   sync.Map // store id → *Config: each store has its own account
 	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
@@ -182,9 +181,10 @@ var errNotConfigured = errors.New("usps: not set up — activate and configure i
 
 // conf is the effective configuration: the last one refresh computed, or
 // Config alone before the first use.
-func (m *Module) conf() *Config {
-	if c := m.live.Load(); c != nil {
-		return c
+func (m *Module) conf(ctx context.Context) *Config {
+	store, _ := gocommerce.StoreFrom(ctx)
+	if c, ok := m.live.Load(store); ok {
+		return c.(*Config)
 	}
 	return &m.cfg
 }
@@ -203,7 +203,8 @@ func (m *Module) refresh(ctx context.Context) bool {
 		}
 	}
 	m.finish(&c)
-	m.live.Store(&c)
+	store, _ := gocommerce.StoreFrom(ctx)
+	m.live.Store(store, &c)
 	return on && m.complete(&c)
 }
 
@@ -337,9 +338,9 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 	}
 	body := map[string]any{
 		"imageInfo":          map[string]any{"imageType": "PDF", "labelType": "4X6LABEL"},
-		"fromAddress":        addressBody(m.conf().From),
+		"fromAddress":        addressBody(m.conf(ctx).From),
 		"toAddress":          toAddress(order),
-		"packageDescription": m.packageBody(order, req),
+		"packageDescription": m.packageBody(ctx, order, req),
 	}
 
 	var out struct {
@@ -493,29 +494,29 @@ func splitName(full string) (first, last string) {
 	}
 }
 
-func (m *Module) packageBody(order *gocommerce.Order, req gocommerce.ShipRequest) map[string]any {
+func (m *Module) packageBody(ctx context.Context, order *gocommerce.Order, req gocommerce.ShipRequest) map[string]any {
 	var units int
 	for _, line := range req.Lines {
 		units += line.Quantity
 	}
 
-	grams := m.conf().DefaultWeightGrams * max(units, 1)
+	grams := m.conf(ctx).DefaultWeightGrams * max(units, 1)
 	if req.Parcel.Measured && req.Parcel.WeightGrams > 0 {
 		grams = req.Parcel.WeightGrams
 	}
 
 	return map[string]any{
-		"mailClass":                    firstNonEmpty(req.Meta["mail_class"], m.conf().MailClass),
-		"rateIndicator":                firstNonEmpty(req.Meta["rate_indicator"], m.conf().RateIndicator),
-		"processingCategory":           m.conf().ProcessingCategory,
+		"mailClass":                    firstNonEmpty(req.Meta["mail_class"], m.conf(ctx).MailClass),
+		"rateIndicator":                firstNonEmpty(req.Meta["rate_indicator"], m.conf(ctx).RateIndicator),
+		"processingCategory":           m.conf(ctx).ProcessingCategory,
 		"destinationEntryFacilityType": "NONE",
 		"mailingDate":                  time.Now().UTC().Format("2006-01-02"),
 		"weightUOM":                    "lb",
 		"weight":                       pounds(grams),
 		"dimensionsUOM":                "in",
-		"length":                       inches(req.Parcel.Dimensions.Length, m.conf().DefaultLengthMM),
-		"width":                        inches(req.Parcel.Dimensions.Width, m.conf().DefaultWidthMM),
-		"height":                       inches(req.Parcel.Dimensions.Height, m.conf().DefaultHeightMM),
+		"length":                       inches(req.Parcel.Dimensions.Length, m.conf(ctx).DefaultLengthMM),
+		"width":                        inches(req.Parcel.Dimensions.Width, m.conf(ctx).DefaultWidthMM),
+		"height":                       inches(req.Parcel.Dimensions.Height, m.conf(ctx).DefaultHeightMM),
 	}
 }
 
@@ -551,8 +552,8 @@ func (m *Module) bearerToken(ctx context.Context) (string, error) {
 		ExpiresIn   int    `json:"expires_in"`
 	}
 	if err := m.call(ctx, http.MethodPost, "/oauth2/v3/token", map[string]any{
-		"client_id":     m.conf().ClientID,
-		"client_secret": m.conf().ClientSecret,
+		"client_id":     m.conf(ctx).ClientID,
+		"client_secret": m.conf(ctx).ClientSecret,
 		"grant_type":    "client_credentials",
 	}, nil, &out); err != nil {
 		return "", err
@@ -588,11 +589,11 @@ func (m *Module) paymentToken(ctx context.Context) (string, error) {
 	role := func(name string) map[string]any {
 		return map[string]any{
 			"roleName":      name,
-			"CRID":          m.conf().CRID,
-			"MID":           m.conf().MID,
-			"manifestMID":   m.conf().ManifestMID,
-			"accountType":   m.conf().AccountType,
-			"accountNumber": m.conf().AccountNumber,
+			"CRID":          m.conf(ctx).CRID,
+			"MID":           m.conf(ctx).MID,
+			"manifestMID":   m.conf(ctx).ManifestMID,
+			"accountType":   m.conf(ctx).AccountType,
+			"accountNumber": m.conf(ctx).AccountNumber,
 		}
 	}
 
@@ -633,7 +634,7 @@ func (m *Module) call(ctx context.Context, method, path string, payload any,
 	if err != nil {
 		return fmt.Errorf("usps: could not encode the request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, m.conf().BaseURL+path, bytes.NewReader(encoded))
+	req, err := http.NewRequestWithContext(ctx, method, m.conf(ctx).BaseURL+path, bytes.NewReader(encoded))
 	if err != nil {
 		return err
 	}

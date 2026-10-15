@@ -51,7 +51,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/itswadesh/gocommerce/core"
@@ -110,7 +110,7 @@ type Config struct {
 // Module is the ShipStation fulfillment provider.
 type Module struct {
 	cfg    Config
-	live   atomic.Pointer[Config]
+	live   sync.Map // store id → *Config: each store has its own account
 	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
@@ -128,9 +128,10 @@ var errNotConfigured = errors.New("shipstation: not set up — activate and conf
 
 // conf is the effective configuration: the last one refresh computed, or
 // Config alone before the first use.
-func (m *Module) conf() *Config {
-	if c := m.live.Load(); c != nil {
-		return c
+func (m *Module) conf(ctx context.Context) *Config {
+	store, _ := gocommerce.StoreFrom(ctx)
+	if c, ok := m.live.Load(store); ok {
+		return c.(*Config)
 	}
 	return &m.cfg
 }
@@ -149,7 +150,8 @@ func (m *Module) refresh(ctx context.Context) bool {
 		}
 	}
 	m.finish(&c)
-	m.live.Store(&c)
+	store, _ := gocommerce.StoreFrom(ctx)
+	m.live.Store(store, &c)
 	return on && m.complete(&c)
 }
 
@@ -234,13 +236,13 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 	if !m.refresh(ctx) {
 		return gocommerce.Shipment{}, errNotConfigured
 	}
-	service := firstNonEmpty(req.Meta["service_code"], m.conf().ServiceCode)
+	service := firstNonEmpty(req.Meta["service_code"], m.conf(ctx).ServiceCode)
 
 	shipment := map[string]any{
 		"service_code": service,
-		"ship_from":    addressBody(m.conf().From),
+		"ship_from":    addressBody(m.conf(ctx).From),
 		"ship_to":      m.toAddress(order),
-		"packages":     []any{m.packageBody(req)},
+		"packages":     []any{m.packageBody(ctx, req)},
 		// ShipStation's own handle on this parcel. A second parcel for the
 		// same order needs a different one, so it carries the count.
 		"external_shipment_id": externalID(order),
@@ -324,13 +326,13 @@ func (m *Module) toAddress(order *gocommerce.Order) map[string]any {
 	})
 }
 
-func (m *Module) packageBody(req gocommerce.ShipRequest) map[string]any {
+func (m *Module) packageBody(ctx context.Context, req gocommerce.ShipRequest) map[string]any {
 	var units int
 	for _, line := range req.Lines {
 		units += line.Quantity
 	}
 
-	grams := m.conf().DefaultWeightGrams * max(units, 1)
+	grams := m.conf(ctx).DefaultWeightGrams * max(units, 1)
 	if req.Parcel.Measured && req.Parcel.WeightGrams > 0 {
 		grams = req.Parcel.WeightGrams
 	}
@@ -338,9 +340,9 @@ func (m *Module) packageBody(req gocommerce.ShipRequest) map[string]any {
 	return map[string]any{
 		"weight": map[string]any{"value": grams, "unit": "gram"},
 		"dimensions": map[string]any{
-			"length": centimetres(req.Parcel.Dimensions.Length, m.conf().DefaultLengthMM),
-			"width":  centimetres(req.Parcel.Dimensions.Width, m.conf().DefaultWidthMM),
-			"height": centimetres(req.Parcel.Dimensions.Height, m.conf().DefaultHeightMM),
+			"length": centimetres(req.Parcel.Dimensions.Length, m.conf(ctx).DefaultLengthMM),
+			"width":  centimetres(req.Parcel.Dimensions.Width, m.conf(ctx).DefaultWidthMM),
+			"height": centimetres(req.Parcel.Dimensions.Height, m.conf(ctx).DefaultHeightMM),
 			"unit":   "centimeter",
 		},
 	}
@@ -386,11 +388,11 @@ func (m *Module) post(ctx context.Context, path string, payload any, out any) er
 	if err != nil {
 		return fmt.Errorf("shipstation: could not encode the request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.conf().BaseURL+path, bytes.NewReader(encoded))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.conf(ctx).BaseURL+path, bytes.NewReader(encoded))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("API-Key", m.conf().APIKey)
+	req.Header.Set("API-Key", m.conf(ctx).APIKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 

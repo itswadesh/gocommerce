@@ -73,7 +73,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"context"
@@ -110,7 +110,7 @@ type Config struct {
 // Module is the RevenueCat payment provider.
 type Module struct {
 	cfg    Config
-	live   atomic.Pointer[Config]
+	live   sync.Map // store id → *Config: each store has its own account
 	app    *gocommerce.App
 	log    *slog.Logger
 	db     *sql.DB
@@ -130,9 +130,10 @@ var errNotConfigured = errors.New("revenuecat: not set up — activate and confi
 
 // conf is the effective configuration: the last one refresh computed, or
 // Config alone before the first use.
-func (m *Module) conf() *Config {
-	if c := m.live.Load(); c != nil {
-		return c
+func (m *Module) conf(ctx context.Context) *Config {
+	store, _ := gocommerce.StoreFrom(ctx)
+	if c, ok := m.live.Load(store); ok {
+		return c.(*Config)
 	}
 	return &m.cfg
 }
@@ -151,7 +152,8 @@ func (m *Module) refresh(ctx context.Context) bool {
 		}
 	}
 	m.finish(&c)
-	m.live.Store(&c)
+	store, _ := gocommerce.StoreFrom(ctx)
+	m.live.Store(store, &c)
 	return on && m.complete(&c)
 }
 
@@ -244,7 +246,7 @@ func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts goc
 			"order_id", order.ID, "order_number", order.Number)
 	}
 
-	link := m.conf().BaseURL + "/" + url.PathEscape(m.conf().LinkToken) + "/" + url.PathEscape(order.Number)
+	link := m.conf(ctx).BaseURL + "/" + url.PathEscape(m.conf(ctx).LinkToken) + "/" + url.PathEscape(order.Number)
 	query := url.Values{}
 	if order.Email != "" {
 		query.Set("email", order.Email)
@@ -275,6 +277,7 @@ func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts goc
 func (m *Module) Webhook() http.Handler { return http.HandlerFunc(m.handleWebhook) }
 
 func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	// A notification for a provider nobody has set up cannot be verified,
 	// and an unverifiable notification is refused.
 	if !m.refresh(r.Context()) {
@@ -291,14 +294,14 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	// constant-time compare so a wrong value cannot be found a byte at a time.
 	if subtle.ConstantTimeCompare(
 		[]byte(r.Header.Get("Authorization")),
-		[]byte(m.conf().WebhookAuthorization)) != 1 {
+		[]byte(m.conf(ctx).WebhookAuthorization)) != 1 {
 		m.log.Warn("rejected a RevenueCat webhook", "error", "Authorization did not match")
 		http.Error(w, "invalid authorization", http.StatusBadRequest)
 		return
 	}
-	if m.conf().SigningSecret != "" {
+	if m.conf(ctx).SigningSecret != "" {
 		if err := verifySignature(body,
-			r.Header.Get(signatureHeader), m.conf().SigningSecret, time.Now()); err != nil {
+			r.Header.Get(signatureHeader), m.conf(ctx).SigningSecret, time.Now()); err != nil {
 			m.log.Warn("rejected a RevenueCat webhook", "error", err)
 			http.Error(w, "invalid signature", http.StatusBadRequest)
 			return
