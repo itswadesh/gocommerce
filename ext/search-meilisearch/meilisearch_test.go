@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,17 +59,24 @@ func (f *fakeMeili) handler(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"taskUid":4}`))
 	case r.Method == http.MethodGet && path == "/indexes/products/documents":
 		var results []map[string]any
-		for id := range f.docs {
-			results = append(results, map[string]any{"id": json.Number(id)})
+		for id, d := range f.docs {
+			results = append(results, map[string]any{"id": json.Number(id), "store_id": d["store_id"]})
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"results": results, "total": len(results)})
 	case r.Method == http.MethodPost && path == "/indexes/products/search":
 		var q struct {
-			Q string `json:"q"`
+			Q      string `json:"q"`
+			Filter any    `json:"filter"`
 		}
 		_ = json.Unmarshal(body, &q)
+		// Only the one filter this module always sends is understood: the
+		// store's own documents.
+		filter, _ := json.Marshal(q.Filter)
 		var hits []map[string]any
 		for _, d := range f.docs {
+			if store, _ := d["store_id"].(string); !strings.Contains(string(filter), `store_id = \"`+store+`\"`) {
+				continue
+			}
 			if title, _ := d["title"].(string); strings.Contains(strings.ToLower(title), strings.ToLower(q.Q)) {
 				hits = append(hits, d)
 			}
@@ -202,33 +210,61 @@ func TestMeilisearchRoutesAreDocumentedAndGated(t *testing.T) {
 
 func ptr[T any](v T) *T { return &v }
 
-// One engine serves every store, so two stores must never sync into one
-// index — a full sync of one removes what the other wrote — and one store's
-// last sync time is not the other's.
-func TestEachStoreHasItsOwnIndexAndSyncState(t *testing.T) {
-	mod := New(Config{Host: "http://127.0.0.1:1", APIKey: "k"})
+// One engine serves every store and every store shares the one index, each
+// document carrying its store: a search sees only the asking store's
+// products, and one store's full sync removes only its own stale documents.
+func TestStoresShareOneIndexEachSeeingItsOwn(t *testing.T) {
+	fake := &fakeMeili{docs: map[string]map[string]any{}}
+	srv := httptest.NewServer(http.HandlerFunc(fake.handler))
+	t.Cleanup(srv.Close)
+	mod := New(Config{Host: srv.URL, APIKey: "master", SearchKey: "search", Poll: -1})
 	app := gctest.New(t, mod)
 	b, err := app.Stores().Create(context.Background(), "Second", "second")
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctxA, ctxB := context.Background(), gocommerce.WithStore(context.Background(), b.ID)
-	a, err := mod.connection(ctxA)
-	if err != nil {
-		t.Fatal(err)
+	price := int64(1000)
+	for _, c := range []struct {
+		ctx   context.Context
+		title string
+	}{{ctxA, "Alpha mug"}, {ctxB, "Beta mug"}} {
+		on := true
+		if _, err := app.Plugins().Update(c.ctx, pluginKey, gocommerce.PluginPatch{Enabled: &on}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := app.Products().CreateProduct(c.ctx, gocommerce.ProductInput{Title: c.title, Status: "active", PriceMinor: &price}); err != nil {
+			t.Fatal(err)
+		}
+		conn, err := mod.connection(c.ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if conn.index != defaultIndex {
+			t.Fatalf("index = %q, want every store in %q", conn.index, defaultIndex)
+		}
+		if _, _, err := mod.Sync(c.ctx, true); err != nil {
+			t.Fatal(err)
+		}
 	}
-	bc, err := mod.connection(ctxB)
-	if err != nil {
-		t.Fatal(err)
+	if len(fake.docs) != 2 {
+		t.Fatalf("index holds %d documents after both stores synced fully, want 2: one store's sync removed the other's", len(fake.docs))
 	}
-	if a.index != defaultIndex {
-		t.Errorf("the first store's index = %q, want %q so an upgraded install keeps its index", a.index, defaultIndex)
+	for _, c := range []struct {
+		store, want, not string
+	}{{"", "Alpha mug", "Beta mug"}, {b.ID, "Beta mug", "Alpha mug"}} {
+		target := "/x/meilisearch/search?q=mug"
+		if c.store != "" {
+			target += "&store=" + c.store
+		}
+		rec := gctest.Request(t, app, http.MethodGet, target, nil)
+		body := rec.Body.String()
+		if rec.Code != http.StatusOK || !strings.Contains(body, c.want) || strings.Contains(body, c.not) {
+			t.Fatalf("search for store %q = %d %s; want %q and not %q", c.store, rec.Code, body, c.want, c.not)
+		}
 	}
-	if bc.index == a.index {
-		t.Fatalf("both stores sync into %q", a.index)
-	}
-	mod.stateFor(ctxA).lastSync = time.Now()
-	if !mod.stateFor(ctxB).lastSync.IsZero() {
-		t.Fatal("store A's sync time became store B's")
+	mod.stateFor(ctxA).lastSync = time.Time{}
+	if mod.stateFor(ctxB).lastSync.IsZero() {
+		t.Fatal("store B's sync time went with store A's")
 	}
 }

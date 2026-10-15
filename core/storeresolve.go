@@ -41,10 +41,17 @@ func storeExemptPath(p string) bool {
 	return false
 }
 
+// storePath reports whether a path belongs to a store: the engine's API and
+// every module's public routes, which are mounted under /x/ (a storefront's
+// search, pages, wishlists, feeds). The panel's own files, /health and /docs
+// belong to no store and are served without asking.
+func storePath(p string) bool {
+	return strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/x/")
+}
+
 // storeMW finds the store an API request is for and binds the request's
 // context to it (WithStore), so every statement the handler runs sees that
-// store's rows and no other's. Only /api/ is resolved: the panel's files,
-// /health and /docs belong to no store.
+// store's rows and no other's. Only store paths are resolved (storePath).
 //
 // First match wins: the API key's own store; the x-litekart-store header (or
 // X-Store, slug or id); ?store=; the litekart_store_id cookie; the host; the
@@ -53,7 +60,7 @@ func storeExemptPath(p string) bool {
 // team (bearerAuth).
 func (a *App) storeMW(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/api/") {
+		if !storePath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
