@@ -83,6 +83,11 @@ const notificationColumns = `id, event, channel, recipient, language, order_numb
 // cancels a handler's context on timeout and a row saying "failed: timed
 // out" is exactly the one that must not be lost to the timeout.
 func (s *Notifications) record(ctx context.Context, note Notification, outcome notificationOutcome, sendErr error) {
+	// Mail sent on the install's own channel belongs to no store, so no
+	// store's log holds it (identityMailScope).
+	if st, ok := StoreFrom(ctx); ok && st == installScope {
+		return
+	}
 	status := NotificationLogged
 	switch {
 	case sendErr != nil:
