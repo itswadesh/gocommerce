@@ -535,14 +535,14 @@
             <div class="page">
                 <!-- Why the login form is back, when it is back because a
                      credential stopped resolving mid-session rather than
-                     because nobody has signed in yet. -->
-                {#if session.expired}
-                    <div class="alert warning m-b-base">
-                        <p>Your session ended. Sign in to continue.</p>
-                    </div>
-                {/if}
+                     because nobody has signed in yet. Said inside the card:
+                     .page is a flex row, and a notice beside the card took its
+                     whole width and left the form an 88px strip. -->
                 {#if ready && !authenticated}
-                    <Login onauthenticated={onAuthenticated} />
+                    <Login
+                        onauthenticated={onAuthenticated}
+                        notice={session.expired ? "Your session ended. Sign in to continue." : ""}
+                    />
                 {/if}
             </div>
         {:else if isPublic}
