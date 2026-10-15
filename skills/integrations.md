@@ -82,7 +82,11 @@ public routes, admin routes, and not one line that touches commerce state.
 **Own a table, prefixed with the module name.** `Migrations()` returns one
 `Migration{ID: "0001_pages", SQL: "CREATE TABLE cms_pages (…)"}` — `ID` matching
 `[a-z0-9_]+`, recorded in the ledger as `cms/0001_pages`, exactly one of `SQL`
-or `Run` set, and frozen once it ships.
+or `Run` set, and frozen once it ships. Then keep the table to its store (D83)
+with one more: `gocommerce.ScopeMigration("0002_store_scope", "cms_pages")`
+adds `store_id`, puts it at the front of the table's keys and turns on the
+row policy, so every query the module runs with its request's `ctx` sees only
+that store's pages.
 
 **Wire it, and let the mount decide the auth.**
 
