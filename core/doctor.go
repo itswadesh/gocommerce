@@ -88,6 +88,7 @@ func (a *App) Diagnose(ctx context.Context) Report {
 
 	add(a.checkDatabase(ctx))
 	add(a.checkMigrations(ctx))
+	add(a.checkRowSecurity(ctx))
 	add(a.checkAdminAccess(ctx))
 	add(a.checkOutbox(ctx))
 	add(a.checkReservations(ctx))
@@ -110,6 +111,40 @@ func (a *App) Diagnose(ctx context.Context) Report {
 		}
 	}
 	return rep
+}
+
+// checkRowSecurity fails when the engine's database login can pass the row
+// policies: PostgreSQL exempts a superuser and a role with BYPASSRLS from
+// every policy, and the policy is what keeps one store's rows out of another's
+// (D83). An install with one store is not leaking anything today, but it is
+// one store away from it, so this is a failure and not a warning.
+func (a *App) checkRowSecurity(ctx context.Context) Diagnostic {
+	var super, bypass bool
+	if err := a.db.QueryRowContext(ctx,
+		`SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user`).Scan(&super, &bypass); err != nil {
+		return Diagnostic{Name: "row security", Status: StatusFail,
+			Detail: "could not read the database login's attributes",
+			Hint:   "check that the engine can read pg_roles", Cause: err.Error()}
+	}
+	return a.rowSecurityVerdict(super, bypass)
+}
+
+func (a *App) rowSecurityVerdict(super, bypass bool) Diagnostic {
+	d := Diagnostic{Name: "row security"}
+	switch {
+	case super:
+		d.Status = StatusFail
+		d.Detail = "the engine signs in to PostgreSQL as a superuser, which every row policy lets through, so stores are not kept apart"
+	case bypass:
+		d.Status = StatusFail
+		d.Detail = "the engine's database login has BYPASSRLS, so stores are not kept apart"
+	default:
+		d.Status = StatusOK
+		d.Detail = "the engine's database login is held to the row policies"
+		return d
+	}
+	d.Hint = "connect as an ordinary login that owns the tables (docker-compose.yml creates gocommerce_app; see scripts/db-init/01-engine-login.sql)"
+	return d
 }
 
 func (a *App) checkDatabase(ctx context.Context) Diagnostic {

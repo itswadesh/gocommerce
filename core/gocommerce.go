@@ -825,6 +825,13 @@ func (a *App) ListenAndServe() error {
 		IdleTimeout:  httpIdleTimeout,
 	}
 
+	// A login that passes the row policies keeps no store's rows from another
+	// (D83). Said at start, loudly, rather than refused: an operator has to be
+	// able to start the process and run the doctor to read why.
+	if d := a.checkRowSecurity(ctx); d.Status == StatusFail {
+		a.log.Error("stores are not isolated", "problem", d.Detail, "fix", d.Hint)
+	}
+
 	// Serving with no admin token is the one configuration that silently leaves
 	// the admin API open, and it is reachable by forgetting a flag. Say so
 	// loudly here — this is the moment it starts to matter.
