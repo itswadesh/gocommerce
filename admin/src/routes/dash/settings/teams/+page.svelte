@@ -23,9 +23,6 @@
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
-    import { portal } from "$lib/portal.js";
-    import { trapFocus } from "$lib/focus.js";
-    import { dismissable } from "$lib/dismiss.js";
 
     /*
      * team.read is the sidebar's gate on this screen; team.write is what every
@@ -46,18 +43,27 @@
     let invitations = $state([]);
 
     let inviteOpen = $state(false);
-    let invite = $state({ email: "", role: "staff" });
+    /*
+     * Dokploy's "Add Invitation": how they arrive first — a link emailed to
+     * them, or a password set now — then the email and the role. There is no
+     * email-provider picker: the link goes out by the store's own provider
+     * (Resend, where it is installed).
+     */
+    let invite = $state({ method: "link", email: "", role: "staff", password: "" });
     let inviting = $state(false);
-    /** The invitation being re-issued, so its own row shows the spinner. */
-    let resending = $state("");
-    // The link, held only for as long as the drawer that shows it is open. The
-    // engine cannot produce it a second time, so this is the one chance to
-    // copy it — and it must not end up anywhere it would outlive that.
+    /** The invitation a row action is working on, so its own row shows it. */
+    let busyInvite = $state("");
+    // The invitation just created, while the drawer that reports it is open:
+    // whether it was emailed, and the link to copy either way.
     let issued = $state(null);
     let copied = $state(false);
-    /** Whether the link on screen replaced an earlier one, which the drawer has
-     *  to say out loud: the earlier link stopped working when this was made. */
-    let reissued = $state(false);
+    /** Accepted and revoked invitations are history; shown on request. */
+    let showAllInvites = $state(false);
+
+    const INVITE_METHODS = [
+        { value: "link", label: "Invitation link — emailed to them" },
+        { value: "password", label: "Set a password now" },
+    ];
 
     let editorOpen = $state(false);
     let editing = $state(null); // null = creating
@@ -117,9 +123,13 @@
         }
     }
 
-    /** Outstanding ones only: accepted invitations are history, and the person
-     *  they let in is already in the table above. */
-    const outstanding = $derived(invitations.filter((i) => i.status !== "accepted"));
+    /** Outstanding ones: waiting, or lapsed and worth resending. Accepted and
+     *  revoked invitations are history. */
+    const outstanding = $derived(
+        invitations.filter((i) => i.status === "pending" || i.status === "expired"),
+    );
+    const listedInvites = $derived(showAllInvites ? invitations : outstanding);
+    const STATUS_TONE = { pending: "info", accepted: "success", expired: "warning", revoked: "" };
 
     /* Summed over the rows rather than asked for: the listing already carries
        every count, and a second request for a total nobody can act on
@@ -203,12 +213,8 @@
     const bulkRemove = () => runOver(actionable, (su) => auth.remove(su.id), "Removed");
 
     /*
-     * Revoking is the only bulk action an invitation has, and Resend is
-     * deliberately not beside it. One resend answers with a link that is shown
-     * once and cannot be produced again, and it cancels the link it replaces —
-     * so a run over eight rows would destroy eight live links and show none of
-     * the eight replacements. It stays a per-row button, which is where the
-     * drawer that shows the link can follow it.
+     * Revoking is the only bulk action an invitation has. Resending cancels
+     * the link it replaces, which is a decision about one person at a time.
      */
     const bulkRevoke = () =>
         runOver(
@@ -236,28 +242,21 @@
                 (!editing && form.role !== "staff")),
     );
 
-    /* An issued link is not a dirty form — closeInvite already refuses to
-       dismiss while one is on screen, and for a stronger reason. */
     const inviteDirty = $derived(
-        inviteOpen && !issued && (invite.email.trim() !== "" || invite.role !== "staff"),
+        inviteOpen &&
+            !issued &&
+            (invite.email.trim() !== "" || invite.password !== "" || invite.role !== defaultRole),
     );
 
     const anyDirty = $derived(editorDirty || inviteDirty);
 
     /*
-     * Adding somebody, the KitCommerce admin's way: an email and a role first,
-     * and only then — when the address has no account — a choice between
-     * making one now and sending a link. An account is one person across every
-     * store (D83): an address that already has one joins this store straight
-     * away, keeping the password it has.
+     * Adding somebody. An address that already has an account elsewhere (D83)
+     * joins straight away by either method and keeps the password it has.
      */
-    let chooseOpen = $state(false);
-    let how = $state("invite"); // "create" | "invite"
-    let newPassword = $state("");
-    let proceeding = $state(false);
-
-    function continueAdd(event) {
+    async function submitInvite(event) {
         event?.preventDefault();
+        if (inviting) return;
         errors = {};
         const email = invite.email.trim().toLowerCase();
         if (!email) {
@@ -272,39 +271,26 @@
             errors.invite = "Choose a role.";
             return;
         }
-        how = "invite";
-        newPassword = "";
-        chooseOpen = true;
-    }
-
-    async function proceed() {
-        if (proceeding) return;
-        errors = {};
-        if (how === "create" && newPassword.length < 8) {
-            errors.choose = "A password of at least 8 characters is required.";
+        if (invite.method === "password" && invite.password.length < 8) {
+            errors.password = "A password of at least 8 characters is required.";
             return;
         }
-        proceeding = true;
+        inviting = true;
         try {
-            if (how === "create") {
-                await auth.create(invite.email.trim(), newPassword, invite.role);
-                toast.success("User created and added to team");
-                chooseOpen = false;
+            if (invite.method === "password") {
+                await auth.create(email, invite.password, invite.role);
+                toast.success(`${email} added to the team`);
                 closeInvite({ deliberate: true });
-                await load();
             } else {
-                await sendInvite();
-                if (issued) {
-                    toast.success("Invite sent");
-                    chooseOpen = false;
-                } else if (errors.invite) {
-                    errors.choose = errors.invite;
-                }
+                const result = await auth.invite(email, invite.role, true);
+                issued = result.data ?? result;
+                copied = false;
             }
+            await load();
         } catch (err) {
-            errors.choose = err.message;
+            errors.invite = err.message;
         } finally {
-            proceeding = false;
+            inviting = false;
         }
     }
 
@@ -317,32 +303,11 @@
     );
 
     function openInvite() {
-        invite = { email: "", role: defaultRole };
+        invite = { method: "link", email: "", role: defaultRole, password: "" };
         issued = null;
         copied = false;
-        reissued = false;
         errors = {};
         inviteOpen = true;
-    }
-
-    async function sendInvite(event) {
-        event?.preventDefault();
-        if (inviting) return;
-        errors = {};
-        if (!invite.email.trim()) {
-            errors.invite = "An email is required.";
-            return;
-        }
-        inviting = true;
-        try {
-            const result = await auth.invite(invite.email.trim(), invite.role);
-            issued = result.data ?? result;
-            await load();
-        } catch (err) {
-            errors.invite = err.message;
-        } finally {
-            inviting = false;
-        }
     }
 
     async function copyLink() {
@@ -357,39 +322,62 @@
         }
     }
 
-    /**
-     * Re-issue an outstanding invitation.
-     *
-     * One POST, not revoke-then-invite: the engine deletes an outstanding
-     * invitation for the same address before writing the new one
-     * (core/invitations.go), so re-inviting IS the replacement. What that means
-     * for the operator is worth being plain about — the old link stops working
-     * the moment this one exists, which is the right behaviour for a lost link
-     * and the wrong surprise if somebody still has the first one.
-     *
-     * Until this existed the only remedy for a link that never arrived was to
-     * find the row, revoke it, and then invite the same address again from a
-     * different button — three steps to repeat one request.
-     */
-    async function resendInvite(inv) {
-        if (resending) return;
-        resending = inv.id;
-        errors = {};
+    async function clipboard(text) {
         try {
-            const result = await auth.invite(inv.email, inv.role);
-            // Straight into the drawer that shows the link: the response is the
-            // only place it exists, so anything that navigates away from it
-            // first has already lost it.
-            issued = result.data ?? result;
-            copied = false;
-            reissued = true;
-            invite = { email: inv.email, role: inv.role };
-            inviteOpen = true;
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Copy a fresh link for an invitation. The store keeps only a link's
+     * hash, so the old one cannot be shown again: this issues a new one, and
+     * the old one stops working. Nothing is emailed.
+     */
+    async function copyInviteLink(inv) {
+        if (busyInvite) return;
+        busyInvite = inv.id;
+        try {
+            const result = await auth.invite(inv.email, inv.role, false);
+            const fresh = result.data ?? result;
+            if (await clipboard(fresh.accept_url)) {
+                toast.success(`New link for ${inv.email} copied — the old one no longer works`);
+            } else {
+                issued = fresh;
+                invite = { method: "link", email: inv.email, role: inv.role, password: "" };
+                inviteOpen = true;
+            }
             await load();
         } catch (err) {
             toast.error(err);
         } finally {
-            resending = "";
+            busyInvite = "";
+        }
+    }
+
+    /** Email the invitation again, with a new link; the old one stops working. */
+    async function resendInvite(inv) {
+        if (busyInvite) return;
+        busyInvite = inv.id;
+        try {
+            const result = await auth.invite(inv.email, inv.role, true);
+            const fresh = result.data ?? result;
+            if (fresh.emailed) {
+                toast.success(`Invitation emailed again to ${inv.email}`);
+            } else {
+                // Not sent: show why, with the link to copy instead.
+                issued = fresh;
+                copied = false;
+                invite = { method: "link", email: inv.email, role: inv.role, password: "" };
+                inviteOpen = true;
+            }
+            await load();
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            busyInvite = "";
         }
     }
 
@@ -404,35 +392,12 @@
     }
 
     /**
-     * The invite drawer only closes deliberately while the one-time link is on
-     * screen.
-     *
-     * `onclose` is one callback for the backdrop, Escape and the header's X, so
-     * it cannot tell them apart — and a stray click on the dimmed page while
-     * that link is up destroys it. So every route out of the drawer is refused
-     * except the footer's Done, which says what it is doing. The form state has
-     * nothing to protect and dismisses normally.
-     *
-     * Resend makes this recoverable rather than fatal now, which is why this is
-     * a refusal with an explanation and not a confirmation dialog over a
-     * dialog.
+     * A half-typed invitation is worth one question. Cancel passes
+     * `deliberate` and is never asked; Escape, the backdrop and the header's X
+     * arrive here saying nothing. A sent invitation has nothing to lose — its
+     * link can be copied again from the list.
      */
     function closeInvite({ deliberate = false } = {}) {
-        if (issued && !deliberate) {
-            toast.info("This link is shown once — press Done when you have copied it");
-            return;
-        }
-        /*
-         * A half-typed invitation is worth one question. Cancel passes
-         * `deliberate` and is never asked — it says what it does — while
-         * Escape, the backdrop and the header's X all arrive here saying
-         * nothing, which is how the address somebody was mid-way through
-         * typing used to disappear.
-         *
-         * `confirm` rather than a dialog over a dialog, the same reasoning
-         * DirtyGuard sets out: this has to answer synchronously and a second
-         * modal over an open drawer is worse than the browser's own question.
-         */
         if (!deliberate && inviteDirty && !window.confirm(DISCARD)) return;
         inviteOpen = false;
     }
@@ -602,19 +567,18 @@
             </div>
 
             <div class="page-header-primary-btns">
-                <!-- One entry point, as in the KitCommerce admin: the email
-                     and role come first, and how the person arrives (an
-                     account made now, or a link they open) is asked after. -->
+                <!-- One entry point, Dokploy's "Add Invitation": how the
+                     person arrives, their email and their role, in one form. -->
                 {#if writable}
                     <button
                         type="button"
                         class="btn"
-                        aria-label="Add team member"
-                        title="Add team member"
+                        aria-label="Invite member"
+                        title="Invite member"
                         onclick={openInvite}
                     >
                         <i class="ri-user-add-line" aria-hidden="true"></i>
-                        <span class="txt">Add team member</span>
+                        <span class="txt">Invite member</span>
                     </button>
                 {/if}
             </div>
@@ -795,12 +759,17 @@
             that nobody ever has been.
         </div>
 
-        {#if outstanding.length}
+        {#if invitations.length}
             <!-- Below the team rather than beside it: these are people who are
-                 not here yet, and mixing them into the list would say they are. -->
-            <div class="m-t-base">
-                <h2 class="tw:mt-6 tw:mb-3 tw:flex tw:flex-wrap tw:items-center tw:gap-2 tw:text-sm tw:font-semibold">
-                    Invited, not yet joined
+                 not here yet, and mixing them into the list would say they are.
+                 Laid out as Dokploy's Invitations card: email, role, status,
+                 when it expires, and what can be done with it. -->
+            <section class="m-t-base invitations" aria-labelledby="invitations-title">
+                <h2
+                    id="invitations-title"
+                    class="tw:mt-6 tw:mb-3 tw:flex tw:flex-wrap tw:items-center tw:gap-2 tw:text-sm tw:font-semibold"
+                >
+                    Invitations
                     {#if writable && outstanding.length > 1}
                         <button
                             type="button"
@@ -812,74 +781,124 @@
                             </span>
                         </button>
                     {/if}
+                    {#if invitations.length > outstanding.length}
+                        <button
+                            type="button"
+                            class="btn sm transparent secondary m-l-auto"
+                            aria-pressed={showAllInvites}
+                            onclick={() => (showAllInvites = !showAllInvites)}
+                        >
+                            <span class="txt">{showAllInvites ? "Waiting only" : "Show all"}</span>
+                        </button>
+                    {/if}
                 </h2>
-                <div class="list">
-                    {#each outstanding as inv (inv.id)}
-                        <div class="list-item">
-                            {#if writable}
-                                <!-- The same tick as the table above, so a
-                                     selection means one thing on this screen.
-                                     `.field` is `width: 100%` in a form column
-                                     and has to be told otherwise in a flex
-                                     row — see the scoped rule at the foot. -->
-                                <div class="field invite-select">
-                                    <input
-                                        id="select-invite-{inv.id}"
-                                        type="checkbox"
-                                        checked={selInvites.has(inv.id)}
-                                        onchange={() => pickInvite(inv.id)}
-                                    />
-                                    <label
-                                        for="select-invite-{inv.id}"
-                                        aria-label="Select the invitation to {inv.email}"
-                                    ></label>
-                                </div>
-                            {/if}
-                            <i class="ri-mail-line" aria-hidden="true"></i>
-                            <span class="txt">{inv.email}</span>
-                            <span class="label">{roleName(inv.role)}</span>
-                            {#if inv.status === "expired"}
-                                <span class="label warning">expired</span>
-                            {/if}
-                            <div class="flex-fill"></div>
-                            <span class="txt-hint txt-sm">
-                                {inv.invited_by ? `invited by ${inv.invited_by}` : "invited"}
-                                · {inv.status === "expired" ? "expired" : "expires"}
-                                {formatDate(inv.expires_at)}
-                            </span>
-                            <!-- Before Revoke, because it is the thing an
-                                 operator standing at this row nearly always
-                                 wants: the link did not arrive, or it expired.
-                                 The title says what it costs — the previous
-                                 link stops working — because the engine
-                                 replaces the outstanding invitation rather
-                                 than adding a second one. -->
-                            {#if writable}
-                                <button
-                                    type="button"
-                                    class="btn circle sm transparent secondary"
-                                    class:loading={resending === inv.id}
-                                    disabled={!!resending}
-                                    aria-label="Resend the invitation to {inv.email}"
-                                    title="Resend — issues a fresh link and cancels the old one"
-                                    onclick={() => resendInvite(inv)}
-                                >
-                                    <i class="ri-mail-send-line" aria-hidden="true"></i>
-                                </button>
-                                <button
-                                    type="button"
-                                    class="btn circle sm transparent secondary"
-                                    aria-label="Revoke the invitation to {inv.email}"
-                                    title="Revoke"
-                                    onclick={() => revokeInvite(inv)}
-                                >
-                                    <i class="ri-close-line" aria-hidden="true"></i>
-                                </button>
-                            {/if}
-                        </div>
-                    {/each}
-                </div>
-            </div>
+                {#if listedInvites.length}
+                    <div class="page-table-wrapper tw:rounded-xl tw:border">
+                        <table class="table responsive-table">
+                            <thead>
+                                <tr>
+                                    {#if writable}<th class="col-bulk-select min-width"></th>{/if}
+                                    <th class="col-field-name-id">Email</th>
+                                    <th class="col-field-type-select">Role</th>
+                                    <th class="col-field-type-select">Status</th>
+                                    <th class="col-field-type-date">Expires</th>
+                                    <th class="col-meta min-width">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {#each listedInvites as inv (inv.id)}
+                                    {@const open = inv.status === "pending" || inv.status === "expired"}
+                                    <tr class="invite-row" class:busy={busyInvite === inv.id}>
+                                        {#if writable}
+                                            <td class="col-bulk-select min-width">
+                                                {#if open}
+                                                    <div class="field invite-select">
+                                                        <input
+                                                            id="select-invite-{inv.id}"
+                                                            type="checkbox"
+                                                            checked={selInvites.has(inv.id)}
+                                                            onchange={() => pickInvite(inv.id)}
+                                                        />
+                                                        <label
+                                                            for="select-invite-{inv.id}"
+                                                            aria-label="Select the invitation to {inv.email}"
+                                                        ></label>
+                                                    </div>
+                                                {/if}
+                                            </td>
+                                        {/if}
+                                        <td class="col-field-name-id" data-name="Email">
+                                            <span class="txt">{inv.email}</span>
+                                            {#if inv.invited_by}
+                                                <div class="txt-hint txt-sm">invited by {inv.invited_by}</div>
+                                            {/if}
+                                        </td>
+                                        <td class="col-field-type-select" data-name="Role">
+                                            <span class="label">{roleName(inv.role)}</span>
+                                        </td>
+                                        <td class="col-field-type-select" data-name="Status">
+                                            <span class="label {STATUS_TONE[inv.status] ?? ''}">{inv.status}</span>
+                                        </td>
+                                        <td
+                                            class="col-field-type-date"
+                                            data-name="Expires"
+                                            title={formatDate(inv.expires_at)}
+                                        >
+                                            {#if inv.status === "accepted"}
+                                                <span class="txt-hint">joined {relativeTime(inv.accepted_at)}</span>
+                                            {:else if inv.status === "revoked"}
+                                                <span class="txt-hint">revoked {relativeTime(inv.revoked_at)}</span>
+                                            {:else}
+                                                {formatDate(inv.expires_at)}
+                                                {#if inv.status === "expired"}<span class="txt-hint">(expired)</span>{/if}
+                                            {/if}
+                                        </td>
+                                        <td class="col-meta min-width" data-name="Actions">
+                                            {#if writable && open}
+                                                <div class="inline-flex gap-5">
+                                                    <button
+                                                        type="button"
+                                                        class="btn circle sm transparent secondary"
+                                                        class:loading={busyInvite === inv.id}
+                                                        disabled={!!busyInvite}
+                                                        aria-label="Copy a new link for {inv.email}"
+                                                        title="Copy link — issues a new one; the old link stops working"
+                                                        onclick={() => copyInviteLink(inv)}
+                                                    >
+                                                        <i class="ri-links-line" aria-hidden="true"></i>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        class="btn circle sm transparent secondary"
+                                                        disabled={!!busyInvite}
+                                                        aria-label="Email the invitation to {inv.email} again"
+                                                        title="Resend email — with a new link"
+                                                        onclick={() => resendInvite(inv)}
+                                                    >
+                                                        <i class="ri-mail-send-line" aria-hidden="true"></i>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        class="btn circle sm transparent secondary"
+                                                        disabled={!!busyInvite}
+                                                        aria-label="Revoke the invitation to {inv.email}"
+                                                        title="Revoke"
+                                                        onclick={() => revokeInvite(inv)}
+                                                    >
+                                                        <i class="ri-close-line" aria-hidden="true"></i>
+                                                    </button>
+                                                </div>
+                                            {/if}
+                                        </td>
+                                    </tr>
+                                {/each}
+                            </tbody>
+                        </table>
+                    </div>
+                {:else}
+                    <p class="txt-hint txt-sm">Nobody is waiting to join. Show all to see past invitations.</p>
+                {/if}
+            </section>
         {/if}
 
         {#if writable}
@@ -1042,43 +1061,44 @@
 
 <Drawer
     open={inviteOpen}
-    title={issued ? "Send this link" : "Add team member"}
+    title={issued ? (issued.emailed ? "Invitation sent" : "Invitation created") : "Invite member"}
     size="sm"
     onclose={() => closeInvite()}
 >
     {#if issued}
-        <!-- The link exists in this response and nowhere else: the store kept
-             only its hash. Saying so is what stops somebody closing the drawer
-             expecting to find it again on the list. -->
-        <div class="alert info m-b-base">
-            <p>
-                <i class="ri-information-line" aria-hidden="true"></i>
-                This is the only time this link is shown. Close this and it cannot be recovered —
-                you would have to resend the invitation to {issued.email}, which issues a
-                different link again.
-            </p>
-            {#if reissued}
-                <!-- Said here rather than only on the button that did it: the
-                     operator may have pressed Resend to chase a link somebody
-                     had already been sent, and both links are not live. -->
-                <p>
-                    Any link {issued.email} was sent before this one has stopped working.
-                </p>
-            {/if}
-        </div>
+        {#if issued.emailed}
+            <div class="alert success m-b-base invite-result" role="status">
+                <i class="ri-mail-check-line" aria-hidden="true"></i>
+                <p>Invitation emailed to <strong>{issued.email}</strong>.</p>
+            </div>
+        {:else}
+            <div class="alert warning m-b-base invite-result" role="status">
+                <i class="ri-mail-close-line" aria-hidden="true"></i>
+                <p>{issued.email_error || `Nothing was emailed to ${issued.email}.`}</p>
+            </div>
+        {/if}
 
         <div class="field">
             <label for="invite-link">Link for {issued.email}</label>
             <input id="invite-link" type="text" readonly value={issued.accept_url} />
         </div>
         <div class="field-help">
-            They choose their own password when they open it. It works until {formatDate(
-                issued.expires_at,
-            )}.
+            It works until {formatDate(issued.expires_at)}. They choose their own password when they
+            open it, or use the one they have if they already work in another store.
         </div>
     {:else}
-        <form id="invite-form" onsubmit={continueAdd}>
-            <div class="field required" class:error={!!errors.invite}>
+        <form id="invite-form" onsubmit={submitInvite}>
+            <div class="field">
+                <label for="invite-method">Invite method</label>
+                <Select id="invite-method" bind:value={invite.method} options={INVITE_METHODS} />
+            </div>
+            <div class="field-help">
+                {invite.method === "link"
+                    ? "They get an email with a link and set their own password."
+                    : "You choose their first password and tell it to them."}
+            </div>
+
+            <div class="field required m-t-sm" class:error={!!errors.invite}>
                 <label for="invite-email">Email</label>
                 <!-- svelte-ignore a11y_autofocus -->
                 <input
@@ -1086,20 +1106,35 @@
                     type="email"
                     autocomplete="off"
                     autofocus
+                    placeholder="name@example.com"
                     bind:value={invite.email}
                     oninput={() => (errors = {})}
                 />
             </div>
             {#if errors.invite}<div class="field-help error">{errors.invite}</div>{/if}
 
-            <div class="field m-t-sm">
+            <div class="field required m-t-sm">
                 <label for="invite-role">Role</label>
                 <Select id="invite-role" bind:value={invite.role} options={roleOptions} />
             </div>
-            <div class="field-help">
-                Next you choose how they arrive: an account you make now, or a link they open
-                and set their own password with.
-            </div>
+            <div class="field-help">What they may do. It can be changed later from the list.</div>
+
+            {#if invite.method === "password"}
+                <div class="field required m-t-sm" class:error={!!errors.password}>
+                    <label for="invite-password">Password</label>
+                    <input
+                        id="invite-password"
+                        type="password"
+                        autocomplete="new-password"
+                        minlength="8"
+                        bind:value={invite.password}
+                        oninput={() => (errors = {})}
+                    />
+                </div>
+                <div class="field-help" class:error={!!errors.password}>
+                    {errors.password || "At least 8 characters. Tell them, and ask them to change it."}
+                </div>
+            {/if}
         </form>
     {/if}
 
@@ -1112,7 +1147,7 @@
             >
                 <span class="txt">Done</span>
             </button>
-            <button type="button" class="btn" onclick={copyLink}>
+            <button type="button" class="btn" class:copied onclick={copyLink}>
                 <i class={copied ? "ri-check-line" : "ri-file-copy-line"} aria-hidden="true"></i>
                 <span class="txt">{copied ? "Copied" : "Copy link"}</span>
             </button>
@@ -1131,86 +1166,11 @@
                 class:loading={inviting}
                 disabled={inviting}
             >
-                <span class="txt">Continue</span>
+                <span class="txt">{invite.method === "link" ? "Send invitation" : "Add member"}</span>
             </button>
         {/if}
     {/snippet}
 </Drawer>
-
-<!-- The KitCommerce admin's "User Account Not Found" choice. Built on the
-     panel's modal (the same markup Confirm uses), so it opens, closes, traps
-     focus and honours reduced motion the way every other dialog here does. -->
-<div
-    class="modal popup sm"
-    data-modal-state={chooseOpen ? "open" : "closed"}
-    inert={!chooseOpen}
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="choose-title"
-    tabindex="-1"
-    use:portal
-    use:trapFocus={chooseOpen}
-    use:dismissable={{ onclose: () => (chooseOpen = false), enabled: chooseOpen && !proceeding }}
->
-    <div class="modal-content">
-        <h5 id="choose-title" class="m-b-sm">User Account Not Found</h5>
-        <p class="txt-hint m-b-base">
-            The email {invite.email.trim()} does not have a registered account yet. Choose how you
-            would like to proceed.
-        </p>
-        <div class="choice-cards" role="radiogroup" aria-label="How they join">
-            <button
-                type="button"
-                class="choice-card"
-                role="radio"
-                aria-checked={how === "create"}
-                onclick={() => (how = "create")}
-            >
-                <i class="ri-user-add-line" aria-hidden="true"></i>
-                <span class="choice-title">Create Account</span>
-                <span class="choice-sub">Enter a password</span>
-            </button>
-            <button
-                type="button"
-                class="choice-card"
-                role="radio"
-                aria-checked={how === "invite"}
-                onclick={() => (how = "invite")}
-            >
-                <i class="ri-mail-send-line" aria-hidden="true"></i>
-                <span class="choice-title">Send Invite</span>
-                <span class="choice-sub">Send a registration link</span>
-            </button>
-        </div>
-        {#if how === "create"}
-            <div class="field required m-t-base" class:error={!!errors.choose}>
-                <label for="choose-password">Password</label>
-                <input
-                    id="choose-password"
-                    type="password"
-                    autocomplete="new-password"
-                    minlength="8"
-                    bind:value={newPassword}
-                />
-            </div>
-            <div class="field-help">At least 8 characters. Tell them, and ask them to change it.</div>
-        {:else}
-            <p class="txt-hint m-t-base">
-                An invitation link will be made for {invite.email.trim()}. They open it, set their own
-                password and join the team; nobody else ever knows it.
-            </p>
-        {/if}
-        {#if errors.choose}<div class="field-help error m-t-sm">{errors.choose}</div>{/if}
-    </div>
-    <footer class="modal-footer">
-        <button type="button" class="btn transparent m-r-auto" onclick={() => (chooseOpen = false)}>
-            <span class="txt">Cancel</span>
-        </button>
-        <button type="button" class="btn" class:loading={proceeding} disabled={proceeding} onclick={proceed}>
-            <span class="txt">{proceeding ? "Processing…" : "Confirm & Proceed"}</span>
-        </button>
-    </footer>
-</div>
 
 <Confirm
     bind:open={confirmOpen}
@@ -1238,116 +1198,67 @@
 
 <style>
     /*
-     * The two ways a person joins, as the KitCommerce admin draws them: a
-     * pair of cards, one checked. Feedback on hover, press and focus, and the
-     * checked state lands in 150ms on transform and colour; with reduced
-     * motion the movement goes and the change of state stays.
+     * Feedback for the invitation drawer and rows: the result notice settles
+     * in, a row being worked on dims, and the copy button answers its press.
+     * 150-250ms on transform and opacity; with reduced motion the movement
+     * goes and the change of state stays.
      */
-    .choice-cards {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-    }
-    .choice-card {
+    .invite-result {
         display: flex;
-        flex-direction: column;
+        gap: 8px;
         align-items: flex-start;
-        gap: 2px;
-        padding: 12px;
-        text-align: left;
-        border: 1px solid var(--inputBorderColor);
-        border-radius: var(--borderRadius);
-        background: var(--surfaceColor);
-        color: var(--surfaceTxtColor);
-        cursor: pointer;
-        transition:
-            transform 150ms ease,
-            border-color 150ms ease,
-            box-shadow 150ms ease;
+        animation: invite-in 220ms ease-out;
     }
-    .choice-card:hover {
-        border-color: var(--surfaceTxtHintColor);
-        transform: translateY(-1px);
+    .invite-row {
+        transition: opacity 180ms ease;
     }
-    .choice-card:active {
-        transform: translateY(0) scale(0.99);
+    .invite-row.busy {
+        opacity: 0.6;
     }
-    .choice-card:focus-visible {
-        outline: 2px solid var(--primaryColor);
-        outline-offset: 2px;
+    .btn.copied i {
+        animation: invite-pop 200ms ease-out;
     }
-    /* The surface's text colour, not --primaryColor: primary is near-black in
-       the dark theme and a checked card drawn in it disappears into the
-       dialog. (--txt*Color and --borderColor are not set on these screens.) */
-    .choice-card {
-        position: relative;
+    @keyframes invite-in {
+        from {
+            opacity: 0;
+            transform: translateY(-4px);
+        }
+        to {
+            opacity: 1;
+            transform: none;
+        }
     }
-    .choice-card[aria-checked="true"] {
-        border-color: var(--surfaceTxtColor);
-        box-shadow: 0 0 0 1px var(--surfaceTxtColor);
-    }
-    .choice-card[aria-checked="true"]::after {
-        content: "\2713";
-        position: absolute;
-        top: 8px;
-        right: 10px;
-        font-weight: 700;
-        color: var(--surfaceTxtColor);
-    }
-    .choice-card i {
-        font-size: 1.25rem;
-        margin-bottom: 4px;
-    }
-    .choice-title {
-        font-weight: 600;
-    }
-    .choice-sub {
-        font-size: var(--smFontSize);
-        color: var(--surfaceTxtHintColor);
-    }
-    @media (max-width: 420px) {
-        .choice-cards {
-            grid-template-columns: 1fr;
+    @keyframes invite-pop {
+        from {
+            transform: scale(0.6);
+        }
+        to {
+            transform: scale(1);
         }
     }
     @media (prefers-reduced-motion: reduce) {
-        .choice-card,
-        .choice-card:hover,
-        .choice-card:active {
-            transform: none;
-            transition: border-color 150ms ease, box-shadow 150ms ease;
+        .invite-result {
+            animation: invite-fade 150ms ease-out;
+        }
+        .btn.copied i {
+            animation: none;
+        }
+        @keyframes invite-fade {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
         }
     }
 
     /*
-     * A checkbox as one item in a `.list-item` row.
-     *
-     * PocketBase's `.field` is `width: 100%` (form.css), which is right for a
-     * field in a form column and wrong for a tick in a flex row — it takes the
-     * whole line and pushes the address, the role chip and both buttons off the
-     * end of it. Only the width is ours; the box itself is PocketBase's.
+     * The tick in an invitation row. PocketBase's `.field` is `width: 100%`,
+     * right in a form column and wrong in a table cell; only the width is ours.
      */
     .invite-select {
         width: auto;
         flex: 0 0 auto;
-    }
-
-    /*
-     * The same row on a phone.
-     *
-     * `.list-item` is one flex line, and at 390px it squeezed the address to
-     * 48px and spelled it down the screen a character per line — before a tick
-     * was added, which took it to 33px. So the address gets the width it needs
-     * and everything else wraps under it, which is the reading an operator
-     * chasing an invitation from their phone actually needs.
-     */
-    @media (max-width: 550px) {
-        .list-item {
-            flex-wrap: wrap;
-        }
-        .list-item .txt {
-            flex: 1 1 100%;
-            min-width: 0;
-        }
     }
 </style>
