@@ -4,6 +4,7 @@
  * with curl.
  */
 
+import { storeHeaders } from "$lib/store-scope.js";
 import {
     beginSession,
     clearToken,
@@ -87,7 +88,9 @@ function storeQuery(store) {
 export async function request(method, path, options = {}) {
     const { body, admin = true, raw = false, headers = {} } = options;
 
-    const init = { method, headers: { ...headers } };
+    // Every request names the store this tab works in (D83); a caller that
+    // names one itself, such as an invitation link's, is left alone.
+    const init = { method, headers: { ...storeHeaders(), ...headers } };
 
     if (admin) {
         const token = getToken();
