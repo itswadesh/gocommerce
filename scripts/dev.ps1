@@ -1,4 +1,4 @@
-# Starts a gocommerce dev server, creating its database if needed.
+﻿# Starts a gocommerce dev server, creating its database if needed.
 #
 #   .\scripts\dev.ps1              # foreground, Ctrl+C to stop
 #   .\scripts\dev.ps1 -Seed        # ...and load a demo catalog first
@@ -64,6 +64,13 @@ if (-not $pgbin) {
         Invoke-Quietly "$pgbin\dropdb.exe" @('-h', $PgHost, '-p', $PgPort, '-U', $PgUser, '--if-exists', $Database)
     }
     Invoke-Quietly "$pgbin\createdb.exe" @('-h', $PgHost, '-p', $PgPort, '-U', $PgUser, $Database)
+    # The engine runs as an ordinary login, as it does under Compose: a
+    # superuser passes every row policy, and with two stores that mixes their
+    # rows (D83). Idempotent, and it hands an existing dev database's tables
+    # to the login.
+    Invoke-Quietly "$pgbin\psql.exe" @('-h', $PgHost, '-p', $PgPort, '-U', $PgUser, '-d', $Database,
+        '-v', 'engine_password=dev', '-f', "$repo\scripts\engine-login.sql")
+    $EngineUser = 'gocommerce_app'
 }
 
 # Go lives outside the machine PATH on more than one box here, in a
@@ -98,7 +105,8 @@ try {
 # which does not exist - and expands to "/=disable". The store then tried to
 # open a database called "=disable" and refused to start. PowerShell 7 parses
 # the same line correctly, which is what kept it hidden.
-$env:DATABASE_URL = "postgres://$PgUser@${PgHost}:$PgPort/${Database}?sslmode=disable"
+if (-not $EngineUser) { $EngineUser = $PgUser }
+$env:DATABASE_URL = "postgres://${EngineUser}:dev@${PgHost}:$PgPort/${Database}?sslmode=disable"
 
 # -Identity installs the shopper-accounts module. The reference binary is
 # module-free by default; a storefront that offers sign-in needs this.

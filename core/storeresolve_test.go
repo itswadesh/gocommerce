@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -178,5 +180,28 @@ func TestAnExistingAccountAcceptsWithItsOwnPassword(t *testing.T) {
 	}
 	if _, _, err := app.invitations.Accept(context.Background(), inv.Token, "the-real-password"); err != nil {
 		t.Fatalf("accept with the real password: %v", err)
+	}
+}
+
+// The sign-in screen asks before anybody has a session, so before any store
+// is named. "Can anybody sign in" is a question about the install, and a
+// person who works in one store signs in to it with no store named.
+func TestSigningInNeedsNoStoreNamed(t *testing.T) {
+	app := newStrictTestApp(t)
+	one := firstStore(t, app)
+	addTestStore(t, app, "two")
+	sessionIn(t, app, one, "manager@example.com", RoleManager)
+
+	rec := do(t, app, http.MethodGet, "/api/admin/auth-state")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"installed":true`) {
+		t.Fatalf("auth-state with two stores = %d %s, want installed", rec.Code, rec.Body)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/auth-with-password",
+		strings.NewReader(`{"identity":"manager@example.com","password":"a-long-enough-password"}`))
+	req.Header.Set("Content-Type", "application/json")
+	out := httptest.NewRecorder()
+	app.Handler().ServeHTTP(out, req)
+	if out.Code != http.StatusOK || !strings.Contains(out.Body.String(), `"role":"manager"`) {
+		t.Fatalf("sign-in with no store named = %d %s, want the person's role in their one store", out.Code, out.Body)
 	}
 }
