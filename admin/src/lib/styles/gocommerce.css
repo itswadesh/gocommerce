@@ -10122,9 +10122,6 @@ kbd + kbd {
     line-height: 22px;
 }
 
-.recovery-automations {
-    overflow: hidden;
-}
 .recovery-automation {
     display: flex;
     align-items: center;
@@ -10242,24 +10239,6 @@ a.recovery-automation:focus-visible .recovery-automation-go > i {
     margin-top: 2px;
 }
 
-/* On or off, as DESIGN.md's status pill: a dot and a word, never colour alone. */
-.recovery-state {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 1px 9px;
-    font-size: var(--smFontSize);
-    font-weight: 500;
-    line-height: 20px;
-    white-space: nowrap;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    color: var(--surfaceTxtHintColor);
-}
-.recovery-state.is-on {
-    color: var(--surfaceTxtColor);
-}
-
 /* ------------------------------------------------------------ the editor */
 
 /* The workflow, as kitcommerce-admin's canvas draws it: nodes on a dotted
@@ -10277,6 +10256,21 @@ a.recovery-automation:focus-visible .recovery-automation-go > i {
 .recovery-workflow-switch {
     width: auto;
     margin: 0;
+}
+.recovery-workflow-help {
+    margin: -6px 0 12px;
+}
+.recovery-flow-item {
+    display: flex;
+    flex: none;
+    align-items: flex-start;
+}
+.recovery-inspector-title:focus {
+    outline: none;
+}
+.recovery-inspector-title:focus-visible {
+    outline: 2px solid var(--ring, var(--primaryColor));
+    outline-offset: 2px;
 }
 .recovery-flow-layout {
     display: grid;
@@ -10574,8 +10568,7 @@ a.recovery-automation:focus-visible .recovery-automation-go > i {
     align-items: center;
     gap: 8px;
 }
-.recovery-sentence .field,
-.recovery-step-row .field {
+.recovery-sentence .field {
     width: auto;
     margin: 0;
     flex: 0 0 auto;
@@ -10585,85 +10578,6 @@ a.recovery-automation:focus-visible .recovery-automation-go > i {
 }
 .shopify-skin .recovery-unit {
     width: 96px;
-}
-.shopify-skin .recovery-action {
-    width: 140px;
-}
-.shopify-skin .recovery-template {
-    width: 184px;
-}
-
-.recovery-steps {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin: 0 0 10px;
-    padding: 0;
-    list-style: none;
-}
-.recovery-step {
-    margin: 0;
-    display: grid;
-    grid-template-columns: 24px minmax(0, 1fr) auto;
-    align-items: start;
-    gap: 10px;
-    padding: 10px 12px;
-    background: var(--cardFace);
-    border: 1px solid var(--surfaceAlt2Color);
-    border-radius: var(--borderRadius);
-    transition: border-color var(--animationSpeed) ease-out;
-}
-.recovery-step.has-error {
-    border-color: var(--dangerColor);
-}
-.recovery-step-n {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    margin-top: 4px;
-    border-radius: 50%;
-    border: 1px solid var(--border);
-    font-size: var(--smFontSize);
-    font-variant-numeric: tabular-nums;
-    color: var(--muted-foreground);
-}
-.recovery-step-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-}
-.recovery-step-word,
-.recovery-step-arrow {
-    color: var(--surfaceTxtHintColor);
-}
-.recovery-step-foot {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 4px 12px;
-    margin-top: 6px;
-}
-.recovery-step-foot .field-help {
-    margin: 0;
-    padding: 0;
-}
-.recovery-step-tools {
-    display: flex;
-    gap: 2px;
-}
-.recovery-add-step {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.recovery-guards .section-title .label {
-    font-weight: normal;
-    text-transform: none;
 }
 .recovery-guard-list {
     display: flex;
@@ -10883,16 +10797,6 @@ a.recovery-automation:focus-visible .recovery-automation-go > i {
     .recovery-funnel-track {
         grid-column: 1 / -1;
         grid-row: 2;
-    }
-    .recovery-step {
-        grid-template-columns: 24px minmax(0, 1fr);
-    }
-    .recovery-step-tools {
-        grid-column: 2;
-    }
-    .shopify-skin .recovery-action,
-    .shopify-skin .recovery-template {
-        width: 100%;
     }
 }
 

@@ -105,6 +105,10 @@
     const currency = $derived(summary?.potential?.currency ?? "USD");
 
     const count = (n) => new Intl.NumberFormat().format(n ?? 0);
+    /* The noun follows the Type switch: with Checkouts chosen, "12 carts" would
+       be the wrong word for what is counted. */
+    const noun = $derived(list.params.kind === "checkout" ? "checkout" : "cart");
+    const tracked = $derived(data?.tracked !== false);
 
     /* "Messages sent", not kitcommerce-admin's "delivered": the engine knows a
        message left, not that it arrived. */
@@ -132,13 +136,16 @@
             label: "Messages sent",
             icon: "ri-mail-check-line",
             value: summary && count(summary.messages_sent),
-            hint: summary ? `to ${count(summary.contacted)} ${pluralize(summary.contacted, "cart")}` : "",
+            hint: summary ? `to ${count(summary.contacted)} ${pluralize(summary.contacted, noun)}` : "",
         },
+        /* Carts whose link was opened, not clicks; and nothing at all when the
+           store cannot count them, rather than a zero nobody measured. A link
+           copied by hand counts too, so this is not a share of the contacted. */
         {
-            label: "Link clicks",
+            label: "Clicked through",
             icon: "ri-cursor-line",
-            value: summary && count(summary.clicked),
-            hint: summary ? (summary.contacted ? `${shareText(summary.clicked, summary.contacted)} of contacted` : "Nobody contacted yet") : "",
+            value: summary && (tracked ? count(summary.clicked) : "Not counted"),
+            hint: tracked ? `${noun === "checkout" ? "Checkouts" : "Carts"} whose recovery link was opened` : "No public address is set",
         },
         {
             label: "Recovered orders",
@@ -316,9 +323,9 @@
                 {:else if data && !summary.abandoned}
                     <div class="recovery-empty-block recovery-report-card">
                         <i class="ri-bar-chart-2-line" aria-hidden="true"></i>
-                        <p><strong>No abandoned carts in this period</strong></p>
+                        <p><strong>No abandoned {noun}s in this period</strong></p>
                         <p class="txt-hint">
-                            Figures appear here once a cart sits idle past its automation's threshold.
+                            Figures appear here once a {noun} sits idle past its automation's threshold.
                             <a class="recovery-arrow-link" href="{base}/dash/marketing/automations">
                                 See the automations <span aria-hidden="true">→</span>
                             </a>
@@ -334,7 +341,9 @@
                                      stage the arrow stays and the percentage does not. -->
                                 {#if i > 0}
                                     <div class="recovery-funnel-step txt-hint txt-sm">
-                                        ↓{stage.prevCount ? ` ${shareText(stage.count, stage.prevCount)} of the step before` : ""}
+                                        ↓{stage.prevCount && stage.count <= stage.prevCount
+                                            ? ` ${shareText(stage.count, stage.prevCount)} of the step before`
+                                            : ""}
                                     </div>
                                 {/if}
                                 <div class="recovery-funnel-row">
@@ -451,7 +460,7 @@
                             </table>
                         </div>
                         <p class="tw:mt-2 tw:text-xs tw:text-muted-foreground">
-                            By the {grain} a cart was abandoned. Periods with nothing abandoned are drawn as empty columns
+                            By the {grain} a {noun} was abandoned. Periods with nothing abandoned are drawn as empty columns
                             and left out of the table.
                         </p>
                     </section>
@@ -501,7 +510,7 @@
 
                 <footer class="page-footer tw:text-xs tw:text-muted-foreground">
                     <span class="txt txt-hint">
-                        Carts abandoned {windowWords}{list.params.kind ? `, ${kindLabel(list.params.kind).toLowerCase()}s only` : ""} ·
+                        {list.params.kind ? `${kindLabel(list.params.kind)}s` : "Carts and checkouts"} abandoned {windowWords} ·
                         times in {tz}
                     </span>
                     <div class="flex-fill"></div>

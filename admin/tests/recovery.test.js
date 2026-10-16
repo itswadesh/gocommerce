@@ -296,6 +296,22 @@ test("an automation's row says when it starts and what it sends, step by step", 
         "Abandoned after 30 minutes idle · 1 step: Send email after 2 hours",
     );
     assert.equal(describeSequence({ abandon_after_minutes: 30, steps: [] }, label), "Abandoned after 30 minutes idle · No steps — nothing is sent");
+    // A step whose action differs from the one before names its own.
+    const mixed = (key) => ({ send_email: "Send email", send_sms: "Send SMS" })[key];
+    assert.equal(
+        describeSequence(
+            {
+                abandon_after_minutes: 10,
+                steps: [
+                    { wait_minutes: 60, action: "send_email" },
+                    { wait_minutes: 1200, action: "send_sms" },
+                    { wait_minutes: 2880, action: "send_sms" },
+                ],
+            },
+            mixed,
+        ),
+        "Abandoned after 10 minutes idle · 3 steps: Send email after 1 hour, then Send SMS after 20 hours, then 2 days",
+    );
 });
 
 test("the workflow is a trigger, its conditions, a wait and a message per step, and an end", () => {

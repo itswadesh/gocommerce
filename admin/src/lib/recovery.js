@@ -246,7 +246,13 @@ export function describeSequence(automation, actionLabel = (key) => key) {
     const head = `Abandoned after ${durationWords(automation?.abandon_after_minutes)} idle`;
     const steps = automation?.steps ?? [];
     if (!steps.length) return `${head} · No steps — nothing is sent`;
-    const waits = steps.map((s, i) => (i === 0 ? `${actionLabel(s.action)} after ` : "") + durationWords(s.wait_minutes));
+    // The action is named where it changes, so "then 20 hours" can only mean
+    // the same thing again.
+    const waits = steps.map(
+        (s, i) =>
+            (i === 0 || s.action !== steps[i - 1].action ? `${actionLabel(s.action)} after ` : "") +
+            durationWords(s.wait_minutes),
+    );
     return `${head} · ${steps.length} ${pluralize(steps.length, "step")}: ${waits.join(", then ")}`;
 }
 

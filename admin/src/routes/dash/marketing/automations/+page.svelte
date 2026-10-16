@@ -62,7 +62,7 @@
                       key: "cart",
                       href: "/dash/marketing/automations/abandoned-cart",
                       title: "Abandoned cart recovery",
-                      what: "Shoppers who added items and left before checkout",
+                      what: "Shoppers who added items and left before checkout; only those signed in can be reached",
                       icon: "ri-shopping-cart-2-line",
                       a: view.settings.cart,
                   },
@@ -90,6 +90,17 @@
                 <div class="flex-fill"></div>
                 {#if !missing}
                     <div class="page-header-primary-btns">
+                        <button
+                            type="button"
+                            class="btn sm circle transparent secondary recovery-refresh"
+                            class:is-spinning={loading}
+                            title={loading ? "Refreshing" : "Refresh"}
+                            aria-label={loading ? "Refreshing" : "Refresh"}
+                            disabled={loading}
+                            onclick={load}
+                        >
+                            <i class="ri-refresh-line" aria-hidden="true"></i>
+                        </button>
                         <a class="btn sm secondary" href="{base}/dash/marketing/recovery">
                             <i class="ri-bar-chart-2-line" aria-hidden="true"></i>
                             <span class="txt">Cart recovery report</span>
