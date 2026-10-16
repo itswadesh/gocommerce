@@ -1,0 +1,1 @@
+import{t as p}from"./LM3Ccvfi.js";import{aA as r,P as i}from"./DovL_LZ7.js";function A(t,s,y,f){var l=t[r];if(i||l!==s){var e=p(s);(!i||e!==t.getAttribute("style"))&&(e==null?t.removeAttribute("style"):t.style.cssText=e),t[r]=s}return f}export{A as s};
