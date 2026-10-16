@@ -9,18 +9,25 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+    actorMeta,
+    customerLines,
     durationWords,
     fillTrend,
     funnelRows,
+    holdSentence,
+    indicatorLabel,
     joinMinutes,
     periodStart,
+    rangeLabel,
     rangeWindow,
     recoveryProgress,
     sequenceSummary,
     settingsError,
     splitMinutes,
     statusClass,
+    timelineByDay,
     validStorefront,
+    valueLabel,
 } from "../src/lib/recovery.js";
 
 test("a wait splits into the largest unit it divides into exactly", () => {
@@ -64,16 +71,27 @@ test("a sequence's summary counts each wait from the step before", () => {
 test("the recovery column says what went out and what comes next", () => {
     const now = Date.parse("2026-10-09T10:00:00Z");
     const soon = new Date(now + 18 * 3600 * 1000).toISOString();
-    assert.deepEqual(recoveryProgress({ email: "" }, now), { text: "No email", hint: "" });
+    const past = new Date(now - 60 * 1000).toISOString();
+    assert.deepEqual(recoveryProgress({ email: "" }, now), { text: "No contact", hint: "", muted: true });
     assert.deepEqual(
         recoveryProgress({ email: "a@b.c", status: "scheduled", messages_sent: 0, next_step_at: soon }, now),
-        { text: "Next in 18h", hint: "" },
+        { text: "Next in 18h", hint: "", muted: false },
+    );
+    assert.deepEqual(
+        recoveryProgress({ email: "a@b.c", status: "scheduled", messages_sent: 0, next_step_at: past }, now).text,
+        "Next due now",
     );
     assert.deepEqual(
         recoveryProgress({ email: "a@b.c", status: "contacted", messages_sent: 1, steps_sent: 1, next_step_at: soon }, now),
-        { text: "Email #1 sent", hint: "Next in 18h" },
+        { text: "Email sent", hint: "Next in 18h", muted: false },
     );
-    assert.equal(recoveryProgress({ email: "a@b.c", status: "contacted", messages_sent: 2, steps_sent: 2 }, now).text, "2 emails");
+    // Clicks and the next step both say something, so both are said.
+    assert.equal(
+        recoveryProgress({ email: "a@b.c", status: "contacted", messages_sent: 2, clicks: 1, next_step_at: soon }, now).hint,
+        "Clicked · Next in 18h",
+    );
+    assert.equal(recoveryProgress({ email: "a@b.c", status: "contacted", messages_sent: 2, clicks: 3 }, now).text, "2 emails");
+    assert.equal(recoveryProgress({ email: "a@b.c", status: "contacted", messages_sent: 2, clicks: 3 }, now).hint, "3 clicks");
     // A next step on a finished record is not news: it will never send.
     assert.equal(
         recoveryProgress({ email: "a@b.c", status: "recovered", messages_sent: 1, steps_sent: 1, next_step_at: soon }, now).hint,
@@ -85,6 +103,80 @@ test("only PocketBase's four label colours come back", () => {
     for (const s of ["abandoned", "scheduled", "contacted", "recovered", "suppressed", "expired", "new"]) {
         assert.ok(["", "info", "success", "warning", "danger"].includes(statusClass(s)), s);
     }
+});
+
+test("statuses take kitcommerce-admin's colours", () => {
+    assert.equal(statusClass("abandoned"), "warning");
+    assert.equal(statusClass("scheduled"), "info");
+    assert.equal(statusClass("contacted"), "info");
+    assert.equal(statusClass("recovered"), "success");
+    assert.equal(statusClass("suppressed"), "danger");
+    assert.equal(statusClass("expired"), "");
+});
+
+test("indicators and holds are worded as kitcommerce-admin words them", () => {
+    assert.equal(indicatorLabel("no_contact"), "No contact details");
+    assert.equal(indicatorLabel("clicked"), "Link clicked");
+    assert.equal(indicatorLabel("inventory_unavailable"), "Items unavailable");
+    assert.equal(indicatorLabel("send_failed"), "Send failed");
+    assert.equal(indicatorLabel("scheduled"), "Recovery scheduled");
+    assert.equal(holdSentence("no_contact"), "There is no email address to write to.");
+    assert.equal(holdSentence("nothing_purchasable"), "None of the items can be bought right now.");
+    assert.equal(holdSentence("sequence_done"), "Every step of the recovery sequence has run.");
+    assert.equal(holdSentence(""), "");
+});
+
+test("a customer reads as a name over how to reach them, or as a guest", () => {
+    assert.deepEqual(customerLines({ name: "Ann Lee", email: "ann@x.io", phone: "+1 555" }), {
+        top: "Ann Lee",
+        hint: "ann@x.io",
+        guest: false,
+    });
+    assert.deepEqual(customerLines({ name: "Ann Lee", phone: "+1 555" }), { top: "Ann Lee", hint: "+1 555", guest: false });
+    assert.deepEqual(customerLines({ email: "ann@x.io", phone: "+1 555" }), { top: "ann@x.io", hint: "+1 555", guest: false });
+    assert.deepEqual(customerLines({ email: "ann@x.io" }), { top: "ann@x.io", hint: "", guest: false });
+    assert.deepEqual(customerLines({}), { top: "Guest", hint: "No contact details", guest: true });
+});
+
+test("who did it is one word, or their name", () => {
+    assert.equal(actorMeta("system"), "Automatic");
+    assert.equal(actorMeta("shopper"), "Customer");
+    assert.equal(actorMeta("token"), "Admin token");
+    assert.equal(actorMeta("ops@shop.io"), "ops@shop.io");
+    assert.equal(actorMeta(""), "");
+});
+
+test("the timeline is newest first, under the day it happened", () => {
+    const now = new Date(2026, 9, 9, 15, 0);
+    const at = (d, h) => new Date(2026, 9, d, h, 0).toISOString();
+    const days = timelineByDay(
+        [
+            { at: at(7, 9), kind: "cart_created" },
+            { at: at(9, 14), kind: "sent" },
+            { at: at(8, 10), kind: "abandoned" },
+            { at: at(9, 11), kind: "scheduled" },
+        ],
+        now,
+    );
+    assert.deepEqual(
+        days.map((d) => d.label),
+        ["Today", "Yesterday", new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" }).format(new Date(2026, 9, 7))],
+    );
+    assert.deepEqual(
+        days[0].entries.map((e) => e.kind),
+        ["sent", "scheduled"],
+    );
+});
+
+test("the value and date filters say what they hold", () => {
+    assert.equal(valueLabel("", ""), "Any value");
+    assert.equal(valueLabel("$10.00", ""), "From $10.00");
+    assert.equal(valueLabel("", "$50.00"), "Up to $50.00");
+    assert.equal(valueLabel("$10.00", "$50.00"), "$10.00 – $50.00");
+    assert.equal(rangeLabel("all"), "Any date");
+    assert.equal(rangeLabel("30d"), "Last 30 days");
+    const custom = rangeLabel("custom", "2026-10-01", "2026-10-09");
+    assert.ok(custom.includes("–") && custom.includes("2026"), custom);
 });
 
 test("a window is the reader's own days, with `to` the midnight after the last", () => {

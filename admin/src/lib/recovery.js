@@ -35,12 +35,11 @@ export function statusLabel(status) {
 }
 
 /**
- * The `.label` colour for a status, from PocketBase's four.
- *
- * Abandoned is a warning for the reason the Carts screen gives: nothing has
- * gone wrong, there is money on the table. Contacted is info because the store
- * has done its part and is waiting. Suppressed and expired are neutral — both
- * are finished, and neither is a failure anybody needs to act on.
+ * The colour for a status, from PocketBase's four, in kitcommerce-admin's
+ * scheme so an operator who knows one panel reads the other: abandoned is
+ * money on the table (warning), scheduled and contacted are the store waiting
+ * on its own sequence (info), suppressed is somebody stopping it (danger), and
+ * expired is simply over (neutral).
  */
 export function statusClass(status) {
     switch (status) {
@@ -48,8 +47,11 @@ export function statusClass(status) {
             return "success";
         case "abandoned":
             return "warning";
+        case "scheduled":
         case "contacted":
             return "info";
+        case "suppressed":
+            return "danger";
         default:
             return "";
     }
@@ -62,18 +64,50 @@ export function isOpen(status) {
 
 const INDICATOR_LABELS = {
     purchased: "Purchased",
-    clicked: "Link opened",
+    clicked: "Link clicked",
     email_sent: "Email sent",
-    inventory_unavailable: "Nothing can be bought",
-    send_failed: "Sending failed",
+    inventory_unavailable: "Items unavailable",
+    send_failed: "Send failed",
     no_email_provider: "No email provider",
-    scheduled: "Reminder scheduled",
-    no_contact: "No email address",
+    scheduled: "Recovery scheduled",
+    no_contact: "No contact details",
     automation_off: "Automation off",
     no_steps: "No steps to send",
     before_install: "Before recovery was set up",
     sequence_done: "Sequence finished",
 };
+
+const HOLD_SENTENCES = {
+    no_contact: "There is no email address to write to.",
+    automation_off: "The recovery automation is turned off.",
+    no_steps: "The recovery automation has no steps.",
+    before_install: "It went idle before recovery was set up for this store, so it is shown but never messaged.",
+    nothing_purchasable: "None of the items can be bought right now.",
+    no_email_provider: "No email provider is set up, so nothing can be sent.",
+    send_failed: "The last message could not be sent.",
+    sequence_done: "Every step of the recovery sequence has run.",
+};
+
+/** Why nothing is scheduled for an open record, as a sentence for its banner. */
+export function holdSentence(key) {
+    if (!key) return "";
+    return HOLD_SENTENCES[key] ?? `${key.replace(/_/g, " ")}.`;
+}
+
+/**
+ * The customer cell's two lines. The name is the newest order's, when the
+ * shopper has one; how to reach them goes underneath. Nobody is a "Guest"
+ * unless there is nothing at all to reach them by.
+ */
+export function customerLines(row) {
+    const name = row?.name?.trim() ?? "";
+    const email = row?.email ?? "";
+    const phone = row?.phone ?? "";
+    if (name) return { top: name, hint: email || phone, guest: false };
+    if (email) return { top: email, hint: phone, guest: false };
+    if (phone) return { top: phone, hint: "", guest: false };
+    return { top: "Guest", hint: "No contact details", guest: true };
+}
 
 /**
  * The one secondary fact under a status, as a phrase. An indicator this table
@@ -181,23 +215,23 @@ export function shortDuration(ms) {
  * the whole answer for that row.
  */
 export function recoveryProgress(row, now = Date.now()) {
-    if (!row?.email) return { text: "No email", hint: "" };
-    const sent = row.messages_sent ?? 0;
-    let text;
-    if (sent === 0) text = "Nothing sent";
-    else if (sent === 1) text = row.steps_sent >= 1 ? `Email #${row.steps_sent} sent` : "1 email sent";
-    else text = `${sent} emails`;
-
-    let hint = "";
-    if (isOpen(row.status) && row.next_step_at) {
+    const sent = row?.messages_sent ?? 0;
+    let next = "";
+    if (isOpen(row?.status) && row?.next_step_at) {
         const ms = new Date(row.next_step_at).getTime() - now;
-        hint = ms > 0 ? `Next in ${shortDuration(ms)}` : "Next is due";
-    } else if ((row.clicks ?? 0) > 0) {
-        hint = `${row.clicks} ${pluralize(row.clicks, "click")}`;
+        next = ms > 0 ? `Next in ${shortDuration(ms)}` : "Next due now";
     }
-    // Nothing has gone out yet but something is about to: that is the news.
-    if (sent === 0 && hint.startsWith("Next")) return { text: hint, hint: "" };
-    return { text, hint };
+    // Nothing has gone out: either something is about to, which is the news,
+    // or nothing is coming at all.
+    if (sent === 0) return next ? { text: next, hint: "", muted: false } : { text: "No contact", hint: "", muted: true };
+
+    const clicks = row.clicks ?? 0;
+    const clicked = clicks === 0 ? "" : clicks === 1 ? "Clicked" : `${clicks} clicks`;
+    return {
+        text: sent === 1 ? "Email sent" : `${sent} emails`,
+        hint: [clicked, next].filter(Boolean).join(" · "),
+        muted: false,
+    };
 }
 
 /**
@@ -216,31 +250,92 @@ export function sequenceSummary(steps) {
 /* ------------------------------------------------------------ the timeline */
 
 const TIMELINE_ICONS = {
-    cart_created: "ri-shopping-basket-2-line",
+    cart_created: "ri-shopping-cart-2-line",
     last_activity: "ri-cursor-line",
     abandoned: "ri-time-line",
     scheduled: "ri-calendar-schedule-line",
-    sent: "ri-mail-send-line",
+    sent: "ri-send-plane-line",
     send_failed: "ri-mail-close-line",
     skipped: "ri-skip-forward-line",
     link_copied: "ri-link",
-    clicked: "ri-external-link-line",
+    clicked: "ri-cursor-line",
     resumed: "ri-arrow-go-back-line",
-    recovered: "ri-checkbox-circle-line",
+    recovered: "ri-verified-badge-line",
     suppressed: "ri-forbid-line",
-    expired: "ri-delete-bin-line",
+    expired: "ri-hourglass-line",
 };
 
 /** The glyph for a timeline entry. The words are the module's, never ours. */
 export function timelineIcon(kind) {
-    return TIMELINE_ICONS[kind] ?? "ri-information-line";
+    return TIMELINE_ICONS[kind] ?? "ri-checkbox-blank-circle-line";
 }
 
-/** Entries that went wrong are drawn in the danger tone; the outcome in success. */
+const TIMELINE_TONES = {
+    send_failed: "danger",
+    abandoned: "warning",
+    suppressed: "warning",
+    scheduled: "info",
+    sent: "info",
+    link_copied: "info",
+    clicked: "success",
+    resumed: "success",
+    recovered: "success",
+};
+
+/** The ring an entry's icon sits in: what went wrong, what moved, what worked. */
 export function timelineTone(kind) {
-    if (kind === "send_failed") return "is-danger";
-    if (kind === "recovered") return "is-success";
-    return "";
+    return TIMELINE_TONES[kind] ?? "muted";
+}
+
+/**
+ * The timeline as the detail screen draws it: newest first, under the day it
+ * happened — "Today", "Yesterday", then the date — in the reader's own days.
+ */
+export function timelineByDay(timeline, now = new Date()) {
+    const sorted = [...(timeline ?? [])].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+    const today = civilDate(now);
+    const yesterday = civilDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+    const days = [];
+    for (const entry of sorted) {
+        const when = new Date(entry.at);
+        const key = civilDate(when);
+        let day = days[days.length - 1];
+        if (!day || day.key !== key) {
+            const label =
+                key === today
+                    ? "Today"
+                    : key === yesterday
+                      ? "Yesterday"
+                      : new Intl.DateTimeFormat(undefined, {
+                            weekday: "short",
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                        }).format(when);
+            day = { key, label, entries: [] };
+            days.push(day);
+        }
+        day.entries.push(entry);
+    }
+    return days;
+}
+
+/** Who did it, as the timeline's meta line says it beside the time. */
+export function actorMeta(actor) {
+    switch (actor) {
+        case "":
+        case undefined:
+        case null:
+            return "";
+        case "system":
+            return "Automatic";
+        case "shopper":
+            return "Customer";
+        case "token":
+            return "Admin token";
+        default:
+            return actor;
+    }
 }
 
 /** Who did it. The module writes "system", "shopper", "token" or an email. */
@@ -289,6 +384,27 @@ export const RANGES = [
     { value: "12m", label: "Last 12 months" },
     { value: "custom", label: "Custom…" },
 ];
+
+/** The value filter's button: what it holds, from amounts already formatted. */
+export function valueLabel(minText, maxText) {
+    if (minText && maxText) return `${minText} – ${maxText}`;
+    if (minText) return `From ${minText}`;
+    if (maxText) return `Up to ${maxText}`;
+    return "Any value";
+}
+
+/** The date filter's button: a preset by name, or the two days it runs between. */
+export function rangeLabel(range, fromCivil = "", toCivil = "") {
+    if (!range || range === "all") return "Any date";
+    if (range !== "custom") return RANGES.find((r) => r.value === range)?.label ?? range;
+    const fmt = (civil) =>
+        new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" }).format(localMidnight(civil));
+    const ok = (c) => /^\d{4}-\d{2}-\d{2}$/.test(c);
+    if (ok(fromCivil) && ok(toCivil)) return `${fmt(fromCivil)} – ${fmt(toCivil)}`;
+    if (ok(fromCivil)) return `From ${fmt(fromCivil)}`;
+    if (ok(toCivil)) return `Up to ${fmt(toCivil)}`;
+    return "Any date";
+}
 
 /**
  * rangeWindow turns a range key (and, for "custom", two civil dates) into the

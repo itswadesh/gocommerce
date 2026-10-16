@@ -16,6 +16,7 @@
      * hidden: "why is there no SMS" is a question the list answers.
      */
     import { untrack } from "svelte";
+    import { base } from "$app/paths";
     import { recovery } from "$lib/api.js";
     import { toast } from "$lib/toast.svelte.js";
     import { rise } from "$lib/motion.js";
@@ -38,19 +39,30 @@
 
     const options = $derived(record?.recovery ?? null);
     const channels = $derived(options?.channels ?? []);
+    const channelOptions = $derived(
+        channels.map((c) => ({
+            value: c.key,
+            label: c.label,
+            disabled: !c.available,
+            note: c.available ? "" : c.reason,
+        })),
+    );
     const templates = $derived(
         (options?.templates ?? []).map((t) => ({
             value: t.event,
             label: t.title,
-            note: t.customized ? "Reworded for this store" : "",
+            note: t.customized ? "Reworded for this store" : "Built-in",
         })),
     );
 
     let channel = $state("email");
     let template = $state("");
     let busy = $state(false);
+    /** Held for a beat after it lands, so the button can say it worked. */
+    let sent = $state(false);
     /** The module's own sentence for a refusal, kept on screen until closed. */
     let refusal = $state("");
+    let refreshed = $state(false);
 
     /* Re-seeded each time it opens, from the record as it is then; untracked,
        so the page's thirty-second re-read does not reset a choice somebody is
@@ -62,10 +74,12 @@
             channel = firstUsable;
             template = options?.default_template || templates[0]?.value || "";
             refusal = "";
+            refreshed = false;
+            sent = false;
         });
     });
 
-    const blocked = $derived(busy || !options?.can_send || !channel || !template);
+    const blocked = $derived(busy || sent || !options?.can_send || !channel || !template);
 
     async function submit(event) {
         event?.preventDefault();
@@ -74,15 +88,17 @@
         refusal = "";
         try {
             const result = await recovery.send(record.id, { channel, template });
+            sent = true;
             toast.success(`Recovery email sent to ${result.sent_to}`);
-            onsent?.(result);
+            setTimeout(() => onsent?.(result), 400);
         } catch (err) {
             if (err.status === 409 || err.status === 502) {
                 // 409: the basket moved on (bought, suppressed, deleted, no
                 // provider). 502: the provider said no. Either way the words
                 // are the module's and belong next to the button pressed.
                 refusal = err.message;
-                if (err.status === 409) onrefresh?.();
+                refreshed = err.status === 409;
+                if (refreshed) onrefresh?.();
             } else {
                 toast.error(err);
             }
@@ -92,12 +108,17 @@
     }
 </script>
 
-<Drawer {open} size="popup sm" title="Send a recovery email" onclose={() => onclose?.()}>
+<Drawer {open} size="popup sm" title="Send recovery" onclose={() => onclose?.()}>
     {#if record}
         <form id={formID} class="recovery-dialog" onsubmit={submit}>
+            <p class="txt-hint m-b-sm">
+                Sends a message about this abandoned {record.kind === "cart" ? "cart" : "checkout"} now. It counts as a
+                manual send and doesn't move the automated sequence.
+            </p>
             {#if refusal}
-                <div class="alert danger recovery-refusal" role="alert" transition:rise>
+                <div class="alert warning recovery-refusal" role="alert" transition:rise>
                     <p>{refusal}</p>
+                    {#if refreshed}<p>Nothing was sent. The record has been refreshed.</p>{/if}
                 </div>
             {:else if options && !options.can_send && options.send_blocked_reason}
                 <div class="alert warning" role="status" transition:rise>
@@ -105,41 +126,32 @@
                 </div>
             {/if}
 
-            <fieldset class="recovery-choices">
-                <legend class="recovery-legend">Channel</legend>
-                {#each channels as c (c.key)}
-                    <div class="field">
-                        <input
-                            type="radio"
-                            id="{formID}-ch-{c.key}"
-                            name="{formID}-channel"
-                            value={c.key}
-                            disabled={!c.available}
-                            bind:group={channel}
-                        />
-                        <label for="{formID}-ch-{c.key}">
-                            {c.label}
-                            {#if !c.available && c.reason}
-                                <span class="recovery-choice-note">{c.reason}</span>
-                            {/if}
-                        </label>
-                    </div>
-                {/each}
-            </fieldset>
-
-            <div class="field m-t-sm">
-                <label for="{formID}-template">Message</label>
+            <div class="field">
+                <label for="{formID}-channel">Channel</label>
                 <Select
-                    id="{formID}-template"
-                    value={template}
-                    options={templates}
-                    onchange={(v) => (template = v)}
+                    id="{formID}-channel"
+                    value={channel}
+                    options={channelOptions}
+                    onchange={(v) => (channel = v)}
                 />
             </div>
-            <div class="field-help">
-                The wording is the store's, edited under Notifications › Setup Email. Sending by hand
-                does not move the automation on: its next reminder still goes out on schedule.
-            </div>
+
+            {#if channel === "email"}
+                <div class="field m-t-sm">
+                    <label for="{formID}-template" class="recovery-label-row">
+                        Template
+                        <a class="txt-sm" href="{base}/dash/notifications/email" target="_blank" rel="noopener">
+                            Preview or edit <span aria-hidden="true">↗</span>
+                        </a>
+                    </label>
+                    <Select
+                        id="{formID}-template"
+                        value={template}
+                        options={templates}
+                        onchange={(v) => (template = v)}
+                    />
+                </div>
+            {/if}
 
             <div class="field m-t-sm readonly-field">
                 <span class="readonly-label">Recipient</span>
@@ -160,8 +172,8 @@
             disabled={blocked}
             title={!options?.can_send && options?.send_blocked_reason ? options.send_blocked_reason : undefined}
         >
-            <i class="ri-mail-send-line" aria-hidden="true"></i>
-            <span class="txt">Send recovery</span>
+            <i class={sent ? "ri-check-line" : "ri-send-plane-line"} aria-hidden="true"></i>
+            <span class="txt">{sent ? "Sent" : busy ? "Sending…" : "Send recovery"}</span>
         </button>
     {/snippet}
 </Drawer>

@@ -14,7 +14,9 @@
      * applies no hidden default, and one that quietly drops rows is worse than
      * a noisy one.
      */
+    import { untrack } from "svelte";
     import { base } from "$app/paths";
+    import { page as route } from "$app/state";
     import { api, can, query } from "$lib/api.js";
     import { rowKey } from "$lib/rowkey.js";
     import { listState } from "$lib/liststate.svelte.js";
@@ -112,6 +114,23 @@
             toast.error(err);
         } finally {
             loading = false;
+        }
+    }
+
+    /* An abandoned checkout's "Open cart" lands here with ?cart=<id>: the
+       basket opens on arrival, wherever it sits in the list, or says why it
+       cannot (purged since). */
+    $effect(() => {
+        const id = Number(route.url.searchParams.get("cart"));
+        if (readable && id > 0) untrack(() => openById(id));
+    });
+
+    async function openById(id) {
+        try {
+            cart = await api.get("/api/admin/carts/" + id);
+            detailOpen = true;
+        } catch (err) {
+            toast.error(err);
         }
     }
 
