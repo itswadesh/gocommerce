@@ -21,7 +21,7 @@ never on a cart. So:
   and nothing it would have to invent.
 - **No payment card.** A cart never attempts a payment.
 - **Thumbnails** are each product's lead picture, the one the product list shows.
-- **The recovery link** works while the cart exists, so its expiry is the cart's.
+- **The recovery link** opens the cart, so it works as long as core keeps the cart: at least until CartRetention after the cart is (or will be) marked abandoned.
 
 ## Screens
 
