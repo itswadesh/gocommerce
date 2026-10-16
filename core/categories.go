@@ -1083,7 +1083,7 @@ func (a *App) mountCategoryRoutes() {
 // handleListCategories serves the tree. Nested by default because a storefront
 // menu is nested; ?flat=1 gives the depth-first list an indented picker wants.
 func (a *App) handleListCategories(w http.ResponseWriter, r *http.Request) {
-	a.respondCategories(w, r)
+	a.respondCategories(w, r, true)
 }
 
 func (a *App) handleGetCategoryBySlug(w http.ResponseWriter, r *http.Request) {
@@ -1097,6 +1097,7 @@ func (a *App) handleGetCategoryBySlug(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	a.translateCategories(r, []*Category{c})
 	products, total, err := a.catalog.ListProducts(r.Context(), ProductQuery{
 		CategoryID: c.ID, Status: ProductActive, Limit: limit, Offset: offset,
 	})
@@ -1124,12 +1125,20 @@ type categoryPage struct {
 // --------------------------------------------------------------------- admin
 
 func (a *App) handleAdminListCategories(w http.ResponseWriter, r *http.Request) {
-	a.respondCategories(w, r)
+	a.respondCategories(w, r, false)
 }
 
-func (a *App) respondCategories(w http.ResponseWriter, r *http.Request) {
+// respondCategories serves both routes; public names the categories in the
+// shopper's language, where the admin route keeps the store's own text.
+func (a *App) respondCategories(w http.ResponseWriter, r *http.Request, public bool) {
 	svc := a.Categories()
 	q := r.URL.Query()
+	send := func(list []*Category, meta ListMeta) {
+		if public {
+			a.translateCategories(r, list)
+		}
+		RespondList(w, list, meta)
+	}
 
 	// Parsed once, at the top, so a bad `order=` is refused identically on every
 	// branch below and on both the public and the admin route — one function
@@ -1158,7 +1167,7 @@ func (a *App) respondCategories(w http.ResponseWriter, r *http.Request) {
 			RespondError(w, r, err)
 			return
 		}
-		RespondList(w, list, ListMeta{Total: total, Limit: limit, Offset: offset})
+		send(list, ListMeta{Total: total, Limit: limit, Offset: offset})
 		return
 	}
 
@@ -1189,7 +1198,7 @@ func (a *App) respondCategories(w http.ResponseWriter, r *http.Request) {
 			RespondError(w, r, err)
 			return
 		}
-		RespondList(w, list, ListMeta{Total: len(list), Limit: len(list), Offset: 0})
+		send(list, ListMeta{Total: len(list), Limit: len(list), Offset: 0})
 		return
 	}
 
@@ -1216,7 +1225,7 @@ func (a *App) respondCategories(w http.ResponseWriter, r *http.Request) {
 			RespondError(w, r, err)
 			return
 		}
-		RespondList(w, list, ListMeta{Total: total, Limit: len(list), Offset: 0})
+		send(list, ListMeta{Total: total, Limit: len(list), Offset: 0})
 		return
 	}
 
@@ -1232,7 +1241,7 @@ func (a *App) respondCategories(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	RespondList(w, list, ListMeta{Total: len(list), Limit: len(list), Offset: 0})
+	send(list, ListMeta{Total: len(list), Limit: len(list), Offset: 0})
 }
 
 func (a *App) handleAdminGetCategory(w http.ResponseWriter, r *http.Request) {

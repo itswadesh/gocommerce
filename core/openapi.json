@@ -388,6 +388,9 @@
           },
           {
             "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Lang"
           }
         ],
         "responses": {
@@ -5429,6 +5432,9 @@
           },
           {
             "$ref": "#/components/parameters/SortOrder"
+          },
+          {
+            "$ref": "#/components/parameters/Lang"
           }
         ],
         "responses": {
@@ -5477,6 +5483,9 @@
           },
           {
             "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Lang"
           }
         ],
         "responses": {
@@ -14489,7 +14498,7 @@
       "Lang": {
         "name": "lang",
         "in": "query",
-        "description": "Overrides Accept-Language. Falls back to the store's default language when unsupported.",
+        "description": "Overrides Accept-Language. One of the store's languages; an unsupported one falls back to its main language (D87). Products, and the names of categories and collections, come back translated where the store has translated them.",
         "schema": {
           "type": "string",
           "example": "en"

@@ -58,6 +58,7 @@ import (
 	"github.com/itswadesh/gocommerce/ext/reviews"
 	meilisearch "github.com/itswadesh/gocommerce/ext/search-meilisearch"
 	"github.com/itswadesh/gocommerce/ext/sitemaps"
+	"github.com/itswadesh/gocommerce/ext/translations"
 	webhooks "github.com/itswadesh/gocommerce/ext/webhooks"
 	"github.com/itswadesh/gocommerce/ext/wishlist"
 )
@@ -190,6 +191,7 @@ environment:
 		withInvoices = fs.Bool("invoices", false, "install the invoices module: a numbered invoice per paid order (INVOICES_SELLER_NAME, INVOICES_SELLER_ADDRESS, INVOICES_TAX_ID)")
 		withCMS      = fs.Bool("cms", false, "install the cms module: content pages at /x/cms/pages/{slug}, edited on the Pages screen")
 		withFAQ      = fs.Bool("faq", false, "install the faq module: the shop's questions and answers at /x/faq, edited on the FAQ screen")
+		withTransl   = fs.Bool("translations", false, "install the translations module: products, categories and collections in each of a store's languages, written on the Translations screen")
 		withWishlist = fs.Bool("wishlist", false, "install the wishlist module: shoppers save products, and the Wishlists screen shows what is wanted most")
 		withB2B      = fs.Bool("b2b", false, "install the b2b module: companies, buyer roles, orders on account against a credit limit, approvals and quotes (implies -identity)")
 		// A store is found by host as well as by header and cookie: a request
@@ -408,6 +410,9 @@ environment:
 		}
 		if *withFAQ {
 			modules = append(modules, faq.New(faq.Config{}))
+		}
+		if *withTransl {
+			modules = append(modules, translations.New())
 		}
 		if *withWishlist {
 			modules = append(modules, wishlist.New(wishlist.Config{}))

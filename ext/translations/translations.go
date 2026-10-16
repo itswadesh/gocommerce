@@ -23,15 +23,14 @@
 //
 // # What is translated
 //
-// Products: title, description, and the two SEO fields. That is what the engine
-// applies today, and the SEO pair is what makes a translated page worth serving
-// — a French listing under an English meta description is half a translation.
+// Products: title, description, and the two SEO fields; the SEO pair is what
+// makes a translated page worth serving — a French listing under an English
+// meta description is half a translation. Categories: the title, which is what
+// navigation and breadcrumbs show. Collections: the title and description.
+// Those are what the engine applies on the storefront's reads (D87).
 //
-// Category and collection *names* are not translated, because the engine has no
-// seam for them: `translateProducts` is the only hook on the read path, and
-// adding two more belongs in core rather than here. A store serving a French
-// catalogue will still see English category names in its navigation, and that
-// is stated rather than quietly left to be discovered.
+// A translation is into one of the store's languages other than its main one:
+// the main language is the text on the product itself.
 package translations
 
 import (
@@ -55,10 +54,23 @@ import (
 // it keeps the stored object the same shape as what the engine reads, so a
 // field added to the engine later is a deliberate addition here rather than
 // something that quietly started working.
-var productFields = []string{"title", "description", "seo_title", "seo_description"}
+var fieldsOf = map[string][]string{
+	gocommerce.KindProduct:    {"title", "description", "seo_title", "seo_description"},
+	gocommerce.KindCategory:   {"title"},
+	gocommerce.KindCollection: {"title", "description"},
+}
+
+// tableOf is the core table each kind's text lives in, read (never written,
+// rule 3) to check an entity exists and to list them for the screen.
+var tableOf = map[string]string{
+	gocommerce.KindProduct:    "products",
+	gocommerce.KindCategory:   "categories",
+	gocommerce.KindCollection: "collections",
+}
 
 // Module is the translation store.
 type Module struct {
+	app *gocommerce.App
 	db  *sql.DB
 	log *slog.Logger
 }
@@ -89,6 +101,7 @@ func (m *Module) Migrations() []gocommerce.Migration {
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
+	m.app = app
 	m.db = app.DB()
 	m.log = app.Log()
 
@@ -97,6 +110,8 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// catalog.read and catalog.write rather than a right of this module's own:
 	// a product's French title is the product's content, and somebody trusted
 	// to rewrite the English one is trusted to write the French.
+	app.HandleAdminFunc("GET /api/admin/x/translations/{kind}",
+		m.handleItems, gocommerce.RightCatalogRead)
 	app.HandleAdminFunc("GET /api/admin/x/translations/{kind}/{id}",
 		m.handleList, gocommerce.RightCatalogRead)
 	app.HandleAdminFunc("PUT /api/admin/x/translations/{kind}/{id}/{language}",
@@ -262,8 +277,23 @@ func (m *Module) handlePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	language, err := languageOf(r)
+	if err == nil {
+		language, err = m.storeLanguage(r.Context(), kind, language)
+	}
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
+		return
+	}
+	// A translation of something that is not there would be a row nothing
+	// ever reads — and a typo in an id is the likeliest way to write one.
+	var exists bool
+	if err := m.db.QueryRowContext(r.Context(),
+		`SELECT EXISTS (SELECT 1 FROM `+tableOf[kind]+` WHERE id = $1)`, id).Scan(&exists); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	if !exists {
+		gocommerce.RespondError(w, r, gocommerce.NotFoundf("no %s %d", kind, id))
 		return
 	}
 
@@ -351,19 +381,45 @@ func (m *Module) handleDelete(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------------ helpers
 
 func kindAndID(r *http.Request) (string, int64, error) {
-	kind := strings.TrimSpace(r.PathValue("kind"))
-	// Only the kinds the engine actually applies. Accepting "variant" would
-	// store rows nothing reads, which looks like a translation that does not
-	// work rather than one that was never wired up.
-	if kind != gocommerce.KindProduct {
-		return "", 0, gocommerce.Validationf(
-			"kind must be %q; the engine applies translations to products only", gocommerce.KindProduct)
+	kind, err := kindOf(r)
+	if err != nil {
+		return "", 0, err
 	}
 	id, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("id")), 10, 64)
 	if err != nil || id <= 0 {
 		return "", 0, gocommerce.Validationf("id must be a positive number")
 	}
 	return kind, id, nil
+}
+
+// kindOf is the path's kind, one the engine applies. Accepting "variant" would
+// store rows nothing reads, which looks like a translation that does not work
+// rather than one that was never wired up.
+func kindOf(r *http.Request) (string, error) {
+	kind := strings.TrimSpace(r.PathValue("kind"))
+	if _, ok := fieldsOf[kind]; !ok {
+		return "", gocommerce.Validationf("kind must be %q, %q or %q",
+			gocommerce.KindProduct, gocommerce.KindCategory, gocommerce.KindCollection)
+	}
+	return kind, nil
+}
+
+// storeLanguage is tag as the store spells it, refused unless it is one the
+// store sells in other than its main one. A translation into a language the
+// store does not offer is one no shopper is ever served; one into the main
+// language would sit beside the text it repeats.
+func (m *Module) storeLanguage(ctx context.Context, kind, tag string) (string, error) {
+	langs := m.app.Languages(ctx)
+	for i, l := range langs {
+		if !strings.EqualFold(l, tag) {
+			continue
+		}
+		if i == 0 {
+			return "", gocommerce.Validationf("%s is the store's main language: that text is the %s's own", l, kind)
+		}
+		return l, nil
+	}
+	return "", gocommerce.Validationf("this store does not sell in %q; add it on Store settings first", tag)
 }
 
 func languageOf(r *http.Request) (string, error) {
@@ -391,7 +447,7 @@ func languageOf(r *http.Request) (string, error) {
 // override as absent anyway — storing it would be a row that says "translated"
 // and reads as English.
 func cleanFields(kind string, in map[string]string) (map[string]string, error) {
-	allowed := productFields
+	allowed := fieldsOf[kind]
 	known := make(map[string]bool, len(allowed))
 	for _, f := range allowed {
 		known[f] = true

@@ -1,12 +1,12 @@
 {
   "paths": {
-    "/api/admin/x/translations/{kind}/{id}": {
+    "/api/admin/x/translations/{kind}": {
       "get": {
         "tags": [
           "translations"
         ],
-        "summary": "Every translation of one product",
-        "description": "Ordered by language, so a picker renders the same way twice. A product nobody has translated answers an empty list rather than null.",
+        "summary": "One kind's items with their translation into one language",
+        "description": "What the Translations screen lists: a page of the store's products, categories or collections, ordered by title, each with its own text beside its translation into `language`, and how many of the store's items that language covers.",
         "parameters": [
           {
             "name": "kind",
@@ -15,10 +15,93 @@
             "schema": {
               "type": "string",
               "enum": [
-                "product"
+                "product",
+                "category",
+                "collection"
               ]
             },
-            "description": "The kind of thing being translated. Only `product` is accepted, because `translateProducts` is the engine's only hook on the public read path — storing a variant row would look like a translation that does not work rather than one that was never wired up."
+            "description": "What is being translated: `product` (title, description, seo_title, seo_description), `category` (title) or `collection` (title, description) — the kinds and fields the engine applies on the storefront's reads. Accepting `variant` would store rows nothing reads."
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "hi",
+            "description": "One of the store's languages other than its main one, as a BCP 47 tag: the main language's text is the item's own, and a language the store does not sell in is never served (D87)."
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Matches anywhere in the item's own title, case-insensitively."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "missing",
+                "translated"
+              ]
+            },
+            "description": "Only the items with no translation into language yet, or only the ones with one."
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The page and the counts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TranslationItems"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/admin/x/translations/{kind}/{id}": {
+      "get": {
+        "tags": [
+          "translations"
+        ],
+        "summary": "Every translation of one item",
+        "description": "Ordered by language, so a picker renders the same way twice. An item nobody has translated answers an empty list rather than null.",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "product",
+                "category",
+                "collection"
+              ]
+            },
+            "description": "What is being translated: `product` (title, description, seo_title, seo_description), `category` (title) or `collection` (title, description) — the kinds and fields the engine applies on the storefront's reads. Accepting `variant` would store rows nothing reads."
           },
           {
             "name": "id",
@@ -28,7 +111,7 @@
               "type": "integer",
               "format": "int64"
             },
-            "description": "The product's id."
+            "description": "The product's, category's or collection's id."
           }
         ],
         "responses": {
@@ -61,8 +144,8 @@
         "tags": [
           "translations"
         ],
-        "summary": "Write one product's translation into one language",
-        "description": "Replaces the whole field set rather than merging it, like every other whole-object PUT here: the caller sent the translation it wants, and a merge would make removing a field impossible. Emptying every field is the same intention as deleting the row, and answers 204 — an empty object left behind would show up as a language this product claims to be translated into.",
+        "summary": "Write one item's translation into one language",
+        "description": "Replaces the whole field set rather than merging it, like every other whole-object PUT here: the caller sent the translation it wants, and a merge would make removing a field impossible. Emptying every field is the same intention as deleting the row, and answers 204 — an empty object left behind would show up as a language this item claims to be translated into.",
         "parameters": [
           {
             "name": "kind",
@@ -71,10 +154,12 @@
             "schema": {
               "type": "string",
               "enum": [
-                "product"
+                "product",
+                "category",
+                "collection"
               ]
             },
-            "description": "The kind of thing being translated. Only `product` is accepted, because `translateProducts` is the engine's only hook on the public read path — storing a variant row would look like a translation that does not work rather than one that was never wired up."
+            "description": "What is being translated: `product` (title, description, seo_title, seo_description), `category` (title) or `collection` (title, description) — the kinds and fields the engine applies on the storefront's reads. Accepting `variant` would store rows nothing reads."
           },
           {
             "name": "id",
@@ -84,7 +169,7 @@
               "type": "integer",
               "format": "int64"
             },
-            "description": "The product's id."
+            "description": "The product's, category's or collection's id."
           },
           {
             "name": "language",
@@ -94,7 +179,7 @@
               "type": "string"
             },
             "example": "fr",
-            "description": "A BCP 47 tag. A regional tag falls back to its primary subtag on read, so a row stored for `fr` serves a shopper asking for `fr-CA`, and an exact `fr-CA` row beats it."
+            "description": "One of the store's languages other than its main one, as a BCP 47 tag: the main language's text is the item's own, and a language the store does not sell in is never served (D87). A regional tag falls back to its primary subtag on read, so a row stored for `fr` serves a shopper asking for `fr-CA`, and an exact `fr-CA` row beats it."
           }
         ],
         "requestBody": {
@@ -139,6 +224,9 @@
           },
           "400": {
             "$ref": "#/components/responses/Validation"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       },
@@ -146,7 +234,7 @@
         "tags": [
           "translations"
         ],
-        "summary": "Remove one product's translation into one language",
+        "summary": "Remove one item's translation into one language",
         "description": "204 whether or not a row went: deleting a translation that is not there leaves the world in the state the caller asked for.",
         "parameters": [
           {
@@ -156,10 +244,12 @@
             "schema": {
               "type": "string",
               "enum": [
-                "product"
+                "product",
+                "category",
+                "collection"
               ]
             },
-            "description": "The kind of thing being translated. Only `product` is accepted, because `translateProducts` is the engine's only hook on the public read path — storing a variant row would look like a translation that does not work rather than one that was never wired up."
+            "description": "What is being translated: `product` (title, description, seo_title, seo_description), `category` (title) or `collection` (title, description) — the kinds and fields the engine applies on the storefront's reads. Accepting `variant` would store rows nothing reads."
           },
           {
             "name": "id",
@@ -169,7 +259,7 @@
               "type": "integer",
               "format": "int64"
             },
-            "description": "The product's id."
+            "description": "The product's, category's or collection's id."
           },
           {
             "name": "language",
@@ -179,7 +269,7 @@
               "type": "string"
             },
             "example": "fr",
-            "description": "A BCP 47 tag. A regional tag falls back to its primary subtag on read, so a row stored for `fr` serves a shopper asking for `fr-CA`, and an exact `fr-CA` row beats it."
+            "description": "One of the store's languages other than its main one, as a BCP 47 tag: the main language's text is the item's own, and a language the store does not sell in is never served (D87). A regional tag falls back to its primary subtag on read, so a row stored for `fr` serves a shopper asking for `fr-CA`, and an exact `fr-CA` row beats it."
           }
         ],
         "responses": {
@@ -215,7 +305,7 @@
             "additionalProperties": {
               "type": "string"
             },
-            "description": "The translated fields. Only `title`, `description`, `seo_title` and `seo_description` are accepted — an unknown name is refused rather than dropped, because a silently discarded field is a translation somebody believes they wrote. A field left out keeps the product's stored text rather than blanking it.",
+            "description": "The translated fields, from the kind's own list — an unknown name is refused rather than dropped, because a silently discarded field is a translation somebody believes they wrote. A field left out keeps the item's stored text rather than blanking it.",
             "example": {
               "title": "Chemise en lin",
               "seo_title": "Chemise en lin — la boutique"
@@ -224,6 +314,76 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "TranslationItems": {
+        "type": "object",
+        "properties": {
+          "language": {
+            "type": "string",
+            "example": "hi"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The kind's translatable fields, in the order a form shows them."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Where a category sits, such as \"Jewellery / Rings\". Absent for products and collections."
+                },
+                "original": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "The store's own text, in its main language, one entry per field."
+                },
+                "translation": {
+                  "type": "object",
+                  "nullable": true,
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "The translation into language, or null until somebody writes one."
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "nullable": true
+                }
+              }
+            }
+          },
+          "matching": {
+            "type": "integer",
+            "description": "How many items the search and the status filter match: what the page is a page of."
+          },
+          "total": {
+            "type": "integer",
+            "description": "How many items of this kind the store has. Archived products are left out of every count and list."
+          },
+          "translated": {
+            "type": "integer",
+            "description": "How many of them have a translation into language."
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
           }
         }
       }
