@@ -13,7 +13,8 @@
     import { page } from "$app/state";
     import { goto } from "$app/navigation";
     import { tick, untrack } from "svelte";
-    import { auth, events, can, session, stores } from "$lib/api.js";
+    import { auth, events, can, session, stores, errors as errorReports } from "$lib/api.js";
+    import { installErrorReporting } from "$lib/error-reporting.js";
     import { clearProfile, clearSettings } from "$lib/settings.svelte.js";
     import { forgetModules, hasModule } from "$lib/modules.svelte.js";
     import { forgetScreens } from "$lib/screens.svelte.js";
@@ -311,6 +312,17 @@
      * page and a store whose database has gone away must not say so every five
      * minutes. The Diagnostics screen is where failures are read.
      */
+    /*
+     * The panel's own crashes go to the store's error page (D86), so a screen
+     * that throws in somebody's browser is a bug the owner hears about. Only
+     * with a store chosen: an error is a store's, and before one is chosen
+     * the report would be a 400.
+     */
+    $effect(() => {
+        if (!authenticated || myStores.state !== "ok" || !myStores.current) return;
+        return installErrorReporting((body) => errorReports.report(body));
+    });
+
     $effect(() => {
         // Diagnostics are a store's: asked before one is chosen, they are 400s.
         // Reading the store restarts the watch on a switch, so the badge
