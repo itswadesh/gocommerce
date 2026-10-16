@@ -3,14 +3,14 @@
      * A recovery link the browser would not put on the clipboard, shown so it
      * can be copied by hand rather than claimed as copied when it was not.
      *
-     * The link opens the cart, so it works for as long as the cart does; the
-     * module sends that date with the link, and this says it.
+     * The link opens the cart, so it works for as long as the cart is kept;
+     * the module sends the earliest that can end, and this says "at least".
      */
     import { copyText } from "$lib/clipboard.js";
     import { formatDate } from "$lib/format.js";
     import Drawer from "$lib/components/Drawer.svelte";
 
-    /** @type {{ link: { url: string, tracked?: boolean, expires_at?: string } | null, onclose: () => void }} */
+    /** @type {{ link: { url: string, tracked?: boolean, works_until?: string } | null, onclose: () => void }} */
     let { link = null, onclose } = $props();
 
     let copied = $state(false);
@@ -37,7 +37,9 @@
 <Drawer open={!!link} size="popup sm" title="Recovery link" onclose={() => onclose?.()}>
     {#if link}
         <p class="txt-hint m-b-sm">
-            It takes the customer back to their cart.{link.expires_at ? ` Works until ${formatDate(link.expires_at)}.` : ""}
+            It takes the customer back to their cart.{link.works_until
+                ? ` It works until at least ${formatDate(link.works_until)}.`
+                : ""}
             {#if link.tracked === false}
                 Clicks on it are not counted: the store has no public address set.
             {/if}

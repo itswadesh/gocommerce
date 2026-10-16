@@ -20,6 +20,7 @@
      * (D30), and the date range is sent as instants in the reader's own day
      * rather than as bare dates the engine would read at UTC midnight.
      */
+    import { untrack } from "svelte";
     import { base } from "$app/paths";
     import { goto } from "$app/navigation";
     import { can, recovery } from "$lib/api.js";
@@ -32,6 +33,7 @@
         customerLines,
         durationWords,
         indicatorLabel,
+        indicatorTone,
         isOpen,
         kindLabel,
         rangeLabel,
@@ -94,6 +96,10 @@
        lacks the right should learn the action exists and why it is not theirs. */
     const mayContact = $derived(can("abandonment.contact"));
     const maySuppress = $derived(can("abandonment.suppress"));
+    /* The other screens a row leads to, offered only to a role that may open
+       them: a link that lands on "no access" is not an action. */
+    const mayCustomers = $derived(can("customers.read"));
+    const mayCarts = $derived(can("orders.read"));
     const noContactRight = `Your role does not carry “${rightLabel("abandonment.contact")}”`;
     const noSuppressRight = `Your role does not carry “${rightLabel("abandonment.suppress")}”`;
 
@@ -171,9 +177,11 @@
         const f = filters();
         // The figures are a second request on purpose: a list that loads with
         // its cards failed is still the list, and says the cards failed.
+        // A failure clears the old figures: cards for the last filter beside
+        // rows for this one would be two different sets side by side.
         const figures = recovery.summary(f).then(
             (s) => mine === reqId && ((summary = s), (figuresFailed = false)),
-            () => mine === reqId && (figuresFailed = true),
+            () => mine === reqId && ((summary = null), (figuresFailed = true)),
         );
         try {
             const page = await recovery.list({ ...f, ...sortQuery(sort), page: list.page, limit: perPage });
@@ -200,12 +208,25 @@
     /* Live, as kitcommerce-admin's is: the list follows the typing once it
        pauses for 400ms, so a fast typist sends one request, not one a key. */
     let draftSearch = $state(list.params.q);
-    let searchTimer;
+    let searchTimer = 0;
     function typed(value) {
         draftSearch = value;
         clearTimeout(searchTimer);
-        searchTimer = setTimeout(() => list.set({ q: draftSearch.trim() }), 400);
+        searchTimer = setTimeout(() => {
+            searchTimer = 0;
+            list.set({ q: draftSearch.trim() });
+        }, 400);
     }
+    /* The box follows the address on Back and Forward, unless a search is
+       still on its way there; and a pending one dies with the page rather
+       than stamping ?q= on wherever the operator went next. */
+    $effect(() => {
+        const q = list.params.q;
+        untrack(() => {
+            if (!searchTimer && draftSearch.trim() !== q) draftSearch = q;
+        });
+    });
+    $effect(() => () => clearTimeout(searchTimer));
 
     function clearAll() {
         clearTimeout(searchTimer);
@@ -554,7 +575,7 @@
                             type="button"
                             class="btn sm secondary recovery-dashed"
                             popovertarget="abandoned-status"
-                            aria-haspopup="true"
+                            aria-haspopup="menu"
                         >
                             <i class="ri-add-circle-line" aria-hidden="true"></i>
                             <span class="txt">Status</span>
@@ -569,10 +590,12 @@
                                 {/if}
                             {/if}
                         </button>
-                        <div id="abandoned-status" class="dropdown recovery-pop" popover="auto">
+                        <div id="abandoned-status" class="dropdown recovery-pop" popover="auto" role="menu" aria-label="Status">
                             <button
                                 type="button"
                                 class="dropdown-item"
+                                role="menuitemcheckbox"
+                                aria-checked={statusSet.size === STATUSES.length}
                                 onclick={() =>
                                     list.set({ status: statusSet.size === STATUSES.length ? "" : STATUSES.join(",") })}
                             >
@@ -597,7 +620,12 @@
                                 </button>
                             {/each}
                             {#if statusSet.size}
-                                <button type="button" class="dropdown-item recovery-pop-clear" onclick={() => list.set({ status: "" })}>
+                                <button
+                                    type="button"
+                                    class="dropdown-item recovery-pop-clear"
+                                    role="menuitem"
+                                    onclick={() => list.set({ status: "" })}
+                                >
                                     <span class="txt">Clear selection ({statusSet.size})</span>
                                 </button>
                             {/if}
@@ -639,12 +667,14 @@
                                 {valueLabel(valueMoney(list.params.min_value_minor), valueMoney(list.params.max_value_minor))}
                             </span>
                         </button>
-                        <form
+                        <div
                             id="abandoned-value"
                             class="dropdown recovery-pop recovery-pop-form"
                             popover="auto"
-                            onsubmit={applyValue}
+                            role="dialog"
+                            aria-label="Cart value"
                         >
+                        <form class="recovery-pop-body" onsubmit={applyValue}>
                             <div class="recovery-pop-title">Cart value</div>
                             <div class="recovery-pop-pair">
                                 <div class="field">
@@ -668,6 +698,7 @@
                                 </button>
                             </div>
                         </form>
+                        </div>
 
                         <button
                             type="button"
@@ -679,12 +710,14 @@
                             <i class="ri-calendar-line" aria-hidden="true"></i>
                             <span class="txt">{rangeLabel(list.params.range, list.params.from, list.params.to)}</span>
                         </button>
-                        <form
+                        <div
                             id="abandoned-dates"
                             class="dropdown recovery-pop recovery-pop-form"
                             popover="auto"
-                            onsubmit={applyDates}
+                            role="dialog"
+                            aria-label="Abandoned between"
                         >
+                        <form class="recovery-pop-body" onsubmit={applyDates}>
                             <div class="recovery-pop-title">Abandoned</div>
                             <div class="recovery-presets">
                                 {#each RANGES.filter((r) => r.value !== "custom") as r (r.value)}
@@ -714,6 +747,7 @@
                                 </button>
                             </div>
                         </form>
+                        </div>
 
                         {#if filtered}
                             <button type="button" class="btn sm transparent secondary" onclick={clearAll} transition:rise>
@@ -808,7 +842,12 @@
                                             {statusLabel(row.status)}
                                         </span>
                                         {#if row.indicator || (row.suppression && row.status !== "suppressed")}
-                                            <div class="txt-hint txt-sm recovery-pill-hint">
+                                            <!-- Muted, except a fault somebody can fix. -->
+                                            <div
+                                                class="txt-sm recovery-pill-hint {indicatorTone(row.indicator) === 'txt-danger'
+                                                    ? 'txt-danger'
+                                                    : 'txt-hint'}"
+                                            >
                                                 {[
                                                     indicatorLabel(row.indicator),
                                                     row.suppression && row.status !== "suppressed" ? "Was suppressed" : "",
@@ -885,7 +924,7 @@
                                                     <span class="txt">Suppress</span>
                                                 </button>
                                             {/if}
-                                            {#if row.email}
+                                            {#if row.email && mayCustomers}
                                                 <a
                                                     role="menuitem"
                                                     class="dropdown-item"
@@ -895,10 +934,17 @@
                                                     <span class="txt">Open customer</span>
                                                 </a>
                                             {/if}
-                                            <a role="menuitem" class="dropdown-item" href="{base}/dash/checkouts?state=any&cart={row.cart_id}">
-                                                <i class="ri-shopping-cart-2-line" aria-hidden="true"></i>
-                                                <span class="txt">Open cart</span>
-                                            </a>
+                                            <!-- An expired record's cart is gone: there is nothing to open. -->
+                                            {#if mayCarts && row.status !== "expired"}
+                                                <a
+                                                    role="menuitem"
+                                                    class="dropdown-item"
+                                                    href="{base}/dash/checkouts?state=any&cart={row.cart_id}"
+                                                >
+                                                    <i class="ri-shopping-cart-2-line" aria-hidden="true"></i>
+                                                    <span class="txt">Open cart</span>
+                                                </a>
+                                            {/if}
                                             {#if row.recovered_order}
                                                 <a
                                                     role="menuitem"
