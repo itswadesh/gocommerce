@@ -624,6 +624,7 @@ func (a *App) handleListCollections(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	a.translateCollections(r, list)
 	RespondList(w, list, ListMeta{Total: total, Limit: limit, Offset: offset})
 }
 
@@ -648,6 +649,7 @@ func (a *App) handleGetCollectionBySlug(w http.ResponseWriter, r *http.Request) 
 		RespondError(w, r, err)
 		return
 	}
+	a.translateCollections(r, []*Collection{c})
 	products, total, err := collections.ProductsInCollection(r.Context(), c.ID, ProductQuery{
 		Status: ProductActive, Limit: limit, Offset: offset,
 	})

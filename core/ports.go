@@ -244,15 +244,19 @@ type Notification struct {
 // call rather than one per product.
 type Translator interface {
 	// Translate returns, for each requested id, the fields that differ in
-	// lang. Kind is "product" or "variant". Missing ids and missing fields
+	// lang. Kind is one of the Kind constants. Missing ids and missing fields
 	// simply keep their stored values.
 	Translate(ctx context.Context, lang, kind string, ids []int64) (map[int64]map[string]string, error)
 }
 
-// Translatable kinds.
+// Translatable kinds, and the fields the engine applies for each: a product's
+// title, description, seo_title and seo_description; a category's title; a
+// collection's title and description.
 const (
-	KindProduct = "product"
-	KindVariant = "variant"
+	KindProduct    = "product"
+	KindVariant    = "variant"
+	KindCategory   = "category"
+	KindCollection = "collection"
 )
 
 // ------------------------------------------------------------- registration

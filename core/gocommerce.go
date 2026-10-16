@@ -724,11 +724,8 @@ func (a *App) nudgeOutbox() {
 // With no translator, or when the request is in the store's own language, it
 // does nothing at all — a single-language store pays nothing for i18n.
 func (a *App) translateProducts(r *http.Request, products []*Product) {
-	if a.translator == nil || len(products) == 0 {
-		return
-	}
-	lang := a.RequestLanguage(r)
-	if strings.EqualFold(lang, a.mainLanguage(r.Context())) {
+	lang := a.translationLanguage(r)
+	if lang == "" || len(products) == 0 {
 		return
 	}
 	ids := make([]int64, 0, len(products))
@@ -766,6 +763,7 @@ func (a *App) translateProducts(r *http.Request, products []*Product) {
 			p.SEODescription = v
 		}
 	}
+	a.translateProductLinks(r.Context(), lang, products)
 }
 
 func (a *App) routeCount(owner string) int {

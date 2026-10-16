@@ -32,6 +32,7 @@ services:
       - -invoices
       - -cms
       - -faq
+      - -translations
       - -wishlist
       - -gateways
       - -carriers
