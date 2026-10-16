@@ -29,6 +29,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
+    import { countryOptions } from "$lib/countries.js";
 
     const PER_PAGE = 50;
     const list = listState({ page: 1, limit: PER_PAGE, q: "", status: "" });
@@ -503,11 +504,12 @@
                     />
                 </div>
                 <div class="field">
-                    <input
-                        type="text"
+                    <Select
+                        id="v-country"
                         placeholder="Country"
-                        aria-label="Country"
+                        ariaLabel="Country"
                         bind:value={form.address.country}
+                        options={countryOptions(form.address.country)}
                     />
                 </div>
             </div>

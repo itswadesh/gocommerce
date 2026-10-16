@@ -29,7 +29,7 @@
     import { goto } from "$app/navigation";
 
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
-    import { COUNTRIES } from "$lib/countries.js";
+    import { countryOptions } from "$lib/countries.js";
 
     /*
      * Deleting the store. Offered to its owner only, never on a demo store,
@@ -124,12 +124,7 @@
     function optionsFor(key) {
         if (key === "timezone") return zones;
         if (key === "language") return languages;
-        if (key === "country") {
-            // A code saved before this was a list, and not on it, stays a
-            // choice rather than being blanked by the select.
-            const saved = draft?.country ?? "";
-            return saved && !COUNTRIES.some((c) => c.value === saved) ? [{ value: saved, label: saved }, ...COUNTRIES] : COUNTRIES;
-        }
+        if (key === "country") return countryOptions(draft?.country);
         return [];
     }
 

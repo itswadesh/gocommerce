@@ -264,3 +264,14 @@ export const COUNTRIES = [
     { value: "ZM", label: "Zambia" },
     { value: "ZW", label: "Zimbabwe" },
 ];
+
+/**
+ * countryOptions is the list for a select whose saved value may predate it: a
+ * value that is not a code on the list (a name typed into the old text box,
+ * an import's "India") stays a choice, first, rather than the select showing
+ * blank and the next save erasing it.
+ */
+export function countryOptions(saved) {
+    if (!saved || COUNTRIES.some((c) => c.value === saved)) return COUNTRIES;
+    return [{ value: saved, label: saved }, ...COUNTRIES];
+}

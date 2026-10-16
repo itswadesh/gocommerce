@@ -48,6 +48,7 @@
     import RefundDialog from "$lib/components/RefundDialog.svelte";
     import ReturnDialog from "$lib/components/ReturnDialog.svelte";
     import Select from "$lib/components/Select.svelte";
+    import { countryOptions } from "$lib/countries.js";
     import ShipDialog from "$lib/components/ShipDialog.svelte";
     import VariantPicker from "$lib/components/VariantPicker.svelte";
 
@@ -1795,10 +1796,11 @@
                                         <div class="delimiter"></div>
                                         <div class="field">
                                             <label for="cust-country">Country</label>
-                                            <input
+                                            <Select
                                                 id="cust-country"
-                                                type="text"
+                                                placeholder="Choose a country"
                                                 bind:value={form.address.country}
+                                                options={countryOptions(form.address.country)}
                                             />
                                         </div>
                                     </div>
