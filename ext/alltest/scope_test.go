@@ -116,7 +116,10 @@ func TestEveryModuleTableIsScoped(t *testing.T) {
 		WHERE n.nspname = current_schema() AND c.relkind = 'r'
 		  AND c.relname NOT IN ('stores', 'store_domains', 'store_members', 'store_counters',
 		                        'api_key_index', 'superusers', 'superuser_sessions',
-		                        'superuser_password_resets', 'gocommerce_migrations')
+		                        'superuser_password_resets', 'gocommerce_migrations',
+		                        -- Which connection runs a report for which store (D84):
+		                        -- the record that scopes reports, so no one store's.
+		                        'report_runs')
 		  AND NOT (c.relrowsecurity AND c.relforcerowsecurity AND EXISTS (
 		      SELECT 1 FROM pg_policies p
 		      WHERE p.schemaname = n.nspname AND p.tablename = c.relname AND p.policyname = 'store_scope'))

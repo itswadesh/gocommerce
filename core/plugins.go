@@ -330,6 +330,29 @@ func (p *Plugins) Update(ctx context.Context, key string, patch PluginPatch) (*P
 		if patch.Enabled != nil {
 			enabled = *patch.Enabled
 		}
+		// A plugin that is on must have what it needs to work. Checked when
+		// it is switched on and when this patch empties a required setting —
+		// not on every save, so a plugin that was on before this rule can
+		// still have its other settings changed.
+		wasOn := current.enabled || (!current.present && def.DefaultEnabled)
+		if enabled {
+			var missing []PluginField
+			for _, f := range def.Fields {
+				if !f.Required {
+					continue
+				}
+				if v, ok := settings[f.Key]; ok && v != nil && v != "" {
+					continue
+				}
+				_, emptied := patch.Settings[f.Key]
+				if !wasOn || emptied {
+					missing = append(missing, f)
+				}
+			}
+			if len(missing) > 0 {
+				return requiredSettingsError(def, missing, wasOn)
+			}
+		}
 		encoded, err := json.Marshal(settings)
 		if err != nil {
 			return Internalf(err, "encode plugin settings")
@@ -363,8 +386,39 @@ func (p *Plugins) Update(ctx context.Context, key string, patch PluginPatch) (*P
 	return out, nil
 }
 
+// requiredSettingsError says which settings a plugin needs before it can be
+// on, and what to put in each — the next thing to do, not what went wrong.
+func requiredSettingsError(def PluginDef, missing []PluginField, wasOn bool) error {
+	parts := make([]string, 0, len(missing))
+	for _, f := range missing {
+		parts = append(parts, f.Label+fieldHint(f, def))
+	}
+	list := strings.Join(parts, "; ")
+	if wasOn {
+		return Validationf("%s is on and needs %s. Enter it, or switch %s off first.", def.Title, list, def.Title)
+	}
+	return Validationf("Before switching %s on, fill in %s.", def.Title, list)
+}
+
+// fieldHint is what a setting's value looks like, said in a few words.
+func fieldHint(f PluginField, def PluginDef) string {
+	switch f.Kind {
+	case "url":
+		return " (the full address, starting with https://, for example https://shop.example.com)"
+	case "secret":
+		return " (from your " + def.Title + " account)"
+	case "number":
+		return " (a number)"
+	case "select":
+		if len(f.Options) > 0 {
+			return " (one of " + strings.Join(f.Options, ", ") + ")"
+		}
+	}
+	return ""
+}
+
 // coercePluginValue turns what a form or a client sent into the field's own
-// type, or refuses it with the field's name.
+// type, or refuses it by saying what to enter instead.
 func coercePluginValue(f PluginField, v any) (any, error) {
 	switch f.Kind {
 	case "bool":
@@ -381,7 +435,7 @@ func coercePluginValue(f PluginField, v any) (any, error) {
 		case nil:
 			return nil, nil
 		}
-		return nil, Validationf("%s must be true or false", f.Label)
+		return nil, Validationf("Set %s to on or off.", f.Label)
 	case "number":
 		switch n := v.(type) {
 		case float64:
@@ -393,7 +447,7 @@ func coercePluginValue(f PluginField, v any) (any, error) {
 		case json.Number:
 			x, err := n.Float64()
 			if err != nil {
-				return nil, Validationf("%s must be a number", f.Label)
+				return nil, Validationf("Enter %s as a number, for example 10.", f.Label)
 			}
 			return x, nil
 		case string:
@@ -402,34 +456,34 @@ func coercePluginValue(f PluginField, v any) (any, error) {
 			}
 			var x float64
 			if _, err := fmt.Sscanf(strings.TrimSpace(n), "%g", &x); err != nil {
-				return nil, Validationf("%s must be a number", f.Label)
+				return nil, Validationf("Enter %s as a number, for example 10.", f.Label)
 			}
 			return x, nil
 		case nil:
 			return nil, nil
 		}
-		return nil, Validationf("%s must be a number", f.Label)
+		return nil, Validationf("Enter %s as a number, for example 10.", f.Label)
 	case "select":
 		s, ok := v.(string)
 		if v == nil || (ok && s == "") {
 			return nil, nil
 		}
 		if !ok {
-			return nil, Validationf("%s must be one of %s", f.Label, strings.Join(f.Options, ", "))
+			return nil, Validationf("Choose %s from the list: %s.", f.Label, strings.Join(f.Options, ", "))
 		}
 		for _, o := range f.Options {
 			if o == s {
 				return s, nil
 			}
 		}
-		return nil, Validationf("%s must be one of %s", f.Label, strings.Join(f.Options, ", "))
+		return nil, Validationf("Choose %s from the list: %s.", f.Label, strings.Join(f.Options, ", "))
 	case "url":
 		s, ok := v.(string)
 		if v == nil || (ok && strings.TrimSpace(s) == "") {
 			return nil, nil
 		}
 		if !ok || !(strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")) {
-			return nil, Validationf("%s must be an absolute URL", f.Label)
+			return nil, Validationf("Enter %s as a full web address starting with https://, for example https://shop.example.com.", f.Label)
 		}
 		return strings.TrimSpace(s), nil
 	default:
@@ -438,7 +492,7 @@ func coercePluginValue(f PluginField, v any) (any, error) {
 		}
 		s, ok := v.(string)
 		if !ok {
-			return nil, Validationf("%s must be text", f.Label)
+			return nil, Validationf("Enter %s as text.", f.Label)
 		}
 		return strings.TrimSpace(s), nil
 	}
