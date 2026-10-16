@@ -65,26 +65,57 @@
 
     $effect(() => {
         channel;
-        languageQuery;
         if (allowed) load();
     });
+    // Another language changes the wording only, not who carries it.
+    let shownLanguage = "";
+    $effect(() => {
+        languageQuery;
+        if (allowed && shownLanguage && shownLanguage !== language) loadTemplates();
+    });
+
+    const templatesPath = () =>
+        "/api/admin/notifications/templates?channel=" + channel + (languageQuery ? "&" + languageQuery : "");
+
+    // Only the latest request is shown, so a slow answer for the language just
+    // left cannot replace the one picked since.
+    let latest = 0;
 
     async function load() {
+        const mine = ++latest;
         loading = true;
         try {
-            const [settings, all, list] = await Promise.all([
+            const [current, all, list] = await Promise.all([
                 request("GET", "/api/admin/settings"),
                 request("GET", "/api/admin/plugins"),
-                request("GET", "/api/admin/notifications/templates?channel=" + channel + (languageQuery ? "&" + languageQuery : "")),
+                request("GET", templatesPath()),
             ]);
-            backends = settings.notifier_channels?.find((c) => c.channel === channel)?.backends ?? [];
+            if (mine !== latest) return;
+            backends = current.notifier_channels?.find((c) => c.channel === channel)?.backends ?? [];
             plugins = all ?? [];
             templates = list ?? [];
+            shownLanguage = language;
             openLinkedTemplate();
         } catch (err) {
-            toast.error(err);
+            if (mine === latest) toast.error(err);
         } finally {
-            loading = false;
+            if (mine === latest) loading = false;
+        }
+    }
+
+    async function loadTemplates() {
+        const mine = ++latest;
+        const wanted = language;
+        loading = true;
+        try {
+            const list = await request("GET", templatesPath());
+            if (mine !== latest) return;
+            templates = list ?? [];
+            shownLanguage = wanted;
+        } catch (err) {
+            if (mine === latest) toast.error(err);
+        } finally {
+            if (mine === latest) loading = false;
         }
     }
 
@@ -154,10 +185,11 @@
         if (!tpl) return;
         saving = true;
         try {
-            const updated = await request("PUT", `/api/admin/notifications/templates/${channel}/${tpl.event}?${languageQuery}`, {
+            // The language the wording was opened in, which is the one it is for.
+            const updated = await request("PUT", `/api/admin/notifications/templates/${channel}/${tpl.event}?language=${encodeURIComponent(tpl.language)}`, {
                 body: { subject: draft.subject, body: draft.body },
             });
-            templates = templates.map((t) => (t.event === updated.event ? updated : t));
+            if (updated.language === language) templates = templates.map((t) => (t.event === updated.event ? updated : t));
             toast.success(`${tpl.title} saved`);
             tpl = null;
         } catch (err) {
@@ -171,11 +203,11 @@
         if (!tpl) return;
         saving = true;
         try {
-            const restored = await request("DELETE", `/api/admin/notifications/templates/${channel}/${tpl.event}?${languageQuery}`);
-            templates = templates.map((t) => (t.event === restored.event ? restored : t));
+            const restored = await request("DELETE", `/api/admin/notifications/templates/${channel}/${tpl.event}?language=${encodeURIComponent(tpl.language)}`);
+            if (restored.language === language) templates = templates.map((t) => (t.event === restored.event ? restored : t));
             toast.success(
                 restored.source === "main"
-                    ? `${tpl.title} in ${short(language)} uses the ${short(main)} wording again`
+                    ? `${tpl.title} in ${short(restored.language)} uses the ${short(main)} wording again`
                     : `${tpl.title} back to its default`,
             );
             tpl = null;
@@ -353,14 +385,13 @@
                  it reads as a caption belonging to the cards it sits under. -->
             <h2 class="tw:mt-10 tw:text-2xl tw:font-semibold tw:tracking-tight">{words.title} templates</h2>
             {#if languages.length > 1}
-                <div class="notify-langs" role="tablist" aria-label="Language">
+                <div class="notify-langs" role="group" aria-label="Language">
                     {#each languages as tag, i (tag)}
                         <button
                             type="button"
-                            role="tab"
                             class="notify-lang"
                             class:on={language === tag}
-                            aria-selected={language === tag}
+                            aria-pressed={language === tag}
                             onclick={() => (picked = tag)}
                             >{languageName(tag)}{#if i === 0}<span class="txt-hint txt-sm"> · main</span>{/if}</button
                         >

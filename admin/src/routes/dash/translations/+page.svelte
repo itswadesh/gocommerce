@@ -64,6 +64,9 @@
     let page = $state(null);
     let loading = $state(true);
     let draft = $state(list.params.q);
+    // Only the latest request is shown: switching kind or language while one
+    // is in flight must not land the old list under the new tab.
+    let latest = 0;
 
     $effect(() => {
         list.params;
@@ -73,19 +76,28 @@
     });
 
     async function load() {
+        const mine = ++latest;
         loading = true;
         try {
-            page = await translations.list(kind.value, {
+            const result = await translations.list(kind.value, {
                 language,
                 status: status === "all" ? "" : status,
                 q: search,
                 limit: perPage,
                 offset: (list.page - 1) * perPage,
             });
+            if (mine !== latest) return;
+            // The last row of the last page translated away: show the page
+            // before it rather than an empty one that says nothing is left.
+            if (!result.items.length && result.matching && list.page > 1) {
+                list.setPage(Math.ceil(result.matching / perPage));
+                return;
+            }
+            page = result;
         } catch (err) {
-            toast.error(err);
+            if (mine === latest) toast.error(err);
         } finally {
-            loading = false;
+            if (mine === latest) loading = false;
         }
     }
 
@@ -112,13 +124,15 @@
     let saving = $state(false);
     let removing = $state(false);
 
+    // The item keeps the kind, language and fields it was opened under, so a
+    // tab switched while the drawer is open cannot send its words elsewhere.
     function open(item) {
-        editing = item;
+        editing = { ...item, kind: kind.value, language, fields: page.fields };
         fields = Object.fromEntries(page.fields.map((f) => [f, item.translation?.[f] ?? ""]));
     }
 
     const edited = $derived(
-        !!editing && page.fields.some((f) => (fields[f] ?? "").trim() !== (editing.translation?.[f] ?? "")),
+        !!editing && editing.fields.some((f) => (fields[f] ?? "").trim() !== (editing.translation?.[f] ?? "")),
     );
 
     async function save(e) {
@@ -126,8 +140,8 @@
         if (!editing || saving || !writable) return;
         saving = true;
         try {
-            await translations.save(kind.value, editing.id, language, fields);
-            toast.success(`${short(language)} saved for ${editing.original.title}`);
+            await translations.save(editing.kind, editing.id, editing.language, fields);
+            toast.success(`${short(editing.language)} saved for ${editing.original.title}`);
             editing = null;
             await load();
         } catch (err) {
@@ -141,7 +155,7 @@
         if (!editing || removing) return;
         removing = true;
         try {
-            await translations.remove(kind.value, editing.id, language);
+            await translations.remove(editing.kind, editing.id, editing.language);
             toast.success(`Translation removed from ${editing.original.title}`);
             editing = null;
             await load();
@@ -201,14 +215,13 @@
             </EmptyState>
         {:else}
             <div class="tr-head">
-                <div class="tr-tabs" role="tablist" aria-label="Language">
+                <div class="tr-tabs" role="group" aria-label="Language">
                     {#each others as lang (lang)}
                         <button
                             type="button"
-                            role="tab"
                             class="tr-tab"
                             class:on={language === lang}
-                            aria-selected={language === lang}
+                            aria-pressed={language === lang}
                             onclick={() => list.set({ language: lang })}>{languageName(lang)}</button
                         >
                     {/each}
@@ -242,14 +255,13 @@
                 </section>
             {/if}
 
-            <div class="tr-status" role="tablist" aria-label="Status">
+            <div class="tr-status" role="group" aria-label="Status">
                 {#each STATUSES as s (s.value)}
                     <button
                         type="button"
-                        role="tab"
                         class="tr-tab"
                         class:on={status === s.value}
-                        aria-selected={status === s.value}
+                        aria-pressed={status === s.value}
                         onclick={() => list.set({ status: s.value })}>{s.label}</button
                     >
                 {/each}
@@ -328,10 +340,10 @@
     </div>
 </div>
 
-<Drawer open={!!editing} title={editing ? `${editing.original.title || "Untitled"} in ${short(language)}` : ""} onclose={() => (editing = null)}>
+<Drawer open={!!editing} title={editing ? `${editing.original.title || "Untitled"} in ${short(editing.language)}` : ""} onclose={() => (editing = null)}>
     {#if editing}
         <form id="tr-form" class="tr-form" onsubmit={save}>
-            {#each page.fields as f (f)}
+            {#each editing.fields as f (f)}
                 <div class="tr-pair" in:rise>
                     <div class="tr-original">
                         <div class="tr-label">{FIELD_LABELS[f] ?? f} · {short(main)}</div>
@@ -340,11 +352,11 @@
                         </div>
                     </div>
                     <div class="field">
-                        <label for="tr-{f}">{FIELD_LABELS[f] ?? f} · {short(language)}</label>
+                        <label for="tr-{f}">{FIELD_LABELS[f] ?? f} · {short(editing.language)}</label>
                         {#if LONG.has(f)}
-                            <textarea id="tr-{f}" rows="5" lang={language} readonly={!writable} bind:value={fields[f]} onkeydown={saveOnModEnter}></textarea>
+                            <textarea id="tr-{f}" rows="5" lang={editing.language} readonly={!writable} bind:value={fields[f]} onkeydown={saveOnModEnter}></textarea>
                         {:else}
-                            <input id="tr-{f}" type="text" lang={language} readonly={!writable} bind:value={fields[f]} />
+                            <input id="tr-{f}" type="text" lang={editing.language} readonly={!writable} bind:value={fields[f]} />
                         {/if}
                     </div>
                 </div>
