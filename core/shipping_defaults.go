@@ -3,7 +3,12 @@ package gocommerce
 import (
 	"context"
 	"database/sql"
+	"regexp"
+	"strings"
 )
+
+// countryRE is an ISO 3166-1 alpha-2 code, upper-cased.
+var countryRE = regexp.MustCompile(`^[A-Z]{2}$`)
 
 // migration0062ShippingLikeKitCommerce gives zones and rates what KitCommerce's
 // shipping screen has: a zone that can be switched off and described, and a
@@ -37,8 +42,8 @@ func cartWeightGrams(ctx context.Context, q rowQuerier, cartID int64) (int64, er
 }
 
 // defaultShippingRates are the rates Varni Jewels runs, which the owner asked
-// every new store to start from: one zone, "Local", the United States, priced
-// on the order's value. Amounts are minor units of the store's currency.
+// every new store to start from: one zone, "Local", covering the store's own
+// country (Varni's is the United States), priced on the order's value. Amounts are minor units of the store's currency.
 // "below $100" is the band ending at 100, "above $100" the one starting there.
 var defaultShippingRates = []ShippingRateInput{
 	{Name: "USPS priority", PriceMinor: 0, MinSubtotalMinor: 10000},
@@ -55,10 +60,16 @@ var defaultShippingRates = []ShippingRateInput{
 func ptr64(v int64) *int64 { return &v }
 
 // SeedDefaults gives the store ctx is bound to the default zone and its rates,
-// in one transaction, positioned in the order they are listed. It is for a
-// store just opened from "Create a store"; a store that already has zones is
-// left as it is.
-func (s *Shipping) SeedDefaults(ctx context.Context) error {
+// in one transaction, positioned in the order they are listed. The zone covers
+// country, the store's own; with none it covers everywhere, so a store made
+// before its country is known refuses no address. It is for a store just
+// opened from "Create a store"; a store that already has zones is left as it
+// is.
+func (s *Shipping) SeedDefaults(ctx context.Context, country string) error {
+	countries := []string{}
+	if country != "" {
+		countries = []string{strings.ToUpper(country)}
+	}
 	return InTx(ctx, s.app.db, func(tx *sql.Tx) error {
 		var any bool
 		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM shipping_zones)`).Scan(&any); err != nil || any {
@@ -66,8 +77,8 @@ func (s *Shipping) SeedDefaults(ctx context.Context) error {
 		}
 		var zoneID int64
 		if err := tx.QueryRowContext(ctx, `
-			INSERT INTO shipping_zones (name, countries) VALUES ('Local', ARRAY['US'])
-			RETURNING id`).Scan(&zoneID); err != nil {
+			INSERT INTO shipping_zones (name, countries) VALUES ('Local', $1::text[])
+			RETURNING id`, stringArray(countries)).Scan(&zoneID); err != nil {
 			return err
 		}
 		for i, r := range defaultShippingRates {

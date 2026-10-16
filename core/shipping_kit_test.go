@@ -114,34 +114,34 @@ func TestTheCartIsWeighedForAQuote(t *testing.T) {
 	}
 }
 
-// A store opened from "Create a store" starts with the zone Varni Jewels runs:
-// Local, the United States, priced by the order's value.
-func TestANewStoreStartsWithTheDefaultZone(t *testing.T) {
+// A store opened from "Create a store" starts with the zone Varni Jewels runs —
+// Local, nine rates priced on the order's value — covering the store's own
+// country, which the form sends and which becomes the store's country too.
+func TestANewStoreStartsWithTheDefaultZoneInItsCountry(t *testing.T) {
 	app := newTestApp(t)
 	tok := signInAs(t, app, "zones@example.com", RoleStaff)
-	rec := doBody(t, app, http.MethodPost, "/api/stores/create", `{"name":"Zoned","slug":"zoned"}`, bearer(tok))
+	rec := doBody(t, app, http.MethodPost, "/api/stores/create", `{"name":"Zoned","slug":"zoned","country":"in"}`, bearer(tok))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create = %d: %s", rec.Code, rec.Body)
 	}
-	st, err := app.Stores().BySlug(context.Background(), "zoned")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx := WithStore(context.Background(), st.ID)
+	ctx := storeCtx(t, app, "zoned")
 	zones, rates, err := app.Shipping().Zones(ctx)
 	if err != nil || len(zones) != 1 {
 		t.Fatalf("zones = %+v %v", zones, err)
 	}
 	z := zones[0]
-	if z.Name != "Local" || len(z.Countries) != 1 || z.Countries[0] != "US" || !z.Active {
-		t.Fatalf("zone = %+v", z)
+	if z.Name != "Local" || len(z.Countries) != 1 || z.Countries[0] != "IN" || !z.Active {
+		t.Fatalf("zone = %+v, want Local covering IN", z)
 	}
 	if n := len(rates[z.ID]); n != len(defaultShippingRates) {
 		t.Fatalf("rates = %d, want %d", n, len(defaultShippingRates))
 	}
-	// $150 of jewellery to the US: free USPS Priority, Overnight at $30, free
-	// 2-Day — and no Ground Advantage, which is only under $100.
-	q, err := app.Shipping().Quote(ctx, ShippingQuery{Country: "US", SubtotalMinor: 15000})
+	if p, err := app.Profile().Get(ctx); err != nil || p.Country != "IN" {
+		t.Fatalf("the store's country = %+v %v, want IN", p, err)
+	}
+	// 150.00 to India: free Priority, Overnight at 30, free 2-Day — and no
+	// Ground Advantage, which is only under 100. Nothing for elsewhere.
+	q, err := app.Shipping().Quote(ctx, ShippingQuery{Country: "IN", SubtotalMinor: 15000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,12 +151,15 @@ func TestANewStoreStartsWithTheDefaultZone(t *testing.T) {
 	}
 	want := map[string]int64{"USPS priority": 0, "Fedex Overnight": 3000, "FedEx 2-Day": 0}
 	if len(got) != len(want) {
-		t.Fatalf("$150 to the US = %v, want %v", got, want)
+		t.Fatalf("150.00 to India = %v, want %v", got, want)
 	}
 	for k, v := range want {
 		if p, ok := got[k]; !ok || p != v {
-			t.Fatalf("$150 to the US = %v, want %v", got, want)
+			t.Fatalf("150.00 to India = %v, want %v", got, want)
 		}
+	}
+	if q, _ := app.Shipping().Quote(ctx, ShippingQuery{Country: "US", SubtotalMinor: 15000}); len(q) != 0 {
+		t.Fatalf("a store in India quoted the US: %+v", q)
 	}
 	// A store that already exists is left as it is.
 	var n int
@@ -166,6 +169,40 @@ func TestANewStoreStartsWithTheDefaultZone(t *testing.T) {
 	if n != 0 {
 		t.Fatalf("the existing store gained %d zones", n)
 	}
+}
+
+// Without a country to name, the default zone covers everywhere, so a store
+// made through the API refuses no address before its owner has set it up; a
+// country that is not a code opens no store.
+func TestADefaultZoneWithoutACountryCoversEverywhere(t *testing.T) {
+	app := newTestApp(t)
+	tok := signInAs(t, app, "nowhere@example.com", RoleStaff)
+	if rec := doBody(t, app, http.MethodPost, "/api/stores/create", `{"name":"Bad","slug":"bad","country":"IND"}`, bearer(tok)); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad country = %d: %s", rec.Code, rec.Body)
+	}
+	if _, err := app.Stores().BySlug(context.Background(), "bad"); err == nil {
+		t.Fatal("a refused create left a store behind")
+	}
+	if rec := doBody(t, app, http.MethodPost, "/api/stores/create", `{"name":"Open","slug":"open"}`, bearer(tok)); rec.Code != http.StatusCreated {
+		t.Fatalf("create = %d: %s", rec.Code, rec.Body)
+	}
+	ctx := storeCtx(t, app, "open")
+	zones, _, err := app.Shipping().Zones(ctx)
+	if err != nil || len(zones) != 1 || len(zones[0].Countries) != 0 {
+		t.Fatalf("zones = %+v %v, want one covering everywhere", zones, err)
+	}
+	if q, _ := app.Shipping().Quote(ctx, ShippingQuery{Country: "FR", SubtotalMinor: 15000}); len(q) == 0 {
+		t.Fatal("a store with no country refused France")
+	}
+}
+
+func storeCtx(t *testing.T, app *App, slug string) context.Context {
+	t.Helper()
+	st, err := app.Stores().BySlug(context.Background(), slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return WithStore(context.Background(), st.ID)
 }
 
 func TestAZoneNeedsAName(t *testing.T) {

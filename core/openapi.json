@@ -13627,6 +13627,11 @@
                     "type": "string",
                     "pattern": "^[A-Za-z]{3}$",
                     "description": "What the new store sells in, an ISO 4217 code; empty is the install's currency (D85)."
+                  },
+                  "country": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z]{2}$",
+                    "description": "Where the store is, an ISO 3166-1 alpha-2 code: its profile's country, and what its default shipping zone (\"Local\") covers. Empty is a default zone covering everywhere."
                   }
                 }
               }

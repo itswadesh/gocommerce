@@ -176,6 +176,9 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 		Slug string `json:"slug"`
 		// Currency is what the store sells in; empty is the install's (D85).
 		Currency string `json:"currency"`
+		// Country is where the store is: its profile's country, and what its
+		// default shipping zone covers. Empty is a zone covering everywhere.
+		Country string `json:"country"`
 	}
 	if err := DecodeJSON(w, r, &in); err != nil {
 		RespondError(w, r, err)
@@ -189,6 +192,11 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		in.Currency = code
+	}
+	in.Country = strings.ToUpper(strings.TrimSpace(in.Country))
+	if in.Country != "" && !countryRE.MatchString(in.Country) {
+		RespondError(w, r, Validationf("country is a two-letter ISO code, such as %q", "IN"))
+		return
 	}
 	ctx := r.Context()
 	var owner int64
@@ -207,9 +215,17 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// A store opened here starts with the default shipping zone, so it can
-	// quote a delivery from its first product (the owner's choice).
-	if err := a.shipping.SeedDefaults(WithStore(ctx, st.ID)); err != nil {
+	bound := WithStore(ctx, st.ID)
+	if in.Country != "" {
+		if _, err := a.db.ExecContext(bound, `UPDATE store_profile SET country = $1`, in.Country); err != nil {
+			RespondError(w, r, Internalf(err, "set the new store's country"))
+			return
+		}
+	}
+	// A store opened here starts with the default shipping zone in its own
+	// country, so it can quote a delivery from its first product (the
+	// owner's choice).
+	if err := a.shipping.SeedDefaults(bound, in.Country); err != nil {
 		RespondError(w, r, Internalf(err, "seed the new store's shipping"))
 		return
 	}
