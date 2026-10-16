@@ -70,6 +70,8 @@ func coreMigrations() []Migration {
 		{ID: "0059_store_domain_verification", SQL: migration0059StoreDomainVerification},
 		{ID: "0060_report_runs", SQL: migration0060ReportRuns},
 		{ID: "0061_store_currency", SQL: migration0061StoreCurrency},
+		{ID: "0063_error_tracker", SQL: migration0063ErrorTracker},
+		ScopeMigration("0064_scope_error_tracker", "error_issues", "error_events"),
 		{ID: "0062_shipping_like_kitcommerce", SQL: migration0062ShippingLikeKitCommerce},
 	}
 }

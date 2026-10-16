@@ -256,6 +256,13 @@ const (
 	// staff need to see who sold a thing to answer a customer about it.
 	RightVendorsRead  Right = "vendors.read"
 	RightVendorsWrite Right = "vendors.write"
+
+	// RightErrorsRead is the error page (D86): what failed, in the code's and
+	// the database's own words — exactly what store.operate does not carry,
+	// so its own right, which only owners hold until a store gives it out.
+	// RightErrorsWrite is marking an error resolved or ignored.
+	RightErrorsRead  Right = "errors.read"
+	RightErrorsWrite Right = "errors.write"
 )
 
 // AllRights is every right, in the order the panel renders them. Used by the
@@ -289,6 +296,7 @@ var AllRights = []Right{
 	RightAPIKeysRead, RightAPIKeysWrite,
 	RightReportsWrite,
 	RightVendorsRead, RightVendorsWrite,
+	RightErrorsRead, RightErrorsWrite,
 }
 
 // The roles. Fixed, and few: a store with three people does not need a
@@ -500,6 +508,9 @@ var rightsExempt = map[string]bool{
 	// The setup guide: which steps are done, for the sidebar's progress link
 	// on every screen. It says whether payments are set up, never how.
 	"GET /api/admin/setup": true,
+	// A crash report from the panel: anybody's panel can crash, whatever
+	// they may read, and the report is written for the owner, not shown back.
+	"POST /api/admin/errors": true,
 }
 
 // requireRights refuses a request whose operator does not carry every right the
