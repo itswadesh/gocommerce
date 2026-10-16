@@ -280,7 +280,7 @@ func (m *Module) handleList(w http.ResponseWriter, r *http.Request) {
 			gocommerce.RespondError(w, r, err)
 			return
 		}
-		m.mask(msg)
+		m.mask(r.Context(), msg)
 		out = append(out, msg)
 	}
 	gocommerce.RespondList(w, out, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})
@@ -305,7 +305,7 @@ func (m *Module) handleGet(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	m.mask(msg)
+	m.mask(r.Context(), msg)
 	gocommerce.Respond(w, http.StatusOK, msg)
 }
 
@@ -349,7 +349,7 @@ func (m *Module) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	m.mask(msg)
+	m.mask(r.Context(), msg)
 	gocommerce.Respond(w, http.StatusOK, msg)
 }
 
@@ -400,10 +400,10 @@ func (m *Module) registerRights(app *gocommerce.App) {
 // mask hides how to reach whoever wrote in. A demo store's inbox is readable by
 // anybody who signs in, and a contact message is somebody's address and their
 // number sitting beside whatever they wanted to say.
-func (m *Module) mask(msg *Message) {
+func (m *Module) mask(ctx context.Context, msg *Message) {
 	if msg == nil {
 		return
 	}
-	msg.Email = m.app.MaskEmail(msg.Email)
-	msg.Phone = m.app.MaskPhone(msg.Phone)
+	msg.Email = m.app.MaskEmail(ctx, msg.Email)
+	msg.Phone = m.app.MaskPhone(ctx, msg.Phone)
 }

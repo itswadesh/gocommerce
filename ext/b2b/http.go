@@ -683,9 +683,9 @@ func (m *Module) handleSetMyLead(w http.ResponseWriter, r *http.Request, acct *i
 
 // The admin side masks buyers' addresses on a demo store, as every core
 // admin route does; the buyer's own routes serve their own colleagues.
-func (m *Module) maskMembers(ms []*Member) {
+func (m *Module) maskMembers(ctx context.Context, ms []*Member) {
 	for _, mem := range ms {
-		mem.Email = m.app.MaskEmail(mem.Email)
+		mem.Email = m.app.MaskEmail(ctx, mem.Email)
 	}
 }
 
@@ -764,7 +764,7 @@ func (m *Module) handleAdminHistory(w http.ResponseWriter, r *http.Request) {
 	// as every shopper's address is; an operator is the store's own.
 	for _, e := range list {
 		if e.ActorKind == ActorBuyer {
-			e.ActorEmail = m.app.MaskEmail(e.ActorEmail)
+			e.ActorEmail = m.app.MaskEmail(r.Context(), e.ActorEmail)
 		}
 	}
 	gocommerce.RespondList(w, list, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})
@@ -954,7 +954,7 @@ func (m *Module) handleAdminMembers(w http.ResponseWriter, r *http.Request) {
 	}
 	members, err := m.Members(r.Context(), id)
 	if err == nil {
-		m.maskMembers(members)
+		m.maskMembers(r.Context(), members)
 	}
 	respond(w, r, http.StatusOK, members, err)
 }
@@ -987,11 +987,11 @@ func (m *Module) handleAdminAddMember(w http.ResponseWriter, r *http.Request) {
 	}
 	// Masked like the member and invitation lists, on a demo store.
 	if mem != nil {
-		mem.Email = m.app.MaskEmail(mem.Email)
+		mem.Email = m.app.MaskEmail(r.Context(), mem.Email)
 		gocommerce.Respond(w, http.StatusCreated, addMemberResponse{Member: mem})
 		return
 	}
-	inv.Email = m.app.MaskEmail(inv.Email)
+	inv.Email = m.app.MaskEmail(r.Context(), inv.Email)
 	gocommerce.Respond(w, http.StatusAccepted, addMemberResponse{Invitation: inv})
 }
 
@@ -1013,7 +1013,7 @@ func (m *Module) handleAdminSetRole(w http.ResponseWriter, r *http.Request) {
 	}
 	mem, err := m.SetRole(r.Context(), id, cust, in.Role)
 	if err == nil {
-		mem.Email = m.app.MaskEmail(mem.Email)
+		mem.Email = m.app.MaskEmail(r.Context(), mem.Email)
 	}
 	respond(w, r, http.StatusOK, mem, err)
 }
@@ -1053,7 +1053,7 @@ func (m *Module) handleAdminInvitations(w http.ResponseWriter, r *http.Request) 
 	invs, err := m.Invitations(r.Context(), id)
 	if err == nil {
 		for _, inv := range invs {
-			inv.Email = m.app.MaskEmail(inv.Email)
+			inv.Email = m.app.MaskEmail(r.Context(), inv.Email)
 		}
 	}
 	respond(w, r, http.StatusOK, invs, err)
@@ -1082,13 +1082,13 @@ func (m *Module) listOrders(w http.ResponseWriter, r *http.Request, companyID in
 	}
 	orders, total, err := m.CompanyOrders(r.Context(), CompanyOrderQuery{CompanyID: companyID,
 		OnAccountOnly: onAccountOnly, OverdueOnly: r.URL.Query().Get("overdue") == "true",
-		Search: r.URL.Query().Get("q"), Demo: m.app.Demo(), Limit: limit, Offset: offset})
+		Search: r.URL.Query().Get("q"), Demo: m.app.Demo(r.Context()), Limit: limit, Offset: offset})
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
 	for _, o := range orders {
-		o.PlacedBy = m.app.MaskEmail(o.PlacedBy)
+		o.PlacedBy = m.app.MaskEmail(r.Context(), o.PlacedBy)
 	}
 	gocommerce.RespondList(w, orders, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})
 }
@@ -1115,7 +1115,7 @@ func (m *Module) handleAdminCompanyOrder(w http.ResponseWriter, r *http.Request)
 	}
 	co, err := m.CompanyOrder(r.Context(), id)
 	if err == nil {
-		co.PlacedBy = m.app.MaskEmail(co.PlacedBy)
+		co.PlacedBy = m.app.MaskEmail(r.Context(), co.PlacedBy)
 	}
 	respond(w, r, http.StatusOK, co, err)
 }
@@ -1147,7 +1147,7 @@ func (m *Module) handleAdminApprovals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, a := range list {
-		a.RequesterMail = m.app.MaskEmail(a.RequesterMail)
+		a.RequesterMail = m.app.MaskEmail(r.Context(), a.RequesterMail)
 	}
 	gocommerce.RespondList(w, list, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})
 }
@@ -1172,14 +1172,14 @@ func (m *Module) handleAdminQuotes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, q := range list {
-		q.RequesterMail = m.app.MaskEmail(q.RequesterMail)
+		q.RequesterMail = m.app.MaskEmail(r.Context(), q.RequesterMail)
 	}
 	gocommerce.RespondList(w, list, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})
 }
 
 func (m *Module) adminQuote(w http.ResponseWriter, r *http.Request, q *Quote, err error) {
 	if err == nil {
-		q.RequesterMail = m.app.MaskEmail(q.RequesterMail)
+		q.RequesterMail = m.app.MaskEmail(r.Context(), q.RequesterMail)
 	}
 	respond(w, r, http.StatusOK, q, err)
 }
@@ -1307,9 +1307,9 @@ func (m *Module) handleAdminDeleteTerritory(w http.ResponseWriter, r *http.Reque
 // maskLead hides a member of the public's address and number on a demo
 // store, as every admin route hides a shopper's. The dealer's own routes are
 // not masked: those are the dealer's customers to call.
-func (m *Module) maskLead(l *Lead) {
-	l.Email = m.app.MaskEmail(l.Email)
-	l.Phone = m.app.MaskPhone(l.Phone)
+func (m *Module) maskLead(ctx context.Context, l *Lead) {
+	l.Email = m.app.MaskEmail(ctx, l.Email)
+	l.Phone = m.app.MaskPhone(ctx, l.Phone)
 }
 
 func (m *Module) handleAdminLeads(w http.ResponseWriter, r *http.Request) {
@@ -1323,7 +1323,7 @@ func (m *Module) handleAdminLeads(w http.ResponseWriter, r *http.Request) {
 	}
 	v := r.URL.Query()
 	q := LeadQuery{CompanyID: company, Unrouted: v.Get("unrouted") == "true", Status: v.Get("status"),
-		RoutedBy: v.Get("routed_by"), Search: v.Get("q"), Demo: m.app.Demo(), Limit: limit, Offset: offset}
+		RoutedBy: v.Get("routed_by"), Search: v.Get("q"), Demo: m.app.Demo(r.Context()), Limit: limit, Offset: offset}
 	// Each pair asks for two sets of leads that cannot overlap. An empty page
 	// would be a true answer to a question nobody meant to ask, so it is
 	// refused instead, naming the pair.
@@ -1344,7 +1344,7 @@ func (m *Module) handleAdminLeads(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, l := range list {
-		m.maskLead(l)
+		m.maskLead(r.Context(), l)
 	}
 	gocommerce.RespondList(w, list, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})
 }
@@ -1356,7 +1356,7 @@ func (m *Module) handleAdminLead(w http.ResponseWriter, r *http.Request) {
 	}
 	lead, err := m.Lead(r.Context(), id)
 	if err == nil {
-		m.maskLead(lead)
+		m.maskLead(r.Context(), lead)
 	}
 	respond(w, r, http.StatusOK, lead, err)
 }
@@ -1373,7 +1373,7 @@ func (m *Module) handleAdminUpdateLead(w http.ResponseWriter, r *http.Request) {
 	}
 	lead, err := m.UpdateLead(r.Context(), id, in)
 	if err == nil {
-		m.maskLead(lead)
+		m.maskLead(r.Context(), lead)
 	}
 	respond(w, r, http.StatusOK, lead, err)
 }

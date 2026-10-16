@@ -18,8 +18,11 @@ type Store struct {
 	Status string `json:"status"`
 	// OrderPrefix overrides Config.OrderPrefix for this store; nil means the
 	// configured one.
-	OrderPrefix *string   `json:"order_prefix"`
-	CreatedAt   time.Time `json:"created_at"`
+	OrderPrefix *string `json:"order_prefix"`
+	// Demo masks personal data on this store's admin routes and freezes who
+	// can sign in to it, as Config.Demo does for the whole install.
+	Demo      bool      `json:"demo"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Membership is a person's standing in one store.
@@ -76,14 +79,14 @@ func (a *App) resolveDefaultStore(ctx context.Context) error {
 	return nil
 }
 
-const storeColumns = `id, slug, name, status, order_prefix, created_at`
+const storeColumns = `id, slug, name, status, order_prefix, demo, created_at`
 
 // storeSlugRE is the shape the stores table's CHECK allows.
 var storeSlugRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 func scanStore(row interface{ Scan(...any) error }) (*Store, error) {
 	var st Store
-	if err := row.Scan(&st.ID, &st.Slug, &st.Name, &st.Status, &st.OrderPrefix, &st.CreatedAt); err != nil {
+	if err := row.Scan(&st.ID, &st.Slug, &st.Name, &st.Status, &st.OrderPrefix, &st.Demo, &st.CreatedAt); err != nil {
 		return nil, err
 	}
 	return &st, nil
@@ -149,6 +152,21 @@ func (s *Stores) Active(ctx context.Context) ([]Store, error) {
 		out = append(out, *st)
 	}
 	return out, rows.Err()
+}
+
+// SetDemo marks a store as a demo, or a live store again. It is the install
+// operator's switch (gocommerce store demo), with no route of its own: a demo
+// store's visitors are signed in to it, and a switch they could reach would
+// let the first of them turn the masking off.
+func (s *Stores) SetDemo(ctx context.Context, id string, on bool) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE stores SET demo = $2 WHERE id = $1`, id, on)
+	if err != nil {
+		return Internalf(err, "mark the store as a demo")
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return NotFoundf("store not found")
+	}
+	return nil
 }
 
 // Count is how many stores exist, serving or not.

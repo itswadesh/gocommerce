@@ -174,7 +174,10 @@
                     >
                         <span class="store-menu-mark" aria-hidden="true">{(st.name || st.slug)[0].toUpperCase()}</span>
                         <span class="select-store-text">
-                            <span class="txt txt-ellipsis">{st.name}</span>
+                            <span class="txt txt-ellipsis">
+                                {st.name}
+                                {#if st.demo}<span class="store-demo-tag">Demo</span>{/if}
+                            </span>
                             <span class="txt-hint txt-sm txt-ellipsis">
                                 {st.slug} · {roleName(st.role)}{st.status !== "active" ? ` · ${st.status}` : ""}
                             </span>

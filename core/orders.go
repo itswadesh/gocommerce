@@ -585,7 +585,7 @@ func (s *Orders) List(ctx context.Context, q OrderQuery) ([]*Order, int, error) 
 		// ?email= turned this into a LIKE on every store, so an exact filter
 		// nobody asked to widen would quietly match more rows than it named.
 		pattern := ""
-		if s.app.cfg.Demo {
+		if s.app.demo(ctx) {
 			pattern = maskedEmailPattern(q.Email)
 		}
 		if pattern != "" {
@@ -594,7 +594,7 @@ func (s *Orders) List(ctx context.Context, q OrderQuery) ([]*Order, int, error) 
 			add("lower(o.email) = $%d", strings.ToLower(q.Email))
 		}
 	}
-	if clause := orderSearchClause(q.Search, &args, s.app.cfg.Demo); clause != "" {
+	if clause := orderSearchClause(q.Search, &args, s.app.demo(ctx)); clause != "" {
 		where = append(where, clause)
 	}
 	if q.From != nil {

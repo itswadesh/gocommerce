@@ -86,10 +86,11 @@ var demoFrozenAny = []string{
 // the JSON fallback, so the refusal is an ordinary API error and the log line
 // looks like any other 403.
 func (a *App) demoGuardMW(next http.Handler) http.Handler {
-	if !a.cfg.Demo {
-		return next
-	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !a.demo(r.Context()) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if reason := demoRefusal(r.Method, r.URL.Path); reason != "" {
 			RespondError(w, r, &APIError{
 				Status:  http.StatusForbidden,
@@ -158,8 +159,8 @@ const maskBullets = "•••"
 // On a store that is not a demo it returns s unchanged, so call sites need no
 // condition of their own. Modules showing people call it for the same reason
 // core does: one rule, in one place, whatever screen it reaches.
-func (a *App) MaskEmail(s string) string {
-	if !a.cfg.Demo {
+func (a *App) MaskEmail(ctx context.Context, s string) string {
+	if !a.demo(ctx) {
 		return s
 	}
 	return maskEmail(s)
@@ -172,8 +173,8 @@ func (a *App) MaskEmail(s string) string {
 // anybody.
 //
 // On a store that is not a demo it returns s unchanged.
-func (a *App) MaskPhone(s string) string {
-	if !a.cfg.Demo {
+func (a *App) MaskPhone(ctx context.Context, s string) string {
+	if !a.demo(ctx) {
 		return s
 	}
 	return maskPhone(s)
@@ -185,7 +186,27 @@ func (a *App) MaskPhone(s string) string {
 // Deliberately not on GET /api/admin/settings. Nothing reads it there yet, and
 // that route's rule is that a field added to it is a field nobody re-decided the
 // gate for; a panel that wants to say "this is a demo" can be given it then.
-func (a *App) Demo() bool { return a.cfg.Demo }
+func (a *App) Demo(ctx context.Context) bool { return a.demo(ctx) }
+
+// demo reports whether ctx's store masks: the whole install is a demo
+// (Config.Demo), or the store it is bound to is marked one (Stores.SetDemo).
+// A request carries the answer from storeMW; anything else bound to a store
+// asks the stores table, which is global and one indexed read.
+func (a *App) demo(ctx context.Context) bool {
+	if a.cfg.Demo {
+		return true
+	}
+	if on, ok := ctx.Value(storeDemoKey{}).(bool); ok {
+		return on
+	}
+	id, ok := StoreFrom(ctx)
+	if !ok {
+		return false
+	}
+	var on bool
+	_ = a.db.QueryRowContext(ctx, `SELECT demo FROM stores WHERE id = $1`, id).Scan(&on)
+	return on
+}
 
 func maskEmail(s string) string {
 	s = strings.TrimSpace(s)
@@ -329,8 +350,8 @@ func maskedEmailPattern(s string) string {
 //
 // No lookup of the stored value is needed, and none is wanted: maskRune cannot
 // occur in a real address or phone number, so the test is the value itself.
-func (a *App) dropMasked(p **string) {
-	if a.cfg.Demo && *p != nil && strings.ContainsRune(**p, maskRune) {
+func (a *App) dropMasked(ctx context.Context, p **string) {
+	if a.demo(ctx) && *p != nil && strings.ContainsRune(**p, maskRune) {
 		*p = nil
 	}
 }
@@ -340,8 +361,8 @@ func (a *App) dropMasked(p **string) {
 // A customer group's membership is the address itself: dropping it silently
 // would report success for a removal that did nothing, and letting it through
 // would file a row of bullets as a member.
-func (a *App) refuseMaskedInput(s, what string) error {
-	if !a.maskedInput(s) {
+func (a *App) refuseMaskedInput(ctx context.Context, s, what string) error {
+	if !a.maskedInput(ctx, s) {
 		return nil
 	}
 	return Validationf(
@@ -350,8 +371,8 @@ func (a *App) refuseMaskedInput(s, what string) error {
 
 // maskedInput reports whether a submitted value is a mask rather than something
 // the operator typed — dropMasked for the fields that are not pointers.
-func (a *App) maskedInput(s string) bool {
-	return a.cfg.Demo && strings.ContainsRune(s, maskRune)
+func (a *App) maskedInput(ctx context.Context, s string) bool {
+	return a.demo(ctx) && strings.ContainsRune(s, maskRune)
 }
 
 // The types that carry somebody's address or number, each masked in one place
@@ -363,8 +384,8 @@ func (a *App) maskedInput(s string) bool {
 // MaskOrder hides the contact details on an order. Exported because a module
 // serving its own view of an order — an invoice, a picking list — owes the same
 // rule as the screens core serves.
-func (a *App) MaskOrder(o *Order) {
-	if !a.cfg.Demo || o == nil {
+func (a *App) MaskOrder(ctx context.Context, o *Order) {
+	if !a.demo(ctx) || o == nil {
 		return
 	}
 	o.Email = maskEmail(o.Email)
@@ -372,14 +393,14 @@ func (a *App) MaskOrder(o *Order) {
 	o.Address.Phone = maskPhone(o.Address.Phone)
 }
 
-func (a *App) maskOrders(os []*Order) {
+func (a *App) maskOrders(ctx context.Context, os []*Order) {
 	for _, o := range os {
-		a.MaskOrder(o)
+		a.MaskOrder(ctx, o)
 	}
 }
 
-func (a *App) maskCustomers(cs []*Customer) {
-	if !a.cfg.Demo {
+func (a *App) maskCustomers(ctx context.Context, cs []*Customer) {
+	if !a.demo(ctx) {
 		return
 	}
 	for _, c := range cs {
@@ -392,31 +413,31 @@ func (a *App) maskCustomers(cs []*Customer) {
 // maskCartSummary covers the admin cart screens. [Cart] itself is never masked:
 // the routes that serve it are the shopper's own, where the address on the
 // basket is the one they typed a moment ago.
-func (a *App) maskCartSummary(c *CartSummary) {
-	if !a.cfg.Demo || c == nil {
+func (a *App) maskCartSummary(ctx context.Context, c *CartSummary) {
+	if !a.demo(ctx) || c == nil {
 		return
 	}
 	c.Email = maskEmail(c.Email)
 	c.VerifiedEmail = maskEmail(c.VerifiedEmail)
 }
 
-func (a *App) maskCartSummaries(cs []*CartSummary) {
+func (a *App) maskCartSummaries(ctx context.Context, cs []*CartSummary) {
 	for _, c := range cs {
-		a.maskCartSummary(c)
+		a.maskCartSummary(ctx, c)
 	}
 }
 
 // maskNotifications hides who a message went to. The log says an order
 // confirmation was delivered and to which channel, which is the operational
 // fact; the address it reached is the customer's.
-func (a *App) maskNotifications(ns []*NotificationRecord) {
+func (a *App) maskNotifications(ctx context.Context, ns []*NotificationRecord) {
 	for _, n := range ns {
-		a.maskNotification(n)
+		a.maskNotification(ctx, n)
 	}
 }
 
-func (a *App) maskNotification(n *NotificationRecord) {
-	if !a.cfg.Demo || n == nil {
+func (a *App) maskNotification(ctx context.Context, n *NotificationRecord) {
+	if !a.demo(ctx) || n == nil {
 		return
 	}
 	if n.Channel == ChannelSMS {
@@ -438,7 +459,7 @@ func (a *App) maskNotification(n *NotificationRecord) {
 // except the caller's own, so an operator can still find themselves in the list
 // they are reading.
 func (a *App) maskSuperuserRows(ctx context.Context, rows []*SuperuserRow) {
-	if !a.cfg.Demo {
+	if !a.demo(ctx) {
 		return
 	}
 	for _, row := range rows {
@@ -451,7 +472,7 @@ func (a *App) maskSuperuserRows(ctx context.Context, rows []*SuperuserRow) {
 // it is the same reasoning that keeps GET /api/admin/me unmasked, applied to
 // the routes that can answer with either your record or somebody else's.
 func (a *App) maskSuperuserExceptSelf(ctx context.Context, s *Superuser) {
-	if !a.cfg.Demo || s == nil {
+	if !a.demo(ctx) || s == nil {
 		return
 	}
 	if caller := SuperuserFrom(ctx); caller != nil && caller.ID == s.ID {
@@ -460,8 +481,8 @@ func (a *App) maskSuperuserExceptSelf(ctx context.Context, s *Superuser) {
 	s.Email = maskEmail(s.Email)
 }
 
-func (a *App) maskInvitations(is []*Invitation) {
-	if !a.cfg.Demo {
+func (a *App) maskInvitations(ctx context.Context, is []*Invitation) {
+	if !a.demo(ctx) {
 		return
 	}
 	for _, i := range is {
@@ -469,22 +490,22 @@ func (a *App) maskInvitations(is []*Invitation) {
 	}
 }
 
-func (a *App) maskVendor(v *Vendor) {
-	if !a.cfg.Demo || v == nil {
+func (a *App) maskVendor(ctx context.Context, v *Vendor) {
+	if !a.demo(ctx) || v == nil {
 		return
 	}
 	v.Email = maskEmail(v.Email)
 	v.Phone = maskPhone(v.Phone)
 }
 
-func (a *App) maskVendors(vs []*Vendor) {
+func (a *App) maskVendors(ctx context.Context, vs []*Vendor) {
 	for _, v := range vs {
-		a.maskVendor(v)
+		a.maskVendor(ctx, v)
 	}
 }
 
-func (a *App) maskRedemptions(rs []DiscountRedemption) {
-	if !a.cfg.Demo {
+func (a *App) maskRedemptions(ctx context.Context, rs []DiscountRedemption) {
+	if !a.demo(ctx) {
 		return
 	}
 	for i := range rs {
@@ -494,8 +515,8 @@ func (a *App) maskRedemptions(rs []DiscountRedemption) {
 
 // maskEmails masks a bare list of addresses — a customer group's membership,
 // which is stored as the addresses themselves.
-func (a *App) maskEmails(es []string) []string {
-	if !a.cfg.Demo {
+func (a *App) maskEmails(ctx context.Context, es []string) []string {
+	if !a.demo(ctx) {
 		return es
 	}
 	out := make([]string, len(es))
@@ -505,8 +526,8 @@ func (a *App) maskEmails(es []string) []string {
 	return out
 }
 
-func (a *App) maskAuditEntries(es []*AuditEntry) {
-	if !a.cfg.Demo {
+func (a *App) maskAuditEntries(ctx context.Context, es []*AuditEntry) {
+	if !a.demo(ctx) {
 		return
 	}
 	for _, e := range es {
@@ -515,8 +536,8 @@ func (a *App) maskAuditEntries(es []*AuditEntry) {
 	}
 }
 
-func (a *App) maskAuditActors(as []AuditActor) {
-	if !a.cfg.Demo {
+func (a *App) maskAuditActors(ctx context.Context, as []AuditActor) {
+	if !a.demo(ctx) {
 		return
 	}
 	for i := range as {
@@ -527,8 +548,8 @@ func (a *App) maskAuditActors(as []AuditActor) {
 // maskMovements covers the stock ledger, which names the operator who moved
 // each unit. It is the same operator address the Team screen masks, reached
 // through the weakest read right in the store.
-func (a *App) maskMovements(ms []StockMovement) {
-	if !a.cfg.Demo {
+func (a *App) maskMovements(ctx context.Context, ms []StockMovement) {
+	if !a.demo(ctx) {
 		return
 	}
 	for i := range ms {
@@ -541,8 +562,8 @@ func (a *App) maskMovements(ms []StockMovement) {
 // corrected contact detail — so masking the actor alone left the timeline
 // publishing both the old address and the new one, on the same screen whose
 // order body masks them.
-func (a *App) maskTimeline(es []OrderTimelineEntry) {
-	if !a.cfg.Demo {
+func (a *App) maskTimeline(ctx context.Context, es []OrderTimelineEntry) {
+	if !a.demo(ctx) {
 		return
 	}
 	for i := range es {
@@ -568,14 +589,14 @@ func maskAuditChanges(c *AuditChanges) {
 // verbatim — and an order.placed payload is the shopper's address and number
 // (events.go). It is the one admin surface where masking cannot read a field,
 // because the payload's shape belongs to whoever published it.
-func (a *App) maskOutboxEvents(es []*OutboxEvent) {
+func (a *App) maskOutboxEvents(ctx context.Context, es []*OutboxEvent) {
 	for _, e := range es {
-		a.maskOutboxEvent(e)
+		a.maskOutboxEvent(ctx, e)
 	}
 }
 
-func (a *App) maskOutboxEvent(e *OutboxEvent) {
-	if !a.cfg.Demo || e == nil || len(e.Payload) == 0 {
+func (a *App) maskOutboxEvent(ctx context.Context, e *OutboxEvent) {
+	if !a.demo(ctx) || e == nil || len(e.Payload) == 0 {
 		return
 	}
 	e.Payload = maskJSON(e.Payload)

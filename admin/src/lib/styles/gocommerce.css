@@ -4095,6 +4095,29 @@ button.media-check {
     max-width: min(300px, calc(100vw - 32px));
     max-height: min(640px, calc(100vh - 100px));
 }
+/* The orders list's customer: name over email and phone. */
+.order-customer {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.3;
+}
+
+/* A demo store says so wherever it is listed: what its screens show is
+   masked, and somebody reading them should know why. */
+.store-demo-tag {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 5px;
+    border-radius: 4px;
+    background: var(--warningAltColor, var(--surfaceAlt2Color));
+    color: var(--warningColor, var(--surfaceTxtColor));
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 16px;
+    vertical-align: 1px;
+}
+
 /* The current store, on top of the menu: name, domain, and two small
    buttons that answer a press within 150 ms. */
 .store-current {

@@ -79,7 +79,7 @@ func (a *App) storeMW(next http.Handler) http.Handler {
 			RespondError(w, r, ErrStoreSuspended)
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(WithStore(r.Context(), st.ID)))
+		next.ServeHTTP(w, r.WithContext(withStoreDemo(WithStore(r.Context(), st.ID), st.Demo)))
 	})
 }
 
