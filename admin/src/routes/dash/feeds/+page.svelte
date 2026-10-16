@@ -22,7 +22,7 @@
      * platform open, and nothing else.
      */
     import { can, request } from "$lib/api.js";
-    import { activateNote } from "$lib/plugin-ready.js";
+    import { activateNote, filled } from "$lib/plugin-ready.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
@@ -85,6 +85,22 @@
     }
 
     const note = $derived(plugin && !plugin.enabled ? activateNote(plugin) : "");
+
+    /*
+     * As on Sitemap: folded settings still show what they are set to, and
+     * open by themselves while a required one is empty.
+     */
+    let settingsOpen = $state(false);
+    $effect(() => {
+        if (note || (plugin?.enabled && !plugin.configured)) settingsOpen = true;
+    });
+    const settingsPreview = $derived(
+        (plugin?.fields ?? []).map((f) => {
+            const v = plugin.settings?.[f.key];
+            const set = filled(v);
+            return { label: f.label, value: set ? String(v) : f.required ? "not set" : "default", missing: !set && f.required };
+        }),
+    );
 
     async function toggle() {
         working = true;
@@ -265,6 +281,13 @@
         ];
     });
     const trouble = $derived(health.filter((h) => h.count > 0));
+
+    // The contents fold opens by itself when items will be held: that list is
+    // the work to do.
+    let contentsOpen = $state(false);
+    $effect(() => {
+        if (trouble.length) contentsOpen = true;
+    });
 </script>
 
 <svelte:head><title>Feeds · GoCommerce</title></svelte:head>
@@ -299,15 +322,6 @@
             {/if}
         </header>
 
-        {#if note && allowed}
-            <!-- The one thing to do first, before anything below is worth
-                 reading. -->
-            <div class="setup-first" role="note">
-                <i class="ri-arrow-right-circle-line" aria-hidden="true"></i>
-                <span><strong>First:</strong> {note} It is in the settings on this page.</span>
-            </div>
-        {/if}
-
         {#if !allowed}
             <NoAccess right="plugins.read" what="feeds" />
         {:else if missing}
@@ -318,269 +332,317 @@
         {:else if loading && !plugin}
             <div class="block txt-center p-base"><span class="loader lg"></span></div>
         {:else if plugin}
-            <!-- How it is built. Litekart's equivalent card is a build
-                 schedule; ours has none to show, because nothing is stored —
-                 so the card answers the question the schedule was there to
-                 answer ("is this file current?") directly instead. -->
-            <section class="card feed-card">
-                <div class="feed-card-head">
-                    <div>
-                        <h2 class="feed-card-title">How these feeds are built</h2>
-                        <p class="txt-hint txt-sm feed-card-sub">
-                            Both files are generated when they are fetched, from the catalogue as it
-                            stands at that moment. There is no build to schedule and nothing to
-                            regenerate.
-                        </p>
-                    </div>
-                    <button
-                        type="button"
-                        class="btn sm transparent secondary"
-                        class:loading={checking}
-                        disabled={checking}
-                        onclick={check}
-                    >
-                        <i class="ri-refresh-line" aria-hidden="true"></i>
-                        <span class="txt">Check again</span>
-                    </button>
-                </div>
-
-                <div class="feed-stats">
-                    <div class="feed-stat">
-                        <div class="feed-stat-label">Rebuilds</div>
-                        <div class="feed-stat-value">On every request</div>
-                    </div>
-                    <div class="feed-stat">
-                        <div class="feed-stat-label">Items</div>
-                        <div class="feed-stat-value">
-                            {serving ? nf.format(status.items) : "—"}
+            <!-- The answer first, as on Sitemap: are the feeds live, how much
+                 is in them, the two addresses to paste, and whether anything
+                 will be held. The figures, the settings and the platform
+                 how-to are folded underneath. -->
+            <section class="card feed-card map-summary">
+                {#if !plugin.enabled && note}
+                    <div class="map-summary-state">
+                        <span class="map-summary-icon warn" aria-hidden="true"><i class="ri-error-warning-line"></i></span>
+                        <div>
+                            <h2 class="feed-card-title">Step 1: tell it where your shop is</h2>
+                            <p class="txt-hint txt-sm">
+                                {note} It is under Settings, just below — then Activate turns on.
+                            </p>
                         </div>
-                        {#if serving}
-                            <div class="feed-stat-note">
-                                across {nf.format(status.products)}
-                                {status.products === 1 ? "product" : "products"}
-                            </div>
+                    </div>
+                {:else if !plugin.enabled}
+                    <div class="map-summary-state">
+                        <span class="map-summary-icon off" aria-hidden="true"><i class="ri-rss-line"></i></span>
+                        <div class="map-summary-text">
+                            <h2 class="feed-card-title">The feeds are off</h2>
+                            <p class="txt-hint txt-sm">
+                                Turn them on and Google, Meta, Pinterest and TikTok can read your catalogue.
+                            </p>
+                        </div>
+                        {#if writable}
+                            <button
+                                type="button"
+                                class="btn sm map-summary-action"
+                                class:loading={working}
+                                disabled={working}
+                                onclick={toggle}
+                            >
+                                <i class="ri-toggle-line" aria-hidden="true"></i>
+                                <span class="txt">Turn them on</span>
+                            </button>
                         {/if}
                     </div>
-                    <div class="feed-stat">
-                        <div class="feed-stat-label">Availability</div>
-                        <div class="feed-stat-value">
-                            {serving ? nf.format(status.in_stock) + " in stock" : "—"}
+                {:else if !plugin.configured}
+                    <div class="map-summary-state">
+                        <span class="map-summary-icon warn" aria-hidden="true"><i class="ri-error-warning-line"></i></span>
+                        <div>
+                            <h2 class="feed-card-title">One setting left</h2>
+                            <p class="txt-hint txt-sm">
+                                Add the storefront's address under Settings below. Until then an item has no
+                                page to link to, so the feeds answer with an error.
+                            </p>
                         </div>
-                        {#if serving && status.out_of_stock > 0}
-                            <div class="feed-stat-note">
-                                {nf.format(status.out_of_stock)} out of stock, still listed
-                            </div>
-                        {/if}
                     </div>
-                    <div class="feed-stat">
-                        <div class="feed-stat-label">Prices in</div>
-                        <div class="feed-stat-value">{status?.currency || "—"}</div>
-                        {#if status?.storefront}
-                            <div class="feed-stat-note">linking to {status.storefront}</div>
-                        {/if}
-                    </div>
-                </div>
-
-                <p class="txt-hint txt-sm feed-foot">
-                    {#if !plugin.enabled}
-                        The addresses answer 404 while the plugin is off.
-                    {:else if !plugin.configured}
-                        The addresses answer 409 until the storefront URL is set below — without it
-                        an item has no page to link to.
-                    {:else}
-                        A fetch always sees current prices and stock. How soon a platform shows a
-                        change is its own fetch schedule, which you set when connecting the feed
-                        below.
-                    {/if}
-                </p>
-            </section>
-
-            <!-- What the platforms will hold, in this store's numbers. -->
-            {#if serving}
-                <section class="card feed-card">
-                    <h2 class="feed-card-title">Feed health</h2>
-                    <p class="txt-hint txt-sm feed-card-sub">
-                        A picture, a brand and an identifier are the three fields Google, Meta and
-                        the rest hold an item over. This is how many items in the file are missing
-                        each of them.
-                    </p>
-                    {#if trouble.length}
-                        <div class="feed-health">
-                            {#each trouble as h (h.key)}
-                                <div class="feed-health-row">
-                                    <div class="feed-health-count">{nf.format(h.count)}</div>
-                                    <div>
-                                        <div class="txt-bold">{h.title}</div>
-                                        <div class="txt-hint txt-sm">{h.fix}</div>
-                                    </div>
-                                </div>
-                            {/each}
+                {:else}
+                    <div class="map-summary-state">
+                        <span class="map-summary-icon on" aria-hidden="true"><i class="ri-rss-line"></i></span>
+                        <div class="map-summary-text">
+                            <h2 class="feed-card-title">
+                                {#if serving}
+                                    {nf.format(status.items)} {status.items === 1 ? "item" : "items"} in your feeds
+                                {:else}
+                                    Reading your feeds…
+                                {/if}
+                            </h2>
+                            <p class="txt-hint txt-sm">
+                                Paste an address into the platform once. Each fetch is built from the catalogue
+                                as it is, so prices and stock are always current.
+                            </p>
                         </div>
-                    {:else}
-                        <div class="feed-health-clear">
-                            <i class="ri-check-line" aria-hidden="true"></i>
-                            <span>
-                                Every item carries a picture, a brand and an identifier. Nothing here
-                                will be held for a missing field.
-                            </span>
-                        </div>
-                    {/if}
-                </section>
-            {/if}
-
-            <!-- The settings, inline: on a screen of its own a drawer is one
-                 click between the operator and the one field that matters. -->
-            <section class="card feed-card">
-                <h2 class="feed-card-title">What goes in the feed</h2>
-                <p class="txt-hint txt-sm feed-card-sub">
-                    Every active variant with a price is included, one item each. These settings say
-                    where its page lives and what it is called when the product does not say.
-                </p>
-                <form id="feed-settings" class="feed-form" onsubmit={submit}>
-                    <PluginFields fields={plugin.fields} bind:form idPrefix="feed" />
-                </form>
-                {#if writable}
-                    <div class="feed-form-actions">
-                        <button
-                            type="submit"
-                            form="feed-settings"
-                            class="btn sm"
-                            class:loading={saving}
-                            disabled={saving}
-                        >
-                            <span class="txt">Save</span>
-                        </button>
                         <button
                             type="button"
-                            class="btn sm transparent secondary"
-                            disabled={saving}
-                            onclick={resetForm}
+                            class="btn sm transparent secondary map-summary-refresh"
+                            class:loading={checking}
+                            disabled={checking}
+                            onclick={check}
+                            aria-label="Count the feeds again"
+                            title="Count again"
                         >
-                            <span class="txt">Discard</span>
+                            <i class="ri-refresh-line" aria-hidden="true"></i>
                         </button>
                     </div>
+                    <div class="feed-links">
+                        {#each LINKS as link (link.path)}
+                            <div class="feed-link">
+                                <div class="feed-link-name">
+                                    <span class="txt-bold">{link.label}</span>
+                                    <span class="txt-hint txt-sm">{link.hint}</span>
+                                </div>
+                                <a class="feed-link-url txt-code" href={origin + link.path} target="_blank" rel="noreferrer"
+                                    >{origin}{link.path}</a
+                                >
+                                <div class="feed-link-actions">
+                                    <button type="button" class="btn sm secondary" onclick={() => copy(origin + link.path)}>
+                                        <i class="ri-file-copy-line" aria-hidden="true"></i>
+                                        <span class="txt">Copy</span>
+                                    </button>
+                                    <a class="btn sm transparent secondary" href={origin + link.path} target="_blank" rel="noreferrer">
+                                        <i class="ri-external-link-line" aria-hidden="true"></i>
+                                        <span class="txt">Open</span>
+                                    </a>
+                                </div>
+                            </div>
+                        {/each}
+                    </div>
+                    {#if serving}
+                        {#if status.items === 0}
+                            <div class="feed-health-clear warn">
+                                <i class="ri-information-line" aria-hidden="true"></i>
+                                <span>
+                                    Nothing to list yet. An active product with a priced variant appears here,
+                                    and in both files, as soon as it is saved.
+                                </span>
+                            </div>
+                        {:else if trouble.length}
+                            <div class="feed-health-clear warn">
+                                <i class="ri-error-warning-line" aria-hidden="true"></i>
+                                <span>
+                                    Platforms may hold items with
+                                    {trouble.map((h) => `${h.title.toLowerCase()} (${nf.format(h.count)})`).join(", ")}.
+                                    What to do is just below.
+                                </span>
+                            </div>
+                        {:else}
+                            <div class="feed-health-clear">
+                                <i class="ri-check-line" aria-hidden="true"></i>
+                                <span>Every item has a picture, a brand and an identifier.</span>
+                            </div>
+                        {/if}
+                    {/if}
                 {/if}
             </section>
 
-            <!-- Connect: the addresses, then what to do with them. -->
-            <section class="card feed-card">
-                <h2 class="feed-card-title">Connect these feeds</h2>
-                <p class="txt-hint txt-sm feed-card-sub">
-                    Paste an address into the platform once. It refetches on its own schedule and
-                    always reads current prices and stock.
-                </p>
-
-                <div class="feed-links">
-                    {#each LINKS as link (link.path)}
-                        <div class="feed-link">
-                            <div class="feed-link-name">
-                                <span class="txt-bold">{link.label}</span>
-                                <span class="txt-hint txt-sm">{link.hint}</span>
+            {#if serving && status.items > 0}
+                <details class="card feed-card map-fold" bind:open={contentsOpen}>
+                    <summary>
+                        <span class="map-fold-title">What's in the feeds</span>
+                        <span class="txt-hint txt-sm">
+                            {nf.format(status.products)} {status.products === 1 ? "product" : "products"} ·
+                            {nf.format(status.in_stock)} in stock · prices in {status.currency || "—"}
+                        </span>
+                        <i class="ri-arrow-down-s-line map-fold-chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="map-fold-body">
+                        <div class="feed-stats">
+                            <div class="feed-stat">
+                                <div class="feed-stat-label">Items</div>
+                                <div class="feed-stat-value">{nf.format(status.items)}</div>
+                                <div class="feed-stat-note">
+                                    one per variant with a price, across {nf.format(status.products)}
+                                    {status.products === 1 ? "product" : "products"}
+                                </div>
                             </div>
-                            <a
-                                class="feed-link-url txt-code"
-                                href={origin + link.path}
-                                target="_blank"
-                                rel="noreferrer">{origin}{link.path}</a
+                            <div class="feed-stat">
+                                <div class="feed-stat-label">Availability</div>
+                                <div class="feed-stat-value">{nf.format(status.in_stock)} in stock</div>
+                                {#if status.out_of_stock > 0}
+                                    <div class="feed-stat-note">
+                                        {nf.format(status.out_of_stock)} out of stock, still listed
+                                    </div>
+                                {/if}
+                            </div>
+                            <div class="feed-stat">
+                                <div class="feed-stat-label">Prices in</div>
+                                <div class="feed-stat-value">{status.currency || "—"}</div>
+                                {#if status.storefront}
+                                    <div class="feed-stat-note">linking to {status.storefront}</div>
+                                {/if}
+                            </div>
+                        </div>
+                        <!-- The three fields platforms hold an item over, in this
+                             store's numbers. -->
+                        {#if trouble.length}
+                            <div class="feed-health">
+                                {#each trouble as h (h.key)}
+                                    <div class="feed-health-row">
+                                        <div class="feed-health-count">{nf.format(h.count)}</div>
+                                        <div>
+                                            <div class="txt-bold">{h.title}</div>
+                                            <div class="txt-hint txt-sm">{h.fix}</div>
+                                        </div>
+                                    </div>
+                                {/each}
+                            </div>
+                        {/if}
+                    </div>
+                </details>
+            {/if}
+
+            <!-- Open by itself while a setting is missing: that is the one
+                 thing the summary above just asked for. -->
+            <details class="card feed-card map-fold" bind:open={settingsOpen}>
+                <summary>
+                    <span class="map-fold-title">Settings</span>
+                    <span class="txt-hint txt-sm">Where each item's page lives, and what it is called</span>
+                    <i class="ri-arrow-down-s-line map-fold-chevron" aria-hidden="true"></i>
+                    {#if !settingsOpen}
+                        <span class="map-fold-values">
+                            {#each settingsPreview as v (v.label)}
+                                <span class="map-fold-value" class:missing={v.missing}>
+                                    <span class="txt-hint">{v.label}:</span>
+                                    <span class="txt-ellipsis">{v.value}</span>
+                                </span>
+                            {/each}
+                        </span>
+                    {/if}
+                </summary>
+                <div class="map-fold-body">
+                    <p class="txt-hint txt-sm">
+                        Every active variant with a price is included, one item each. These settings say where
+                        its page lives and what it is called when the product does not say.
+                    </p>
+                    <form id="feed-settings" class="feed-form" onsubmit={submit}>
+                        <PluginFields fields={plugin.fields} bind:form idPrefix="feed" />
+                    </form>
+                    {#if writable}
+                        <div class="feed-form-actions">
+                            <button
+                                type="submit"
+                                form="feed-settings"
+                                class="btn sm"
+                                class:loading={saving}
+                                disabled={saving}
                             >
-                            <div class="feed-link-actions">
-                                <button
-                                    type="button"
-                                    class="btn sm secondary"
-                                    onclick={() => copy(origin + link.path)}
-                                >
-                                    <i class="ri-file-copy-line" aria-hidden="true"></i>
-                                    <span class="txt">Copy</span>
-                                </button>
-                                <a
-                                    class="btn sm transparent secondary"
-                                    href={origin + link.path}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                >
-                                    <i class="ri-external-link-line" aria-hidden="true"></i>
-                                    <span class="txt">Open</span>
-                                </a>
-                            </div>
+                                <span class="txt">Save</span>
+                            </button>
+                            <button
+                                type="button"
+                                class="btn sm transparent secondary"
+                                disabled={saving}
+                                onclick={resetForm}
+                            >
+                                <span class="txt">Discard</span>
+                            </button>
                         </div>
-                    {/each}
+                    {/if}
                 </div>
+            </details>
 
-                <div class="feed-tabs" role="tablist" aria-label="Platforms">
-                    {#each PLATFORMS as p (p.key)}
-                        <button
-                            type="button"
-                            role="tab"
-                            class="feed-tab"
-                            class:on={tab === p.key}
-                            aria-selected={tab === p.key}
-                            onclick={() => (tab = p.key)}>{p.name.split(" ")[0]}</button
-                        >
-                    {/each}
-                </div>
-
-                <div class="feed-guide">
-                    <div class="feed-guide-head">
-                        <div>
-                            <h3 class="feed-guide-title">{current.name}</h3>
-                            <p class="txt-hint txt-sm">{current.blurb}</p>
-                        </div>
-                        <a
-                            class="btn sm transparent secondary"
-                            href={current.docs}
-                            target="_blank"
-                            rel="noreferrer"
-                        >
-                            <span class="txt">Their docs</span>
-                        </a>
-                    </div>
-
-                    <div class="feed-guide-reads txt-sm">
-                        Reads <span class="txt-code">{current.reads}</span>
-                    </div>
-
-                    <h4 class="feed-guide-heading">Before you start</h4>
-                    <ul class="feed-before">
-                        {#each current.before as line, i (i)}
-                            <li>{line}</li>
+            <details class="card feed-card map-fold">
+                <summary>
+                    <span class="map-fold-title">How to connect them</span>
+                    <span class="txt-hint txt-sm">Google, Meta, Pinterest and TikTok, step by step</span>
+                    <i class="ri-arrow-down-s-line map-fold-chevron" aria-hidden="true"></i>
+                </summary>
+                <div class="map-fold-body">
+                    <div class="feed-tabs" role="tablist" aria-label="Platforms">
+                        {#each PLATFORMS as p (p.key)}
+                            <button
+                                type="button"
+                                role="tab"
+                                class="feed-tab"
+                                class:on={tab === p.key}
+                                aria-selected={tab === p.key}
+                                onclick={() => (tab = p.key)}>{p.name.split(" ")[0]}</button
+                            >
                         {/each}
-                    </ul>
+                    </div>
 
-                    <h4 class="feed-guide-heading">Steps</h4>
-                    <ol class="feed-steps">
-                        {#each current.steps as step, i (i)}
+                    <div class="feed-guide">
+                        <div class="feed-guide-head">
+                            <div>
+                                <h3 class="feed-guide-title">{current.name}</h3>
+                                <p class="txt-hint txt-sm">{current.blurb}</p>
+                            </div>
+                            <a class="btn sm transparent secondary" href={current.docs} target="_blank" rel="noreferrer">
+                                <span class="txt">Their docs</span>
+                            </a>
+                        </div>
+
+                        <div class="feed-guide-reads txt-sm">
+                            Reads <span class="txt-code">{current.reads}</span>
+                        </div>
+
+                        <h4 class="feed-guide-heading">Before you start</h4>
+                        <ul class="feed-before">
+                            {#each current.before as line, i (i)}
+                                <li>{line}</li>
+                            {/each}
+                        </ul>
+
+                        <h4 class="feed-guide-heading">Steps</h4>
+                        <ol class="feed-steps">
+                            {#each current.steps as step, i (i)}
+                                <li>
+                                    <span class="feed-step-n">{i + 1}</span>
+                                    <span>{step}</span>
+                                </li>
+                            {/each}
+                        </ol>
+                    </div>
+
+                    <h4 class="feed-guide-heading">If items get rejected</h4>
+                    <ul class="feed-before">
+                        {#each health as h (h.key)}
                             <li>
-                                <span class="feed-step-n">{i + 1}</span>
-                                <span>{step}</span>
+                                <span class="txt-bold">{h.title}</span>
+                                {#if serving}
+                                    <span class="feed-reject-count" class:none={h.count === 0}>
+                                        {h.count === 0 ? "none" : nf.format(h.count) + " here"}
+                                    </span>
+                                {/if}
+                                — {h.fix}
                             </li>
                         {/each}
-                    </ol>
-                </div>
-
-                <h4 class="feed-guide-heading">If items get rejected</h4>
-                <ul class="feed-before">
-                    {#each health as h (h.key)}
                         <li>
-                            <span class="txt-bold">{h.title}</span>
-                            {#if serving}
-                                <span class="feed-reject-count" class:none={h.count === 0}>
-                                    {h.count === 0 ? "none" : nf.format(h.count) + " here"}
-                                </span>
-                            {/if}
-                            — {h.fix}
+                            <span class="txt-bold">Price or availability mismatch</span>
+                            — the platform crawled the product page and read something different from the feed.
+                            Usually a storefront cache serving an older page.
                         </li>
-                    {/each}
-                    <li>
-                        <span class="txt-bold">Price or availability mismatch</span>
-                        — the platform crawled the product page and read something different from
-                        the feed. Usually a storefront cache serving an older page.
-                    </li>
-                    <li>
-                        <span class="txt-bold">Domain not claimed</span>
-                        — every platform above has to own the domain before it accepts items from it.
-                    </li>
-                </ul>
-            </section>
+                        <li>
+                            <span class="txt-bold">Domain not claimed</span>
+                            — every platform above has to own the domain before it accepts items from it.
+                        </li>
+                    </ul>
+                </div>
+            </details>
         {/if}
     </div>
 </div>
