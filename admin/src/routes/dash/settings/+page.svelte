@@ -29,6 +29,7 @@
     import { goto } from "$app/navigation";
 
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
+    import { COUNTRIES } from "$lib/countries.js";
 
     /*
      * Deleting the store. Offered to its owner only, never on a demo store,
@@ -80,7 +81,7 @@
         { key: "city", label: "City" },
         { key: "state", label: "State or region" },
         { key: "postal_code", label: "Postal code" },
-        { key: "country", label: "Country", hint: "Two-letter code, such as GB." },
+        { key: "country", label: "Country", kind: "select", hint: "Where the business is registered." },
         { key: "tax_id", label: "Tax registration", hint: "VAT, GST or equivalent." },
         { key: "support_url", label: "Support URL" },
         {
@@ -123,6 +124,12 @@
     function optionsFor(key) {
         if (key === "timezone") return zones;
         if (key === "language") return languages;
+        if (key === "country") {
+            // A code saved before this was a list, and not on it, stays a
+            // choice rather than being blanked by the select.
+            const saved = draft?.country ?? "";
+            return saved && !COUNTRIES.some((c) => c.value === saved) ? [{ value: saved, label: saved }, ...COUNTRIES] : COUNTRIES;
+        }
         return [];
     }
 
@@ -302,10 +309,12 @@
                                                 <option value="">
                                                     {f.key === "timezone"
                                                         ? "UTC (nothing set)"
-                                                        : "The binary's default"}
+                                                        : f.key === "country"
+                                                          ? "Not set"
+                                                          : "The binary's default"}
                                                 </option>
-                                                {#each optionsFor(f.key) as option (option)}
-                                                    <option value={option}>{option}</option>
+                                                {#each optionsFor(f.key) as option (option.value ?? option)}
+                                                    <option value={option.value ?? option}>{option.label ?? option}</option>
                                                 {/each}
                                             </select>
                                         {:else}
