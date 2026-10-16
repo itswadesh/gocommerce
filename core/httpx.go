@@ -1,11 +1,13 @@
 package gocommerce
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -152,6 +154,9 @@ func RespondError(w http.ResponseWriter, r *http.Request, err error) {
 		apiErr.Status = http.StatusInternalServerError
 	}
 	if apiErr.Status >= 500 {
+		// The cause is kept from the response and given to the store's error
+		// page instead (D86).
+		captureServerError(r, apiErr.Status, apiErr)
 		logFrom(r).Error("request failed",
 			"code", apiErr.Code, "error", apiErr.Error(),
 			"method", r.Method, "path", r.URL.Path)
@@ -275,10 +280,14 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 
 func (a *App) recoverMW(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The error tracker, and a place for storeMW to say which store this
+		// is, so a panic caught out here is still recorded against it.
+		r = r.WithContext(context.WithValue(r.Context(), requestErrorsKey{}, &requestErrors{tracker: a.Errors()}))
 		defer func() {
 			if p := recover(); p != nil {
 				a.log.Error("panic recovered",
 					"panic", p, "method", r.Method, "path", r.URL.Path)
+				capturePanic(r, p, debug.Stack())
 				writeJSON(w, http.StatusInternalServerError, envelope{Error: ErrInternal})
 			}
 		}()
@@ -531,6 +540,7 @@ func (a *App) mountCoreRoutes() {
 	a.mountCustomReportRoutes()
 	a.mountPluginRoutes()
 	a.mountNotificationRoutes()
+	a.mountErrorRoutes()
 	a.mountNotifyTemplateRoutes()
 	// The store's own operations after the commerce surfaces, before the
 	// panel's file server: everything above is the shop, this is the machine

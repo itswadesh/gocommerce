@@ -70,6 +70,8 @@ export const RIGHT_ORDER = [
     "reports.write",
     "vendors.read",
     "vendors.write",
+    "errors.read",
+    "errors.write",
 ];
 
 /** A right reads better as a sentence than as a dotted identifier. */
@@ -122,6 +124,8 @@ export const RIGHT_LABELS = {
     "reports.write": "Write custom SQL reports",
     "vendors.read": "See the sellers on this store",
     "vendors.write": "Add sellers, approve them, and set what they are offering",
+    "errors.read": "See what failed, with its stack and the request",
+    "errors.write": "Mark an error resolved or ignored",
 };
 
 /*
@@ -178,6 +182,8 @@ export const RIGHT_SCOPES = {
     "reports.write": "Writing SQL that reads any table in the store, and deciding what everyone with reports.read may see",
     "vendors.read": "Who sells through this shop, what they charge and how much they are holding",
     "vendors.write": "Letting a seller in or stopping them, their commission, and the price on anything they offer",
+    "errors.read": "Failures in the code's and the database's own words: table names, hosts, and the operator who hit them",
+    "errors.write": "Whether an error is still open, resolved or ignored",
 };
 
 /*
@@ -268,6 +274,7 @@ export const RESOURCE_LABELS = {
     roles: "Roles",
     data: "Import and export",
     store: "Store",
+    errors: "Errors",
     shipping: "Shipping",
     channels: "Channels",
     plugins: "Plugins",
@@ -378,6 +385,7 @@ export const RIGHT_SECTIONS = [
             "agent",
             "store",
             "apikeys",
+            "errors",
         ],
     },
 ];
