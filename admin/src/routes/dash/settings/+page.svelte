@@ -743,7 +743,7 @@
         min-height: 44px;
         padding: 2px 6px 2px 12px;
         border: 1px solid var(--surfaceAlt3Color);
-        border-radius: var(--baseRadius);
+        border-radius: var(--borderRadius);
         transition: border-color 150ms ease-out;
     }
     .langs-item.main {

@@ -232,7 +232,7 @@
         gap: 4px;
         padding: 14px 16px;
         border: 1px solid var(--surfaceAlt2Color);
-        border-radius: var(--baseRadius);
+        border-radius: var(--borderRadius);
         background: var(--baseColor);
         color: inherit;
         text-decoration: none;

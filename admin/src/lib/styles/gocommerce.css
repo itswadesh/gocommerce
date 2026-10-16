@@ -127,16 +127,18 @@ body {
 /*
  * Rounder text boxes.
  *
- * PocketBase points --inputBorderRadius at --borderRadius, so a field corners
- * as tightly as a button does. A borderless field is read by its fill, and 5px
- * on a shape that has no outline barely registers as a corner at all — 8px
- * gives it one. Re-pointing the token rather than the rules keeps every part
- * that has to agree with it in agreement: `.field` children inherit the radius
- * for addons and prefixes, and the searchbar's own 30px pill still wins,
- * because it sets the same token further down.
+ * One corner for everything: the buttons' 5px (--borderRadius) on fields,
+ * cards, tables, modals, menus, alerts and tags alike — the owner's call,
+ * after the panel had grown 5px buttons, 8px fields, 13px tables, 15px modals
+ * and pill-shaped search bars side by side. Fields re-point PocketBase's input
+ * token, and modals its large one, so every part that reads them agrees; the
+ * search bar's pill and the Tailwind utilities are brought in line below
+ * ("one corner"). Round things stay round: a circle button, a status dot, a
+ * counter, a switch.
  */
 :root {
-    --inputBorderRadius: 8px;
+    --inputBorderRadius: var(--borderRadius);
+    --lgBorderRadius: var(--borderRadius);
 }
 
 /* ------------------------------------------------------------ page ground */
@@ -694,7 +696,7 @@ th.col-field-type-number {
        embedded in a header that no longer exists, and a full pill makes a bar
        this wide read as a toast — something that will disappear on its own,
        which is the opposite of what it is asking for. */
-    border-radius: var(--radius-lg, 10px);
+    border-radius: var(--borderRadius);
     /* And it needs the shadow now. The note that used to be here said one would
        read as a banner, which was true while the bar sat inside a coloured
        header; floating over white page content it is the only thing separating
@@ -973,7 +975,7 @@ th.col-field-type-number {
     color: var(--popover-foreground);
     background: var(--popover);
     border: 1px solid var(--border);
-    border-radius: calc(var(--radius) - 2px);
+    border-radius: var(--borderRadius);
     /* shadcn's `shadow-md`. The design system prefers a border to a shadow, but
        a popover is the one place it keeps one: the panel floats over content,
        and an edge alone does not say which layer it is on. */
@@ -999,7 +1001,7 @@ th.col-field-type-number {
     color: inherit;
     background: none;
     border: 0;
-    border-radius: calc(var(--radius) - 6px);
+    border-radius: var(--borderRadius);
     cursor: default;
     user-select: none;
     word-break: break-word;
@@ -1537,7 +1539,7 @@ tr.variant-child > td:first-child {
     color: var(--successTxtColor);
     background: var(--surfaceColor);
     border: 1px solid var(--surfaceAlt4Color);
-    border-radius: 3px;
+    border-radius: var(--borderRadius);
     transition:
         background var(--animationSpeed),
         border-color var(--animationSpeed);
@@ -2008,7 +2010,7 @@ button.media-check {
     text-align: center;
     color: var(--baseColor);
     background: var(--txtPrimaryColor);
-    border-top-left-radius: var(--baseRadius);
+    border-top-left-radius: var(--borderRadius);
 }
 /* A chosen tile shows its place in the variant's gallery rather than a tick. */
 .media-check-order {
@@ -3762,7 +3764,7 @@ button.media-check {
     right: -7px;
     min-width: 16px;
     padding: 0 4px;
-    border-radius: 8px;
+    border-radius: var(--borderRadius);
     font-size: 10px;
     font-weight: 600;
     line-height: 16px;
@@ -3928,7 +3930,7 @@ button.media-check {
     align-items: center;
     gap: 8px;
     padding: 4px 10px;
-    border-radius: 6px;
+    border-radius: var(--borderRadius);
     font-size: 12.5px;
     line-height: 18px;
     text-decoration: none;
@@ -3960,7 +3962,7 @@ button.media-check {
     align-items: center;
     gap: 10px;
     padding: 6px 10px;
-    border-radius: 6px;
+    border-radius: var(--borderRadius);
     font-size: 13px;
     font-weight: 500;
     line-height: 20px;
@@ -4031,7 +4033,7 @@ button.media-check {
     width: 100%;
     padding: 6px;
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--borderRadius);
     background: none;
     font-family: inherit;
     text-align: left;
@@ -4289,7 +4291,7 @@ button.media-check {
     flex: none;
     width: 40px;
     height: 40px;
-    border-radius: 10px;
+    border-radius: var(--borderRadius);
     font-size: 20px;
     background: var(--surfaceAlt1Color);
     color: var(--surfaceTxtHintColor);
@@ -4372,7 +4374,7 @@ button.media-check {
     gap: 4px;
     max-width: 100%;
     padding: 2px 8px;
-    border-radius: 6px;
+    border-radius: var(--borderRadius);
     background: var(--surfaceAlt1Color);
     font-size: 12px;
     min-width: 0;
@@ -4449,7 +4451,7 @@ button.media-check {
     position: relative;
     overflow: hidden;
     height: 6px;
-    border-radius: 3px;
+    border-radius: var(--borderRadius);
     background: var(--surfaceAlt2Color);
 }
 .setup-guide-bar {
@@ -4551,7 +4553,7 @@ button.media-check {
     margin: 4px 0 8px;
     padding: 8px 10px;
     border: 1px solid var(--surfaceAlt2Color);
-    border-radius: 8px;
+    border-radius: var(--borderRadius);
     color: inherit;
     text-decoration: none;
     font-size: 12px;
@@ -4603,7 +4605,7 @@ button.media-check {
     display: inline-block;
     margin-left: 6px;
     padding: 0 5px;
-    border-radius: 4px;
+    border-radius: var(--borderRadius);
     background: var(--warningAltColor, var(--surfaceAlt2Color));
     color: var(--warningColor, var(--surfaceTxtColor));
     font-size: 10px;
@@ -4652,7 +4654,7 @@ button.media-check {
     width: 28px;
     height: 28px;
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--borderRadius);
     background: none;
     color: var(--surfaceTxtHintColor);
     text-decoration: none;
@@ -4759,7 +4761,7 @@ button.media-check {
     flex-shrink: 0;
     width: 24px;
     height: 24px;
-    border-radius: 6px;
+    border-radius: var(--borderRadius);
     background: var(--surfaceAlt2Color);
     font-size: 11px;
     font-weight: 600;
@@ -5522,7 +5524,7 @@ tr.handle:focus-visible {
        buckets is wider than the page and has to scroll rather than be clipped. */
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: calc(var(--radius) + 4px);
+    border-radius: var(--borderRadius);
     overflow-x: auto;
 }
 .report-bar {
@@ -5874,7 +5876,7 @@ kbd {
     padding: 1px 5px;
     border: 1px solid var(--surfaceAlt3Color);
     border-bottom-width: 2px;
-    border-radius: 4px;
+    border-radius: var(--borderRadius);
     background: var(--surfaceAlt1Color);
     color: var(--surfaceTxtHintColor);
     font-family: var(--monospaceFontFamily);
@@ -6177,7 +6179,7 @@ kbd + kbd {
 }
 .shopify-skin .perm-name {
     padding: 4px 10px;
-    border-radius: 5px;
+    border-radius: var(--borderRadius);
     background: var(--permNameBg);
     font-size: var(--smFontSize);
     font-weight: 600;
@@ -6193,7 +6195,7 @@ kbd + kbd {
     margin: 0 auto;
     padding: 3px 9px;
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: var(--borderRadius);
     background: var(--permBtnBg);
     color: var(--permBtnFg);
     /* 12px: the panel's scale stops at 13px, and a token that does not
@@ -6289,7 +6291,7 @@ kbd + kbd {
 }
 .shopify-skin .right-chip {
     padding: 1px 7px;
-    border-radius: 4px;
+    border-radius: var(--borderRadius);
     background: var(--surfaceAlt1Color);
     color: var(--surfaceTxtHintColor);
     font-size: 11px;
@@ -7608,7 +7610,7 @@ kbd + kbd {
     min-width: 0;
     padding: 12px 16px;
     border: 1px solid var(--border);
-    border-radius: calc(var(--radius) + 4px);
+    border-radius: var(--borderRadius);
     background: var(--card);
     color: var(--foreground);
     text-align: left;
@@ -7866,7 +7868,7 @@ kbd + kbd {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
     border: 1px solid var(--border);
-    border-radius: calc(var(--radius) + 4px);
+    border-radius: var(--borderRadius);
     background: var(--card);
     overflow: hidden;
 }
@@ -7901,7 +7903,7 @@ kbd + kbd {
     padding: 0;
     list-style: none;
     border: 1px solid var(--border);
-    border-radius: calc(var(--radius) + 4px);
+    border-radius: var(--borderRadius);
     background: var(--card);
     transition: opacity var(--animationSpeed) ease-out;
 }
@@ -8081,7 +8083,7 @@ kbd + kbd {
     gap: 1px;
     margin: 0 4px 10px;
     padding: 8px 10px;
-    border-radius: 8px;
+    border-radius: var(--borderRadius);
     background: var(--surfaceAlt1Color);
     line-height: 1.3;
 }
@@ -8102,7 +8104,7 @@ kbd + kbd {
     height: 18px;
     margin-left: auto;
     padding: 0 5px;
-    border-radius: 9px;
+    border-radius: var(--borderRadius);
     background: var(--foreground);
     color: var(--background);
     font-size: 10.5px;
@@ -8189,7 +8191,7 @@ kbd + kbd {
     justify-content: center;
     width: 48px;
     height: 48px;
-    border-radius: 14px;
+    border-radius: var(--borderRadius);
     background: var(--primaryColor);
     color: var(--primaryTxtColor);
     font-size: 24px;
@@ -8303,7 +8305,7 @@ kbd + kbd {
     margin-bottom: var(--spacing);
     padding: 18px 20px;
     border: 1px solid transparent;
-    border-radius: 14px;
+    border-radius: var(--borderRadius);
     animation: portalSettle 260ms ease-out;
 }
 /* Tinted from the card rather than PocketBase's surface fills: in dark mode
@@ -8446,7 +8448,7 @@ kbd + kbd {
     position: relative;
     height: 6px;
     overflow: hidden;
-    border-radius: 3px;
+    border-radius: var(--borderRadius);
     background: var(--surfaceAlt2Color);
 }
 .portal-meter-fill {
@@ -8718,7 +8720,7 @@ kbd + kbd {
     width: 100%;
     padding: 10px 12px;
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--borderRadius);
     background: var(--card);
     color: inherit;
     font: inherit;
@@ -8784,7 +8786,7 @@ kbd + kbd {
     margin-top: 8px;
     padding: 12px;
     border: 1px dashed var(--border);
-    border-radius: 10px;
+    border-radius: var(--borderRadius);
 }
 .portal-form-grid {
     display: grid;
@@ -8814,7 +8816,7 @@ kbd + kbd {
     flex-wrap: wrap;
     gap: 2px;
     padding: 3px;
-    border-radius: 10px;
+    border-radius: var(--borderRadius);
     background: var(--surfaceAlt1Color);
 }
 .portal-tabs-fill {
@@ -8830,7 +8832,7 @@ kbd + kbd {
     gap: 6px;
     padding: 6px 12px;
     border: 0;
-    border-radius: 8px;
+    border-radius: var(--borderRadius);
     background: transparent;
     color: var(--surfaceTxtHintColor);
     font: inherit;
@@ -8948,7 +8950,7 @@ kbd + kbd {
 .portal-upload {
     padding: 14px;
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--borderRadius);
     background: var(--card);
 }
 /* The whole box is the file picker's label, so a click anywhere chooses and
@@ -8963,7 +8965,7 @@ kbd + kbd {
     margin-bottom: 8px;
     padding: 22px 16px;
     border: 1.5px dashed var(--border);
-    border-radius: 12px;
+    border-radius: var(--borderRadius);
     text-align: center;
     cursor: pointer;
     transition:
@@ -9045,7 +9047,7 @@ kbd + kbd {
     width: 48px;
     height: 48px;
     overflow: hidden;
-    border-radius: 8px;
+    border-radius: var(--borderRadius);
     background: var(--surfaceAlt1Color);
     color: var(--surfaceTxtHintColor);
     font-size: 20px;
@@ -9395,7 +9397,7 @@ kbd + kbd {
     font-size: var(--smFontSize);
     color: var(--surfaceTxtHintColor);
     text-decoration: none;
-    border-radius: 3px;
+    border-radius: var(--borderRadius);
     transition: color var(--animationSpeed) ease-out;
 }
 .recovery-arrow-link > span[aria-hidden],
@@ -9701,7 +9703,7 @@ a.recovery-automation:focus-visible {
     width: 36px;
     height: 36px;
     border: 1px solid var(--border);
-    border-radius: calc(var(--radius) - 2px);
+    border-radius: var(--borderRadius);
     color: var(--muted-foreground);
     font-size: 18px;
 }
@@ -10215,4 +10217,35 @@ a.recovery-automation:focus-visible .recovery-automation-go > i {
 }
 .label.label-danger {
     background: var(--surfaceDangerColor);
+}
+
+/* The tick on an active provider's green label: green on green, so "on and
+   working" reads at a glance, and from the colour alone as well as the word. */
+.label.label-success .state-tick {
+    color: var(--successColor);
+    font-size: 1.1em;
+    line-height: 1;
+}
+
+/* -------------------------------------------------------------- one corner */
+
+/*
+ * The rest of "one corner for everything" (see the tokens at the top): the
+ * search bar and pill buttons PocketBase draws as capsules, and the Tailwind
+ * roundings the screens use for their table frames and tiles. Tailwind's
+ * utilities are imported unlayered and after this file (design.css), so the
+ * `html` prefix is what lets these win, by one step of specificity, without
+ * !important.
+ */
+.searchbar .field {
+    --inputBorderRadius: var(--borderRadius);
+}
+.btn.pill {
+    border-radius: var(--borderRadius);
+}
+html .tw\:rounded-md,
+html .tw\:rounded-lg,
+html .tw\:rounded-xl,
+html .tw\:rounded-2xl {
+    border-radius: var(--borderRadius);
 }

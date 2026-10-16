@@ -435,7 +435,7 @@
         width: 100%;
         padding: 8px 10px;
         border: 0;
-        border-radius: var(--baseRadius);
+        border-radius: var(--borderRadius);
         background: transparent;
         text-align: left;
         cursor: pointer;
