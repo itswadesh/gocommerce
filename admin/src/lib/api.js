@@ -388,6 +388,18 @@ export const events = {
  * the panel's own crashes reported to it. Reading needs errors.read; any
  * signed-in operator may report.
  */
+/**
+ * translations is ext/translations: a store's products, categories and
+ * collections in its other languages (D87). The list carries each item's own
+ * text beside its translation, and the counts the screen heads it with.
+ */
+export const translations = {
+    list: (kind, params) => api.get(`/api/admin/x/translations/${kind}` + query(params)),
+    save: (kind, id, language, fields) =>
+        api.put(`/api/admin/x/translations/${kind}/${id}/${encodeURIComponent(language)}`, { fields }),
+    remove: (kind, id, language) => api.delete(`/api/admin/x/translations/${kind}/${id}/${encodeURIComponent(language)}`),
+};
+
 export const errors = {
     list: (params) => api.get("/api/admin/errors" + query(params)),
     get: (id) => api.get(`/api/admin/errors/${id}`),

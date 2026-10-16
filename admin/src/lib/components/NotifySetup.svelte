@@ -20,6 +20,8 @@
     import { page } from "$app/state";
     import { can, request } from "$lib/api.js";
     import { session } from "$lib/session.svelte.js";
+    import { settings } from "$lib/settings.svelte.js";
+    import { languageName } from "$lib/languages.js";
     import { formatDate } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import Drawer from "$lib/components/Drawer.svelte";
@@ -48,8 +50,22 @@
     let draft = $state({ subject: "", body: "" });
     let saving = $state(false);
 
+    /*
+     * Which of the store's languages the wording is for (D87). A customer is
+     * written to in the language they ordered in, and one nobody has worded
+     * gets the main language's wording — so the main language comes first,
+     * and the picker only appears once there is a second.
+     */
+    const languages = $derived(settings.languages ?? []);
+    const main = $derived(languages[0] ?? "");
+    let picked = $state("");
+    const language = $derived(languages.includes(picked) ? picked : main);
+    const short = (tag) => languageName(tag).split(" · ")[0];
+    const languageQuery = $derived(language ? "language=" + encodeURIComponent(language) : "");
+
     $effect(() => {
         channel;
+        languageQuery;
         if (allowed) load();
     });
 
@@ -59,7 +75,7 @@
             const [settings, all, list] = await Promise.all([
                 request("GET", "/api/admin/settings"),
                 request("GET", "/api/admin/plugins"),
-                request("GET", "/api/admin/notifications/templates?channel=" + channel),
+                request("GET", "/api/admin/notifications/templates?channel=" + channel + (languageQuery ? "&" + languageQuery : "")),
             ]);
             backends = settings.notifier_channels?.find((c) => c.channel === channel)?.backends ?? [];
             plugins = all ?? [];
@@ -138,7 +154,7 @@
         if (!tpl) return;
         saving = true;
         try {
-            const updated = await request("PUT", `/api/admin/notifications/templates/${channel}/${tpl.event}`, {
+            const updated = await request("PUT", `/api/admin/notifications/templates/${channel}/${tpl.event}?${languageQuery}`, {
                 body: { subject: draft.subject, body: draft.body },
             });
             templates = templates.map((t) => (t.event === updated.event ? updated : t));
@@ -155,9 +171,13 @@
         if (!tpl) return;
         saving = true;
         try {
-            const restored = await request("DELETE", `/api/admin/notifications/templates/${channel}/${tpl.event}`);
+            const restored = await request("DELETE", `/api/admin/notifications/templates/${channel}/${tpl.event}?${languageQuery}`);
             templates = templates.map((t) => (t.event === restored.event ? restored : t));
-            toast.success(`${tpl.title} back to its default`);
+            toast.success(
+                restored.source === "main"
+                    ? `${tpl.title} in ${short(language)} uses the ${short(main)} wording again`
+                    : `${tpl.title} back to its default`,
+            );
             tpl = null;
         } catch (err) {
             toast.error(err);
@@ -332,11 +352,30 @@
             <!-- A section heading that follows a block needs air above it, or
                  it reads as a caption belonging to the cards it sits under. -->
             <h2 class="tw:mt-10 tw:text-2xl tw:font-semibold tw:tracking-tight">{words.title} templates</h2>
+            {#if languages.length > 1}
+                <div class="notify-langs" role="tablist" aria-label="Language">
+                    {#each languages as tag, i (tag)}
+                        <button
+                            type="button"
+                            role="tab"
+                            class="notify-lang"
+                            class:on={language === tag}
+                            aria-selected={language === tag}
+                            onclick={() => (picked = tag)}
+                            >{languageName(tag)}{#if i === 0}<span class="txt-hint txt-sm"> · main</span>{/if}</button
+                        >
+                    {/each}
+                </div>
+            {/if}
             <p class="txt-hint m-b-base">
                 {templates.length} messages{#if customizedCount}, {customizedCount} reworded{/if}. Each is a Go
                 text/template over the event's data: <code>{"{{.order_number}}"}</code> prints the
                 order number, <code>{"{{if .tracking}}…{{end}}"}</code> shows a line only when
                 there is one.
+                {#if language !== main}
+                    Customers who ordered in {short(language)} get the {short(main)} wording of any
+                    message not written in {short(language)} yet.
+                {/if}
                 {#if channel === "sms"}
                     A provider that sends pre-approved templates of its own (MSG91's DLT flows)
                     ignores this wording and takes its template ids from its settings above.
@@ -374,7 +413,11 @@
                                 </td>
                                 <td class="col-field-type-select min-width" data-name="Status">
                                     {#if t.customized}
-                                        <span class="label label-success" title={t.updated_at ? "Edited " + formatDate(t.updated_at) : ""}>Customized</span>
+                                        <span class="label success" title={t.updated_at ? "Edited " + formatDate(t.updated_at) : ""}>
+                                            {language === main ? "Customized" : `In ${short(language)}`}
+                                        </span>
+                                    {:else if t.source === "main"}
+                                        <span class="label warning">{short(main)} wording</span>
                                     {:else}
                                         <span class="label">Default</span>
                                     {/if}
@@ -407,9 +450,23 @@
 
 <PluginSettingsDrawer plugin={editing} onclose={() => (editing = null)} onsaved={saved} />
 
-<Drawer open={!!tpl} size="md" title={tpl ? tpl.title : "Message"} onclose={() => (tpl = null)}>
+<Drawer
+    open={!!tpl}
+    size="md"
+    title={tpl ? (languages.length > 1 ? `${tpl.title} · ${short(language)}` : tpl.title) : "Message"}
+    onclose={() => (tpl = null)}
+>
     {#if tpl}
         <div class="field-help m-b-base">{tpl.description}</div>
+        {#if language !== main && !tpl.customized}
+            <div class="alert info m-b-base">
+                <p>
+                    Not written in {short(language)} yet: these customers get the
+                    {tpl.source === "main" ? `${short(main)} wording` : "default wording"} below. Write
+                    theirs over it and save. Have a native speaker read it before it goes out.
+                </p>
+            </div>
+        {/if}
         {#if channel === "email"}
             <div class="field">
                 <label for="tpl-subject">Subject</label>
@@ -438,7 +495,9 @@
     {#snippet footer()}
         <button type="button" class="btn transparent m-r-auto" onclick={() => (tpl = null)}><span class="txt">Cancel</span></button>
         {#if tpl?.customized}
-            <button type="button" class="btn secondary" disabled={saving || !writable} onclick={resetTemplate}><span class="txt">Restore default</span></button>
+            <button type="button" class="btn secondary" disabled={saving || !writable} onclick={resetTemplate}>
+                <span class="txt">{language === main ? "Restore default" : `Remove the ${short(language)} wording`}</span>
+            </button>
         {/if}
         <button type="button" class="btn" class:loading={saving} disabled={saving || !writable || !draft.body.trim()} onclick={saveTemplate}>
             <span class="txt">Save</span>
@@ -462,6 +521,35 @@
         color: var(--txtHintColor);
         font-size: var(--smFontSize);
         line-height: 1.45;
+    }
+    .notify-langs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px;
+        margin: 8px 0 12px;
+        border-bottom: 1px solid var(--surfaceAlt2Color);
+    }
+    .notify-lang {
+        min-height: 40px;
+        padding: 8px 12px;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        background: none;
+        color: var(--txtHintColor);
+        font: inherit;
+        font-weight: 500;
+        cursor: pointer;
+        transition:
+            color 150ms ease-out,
+            border-color 150ms ease-out;
+    }
+    .notify-lang:hover,
+    .notify-lang:focus-visible {
+        color: var(--txtPrimaryColor);
+    }
+    .notify-lang.on {
+        border-bottom-color: var(--primaryColor);
+        color: var(--txtPrimaryColor);
     }
     .tpl-body {
         font-family: var(--monospaceFontFamily);
@@ -525,6 +613,9 @@
     @media (prefers-reduced-motion: reduce) {
         .notify-test-result {
             animation: none;
+        }
+        .notify-lang {
+            transition: none;
         }
     }
 </style>
