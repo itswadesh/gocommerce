@@ -810,7 +810,7 @@ func (m *Module) AcceptInvitation(ctx context.Context, customerID int64, token s
 	// hole the whole verification exists to close.
 	if strings.ToLower(acct.Email) != inv.Email {
 		return nil, gocommerce.Forbiddenf("this invitation was sent to another address; sign in as %s to accept it",
-			m.app.MaskEmail(inv.Email))
+			m.app.MaskEmail(ctx, inv.Email))
 	}
 	if _, err := m.accounts.MarkEmailVerified(ctx, customerID, inv.Email); err != nil {
 		return nil, err

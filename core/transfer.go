@@ -263,7 +263,7 @@ func (t *Transfer) ExportOrders(ctx context.Context, out io.Writer, q OrderQuery
 	// The same predicate the listing uses, from the same function: an export
 	// taken from a filtered screen must be the rows on that screen. The
 	// statement below aliases orders as `o`, which is what lets it transfer.
-	if clause := orderSearchClause(q.Search, &args, t.app.cfg.Demo); clause != "" {
+	if clause := orderSearchClause(q.Search, &args, t.app.demo(ctx)); clause != "" {
 		where = append(where, clause)
 	}
 	if q.From != nil {
@@ -304,9 +304,9 @@ func (t *Transfer) ExportOrders(ctx context.Context, out io.Writer, q OrderQuery
 		// Before either record shape is built, so neither format can be the one
 		// that forgets. An export is the whole screen in a file, and a mask the
 		// download walks past is not a mask at all.
-		l.email = t.app.MaskEmail(l.email)
-		l.phone = t.app.MaskPhone(l.phone)
-		l.addr.Phone = t.app.MaskPhone(l.addr.Phone)
+		l.email = t.app.MaskEmail(ctx, l.email)
+		l.phone = t.app.MaskPhone(ctx, l.phone)
+		l.addr.Phone = t.app.MaskPhone(ctx, l.addr.Phone)
 		first := l.id != lastOrder
 		lastOrder = l.id
 
@@ -356,7 +356,7 @@ func (t *Transfer) ExportCustomers(ctx context.Context, out io.Writer, q Custome
 	}
 
 	where, args := []string{"o.email <> ''"}, []any{}
-	if clause := customerSearchClause(q.Search, &args, t.app.cfg.Demo); clause != "" {
+	if clause := customerSearchClause(q.Search, &args, t.app.demo(ctx)); clause != "" {
 		where = append(where, clause)
 	}
 	// Validationf, returned bare: wrapping it in Internalf would serve a bad
@@ -393,9 +393,9 @@ func (t *Transfer) ExportCustomers(ctx context.Context, out io.Writer, q Custome
 			return err
 		}
 		_ = json.Unmarshal(addrRaw, &c.addr)
-		c.email = t.app.MaskEmail(c.email)
-		c.phone = t.app.MaskPhone(c.phone)
-		c.addr.Phone = t.app.MaskPhone(c.addr.Phone)
+		c.email = t.app.MaskEmail(ctx, c.email)
+		c.phone = t.app.MaskPhone(ctx, c.phone)
+		c.addr.Phone = t.app.MaskPhone(ctx, c.addr.Phone)
 
 		var record []string
 		if opts.Format == FormatShopify {

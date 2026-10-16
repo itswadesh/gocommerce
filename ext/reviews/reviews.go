@@ -397,7 +397,7 @@ func (m *Module) handleList(w http.ResponseWriter, r *http.Request) {
 	// A demo store publishes this screen to whoever signs in, and a review
 	// carries the address of somebody who bought something.
 	for _, row := range rows {
-		row.Email = m.app.MaskEmail(row.Email)
+		row.Email = m.app.MaskEmail(r.Context(), row.Email)
 	}
 	gocommerce.RespondList(w, rows, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})
 }
@@ -449,7 +449,7 @@ func (m *Module) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, gocommerce.NotFoundf("review %d does not exist", id))
 		return
 	}
-	rows[0].Email = m.app.MaskEmail(rows[0].Email)
+	rows[0].Email = m.app.MaskEmail(r.Context(), rows[0].Email)
 	gocommerce.Respond(w, http.StatusOK, rows[0])
 }
 

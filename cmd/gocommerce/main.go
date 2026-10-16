@@ -81,7 +81,8 @@ commands:
   serve      apply migrations, then serve the API (default)
   migrate    apply migrations and exit
   superuser  create or update an admin-panel operator, then exit
-  store      create a store: store create <slug> [name], then exit
+  store      create a store: store create <slug> [name]; or mark one a demo
+             (masked personal data): store demo <slug> on|off; then exit
   doctor     run operational diagnostics and exit (-json for agents)
   spec       print the OpenAPI contract and exit
   taxonomy   import a product category tree, then exit
@@ -511,9 +512,14 @@ environment:
 // variable must not silently reset that operator's password.
 // storeCmd opens a new store, seeded so it can stock and sell. Its first
 // operator is added with `superuser create` and -store.
+const storeUsage = "usage: gocommerce store create <slug> [name] | gocommerce store demo <slug> on|off"
+
 func storeCmd(ctx context.Context, app *gocommerce.App, args []string) error {
+	if len(args) == 3 && args[0] == "demo" {
+		return storeDemoCmd(ctx, app, args[1], args[2])
+	}
 	if len(args) < 2 || args[0] != "create" {
-		return errors.New("usage: gocommerce store create <slug> [name]")
+		return errors.New(storeUsage)
 	}
 	name := strings.Join(args[2:], " ")
 	st, err := app.Stores().Create(ctx, name, args[1])
@@ -522,6 +528,36 @@ func storeCmd(ctx context.Context, app *gocommerce.App, args []string) error {
 	}
 	fmt.Printf("created store %s (%s)\nadd its first operator: gocommerce -store %s superuser create <email> <password> owner\n",
 		st.Slug, st.ID, st.Slug)
+	return nil
+}
+
+// storeDemoCmd marks a store as a demo or a live store again. It is a command
+// and not a panel switch on purpose: a demo store's visitors are signed in to
+// it, and a switch they could reach would let the first one unmask it.
+func storeDemoCmd(ctx context.Context, app *gocommerce.App, name, state string) error {
+	var on bool
+	switch strings.ToLower(state) {
+	case "on":
+		on = true
+	case "off":
+	default:
+		return errors.New(storeUsage)
+	}
+	st, err := app.Stores().BySlug(ctx, name)
+	if err != nil && gocommerce.ValidStoreID(name) {
+		st, err = app.Stores().Get(ctx, name)
+	}
+	if err != nil {
+		return fmt.Errorf("no store %q", name)
+	}
+	if err := app.Stores().SetDemo(ctx, st.ID, on); err != nil {
+		return err
+	}
+	if on {
+		fmt.Printf("store %s is now a demo: its admin screens mask emails and phone numbers, and its team, roles and API keys are frozen\n", st.Slug)
+	} else {
+		fmt.Printf("store %s is live again: its admin screens show personal data in full\n", st.Slug)
+	}
 	return nil
 }
 
