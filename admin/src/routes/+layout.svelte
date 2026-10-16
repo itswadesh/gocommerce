@@ -19,6 +19,7 @@
     import { forgetScreens } from "$lib/screens.svelte.js";
     import { applyEntry, ensureStore, forgetStores, markStores, myStores } from "$lib/stores.svelte.js";
     import { reloadStoreData } from "$lib/store-data.js";
+    import { copyText } from "$lib/clipboard.js";
     import { droppedNote, sectionFor, switchTarget } from "$lib/store-switch.js";
     import { health } from "$lib/health.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
@@ -490,13 +491,28 @@
     });
     const roleName = (role) => (role ? role[0].toUpperCase() + role.slice(1) : "");
 
+    /* The check stands in for the copy icon for a moment, so the press is
+       answered where the eye already is; the toast says it too. */
+    let copied = $state("");
+    async function copyStoreId(id) {
+        if (await copyText(id)) {
+            copied = id;
+            toast.success("Store ID copied");
+            setTimeout(() => {
+                if (copied === id) copied = "";
+            }, 1500);
+        } else {
+            toast.error("Could not copy. Select the ID and copy it yourself: " + id);
+        }
+    }
+
     /**
      * Arrow keys walk the account menu; Enter and Escape are the browser's
      * own for buttons and popovers. Opening it puts focus on the current
      * store, so the keyboard starts where the person is.
      */
     function menuKeys(node) {
-        const items = () => [...node.querySelectorAll(".dropdown-item:not([disabled]), .store-menu-search")];
+        const items = () => [...node.querySelectorAll(".store-current-btn, .dropdown-item:not([disabled]), .store-menu-search")];
         const onKey = (event) => {
             if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
             event.preventDefault();
@@ -658,7 +674,45 @@
         </button>
         <div id={menuId} class="dropdown sm nowrap logged-user-dropdown" popover="auto" use:menuKeys>
             <!-- The stores first: which one this tab is in is the question the
-                 menu is most often opened to answer. -->
+                 menu is most often opened to answer. The block on top is the
+                 current one, as the KitCommerce admin has it: its name, where
+                 it lives, and its id to copy for a script or a support ticket. -->
+            {#if myStores.current}
+                {@const here = myStores.current}
+                <div class="store-current">
+                    <div class="store-current-text">
+                        <span class="store-current-label">Store</span>
+                        <span class="txt txt-ellipsis store-current-name">{here.name}</span>
+                        {#if here.domain}
+                            <span class="txt-hint txt-ellipsis store-current-domain">{here.domain}</span>
+                        {/if}
+                    </div>
+                    <div class="store-current-actions">
+                        <button
+                            type="button"
+                            class="store-current-btn"
+                            class:done={copied === here.id}
+                            aria-label="Copy store ID"
+                            title="Copy store ID"
+                            onclick={() => copyStoreId(here.id)}
+                        >
+                            <i class={copied === here.id ? "ri-check-line" : "ri-file-copy-line"} aria-hidden="true"></i>
+                        </button>
+                        {#if here.domain}
+                            <a
+                                class="store-current-btn"
+                                href="https://{here.domain}"
+                                target="_blank"
+                                rel="noreferrer"
+                                aria-label="Visit store"
+                                title="Visit store"
+                            >
+                                <i class="ri-external-link-line" aria-hidden="true"></i>
+                            </a>
+                        {/if}
+                    </div>
+                </div>
+            {/if}
             {#if myStores.list.length}
                 <div class="store-menu" role="group" aria-label="Your stores">
                     {#if myStores.list.length > 7}

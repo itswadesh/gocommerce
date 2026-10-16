@@ -315,3 +315,30 @@ func TestTheUpgradeTakesTheStoreNameFromTheProfile(t *testing.T) {
 		t.Fatalf("store name = %q, want the profile's", st.Name)
 	}
 }
+
+// The store list says where each store lives, for the account menu's
+// "Visit store": its own domain first, else its address under the
+// install's base domain, else nothing.
+func TestTheStoreListSaysWhereEachStoreLives(t *testing.T) {
+	app := newTestApp(t)
+	app.cfg.BaseDomain = "shops.test"
+	tok := signInAs(t, app, "where@example.com", RoleOwner)
+	b := addTestStore(t, app, "bee")
+	joinTestStore(t, app, b, "where@example.com", RoleStaff)
+	if _, err := app.db.Exec(`INSERT INTO store_domains (host, store_id) VALUES ('bee.example', $1)`, b); err != nil {
+		t.Fatal(err)
+	}
+	rec := do(t, app, http.MethodGet, "/api/stores/my", bearer(tok))
+	var mine []MyStore
+	decodeData(t, rec, &mine)
+	if len(mine) != 2 || mine[0].Domain != mine[0].Slug+".shops.test" || mine[1].Domain != "bee.example" {
+		t.Fatalf("stores = %+v, want slug.shops.test then bee.example", mine)
+	}
+
+	app.cfg.BaseDomain = ""
+	rec = do(t, app, http.MethodGet, "/api/stores/my", bearer(tok))
+	decodeData(t, rec, &mine)
+	if mine[0].Domain != "" {
+		t.Fatalf("with no base domain, the first store's domain = %q, want none", mine[0].Domain)
+	}
+}
