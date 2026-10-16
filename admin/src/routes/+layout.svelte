@@ -17,7 +17,7 @@
     import { clearProfile, clearSettings } from "$lib/settings.svelte.js";
     import { forgetModules, hasModule } from "$lib/modules.svelte.js";
     import { forgetScreens } from "$lib/screens.svelte.js";
-    import { applyEntry, ensureStore, forgetStores, markStores, myStores } from "$lib/stores.svelte.js";
+    import { applyEntry, ensureStore, forgetStores, isSuperseded, markStores, myStores } from "$lib/stores.svelte.js";
     import { reloadStoreData } from "$lib/store-data.js";
     import { copyText } from "$lib/clipboard.js";
     import { droppedNote, sectionFor, switchTarget } from "$lib/store-switch.js";
@@ -247,6 +247,8 @@
             // session in api.js, before the operator meant to do anything.
             where = await ensureStore();
         } catch (err) {
+            // Signed out while asking: the answer was the last person's.
+            if (isSuperseded(err)) return;
             if (err.isAuth) {
                 // The cached settings would be the previous operator's answer.
                 clearSettings();
