@@ -160,7 +160,7 @@ func (a *App) handleSwitchStore(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	setStoreCookie(w, r, hit.ID)
+	a.setStoreCookie(w, r, hit.ID)
 	Respond(w, http.StatusOK, entry)
 }
 
@@ -177,20 +177,14 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	st, err := a.stores.Create(ctx, in.Name, in.Slug)
+	var owner int64
+	if su := SuperuserFrom(ctx); su != nil {
+		owner = su.ID
+	}
+	st, err := a.stores.CreateFor(ctx, in.Name, in.Slug, owner)
 	if err != nil {
 		RespondError(w, r, err)
 		return
-	}
-	if su := SuperuserFrom(ctx); su != nil {
-		if _, err := a.db.ExecContext(ctx, `
-			INSERT INTO store_members (store_id, superuser_id, role) VALUES ($1, $2, $3)`,
-			st.ID, su.ID, RoleOwner); err != nil {
-			// A store nobody can enter is worse than none: take it back out.
-			_, _ = a.db.ExecContext(context.WithoutCancel(ctx), `DELETE FROM stores WHERE id = $1`, st.ID)
-			RespondError(w, r, Internalf(err, "make the creator the store's owner"))
-			return
-		}
 	}
 	entry, err := a.enterStore(ctx, st.ID)
 	if err != nil {
@@ -198,7 +192,7 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.log.Info("store created", "store", st.ID, "slug", st.Slug)
-	setStoreCookie(w, r, st.ID)
+	a.setStoreCookie(w, r, st.ID)
 	Respond(w, http.StatusCreated, entry)
 }
 
@@ -221,22 +215,25 @@ func (a *App) enterStore(ctx context.Context, id string) (*storeEntry, error) {
 	return entry, nil
 }
 
-func setStoreCookie(w http.ResponseWriter, r *http.Request, id string) {
-	writeStoreCookie(w, r, id, int((365 * 24 * time.Hour).Seconds()))
+func (a *App) setStoreCookie(w http.ResponseWriter, r *http.Request, id string) {
+	a.writeStoreCookie(w, r, id, int((365 * 24 * time.Hour).Seconds()))
 }
 
-func clearStoreCookie(w http.ResponseWriter, r *http.Request) {
-	writeStoreCookie(w, r, "", -1)
+func (a *App) clearStoreCookie(w http.ResponseWriter, r *http.Request) {
+	a.writeStoreCookie(w, r, "", -1)
 }
 
-func writeStoreCookie(w http.ResponseWriter, r *http.Request, id string, maxAge int) {
+func (a *App) writeStoreCookie(w http.ResponseWriter, r *http.Request, id string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     storeCookie,
 		Value:    id,
 		Path:     "/",
 		MaxAge:   maxAge,
 		HttpOnly: true,
-		Secure:   r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"),
+		// The operator's word, not a header: X-Forwarded-Proto is whatever
+		// the client sent unless a proxy rewrote it, and nothing here knows
+		// which. Behind a TLS-terminating proxy, PanelURL says https.
+		Secure:   r.TLS != nil || strings.HasPrefix(strings.ToLower(a.cfg.PanelURL), "https://"),
 		SameSite: http.SameSiteLaxMode,
 	})
 }

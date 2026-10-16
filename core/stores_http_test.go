@@ -342,3 +342,41 @@ func TestTheStoreListSaysWhereEachStoreLives(t *testing.T) {
 		t.Fatalf("with no base domain, the first store's domain = %q, want none", mine[0].Domain)
 	}
 }
+
+// Whether the store cookie is Secure is the operator's to say — a TLS
+// connection, or a panel configured on https — not a header any client can
+// send.
+func TestTheStoreCookieIgnoresAForwardedProtoAnybodyCanSend(t *testing.T) {
+	app := newTestApp(t)
+	tok := signInAs(t, app, "proto@example.com", RoleOwner)
+	secure := func() bool {
+		rec := doBody(t, app, http.MethodPost, "/api/stores/switch", `{"store_id":"`+app.DefaultStore()+`"}`,
+			bearer(tok), header("X-Forwarded-Proto", "https"))
+		for _, c := range rec.Result().Cookies() {
+			if c.Name == storeCookie {
+				return c.Secure
+			}
+		}
+		t.Fatalf("no store cookie: %d %s", rec.Code, rec.Body)
+		return false
+	}
+	if secure() {
+		t.Fatal("a client's X-Forwarded-Proto made the cookie Secure")
+	}
+	app.cfg.PanelURL = "https://admin.example.com"
+	if !secure() {
+		t.Fatal("a panel configured on https did not make the cookie Secure")
+	}
+}
+
+// A store and its owner are written together: an owner that cannot be
+// recorded leaves no store behind that nobody can enter.
+func TestAStoreAndItsOwnerAreWrittenTogether(t *testing.T) {
+	app := newTestApp(t)
+	if _, err := app.Stores().CreateFor(context.Background(), "Orphan", "orphan", 987654321); err == nil {
+		t.Fatal("a store was created for an owner who does not exist")
+	}
+	if _, err := app.Stores().BySlug(context.Background(), "orphan"); err == nil {
+		t.Fatal("the store row outlived its failed owner")
+	}
+}
