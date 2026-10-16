@@ -70,7 +70,7 @@ func (a *App) Setup(ctx context.Context) (*Setup, error) {
 	if err != nil {
 		return nil, err
 	}
-	hasShipping, err := exists(`SELECT 1 FROM shipping_rates r JOIN shipping_zones z ON z.id = r.zone_id WHERE r.active`)
+	hasShipping, err := exists(`SELECT 1 FROM shipping_rates r JOIN shipping_zones z ON z.id = r.zone_id WHERE r.active AND z.active`)
 	if err != nil {
 		return nil, err
 	}

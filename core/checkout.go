@@ -279,10 +279,15 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 			// A group's rates are re-judged here against the verified address
 			// as it stands now, so a rate quoted while the cart was in a group
 			// it has since left is refused below like any rate that moved.
+			weight, err := cartWeightGrams(ctx, tx, cartID)
+			if err != nil {
+				return err
+			}
 			quotes, rated, err = s.app.shipping.options(ctx, tx, ShippingQuery{
 				Country:       in.Address.Country,
 				State:         in.Address.State,
 				SubtotalMinor: subtotal,
+				WeightGrams:   weight,
 				Email:         verified.String,
 			})
 			if err != nil {
