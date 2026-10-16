@@ -37,8 +37,41 @@ type publicShowcase struct {
 func card(s *Showcase) publicCard {
 	v := s.Video
 	v.URL = "" // what the store pasted is its business; the player is built
-	return publicCard{Slug: s.Slug, Title: s.Title, Description: s.Description, Video: v,
-		Label: s.Label, StartsAt: s.StartsAt, FeaturedProductID: s.FeaturedProductID}
+	out := publicCard{Slug: s.Slug, Title: s.Title, Description: s.Description, Video: v,
+		Label: s.Label, FeaturedProductID: s.FeaturedProductID}
+	if s.Kind == KindLive {
+		out.StartsAt = s.StartsAt
+	}
+	return out
+}
+
+// buyable clears a featured product a buyer cannot have here — archived, or
+// not on this channel, or gone from the collection since — so no route points
+// at something the showcase's own page would not show.
+func (m *Module) buyable(r *http.Request, s *Showcase) error {
+	if s.FeaturedProductID == nil {
+		return nil
+	}
+	channel, err := m.app.Channels().Resolve(r.Context(), r.URL.Query().Get("channel"))
+	if err != nil {
+		return err
+	}
+	var channelID int64
+	if channel != nil {
+		channelID = channel.ID
+	}
+	ok, err := m.sellable(r.Context(), []int64{*s.FeaturedProductID}, channelID)
+	if err == nil && len(ok) == 1 && s.CollectionID != nil {
+		var held bool
+		held, err = m.holds(r.Context(), s.CollectionID, nil, *s.FeaturedProductID)
+		if !held {
+			ok = nil
+		}
+	}
+	if len(ok) == 0 {
+		s.FeaturedProductID = nil
+	}
+	return err
 }
 
 func (m *Module) closed(w http.ResponseWriter, r *http.Request) bool {
@@ -57,6 +90,13 @@ func (m *Module) handlePublicList(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	where, args := "status = 'published'", []any{}
+	on := q.Get("on")
+	// A product or a collection named alone says which page it is for.
+	if on == "" && q.Get("product") != "" {
+		on = "product"
+	} else if on == "" && q.Get("collection") != "" {
+		on = "collection"
+	}
 	idParam := func(name string) (int64, bool) {
 		id, err := strconv.ParseInt(q.Get(name), 10, 64)
 		if err != nil || id <= 0 {
@@ -65,7 +105,7 @@ func (m *Module) handlePublicList(w http.ResponseWriter, r *http.Request) {
 		}
 		return id, true
 	}
-	switch q.Get("on") {
+	switch on {
 	case "":
 	case "home":
 		where += " AND on_home"
@@ -97,6 +137,10 @@ func (m *Module) handlePublicList(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]publicCard, 0, len(list))
 	for _, s := range list {
+		if err := m.buyable(r, s); err != nil {
+			gocommerce.RespondError(w, r, err)
+			return
+		}
 		out = append(out, card(s))
 	}
 	gocommerce.Respond(w, http.StatusOK, out)
@@ -162,6 +206,9 @@ func (m *Module) handlePublicNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s, err := m.published(r.Context(), r.PathValue("slug"))
+	if err == nil {
+		err = m.buyable(r, s)
+	}
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
@@ -183,26 +230,36 @@ const (
 // buyer is kept: a day's counts, and for an add to the cart which showcase
 // the basket came from, so its order can be counted. A storefront reports
 // add_to_cart only once the cart has accepted the line.
+//
+// Views and clicks are rate-limited; an add with its basket is not, and is
+// counted once per basket instead. Behind a proxy every buyer shares one
+// address, and a busy livestream must not lose the adds that credit its
+// orders — while a basket is something only the store's own cart makes.
 func (m *Module) handleEvent(w http.ResponseWriter, r *http.Request) {
 	if m.closed(w, r) {
 		return
 	}
 	ctx := r.Context()
-	store, _ := gocommerce.StoreFrom(ctx)
-	if wait, ok := m.events.allow(store+" "+peerAddr(r), time.Now()); !ok {
-		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
-		gocommerce.RespondError(w, r, &gocommerce.APIError{Status: http.StatusTooManyRequests,
-			Code: "too_many_requests", Message: "too many showcase events from this address; try again shortly"})
-		return
-	}
 	var in struct {
-		Type      string `json:"type"`
+		Type string `json:"type"`
+		// ProductID is accepted for the storefront's sake and not yet kept:
+		// the counts are per showcase.
 		ProductID *int64 `json:"product_id"`
 		Cart      string `json:"cart"`
 	}
 	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
+	}
+	basket := in.Type == EventAddToCart && in.Cart != ""
+	if !basket {
+		store, _ := gocommerce.StoreFrom(ctx)
+		if wait, ok := m.events.allow(store+" "+r.PathValue("slug")+" "+peerAddr(r), time.Now()); !ok {
+			w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+			gocommerce.RespondError(w, r, &gocommerce.APIError{Status: http.StatusTooManyRequests,
+				Code: "too_many_requests", Message: "too many showcase events from this address; try again shortly"})
+			return
+		}
 	}
 	column := map[string]string{EventView: "views", EventClick: "clicks", EventAddToCart: "adds"}[in.Type]
 	if column == "" {
@@ -215,7 +272,7 @@ func (m *Module) handleEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var cartID int64
-	if in.Type == EventAddToCart && in.Cart != "" {
+	if basket {
 		cart, err := m.app.Cart().GetByToken(ctx, in.Cart)
 		if err != nil {
 			gocommerce.RespondError(w, r, err)
@@ -224,17 +281,23 @@ func (m *Module) handleEvent(w http.ResponseWriter, r *http.Request) {
 		cartID = cart.ID
 	}
 	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
-		if err := m.count(ctx, tx, s.ID, column, 1); err != nil {
-			return err
+		if cartID != 0 {
+			// The basket is this showcase's now, the last one to add to it;
+			// it counts as an add only the first time.
+			var fresh bool
+			err := tx.QueryRowContext(ctx, `
+				INSERT INTO showcase_carts (cart_id, showcase_id) VALUES ($1, $2)
+				ON CONFLICT (store_id, cart_id) DO UPDATE SET showcase_id = EXCLUDED.showcase_id, created_at = now()
+				WHERE showcase_carts.showcase_id <> EXCLUDED.showcase_id
+				RETURNING true`, cartID, s.ID).Scan(&fresh)
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
 		}
-		if cartID == 0 {
-			return nil
-		}
-		_, err := tx.ExecContext(ctx, `
-			INSERT INTO showcase_carts (cart_id, showcase_id) VALUES ($1, $2)
-			ON CONFLICT (store_id, cart_id) DO UPDATE SET showcase_id = EXCLUDED.showcase_id, created_at = now()`,
-			cartID, s.ID)
-		return err
+		return m.count(ctx, tx, s.ID, column, 1)
 	})
 	if err != nil {
 		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "count showcase event"))
@@ -269,7 +332,12 @@ func (m *Module) onOrderCreated(ctx context.Context, e gocommerce.Event) error {
 		if err := m.count(ctx, tx, showcase, "orders", 1); err != nil {
 			return err
 		}
-		return m.count(ctx, tx, showcase, "revenue_minor", ev.TotalMinor)
+		if err := m.count(ctx, tx, showcase, "revenue_minor", ev.TotalMinor); err != nil {
+			return err
+		}
+		// The basket is an order now; nothing more will be added to it.
+		_, err = tx.ExecContext(ctx, `DELETE FROM showcase_carts WHERE cart_id = $1`, ev.CartID)
+		return err
 	})
 }
 

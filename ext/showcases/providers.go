@@ -59,7 +59,7 @@ var facebookHosts = map[string]bool{
 var (
 	youTubeID  = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 	facebookID = regexp.MustCompile(`^[0-9]{5,25}$`)
-	pageName   = regexp.MustCompile(`^[A-Za-z0-9.\-]{1,100}$`)
+	pageName   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.\-]{0,99}$`)
 )
 
 func unsupported() error {
@@ -123,7 +123,7 @@ func facebook(u *url.URL, parts []string) (video, error) {
 		}
 	case parts[0] == "reel" && len(parts) == 2 && facebookID.MatchString(parts[1]):
 		return video{Provider: ProviderFacebook, Ref: "https://www.facebook.com/reel/" + parts[1]}, nil
-	case len(parts) >= 3 && parts[1] == "videos" && pageName.MatchString(parts[0]):
+	case len(parts) >= 3 && parts[1] == "videos" && pageName.MatchString(parts[0]) && !strings.Contains(parts[0], ".."):
 		// /{page}/videos/{id} or /{page}/videos/{title}/{id}.
 		if id := parts[len(parts)-1]; facebookID.MatchString(id) {
 			return video{Provider: ProviderFacebook, Ref: "https://www.facebook.com/" + parts[0] + "/videos/" + id + "/"}, nil
@@ -195,9 +195,11 @@ func (m *Module) check(ctx context.Context, v video) Check {
 			out.Title = strings.TrimSpace(body.Title)
 		}
 	case http.StatusUnauthorized, http.StatusForbidden:
-		out.Problem = "The video's owner has turned off playing it on other sites. In YouTube Studio, open the video's details and allow embedding."
+		// YouTube answers the same for a private video and for one whose
+		// owner turned off embedding, so the message names both.
+		out.Problem = "YouTube will not let other sites play this video: it is private, or its owner turned off embedding. In YouTube Studio, make it public or unlisted and allow embedding."
 	case http.StatusNotFound, http.StatusBadRequest:
-		out.Problem = "YouTube says this video is private or has been removed. Make it public or unlisted, or paste another."
+		out.Problem = "YouTube has no video at that link; it may have been removed. Paste another."
 	}
 	return out
 }

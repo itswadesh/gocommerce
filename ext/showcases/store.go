@@ -65,6 +65,9 @@ type Showcase struct {
 	// Products is filled on a single read: what the showcase holds now,
 	// whatever its status, for the editor.
 	Products []ProductSummary `json:"products,omitempty"`
+	// Picked is, while a collection is shown instead, the products picked
+	// before it, so the editor can go back to them without losing them.
+	Picked []ProductSummary `json:"picked,omitempty"`
 }
 
 // Stats is how a showcase has done since it was made.
@@ -184,12 +187,12 @@ func (m *Module) fill(ctx context.Context, list []*Showcase) error {
 		return nil
 	}
 	by := make(map[int64]*Showcase, len(list))
-	ids := make([]string, 0, len(list))
+	ids := make([]int64, 0, len(list))
 	for _, s := range list {
 		by[s.ID] = s
-		ids = append(ids, strconv.FormatInt(s.ID, 10))
+		ids = append(ids, s.ID)
 	}
-	set := "{" + strings.Join(ids, ",") + "}"
+	set := int64Set(ids)
 	rows, err := m.db.QueryContext(ctx, `SELECT showcase_id, product_id FROM showcase_products
 		WHERE showcase_id = ANY($1::bigint[]) ORDER BY showcase_id, position`, set)
 	if err != nil {
@@ -226,7 +229,8 @@ func (m *Module) fill(ctx context.Context, list []*Showcase) error {
 	return rows.Err()
 }
 
-// create makes a draft from in, which needs a title and a video.
+// create makes a draft from in, which needs a title and a video. The whole of
+// in is checked before anything is written, so a refusal leaves nothing.
 func (m *Module) create(ctx context.Context, in Input) (*Showcase, error) {
 	if in.VideoURL == nil || strings.TrimSpace(*in.VideoURL) == "" {
 		return nil, gocommerce.Validationf("paste the link to the video")
@@ -234,43 +238,47 @@ func (m *Module) create(ctx context.Context, in Input) (*Showcase, error) {
 	if in.Title == nil || strings.TrimSpace(*in.Title) == "" {
 		return nil, gocommerce.Validationf("a showcase needs a title")
 	}
-	v, err := parseVideo(*in.VideoURL)
+	base := slugOf(*in.Title)
+	if in.Slug != nil {
+		if base = strings.TrimSpace(*in.Slug); !slugRE.MatchString(base) || len(base) > 70 {
+			return nil, gocommerce.Validationf("a slug is lower-case letters, digits and single dashes")
+		}
+		in.Slug = nil // numbered below rather than refused when taken
+	}
+	blank := &Showcase{Kind: KindVideo, LiveState: LiveNone, Status: StatusDraft, Label: LabelVideo, ProductIDs: []int64{}}
+	c, err := m.plan(ctx, blank, in)
 	if err != nil {
 		return nil, err
 	}
-	base := slugOf(*in.Title)
-	if in.Slug != nil && strings.TrimSpace(*in.Slug) != "" {
-		base = strings.TrimSpace(*in.Slug)
-	}
+	v, _ := parseVideo(*in.VideoURL) // checked by plan
 	var id int64
-	// A taken slug gets a number rather than an error: two showcases called
-	// "Diwali" are two showcases, and the address is not what anyone typed.
-	for n := 1; n <= 20 && id == 0; n++ {
-		slug := base
-		if n > 1 {
-			slug = fmt.Sprintf("%s-%d", base, n)
-		}
-		err = m.db.QueryRowContext(ctx, `
-			INSERT INTO showcases (slug, title, provider, video_url, video_ref)
-			VALUES ($1, $2, $3, $4, $5)
-			ON CONFLICT (store_id, slug) DO NOTHING
-			RETURNING id`, slug, strings.TrimSpace(*in.Title), v.Provider, strings.TrimSpace(*in.VideoURL), v.Ref).Scan(&id)
-		if errors.Is(err, sql.ErrNoRows) {
-			err = nil
-			continue
-		}
-		if err != nil {
-			if strings.Contains(err.Error(), "showcases_slug_check") {
-				return nil, gocommerce.Validationf("a slug is lower-case letters, digits and single dashes")
+	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+		// A taken slug gets a number rather than an error: two showcases
+		// called "Diwali" are two showcases, and the address is not what
+		// anyone typed.
+		for n := 1; n <= 20 && id == 0; n++ {
+			slug := base
+			if n > 1 {
+				slug = fmt.Sprintf("%s-%d", base, n)
 			}
-			return nil, gocommerce.Internalf(err, "create showcase")
+			err := tx.QueryRowContext(ctx, `
+				INSERT INTO showcases (slug, title, provider, video_url, video_ref)
+				VALUES ($1, $2, $3, $4, $5)
+				ON CONFLICT (store_id, slug) DO NOTHING
+				RETURNING id`, slug, strings.TrimSpace(*in.Title), v.Provider, strings.TrimSpace(*in.VideoURL), v.Ref).Scan(&id)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
 		}
+		if id == 0 {
+			return gocommerce.Conflictf("every address for %q is taken; give this showcase a slug of its own", base)
+		}
+		return m.apply(ctx, tx, id, c)
+	})
+	if err != nil {
+		return nil, saveErr(err)
 	}
-	if id == 0 {
-		return nil, gocommerce.Conflictf("every address for %q is taken; give this showcase a slug of its own", base)
-	}
-	in.Title, in.Slug, in.VideoURL = nil, nil, nil
-	return m.update(ctx, id, in)
+	return m.get(ctx, "id = $1", id)
 }
 
 // update applies in to showcase id and answers it as it now is.
@@ -279,98 +287,131 @@ func (m *Module) update(ctx context.Context, id int64, in Input) (*Showcase, err
 	if err != nil {
 		return nil, err
 	}
-	next := *cur
-	sets := []string{}
-	args := []any{}
-	put := func(col string, v any) {
-		args = append(args, v)
-		sets = append(sets, fmt.Sprintf("%s = $%d", col, len(args)))
+	c, err := m.plan(ctx, cur, in)
+	if err != nil {
+		return nil, err
 	}
+	if err := gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error { return m.apply(ctx, tx, id, c) }); err != nil {
+		return nil, saveErr(err)
+	}
+	return m.get(ctx, "id = $1", id)
+}
 
+func saveErr(err error) error {
+	var api *gocommerce.APIError
+	switch {
+	case errors.As(err, &api):
+		return api
+	case strings.Contains(err.Error(), "showcases_slug_key"):
+		return gocommerce.Conflictf("another showcase already has that address")
+	}
+	return gocommerce.Internalf(err, "save showcase")
+}
+
+// change is what an Input does to a showcase: the columns to set, and the
+// product list when it is replaced.
+type change struct {
+	sets     []string
+	args     []any
+	products []int64
+	replace  bool
+}
+
+func (c *change) put(col string, v any) {
+	c.args = append(c.args, v)
+	c.sets = append(c.sets, fmt.Sprintf("%s = $%d", col, len(c.args)))
+}
+
+// plan checks in against the showcase as it is, and says what to write. It
+// reads but never writes, so a refusal anywhere in in leaves nothing changed.
+func (m *Module) plan(ctx context.Context, cur *Showcase, in Input) (*change, error) {
+	c := &change{}
 	if in.Title != nil {
 		t := strings.TrimSpace(*in.Title)
 		if t == "" || len([]rune(t)) > maxTitle {
 			return nil, gocommerce.Validationf("a title is 1 to %d characters", maxTitle)
 		}
-		put("title", t)
+		c.put("title", t)
 	}
 	if in.Slug != nil {
 		s := strings.TrimSpace(*in.Slug)
 		if !slugRE.MatchString(s) || len(s) > 80 {
 			return nil, gocommerce.Validationf("a slug is lower-case letters, digits and single dashes")
 		}
-		put("slug", s)
+		c.put("slug", s)
 	}
 	if in.Description != nil {
 		d := strings.TrimSpace(*in.Description)
 		if len([]rune(d)) > maxDescription {
 			return nil, gocommerce.Validationf("a description is at most %d characters", maxDescription)
 		}
-		put("description", d)
+		c.put("description", d)
 	}
 	if in.VideoURL != nil {
 		v, err := parseVideo(*in.VideoURL)
 		if err != nil {
 			return nil, err
 		}
-		put("provider", v.Provider)
-		put("video_url", strings.TrimSpace(*in.VideoURL))
-		put("video_ref", v.Ref)
+		c.put("provider", v.Provider)
+		c.put("video_url", strings.TrimSpace(*in.VideoURL))
+		c.put("video_ref", v.Ref)
 	}
+
+	kind, state, startsAt := cur.Kind, cur.LiveState, cur.StartsAt
 	if in.Kind != nil {
 		if *in.Kind != KindVideo && *in.Kind != KindLive {
 			return nil, gocommerce.Validationf("kind is %q or %q", KindVideo, KindLive)
 		}
-		next.Kind = *in.Kind
-		put("kind", next.Kind)
-		if next.Kind == KindVideo && in.LiveState == nil {
-			s := LiveNone
-			in.LiveState = &s
+		kind = *in.Kind
+		c.put("kind", kind)
+		if kind == KindVideo && in.LiveState == nil {
+			none := LiveNone
+			in.LiveState = &none
 		}
 	}
 	if in.StartsAt != nil {
-		if strings.TrimSpace(*in.StartsAt) == "" {
-			next.StartsAt = nil
-		} else {
-			t, err := time.Parse(time.RFC3339, strings.TrimSpace(*in.StartsAt))
+		startsAt = nil
+		if raw := strings.TrimSpace(*in.StartsAt); raw != "" {
+			t, err := time.Parse(time.RFC3339, raw)
 			if err != nil {
 				return nil, gocommerce.Validationf("starts_at is a time such as 2026-11-01T18:30:00+05:30")
 			}
-			next.StartsAt = &t
+			startsAt = &t
 		}
-		put("starts_at", next.StartsAt)
+		c.put("starts_at", startsAt)
 	}
 	if in.LiveState != nil {
-		state := *in.LiveState
+		state = *in.LiveState
 		switch state {
-		case LiveNone, LiveEnded:
-		case LiveScheduled:
-			if next.StartsAt == nil {
-				return nil, gocommerce.Validationf("say when the broadcast starts before scheduling it")
-			}
-		case LiveNow:
+		case LiveNone, LiveScheduled, LiveNow, LiveEnded:
 		default:
 			return nil, gocommerce.Validationf("live_state is none, scheduled, live or ended")
 		}
-		if state != LiveNone && next.Kind != KindLive {
+		if state != LiveNone && kind != KindLive {
 			return nil, gocommerce.Validationf("only a livestream has a live state; set kind to %q first", KindLive)
 		}
-		put("live_state", state)
-		// The moment it went live, kept while it stays live: saying "live"
-		// again does not restart the twelve hours.
+		c.put("live_state", state)
+		// The moment it went live, kept while it stays live — saying "live"
+		// again mid-broadcast does not restart the twelve hours — and taken
+		// afresh once they lapsed, for the next day's broadcast.
 		switch {
-		case state == LiveNow && cur.LiveState != LiveNow:
-			put("live_since", time.Now())
+		case state == LiveNow && cur.Label != LabelLive:
+			c.put("live_since", time.Now())
 		case state != LiveNow:
-			put("live_since", nil)
+			c.put("live_since", nil)
 		}
+	}
+	if state == LiveScheduled && startsAt == nil {
+		return nil, gocommerce.Validationf("a scheduled broadcast needs its start time")
 	}
 
 	products := cur.ProductIDs
 	if in.ProductIDs != nil {
+		var err error
 		if products, err = m.checkProducts(ctx, *in.ProductIDs); err != nil {
 			return nil, err
 		}
+		c.products, c.replace = products, true
 	}
 	collection := cur.CollectionID
 	if in.CollectionID.Present {
@@ -380,12 +421,12 @@ func (m *Module) update(ctx context.Context, id int64, in Input) (*Showcase, err
 				return nil, err
 			}
 		}
-		put("collection_id", collection)
+		c.put("collection_id", collection)
 	}
 	featured := cur.FeaturedProductID
 	if in.FeaturedProductID.Present {
 		featured = in.FeaturedProductID.Value
-		put("featured_product_id", featured)
+		c.put("featured_product_id", featured)
 	}
 	// A featured product has to be one the showcase shows, whichever of its
 	// inputs moved; one that no longer is stops being featured.
@@ -398,7 +439,7 @@ func (m *Module) update(ctx context.Context, id int64, in Input) (*Showcase, err
 			if in.FeaturedProductID.Present {
 				return nil, gocommerce.Validationf("the featured product has to be one of the showcase's products")
 			}
-			put("featured_product_id", nil)
+			c.put("featured_product_id", nil)
 		}
 	}
 	for _, f := range []struct {
@@ -406,11 +447,11 @@ func (m *Module) update(ctx context.Context, id int64, in Input) (*Showcase, err
 		v   *bool
 	}{{"on_home", in.OnHome}, {"on_collection", in.OnCollection}, {"on_products", in.OnProducts}} {
 		if f.v != nil {
-			put(f.col, *f.v)
+			c.put(f.col, *f.v)
 		}
 	}
 	if in.Position != nil {
-		put("position", *in.Position)
+		c.put("position", *in.Position)
 	}
 	if in.Status != nil {
 		switch *in.Status {
@@ -419,44 +460,66 @@ func (m *Module) update(ctx context.Context, id int64, in Input) (*Showcase, err
 				return nil, gocommerce.Validationf("attach products or a collection before publishing: the point of a showcase is what it sells")
 			}
 			if cur.Status != StatusPublished {
-				put("published_at", time.Now())
+				c.put("published_at", time.Now())
 			}
 		case StatusDraft, StatusArchived:
 		default:
 			return nil, gocommerce.Validationf("status is draft, published or archived")
 		}
-		put("status", *in.Status)
+		c.put("status", *in.Status)
 	}
+	return c, nil
+}
 
-	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
-		if len(sets) > 0 {
-			args = append(args, id)
-			if _, err := tx.ExecContext(ctx, `UPDATE showcases SET `+strings.Join(sets, ", ")+
-				fmt.Sprintf(`, updated_at = now() WHERE id = $%d`, len(args)), args...); err != nil {
-				return err
-			}
-		}
-		if in.ProductIDs == nil {
-			return nil
-		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM showcase_products WHERE showcase_id = $1`, id); err != nil {
+// apply writes a planned change to showcase id inside tx.
+func (m *Module) apply(ctx context.Context, tx *sql.Tx, id int64, c *change) error {
+	if len(c.sets) > 0 {
+		args := append(c.args, id)
+		if _, err := tx.ExecContext(ctx, `UPDATE showcases SET `+strings.Join(c.sets, ", ")+
+			fmt.Sprintf(`, updated_at = now() WHERE id = $%d`, len(args)), args...); err != nil {
 			return err
 		}
-		for i, pid := range products {
-			if _, err := tx.ExecContext(ctx, `INSERT INTO showcase_products (showcase_id, product_id, position)
-				VALUES ($1, $2, $3)`, id, pid, i); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		if strings.Contains(err.Error(), "showcases_store_id_slug_key") || strings.Contains(err.Error(), "showcases_slug_key") {
-			return nil, gocommerce.Conflictf("another showcase already has that address")
-		}
-		return nil, gocommerce.Internalf(err, "save showcase")
 	}
-	return m.get(ctx, "id = $1", id)
+	if !c.replace {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM showcase_products WHERE showcase_id = $1`, id); err != nil {
+		return err
+	}
+	for i, pid := range c.products {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO showcase_products (showcase_id, product_id, position)
+			VALUES ($1, $2, $3)`, id, pid, i); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// present is the ids, in their order, of the products the store still has.
+func (m *Module) present(ctx context.Context, ids []int64) ([]int64, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := m.db.QueryContext(ctx, `SELECT id FROM products WHERE id = ANY($1::bigint[])`, int64Set(ids))
+	if err != nil {
+		return nil, gocommerce.Internalf(err, "read the showcase's products")
+	}
+	defer rows.Close()
+	there := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, gocommerce.Internalf(err, "read the showcase's products")
+		}
+		there[id] = true
+	}
+	out := make([]int64, 0, len(there))
+	for _, id := range ids {
+		if there[id] {
+			out = append(out, id)
+		}
+	}
+	return out, rows.Err()
 }
 
 // checkProducts keeps a list once each, in order, and refuses one that names
