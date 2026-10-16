@@ -121,6 +121,22 @@ On a PaaS that builds from a Git repository — Dokploy, Coolify, Railway — po
 it at the compose file and set the same variables in its own environment tab
 rather than committing them.
 
+The engine sees only the variables the compose file lists under its
+`environment:`, so a key set in the host and missing from that list never
+reaches it. Email and SMS are listed, each optional, and are every store's
+default until a store enters its own:
+
+| Variable | What it does |
+|---|---|
+| `RESEND_API_KEY` | Sends email through Resend. With nothing else set it sends from Resend's onboarding address. |
+| `DEFAULT_EMAIL_FROM_ADDRESS` | The sender for Resend and SendGrid when their own `RESEND_FROM` / `SENDGRID_FROM` is empty. It must be on a domain the provider has verified. |
+| `SENDGRID_API_KEY` | Sends email through SendGrid. |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` | Sends texts through Twilio. |
+| `MSG91_AUTH_KEY` (or `MSG91_AUTHKEY`) | Sends texts through MSG91. |
+
+Notifications › Setup Email has a **Send test email** button: it sends one
+message now and shows the provider's answer, such as an unverified sender.
+
 ### Running several instances
 
 Nothing has to change. The outbox dispatcher claims rows with `FOR UPDATE SKIP
