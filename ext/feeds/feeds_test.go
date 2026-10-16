@@ -32,18 +32,18 @@ func TestTheFeedsCarryEveryActiveVariant(t *testing.T) {
 		t.Fatalf("draft: %v", err)
 	}
 
-	// Off: nothing to fetch. On without an address: told what to set.
+	// Off: nothing to fetch. On without an address: refused, and told what
+	// to set — a feed that is on and empty is how a new store gets lost.
 	if rec := gctest.Request(t, app, http.MethodGet, "/x/feeds/google.xml", nil); rec.Code != http.StatusNotFound {
 		t.Errorf("feed while off = %d", rec.Code)
 	}
 	on := true
-	if _, err := app.Plugins().Update(ctx, pluginKey, gocommerce.PluginPatch{Enabled: &on}); err != nil {
-		t.Fatal(err)
+	if _, err := app.Plugins().Update(ctx, pluginKey, gocommerce.PluginPatch{Enabled: &on}); err == nil ||
+		!strings.Contains(err.Error(), "Storefront URL") {
+		t.Fatalf("switching feeds on without a storefront = %v, want it refused naming the setting", err)
 	}
-	if rec := gctest.Request(t, app, http.MethodGet, "/x/feeds/google.xml", nil); rec.Code != http.StatusConflict {
-		t.Errorf("feed without a storefront = %d, want 409", rec.Code)
-	}
-	if _, err := app.Plugins().Update(ctx, pluginKey, gocommerce.PluginPatch{Settings: map[string]any{"storefront_url": "https://shop.example", "brand": "House"}}); err != nil {
+	if _, err := app.Plugins().Update(ctx, pluginKey, gocommerce.PluginPatch{Enabled: &on,
+		Settings: map[string]any{"storefront_url": "https://shop.example", "brand": "House"}}); err != nil {
 		t.Fatal(err)
 	}
 

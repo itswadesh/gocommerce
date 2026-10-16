@@ -85,7 +85,7 @@ func TestAPluginIsSwitchedOnWithItsSettings(t *testing.T) {
 	if _, err := app.Plugins().Update(ctx, "hello-bar", PluginPatch{Settings: map[string]any{"link": "shop.example"}}); err == nil || !strings.Contains(err.Error(), "Link") {
 		t.Errorf("bad url = %v", err)
 	}
-	if _, err := app.Plugins().Update(ctx, "fake-mail", PluginPatch{Settings: map[string]any{"list_id": "spam"}}); err == nil || !strings.Contains(err.Error(), "one of") {
+	if _, err := app.Plugins().Update(ctx, "fake-mail", PluginPatch{Settings: map[string]any{"list_id": "spam"}}); err == nil || !strings.Contains(err.Error(), "Choose") {
 		t.Errorf("bad select = %v", err)
 	}
 	if _, err := app.Plugins().Update(ctx, "nope", PluginPatch{Enabled: &on}); err == nil {
@@ -181,5 +181,62 @@ func TestTheStorefrontSeesOnlyWhatIsOnAndPublic(t *testing.T) {
 	patched := do(t, app, http.MethodPatch, "/api/admin/plugins/fake-mail", withAdmin, jsonBody(t, PluginPatch{Enabled: &off}))
 	if patched.Code != http.StatusOK || strings.Contains(patched.Body.String(), `"enabled":true`) {
 		t.Errorf("PATCH = %d: %s", patched.Code, patched.Body)
+	}
+}
+
+// A plugin cannot be switched on while a setting it needs is empty: it would
+// be "on" and doing nothing, which is how a new store gets lost. The refusal
+// names the setting and what to put in it.
+func TestAPluginWaitsForItsRequiredSettings(t *testing.T) {
+	app := newTestApp(t, fakePlugin{})
+	ctx := context.Background()
+	on, off := true, false
+	_, err := app.Plugins().Update(ctx, "fake-mail", PluginPatch{Enabled: &on})
+	if err == nil {
+		t.Fatal("a plugin was switched on without the setting it needs")
+	}
+	if msg := err.Error(); !strings.Contains(msg, "API key") || !strings.Contains(msg, "Fake Mail") {
+		t.Fatalf("refusal = %q, want it to name the setting and the plugin", msg)
+	}
+	// With the setting in the same patch, it goes on.
+	p, err := app.Plugins().Update(ctx, "fake-mail", PluginPatch{Enabled: &on, Settings: map[string]any{"api_key": "k-123"}})
+	if err != nil || !p.Enabled {
+		t.Fatalf("on with its key = %+v, %v", p, err)
+	}
+	// And the setting cannot be emptied while it is on.
+	if _, err := app.Plugins().Update(ctx, "fake-mail", PluginPatch{Settings: map[string]any{"api_key": ""}}); err == nil {
+		t.Fatal("a required setting was emptied while the plugin was on")
+	}
+	// Switched off, it can.
+	if _, err := app.Plugins().Update(ctx, "fake-mail", PluginPatch{Enabled: &off, Settings: map[string]any{"api_key": ""}}); err != nil {
+		t.Fatalf("emptying it once off = %v", err)
+	}
+}
+
+// Every refusal of a setting says what to enter, not what was wrong.
+func TestSettingErrorsSayWhatToEnter(t *testing.T) {
+	cases := []struct {
+		f    PluginField
+		v    any
+		want []string
+	}{
+		{PluginField{Label: "Storefront URL", Kind: "url"}, "shop.example.com", []string{"Enter", "https://", "for example"}},
+		{PluginField{Label: "Threshold", Kind: "number"}, "ten", []string{"Enter", "number", "for example"}},
+		{PluginField{Label: "List", Kind: "select", Options: []string{"news", "vip"}}, "spam", []string{"Choose", "news", "vip"}},
+		{PluginField{Label: "Show it", Kind: "bool"}, 7, []string{"on or off"}},
+	}
+	for _, c := range cases {
+		_, err := coercePluginValue(c.f, c.v)
+		if err == nil {
+			t.Fatalf("%s accepted %v", c.f.Label, c.v)
+		}
+		for _, w := range c.want {
+			if !strings.Contains(err.Error(), w) {
+				t.Errorf("%s: %q does not say %q", c.f.Label, err.Error(), w)
+			}
+		}
+		if strings.Contains(err.Error(), "must be") {
+			t.Errorf("%s: %q still only says what is wrong", c.f.Label, err.Error())
+		}
 	}
 }
