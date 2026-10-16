@@ -275,16 +275,9 @@
                                             icon="ri-filter-off-line"
                                             title="No fields match “{search}”"
                                             text="Try another word, or clear the search to see the whole dictionary."
-                                        >
-                                            <button
-                                                type="button"
-                                                class="btn secondary"
-                                                onclick={() => ((draftSearch = ""), list.set({ q: "" }))}
-                                            >
-                                                <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                                <span class="txt">Clear search</span>
-                                            </button>
-                                        </EmptyState>
+                                            onclear={() => ((draftSearch = ""), list.set({ q: "" }))}
+                                            clearLabel="Clear search"
+                                        />
                                     {:else}
                                         <EmptyState
                                             icon="ri-list-settings-line"

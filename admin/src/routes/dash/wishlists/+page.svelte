@@ -201,12 +201,8 @@
                                             icon="ri-checkbox-circle-line"
                                             title="Nothing wanted is out of stock"
                                             text="Every product a shopper has saved can be bought right now."
-                                        >
-                                            <button type="button" class="btn secondary" onclick={() => list.set({ stock: "", page: 1 })}>
-                                                <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                                <span class="txt">Clear filters</span>
-                                            </button>
-                                        </EmptyState>
+                                            onclear={() => list.set({ stock: "", page: 1 })}
+                                        />
                                     {:else}
                                         <EmptyState
                                             icon="ri-heart-line"
@@ -265,16 +261,8 @@
                                             icon="ri-filter-off-line"
                                             title="No wishlists match these filters"
                                             text="Try another email, or clear the filters to see every list."
-                                        >
-                                            <button
-                                                type="button"
-                                                class="btn secondary"
-                                                onclick={() => ((draft = ""), list.set({ q: "", stock: "", page: 1 }))}
-                                            >
-                                                <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                                <span class="txt">Clear filters</span>
-                                            </button>
-                                        </EmptyState>
+                                            onclear={() => ((draft = ""), list.set({ q: "", stock: "", page: 1 }))}
+                                        />
                                     {:else}
                                         <EmptyState
                                             icon="ri-heart-line"

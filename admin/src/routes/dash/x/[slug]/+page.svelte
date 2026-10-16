@@ -258,7 +258,6 @@
                                     <!-- The module knows what its rows are; the panel
                                          does not, so the sentence is the module's own. -->
                                     <EmptyState
-                                        icon="ri-inbox-line"
                                         title="Nothing here yet"
                                         text={screen.list.empty || `Rows appear here once ${screen.module} has something to list.`}
                                     >

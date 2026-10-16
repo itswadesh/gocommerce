@@ -422,12 +422,8 @@
                                 icon="ri-filter-off-line"
                                 title="No deliveries match these filters"
                                 text="Try another state or endpoint, or clear them to go back to what is still trying."
-                            >
-                                <button type="button" class="btn secondary" onclick={() => list.clear()}>
-                                    <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                    <span class="txt">Clear filters</span>
-                                </button>
-                            </EmptyState>
+                                onclear={() => list.clear()}
+                            />
                         {:else if list.params.state === "pending"}
                             <EmptyState
                                 icon="ri-checkbox-circle-line"

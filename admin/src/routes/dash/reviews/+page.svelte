@@ -234,19 +234,11 @@
                                             icon="ri-filter-off-line"
                                             title="No reviews match these filters"
                                             text="Try another search or status, or clear them to go back to what is waiting."
-                                        >
-                                            <button
-                                                type="button"
-                                                class="btn secondary"
-                                                onclick={() => {
+                                            onclear={() => {
                                                     draft = "";
                                                     list.clear();
                                                 }}
-                                            >
-                                                <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                                <span class="txt">Clear filters</span>
-                                            </button>
-                                        </EmptyState>
+                                        />
                                     {:else if list.params.status === "pending"}
                                         <EmptyState
                                             icon="ri-chat-check-line"

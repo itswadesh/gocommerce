@@ -1000,19 +1000,11 @@
                                         icon="ri-filter-off-line"
                                         title="No orders match these filters"
                                         text="Try another status, payment or date — or clear them to see every order."
-                                    >
-                                        <button
-                                            type="button"
-                                            class="btn secondary"
-                                            onclick={() => {
+                                        onclear={() => {
                                                 draftSearch = "";
                                                 list.clear();
                                             }}
-                                        >
-                                            <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                            <span class="txt">Clear filters</span>
-                                        </button>
-                                    </EmptyState>
+                                    />
                                 {:else}
                                     <EmptyState
                                         icon="ri-shopping-bag-3-line"

@@ -164,19 +164,12 @@
                                                 icon="ri-filter-off-line"
                                                 title="No catalogues match this search"
                                                 text="No catalogue's name matches “{list.params.q}”. Try fewer letters, or clear the search."
-                                            >
-                                                <button
-                                                    type="button"
-                                                    class="btn secondary"
-                                                    onclick={() => {
+                                                onclear={() => {
                                                         draft = "";
                                                         list.clear();
                                                     }}
-                                                >
-                                                    <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                                    <span class="txt">Clear search</span>
-                                                </button>
-                                            </EmptyState>
+                                                clearLabel="Clear search"
+                                            />
                                         {:else}
                                             <EmptyState
                                                 icon="ri-book-2-line"

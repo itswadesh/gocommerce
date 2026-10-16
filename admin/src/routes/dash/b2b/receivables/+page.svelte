@@ -279,19 +279,11 @@
                                                 icon="ri-filter-off-line"
                                                 title="No orders match this search"
                                                 text="No order on account matches “{list.params.q}”. Try a PO number, an order number or an email, or clear the search."
-                                            >
-                                                <button
-                                                    type="button"
-                                                    class="btn secondary"
-                                                    onclick={() => {
+                                                onclear={() => {
                                                         draft = "";
                                                         list.clear();
                                                     }}
-                                                >
-                                                    <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                                    <span class="txt">Clear filters</span>
-                                                </button>
-                                            </EmptyState>
+                                            />
                                         {:else if list.params.overdue}
                                             <EmptyState
                                                 icon="ri-checkbox-circle-line"

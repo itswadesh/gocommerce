@@ -302,16 +302,8 @@
                                                     icon="ri-filter-off-line"
                                                     title="No territories match these filters"
                                                     text="Try another country or dealer, or clear them to see every territory."
-                                                >
-                                                    <button
-                                                        type="button"
-                                                        class="btn secondary"
-                                                        onclick={() => list.set({ country: "", company_id: "" })}
-                                                    >
-                                                        <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                                        <span class="txt">Clear filters</span>
-                                                    </button>
-                                                </EmptyState>
+                                                    onclear={() => list.set({ country: "", company_id: "" })}
+                                                />
                                             {:else}
                                                 <EmptyState
                                                     icon="ri-map-pin-line"
@@ -395,19 +387,12 @@
                                                     icon="ri-filter-off-line"
                                                     title="No companies match this search"
                                                     text="No company's name or code matches “{list.params.q}”. Try fewer letters, or clear the search."
-                                                >
-                                                    <button
-                                                        type="button"
-                                                        class="btn secondary"
-                                                        onclick={() => {
+                                                    onclear={() => {
                                                             draft = "";
                                                             list.set({ q: "" });
                                                         }}
-                                                    >
-                                                        <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                                        <span class="txt">Clear search</span>
-                                                    </button>
-                                                </EmptyState>
+                                                    clearLabel="Clear search"
+                                                />
                                             {:else}
                                                 <EmptyState
                                                     icon="ri-building-line"

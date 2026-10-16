@@ -315,12 +315,8 @@
                                         icon="ri-filter-off-line"
                                         title="No carts match these filters"
                                         text="Try another state or email filter, or clear them to go back to abandoned baskets."
-                                    >
-                                        <button type="button" class="btn secondary" onclick={() => list.clear()}>
-                                            <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                            <span class="txt">Clear filters</span>
-                                        </button>
-                                    </EmptyState>
+                                        onclear={() => list.clear()}
+                                    />
                                 {/if}
                             </td>
                         </tr>

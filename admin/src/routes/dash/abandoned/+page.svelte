@@ -770,12 +770,8 @@
                                                 icon="ri-filter-off-line"
                                                 title="No abandoned checkouts match these filters"
                                                 text="Try another status or search, or clear them to see every basket."
-                                            >
-                                                <button type="button" class="btn secondary" onclick={clearAll}>
-                                                    <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                                    <span class="txt">Clear filters</span>
-                                                </button>
-                                            </EmptyState>
+                                                onclear={clearAll}
+                                            />
                                         {/if}
                                     </td>
                                 </tr>

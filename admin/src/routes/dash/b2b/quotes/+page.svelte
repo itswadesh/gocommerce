@@ -225,12 +225,8 @@
                                                 icon="ri-filter-off-line"
                                                 title="No quotes match these filters"
                                                 text="Try another status or company, or clear them to see every quote."
-                                            >
-                                                <button type="button" class="btn secondary" onclick={() => list.clear()}>
-                                                    <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                                    <span class="txt">Clear filters</span>
-                                                </button>
-                                            </EmptyState>
+                                                onclear={() => list.clear()}
+                                            />
                                         {:else}
                                             <EmptyState
                                                 icon="ri-file-list-3-line"

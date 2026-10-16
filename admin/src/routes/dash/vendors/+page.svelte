@@ -349,12 +349,8 @@
                                         icon="ri-filter-off-line"
                                         title="No vendors match these filters"
                                         text="Try another status or search, or clear them to see every vendor."
-                                    >
-                                        <button type="button" class="btn secondary" onclick={() => list.clear()}>
-                                            <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                            <span class="txt">Clear filters</span>
-                                        </button>
-                                    </EmptyState>
+                                        onclear={() => list.clear()}
+                                    />
                                 {:else}
                                     <EmptyState
                                         icon="ri-store-3-line"
