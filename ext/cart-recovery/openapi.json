@@ -95,7 +95,7 @@
         "responses": {
           "200": {"description": "The link.", "content": {"application/json": {"schema": {"type": "object", "properties": {
             "data": {"type": "object", "properties": {"url": {"type": "string"}, "tracked": {"type": "boolean"},
-              "expires_at": {"type": "string", "format": "date-time", "description": "When the cart, and so the link, stops working. Absent when the cart is gone."}}}}}}}},
+              "works_until": {"type": "string", "format": "date-time", "description": "The earliest the link can stop working: when core may delete the cart it opens. Later if the shopper comes back. Absent when the cart is gone."}}}}}}}},
           "404": {"$ref": "#/components/responses/NotFound"},
           "409": {"$ref": "#/components/responses/Conflict"}
         }

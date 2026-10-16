@@ -49,11 +49,11 @@ func TestAReturningShopperIsNamedFromTheirLastOrder(t *testing.T) {
 	h.idle(strangerCart, 20)
 	h.pass()
 
-	a := h.record(cartID)
+	a := h.detail(h.record(cartID).ID)
 	if a.Name != "Ann Lee" || a.Phone != "+15555550199" {
 		t.Errorf("record names %q %q, want the name and phone on her order", a.Name, a.Phone)
 	}
-	if s := h.record(strangerCart); s.Name != "" || s.Phone != "" {
+	if s := h.detail(h.record(strangerCart).ID); s.Name != "" || s.Phone != "" {
 		t.Errorf("a first-time shopper is named %q %q, want nothing the store was never told", s.Name, s.Phone)
 	}
 
@@ -67,7 +67,7 @@ func TestAReturningShopperIsNamedFromTheirLastOrder(t *testing.T) {
 		t.Errorf("search for nobody found %d", len(rows))
 	}
 
-	d := h.detail(a.ID)
+	d := a
 	if d.Customer == nil || d.Customer.Name != "Ann Lee" || d.Customer.Phone != "+15555550199" || d.Customer.Orders != 1 {
 		t.Errorf("customer = %+v, want Ann with her one order", d.Customer)
 	}
@@ -129,21 +129,38 @@ func TestTheRecoveryLinkSaysUntilWhenItWorks(t *testing.T) {
 	_, cartID, _ := h.basket("L-1", "link@example.com", 1)
 	h.idle(cartID, 20)
 	h.pass()
+	retention := h.app.Config().CartRetention
+	link := func() time.Time {
+		t.Helper()
+		rec := gctest.AdminRequest(t, h.app, http.MethodPost,
+			"/api/admin/x/cart-recovery/abandonments/"+itoa(h.record(cartID).ID)+"/link", map[string]any{})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("link = %d %s", rec.Code, rec.Body)
+		}
+		var got struct {
+			URL        string    `json:"url"`
+			WorksUntil time.Time `json:"works_until"`
+		}
+		gctest.DecodeData(t, rec, &got)
+		if got.URL == "" {
+			t.Fatal("no link")
+		}
+		return got.WorksUntil
+	}
+
+	// An open cart is kept until it expires and then for the retention after.
 	var expires time.Time
 	h.app.DB().QueryRow(`SELECT expires_at FROM carts WHERE id = $1`, cartID).Scan(&expires)
+	if got := link(); !got.Equal(expires.Add(retention)) {
+		t.Errorf("open cart: works until %v, want %v", got, expires.Add(retention))
+	}
 
-	rec := gctest.AdminRequest(t, h.app, http.MethodPost,
-		"/api/admin/x/cart-recovery/abandonments/"+itoa(h.record(cartID).ID)+"/link", map[string]any{})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("link = %d %s", rec.Code, rec.Body)
-	}
-	var got struct {
-		URL       string    `json:"url"`
-		ExpiresAt time.Time `json:"expires_at"`
-	}
-	gctest.DecodeData(t, rec, &got)
-	if got.URL == "" || !got.ExpiresAt.Equal(expires) {
-		t.Errorf("link = %+v, want it to work until the cart expires at %v", got, expires)
+	// Once core marks it abandoned, the retention runs from that moment.
+	h.exec(`UPDATE carts SET status = 'abandoned', abandoned_at = now() - interval '2 days' WHERE id = $1`, cartID)
+	var abandoned time.Time
+	h.app.DB().QueryRow(`SELECT abandoned_at FROM carts WHERE id = $1`, cartID).Scan(&abandoned)
+	if got := link(); !got.Equal(abandoned.Add(retention)) {
+		t.Errorf("abandoned cart: works until %v, want %v", got, abandoned.Add(retention))
 	}
 }
 
