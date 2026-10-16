@@ -181,7 +181,35 @@ func (r *CustomReports) runInReadOnlyTx(ctx context.Context, query string) (*Rep
 			Message: "custom reports are turned off on this store: an operator must configure a read-only reports database (see scripts/reports-role.sql and set GOCOMMERCE_REPORTS_DATABASE_URL)",
 		}
 	}
-	tx, err := r.app.reportsDB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	store := r.app.storeOf(ctx)
+	if store == "" {
+		return nil, ErrStoreRequired
+	}
+	ctx = WithStore(ctx, store)
+	// One connection for the whole run: the record that pins it to its store
+	// is keyed on this connection's backend (report_scope.go).
+	conn, err := r.app.reportsDB.Conn(ctx)
+	if err != nil {
+		return nil, Internalf(err, "start the report")
+	}
+	defer conn.Close()
+	var pid int
+	if err := conn.QueryRowContext(ctx, `SELECT pg_backend_pid()`).Scan(&pid); err != nil {
+		return nil, Internalf(err, "start the report")
+	}
+	// Written by the engine's own login, which is the only one that can: the
+	// report's SQL cannot change which store this connection reads.
+	if _, err := r.app.db.ExecContext(ctx, `
+		INSERT INTO report_runs (pid, store_id) VALUES ($1, $2)
+		ON CONFLICT (pid) DO UPDATE SET store_id = EXCLUDED.store_id, started_at = now()`, pid, store); err != nil {
+		return nil, Internalf(err, "start the report")
+	}
+	defer func() {
+		_, _ = r.app.db.ExecContext(context.WithoutCancel(ctx),
+			`DELETE FROM report_runs WHERE pid = $1 AND store_id = $2`, pid, store)
+	}()
+
+	tx, err := conn.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, Internalf(err, "start the report")
 	}
@@ -352,14 +380,10 @@ func (a *App) mountCustomReportRoutes() {
 	// Running a saved one is reports.read: the point of saving a report is
 	// that somebody else can run it, and its SQL was reviewed by whoever could
 	// write it.
-	//
-	// Both run routes answer ErrReportsUnavailable while stores share tables
-	// (D83); handleRunSavedReport and handleRunAdhocReport come back with
-	// per-store reporting logins.
-	a.HandleAdminFunc("POST /api/admin/reports/custom/{id}/run", a.handleReportsUnavailable, RightReportsRead)
+	a.HandleAdminFunc("POST /api/admin/reports/custom/{id}/run", a.handleRunSavedReport, RightReportsRead)
 	// Running unsaved SQL is reports.write, because that is writing a report —
 	// it just has not been kept.
-	a.HandleAdminFunc("POST /api/admin/reports/custom/run", a.handleReportsUnavailable, RightReportsWrite)
+	a.HandleAdminFunc("POST /api/admin/reports/custom/run", a.handleRunAdhocReport, RightReportsWrite)
 }
 
 func (a *App) handleListCustomReports(w http.ResponseWriter, r *http.Request) {
@@ -435,21 +459,6 @@ func (a *App) handleRunAdhocReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.respondReportRun(w, r, in.SQL)
-}
-
-// ErrReportsUnavailable is the answer to running a report while stores share
-// tables (D83): a report is SQL its author writes, and that SQL could call
-// set_config and read another store's rows. Reports come back once each store
-// runs them as a login of its own that the row policy is tied to.
-var ErrReportsUnavailable = &APIError{
-	Status: http.StatusServiceUnavailable,
-	Code:   "reports_unavailable",
-	Message: "Custom SQL reports are switched off while stores share one database; " +
-		"they return once each store has its own reporting login.",
-}
-
-func (a *App) handleReportsUnavailable(w http.ResponseWriter, r *http.Request) {
-	RespondError(w, r, ErrReportsUnavailable)
 }
 
 func (a *App) respondReportRun(w http.ResponseWriter, r *http.Request, query string) {
