@@ -52,7 +52,7 @@ Everything in `ports.go`. Nothing else in the engine is abstracted.
 | `FulfillmentProvider` | `Code`, `Ship` | `RegisterFulfillment` | built-in `manual`; `ext/fulfill-{shiprocket,delhivery,nimbuspost,indiapost,shippo,shipstation,easyship,shippit,usps,onfleet,veeqo}` |
 | `Notifier` | `Notify` | `RegisterNotifier(channel, n)` | built-in log notifier; `ext/notify-resend` and `ext/notify-sendgrid` (email), `ext/notify-twilio` and `ext/notify-msg91` (SMS) |
 | *(sending one)* | — | `App.Notify(ctx, n)` | D50. The engine delivers `order.*` itself and nothing else; a module that wants to write to a shopper about anything else calls this. `ext/cart-recovery` is the first caller |
-| `Translator` | `Translate` | `RegisterTranslator` | `ext/translations` — catalogue content in the language a shopper asked for |
+| `Translator` | `Translate` | `RegisterTranslator` | `ext/translations` — products, and the names of categories and collections, in the language a shopper asked for (kinds `product`, `category`, `collection`, D87) |
 
 One more optional capability lives in `openapi.go`: implement
 `OpenAPI() []byte` and your fragment's paths and component schemas are merged
@@ -92,8 +92,8 @@ that store's pages.
 
 ```go
 func (m *Module) Register(app *gocommerce.App) error {
+    m.app = app
     m.db = app.DB()
-    m.defaultLang = app.Config().DefaultLanguage
 
     app.HandleFunc("GET /x/cms/pages/{slug}", m.handleGetPublic)
     app.HandleAdminFunc("POST /api/admin/x/cms/pages", m.handleCreate)
@@ -121,7 +121,9 @@ with the taxonomy's status and code; `DecodeJSON` applies the body limit and
 returns a validation error for malformed input. Never write a bare
 `http.Error` — a client decoding JSON must never get Go's plain-text default.
 Read the negotiated language with `gocommerce.Language(r.Context())` rather
-than parsing `Accept-Language` again.
+than parsing `Accept-Language` again. A store's own languages are
+`app.Languages(ctx)`, its main language first (D87); `Config.DefaultLanguage`
+is only what a store that never chose any sells in, so a module never caches it.
 
 ## Plugins: a switch and its settings
 

@@ -125,7 +125,7 @@ Every gateway and carrier module installs idle: `-gateways` and `-carriers` put 
 | `fulfill-veeqo` | Telling Veeqo a parcel went out |
 | `invoices` | Numbered, gapless invoices on payment |
 | `cms` | Content pages, per language |
-| `translations` | Catalogue content in the language a shopper asked for |
+| `translations` | Products, categories and collections in each of a store's languages, written on the Translations screen |
 | `identity` | Shopper accounts: sessions, saved addresses, order history, password reset, confirmed email addresses |
 | `b2b` | Companies and their buyers in roles, orders on account against a credit limit and net terms, purchase-order numbers, approval over a limit, and quotes priced for one buyer |
 | `cart-recovery` | Abandoned checkouts: records baskets left idle, sends a sequence of reminders by email with a tracked link back, and credits the order that recovers each one |
