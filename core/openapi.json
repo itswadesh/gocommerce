@@ -13692,7 +13692,7 @@
                   },
                   "slug": {
                     "type": "string",
-                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+                    "pattern": "^([a-z0-9][a-z0-9-]{0,62})?$",
                     "description": "The store's address. Empty takes one from the name, or a suggested one."
                   },
                   "currency": {

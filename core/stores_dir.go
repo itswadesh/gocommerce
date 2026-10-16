@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strings"
 	"time"
@@ -456,24 +457,38 @@ func (s *Stores) Create(ctx context.Context, name, slug string) (*Store, error) 
 // Without a name or an address it takes a suggested one (store_names.go); with
 // a name and no address, the address comes from the name, numbered when
 // taken, or is suggested for a name with no Latin letters to make one from.
-// An address given and taken is refused, since somebody chose it.
+// An address given and taken is refused, since somebody chose it; one worked
+// out here and taken by a store opened in the same moment is worked out again.
 func (s *Stores) CreateFor(ctx context.Context, name, slug string, ownerID int64) (*Store, error) {
 	slug = strings.ToLower(strings.TrimSpace(slug))
 	name = strings.TrimSpace(name)
-	if slug == "" {
+	if slug != "" {
+		return s.createOne(ctx, name, slug, ownerID)
+	}
+	for attempt := 0; ; attempt++ {
 		var err error
+		derived := ""
 		switch from := storeSlugFrom(name); {
 		case name == "":
-			name, slug, err = s.SuggestName(ctx)
+			name, derived, err = s.SuggestName(ctx)
 		case from == "":
-			_, slug, err = s.SuggestName(ctx)
+			_, derived, err = s.SuggestName(ctx)
 		default:
-			slug, err = s.freeSlug(ctx, from)
+			derived, err = s.freeSlug(ctx, from)
 		}
 		if err != nil {
 			return nil, err
 		}
+		st, err := s.createOne(ctx, name, derived, ownerID)
+		var conflict *APIError
+		if attempt == 0 && errors.As(err, &conflict) && conflict.Status == http.StatusConflict {
+			continue
+		}
+		return st, err
 	}
+}
+
+func (s *Stores) createOne(ctx context.Context, name, slug string, ownerID int64) (*Store, error) {
 	if !storeSlugRE.MatchString(slug) {
 		return nil, Validationf("a store's slug is lowercase letters, digits and hyphens, starting with a letter or digit")
 	}

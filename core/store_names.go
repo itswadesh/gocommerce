@@ -3,6 +3,7 @@ package gocommerce
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"strings"
@@ -15,7 +16,7 @@ import (
 // settings, so lists and emails showed a blank. Now a store is never without
 // one: the create form offers a suggestion the way GitHub offers
 // "fuzzy-octo-guacamole" for a new repository, a store opened without a name
-// takes it, and stores that had none were given one (0067). The words are a
+// takes it, and stores that had none in the directory were given one (0067). The words are a
 // shop's — an adjective and a place to buy things — so every pairing reads as
 // a plausible shop: "Saffron Orchard", "Brisk Lantern".
 
@@ -113,10 +114,12 @@ func (s *Stores) slugTaken(ctx context.Context, slug string) (bool, error) {
 	return taken, nil
 }
 
-// migrate0067NameUnnamedStores gives every store without a name one, in its
-// directory row and its profile alike, since the profile's name is the one
-// its emails and invoices use. Each profile is written bound to its store, as
-// row security requires.
+// migrate0067NameUnnamedStores gives every store without a name one in the
+// directory — what store lists and the account menu show. The profile's name,
+// which buyers see on the storefront, invoices and emails, is left as it is: a
+// live shop is not renamed in front of its customers by an upgrade. A profile
+// that already has a name lends it to the directory, rather than the two
+// differing; it is read bound to its store, as row security requires.
 func migrate0067NameUnnamedStores(ctx context.Context, tx *sql.Tx) error {
 	rows, err := tx.QueryContext(ctx, `SELECT id FROM stores WHERE trim(name) = ''`)
 	if err != nil {
@@ -136,12 +139,15 @@ func migrate0067NameUnnamedStores(ctx context.Context, tx *sql.Tx) error {
 		return err
 	}
 	for _, id := range ids {
-		name, _ := randomStoreName()
-		if _, err := tx.ExecContext(ctx, `UPDATE stores SET name = $1 WHERE id = $2`, name, id); err != nil {
+		var name string
+		err := tx.QueryRowContext(WithStore(ctx, id), `SELECT trim(name) FROM store_profile`).Scan(&name)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if _, err := tx.ExecContext(WithStore(ctx, id),
-			`UPDATE store_profile SET name = $1 WHERE trim(name) = ''`, name); err != nil {
+		if name == "" {
+			name, _ = randomStoreName()
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE stores SET name = $1 WHERE id = $2`, name, id); err != nil {
 			return err
 		}
 	}
