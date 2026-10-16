@@ -4090,9 +4090,14 @@ button.media-check {
 }
 /* Taller than a plain dropdown's 330px: the stores and the account rows
    share it, and both should be in view without scrolling the menu. */
-.logged-user-dropdown {
-    min-width: 232px;
-    max-width: min(300px, calc(100vw - 32px));
+/* Two classes, to outrank .dropdown.nowrap's width: auto in the vendored
+   dropdown.css, which this file may not edit. */
+.dropdown.logged-user-dropdown {
+    /* Its own width, not the sidebar's: a store name, its role and the
+       actions beside it need more room than the rail it opens from. */
+    width: 320px;
+    min-width: 0;
+    max-width: calc(100vw - 32px);
     max-height: min(640px, calc(100vh - 100px));
 }
 /* Deleting a store: set apart, in the danger colour, so it is never mistaken
@@ -4179,6 +4184,183 @@ button.media-check {
         transition: none;
     }
     .domain-not-found {
+        animation: none;
+    }
+}
+
+/* Ctrl/Cmd+S pressed a Save button: it answers as if clicked, so the
+   operator sees which one the shortcut found. */
+.shortcut-pressed {
+    animation: shortcutPress 250ms ease-out;
+}
+@keyframes shortcutPress {
+    40% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 3px var(--primaryColor);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .shortcut-pressed {
+        animation: none;
+        outline: 2px solid var(--primaryColor);
+        outline-offset: 2px;
+    }
+}
+
+/* EmptyState: what a list says when it has nothing to show. It rises in once,
+   gently, so an empty screen reads as an answer rather than a failed load. */
+.empty-row > td {
+    padding: 0 !important;
+    border-bottom: 0 !important;
+}
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 440px;
+    margin: 0 auto;
+    padding: 48px 20px 52px;
+    text-align: center;
+    animation: emptyIn 260ms ease-out both;
+}
+.empty-state-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    margin-bottom: 14px;
+    border-radius: 50%;
+    background: var(--surfaceAlt1Color);
+    color: var(--surfaceTxtHintColor);
+    font-size: 26px;
+}
+.empty-state-title {
+    margin: 0 0 6px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--surfaceTxtColor);
+}
+.empty-state-text {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--surfaceTxtHintColor);
+    white-space: normal;
+}
+.empty-state-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 18px;
+}
+@keyframes emptyIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .empty-state {
+        animation: none;
+    }
+}
+
+/* Sitemap: the answer in one card, the rest folded beneath it. */
+.map-summary-state {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+.map-summary-text {
+    flex: 1;
+    min-width: 0;
+}
+.map-summary-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    font-size: 20px;
+    background: var(--surfaceAlt1Color);
+    color: var(--surfaceTxtHintColor);
+}
+.map-summary-icon.on {
+    background: var(--successAltColor, var(--surfaceAlt1Color));
+    color: var(--successColor);
+}
+.map-summary-icon.warn {
+    background: var(--warningAltColor, var(--surfaceAlt1Color));
+    color: var(--warningColor);
+}
+.map-summary-refresh {
+    flex: none;
+}
+.map-index {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: var(--borderRadius);
+    background: var(--surfaceAlt1Color);
+}
+.map-index-url {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.map-fold > summary {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    cursor: pointer;
+    list-style: none;
+    border-radius: var(--borderRadius);
+    transition: color 150ms ease-out;
+}
+.map-fold > summary::-webkit-details-marker {
+    display: none;
+}
+.map-fold > summary:hover .map-fold-title,
+.map-fold > summary:focus-visible .map-fold-title {
+    color: var(--primaryColor);
+}
+.map-fold > summary:focus-visible {
+    outline: 2px solid var(--primaryColor);
+    outline-offset: 4px;
+}
+.map-fold-title {
+    font-weight: 600;
+    transition: color 150ms ease-out;
+}
+.map-fold-chevron {
+    margin-left: auto;
+    align-self: center;
+    font-size: 18px;
+    color: var(--surfaceTxtHintColor);
+    transition: transform 200ms ease-out;
+}
+.map-fold[open] > summary .map-fold-chevron {
+    transform: rotate(180deg);
+}
+.map-fold-body {
+    margin-top: 12px;
+    animation: emptyIn 220ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+    .map-fold-chevron {
+        transition: none;
+    }
+    .map-fold-body {
         animation: none;
     }
 }
