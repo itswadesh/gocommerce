@@ -67,7 +67,12 @@ func storeTables(t *testing.T, app *App) []string {
 	t.Helper()
 	global := map[string]bool{"stores": true, "store_domains": true, "store_members": true,
 		"store_counters": true, "api_key_index": true, "superusers": true,
-		"superuser_sessions": true, "superuser_password_resets": true, "gocommerce_migrations": true}
+		"superuser_sessions": true, "superuser_password_resets": true, "gocommerce_migrations": true,
+		// Which store a reports connection runs for, by backend pid. It is how
+		// the reports policy is keyed on something a query cannot set, so it
+		// must not itself be read through gocommerce.store_id; the reports
+		// login has no rights on it at all (report_scope.go).
+		"report_runs": true}
 	rows, err := app.db.QueryContext(context.Background(),
 		`SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY 1`)
 	if err != nil {
