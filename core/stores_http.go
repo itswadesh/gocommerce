@@ -2,6 +2,7 @@ package gocommerce
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"net/http"
 	"strings"
@@ -20,6 +21,9 @@ type MyStore struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
 	Role   string `json:"role"`
+	// Domain is where the store's shop is: its first attached domain, else
+	// <slug>.<Config.BaseDomain>, else empty when neither exists.
+	Domain string `json:"domain"`
 }
 
 // storeCookie only says which store a new tab opens in. The panel keeps each
@@ -68,14 +72,16 @@ func isAPIKeyShaped(token string) bool {
 // myStores lists the stores the caller may enter. A static admin token is the
 // install's operator, so it sees every store, as owner.
 func (a *App) myStores(ctx context.Context) ([]MyStore, error) {
-	q := `SELECT st.id, st.slug, st.name, st.status, m.role
+	const domain = `(SELECT host FROM store_domains d WHERE d.store_id = st.id ORDER BY created_at, host LIMIT 1)`
+	q := `SELECT st.id, st.slug, st.name, st.status, m.role, ` + domain + `
 		FROM store_members m JOIN stores st ON st.id = m.store_id
 		WHERE m.superuser_id = $1 ORDER BY st.created_at, st.id`
 	var args []any
 	if su := SuperuserFrom(ctx); su != nil {
 		args = append(args, su.ID)
 	} else {
-		q = `SELECT id, slug, name, status, '` + RoleOwner + `' FROM stores ORDER BY created_at, id`
+		q = `SELECT st.id, st.slug, st.name, st.status, '` + RoleOwner + `', ` + domain + `
+			FROM stores st ORDER BY st.created_at, st.id`
 	}
 	rows, err := a.db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -85,8 +91,13 @@ func (a *App) myStores(ctx context.Context) ([]MyStore, error) {
 	out := []MyStore{}
 	for rows.Next() {
 		var s MyStore
-		if err := rows.Scan(&s.ID, &s.Slug, &s.Name, &s.Status, &s.Role); err != nil {
+		var host sql.NullString
+		if err := rows.Scan(&s.ID, &s.Slug, &s.Name, &s.Status, &s.Role, &host); err != nil {
 			return nil, Internalf(err, "scan store")
+		}
+		s.Domain = host.String
+		if s.Domain == "" && a.cfg.BaseDomain != "" {
+			s.Domain = s.Slug + "." + strings.ToLower(a.cfg.BaseDomain)
 		}
 		out = append(out, s)
 	}

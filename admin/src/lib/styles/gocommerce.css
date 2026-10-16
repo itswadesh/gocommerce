@@ -4093,8 +4093,95 @@ button.media-check {
 .logged-user-dropdown {
     min-width: 232px;
     max-width: min(300px, calc(100vw - 32px));
-    max-height: min(560px, calc(100vh - 100px));
+    max-height: min(640px, calc(100vh - 100px));
 }
+/* The current store, on top of the menu: name, domain, and two small
+   buttons that answer a press within 150 ms. */
+.store-current {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px 8px;
+    border-bottom: 1px solid var(--surfaceAlt2Color);
+    margin-bottom: 2px;
+}
+.store-current-text {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    line-height: 1.3;
+}
+.store-current-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--surfaceTxtHintColor);
+}
+.store-current-name {
+    font-weight: 600;
+}
+.store-current-domain {
+    font-size: 11px;
+}
+.store-current-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 2px;
+}
+.store-current-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--surfaceTxtHintColor);
+    text-decoration: none;
+    cursor: pointer;
+    transition:
+        background 150ms ease-out,
+        color 150ms ease-out,
+        transform 150ms ease-out;
+}
+.store-current-btn:hover,
+.store-current-btn:focus-visible {
+    background: var(--surfaceAlt1Color);
+    color: var(--surfaceTxtColor);
+}
+.store-current-btn:focus-visible {
+    outline: 2px solid var(--primaryColor);
+    outline-offset: 1px;
+}
+.store-current-btn:active {
+    transform: scale(0.92);
+}
+.store-current-btn.done {
+    color: var(--successColor, var(--surfaceTxtColor));
+}
+.store-current-btn.done i {
+    animation: storeCheckIn 200ms ease-out both;
+}
+@media (max-width: 768px) {
+    /* A finger, not a pointer. */
+    .store-current-btn {
+        width: 40px;
+        height: 40px;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .store-current-btn {
+        transition-property: background, color;
+    }
+    .store-current-btn:active {
+        transform: none;
+    }
+    .store-current-btn.done i {
+        animation: none;
+    }
+}
+
 /* Short enough that "Create a store" and the account rows stay in view on a
    phone; a long list scrolls inside itself. */
 .store-menu-list {

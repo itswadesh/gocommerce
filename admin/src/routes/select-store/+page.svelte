@@ -152,7 +152,9 @@
                 {/if}
             </form>
         {:else}
-            {#if myStores.list.length > 7}
+            <!-- Past ten: a list longer than a phone screen is where a search box
+                 starts paying for its place. -->
+            {#if myStores.list.length > 10}
                 <input
                     type="search"
                     class="select-store-search m-b-sm"
