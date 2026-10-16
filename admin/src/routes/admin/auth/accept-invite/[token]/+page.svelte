@@ -13,6 +13,7 @@
     import { goto } from "$app/navigation";
     import { auth } from "$lib/api.js";
     import { setStore } from "$lib/store-scope.js";
+    import { forgetStores } from "$lib/stores.svelte.js";
     import { rightLabel } from "$lib/rights.js";
     import { toast } from "$lib/toast.svelte.js";
 
@@ -63,6 +64,10 @@
             const record = await auth.accept(token, password, store);
             // The store that invited them is the one this panel now works in.
             setStore(store);
+            // Somebody already signed in keeps their session through this, so
+            // nothing else tells the shell its store list and caches are now
+            // stale: have it settle the store again, as at sign-in.
+            forgetStores();
             // Accepting signs you in, so there is nowhere to send them but in.
             // They have typed this password once already and asking them to
             // prove it immediately is how a first impression goes wrong.

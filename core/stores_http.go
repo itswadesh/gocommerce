@@ -209,11 +209,19 @@ func (a *App) enterStore(ctx context.Context, id string) (*storeEntry, error) {
 }
 
 func setStoreCookie(w http.ResponseWriter, r *http.Request, id string) {
+	writeStoreCookie(w, r, id, int((365 * 24 * time.Hour).Seconds()))
+}
+
+func clearStoreCookie(w http.ResponseWriter, r *http.Request) {
+	writeStoreCookie(w, r, "", -1)
+}
+
+func writeStoreCookie(w http.ResponseWriter, r *http.Request, id string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     storeCookie,
 		Value:    id,
 		Path:     "/",
-		MaxAge:   int((365 * 24 * time.Hour).Seconds()),
+		MaxAge:   maxAge,
 		HttpOnly: true,
 		Secure:   r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"),
 		SameSite: http.SameSiteLaxMode,

@@ -180,3 +180,75 @@ func TestAStaticTokenSeesEveryStoreAsOwner(t *testing.T) {
 		t.Fatalf("stores = %+v, want both as owner", mine)
 	}
 }
+
+// The store cookie only says which store a new tab opens in. A cookie left
+// naming a store that has since gone or been suspended must not stand
+// between somebody and signing in: JavaScript cannot clear an HttpOnly
+// cookie, so the panel would have no way out.
+func TestAStaleStoreCookieDoesNotBlockSigningIn(t *testing.T) {
+	app := newTestApp(t)
+	signInAs(t, app, "stale@example.com", RoleOwner)
+	paused := addTestStore(t, app, "paused")
+	if _, err := app.db.Exec(`UPDATE stores SET status = 'suspended' WHERE id = $1`, paused); err != nil {
+		t.Fatal(err)
+	}
+	for name, value := range map[string]string{
+		"gone":      "store_01ZZZZZZZZZZZZZZZZZZZZZZZZ",
+		"suspended": paused,
+	} {
+		rec := doBody(t, app, http.MethodPost, "/api/admin/auth-with-password",
+			`{"identity":"stale@example.com","password":"a-long-enough-password"}`,
+			func(r *http.Request) { r.AddCookie(&http.Cookie{Name: storeCookie, Value: value}) })
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s store in the cookie: sign-in = %d: %s", name, rec.Code, rec.Body)
+		}
+	}
+}
+
+func TestSigningOutClearsTheStoreCookie(t *testing.T) {
+	app := newTestApp(t)
+	tok := signInAs(t, app, "leaving@example.com", RoleOwner)
+	rec := do(t, app, http.MethodPost, "/api/admin/auth-logout", bearer(tok))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("logout = %d: %s", rec.Code, rec.Body)
+	}
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == storeCookie && c.MaxAge < 0 {
+			return
+		}
+	}
+	t.Fatal("signing out left the store cookie in place")
+}
+
+func TestAnAPIKeyCannotListStores(t *testing.T) {
+	app := newTestApp(t)
+	_, secret, err := app.APIKeys().Create(context.Background(), APIKeyInput{Name: "scripts", Role: RoleOwner}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := do(t, app, http.MethodGet, "/api/stores/my", bearer(secret)); rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403: %s", rec.Code, rec.Body)
+	}
+}
+
+// Somebody in several stores who has not chosen one yet (the store picker)
+// can still sign out: the session is theirs, not one store's.
+func TestSigningOutNeedsNoStore(t *testing.T) {
+	app := newTestApp(t)
+	b := addTestStore(t, app, "bee")
+	c := addTestStore(t, app, "sea")
+	if _, err := app.Superusers().Create(WithStore(context.Background(), b), "two@example.com", "a-long-enough-password", RoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	joinTestStore(t, app, c, "two@example.com", RoleStaff)
+	_, sess, err := app.Superusers().Authenticate(context.Background(), "two@example.com", "a-long-enough-password", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := do(t, app, http.MethodPost, "/api/admin/auth-logout", bearer(sess.Token)); rec.Code != http.StatusNoContent {
+		t.Fatalf("logout = %d: %s", rec.Code, rec.Body)
+	}
+	if _, ok := app.Superusers().Resolve(context.Background(), sess.Token); ok {
+		t.Fatal("the session outlived signing out")
+	}
+}
