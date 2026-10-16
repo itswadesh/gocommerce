@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -352,6 +353,43 @@ func (f *fallbackRecorder) Write(b []byte) (int, error) {
 		f.status = http.StatusOK
 	}
 	return len(b), nil // discarded: the caller writes its own body
+}
+
+// corsMW lets the browsers of the origins in Config.CORSOrigins call the API
+// directly, so a storefront on another origin needs no proxy in front.
+//
+// A preflight is answered here and goes no further: it carries no store and no
+// token, so every route behind this would refuse it. The requested headers are
+// echoed rather than listed, because with credentials off a header grants the
+// caller nothing it could not already send, and a list would have to learn
+// every header a module reads.
+func (a *App) corsMW(next http.Handler) http.Handler {
+	origins := a.cfg.CORSOrigins
+	if len(origins) == 0 {
+		return next
+	}
+	anyOrigin := slices.Contains(origins, "*")
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin == "" || !(anyOrigin || slices.Contains(origins, origin)) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		h := w.Header()
+		h.Add("Vary", "Origin")
+		h.Set("Access-Control-Allow-Origin", origin)
+		if r.Method != http.MethodOptions || r.Header.Get("Access-Control-Request-Method") == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		h.Add("Vary", "Access-Control-Request-Method, Access-Control-Request-Headers")
+		h.Set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, PATCH, DELETE")
+		if headers := r.Header.Get("Access-Control-Request-Headers"); headers != "" {
+			h.Set("Access-Control-Allow-Headers", headers)
+		}
+		h.Set("Access-Control-Max-Age", "600")
+		w.WriteHeader(http.StatusNoContent)
+	})
 }
 
 func (a *App) logMW(next http.Handler) http.Handler {

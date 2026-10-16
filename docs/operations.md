@@ -26,6 +26,7 @@ Only `DBURL` and one admin token are required.
 | `DefaultLanguage` / `Languages` | `en` / `["en"]` | Negotiated per request. |
 | `AdminTokens` | — | At least one, unless `Dev`. Several allow rotation. |
 | `AdminAuth` | bearer tokens | Replace to add sessions, OIDC or RBAC. |
+| `CORSOrigins` | none | Browser origins allowed to call the API directly (`GOCOMMERCE_CORS_ORIGINS`, comma-separated, `*` for any). Unset, a storefront on another origin has to proxy. Credentials are never allowed. |
 | `CartTTL` | 720h | How long an untouched cart survives. |
 | `CartRetention` | 720h | How long an abandoned cart is kept before deletion, measured from `abandoned_at`. |
 | `OrderTTL` | 24h | How long an unpaid order holds its stock. |

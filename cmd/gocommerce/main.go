@@ -127,6 +127,10 @@ environment:
                     https://shop.example.com: the base of a password-reset
                     link, and of a recovery email's link, which counts the
                     click before sending the shopper to their basket
+  GOCOMMERCE_CORS_ORIGINS
+                    browser origins allowed to call the API directly,
+                    comma-separated, e.g. https://shop.example.com, or * for
+                    any; unset, a storefront on another origin has to proxy
   GOCOMMERCE_MEDIA_DIR
                     where uploaded media is written, used when -media-dir is
                     not given; leaving it unset disables uploads and the media
@@ -260,7 +264,10 @@ environment:
 		// about the deployment. It is the base of a password-reset link and of a
 		// recovery email's tracked link.
 		PanelURL: os.Getenv("GOCOMMERCE_PANEL_URL"),
-		Logger:   log,
+		// Env only, for the same reason: which storefronts call this engine
+		// is a fact about the deployment.
+		CORSOrigins: corsOrigins(os.Getenv("GOCOMMERCE_CORS_ORIGINS")),
+		Logger:      log,
 	}
 	if *mediaDir == "" {
 		*mediaDir = os.Getenv("GOCOMMERCE_MEDIA_DIR")
@@ -708,6 +715,17 @@ func superuserCmd(ctx context.Context, app *gocommerce.App, args []string) error
 		}
 	}
 	return fmt.Errorf("no superuser with email %q", email)
+}
+
+// corsOrigins trims the trailing slash an origin copied from the address bar
+// carries. A browser's Origin header never has one, so "https://shop.com/"
+// would match nothing and the storefront would fail with no hint why.
+func corsOrigins(s string) []string {
+	origins := splitList(s)
+	for i, o := range origins {
+		origins[i] = strings.TrimRight(o, "/")
+	}
+	return origins
 }
 
 func splitList(s string) []string {
