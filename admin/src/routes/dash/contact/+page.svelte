@@ -320,7 +320,7 @@
         white-space: pre-wrap;
         line-height: 1.5;
         padding: var(--smSpacing);
-        border-radius: var(--baseRadius);
+        border-radius: var(--borderRadius);
         background: var(--surfaceAlt2Color, rgba(0, 0, 0, 0.04));
     }
 </style>

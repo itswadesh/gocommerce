@@ -535,7 +535,7 @@
         position: relative;
         aspect-ratio: 16 / 9;
         overflow: hidden;
-        border-radius: 8px;
+        border-radius: var(--borderRadius);
         background: #000;
     }
     .sc-player iframe {
@@ -564,7 +564,7 @@
         min-width: 0;
         padding: 6px;
         border: 1px solid var(--surfaceAlt3Color);
-        border-radius: 8px;
+        border-radius: var(--borderRadius);
         transition:
             border-color 150ms ease-out,
             transform 150ms ease-out;
@@ -583,7 +583,7 @@
         width: 44px;
         height: 44px;
         object-fit: cover;
-        border-radius: 6px;
+        border-radius: var(--borderRadius);
         background: var(--surfaceAlt2Color);
     }
     .sc-card-title {

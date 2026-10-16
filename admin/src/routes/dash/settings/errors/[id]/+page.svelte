@@ -244,7 +244,7 @@
         width: 32px;
         height: 32px;
         flex: 0 0 auto;
-        border-radius: 8px;
+        border-radius: var(--borderRadius);
         background: color-mix(in srgb, var(--dangerColor), transparent 88%);
         color: var(--dangerColor);
     }
@@ -258,7 +258,7 @@
         gap: 10px;
         margin-top: 14px;
         padding: 12px;
-        border-radius: var(--baseRadius);
+        border-radius: var(--borderRadius);
         background: var(--surfaceAlt1Color);
     }
     .err-stat-label {
@@ -301,7 +301,7 @@
         gap: 1px;
         padding: 6px 8px;
         border: 0;
-        border-radius: 6px;
+        border-radius: var(--borderRadius);
         background: none;
         font: inherit;
         text-align: left;
@@ -326,7 +326,7 @@
     .err-stack {
         margin: 0 0 14px;
         padding: 10px 12px;
-        border-radius: var(--baseRadius);
+        border-radius: var(--borderRadius);
         background: var(--surfaceAlt1Color);
         font-family: var(--monospaceFontFamily, ui-monospace, monospace);
         font-size: 12px;

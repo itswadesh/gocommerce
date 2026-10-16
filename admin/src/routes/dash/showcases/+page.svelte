@@ -304,7 +304,7 @@
         width: 96px;
         height: 54px;
         object-fit: cover;
-        border-radius: 6px;
+        border-radius: var(--borderRadius);
         background: var(--surfaceAlt2Color);
     }
     .sc-thumb-blank {
@@ -335,7 +335,7 @@
         position: relative;
         aspect-ratio: 16 / 9;
         overflow: hidden;
-        border-radius: 8px;
+        border-radius: var(--borderRadius);
         background: #000;
     }
     .sc-player iframe {

@@ -265,7 +265,7 @@
         width: 28px;
         height: 28px;
         flex: 0 0 auto;
-        border-radius: 8px;
+        border-radius: var(--borderRadius);
         background: color-mix(in srgb, var(--dangerColor), transparent 88%);
         color: var(--dangerColor);
     }

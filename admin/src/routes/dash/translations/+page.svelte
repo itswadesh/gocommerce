@@ -442,7 +442,7 @@
     .tr-bar {
         height: 6px;
         overflow: hidden;
-        border-radius: 3px;
+        border-radius: var(--borderRadius);
         background: var(--surfaceAlt2Color);
     }
     .tr-bar-fill {
@@ -470,7 +470,7 @@
     }
     .tr-source {
         padding: 8px 10px;
-        border-radius: var(--baseRadius);
+        border-radius: var(--borderRadius);
         background: var(--surfaceAlt1Color, var(--baseAlt1Color));
         white-space: pre-wrap;
         overflow-wrap: anywhere;

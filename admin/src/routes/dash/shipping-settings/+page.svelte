@@ -781,7 +781,7 @@
         position: relative;
         margin: 0 16px 14px;
         border: 1px solid var(--surfaceAlt2Color);
-        border-radius: var(--baseRadius);
+        border-radius: var(--borderRadius);
         overflow: hidden;
     }
     .zone-row,
@@ -817,7 +817,7 @@
         width: 28px;
         height: 28px;
         flex: 0 0 auto;
-        border-radius: 8px;
+        border-radius: var(--borderRadius);
         background: var(--surfaceAlt2Color);
         color: var(--txtHintColor);
         font-size: 14px;
@@ -845,7 +845,7 @@
     }
     .chip {
         padding: 3px 10px;
-        border-radius: 6px;
+        border-radius: var(--borderRadius);
         background: var(--surfaceAlt1Color);
         color: var(--txtHintColor);
         font-size: 12px;
@@ -956,14 +956,14 @@
         padding: 4px;
         overflow-y: auto;
         border: 1px solid var(--surfaceAlt2Color);
-        border-radius: var(--baseRadius);
+        border-radius: var(--borderRadius);
     }
     .country-item {
         display: flex;
         align-items: center;
         gap: 8px;
         padding: 4px 6px;
-        border-radius: 6px;
+        border-radius: var(--borderRadius);
         cursor: pointer;
         transition: background-color 150ms ease-out;
     }
@@ -1008,7 +1008,7 @@
         gap: 10px;
         padding: 14px;
         border: 1px solid var(--surfaceAlt2Color);
-        border-radius: var(--baseRadius);
+        border-radius: var(--borderRadius);
         background: var(--surfaceAlt1Color);
     }
     .preview-check {
