@@ -22,6 +22,7 @@
      * platform open, and nothing else.
      */
     import { can, request } from "$lib/api.js";
+    import { activateNote } from "$lib/plugin-ready.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
@@ -82,6 +83,9 @@
             checking = false;
         }
     }
+
+    // What has to be filled in before feeds can go on.
+    const note = $derived(plugin && !plugin.enabled ? activateNote(plugin) : "");
 
     async function toggle() {
         working = true;
@@ -279,7 +283,8 @@
                             type="button"
                             class="btn sm {plugin.enabled ? 'secondary' : ''}"
                             class:loading={working}
-                            disabled={working}
+                            disabled={working || !!note}
+                            title={note || undefined}
                             onclick={toggle}
                         >
                             <span class="txt">{plugin.enabled ? "Deactivate" : "Activate"}</span>
@@ -288,6 +293,15 @@
                 {/if}
             {/if}
         </header>
+
+        {#if note && allowed}
+            <!-- The one thing to do first, before anything below is worth
+                 reading. -->
+            <div class="setup-first" role="note">
+                <i class="ri-arrow-right-circle-line" aria-hidden="true"></i>
+                <span><strong>First:</strong> {note} It is in the settings on this page.</span>
+            </div>
+        {/if}
 
         {#if !allowed}
             <NoAccess right="plugins.read" what="feeds" />

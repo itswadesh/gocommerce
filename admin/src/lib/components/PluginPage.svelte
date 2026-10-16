@@ -7,6 +7,7 @@
      * one card is kinder than a search on the Plugins screen.
      */
     import { can, request } from "$lib/api.js";
+    import { activateNote } from "$lib/plugin-ready.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
@@ -40,6 +41,12 @@
     }
 
     async function toggle() {
+        const note = plugin && !plugin.enabled ? activateNote(plugin) : "";
+        if (note) {
+            toast.info(note);
+            editing = plugin;
+            return;
+        }
         if (!plugin) return;
         working = true;
         try {
