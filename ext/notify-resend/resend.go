@@ -316,11 +316,11 @@ func (m *Module) send(ctx context.Context, s sender, to, event, subject, body st
 		reason = strings.TrimSpace(string(detail))
 	}
 	if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
-		// A rejected message will be rejected again. Log it and let the event
-		// settle, rather than retrying a bad address twelve times.
+		// A rejected message will be rejected again: a refusal, which the
+		// engine records as failed and does not retry twelve times.
 		m.log.Error("Resend rejected the message",
 			"event", event, "status", resp.Status, "to", to, "from", s.from, "detail", reason)
-		return nil
+		return fmt.Errorf("resend: %w: %s (%s)", gocommerce.ErrNotificationRefused, reason, resp.Status)
 	}
 	m.log.Error("Resend could not take the message",
 		"event", event, "status", resp.Status, "to", to, "detail", reason)

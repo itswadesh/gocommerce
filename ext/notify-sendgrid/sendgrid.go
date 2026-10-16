@@ -269,10 +269,10 @@ func (m *Module) send(ctx context.Context, s sender, to, subject, body string) e
 	detail, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
 	err = fmt.Errorf("sendgrid: send returned %s: %s", resp.Status, strings.TrimSpace(string(detail)))
 	if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
-		// A rejected message will be rejected again. Log it and let the event
-		// settle, rather than retrying a bad address twelve times.
+		// A rejected message will be rejected again: a refusal, which the
+		// engine records as failed and does not retry twelve times.
 		m.log.Error("sendgrid rejected the message", "status", resp.Status, "to", to, "detail", string(detail))
-		return nil
+		return fmt.Errorf("sendgrid: %w: %s (%s)", gocommerce.ErrNotificationRefused, strings.TrimSpace(string(detail)), resp.Status)
 	}
 	return err
 }

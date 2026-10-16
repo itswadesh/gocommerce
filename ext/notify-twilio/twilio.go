@@ -223,12 +223,12 @@ func (m *Module) send(ctx context.Context, s sender, n gocommerce.Notification, 
 			MoreInfo string `json:"more_info"`
 		}
 		_ = json.Unmarshal(detail, &out)
-		// Settled, not retried: a number Twilio will not accept will not be
-		// accepted on the twelfth attempt either, and the reason belongs in
-		// the log rather than in a stack trace.
+		// A refusal, not retried: a number Twilio will not accept will not
+		// be accepted on the twelfth attempt either. The engine records it as
+		// failed, with Twilio's reason.
 		m.log.Error("Twilio refused the message",
 			"event", n.Event, "to", n.To, "status", resp.Status,
 			"code", out.Code, "detail", out.Message, "more_info", out.MoreInfo)
-		return nil
+		return fmt.Errorf("twilio: %w: %s (%s)", gocommerce.ErrNotificationRefused, out.Message, resp.Status)
 	}
 }

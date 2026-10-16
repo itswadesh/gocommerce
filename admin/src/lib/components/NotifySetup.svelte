@@ -19,6 +19,7 @@
     import { goto } from "$app/navigation";
     import { page } from "$app/state";
     import { can, request } from "$lib/api.js";
+    import { session } from "$lib/session.svelte.js";
     import { formatDate } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import Drawer from "$lib/components/Drawer.svelte";
@@ -166,6 +167,33 @@
     }
 
     const customizedCount = $derived(templates.filter((t) => t.customized).length);
+
+    /*
+     * Send a test email: the one way to know the provider really delivers,
+     * short of placing an order. To the operator's own address unless they
+     * type another. The answer stays on the page — a provider's refusal
+     * ("domain not verified") is the thing to read, and a toast is gone
+     * before it is read.
+     */
+    const delivering = $derived(providers.some((p) => p.name !== "log" && p.delivers));
+    let testTo = $state(session.record?.email ?? "");
+    let testing = $state(false);
+    let testResult = $state(null);
+
+    async function sendTest(e) {
+        e.preventDefault();
+        if (testing) return;
+        testing = true;
+        testResult = null;
+        try {
+            await request("POST", "/api/admin/notifications/test-email", { body: { to: testTo } });
+            testResult = { ok: true, text: `Sent to ${testTo.trim()}. It should arrive within a minute; check spam if it doesn't.` };
+        } catch (err) {
+            testResult = { ok: false, text: err?.message ?? String(err) };
+        } finally {
+            testing = false;
+        }
+    }
 </script>
 
 <svelte:head><title>Setup {words.title} · GoCommerce</title></svelte:head>
@@ -256,6 +284,49 @@
                     No {words.noun} module is installed in this binary. Build the store with one
                     (ext/notify-{channel === "email" ? "sendgrid" : "msg91"}) and it appears here.
                 </p>
+            {/if}
+
+            {#if channel === "email" && !loading}
+                <section class="card notify-test">
+                    <h3 class="notify-test-title">Send a test email</h3>
+                    {#if delivering}
+                        <p class="txt-hint txt-sm">
+                            Sends one email through the active provider now, so you know order emails will arrive.
+                        </p>
+                    {:else}
+                        <p class="txt-hint txt-sm">
+                            Activate a provider above and enter its key first. Until then nothing can be sent.
+                        </p>
+                    {/if}
+                    <form class="notify-test-form" onsubmit={sendTest}>
+                        <div class="field">
+                            <label for="notify-test-to">Send to</label>
+                            <input
+                                id="notify-test-to"
+                                type="email"
+                                autocomplete="email"
+                                required
+                                disabled={!writable || !delivering}
+                                bind:value={testTo}
+                            />
+                        </div>
+                        <button
+                            type="submit"
+                            class="btn"
+                            class:loading={testing}
+                            disabled={!writable || !delivering || testing}
+                        >
+                            <i class="ri-mail-send-line" aria-hidden="true"></i>
+                            <span class="txt">Send test email</span>
+                        </button>
+                    </form>
+                    {#if testResult}
+                        <p class="notify-test-result" class:ok={testResult.ok} role="status">
+                            <i class={testResult.ok ? "ri-check-line" : "ri-error-warning-line"} aria-hidden="true"></i>
+                            <span>{testResult.text}</span>
+                        </p>
+                    {/if}
+                </section>
             {/if}
 
             <!-- A section heading that follows a block needs air above it, or
@@ -404,5 +475,56 @@
         border-radius: var(--baseRadius);
         background: var(--surfaceAlt2Color);
         font-size: var(--xsFontSize);
+    }
+    .notify-test {
+        margin: 0 0 var(--baseSpacing);
+    }
+    .notify-test-title {
+        margin: 0 0 4px;
+        font-size: 1rem;
+        font-weight: 600;
+    }
+    .notify-test-form {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: var(--smSpacing);
+        margin-top: var(--smSpacing);
+    }
+    .notify-test-form .field {
+        flex: 1 1 260px;
+        max-width: 420px;
+        margin: 0;
+    }
+    .notify-test-result {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin: var(--smSpacing) 0 0;
+        padding: 10px 12px;
+        border-radius: var(--borderRadius);
+        background: var(--dangerAltColor, var(--surfaceAlt1Color));
+        overflow-wrap: anywhere;
+        animation: notifyTestIn 200ms ease-out both;
+    }
+    .notify-test-result.ok {
+        background: var(--surfaceSuccessColor, var(--surfaceAlt1Color));
+    }
+    .notify-test-result i {
+        color: var(--dangerColor);
+    }
+    .notify-test-result.ok i {
+        color: var(--successColor);
+    }
+    @keyframes notifyTestIn {
+        from {
+            opacity: 0;
+            transform: translateY(-4px);
+        }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .notify-test-result {
+            animation: none;
+        }
     }
 </style>
