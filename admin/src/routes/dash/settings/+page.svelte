@@ -31,6 +31,9 @@
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
     import { countryOptions } from "$lib/countries.js";
     import { currencyOptions } from "$lib/currencies.js";
+    import { languageName, languageOptions } from "$lib/languages.js";
+    import { rise, flipDuration } from "$lib/motion.js";
+    import { flip } from "svelte/animate";
 
     /*
      * Deleting the store. Offered to its owner only, never on a demo store,
@@ -91,12 +94,6 @@
             kind: "select",
             hint: "What \"today\" means on an invoice and in a report. Empty is UTC.",
         },
-        {
-            key: "language",
-            label: "Language",
-            kind: "select",
-            hint: "How a customer is written to when their order recorded no preference of its own.",
-        },
         // The store's own currency (D85): chosen until its first order, then
         // fixed, because changing it would change what every order means.
         { key: "currency", label: "Currency", kind: "select" },
@@ -120,14 +117,8 @@
         }
     })();
 
-    /* Only what this binary has content for: choosing anything else would
-       write every customer a message in a language nobody translated, and the
-       engine refuses it anyway. */
-    const languages = $derived(settings.languages ?? []);
-
     function optionsFor(key) {
         if (key === "timezone") return zones;
-        if (key === "language") return languages;
         if (key === "country") return countryOptions(draft?.country);
         if (key === "currency") return currencyOptions(draft?.currency);
         return [];
@@ -146,21 +137,50 @@
         }
     }
 
-    const dirty = $derived(
-        !!profile && !!draft && FIELDS.some((f) => (draft[f.key] ?? "") !== (profile[f.key] ?? "")),
+    const languagesChanged = $derived(
+        !!profile && !!draft && (draft.languages ?? []).join() !== (profile.languages ?? []).join(),
     );
+    const dirty = $derived(
+        !!profile &&
+            !!draft &&
+            (languagesChanged || FIELDS.some((f) => (draft[f.key] ?? "") !== (profile[f.key] ?? ""))),
+    );
+
+    /*
+     * The store's languages (D87), main first. One list rather than a list and
+     * a default beside it, as the engine keeps them: the main language is what
+     * the catalogue is written in and what a shopper who asks for nothing is
+     * served, so it cannot be one the store does not sell in.
+     */
+    let adding = $state("");
+    function addLanguage() {
+        if (!adding) return;
+        draft.languages = [...(draft.languages ?? []), adding];
+        adding = "";
+    }
+    function makeMain(tag) {
+        draft.languages = [tag, ...draft.languages.filter((l) => l !== tag)];
+    }
+    function dropLanguage(tag) {
+        draft.languages = draft.languages.filter((l) => l !== tag);
+    }
 
     async function saveProfile() {
         if (saving || !dirty) return;
         saving = true;
         try {
             const before = profile?.currency;
-            profile = await storeProfile.save(draft);
+            const languagesBefore = (profile?.languages ?? []).join();
+            profile = await storeProfile.save({ ...draft, language: draft.languages?.[0] ?? "" });
             draft = { ...profile };
             toast.success("Store details saved");
             // Every price on every screen is formatted in the store's currency,
-            // read once into the settings; a new one has to reach them now.
-            if (profile.currency !== before) loadSettings({ force: true }).catch(() => {});
+            // and the languages decide what Translations and the message
+            // editors offer; both are read once into the settings, so a change
+            // has to reach them now.
+            if (profile.currency !== before || profile.languages.join() !== languagesBefore) {
+                loadSettings({ force: true }).catch(() => {});
+            }
             // The name here is the store's name, so the account menu and the
             // store list change with it.
             loadStores().catch(() => {});
@@ -193,14 +213,6 @@
         }
         return `${seconds} ${pluralize(seconds, "second")}`;
     }
-
-    /* The default is marked in the list rather than given a box of its own: it
-       is one of these tags, not a fourth setting beside them. */
-    const languageList = $derived(
-        settings.languages
-            .map((lang) => (lang === settings.defaultLanguage ? `${lang} (default)` : lang))
-            .join(", "),
-    );
 
     /*
      * The one line on this screen that can be bad news.
@@ -343,6 +355,54 @@
                                 </div>
                             {/each}
                             <div class="col-12">
+                                <div class="langs" role="group" aria-labelledby="sp-languages">
+                                    <div class="langs-head">
+                                        <span id="sp-languages" class="langs-title">Languages</span>
+                                        <span class="field-help">
+                                            The first is the main one: the catalogue is written in it, and a
+                                            shopper who asks for nothing is served it. Customers are written to
+                                            in the language they ordered in.
+                                        </span>
+                                    </div>
+                                    <ul class="langs-list">
+                                        {#each draft.languages ?? [] as tag, i (tag)}
+                                            <li class="langs-item" class:main={i === 0} in:rise animate:flip={{ duration: flipDuration() }}>
+                                                <span class="langs-name">
+                                                    {languageName(tag)} <span class="txt-hint txt-sm">{tag}</span>
+                                                </span>
+                                                {#if i === 0}
+                                                    <span class="label sm success">Main</span>
+                                                {:else if editable}
+                                                    <button type="button" class="btn sm transparent secondary" onclick={() => makeMain(tag)}>
+                                                        <span class="txt">Make main</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        class="btn sm circle transparent secondary"
+                                                        aria-label="Stop selling in {languageName(tag)}"
+                                                        title="Remove"
+                                                        onclick={() => dropLanguage(tag)}
+                                                    >
+                                                        <i class="ri-close-line" aria-hidden="true"></i>
+                                                    </button>
+                                                {/if}
+                                            </li>
+                                        {/each}
+                                    </ul>
+                                    {#if editable}
+                                        <div class="field langs-add">
+                                            <label for="sp-add-language">Add a language</label>
+                                            <select id="sp-add-language" bind:value={adding} onchange={addLanguage}>
+                                                <option value="">Choose one…</option>
+                                                {#each languageOptions(draft.languages ?? []) as option (option.value)}
+                                                    <option value={option.value}>{option.label}</option>
+                                                {/each}
+                                            </select>
+                                        </div>
+                                    {/if}
+                                </div>
+                            </div>
+                            <div class="col-12">
                                 {#if editable}
                                     <button type="submit" class="btn sm" disabled={saving || !dirty}>
                                         <span class="txt">{saving ? "Saving…" : "Save store details"}</span>
@@ -367,7 +427,6 @@
                         <span class="txt-hint txt-sm">Fixed when the engine starts; read only</span>
                         <i class="ri-arrow-down-s-line map-fold-chevron" aria-hidden="true"></i>
                         <span class="map-fold-values">
-                            <span class="map-fold-value">{languageList || "—"}</span>
                             <span class="map-fold-value">
                                 prices {store?.prices_include_tax ? "include tax" : "have tax added at checkout"}
                             </span>
@@ -375,16 +434,6 @@
                         </span>
                     </summary>
                     <div class="map-fold-body grid">
-                        <div class="col-md-4">
-                            <div class="field readonly">
-                                <label for="language">Languages</label>
-                                <!-- The list, not the default alone: a store that
-                                     serves three languages negotiates one per
-                                     request, and the default is one of these, not
-                                     a fourth thing. -->
-                                <input id="language" type="text" readonly value={languageList} />
-                            </div>
-                        </div>
                         <div class="col-md-4">
                             <div class="field readonly">
                                 <label for="version">Engine version</label>
@@ -653,3 +702,52 @@
         </footer>
     </div>
 </div>
+
+<style>
+    .langs {
+        display: grid;
+        gap: 8px;
+    }
+    .langs-head {
+        display: grid;
+        gap: 2px;
+    }
+    .langs-title {
+        font-weight: 600;
+    }
+    .langs-list {
+        display: grid;
+        gap: 4px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+    .langs-item {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 8px;
+        min-height: 44px;
+        padding: 2px 6px 2px 12px;
+        border: 1px solid var(--surfaceAlt3Color);
+        border-radius: var(--baseRadius);
+        transition: border-color 150ms ease-out;
+    }
+    .langs-item.main {
+        border-color: color-mix(in srgb, var(--successColor), transparent 50%);
+    }
+    .langs-name {
+        flex: 1 1 auto;
+        min-width: 0;
+        font-weight: 500;
+        overflow-wrap: anywhere;
+    }
+    .langs-add {
+        max-width: 360px;
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .langs-item {
+            transition: none;
+        }
+    }
+</style>
