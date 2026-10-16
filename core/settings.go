@@ -108,18 +108,14 @@ func (a *App) Settings() StoreSettings { return a.SettingsFor(context.Background
 
 // SettingsFor is Settings for the store ctx is bound to.
 func (a *App) SettingsFor(ctx context.Context) StoreSettings {
-	// Copied rather than shared: a caller that sorted or appended to the
-	// returned slice would be editing the running config through the snapshot.
-	// make with a concrete length also keeps the JSON [] rather than null in
-	// the empty case, which applyDefaults makes impossible but a client should
-	// not have to trust.
-	langs := make([]string, len(a.cfg.Languages))
-	copy(langs, a.cfg.Languages)
+	// The store's own, as the currency is (D87): Languages hands back a copy,
+	// never empty, main language first.
+	langs := a.Languages(ctx)
 
 	return StoreSettings{
 		Version:          Version,
 		Currency:         a.Currency(ctx),
-		DefaultLanguage:  a.cfg.DefaultLanguage,
+		DefaultLanguage:  langs[0],
 		Languages:        langs,
 		PricesIncludeTax: a.cfg.PricesIncludeTax,
 		FlatShipping:     money(a.cfg.FlatShippingMinor, a.Currency(ctx)),

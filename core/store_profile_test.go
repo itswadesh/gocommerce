@@ -179,16 +179,15 @@ func TestTheStoreProfileRefusesAClockItCannotRead(t *testing.T) {
 		t.Errorf("error = %v, want it to name the field", err)
 	}
 
-	// And a language the binary has no content for: choosing it would send
-	// every customer a message in a language nobody translated.
+	// And a main language the store does not sell in: it would be served to
+	// every shopper who asks for nothing.
 	if _, err := app.Profile().Set(ctx, StoreProfile{Language: "xh"}, nil); err == nil {
-		t.Fatal("a language this binary was not started with should be refused")
+		t.Fatal("a main language the store does not sell in should be refused")
 	}
 }
 
-// The store's language is the fallback for a message, and it beats the
-// binary's — the panel is the nearer hand, the same rule a plugin setting
-// follows over its Config.
+// The store's main language is the fallback for a message; a preference the
+// order recorded wins while the store still sells in it (D87).
 func TestTheStoreLanguageIsTheFallbackForAMessage(t *testing.T) {
 	app := newTestApp(t)
 	ctx := context.Background()
@@ -196,9 +195,20 @@ func TestTheStoreLanguageIsTheFallbackForAMessage(t *testing.T) {
 	if got := app.Profile().MessageLanguage(ctx, ""); got != app.Settings().DefaultLanguage {
 		t.Errorf("with nothing set = %q, want the binary's %q", got, app.Settings().DefaultLanguage)
 	}
-	// A preference recorded on the order wins over both: it is the customer's.
-	if got := app.Profile().MessageLanguage(ctx, "fr"); got != "fr" {
-		t.Errorf("with the order saying fr = %q, want fr", got)
+	if _, err := app.Profile().Set(ctx, StoreProfile{Languages: []string{"hi", "en", "fr"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := app.Profile().MessageLanguage(ctx, ""); got != "hi" {
+		t.Errorf("with nothing recorded = %q, want the main language hi", got)
+	}
+	// A preference recorded on the order wins: it is the customer's. A
+	// regional tag finds its language.
+	if got := app.Profile().MessageLanguage(ctx, "fr-CA"); got != "fr" {
+		t.Errorf("with the order saying fr-CA = %q, want fr", got)
+	}
+	// One the store has dropped is one nobody keeps the wording of.
+	if got := app.Profile().MessageLanguage(ctx, "de"); got != "hi" {
+		t.Errorf("with the order saying de = %q, want the main language hi", got)
 	}
 }
 
@@ -226,12 +236,17 @@ func TestTheStoresPublicFaceIsItsNameAndContactsOnly(t *testing.T) {
 		t.Fatalf("with no token = %d, want 200: %s", rec.Code, rec.Body)
 	}
 	var body struct {
-		Data map[string]string `json:"data"`
+		Data map[string]any `json:"data"`
 	}
 	decodeJSONBody(t, rec.Body.Bytes(), &body)
-	want := map[string]string{
+	if langs, _ := body.Data["languages"].([]any); len(langs) != 1 || langs[0] != "en" {
+		t.Errorf("public languages = %v, want [en]", body.Data["languages"])
+	}
+	delete(body.Data, "languages")
+	want := map[string]any{
 		"name": "The Corner Shop", "email": "hello@corner.example",
 		"phone": "+44 20 7946 0000", "support_url": "https://corner.example/help",
+		"language": "en",
 	}
 	if len(body.Data) != len(want) {
 		t.Errorf("public fields = %v, want exactly %v", body.Data, want)

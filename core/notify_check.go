@@ -39,7 +39,7 @@ func (a *App) SendTestEmail(ctx context.Context, to string) error {
 		Event:    EventNotificationTest,
 		Channel:  ChannelEmail,
 		To:       to,
-		Language: a.cfg.DefaultLanguage,
+		Language: a.mainLanguage(ctx),
 		Data:     map[string]string{"store_name": store, "to": to},
 	})
 	// 422, not 502: a 5xx's message is replaced before it leaves the server,

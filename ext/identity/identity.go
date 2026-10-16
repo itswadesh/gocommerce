@@ -919,7 +919,7 @@ func (m *Module) language(ctx context.Context) string {
 	if lang := gocommerce.Language(ctx); lang != "" {
 		return lang
 	}
-	return m.app.Config().DefaultLanguage
+	return m.app.Languages(ctx)[0]
 }
 
 var invalidResetToken = &gocommerce.APIError{

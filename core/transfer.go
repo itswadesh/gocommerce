@@ -551,7 +551,7 @@ func (t *Transfer) importOrderGroup(ctx context.Context, rows []csvRow, dryRun, 
 		}
 		lang := first.get("language")
 		if lang == "" {
-			lang = t.app.cfg.DefaultLanguage
+			lang = t.app.mainLanguage(ctx)
 		}
 		createdAt := time.Now().UTC()
 		if v := first.get("created_at"); v != "" {

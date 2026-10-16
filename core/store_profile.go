@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 )
@@ -50,14 +51,16 @@ type StoreProfile struct {
 	// a UTC server otherwise closes its day seventeen hours late. Empty is
 	// UTC, which is what the server was doing anyway.
 	Timezone string `json:"timezone"`
-	// Language is which one a customer is written to in when the order
-	// recorded no preference. It is not Config.DefaultLanguage, which answers
-	// a different question — what to serve a request that asked for no
-	// particular language (D21). This one is the store's choice about its own
-	// outgoing messages, so it is a setting rather than a start-up decision,
-	// and it is constrained to the languages the binary actually has content
-	// for. Empty means the binary's.
+	// Language is the store's main language (D87): what a request that asks
+	// for none is served in, what its catalogue is written in, and what a
+	// customer is written to in when nothing says otherwise. It is the first
+	// of Languages. Saving one the store does not sell in is refused; empty
+	// leaves it as it is.
 	Language string `json:"language"`
+	// Languages is every language the store sells in, the main one first.
+	// Empty leaves them as they are, so a client that does not send them
+	// cannot reset them.
+	Languages []string `json:"languages"`
 	// SupportURL is where a buyer is sent for help, for the foot of an email.
 	SupportURL string `json:"support_url"`
 
@@ -87,12 +90,12 @@ func (p *StoreProfiles) Get(ctx context.Context) (*StoreProfile, error) {
 	err := p.app.db.QueryRowContext(ctx, `
 		SELECT name, legal_name, email, phone,
 		       address_line1, address_line2, city, state, postal_code, country,
-		       tax_id, support_url, timezone, language
+		       tax_id, support_url, timezone
 		FROM store_profile WHERE id = 1`).Scan(
 		&out.Name, &out.LegalName, &out.Email, &out.Phone,
 		&out.AddressLine1, &out.AddressLine2, &out.City, &out.State,
 		&out.PostalCode, &out.Country, &out.TaxID, &out.SupportURL,
-		&out.Timezone, &out.Language)
+		&out.Timezone)
 	if err == sql.ErrNoRows {
 		// Unreachable while the migration's INSERT stands, and harmless if a
 		// later one ever changes that: an empty shop is a real answer.
@@ -101,6 +104,8 @@ func (p *StoreProfiles) Get(ctx context.Context) (*StoreProfile, error) {
 	if err != nil {
 		return nil, Internalf(err, "read the store profile")
 	}
+	out.Languages = p.app.Languages(ctx)
+	out.Language = out.Languages[0]
 	out.Currency = p.app.Currency(ctx)
 	if out.CurrencyLocked, err = p.app.hasOrders(ctx, p.app.db); err != nil {
 		return nil, Internalf(err, "read whether the store has orders")
@@ -153,14 +158,24 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 			return nil, Validationf("%q is not a timezone this server can read; use an IANA name such as %q", in.Timezone, "Europe/London")
 		}
 	}
-	// Folded rather than refused, the way the country code is upper-cased:
-	// "EN" is the right language typed the wrong way.
-	in.Language = strings.ToLower(strings.TrimSpace(in.Language))
-	if in.Language != "" && !containsFold(p.app.cfg.Languages, in.Language) {
-		// Refused rather than accepted quietly, because choosing a language
-		// nothing is translated into sends every customer a message in it.
-		return nil, Validationf("this store has no content in %q; it was started with %s",
-			in.Language, strings.Join(p.app.cfg.Languages, ", "))
+	// The languages: folded rather than refused, the way the country code is
+	// upper-cased — "EN" is the right language typed the wrong way. A main
+	// language the store does not sell in is refused rather than added: it
+	// would be served to every shopper who asks for nothing.
+	var languages []string
+	if len(in.Languages) > 0 || strings.TrimSpace(in.Language) != "" {
+		current := p.app.Languages(ctx)
+		list := in.Languages
+		if len(list) == 0 {
+			list = current
+		}
+		langs, err := normalizeLanguages(list, in.Language)
+		if err != nil {
+			return nil, err
+		}
+		if !slices.Equal(langs, current) {
+			languages = langs
+		}
 	}
 
 	// The currency: refused, not ignored, once there is an order, because an
@@ -193,18 +208,23 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 				return err
 			}
 		}
+		if languages != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE stores SET languages = $1::text[] WHERE id = $2`,
+				stringArray(languages), p.app.storeOf(ctx)); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.ExecContext(ctx, `
 		UPDATE store_profile SET
 		    name = $1, legal_name = $2, email = $3, phone = $4,
 		    address_line1 = $5, address_line2 = $6, city = $7, state = $8,
 		    postal_code = $9, country = $10, tax_id = $11, support_url = $12,
-		    timezone = $13, language = $14,
-		    updated_at = now(), updated_by = $15
+		    timezone = $13, updated_at = now(), updated_by = $14
 		WHERE id = 1`,
 			in.Name, in.LegalName, in.Email, in.Phone,
 			in.AddressLine1, in.AddressLine2, in.City, in.State,
 			in.PostalCode, in.Country, in.TaxID, in.SupportURL,
-			in.Timezone, in.Language, updatedBy); err != nil {
+			in.Timezone, updatedBy); err != nil {
 			return err
 		}
 		// A store has one name: this one, which is what the store list and
@@ -226,6 +246,9 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 	}
 	if currency != "" {
 		ctx = withStoreCurrency(ctx, currency)
+	}
+	if languages != nil {
+		ctx = withStoreLanguages(ctx, languages)
 	}
 	return p.Get(ctx)
 }
@@ -249,18 +272,18 @@ func (p *StoreProfiles) LocationOf(ctx context.Context) *time.Location {
 
 // MessageLanguage is the language to write a customer in.
 //
-// Three answers in order of who is nearest: what the order recorded about this
-// customer, then what the store chose, then what the binary was started with.
-// The customer's own preference wins over the shop's — it is the one fact here
-// about the person being written to.
+// What the order recorded about this customer, while the store still sells in
+// it, else the store's main language. The customer's own preference wins over
+// the shop's — it is the one fact here about the person being written to — but
+// a language the store has since dropped is one nobody is keeping its wording
+// up to date in. A regional tag matches its language, so an order placed in
+// "fr-CA" is written to in a store's "fr".
 func (p *StoreProfiles) MessageLanguage(ctx context.Context, preferred string) string {
-	if preferred = strings.TrimSpace(preferred); preferred != "" {
-		return preferred
+	langs := p.app.Languages(ctx)
+	if m, ok := matchLanguage(langs, strings.TrimSpace(preferred)); ok {
+		return m
 	}
-	if profile, err := p.Get(ctx); err == nil && profile.Language != "" {
-		return profile.Language
-	}
-	return p.app.cfg.DefaultLanguage
+	return langs[0]
 }
 
 // ------------------------------------------------------------------- routes
@@ -284,11 +307,15 @@ func (a *App) mountStoreProfileRoutes() {
 // how a buyer reaches it, which is what the foot of every email it sends
 // already says. The address, legal name and tax number stay behind the admin
 // route: a page that names a shop has no need to publish where it is.
+//
+// Its languages are public too, so a storefront can offer the ones it sells in.
 type publicStore struct {
-	Name       string `json:"name"`
-	Email      string `json:"email"`
-	Phone      string `json:"phone"`
-	SupportURL string `json:"support_url"`
+	Name       string   `json:"name"`
+	Email      string   `json:"email"`
+	Phone      string   `json:"phone"`
+	SupportURL string   `json:"support_url"`
+	Language   string   `json:"language"`
+	Languages  []string `json:"languages"`
 }
 
 func (a *App) handlePublicStore(w http.ResponseWriter, r *http.Request) {
@@ -297,7 +324,8 @@ func (a *App) handlePublicStore(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	Respond(w, http.StatusOK, publicStore{Name: p.Name, Email: p.Email, Phone: p.Phone, SupportURL: p.SupportURL})
+	Respond(w, http.StatusOK, publicStore{Name: p.Name, Email: p.Email, Phone: p.Phone, SupportURL: p.SupportURL,
+		Language: p.Language, Languages: p.Languages})
 }
 
 func (a *App) handleGetStoreProfile(w http.ResponseWriter, r *http.Request) {

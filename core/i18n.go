@@ -43,13 +43,13 @@ func Language(ctx context.Context) string {
 	return lang
 }
 
-// RequestLanguage is the language to render this request in, always a member
-// of Config.Languages.
+// RequestLanguage is the language to render this request in, always one of
+// the store's languages (D87).
 func (a *App) RequestLanguage(r *http.Request) string {
 	if lang := Language(r.Context()); lang != "" {
 		return lang
 	}
-	return a.cfg.DefaultLanguage
+	return a.mainLanguage(r.Context())
 }
 
 func withLogger(r *http.Request, log *slog.Logger) *http.Request {
@@ -67,8 +67,9 @@ func logFrom(r *http.Request) *slog.Logger {
 // registered translator agree on it.
 func (a *App) languageMW(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		langs := a.requestLanguages(r.Context())
 		lang := negotiateLanguage(
-			a.cfg.Languages, a.cfg.DefaultLanguage,
+			langs, langs[0],
 			r.URL.Query().Get("lang"), r.Header.Get("Accept-Language"))
 		w.Header().Set("Content-Language", lang)
 		next.ServeHTTP(w, r.WithContext(WithLanguage(r.Context(), lang)))

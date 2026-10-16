@@ -27,11 +27,11 @@ func (m *Module) builtinTools() []Tool {
 			// catalog.read however it is re-cut, so there is nobody this
 			// could be kept from who is signed in at all.
 			Call: func(ctx context.Context, _ json.RawMessage) (any, error) {
-				cfg := m.app.Config()
+				langs := m.app.Languages(ctx)
 				return map[string]any{
 					"currency":              m.app.Currency(ctx),
-					"default_language":      cfg.DefaultLanguage,
-					"languages":             cfg.Languages,
+					"default_language":      langs[0],
+					"languages":             langs,
 					"payment_methods":       m.app.Pay().MethodsFor(ctx),
 					"fulfillment_providers": m.app.Ship().Providers(),
 					"engine_version":        gocommerce.Version,

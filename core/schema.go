@@ -73,6 +73,7 @@ func coreMigrations() []Migration {
 		{ID: "0062_shipping_like_kitcommerce", SQL: migration0062ShippingLikeKitCommerce},
 		{ID: "0063_error_tracker", SQL: migration0063ErrorTracker},
 		ScopeMigration("0064_scope_error_tracker", "error_issues", "error_events"),
+		{ID: "0065_store_languages", SQL: migration0065StoreLanguages},
 	}
 }
 

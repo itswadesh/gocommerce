@@ -728,7 +728,7 @@ func (a *App) translateProducts(r *http.Request, products []*Product) {
 		return
 	}
 	lang := a.RequestLanguage(r)
-	if lang == a.cfg.DefaultLanguage {
+	if strings.EqualFold(lang, a.mainLanguage(r.Context())) {
 		return
 	}
 	ids := make([]int64, 0, len(products))
@@ -839,10 +839,12 @@ func (a *App) Handler() http.Handler {
 	// 404 that invites trying the next verb. Inside storeMW, because whether
 	// a request is to a demo can depend on its store.
 	h = a.demoGuardMW(h)
+	// Inside storeMW, because a request is negotiated against its own store's
+	// languages (D87).
+	h = a.languageMW(h)
 	// Before logging, so it sees the store the request is for; after the
 	// fallback, so an unknown route still answers JSON.
 	h = a.storeMW(h)
-	h = a.languageMW(h)
 	// Outside storeMW and the demo guard, so a preflight is answered before
 	// anything can refuse it: a browser sends no X-Store and no token on one.
 	h = a.corsMW(h)

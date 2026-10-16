@@ -59,7 +59,7 @@ type Module struct {
 	cfg           Config
 	db            *sql.DB
 	publishedOnly bool
-	defaultLang   string
+	app           *gocommerce.App
 }
 
 // New constructs the module.
@@ -99,12 +99,12 @@ func (m *Module) Migrations() []gocommerce.Migration {
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
 	m.registerRights(app)
+	m.app = app
 	m.db = app.DB()
 	m.publishedOnly = true
 	if m.cfg.PublishedOnly != nil {
 		m.publishedOnly = *m.cfg.PublishedOnly
 	}
-	m.defaultLang = app.Config().DefaultLanguage
 
 	app.HandleFunc("GET /x/cms/pages", m.handleListPublic)
 	app.HandleFunc("GET /x/cms/pages/{slug}", m.handleGetPublic)
@@ -145,10 +145,10 @@ func (m *Module) handleGetPublic(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 
 	page, err := m.bySlug(r.Context(), slug, lang, m.publicStatus())
-	if errors.Is(err, sql.ErrNoRows) && lang != m.defaultLang {
+	if main := m.app.Languages(r.Context())[0]; errors.Is(err, sql.ErrNoRows) && lang != main {
 		// Fall back to the store's own language rather than 404ing a shopper
 		// whose browser asked for a translation nobody has written yet.
-		page, err = m.bySlug(r.Context(), slug, m.defaultLang, m.publicStatus())
+		page, err = m.bySlug(r.Context(), slug, main, m.publicStatus())
 	}
 	if errors.Is(err, sql.ErrNoRows) {
 		gocommerce.RespondError(w, r, gocommerce.NotFoundf("no page at %q", slug))
@@ -172,7 +172,7 @@ func (m *Module) requestLanguage(r *http.Request) string {
 	if lang := gocommerce.Language(r.Context()); lang != "" {
 		return lang
 	}
-	return m.defaultLang
+	return m.app.Languages(r.Context())[0]
 }
 
 // -------------------------------------------------------------------- admin
@@ -262,7 +262,7 @@ func (m *Module) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if in.Language == "" {
-		in.Language = m.defaultLang
+		in.Language = m.app.Languages(r.Context())[0]
 	}
 	if in.Status == "" {
 		in.Status = StatusDraft
