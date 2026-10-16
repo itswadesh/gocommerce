@@ -84,7 +84,6 @@
         }
     }
 
-    // What has to be filled in before feeds can go on.
     const note = $derived(plugin && !plugin.enabled ? activateNote(plugin) : "");
 
     async function toggle() {

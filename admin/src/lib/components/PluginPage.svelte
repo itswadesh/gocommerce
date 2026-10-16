@@ -41,13 +41,13 @@
     }
 
     async function toggle() {
-        const note = plugin && !plugin.enabled ? activateNote(plugin) : "";
+        if (!plugin) return;
+        const note = plugin.enabled ? "" : activateNote(plugin);
         if (note) {
             toast.info(note);
             editing = plugin;
             return;
         }
-        if (!plugin) return;
         working = true;
         try {
             plugin = await request("PATCH", `/api/admin/plugins/${pluginKey}`, { body: { enabled: !plugin.enabled } });

@@ -7,11 +7,11 @@
  * with the reason beside it, rather than offered and refused.
  */
 
-const filled = (v) => v !== undefined && v !== null && String(v).trim() !== "";
+export const filled = (v) => v !== undefined && v !== null && String(v).trim() !== "";
 
 /** missingSettings lists the required fields a plugin has no value for. */
 export function missingSettings(plugin) {
-    return (plugin?.fields ?? []).filter((f) => f.required && !filled(plugin?.settings?.[f.key]));
+    return (plugin.fields ?? []).filter((f) => f.required && !filled(plugin.settings?.[f.key]));
 }
 
 function hint(f) {

@@ -147,8 +147,8 @@
                 event.preventDefault();
                 const target = findSaveTarget();
                 if (!target) return;
-                target.button?.classList.add("shortcut-pressed");
-                setTimeout(() => target.button?.classList.remove("shortcut-pressed"), 250);
+                target.button.classList.add("shortcut-pressed");
+                setTimeout(() => target.button.classList.remove("shortcut-pressed"), 250);
                 if (target.form) target.form.requestSubmit(target.button);
                 else target.button.click();
                 return;

@@ -24,7 +24,7 @@
      * number the code invented would be worse than no bar.
      */
     import { can, request } from "$lib/api.js";
-    import { activateNote } from "$lib/plugin-ready.js";
+    import { activateNote, filled } from "$lib/plugin-ready.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
@@ -32,9 +32,6 @@
     import PluginFields from "$lib/components/PluginFields.svelte";
 
     const PLUGIN = "sitemap";
-    // What has to be filled in before it can go on — said, not discovered by
-    // pressing Activate and being refused.
-    const note = $derived(plugin && !plugin.enabled ? activateNote(plugin) : "");
     const INDEX = "/x/sitemaps/sitemap.xml";
 
     const allowed = $derived(can("plugins.read"));
@@ -46,6 +43,9 @@
     let working = $state(false);
     let saving = $state(false);
     let form = $state({});
+    // What has to be filled in before it can go on — said, not discovered by
+    // pressing Activate and being refused.
+    const note = $derived(plugin && !plugin.enabled ? activateNote(plugin) : "");
 
     /** One row per sitemap: what it is, where it is, how many addresses. */
     let files = $state([]);
@@ -62,12 +62,12 @@
      */
     let settingsOpen = $state(false);
     $effect(() => {
-        if (note || (plugin?.enabled && !plugin?.configured)) settingsOpen = true;
+        if (note || (plugin?.enabled && !plugin.configured)) settingsOpen = true;
     });
     const settingsPreview = $derived(
         (plugin?.fields ?? []).map((f) => {
-            const v = plugin?.settings?.[f.key];
-            const set = v !== undefined && v !== null && String(v).trim() !== "";
+            const v = plugin.settings?.[f.key];
+            const set = filled(v);
             return { label: f.label, value: set ? String(v) : f.required ? "not set" : "default", missing: !set && f.required };
         }),
     );

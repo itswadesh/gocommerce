@@ -74,15 +74,15 @@ export function onNewShortcut(handler) {
  * choose between them is a guess, and a guess that saves the wrong thing is
  * worse than nothing, so that returns null.
  *
- * @returns {{ form?: HTMLFormElement, button?: HTMLElement } | null}
+ * @returns {{ form?: HTMLFormElement, button: HTMLElement } | null}
  */
-export function findSaveTarget(doc = document) {
-    const modals = [...doc.querySelectorAll('[data-modal-state="open"]')];
-    const scope = modals[modals.length - 1] ?? doc.querySelector("main") ?? doc.body;
+export function findSaveTarget() {
+    const modals = [...document.querySelectorAll('[data-modal-state="open"]')];
+    const scope = modals[modals.length - 1] ?? document.querySelector("main") ?? document.body;
     const visible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
     const enabled = (el) => !el.disabled && el.getAttribute("aria-disabled") !== "true";
 
-    const form = doc.activeElement?.closest?.("form");
+    const form = document.activeElement?.closest("form");
     if (form && scope.contains(form)) {
         const submit = form.querySelector('button[type="submit"], button:not([type]), input[type="submit"]');
         if (submit && visible(submit) && enabled(submit)) return { form, button: submit };
@@ -96,7 +96,7 @@ export function findSaveTarget(doc = document) {
     });
     if (saves.length === 1) return { button: saves[0] };
     // Several: the one in the same section as whatever has focus.
-    const near = saves.filter((el) => doc.activeElement && el.closest("section, form, .card")?.contains(doc.activeElement));
+    const near = saves.filter((el) => document.activeElement && el.closest("section, form, .card")?.contains(document.activeElement));
     return near.length === 1 ? { button: near[0] } : null;
 }
 

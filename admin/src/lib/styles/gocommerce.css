@@ -4327,7 +4327,6 @@ button.media-check {
     cursor: pointer;
     list-style: none;
     border-radius: var(--borderRadius);
-    transition: color 150ms ease-out;
 }
 .map-fold > summary::-webkit-details-marker {
     display: none;
@@ -4377,11 +4376,6 @@ button.media-check {
     background: var(--warningAltColor, var(--surfaceAlt1Color));
     color: var(--warningColor);
 }
-@media (prefers-reduced-motion: reduce) {
-    .map-fold-values {
-        animation: none;
-    }
-}
 .map-fold-body {
     margin-top: 12px;
     animation: emptyIn 220ms ease-out both;
@@ -4390,6 +4384,7 @@ button.media-check {
     .map-fold-chevron {
         transition: none;
     }
+    .map-fold-values,
     .map-fold-body {
         animation: none;
     }

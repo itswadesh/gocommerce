@@ -341,11 +341,10 @@ func (p *Plugins) Update(ctx context.Context, key string, patch PluginPatch) (*P
 				if !f.Required {
 					continue
 				}
-				if v, ok := settings[f.Key]; ok && v != nil && v != "" {
+				if v := settings[f.Key]; v != nil && v != "" {
 					continue
 				}
-				_, emptied := patch.Settings[f.Key]
-				if !wasOn || emptied {
+				if _, emptied := patch.Settings[f.Key]; !wasOn || emptied {
 					missing = append(missing, f)
 				}
 			}
