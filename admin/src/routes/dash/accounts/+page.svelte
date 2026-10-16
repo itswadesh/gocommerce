@@ -226,19 +226,11 @@
                                                 icon="ri-filter-off-line"
                                                 title="No accounts match this search"
                                                 text="The search reads emails and names, never phone numbers. Try one of those, or clear the search."
-                                            >
-                                                <button
-                                                    type="button"
-                                                    class="btn secondary"
-                                                    onclick={() => {
+                                                onclear={() => {
                                                         draftSearch = "";
                                                         list.set({ q: "" });
                                                     }}
-                                                >
-                                                    <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                                    <span class="txt">Clear filters</span>
-                                                </button>
-                                            </EmptyState>
+                                            />
                                         {:else}
                                             <EmptyState
                                                 icon="ri-user-add-line"

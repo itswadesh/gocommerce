@@ -1090,12 +1090,9 @@
                                         icon="ri-filter-off-line"
                                         title="No categories match “{search}”"
                                         text="The search reads the whole tree, not only the branches you have opened. Try another word, or clear it."
-                                    >
-                                        <button type="button" class="btn secondary" onclick={clearSearch}>
-                                            <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                            <span class="txt">Clear search</span>
-                                        </button>
-                                    </EmptyState>
+                                        onclear={clearSearch}
+                                        clearLabel="Clear search"
+                                    />
                                 {:else}
                                     <EmptyState
                                         icon="ri-node-tree"

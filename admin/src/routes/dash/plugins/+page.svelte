@@ -223,19 +223,11 @@
                             text={activeOnly && !search
                                 ? "No plugin is enabled yet. Turn off Enabled only to see every plugin."
                                 : "Try another word, or clear the search and Enabled only to see every plugin."}
-                        >
-                            <button
-                                type="button"
-                                class="btn secondary"
-                                onclick={() => {
+                            onclear={() => {
                                     search = "";
                                     activeOnly = false;
                                 }}
-                            >
-                                <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                <span class="txt">Clear filters</span>
-                            </button>
-                        </EmptyState>
+                        />
                     {:else}
                         <EmptyState
                             icon="ri-plug-line"

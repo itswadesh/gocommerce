@@ -284,12 +284,9 @@
                                             icon="ri-filter-off-line"
                                             title="No roles match this search"
                                             text="Nothing matches “{search.trim()}” in a role's name or rights. Try a shorter word, or clear the search."
-                                        >
-                                            <button type="button" class="btn secondary" onclick={() => (search = "")}>
-                                                <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                                <span class="txt">Clear search</span>
-                                            </button>
-                                        </EmptyState>
+                                            onclear={() => (search = "")}
+                                            clearLabel="Clear search"
+                                        />
                                     {:else}
                                         <EmptyState
                                             icon="ri-shield-user-line"

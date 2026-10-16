@@ -844,12 +844,8 @@
                                         icon="ri-filter-off-line"
                                         title="No discounts match these filters"
                                         text="Try a different code or state, or clear the filters to see every discount."
-                                    >
-                                        <button type="button" class="btn secondary" onclick={clearFilters}>
-                                            <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                            <span class="txt">Clear filters</span>
-                                        </button>
-                                    </EmptyState>
+                                        onclear={clearFilters}
+                                    />
                                 {:else}
                                     <EmptyState
                                         icon="ri-coupon-3-line"

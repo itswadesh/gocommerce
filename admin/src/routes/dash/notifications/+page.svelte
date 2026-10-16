@@ -104,7 +104,7 @@
         return row.title || row.event;
     }
 
-    const filtered = $derived(Boolean(list.params.q || list.params.status || list.params.channel));
+    const filtered = $derived(list.params.q || list.params.status || list.params.channel);
 </script>
 
 <svelte:head><title>Notification History · GoCommerce</title></svelte:head>
@@ -277,19 +277,11 @@
                                             icon="ri-filter-off-line"
                                             title="No notifications match these filters"
                                             text="Try another channel, status or search, or clear them to see everything sent."
-                                        >
-                                            <button
-                                                type="button"
-                                                class="btn secondary"
-                                                onclick={() => {
+                                            onclear={() => {
                                                     draft = "";
                                                     list.clear();
                                                 }}
-                                            >
-                                                <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                                <span class="txt">Clear filters</span>
-                                            </button>
-                                        </EmptyState>
+                                        />
                                     {:else}
                                         <EmptyState
                                             icon="ri-notification-3-line"

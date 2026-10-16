@@ -398,19 +398,11 @@
                                             icon="ri-filter-off-line"
                                             title="No events match these filters"
                                             text="Try another state or event name, or clear them to go back to the dead letters."
-                                        >
-                                            <button
-                                                type="button"
-                                                class="btn secondary"
-                                                onclick={() => {
+                                            onclear={() => {
                                                     draftName = "";
                                                     list.clear();
                                                 }}
-                                            >
-                                                <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                                <span class="txt">Clear filters</span>
-                                            </button>
-                                        </EmptyState>
+                                        />
                                     {/if}
                                 </td>
                             </tr>

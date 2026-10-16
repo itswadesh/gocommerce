@@ -430,12 +430,8 @@
                                         icon="ri-filter-off-line"
                                         title="No customers match this search"
                                         text="Check the spelling, or clear the search to see every customer."
-                                    >
-                                        <button type="button" class="btn secondary" onclick={clearSearch}>
-                                            <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                            <span class="txt">Clear filters</span>
-                                        </button>
-                                    </EmptyState>
+                                        onclear={clearSearch}
+                                    />
                                 {:else}
                                     <EmptyState
                                         icon="ri-user-3-line"

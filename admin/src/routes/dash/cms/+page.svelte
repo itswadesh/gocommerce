@@ -290,12 +290,8 @@
                                                 icon="ri-filter-off-line"
                                                 title="No pages match these filters"
                                                 text="Try another language or status, or clear them to see every page."
-                                            >
-                                                <button type="button" class="btn secondary" onclick={() => list.clear()}>
-                                                    <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                                    <span class="txt">Clear filters</span>
-                                                </button>
-                                            </EmptyState>
+                                                onclear={() => list.clear()}
+                                            />
                                         {/if}
                                     </td>
                                 </tr>

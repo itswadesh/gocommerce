@@ -1278,19 +1278,11 @@
                                         icon="ri-filter-off-line"
                                         title="No products match these filters"
                                         text="Try a different search or status, or clear the filters to see the whole catalogue."
-                                    >
-                                        <button
-                                            type="button"
-                                            class="btn secondary"
-                                            onclick={() => {
+                                        onclear={() => {
                                                 draftSearch = "";
                                                 list.clear();
                                             }}
-                                        >
-                                            <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                            <span class="txt">Clear filters</span>
-                                        </button>
-                                    </EmptyState>
+                                    />
                                 {:else}
                                     <EmptyState
                                         icon="ri-price-tag-3-line"

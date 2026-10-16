@@ -682,12 +682,8 @@
                                         icon="ri-filter-off-line"
                                         title="No rates match “{filter}”"
                                         text="Try a name, a country or a percentage, or clear the filter to see every rate."
-                                    >
-                                        <button type="button" class="btn secondary" onclick={clearFilter}>
-                                            <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                            <span class="txt">Clear filters</span>
-                                        </button>
-                                    </EmptyState>
+                                        onclear={clearFilter}
+                                    />
                                 {:else}
                                     <EmptyState
                                         icon="ri-percent-line"

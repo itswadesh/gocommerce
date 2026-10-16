@@ -420,19 +420,11 @@
                                                 icon="ri-filter-off-line"
                                                 title="No leads match these filters"
                                                 text="Try another dealer, route or status, or clear them to see every lead."
-                                            >
-                                                <button
-                                                    type="button"
-                                                    class="btn secondary"
-                                                    onclick={() => {
+                                                onclear={() => {
                                                         draft = "";
                                                         list.clear();
                                                     }}
-                                                >
-                                                    <i class="ri-close-circle-line" aria-hidden="true"></i>
-                                                    <span class="txt">Clear filters</span>
-                                                </button>
-                                            </EmptyState>
+                                            />
                                         {:else}
                                             <EmptyState
                                                 icon="ri-user-search-line"
