@@ -20,16 +20,16 @@ var (
 )
 
 // storeExempt are API paths that work before a store is known: signing in and
-// out of the person (who is not one store's), the password reset that goes
-// with it, and the routes that list and create stores. They are still bound
-// to a store when the request names one — a sign-in that names its store
-// answers with the role there — but naming none is not an error.
+// out of the person (who is not one store's) and the password reset that goes
+// with it. They are still bound to a store when the request names one — a
+// sign-in that names its store answers with the role there — but naming none
+// is not an error. The /api/stores routes go further and are never bound
+// (personPath).
 var storeExempt = []string{
 	"/api/admin/auth-state",
 	"/api/admin/auth-with-password",
 	"/api/admin/auth-logout",
 	"/api/admin/password-reset",
-	"/api/stores/",
 }
 
 func storeExemptPath(p string) bool {
@@ -60,7 +60,7 @@ func storePath(p string) bool {
 // team (bearerAuth).
 func (a *App) storeMW(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !storePath(r.URL.Path) {
+		if !storePath(r.URL.Path) || personPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}

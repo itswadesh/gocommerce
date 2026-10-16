@@ -459,6 +459,7 @@ func (a *App) mountCoreRoutes() {
 	a.HandleFunc("GET /docs", a.handleDocs)
 
 	a.mountSuperuserRoutes()
+	a.mountStoreRoutes()
 	a.mountMediaRoutes()
 	a.mountCatalogRoutes()
 	a.mountCollectionRoutes()
