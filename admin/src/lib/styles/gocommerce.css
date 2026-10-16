@@ -4112,6 +4112,10 @@ button.media-check {
 .store-delete .btn[disabled] {
     transition: opacity 150ms ease-out;
 }
+/* Folded, its heading carries the warning on its own. */
+.store-delete-fold > summary .map-fold-title {
+    color: var(--dangerColor);
+}
 
 /* Settings › Domains: one row per domain, and the DNS record to create
    beneath a domain still waiting for it. */
