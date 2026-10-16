@@ -21,6 +21,8 @@ type MyStore struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
 	Role   string `json:"role"`
+	// Demo says the store masks personal data (Stores.SetDemo).
+	Demo bool `json:"demo"`
 	// Domain is where the store's shop is: its first attached domain, else
 	// <slug>.<Config.BaseDomain>, else empty when neither exists.
 	Domain string `json:"domain"`
@@ -73,14 +75,14 @@ func isAPIKeyShaped(token string) bool {
 // install's operator, so it sees every store, as owner.
 func (a *App) myStores(ctx context.Context) ([]MyStore, error) {
 	const domain = `(SELECT host FROM store_domains d WHERE d.store_id = st.id ORDER BY created_at, host LIMIT 1)`
-	q := `SELECT st.id, st.slug, st.name, st.status, m.role, ` + domain + `
+	q := `SELECT st.id, st.slug, st.name, st.status, st.demo, m.role, ` + domain + `
 		FROM store_members m JOIN stores st ON st.id = m.store_id
 		WHERE m.superuser_id = $1 ORDER BY st.created_at, st.id`
 	var args []any
 	if su := SuperuserFrom(ctx); su != nil {
 		args = append(args, su.ID)
 	} else {
-		q = `SELECT st.id, st.slug, st.name, st.status, '` + RoleOwner + `', ` + domain + `
+		q = `SELECT st.id, st.slug, st.name, st.status, st.demo, '` + RoleOwner + `', ` + domain + `
 			FROM stores st ORDER BY st.created_at, st.id`
 	}
 	rows, err := a.db.QueryContext(ctx, q, args...)
@@ -92,7 +94,7 @@ func (a *App) myStores(ctx context.Context) ([]MyStore, error) {
 	for rows.Next() {
 		var s MyStore
 		var host sql.NullString
-		if err := rows.Scan(&s.ID, &s.Slug, &s.Name, &s.Status, &s.Role, &host); err != nil {
+		if err := rows.Scan(&s.ID, &s.Slug, &s.Name, &s.Status, &s.Demo, &s.Role, &host); err != nil {
 			return nil, Internalf(err, "scan store")
 		}
 		s.Domain = host.String

@@ -19280,6 +19280,10 @@
           "domain": {
             "type": "string",
             "description": "Where the store's shop is: its first attached domain, else <slug>.<base domain>, else empty."
+          },
+          "demo": {
+            "type": "boolean",
+            "description": "The store masks personal data on its admin routes and freezes who can sign in (gocommerce store demo <slug> on)."
           }
         }
       },
@@ -19309,6 +19313,10 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "demo": {
+            "type": "boolean",
+            "description": "The store masks personal data on its admin routes and freezes who can sign in (gocommerce store demo <slug> on)."
           }
         }
       }

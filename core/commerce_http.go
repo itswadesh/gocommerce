@@ -293,7 +293,7 @@ func (a *App) handleListOrders(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.maskOrders(orders)
+	a.maskOrders(r.Context(), orders)
 	RespondList(w, orders, ListMeta{Total: total, Limit: limit, Offset: offset})
 }
 
@@ -308,7 +308,7 @@ func (a *App) handleGetOrder(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.MaskOrder(order)
+	a.MaskOrder(r.Context(), order)
 	Respond(w, http.StatusOK, order)
 }
 
@@ -356,7 +356,7 @@ func (a *App) handleOrderTimeline(w http.ResponseWriter, r *http.Request) {
 			entries[i].LastError = ""
 		}
 	}
-	a.maskTimeline(entries)
+	a.maskTimeline(r.Context(), entries)
 	RespondList(w, entries, ListMeta{Total: total, Limit: limit, Offset: offset})
 }
 
@@ -380,7 +380,7 @@ func (a *App) handleCancelOrder(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.MaskOrder(order)
+	a.MaskOrder(r.Context(), order)
 	Respond(w, http.StatusOK, order)
 }
 
@@ -404,7 +404,7 @@ func (a *App) handleMarkPaid(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.MaskOrder(order)
+	a.MaskOrder(r.Context(), order)
 	Respond(w, http.StatusOK, order)
 }
 
@@ -421,7 +421,7 @@ func (a *App) handleMarkUnpaid(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.MaskOrder(order)
+	a.MaskOrder(r.Context(), order)
 	Respond(w, http.StatusOK, order)
 }
 
@@ -451,7 +451,7 @@ func (a *App) handleMarkPaymentFailed(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.MaskOrder(order)
+	a.MaskOrder(r.Context(), order)
 	Respond(w, http.StatusOK, order)
 }
 
@@ -466,7 +466,7 @@ func (a *App) handleUndeliver(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.MaskOrder(order)
+	a.MaskOrder(r.Context(), order)
 	Respond(w, http.StatusOK, order)
 }
 
@@ -503,7 +503,7 @@ func (a *App) handleDeleteFulfillment(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.MaskOrder(order)
+	a.MaskOrder(r.Context(), order)
 	Respond(w, http.StatusOK, order)
 }
 
@@ -537,13 +537,13 @@ func (a *App) handleUpdateOrder(w http.ResponseWriter, r *http.Request) {
 	// The form was filled from a masked response, so a save that left the
 	// contact fields alone hands the mask straight back. Dropping them is what
 	// the operator meant and is what stops the mask overwriting the address.
-	a.dropMasked(&patch.Email)
-	a.dropMasked(&patch.Phone)
+	a.dropMasked(r.Context(), &patch.Email)
+	a.dropMasked(r.Context(), &patch.Phone)
 	// The address carries a second phone, and the form submits the whole object
 	// rather than a field: without this, saving an order wrote the mask over the
 	// number the parcel is delivered against. There is nothing to fall back to
 	// on a nested value, so it is restored from the order as stored.
-	if patch.Address != nil && a.maskedInput(patch.Address.Phone) {
+	if patch.Address != nil && a.maskedInput(r.Context(), patch.Address.Phone) {
 		if was, err := a.orders.Get(r.Context(), id); err == nil {
 			patch.Address.Phone = was.Address.Phone
 		} else {
@@ -556,7 +556,7 @@ func (a *App) handleUpdateOrder(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.MaskOrder(order)
+	a.MaskOrder(r.Context(), order)
 	Respond(w, http.StatusOK, order)
 }
 
@@ -583,7 +583,7 @@ func (a *App) handleRefund(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.MaskOrder(order)
+	a.MaskOrder(r.Context(), order)
 	Respond(w, http.StatusOK, order)
 }
 
@@ -611,7 +611,7 @@ func (a *App) handleSettleRefund(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.MaskOrder(order)
+	a.MaskOrder(r.Context(), order)
 	Respond(w, http.StatusOK, order)
 }
 
@@ -626,7 +626,7 @@ func (a *App) handleDeliver(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.MaskOrder(order)
+	a.MaskOrder(r.Context(), order)
 	Respond(w, http.StatusOK, order)
 }
 
@@ -656,7 +656,7 @@ func (a *App) handleCreateFulfillment(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.MaskOrder(order)
+	a.MaskOrder(r.Context(), order)
 	Respond(w, http.StatusCreated, order)
 }
 
@@ -839,7 +839,7 @@ func (a *App) handleEditOrderLines(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.MaskOrder(order)
+	a.MaskOrder(r.Context(), order)
 	Respond(w, http.StatusOK, map[string]any{"order": order, "changed": change})
 }
 
@@ -865,7 +865,7 @@ func (a *App) handleRecordReturn(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.MaskOrder(order)
+	a.MaskOrder(r.Context(), order)
 	Respond(w, http.StatusCreated, map[string]any{"order": order, "return": rec})
 }
 
@@ -888,7 +888,7 @@ func (a *App) handleWithdrawReturn(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.MaskOrder(order)
+	a.MaskOrder(r.Context(), order)
 	Respond(w, http.StatusOK, order)
 }
 
@@ -921,7 +921,7 @@ func (a *App) handleCreateOrder(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.MaskOrder(result.Order)
+	a.MaskOrder(r.Context(), result.Order)
 	Respond(w, http.StatusCreated, result)
 }
 
@@ -949,6 +949,6 @@ func (a *App) handleListCustomers(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.maskCustomers(customers)
+	a.maskCustomers(r.Context(), customers)
 	RespondList(w, customers, ListMeta{Total: total, Limit: limit, Offset: offset})
 }

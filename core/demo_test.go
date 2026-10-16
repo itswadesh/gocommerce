@@ -1,6 +1,7 @@
 package gocommerce
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -87,19 +88,19 @@ func TestMaskingIsOffUnlessTheStoreIsADemo(t *testing.T) {
 	live := &App{cfg: Config{}}
 	demo := &App{cfg: Config{Demo: true}}
 
-	if got := live.MaskEmail("jane.doe@gmail.com"); got != "jane.doe@gmail.com" {
+	if got := live.MaskEmail(context.Background(), "jane.doe@gmail.com"); got != "jane.doe@gmail.com" {
 		t.Errorf("a live store masked an address: %q", got)
 	}
-	if got := live.MaskPhone("+31 20 555 1242"); got != "+31 20 555 1242" {
+	if got := live.MaskPhone(context.Background(), "+31 20 555 1242"); got != "+31 20 555 1242" {
 		t.Errorf("a live store masked a number: %q", got)
 	}
-	if got := demo.MaskEmail("jane.doe@gmail.com"); got != "j•••@g•••.com" {
+	if got := demo.MaskEmail(context.Background(), "jane.doe@gmail.com"); got != "j•••@g•••.com" {
 		t.Errorf("a demo store did not mask an address: %q", got)
 	}
-	if got := demo.MaskPhone("+31 20 555 1242"); got != "+31 •• ••• ••42" {
+	if got := demo.MaskPhone(context.Background(), "+31 20 555 1242"); got != "+31 •• ••• ••42" {
 		t.Errorf("a demo store did not mask a number: %q", got)
 	}
-	if !demo.Demo() || live.Demo() {
+	if !demo.Demo(context.Background()) || live.Demo(context.Background()) {
 		t.Error("Demo() does not report what the config says")
 	}
 }
@@ -111,14 +112,14 @@ func TestAMaskComingBackIsNotAnEdit(t *testing.T) {
 
 	masked := "j•••@g•••.com"
 	p := &masked
-	demo.dropMasked(&p)
+	demo.dropMasked(context.Background(), &p)
 	if p != nil {
 		t.Errorf("a demo store accepted its own mask as an edit: %q", *p)
 	}
 
 	typed := "someone.else@example.com"
 	q := &typed
-	demo.dropMasked(&q)
+	demo.dropMasked(context.Background(), &q)
 	if q == nil || *q != typed {
 		t.Error("a demo store dropped an address the operator actually typed")
 	}
@@ -127,18 +128,18 @@ func TestAMaskComingBackIsNotAnEdit(t *testing.T) {
 	// value containing the rune is somebody's odd input, not our mask.
 	odd := "we•rd@example.com"
 	r := &odd
-	live.dropMasked(&r)
+	live.dropMasked(context.Background(), &r)
 	if r == nil || *r != odd {
 		t.Error("a live store dropped a field it never masked")
 	}
 
 	var absent *string
-	demo.dropMasked(&absent)
+	demo.dropMasked(context.Background(), &absent)
 	if absent != nil {
 		t.Error("dropMasked invented a value for a field that was not submitted")
 	}
 
-	if !demo.maskedInput(masked) || demo.maskedInput(typed) || live.maskedInput(masked) {
+	if !demo.maskedInput(context.Background(), masked) || demo.maskedInput(context.Background(), typed) || live.maskedInput(context.Background(), masked) {
 		t.Error("maskedInput disagrees with dropMasked about what a mask is")
 	}
 }

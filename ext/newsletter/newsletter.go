@@ -283,7 +283,7 @@ func (m *Module) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, s := range rows {
-		s.Email = m.app.MaskEmail(s.Email)
+		s.Email = m.app.MaskEmail(r.Context(), s.Email)
 	}
 	gocommerce.RespondList(w, rows, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})
 }
@@ -309,7 +309,7 @@ func (m *Module) handleExport(w http.ResponseWriter, r *http.Request) {
 			if s.UnsubscribedAt != nil {
 				left = s.UnsubscribedAt.UTC().Format(time.RFC3339)
 			}
-			_ = cw.Write([]string{m.app.MaskEmail(s.Email), s.Name, s.Source, s.Status, s.CreatedAt.UTC().Format(time.RFC3339), left})
+			_ = cw.Write([]string{m.app.MaskEmail(r.Context(), s.Email), s.Name, s.Source, s.Status, s.CreatedAt.UTC().Format(time.RFC3339), left})
 		}
 		if len(rows) < 500 {
 			break

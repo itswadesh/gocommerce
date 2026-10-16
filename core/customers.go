@@ -122,7 +122,7 @@ func customerSearchClause(search string, args *[]any, demo bool) string {
 // address are not.
 func (s *Orders) Customers(ctx context.Context, q CustomerQuery) ([]*Customer, int, error) {
 	where, args := []string{"o.email <> ''"}, []any{}
-	if clause := customerSearchClause(q.Search, &args, s.app.cfg.Demo); clause != "" {
+	if clause := customerSearchClause(q.Search, &args, s.app.demo(ctx)); clause != "" {
 		where = append(where, clause)
 	}
 	clause := strings.Join(where, " AND ")

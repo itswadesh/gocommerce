@@ -66,12 +66,20 @@ func coreMigrations() []Migration {
 		{ID: "0055_invitation_revoked", SQL: migration0055InvitationRevoked},
 		{ID: "0056_order_number_sequences", Run: migrate0056OrderNumberSequences},
 		{ID: "0057_store_names", Run: migrate0057StoreNames},
+		{ID: "0058_store_demo", SQL: migration0058StoreDemo},
 	}
 }
 
 // M55 — a revoked invitation is kept, marked, rather than deleted, so the
 // team screen can list what was sent and what became of it, as it already
 // does for accepted ones. The one-open-invitation rule now skips revoked rows.
+// M58 — a store can be a demo on its own: its admin routes mask personal data
+// and freeze who can sign in, as Config.Demo does for a whole install, while
+// the stores beside it are live. Set from the command line only.
+const migration0058StoreDemo = `
+ALTER TABLE stores ADD COLUMN demo boolean NOT NULL DEFAULT false;
+`
+
 const migration0055InvitationRevoked = `
 ALTER TABLE superuser_invitations ADD COLUMN revoked_at timestamptz;
 DROP INDEX superuser_invitations_open;
