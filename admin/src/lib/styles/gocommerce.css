@@ -2963,11 +2963,12 @@ button.media-check {
     flex-basis: auto;
 }
 
-/* Below 550px PocketBase turns a header button into its icon in a circle. The
-   audit trail's "Clear filters" has no icon, so it was its words squeezed
-   into a circle and running off the phone's edge; it keeps its own shape. */
+/* Below 550px PocketBase turns a header button into its icon in a circle. A
+   button with no icon — the audit trail's "Clear filters", Feeds' and
+   Sitemap's "Deactivate" — was its words squeezed into a circle, so it keeps
+   its own shape. */
 @media (max-width: 550px) {
-    .page-audit .page-header-primary-btns .btn:not(.circle) {
+    .page-header-primary-btns .btn:not(.circle):not(:has(> i)) {
         aspect-ratio: auto;
         padding: 5px 14px;
         border-radius: var(--borderRadius);
@@ -6477,6 +6478,13 @@ kbd + kbd {
 .shopify-skin .feed-health-clear i {
     color: var(--successColor);
     font-size: 1.1rem;
+}
+/* The same line when items will be held: the summary's pointer to the list. */
+.shopify-skin .feed-health-clear.warn {
+    background: var(--warningAltColor, var(--surfaceAlt1Color));
+}
+.shopify-skin .feed-health-clear.warn i {
+    color: var(--warningColor);
 }
 
 /* The settings, two across on a wide screen and one on a narrow one. */
