@@ -33,7 +33,7 @@ func (a *App) handleListNotifications(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.maskNotifications(rows)
+	a.maskNotifications(r.Context(), rows)
 	RespondList(w, rows, ListMeta{Total: total, Limit: limit, Offset: offset})
 }
 
@@ -48,7 +48,7 @@ func (a *App) handleGetNotification(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.maskNotification(rec)
+	a.maskNotification(r.Context(), rec)
 	Respond(w, http.StatusOK, rec)
 }
 
@@ -63,6 +63,6 @@ func (a *App) handleResendNotification(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.maskNotification(rec)
+	a.maskNotification(r.Context(), rec)
 	Respond(w, http.StatusOK, rec)
 }

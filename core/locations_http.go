@@ -187,7 +187,7 @@ func (a *App) handleVariantMovements(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.maskMovements(rows)
+	a.maskMovements(r.Context(), rows)
 	RespondList(w, rows, ListMeta{Total: total, Limit: limit, Offset: offset})
 }
 
@@ -222,7 +222,7 @@ func (a *App) handleLocationMovements(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.maskMovements(rows)
+	a.maskMovements(r.Context(), rows)
 	RespondList(w, rows, ListMeta{Total: total, Limit: limit, Offset: offset})
 }
 

@@ -682,7 +682,10 @@
                 <div class="store-current">
                     <div class="store-current-text">
                         <span class="store-current-label">Store</span>
-                        <span class="txt txt-ellipsis store-current-name">{here.name}</span>
+                        <span class="txt txt-ellipsis store-current-name">
+                            {here.name}
+                            {#if here.demo}<span class="store-demo-tag" title="Personal data is masked in this store">Demo</span>{/if}
+                        </span>
                         {#if here.domain}
                             <span class="txt-hint txt-ellipsis store-current-domain">{here.domain}</span>
                         {/if}
@@ -740,7 +743,9 @@
                                 <span class="store-menu-mark" aria-hidden="true">{(st.name || st.slug)[0].toUpperCase()}</span>
                                 <span class="store-menu-text">
                                     <span class="txt txt-ellipsis">{st.name}</span>
-                                    <span class="store-menu-role">{roleName(st.role)}</span>
+                                    <span class="store-menu-role">
+                                        {roleName(st.role)}{#if st.demo}<span class="store-demo-tag">Demo</span>{/if}
+                                    </span>
                                 </span>
                                 {#if switching === st.id}
                                     <span class="loader sm" aria-label="Switching"></span>

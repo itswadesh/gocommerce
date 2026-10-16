@@ -325,7 +325,7 @@ func (m *Module) handleGet(w http.ResponseWriter, r *http.Request) {
 	// order actually was, and masking there would write bullets into the
 	// document a real store has to be able to produce. Both shapes below read
 	// from here, so the JSON and the printable page mask together.
-	m.app.MaskOrder(&order)
+	m.app.MaskOrder(r.Context(), &order)
 
 	// JSON for a client that wants the data, HTML for a human who wants to
 	// print it.

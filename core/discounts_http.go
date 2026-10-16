@@ -160,7 +160,7 @@ func (a *App) handleDiscountOrders(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.maskRedemptions(rows)
+	a.maskRedemptions(r.Context(), rows)
 	RespondList(w, rows, ListMeta{Total: total, Limit: limit, Offset: offset})
 }
 

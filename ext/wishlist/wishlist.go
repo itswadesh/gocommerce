@@ -563,7 +563,7 @@ func (m *Module) handleLists(w http.ResponseWriter, r *http.Request) {
 			gocommerce.RespondError(w, r, gocommerce.Internalf(err, "scan a wishlist"))
 			return
 		}
-		l.Email = m.app.MaskEmail(l.Email)
+		l.Email = m.app.MaskEmail(r.Context(), l.Email)
 		out = append(out, l)
 	}
 	if err := rows.Err(); err != nil {

@@ -58,6 +58,15 @@ func WithStore(ctx context.Context, storeID string) context.Context {
 	return context.WithValue(ctx, storeKey{}, storeID)
 }
 
+type storeDemoKey struct{}
+
+// withStoreDemo records, beside the store, whether it is a demo, so masking
+// answers from the row storeMW already read rather than reading it again for
+// every field it hides.
+func withStoreDemo(ctx context.Context, demo bool) context.Context {
+	return context.WithValue(ctx, storeDemoKey{}, demo)
+}
+
 // StoreFrom returns the store ctx is bound to, if any.
 func StoreFrom(ctx context.Context) (string, bool) {
 	s, ok := ctx.Value(storeKey{}).(string)
