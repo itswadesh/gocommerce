@@ -280,7 +280,9 @@ func (s *Stores) Seed(ctx context.Context, storeID string) error {
 			return Internalf(err, "seed roles")
 		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO store_profile (store_id) VALUES ($1) ON CONFLICT (store_id) DO NOTHING`, storeID); err != nil {
+			INSERT INTO store_profile (store_id, name)
+			SELECT $1, name FROM stores WHERE id = $1
+			ON CONFLICT (store_id) DO NOTHING`, storeID); err != nil {
 			return Internalf(err, "seed store profile")
 		}
 		if _, err := tx.ExecContext(ctx,

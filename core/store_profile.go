@@ -155,7 +155,8 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 	if by != nil {
 		updatedBy = &by.ID
 	}
-	_, err := p.app.db.ExecContext(ctx, `
+	err := InTx(ctx, p.app.db, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
 		UPDATE store_profile SET
 		    name = $1, legal_name = $2, email = $3, phone = $4,
 		    address_line1 = $5, address_line2 = $6, city = $7, state = $8,
@@ -163,10 +164,22 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 		    timezone = $13, language = $14,
 		    updated_at = now(), updated_by = $15
 		WHERE id = 1`,
-		in.Name, in.LegalName, in.Email, in.Phone,
-		in.AddressLine1, in.AddressLine2, in.City, in.State,
-		in.PostalCode, in.Country, in.TaxID, in.SupportURL,
-		in.Timezone, in.Language, updatedBy)
+			in.Name, in.LegalName, in.Email, in.Phone,
+			in.AddressLine1, in.AddressLine2, in.City, in.State,
+			in.PostalCode, in.Country, in.TaxID, in.SupportURL,
+			in.Timezone, in.Language, updatedBy); err != nil {
+			return err
+		}
+		// A store has one name: this one, which is what the store list and
+		// the account menu show (D83). Blank leaves the old one, since a
+		// store listed as nothing cannot be picked out.
+		if in.Name == "" {
+			return nil
+		}
+		_, err := tx.ExecContext(ctx,
+			`UPDATE stores SET name = $1 WHERE id = $2`, in.Name, p.app.storeOf(ctx))
+		return err
+	})
 	if err != nil {
 		return nil, Internalf(err, "save the store profile")
 	}
