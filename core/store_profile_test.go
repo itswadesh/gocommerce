@@ -16,13 +16,14 @@ func TestAStoreDescribesItself(t *testing.T) {
 	ctx := context.Background()
 
 	// A store that has said nothing gets blanks, not an error: the migration
-	// makes the row, so there is always something to read.
+	// makes the row, so there is always something to read. Its name is the
+	// one exception, suggested so that no store is listed as nothing (0067).
 	empty, err := app.Profile().Get(ctx)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if empty.Name != "" || empty.Country != "" {
-		t.Errorf("a fresh store = %+v, want blanks", empty)
+	if len(strings.Fields(empty.Name)) != 2 || empty.Country != "" || empty.Email != "" {
+		t.Errorf("a fresh store = %+v, want a suggested name and blanks", empty)
 	}
 
 	saved, err := app.Profile().Set(ctx, StoreProfile{

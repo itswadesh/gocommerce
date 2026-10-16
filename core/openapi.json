@@ -13678,23 +13678,22 @@
             "adminToken": []
           }
         ],
-        "description": "Creates a store with its starting rows, makes the caller its owner and moves them into it. Any signed-in person may open one.",
+        "description": "Creates a store with its starting rows, makes the caller its owner and moves them into it. Any signed-in person may open one. A store is never opened without a name: with neither name nor slug it takes a suggested one (GET /api/stores/suggest); with a name and no slug, the slug comes from the name, numbered when taken, or is suggested for a name with no Latin letters. A slug given and already taken is refused with 409.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "slug"
-                ],
                 "properties": {
                   "name": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "What the store is called. Empty takes a suggested name."
                   },
                   "slug": {
                     "type": "string",
-                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+                    "description": "The store's address. Empty takes one from the name, or a suggested one."
                   },
                   "currency": {
                     "type": "string",
@@ -13760,6 +13759,50 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/stores/suggest": {
+      "get": {
+        "tags": [
+          "stores"
+        ],
+        "summary": "A name for a new store",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "A two-word name, an adjective and a place to shop such as \"Saffron Orchard\", with an address no store has (numbered when the words are taken). What the create form offers, the way GitHub offers a name for a new repository; nothing is reserved. Any signed-in person may ask.",
+        "responses": {
+          "200": {
+            "description": "The suggestion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "example": "Saffron Orchard"
+                        },
+                        "slug": {
+                          "type": "string",
+                          "example": "saffron-orchard"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           }
         }
       }
