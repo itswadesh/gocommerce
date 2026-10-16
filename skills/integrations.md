@@ -364,6 +364,12 @@ exposed, you say so in `main()`.
   unverified sender, a bad key): it is recorded as failed, with your reason,
   and never retried. Return a plain error only when the vendor could not be
   reached.
+- **Letting two providers text the same person.** Every backend on a channel
+  gets every message unless one is scoped: implement
+  `gocommerce.ScopedNotifier` (`Serves(ctx, n) bool`) and a message you serve
+  is yours alone, the channel's other backends standing aside for it. MSG91
+  does this for Indian numbers and India-based stores; Twilio, unscoped,
+  carries the rest.
 - **Forgetting the webhook is a raw-body route.** The engine applies no
   body-consuming middleware there precisely so you can verify the signature
   against the exact bytes — and then deduplicate on the gateway's event id.

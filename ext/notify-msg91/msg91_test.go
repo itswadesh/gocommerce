@@ -52,6 +52,16 @@ func TestConfiguredFromThePanel(t *testing.T) {
 	server := gctest.StubHTTP(t, s.handler)
 	app := gctest.New(t, New(Config{BaseURL: server.URL}))
 	ctx := context.Background()
+	// A store in India, whose numbers are MSG91's even written without the
+	// code (TestMSG91ServesIndianNumbersAndIndianStores).
+	profile, err := app.Profile().Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile.Country = "IN"
+	if _, err := app.Profile().Set(ctx, *profile, nil); err != nil {
+		t.Fatal(err)
+	}
 
 	text := func(event string) {
 		t.Helper()
