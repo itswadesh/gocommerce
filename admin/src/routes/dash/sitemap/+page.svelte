@@ -212,6 +212,12 @@
         }
     }
 
+    // Enter in a field saves, like the Save button.
+    function submit(e) {
+        e.preventDefault();
+        if (writable && !saving) save();
+    }
+
     async function save() {
         saving = true;
         try {
@@ -549,17 +555,17 @@
                         module is installed. These say where each lives, so the sitemap lists addresses that
                         exist.
                     </p>
-                    <div class="feed-form">
+                    <form id="map-settings" class="feed-form" onsubmit={submit}>
                         <PluginFields fields={plugin.fields} bind:form idPrefix="map" />
-                    </div>
+                    </form>
                     {#if writable}
                         <div class="feed-form-actions">
                             <button
-                                type="button"
+                                type="submit"
+                                form="map-settings"
                                 class="btn sm"
                                 class:loading={saving}
                                 disabled={saving}
-                                onclick={save}
                             >
                                 <span class="txt">Save</span>
                             </button>
