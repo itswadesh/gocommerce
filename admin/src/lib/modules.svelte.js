@@ -110,11 +110,17 @@ async function probe(path) {
     }
 }
 
+/* Bumped by forgetModules, so a round begun for the store the tab has left
+   cannot write its answer into the new store's. */
+let generation = 0;
+
 async function round() {
+    const mine = generation;
     // Free when the shell has already loaded the settings, and correct when it
     // has not: ensureSettings never throws, so a store that cannot answer it
     // falls through to the probes rather than leaving the panel module-blind.
     await ensureSettings();
+    if (mine !== generation) return s.names;
     if (Array.isArray(settings.all?.modules)) {
         s.names = [...settings.modules];
         s.loaded = true;
@@ -124,6 +130,7 @@ async function round() {
     const mayAsk = (right) => [right].flat().some((r) => can(r));
     const names = Object.keys(PROBES).filter((name) => mayAsk(PROBES[name].right));
     const present = await Promise.all(names.map((name) => probe(PROBES[name].path)));
+    if (mine !== generation) return s.names;
     s.names = names.filter((_, i) => present[i]);
     s.loaded = true;
     return s.names;
@@ -139,12 +146,13 @@ async function round() {
 export async function loadModules() {
     if (s.loaded) return s.names;
     if (inflight) return inflight;
-    inflight = round()
+    const request = round()
         .catch(() => s.names)
         .finally(() => {
-            inflight = null;
+            if (inflight === request) inflight = null;
         });
-    return inflight;
+    inflight = request;
+    return request;
 }
 
 /** Whether this store serves `name`. False until the answer arrives. */
@@ -166,6 +174,7 @@ export function modulesKnown() {
 /** Called by the shell on sign-in and sign-out: the next operator on a shared
  *  browser may be signed into another store. */
 export function forgetModules() {
+    generation++;
     s.names = [];
     s.loaded = false;
     inflight = null;

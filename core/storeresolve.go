@@ -123,15 +123,36 @@ func (a *App) resolveStore(r *http.Request) (*Store, error) {
 // namedStore is the store the request names outright: header, then query,
 // then cookie. A name that matches no store is a 404, not a fall-through: a
 // client that names a store and gets another's answer would be worse.
+//
+// The cookie is the exception. It is only a reminder of which store a new tab
+// opens in, set by a switch long ago, and the panel cannot clear it (HttpOnly)
+// — so one naming a store that has since gone or been suspended is passed
+// over rather than refusing every request, sign-in included.
 func (a *App) namedStore(ctx context.Context, r *http.Request) (*Store, error) {
 	candidates := []string{
 		r.Header.Get("x-litekart-store"),
 		r.Header.Get("X-Store"),
 		r.URL.Query().Get("store"),
 	}
-	if c, err := r.Cookie("litekart_store_id"); err == nil {
-		candidates = append(candidates, c.Value)
+	if st, err := a.lookupStore(ctx, candidates); st != nil || err != nil {
+		return st, err
 	}
+	c, err := r.Cookie(storeCookie)
+	if err != nil {
+		return nil, nil
+	}
+	st, err := a.lookupStore(ctx, []string{c.Value})
+	if err != nil && !errors.Is(err, ErrNotFound) && !errors.Is(err, ErrStoreNotFound) {
+		return nil, err
+	}
+	if st == nil || st.Status != "active" {
+		return nil, nil
+	}
+	return st, nil
+}
+
+// lookupStore returns the store the first non-empty name matches.
+func (a *App) lookupStore(ctx context.Context, candidates []string) (*Store, error) {
 	for _, v := range candidates {
 		v = strings.TrimSpace(v)
 		if v == "" {

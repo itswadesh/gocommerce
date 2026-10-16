@@ -35,6 +35,12 @@ const s = $state({
 
 /** A pending load, so concurrent callers share one request rather than racing. */
 let inflight = null;
+/*
+ * Bumped by clearSettings. An answer that lands after a clear was asked for
+ * before it — of the store the tab has just left — and is dropped rather
+ * than written over the new store's.
+ */
+let generation = 0;
 
 function list(value) {
     if (Array.isArray(value)) return value;
@@ -132,6 +138,7 @@ export const settings = {
  */
 const pf = $state({ data: {}, loaded: false, loading: false, error: null });
 let profileInflight = null;
+let profileGeneration = 0;
 
 export const profile = {
     /** What a customer calls the shop. */
@@ -166,20 +173,26 @@ export async function loadProfile({ force = false } = {}) {
     if (pf.loaded && !force) return pf.data;
 
     pf.loading = true;
-    profileInflight = (async () => {
+    const mine = profileGeneration;
+    const request = (async () => {
         try {
-            pf.data = (await api.get("/api/admin/store")) ?? {};
+            const data = (await api.get("/api/admin/store")) ?? {};
+            if (mine !== profileGeneration) return pf.data;
+            pf.data = data;
             pf.loaded = true;
             pf.error = null;
         } catch (err) {
-            pf.error = err;
+            if (mine === profileGeneration) pf.error = err;
         } finally {
-            pf.loading = false;
-            profileInflight = null;
+            if (mine === profileGeneration) {
+                pf.loading = false;
+                profileInflight = null;
+            }
         }
         return pf.data;
     })();
-    return profileInflight;
+    profileInflight = request;
+    return request;
 }
 
 /** The idempotent form, safe from any screen's mount effect. */
@@ -189,6 +202,9 @@ export function ensureProfile() {
 
 /** Called by the shell on sign-out, for clearSettings' reason. */
 export function clearProfile() {
+    profileGeneration++;
+    profileInflight = null;
+    pf.loading = false;
     pf.data = {};
     pf.loaded = false;
     pf.error = null;
@@ -207,21 +223,26 @@ export async function loadSettings({ force = false } = {}) {
     if (s.loaded && !force) return s.data;
 
     s.loading = true;
-    inflight = (async () => {
+    const mine = generation;
+    const request = (async () => {
         try {
             const result = await api.get("/api/admin/settings");
+            if (mine !== generation) return s.data;
             s.data = result ?? {};
             s.loaded = true;
             s.error = null;
         } catch (err) {
-            s.error = err;
+            if (mine === generation) s.error = err;
         } finally {
-            s.loading = false;
-            inflight = null;
+            if (mine === generation) {
+                s.loading = false;
+                inflight = null;
+            }
         }
         return s.data;
     })();
-    return inflight;
+    inflight = request;
+    return request;
 }
 
 /**
@@ -236,6 +257,9 @@ export function ensureSettings() {
 
 /** Called by the shell on sign-out. See the header. */
 export function clearSettings() {
+    generation++;
+    inflight = null;
+    s.loading = false;
     s.data = {};
     s.loaded = false;
     s.error = null;

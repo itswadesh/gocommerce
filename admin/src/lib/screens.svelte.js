@@ -15,17 +15,22 @@
 import { api } from "$lib/api.js";
 
 const s = $state({ list: [], loaded: false });
+// Bumped by forgetScreens: a listing asked for before it is the old store's.
+let generation = 0;
 
 /** Called by the shell once the operator is known. */
 export function loadScreens() {
+    const mine = generation;
     api.get("/api/admin/screens")
         .then((result) => {
+            if (mine !== generation) return;
             s.list = result.data ?? [];
             s.loaded = true;
         })
         // A panel that cannot list module screens is a panel with the built-in
         // ones, not a broken panel.
         .catch(() => {
+            if (mine !== generation) return;
             s.list = [];
             s.loaded = true;
         });
@@ -38,6 +43,7 @@ export function moduleScreens() {
 
 /** Called by the shell on sign-out: the next operator may be another store. */
 export function forgetScreens() {
+    generation++;
     s.list = [];
     s.loaded = false;
 }

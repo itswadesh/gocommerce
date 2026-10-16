@@ -364,6 +364,10 @@
             goto(base + next, { replaceState: true });
         } else if (state === "choose" || state === "none") {
             goto(`${base}${SELECT}?next=${encodeURIComponent(next)}`, { replaceState: true });
+        } else if (state === "error") {
+            // Off the login page, where a signed-in person draws nothing, to
+            // the shell's "could not reach the store" and its Try again.
+            goto(base + next, { replaceState: true });
         }
     });
     $effect(() => {
@@ -434,25 +438,35 @@
          */
         const move = async () => {
             parked = true;
-            await tick();
-            applyEntry(entry);
-            await reloadStoreData();
-            let href = target0.href;
-            const section = sectionFor(href.split("?")[0], NAV);
-            if (target0.dropped) note = droppedNote(section, target0.dropped, from?.name ?? "the other store");
-            if (section && section.href !== "/dash") {
-                if (section.right && !can(section.right)) {
-                    note = `You don't have access to ${section.label} in ${target.name}`;
-                    href = "/dash";
-                } else if (section.module && !hasModule(section.module)) {
-                    note = `${section.label} is not available in ${target.name}`;
-                    href = "/dash";
+            try {
+                await tick();
+                applyEntry(entry);
+                await reloadStoreData();
+                let href = target0.href;
+                const section = sectionFor(href.split("?")[0], NAV);
+                if (target0.dropped) note = droppedNote(section, target0.dropped, from?.name ?? "the other store");
+                if (section && section.href !== "/dash") {
+                    if (section.right && !can(section.right)) {
+                        note = `You don't have access to ${section.label} in ${target.name}`;
+                        href = "/dash";
+                    } else if (section.module && !hasModule(section.module)) {
+                        note = `${section.label} is not available in ${target.name}`;
+                        href = "/dash";
+                    }
                 }
+                await goto(base + href);
+                toast.info(note || `Switched to ${target.name}`);
+            } catch (err) {
+                // The store has changed by now (or the caches failed to
+                // reload); whatever page is under the person stays usable.
+                toast.error(err?.message || "The store changed, but the page could not be opened.");
+            } finally {
+                // Never left down: a parked page is a blank screen.
+                storeEpoch++;
+                parked = false;
+                switching = "";
+                await tick();
             }
-            await goto(base + href);
-            storeEpoch++;
-            parked = false;
-            await tick();
         };
         const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
         if (typeof document.startViewTransition === "function" && !still) {
@@ -464,8 +478,6 @@
         } else {
             await move();
         }
-        switching = "";
-        toast.info(note || `Switched to ${target.name}`);
     }
 
     /* The store list in the account menu, searchable once it outgrows a

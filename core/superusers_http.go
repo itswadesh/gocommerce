@@ -16,7 +16,9 @@ func (a *App) mountSuperuserRoutes() {
 	a.HandleFunc("POST /api/admin/install", a.handleInstall)
 
 	a.HandleAdminFunc("POST /api/admin/auth-refresh", a.handleAuthRefresh)
-	a.HandleAdminFunc("POST /api/admin/auth-logout", a.handleAuthLogout)
+	// A person's, not one store's: somebody still choosing a store (or in
+	// none) must be able to end their session.
+	a.Handle("POST /api/admin/auth-logout", a.personAuth(http.HandlerFunc(a.handleAuthLogout)))
 
 	a.HandleAdminFunc("GET /api/admin/superusers", a.handleListSuperusers, RightTeamRead)
 	a.HandleAdminFunc("POST /api/admin/superusers", a.handleCreateSuperuser, RightTeamWrite)
@@ -173,6 +175,8 @@ func (a *App) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	// The store the next person on this browser opens in is theirs to choose.
+	clearStoreCookie(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
