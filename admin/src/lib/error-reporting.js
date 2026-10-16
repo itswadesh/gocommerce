@@ -34,6 +34,9 @@ export function reportFor(event, url) {
         message = String(event?.message ?? "");
     }
     if (!message.trim()) return null;
+    // A request the engine refused or failed is not the panel crashing: a 500
+    // is already the server's issue, and a 403 or a 404 is an answer.
+    if (kind === "ApiError") return null;
     if (NOISE.some((re) => re.test(message))) return null;
     if (/(chrome|moz|safari)-extension:\/\//.test(stack)) return null;
     return { kind, message, stack, url };

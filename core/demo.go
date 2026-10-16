@@ -82,6 +82,10 @@ var demoFrozenAny = []string{
 	"/api/admin/reports/custom/run",
 	"/api/admin/reports/custom/*/run",
 	"/api/admin/vendors/*/users",
+	// The error page (D86): the database's and the code's own words, and the
+	// unmasked address of whoever hit them.
+	"/api/admin/errors",
+	"/api/admin/errors/*",
 }
 
 // demoGuardMW refuses the writes demoFrozen names and every method on the

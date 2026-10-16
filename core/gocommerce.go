@@ -352,6 +352,8 @@ type App struct {
 	invitations  *Invitations
 	taxes        *Taxes
 	shipping     *Shipping
+	// errq records error occurrences off the request path (D86).
+	errq *errorQueue
 	// reports is a reading of the orders: it owns no table and writes nothing,
 	// so it has no ordering constraint against anything built here.
 	reports *Reports
@@ -606,6 +608,7 @@ func (a *App) buildServices() {
 	a.invitations = &Invitations{app: a}
 	a.taxes = &Taxes{app: a}
 	a.shipping = &Shipping{app: a}
+	a.errq = newErrorQueue(a)
 	a.reports = &Reports{app: a}
 	a.lookupTXT = net.DefaultResolver.LookupTXT
 
@@ -638,6 +641,14 @@ func (a *App) startBackgroundWork() {
 	// must not hold the process open.
 	a.OnStop(func(ctx context.Context) error {
 		a.superusers.waitForResetDelivery(5 * time.Second)
+		return nil
+	})
+	// Errors already queued are recorded before the process goes; capped,
+	// like the reset above.
+	a.OnStop(func(ctx context.Context) error {
+		stopCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		a.errq.stop(stopCtx)
 		return nil
 	})
 }

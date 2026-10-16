@@ -45,6 +45,7 @@ type errorIssueView struct {
 
 func listIssues(t *testing.T, app *App, query string, opts ...func(*http.Request)) []errorIssueView {
 	t.Helper()
+	app.errq.flush()
 	rec := do(t, app, http.MethodGet, "/api/admin/errors"+query, append([]func(*http.Request){withAdmin}, opts...)...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("list errors = %d: %s", rec.Code, rec.Body)
@@ -56,6 +57,7 @@ func listIssues(t *testing.T, app *App, query string, opts ...func(*http.Request
 
 func getIssue(t *testing.T, app *App, id int64) errorIssueView {
 	t.Helper()
+	app.errq.flush()
 	rec := do(t, app, http.MethodGet, fmt.Sprintf("/api/admin/errors/%d", id), withAdmin)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("get error = %d: %s", rec.Code, rec.Body)
@@ -113,7 +115,7 @@ func TestAPanicBecomesAnIssue(t *testing.T) {
 func TestPanelErrorsAreReported(t *testing.T) {
 	app := newTestApp(t)
 	body := `{"kind":"TypeError","message":"Cannot read properties of undefined (reading 'total')",
-		"stack":"TypeError: Cannot read properties of undefined (reading 'total')\n    at render (http://127.0.0.1:8090/_app/immutable/nodes/12.Ab3.js:40:17)\n    at x (http://127.0.0.1:8090/_app/immutable/chunks/a.js:1:1)",
+		"stack":"TypeError: Cannot read properties of undefined (reading 'total')\n    at render (http://127.0.0.1:8090/_app/immutable/nodes/12.BDNuN_ZX.js:40:17)\n    at x (http://127.0.0.1:8090/_app/immutable/chunks/a.js:1:1)",
 		"url":"/dash/orders?page=2"}`
 	for i := 0; i < 2; i++ {
 		if rec := doBody(t, app, http.MethodPost, "/api/admin/errors", body, withAdmin); rec.Code != http.StatusAccepted {
@@ -122,7 +124,7 @@ func TestPanelErrorsAreReported(t *testing.T) {
 	}
 	issues := listIssues(t, app, "?source=panel")
 	if len(issues) != 1 || issues[0].Count != 2 || issues[0].Source != "panel" ||
-		!strings.Contains(issues[0].Culprit, "nodes/12.Ab3.js:40") || !strings.HasPrefix(issues[0].Title, "TypeError: ") {
+		issues[0].Culprit != "_app/immutable/nodes/12.js" || !strings.HasPrefix(issues[0].Title, "TypeError: ") {
 		t.Fatalf("panel issues = %+v", issues)
 	}
 	full := getIssue(t, app, issues[0].ID)
@@ -204,7 +206,75 @@ func TestErrorsAreKeptToTheirStore(t *testing.T) {
 		t.Fatalf("another store sees %+v", got)
 	}
 	ctx := WithStore(context.Background(), other)
+	app.errq.flush()
 	if issues, _, err := app.Errors().List(ctx, ErrorQuery{Limit: 10}); err != nil || len(issues) != 0 {
 		t.Fatalf("another store's list = %+v %v", issues, err)
+	}
+}
+
+// Release builds are -trimpath: no frame carries a leading slash, and the
+// culprit is still the code that failed, not the runtime or the recorder.
+func TestTheCulpritIsTheCodeThatFailedInATrimmedBuild(t *testing.T) {
+	stack := "goroutine 7 [running]:\n" +
+		"runtime/debug.Stack()\n\truntime/debug/stack.go:26 +0x5e\n" +
+		"github.com/itswadesh/gocommerce/core.captureServerError(0xc0001)\n\tgithub.com/itswadesh/gocommerce/core/error_tracker.go:331 +0x45\n" +
+		"github.com/itswadesh/gocommerce/core.RespondError({0x1, 0x2})\n\tgithub.com/itswadesh/gocommerce/core/httpx.go:160 +0x1\n" +
+		"github.com/itswadesh/gocommerce/core.(*App).handleListProducts(0xc0002, {0x3})\n\tgithub.com/itswadesh/gocommerce/core/catalog_http.go:88 +0x2c4\n" +
+		"net/http.HandlerFunc.ServeHTTP(0x1, {0x2})\n\tnet/http/server.go:2294 +0x29\n"
+	if got := goCulprit(stack); got != "core.(*App).handleListProducts (catalog_http.go)" {
+		t.Fatalf("culprit = %q", got)
+	}
+	panicked := "goroutine 9 [running]:\n" +
+		"runtime/debug.Stack()\n\truntime/debug/stack.go:26 +0x5e\n" +
+		"github.com/itswadesh/gocommerce/core.(*App).recoverMW.func1.1()\n\tgithub.com/itswadesh/gocommerce/core/httpx.go:290 +0x5\n" +
+		"panic({0x1, 0x2})\n\truntime/panic.go:791 +0x132\n" +
+		"github.com/itswadesh/gocommerce/ext/cms.(*Module).handlePage(0x1)\n\tgithub.com/itswadesh/gocommerce/ext/cms/cms.go:120 +0x9\n"
+	if got := goCulprit(panicked); got != "cms.(*Module).handlePage (cms.go)" {
+		t.Fatalf("panic culprit = %q", got)
+	}
+}
+
+// A path that carries a token is kept without it: the route's pattern where
+// the mux matched one, the path with the token blanked otherwise.
+func TestTokensStayOutOfTheRecord(t *testing.T) {
+	if got := blankTokens("/api/admin/password-reset/k3J9aZx0QmW2pLr7Tn5Yb8Vc"); got != "/api/admin/password-reset/{token}" {
+		t.Fatalf("blanked = %q", got)
+	}
+	if got := blankTokens("/api/admin/orders/42"); got != "/api/admin/orders/42" {
+		t.Fatalf("an id was blanked: %q", got)
+	}
+	r, _ := http.NewRequest(http.MethodGet, "/api/admin/invitations/accept/k3J9aZx0QmW2pLr7Tn5Yb8Vc", nil)
+	r.Pattern = "GET /api/admin/invitations/accept/{token}"
+	if got := safePath(r); got != "/api/admin/invitations/accept/{token}" {
+		t.Fatalf("safe path = %q", got)
+	}
+}
+
+// One operator cannot fill the page: past the limit a report is accepted and
+// dropped.
+func TestPanelReportsAreLimitedPerOperator(t *testing.T) {
+	app := newTestApp(t)
+	staff := signInAs(t, app, "flood@example.com", RoleStaff)
+	for i := 0; i < reportLimit+10; i++ {
+		// Letters, not digits: digits are taken out of the fingerprint.
+		body := fmt.Sprintf(`{"kind":"Error","message":"flood %c%c","url":"/dash"}`, 'a'+i%26, 'a'+i/26)
+		if rec := doBody(t, app, http.MethodPost, "/api/admin/errors", body, bearer(staff)); rec.Code != http.StatusAccepted {
+			t.Fatalf("report %d = %d", i, rec.Code)
+		}
+	}
+	if got := listIssues(t, app, "?source=panel"); len(got) != reportLimit {
+		t.Fatalf("issues from one operator in a minute = %d, want %d", len(got), reportLimit)
+	}
+}
+
+// A demo store's visitors are signed in as its owners: its error page is shut,
+// like custom reports.
+func TestADemoStoreKeepsItsErrorsShut(t *testing.T) {
+	app := newTestApp(t)
+	if err := app.Stores().SetDemo(context.Background(), app.DefaultStore(), true); err != nil {
+		t.Fatal(err)
+	}
+	if rec := do(t, app, http.MethodGet, "/api/admin/errors", withAdmin); rec.Code != http.StatusForbidden {
+		t.Fatalf("errors on a demo = %d", rec.Code)
 	}
 }
