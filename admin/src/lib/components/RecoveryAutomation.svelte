@@ -24,6 +24,8 @@
      * the sequence is always a straight line, so the nodes are a row of
      * buttons laid out by CSS and the panel ships no graph library for it.
      */
+    import { tick, untrack } from "svelte";
+    import { flip } from "svelte/animate";
     import { base } from "$app/paths";
     import { can, recovery } from "$lib/api.js";
     import { formatDate, relativeTime } from "$lib/format.js";
@@ -38,7 +40,7 @@
     } from "$lib/recovery.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { rightLabel } from "$lib/rights.js";
-    import { rise } from "$lib/motion.js";
+    import { flipDuration, rise } from "$lib/motion.js";
     import { toast } from "$lib/toast.svelte.js";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
@@ -80,8 +82,9 @@
     let draft = $state(null);
     let loading = $state(true);
     let saving = $state(false);
-    /** { form, threshold, storefront, steps: { [index]: message } } */
-    let errors = $state({ steps: {} });
+    /** { form, threshold, storefront, steps: { [index]: message },
+        stepField: { [index]: "wait" | "action" } } — which box of the step it is */
+    let errors = $state({ steps: {}, stepField: {} });
 
     let keySeq = 0;
 
@@ -94,7 +97,7 @@
         try {
             view = await recovery.settings();
             draft = shape(view.settings[kind], view.settings.storefront_url);
-            errors = { steps: {} };
+            errors = { steps: {}, stepField: {} };
         } catch (err) {
             toast.error(err);
         } finally {
@@ -102,13 +105,15 @@
         }
     }
 
-    /** The editable form of one automation: waits split into a number and a unit. */
-    function shape(automation, storefront) {
+    /** The editable form of one automation: waits split into a number and a
+        unit. `keep` is the draft being replaced: its steps' keys are reused by
+        position, so the node whose settings are open stays open. */
+    function shape(automation, storefront, keep = []) {
         return {
             enabled: !!automation.enabled,
             threshold: splitMinutes(automation.abandon_after_minutes),
-            steps: (automation.steps ?? []).map((s) => ({
-                _key: ++keySeq,
+            steps: (automation.steps ?? []).map((s, i) => ({
+                _key: keep[i]?._key ?? ++keySeq,
                 ...splitMinutes(s.wait_minutes),
                 action: s.action,
                 template: s.template,
@@ -182,24 +187,17 @@
         });
     });
 
-    /** "After step 1 · lands 21 hours after abandonment" — what the wait means. */
-    function whenWords(i) {
-        const from = i === 0 ? "After the basket is abandoned" : `After step ${i}`;
-        const at = arrivals[i];
-        return at === null || at === undefined ? from : `${from} · lands ${durationWords(at)} after abandonment`;
-    }
-
     function validate() {
-        const next = { steps: {} };
+        const next = { steps: {}, stepField: {} };
         const t = joinMinutes(draft.threshold.value, draft.threshold.unit);
         if (t === null) next.threshold = "Type a whole number.";
         else if (t < 1 || t > MAX_THRESHOLD) next.threshold = "Between 1 minute and 7 days.";
         draft.steps.forEach((s, i) => {
             const m = joinMinutes(s.value, s.unit);
-            if (m === null) next.steps[i] = "Type the wait as a whole number.";
-            else if (m < 1 || m > MAX_WAIT) next.steps[i] = "A wait is between 1 minute and 30 days.";
+            if (m === null) [next.steps[i], next.stepField[i]] = ["Type the wait as a whole number.", "wait"];
+            else if (m < 1 || m > MAX_WAIT) [next.steps[i], next.stepField[i]] = ["A wait is between 1 minute and 30 days.", "wait"];
             else if (!actionOptions.find((a) => a.value === s.action && !a.disabled)) {
-                next.steps[i] = "Choose an action this store can take.";
+                [next.steps[i], next.stepField[i]] = ["Choose an action this store can take.", "action"];
             }
         });
         if (!validStorefront(draft.storefront)) {
@@ -214,7 +212,7 @@
         if (!validate()) {
             toast.warning("Some fields need a look before this can be saved");
             const bad = nodes.find((n) => nodeError(n));
-            if (bad) selected = bad.id;
+            if (bad) select(bad.id, { keep: true });
             return;
         }
         saving = true;
@@ -226,19 +224,23 @@
                 storefront_url: draft.storefront.trim(),
             };
             view = await recovery.saveSettings(body);
-            draft = shape(view.settings[kind], view.settings.storefront_url);
-            errors = { steps: {} };
+            draft = shape(view.settings[kind], view.settings.storefront_url, draft.steps);
+            errors = { steps: {}, stepField: {} };
             toast.success(`${words.title} saved`);
         } catch (err) {
             if (err.status === 400) {
                 const where = settingsError(err.message);
-                const next = { steps: {} };
+                const next = { steps: {}, stepField: {} };
                 if (where.field === "storefront") next.storefront = where.message;
                 else if (where.side && where.side !== kind) next.form = where.message;
                 else if (where.field === "threshold") next.threshold = where.message;
-                else if (where.field === "step") next.steps[where.step] = where.message;
-                else next.form = where.message;
+                else if (where.field === "step") {
+                    next.steps[where.step] = where.message;
+                    next.stepField[where.step] = /wait_minutes/.test(where.message) ? "wait" : "action";
+                } else next.form = where.message;
                 errors = next;
+                const bad = nodes.find((n) => nodeError(n));
+                if (bad) select(bad.id, { keep: true });
             }
             toast.error(err);
         } finally {
@@ -247,15 +249,15 @@
     }
 
     function discard() {
-        draft = shape(view.settings[kind], view.settings.storefront_url);
-        errors = { steps: {} };
+        draft = shape(view.settings[kind], view.settings.storefront_url, draft.steps);
+        errors = { steps: {}, stepField: {} };
     }
 
     function resetToDefaults() {
         // The sequence only: the storefront address is shared by both
         // automations and has no default of its own to go back to.
-        draft = shape(view.defaults[kind], draft.storefront);
-        errors = { steps: {} };
+        draft = shape(view.defaults[kind], draft.storefront, draft.steps);
+        errors = { steps: {}, stepField: {} };
         toast.info("The defaults are in the form. Save to keep them.");
     }
 
@@ -264,14 +266,16 @@
     /** The node whose settings are open beside the canvas, by id. */
     let selected = $state("");
     let zoom = $state(1);
+    /** Once somebody zooms by hand, the canvas stops fitting itself. */
+    let manualZoom = false;
     let canvas = $state(null);
+    let inspector = $state(null);
 
     const ZOOM_MIN = 0.4;
     const ZOOM_MAX = 1.5;
+    const AUTO_FIT_MIN = 0.8;
 
     const stepAt = (id) => draft?.steps.findIndex((s) => id === `wait-${s._key}` || id === `send-${s._key}`) ?? -1;
-    const selectedStep = $derived(stepAt(selected));
-    const selectedNode = $derived(nodes.find((n) => n.id === selected) ?? null);
 
     const templateTitle = (event) => templateOptions.find((t) => t.value === event)?.label ?? "";
     const actionLabel = (key) => actionOptions.find((a) => a.value === key)?.label ?? key;
@@ -288,19 +292,47 @@
               })
             : [],
     );
+    const selectedStep = $derived(stepAt(selected));
+    const selectedNode = $derived(nodes.find((n) => n.id === selected) ?? null);
 
-    /** Whether a node carries a refused or unparseable value, for its badge. */
+    /** Whether a node carries a refused or unparseable value, for its badge:
+        a step's wait or its message, whichever box it was. */
     function nodeError(node) {
         if (node.kind === "trigger") return !!errors.threshold;
-        if (node.step !== undefined) return !!errors.steps?.[node.step];
-        return false;
+        if (node.step === undefined || !errors.steps?.[node.step]) return false;
+        return (errors.stepField?.[node.step] ?? "action") === (node.kind === "wait" ? "wait" : "action");
+    }
+    const stepError = (field) => (errors.stepField?.[selectedStep] === field ? errors.steps?.[selectedStep] : "");
+
+    /** A node's name for a screen reader: a wait says which message it is before. */
+    function nodeName(node) {
+        const name = node.kind === "wait" ? `Wait before message ${node.step + 1}` : node.label;
+        return `${name}: ${node.sub}${nodeError(node) ? " (needs a look)" : ""}`;
     }
 
-    function select(id) {
-        selected = selected === id ? "" : id;
+    /* Selecting a node moves focus to its settings, so a keyboard is one Tab
+       from the boxes rather than past every node; Escape brings it back. */
+    async function select(id, { keep = false } = {}) {
+        selected = selected === id && !keep ? "" : id;
+        if (!selected) return;
+        await tick();
+        inspector?.querySelector(".recovery-inspector-title")?.focus();
+    }
+
+    async function focusNode(id) {
+        await tick();
+        canvas?.querySelector(`[data-node="${id}"]`)?.focus();
+    }
+
+    function onKey(event) {
+        if (event.key !== "Escape" || !selected) return;
+        const id = selected;
+        selected = "";
+        focusNode(id);
     }
 
     function setZoom(next) {
+        manualZoom = true;
         zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(next * 10) / 10));
     }
 
@@ -308,12 +340,29 @@
        row's natural width is known from its parts — 112px a node, 36px a link
        and 56px of padding, as the stylesheet draws them — rather than read
        back through a zoom, and the step is rounded down so it always fits. */
-    function fit() {
+    function fit({ floor = ZOOM_MIN } = {}) {
         if (!canvas) return;
         const natural = nodes.length * 112 + (nodes.length - 1) * 36 + 56;
         const room = canvas.clientWidth / natural;
-        zoom = Math.min(1, Math.max(ZOOM_MIN, Math.floor(room * 10) / 10));
+        zoom = Math.min(1, Math.max(floor, Math.floor(room * 10) / 10));
     }
+
+    /* Fitting on its own stops where the labels stay readable; past that the
+       row scrolls, and the Fit button goes the rest of the way. */
+    const autoFit = () => !manualZoom && fit({ floor: AUTO_FIT_MIN });
+
+    /* The workflow arrives fitted to its canvas, and keeps fitting as the
+       window or the number of nodes changes — until somebody zooms by hand. */
+    $effect(() => {
+        if (!canvas) return;
+        const ro = new ResizeObserver(autoFit);
+        ro.observe(canvas);
+        return () => ro.disconnect();
+    });
+    $effect(() => {
+        nodes.length;
+        if (canvas) untrack(autoFit);
+    });
 
     /** A wait and a message, inserted at `at` — between two nodes, or at the end. */
     function insertStep(at) {
@@ -322,14 +371,18 @@
         const action = actionOptions.find((a) => !a.disabled)?.value ?? "";
         const step = { _key: ++keySeq, value: 1, unit: "days", action, template };
         draft.steps = [...draft.steps.slice(0, at), step, ...draft.steps.slice(at)];
-        errors = { ...errors, steps: {} };
+        errors = { ...errors, steps: {}, stepField: {} };
         selected = `send-${step._key}`;
     }
 
+    /* The deleted node's button had focus; it goes to the node that took its
+       place, or to End. */
     function removeStep(index) {
         draft.steps = draft.steps.filter((_, i) => i !== index);
-        errors = { ...errors, steps: {} };
+        errors = { ...errors, steps: {}, stepField: {} };
         selected = "";
+        const next = draft.steps[Math.min(index, draft.steps.length - 1)];
+        focusNode(next ? `send-${next._key}` : "end");
     }
 
     function moveStep(index, by) {
@@ -338,7 +391,7 @@
         const next = [...draft.steps];
         [next[index], next[to]] = [next[to], next[index]];
         draft.steps = next;
-        errors = { ...errors, steps: {} };
+        errors = { ...errors, steps: {}, stepField: {} };
     }
 
     /* When each step lands, from abandonment — for the header and the waits. */
@@ -352,10 +405,6 @@
     };
     const nodeIcon = (node) =>
         node.kind === "trigger" ? (kind === "cart" ? "ri-shopping-cart-2-line" : "ri-bank-card-line") : NODE_ICONS[node.kind];
-
-    function onKey(event) {
-        if (event.key === "Escape" && selected) selected = "";
-    }
 
     const readOnlyNote = `Your role can see this automation but not change it: that needs “${rightLabel("abandonment.automate")}”.`;
 </script>
@@ -456,20 +505,26 @@
                                 <label for="recovery-enabled-{kind}">{draft.enabled ? "Active" : "Inactive"}</label>
                             </div>
                         </div>
+                        <p class="txt-hint txt-sm recovery-workflow-help">
+                            Switching it off stops every pending reminder the moment you save; switching it on schedules
+                            them again from each {words.noun}'s last message.
+                        </p>
 
-                        <div class="recovery-flow-layout">
-                            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-                            <div
-                                class="recovery-canvas"
-                                class:is-off={!draft.enabled}
-                                bind:this={canvas}
-                                role="group"
-                                aria-label="Workflow"
-                                onkeydown={onKey}
-                            >
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <div class="recovery-flow-layout" onkeydown={onKey}>
+                            <div class="recovery-canvas" class:is-off={!draft.enabled} bind:this={canvas} role="group" aria-label="Workflow">
                                 <div class="recovery-canvas-scroll">
                                 <div class="recovery-flow" style:zoom={zoom}>
                                     {#each nodes as node, i (node.id)}
+                                        <!-- One element per node and its incoming link, so a
+                                             move slides and a delete fades rather than jumping.
+                                             The slide is skipped while zoomed: flip measures
+                                             the screen, and the zoom would scale its distance. -->
+                                        <div
+                                            class="recovery-flow-item"
+                                            animate:flip={{ duration: zoom === 1 ? flipDuration() : 0 }}
+                                            transition:rise
+                                        >
                                         {#if i > 0}
                                             {@const insertAt =
                                                 node.kind === "wait" ? node.step : node.kind === "end" ? draft.steps.length : -1}
@@ -478,7 +533,9 @@
                                                     <button
                                                         type="button"
                                                         class="recovery-edge-add"
-                                                        aria-label="Add a wait and a message here"
+                                                        aria-label={insertAt === draft.steps.length
+                                                            ? "Add a step at the end"
+                                                            : `Add a step before message ${insertAt + 1}`}
                                                         title="Add node"
                                                         onclick={() => insertStep(insertAt)}
                                                     >
@@ -492,10 +549,10 @@
                                             class="recovery-node is-{node.kind}"
                                             class:is-selected={selected === node.id}
                                             class:has-error={nodeError(node)}
+                                            data-node={node.id}
                                             aria-pressed={selected === node.id}
-                                            aria-label="{node.label}: {node.sub}{nodeError(node) ? ' (needs a look)' : ''}"
+                                            aria-label={nodeName(node)}
                                             onclick={() => select(node.id)}
-                                            in:rise
                                         >
                                             <span class="recovery-node-box">
                                                 {#if node.kind === "trigger"}
@@ -513,6 +570,7 @@
                                             <span class="recovery-node-label">{node.label}</span>
                                             <span class="recovery-node-sub">{node.sub}</span>
                                         </button>
+                                        </div>
                                     {/each}
                                 </div>
                                 </div>
@@ -523,7 +581,8 @@
                                         class="btn xs circle secondary"
                                         aria-label="Zoom out"
                                         title="Zoom out"
-                                        disabled={zoom <= ZOOM_MIN}
+                                        class:is-blocked={zoom <= ZOOM_MIN}
+                                        aria-disabled={zoom <= ZOOM_MIN}
                                         onclick={() => setZoom(zoom - 0.1)}
                                     >
                                         <i class="ri-zoom-out-line" aria-hidden="true"></i>
@@ -533,12 +592,22 @@
                                         class="btn xs circle secondary"
                                         aria-label="Zoom in"
                                         title="Zoom in"
-                                        disabled={zoom >= ZOOM_MAX}
+                                        class:is-blocked={zoom >= ZOOM_MAX}
+                                        aria-disabled={zoom >= ZOOM_MAX}
                                         onclick={() => setZoom(zoom + 0.1)}
                                     >
                                         <i class="ri-zoom-in-line" aria-hidden="true"></i>
                                     </button>
-                                    <button type="button" class="btn xs circle secondary" aria-label="Fit to view" title="Fit to view" onclick={fit}>
+                                    <button
+                                        type="button"
+                                        class="btn xs circle secondary"
+                                        aria-label="Fit to view"
+                                        title="Fit to view"
+                                        onclick={() => {
+                                            manualZoom = false;
+                                            fit();
+                                        }}
+                                    >
                                         <i class="ri-fullscreen-exit-line" aria-hidden="true"></i>
                                     </button>
                                 </div>
@@ -556,20 +625,24 @@
                                 {/if}
                             </div>
 
-                            <aside class="recovery-inspector" aria-live="polite">
+                            <aside class="recovery-inspector" bind:this={inspector} aria-label="Node settings">
                                 {#if !selectedNode}
                                     <div class="recovery-inspector-empty" in:rise>
                                         <i class="ri-cursor-line" aria-hidden="true"></i>
-                                        <p class="txt-bold">Select a node to edit it</p>
-                                        <ul class="txt-hint txt-sm">
-                                            <li>Click <strong>+</strong> between two nodes to add a wait and a message there.</li>
-                                            <li>Select a message to choose its template, move it or delete it.</li>
-                                            <li>Select the trigger to change when a {words.noun} counts as abandoned.</li>
-                                        </ul>
+                                        {#if writable}
+                                            <p class="txt-bold">Select a node to edit it</p>
+                                            <ul class="txt-hint txt-sm">
+                                                <li>Click <strong>+</strong> between two nodes to add a wait and a message there.</li>
+                                                <li>Select a message to choose its template, move it or delete it.</li>
+                                                <li>Select the trigger to change when a {words.noun} counts as abandoned.</li>
+                                            </ul>
+                                        {:else}
+                                            <p class="txt-bold">Select a node to see its settings</p>
+                                        {/if}
                                     </div>
                                 {:else if selectedNode.kind === "trigger"}
                                     <div in:rise>
-                                        <h6 class="recovery-inspector-title">{selectedNode.label}</h6>
+                                        <h6 class="recovery-inspector-title" tabindex="-1">{selectedNode.label}</h6>
                                         <p class="txt-sm m-b-sm">When should a {words.noun} become abandoned?</p>
                                         <div class="recovery-sentence">
                                             <div class="field recovery-num" class:error={!!errors.threshold}>
@@ -605,7 +678,7 @@
                                     </div>
                                 {:else if selectedNode.kind === "filter"}
                                     <div in:rise>
-                                        <h6 class="recovery-inspector-title">Only continue if</h6>
+                                        <h6 class="recovery-inspector-title" tabindex="-1">Only continue if</h6>
                                         <ul class="recovery-guard-list">
                                             {#each view.guards as guard (guard)}
                                                 <li><i class="ri-check-line" aria-hidden="true"></i>{guard}</li>
@@ -622,10 +695,10 @@
                                 {:else if selectedNode.kind === "wait" && selectedStep >= 0}
                                     {@const step = draft.steps[selectedStep]}
                                     <div in:rise>
-                                        <h6 class="recovery-inspector-title">Wait</h6>
+                                        <h6 class="recovery-inspector-title" tabindex="-1">Wait</h6>
                                         <div class="recovery-sentence">
                                             <span>Wait for</span>
-                                            <div class="field recovery-num" class:error={!!errors.steps?.[selectedStep]}>
+                                            <div class="field recovery-num" class:error={!!stepError("wait")}>
                                                 <input
                                                     type="number"
                                                     min="1"
@@ -646,8 +719,8 @@
                                                 />
                                             </div>
                                         </div>
-                                        {#if errors.steps?.[selectedStep]}
-                                            <div class="field-help error" transition:rise>{errors.steps[selectedStep]}</div>
+                                        {#if stepError("wait")}
+                                            <div class="field-help error" transition:rise>{stepError("wait")}</div>
                                         {:else}
                                             <div class="field-help">
                                                 {selectedStep === 0 ? "Counted from abandonment." : "Counted from the message before."}
@@ -661,7 +734,7 @@
                                 {:else if selectedNode.kind === "action" && selectedStep >= 0}
                                     {@const step = draft.steps[selectedStep]}
                                     <div in:rise>
-                                        <h6 class="recovery-inspector-title">Message {selectedStep + 1}</h6>
+                                        <h6 class="recovery-inspector-title" tabindex="-1">Message {selectedStep + 1}</h6>
                                         <div class="field">
                                             <label for="recovery-action-{kind}">Action</label>
                                             <Select
@@ -673,15 +746,7 @@
                                             />
                                         </div>
                                         <div class="field m-t-sm">
-                                            <label for="recovery-template-{kind}" class="recovery-label-row">
-                                                Template
-                                                <a
-                                                    class="txt-sm"
-                                                    href="{base}/dash/notifications/email?template={encodeURIComponent(step.template)}"
-                                                >
-                                                    Edit <span aria-hidden="true">↗</span>
-                                                </a>
-                                            </label>
+                                            <label for="recovery-template-{kind}">Template</label>
                                             <Select
                                                 id="recovery-template-{kind}"
                                                 value={step.template}
@@ -690,15 +755,25 @@
                                                 onchange={(v) => (step.template = v)}
                                             />
                                         </div>
-                                        {#if errors.steps?.[selectedStep]}
-                                            <div class="field-help error" transition:rise>{errors.steps[selectedStep]}</div>
+                                        <a
+                                            class="recovery-arrow-link m-t-5"
+                                            href="{base}/dash/notifications/email?template={encodeURIComponent(step.template)}"
+                                        >
+                                            Edit the wording of {templateTitle(step.template) || "this message"}
+                                            <span aria-hidden="true">→</span>
+                                        </a>
+                                        {#if stepError("action")}
+                                            <div class="field-help error" transition:rise>{stepError("action")}</div>
                                         {/if}
                                         {#if writable}
                                             <div class="recovery-inspector-tools">
+                                                <!-- aria-disabled, not disabled: a button that disables
+                                                     itself under the cursor drops focus to the page. -->
                                                 <button
                                                     type="button"
                                                     class="btn sm secondary"
-                                                    disabled={selectedStep === 0}
+                                                    class:is-blocked={selectedStep === 0}
+                                                    aria-disabled={selectedStep === 0}
                                                     onclick={() => moveStep(selectedStep, -1)}
                                                 >
                                                     <i class="ri-arrow-left-line" aria-hidden="true"></i>
@@ -707,7 +782,8 @@
                                                 <button
                                                     type="button"
                                                     class="btn sm secondary"
-                                                    disabled={selectedStep === draft.steps.length - 1}
+                                                    class:is-blocked={selectedStep === draft.steps.length - 1}
+                                                    aria-disabled={selectedStep === draft.steps.length - 1}
                                                     onclick={() => moveStep(selectedStep, 1)}
                                                 >
                                                     <i class="ri-arrow-right-line" aria-hidden="true"></i>
@@ -722,16 +798,19 @@
                                                     <span class="txt">Delete node</span>
                                                 </button>
                                             </div>
-                                            <div class="field-help">Deleting a message takes its wait with it.</div>
+                                            <div class="field-help">
+                                                Deleting a message takes its wait with it. A message sent by hand from a
+                                                {words.noun}'s page does not move the sequence on.
+                                            </div>
                                         {/if}
                                     </div>
                                 {:else if selectedNode.kind === "end"}
                                     <div in:rise>
-                                        <h6 class="recovery-inspector-title">End</h6>
+                                        <h6 class="recovery-inspector-title" tabindex="-1">End</h6>
                                         <p class="txt-sm">
                                             {draft.steps.length
                                                 ? "Nothing more is sent after the last message."
-                                                : "No messages are connected, so nothing is sent. The carts are still recorded."}
+                                                : `No messages are connected, so nothing is sent. Abandoned ${words.noun}s are still recorded.`}
                                         </p>
                                         <div class="field-help">Up to {MAX_STEPS} messages can be connected.</div>
                                     </div>
