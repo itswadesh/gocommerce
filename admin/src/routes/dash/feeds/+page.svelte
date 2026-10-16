@@ -101,6 +101,12 @@
         }
     }
 
+    // Enter in a field saves, like the Save button.
+    function submit(e) {
+        e.preventDefault();
+        if (writable && !saving) save();
+    }
+
     async function save() {
         saving = true;
         try {
@@ -430,17 +436,17 @@
                     Every active variant with a price is included, one item each. These settings say
                     where its page lives and what it is called when the product does not say.
                 </p>
-                <div class="feed-form">
+                <form id="feed-settings" class="feed-form" onsubmit={submit}>
                     <PluginFields fields={plugin.fields} bind:form idPrefix="feed" />
-                </div>
+                </form>
                 {#if writable}
                     <div class="feed-form-actions">
                         <button
-                            type="button"
+                            type="submit"
+                            form="feed-settings"
                             class="btn sm"
                             class:loading={saving}
                             disabled={saving}
-                            onclick={save}
                         >
                             <span class="txt">Save</span>
                         </button>

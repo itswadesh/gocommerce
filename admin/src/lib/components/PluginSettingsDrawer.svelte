@@ -57,7 +57,9 @@
 <Drawer open={!!plugin} title={plugin ? `${plugin.title} settings` : "Settings"} size="sm" {onclose}>
     {#if plugin}
         <div class="field-help m-b-base">{plugin.description}</div>
-        <PluginFields fields={plugin.fields} bind:form />
+        <form id="plugin-settings-form" onsubmit={(e) => (e.preventDefault(), saving || save())}>
+            <PluginFields fields={plugin.fields} bind:form />
+        </form>
         {#if (plugin.fields ?? []).some((f) => f.public && f.kind !== "secret")}
             <div class="field-help m-t-base">
                 Settings marked for the storefront are readable by anyone who visits it; a
@@ -70,7 +72,7 @@
         <button type="button" class="btn transparent m-r-auto" onclick={onclose}>
             <span class="txt">Cancel</span>
         </button>
-        <button type="button" class="btn" class:loading={saving} disabled={saving} onclick={save}>
+        <button type="submit" form="plugin-settings-form" class="btn" class:loading={saving} disabled={saving}>
             <span class="txt">Save</span>
         </button>
     {/snippet}
