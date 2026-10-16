@@ -12,10 +12,14 @@
     import { base } from "$app/paths";
     import { page } from "$app/state";
     import { goto } from "$app/navigation";
-    import { auth, events, getToken, can, session } from "$lib/api.js";
-    import { clearProfile, clearSettings, loadProfile, loadSettings } from "$lib/settings.svelte.js";
-    import { forgetModules, loadModules } from "$lib/modules.svelte.js";
-    import { forgetScreens, loadScreens } from "$lib/screens.svelte.js";
+    import { tick, untrack } from "svelte";
+    import { auth, events, can, session } from "$lib/api.js";
+    import { clearProfile, clearSettings } from "$lib/settings.svelte.js";
+    import { forgetModules, hasModule } from "$lib/modules.svelte.js";
+    import { forgetScreens } from "$lib/screens.svelte.js";
+    import { enterStore, ensureStore, forgetStores, markStores, myStores } from "$lib/stores.svelte.js";
+    import { reloadStoreData } from "$lib/store-data.js";
+    import { droppedNote, sectionFor, switchTarget } from "$lib/store-switch.js";
     import { health } from "$lib/health.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
     import { NAV, visibleNav as allowedNav } from "$lib/nav.js";
@@ -58,6 +62,10 @@
     const PUBLIC_PREFIXES = ["/admin/auth", "/portal"];
     const LOGIN = "/admin/auth/login";
     const onLogin = $derived(page.url.pathname.replace(base, "") === LOGIN);
+    /* Signed in, but in no store yet: no sidebar, because every link in it
+       would ask a store that has not been chosen. */
+    const SELECT = "/select-store";
+    const onSelect = $derived(page.url.pathname.replace(base, "") === SELECT);
     const isPublic = $derived(
         PUBLIC_PREFIXES.some((prefix) =>
             page.url.pathname.replace(base, "").startsWith(prefix),
@@ -215,43 +223,48 @@
     }
 
     $effect(() => {
-        if (!getToken()) {
-            ready = true;
+        ready = true;
+    });
+
+    /*
+     * Which store this tab is in is settled before anything that needs one is
+     * asked (D83): a person in several stores has no store until they choose
+     * one, and every store-bound request made before that is a 400. It runs on
+     * every way into a session — a stored token, the login form, an accepted
+     * invitation — because each ends with `authenticated` turning true.
+     */
+    $effect(() => {
+        if (!ready || !authenticated || myStores.state !== "unknown") return;
+        untrack(boot);
+    });
+
+    async function boot() {
+        markStores("pending");
+        let where;
+        try {
+            // Also the stored token's check: a 401 here has already ended the
+            // session in api.js, before the operator meant to do anything.
+            where = await ensureStore();
+        } catch (err) {
+            if (err.isAuth) {
+                // The cached settings would be the previous operator's answer.
+                clearSettings();
+                clearProfile();
+                return;
+            }
+            // A store that cannot be reached is not a credential that has
+            // gone bad. Clearing the session here signed out an operator
+            // whose token was still perfectly good.
+            markStores("error");
+            toast.error("Could not reach the store — you are still signed in.");
             return;
         }
-        // A stored token is a claim, not a fact. Refresh turns it back into an
-        // identity — or tells us it has expired, before the operator hits a
-        // 401 on something they actually meant to do.
-        ready = true;
-        // Every screen formats money before it can draw anything, so the store
-        // is asked here, once, rather than by each screen that needs it.
-        // Nothing in the shell waits on the answer.
-        loadSettings();
-        loadProfile();
-        auth.refresh()
-            .then(() => {
-                // After the refresh rather than beside it: a stored token is a
-                // claim, and probing four module routes with one the store has
-                // just rejected is four 401s on the commonest path there is —
-                // come back the next morning, session expired, sign in again.
-                loadModules();
-                loadScreens();
-            })
-            .catch((err) => {
-                if (err.isAuth) {
-                    // api.js has already ended the session; the cached settings
-                    // would be the previous operator's answer.
-                    clearSettings();
-        clearProfile();
-                    clearProfile();
-                    return;
-                }
-                // A store that cannot be reached is not a credential that has
-                // gone bad. Clearing the session here signed out an operator
-                // whose token was still perfectly good.
-                toast.error("Could not reach the store — you are still signed in.");
-            });
-    });
+        if (where !== "ok") return; // the redirect below sends them to choose
+        // A stored record is a claim; the refresh turns it into this store's
+        // answer before the module probes ask what it may see.
+        await auth.refresh().catch(() => {});
+        reloadStoreData();
+    }
 
     /*
      * The health report, for the badge. Svelte runs the returned teardown when
@@ -287,9 +300,11 @@
     let deadLetters = $state(0);
 
     $effect(() => {
-        // Reading the path is what subscribes this to navigation.
+        // Reading the path is what subscribes this to navigation, and the
+        // epoch to a switch that stays on the same address.
         page.url.pathname;
-        if (!authenticated || !can("store.operate")) {
+        storeEpoch;
+        if (!authenticated || myStores.state !== "ok" || !can("store.operate")) {
             deadLetters = 0;
             return;
         }
@@ -339,33 +354,151 @@
         }
     });
     $effect(() => {
-        if (ready && authenticated && onLogin) {
-            goto(base + safeNext(page.url.searchParams.get("next")), { replaceState: true });
+        if (!ready || !authenticated || !onLogin) return;
+        const state = myStores.state;
+        const next = safeNext(page.url.searchParams.get("next"));
+        if (state === "ok") {
+            goto(base + next, { replaceState: true });
+        } else if (state === "choose" || state === "none") {
+            goto(`${base}${SELECT}?next=${encodeURIComponent(next)}`, { replaceState: true });
         }
+    });
+    $effect(() => {
+        if (!ready || !authenticated || isPublic || onSelect) return;
+        const state = myStores.state;
+        if (state === "choose" || state === "none") {
+            const here = page.url.pathname.replace(base, "") + page.url.search;
+            goto(`${base}${SELECT}?next=${encodeURIComponent(here)}`, { replaceState: true });
+        }
+    });
+    // However the session ended — signing out, or a 401 — the next one is
+    // somebody's whose stores have yet to be asked for.
+    $effect(() => {
+        if (!authenticated) untrack(forgetStores);
     });
 
     function onAuthenticated() {
-        // auth.login has already written the session; the shell only reacts to
-        // it. Forced, because the boot attempt ran with no token — or failed.
-        loadSettings({ force: true });
-        loadProfile({ force: true });
-        // A new sign-in may be a different operator against a different store,
-        // so the previous answer is dropped before a new one is asked for.
-        forgetModules();
-        loadModules();
-        forgetScreens();
-        loadScreens();
+        // auth.login has already written the session, and the boot effect
+        // takes it from there: the store first, then everything cached.
         toast.success("Signed in");
     }
 
+    /*
+     * Switching store keeps the page (D83): the same section in the new
+     * store, minus anything that named a row of the old one. The mapping is
+     * store-switch.js's; this is the sequence around it — enter, drop what
+     * was cached, then move, under a 200 ms cross-fade.
+     */
+    let switching = $state("");
+    let switchError = $state("");
+    // Bumped as the page changes, so a switch that lands on the same address
+    // still mounts the screen afresh and asks the new store for its rows.
+    let storeEpoch = $state(0);
+
+    async function switchStore(target) {
+        const from = myStores.current;
+        if (switching || target.id === from?.id) return;
+        switching = target.id;
+        switchError = "";
+        try {
+            await enterStore(target.id);
+        } catch (err) {
+            // The menu stays open with the reason in it, and nothing else
+            // changes: the tab is still in the store it was in.
+            switchError = err?.message || "Could not switch store.";
+            switching = "";
+            return;
+        }
+        for (const el of document.querySelectorAll(".logged-user-dropdown")) {
+            if (el.matches(":popover-open")) el.hidePopover();
+        }
+        await reloadStoreData();
+
+        let { href, dropped } = switchTarget(page.route.id, page.url);
+        const section = sectionFor(href.split("?")[0], NAV);
+        let note = dropped ? droppedNote(section, dropped, from?.name ?? "the other store") : "";
+        if (section && section.href !== "/dash") {
+            if (section.right && !can(section.right)) {
+                note = `You don't have access to ${section.label} in ${target.name}`;
+                href = "/dash";
+            } else if (section.module && !hasModule(section.module)) {
+                note = `${section.label} is not available in ${target.name}`;
+                href = "/dash";
+            }
+        }
+        const move = async () => {
+            storeEpoch++;
+            await goto(base + href);
+            await tick();
+        };
+        const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+        if (typeof document.startViewTransition === "function" && !still) {
+            const root = document.documentElement;
+            root.classList.add("store-vt");
+            const transition = document.startViewTransition(move);
+            transition.finished.finally(() => root.classList.remove("store-vt"));
+            await transition.updateCallbackDone.catch(() => {});
+        } else {
+            await move();
+        }
+        switching = "";
+        toast.info(note || `Switched to ${target.name}`);
+    }
+
+    /* The store list in the account menu, searchable once it outgrows a
+       glance: past seven stores. */
+    let storeQuery = $state("");
+    const storeList = $derived.by(() => {
+        const q = storeQuery.trim().toLowerCase();
+        if (!q) return myStores.list;
+        return myStores.list.filter((st) => st.name.toLowerCase().includes(q) || st.slug.includes(q));
+    });
+    const roleName = (role) => (role ? role[0].toUpperCase() + role.slice(1) : "");
+
+    /**
+     * Arrow keys walk the account menu; Enter and Escape are the browser's
+     * own for buttons and popovers. Opening it puts focus on the current
+     * store, so the keyboard starts where the person is.
+     */
+    function menuKeys(node) {
+        const items = () => [...node.querySelectorAll(".dropdown-item:not([disabled]), .store-menu-search")];
+        const onKey = (event) => {
+            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+            event.preventDefault();
+            const list = items();
+            const at = list.indexOf(document.activeElement);
+            const step = event.key === "ArrowDown" ? 1 : -1;
+            list[(at + step + list.length) % list.length]?.focus();
+        };
+        const onToggle = (event) => {
+            if (event.newState !== "open") {
+                switchError = "";
+                storeQuery = "";
+                return;
+            }
+            (node.querySelector(".store-menu-item.current") ?? items()[0])?.focus();
+        };
+        node.addEventListener("keydown", onKey);
+        node.addEventListener("toggle", onToggle);
+        return {
+            destroy() {
+                node.removeEventListener("keydown", onKey);
+                node.removeEventListener("toggle", onToggle);
+            },
+        };
+    }
+
     async function signOut() {
-        document.getElementById("logged-user-dropdown")?.hidePopover();
+        for (const el of document.querySelectorAll(".logged-user-dropdown")) {
+            if (el.matches(":popover-open")) el.hidePopover();
+        }
         // auth.logout is what clears the credential. The settings go with it:
         // the next operator on a shared browser may be looking at another store.
         await auth.logout();
         clearSettings();
         forgetModules();
         forgetScreens();
+        forgetStores();
         toast.info("Signed out");
     }
 
@@ -466,52 +599,97 @@
     </nav>
 {/snippet}
 
-{#snippet account()}
+{#snippet account(where)}
     <!-- The account block sits at the foot of the sidebar, as it does in B2B
-         Leads: avatar, who you are, and the role you are signed in as — which
-         this panel now knows, so it can say it. -->
+         Leads: avatar, the store this tab is in, and who you are there. It is
+         drawn twice — the sidebar and the phone drawer — so each copy's menu
+         has its own id; one id for both opened the hidden copy on a phone. -->
+    {@const menuId = `logged-user-dropdown-${where}`}
+    {@const hide = () => document.getElementById(menuId)?.hidePopover()}
     <div class="app-account">
         <button
             type="button"
             class="app-account-trigger"
-            popovertarget="logged-user-dropdown"
+            popovertarget={menuId}
             use:trackPopover
         >
             <span class="app-avatar" aria-hidden="true">{initials}</span>
             <span class="app-account-who">
+                <span class="app-account-store txt-ellipsis" data-store-name>{myStores.current?.name ?? "GoCommerce"}</span>
                 <span class="app-account-name txt-ellipsis">{record?.email || "admin token"}</span>
                 <span class="app-account-role txt-ellipsis">{roleLabel}</span>
             </span>
             <i class="ri-arrow-up-s-line" aria-hidden="true"></i>
         </button>
-        <div id="logged-user-dropdown" class="dropdown sm nowrap logged-user-dropdown" popover="auto">
-            <!-- First, and unconditional: changing your own password needs no
-                 right, and this is the shortest way to it. -->
-            <a
-                class="dropdown-item"
-                href="{base}/dash/settings/account"
-                onclick={() => document.getElementById("logged-user-dropdown")?.hidePopover()}
-            >
+        <div id={menuId} class="dropdown sm nowrap logged-user-dropdown" popover="auto" use:menuKeys>
+            <!-- The stores first: which one this tab is in is the question the
+                 menu is most often opened to answer. -->
+            {#if myStores.list.length}
+                <div class="store-menu" role="group" aria-label="Your stores">
+                    {#if myStores.list.length > 7}
+                        <input
+                            type="search"
+                            class="store-menu-search"
+                            placeholder="Find a store"
+                            aria-label="Find a store"
+                            bind:value={storeQuery}
+                        />
+                    {/if}
+                    <div class="store-menu-list">
+                        {#each storeList as st (st.id)}
+                            {@const current = st.id === myStores.current?.id}
+                            <button
+                                type="button"
+                                class="dropdown-item store-menu-item"
+                                class:current
+                                class:busy={switching === st.id}
+                                aria-current={current ? "true" : undefined}
+                                disabled={st.status !== "active"}
+                                title={st.status !== "active" ? `${st.name} is ${st.status}` : undefined}
+                                onclick={() => switchStore(st)}
+                            >
+                                <span class="store-menu-mark" aria-hidden="true">{(st.name || st.slug)[0].toUpperCase()}</span>
+                                <span class="store-menu-text">
+                                    <span class="txt txt-ellipsis">{st.name}</span>
+                                    <span class="store-menu-role">{roleName(st.role)}</span>
+                                </span>
+                                {#if switching === st.id}
+                                    <span class="loader sm" aria-label="Switching"></span>
+                                {:else if current}
+                                    <i class="ri-check-line store-menu-check" aria-hidden="true"></i>
+                                {/if}
+                            </button>
+                        {:else}
+                            <p class="store-menu-empty txt-hint">No store matches “{storeQuery}”.</p>
+                        {/each}
+                    </div>
+                    {#if switchError}
+                        <p class="store-menu-error" role="alert">{switchError}</p>
+                    {/if}
+                    <a class="dropdown-item" href="{base}{SELECT}?create=1" onclick={hide}>
+                        <i class="ri-add-line" aria-hidden="true"></i>
+                        <span class="txt">Create a store</span>
+                    </a>
+                    <a class="dropdown-item" href="{base}{SELECT}" onclick={hide}>
+                        <i class="ri-store-2-line" aria-hidden="true"></i>
+                        <span class="txt">All stores…</span>
+                    </a>
+                </div>
+                <hr />
+            {/if}
+            <!-- Unconditional: changing your own password needs no right, and
+                 this is the shortest way to it. -->
+            <a class="dropdown-item" href="{base}/dash/settings/account" onclick={hide}>
                 <i class="ri-user-settings-line" aria-hidden="true"></i>
                 <span class="txt">Your account</span>
             </a>
             {#if can("team.read")}
-                <a
-                    class="dropdown-item"
-                    href="{base}/dash/settings/teams"
-                    onclick={() => document.getElementById("logged-user-dropdown")?.hidePopover()}
-                >
+                <a class="dropdown-item" href="{base}/dash/settings/teams" onclick={hide}>
                     <i class="ri-group-line" aria-hidden="true"></i>
                     <span class="txt">Manage the team</span>
                 </a>
             {/if}
-            <a
-                class="dropdown-item"
-                href="{base}/docs"
-                target="_blank"
-                rel="noreferrer"
-                onclick={() => document.getElementById("logged-user-dropdown")?.hidePopover()}
-            >
+            <a class="dropdown-item" href="{base}/docs" target="_blank" rel="noreferrer" onclick={hide}>
                 <i class="ri-code-s-slash-line" aria-hidden="true"></i>
                 <span class="txt">API preview</span>
             </a>
@@ -548,13 +726,16 @@
         {:else if isPublic}
             <!-- No header, no nav: there is nothing yet to navigate as. -->
             {@render children?.()}
-        {:else if ready && authenticated}
+        {:else if onSelect && ready && authenticated}
+            <!-- Signed in, in no store yet: the store picker alone. -->
+            {@render children?.()}
+        {:else if ready && authenticated && myStores.state === "ok"}
             <!-- Desktop: the sidebar itself. -->
             <aside class="app-sidebar">
                 {@render brand()}
                 {@render searchTrigger()}
                 {@render navLinks()}
-                <div class="app-sidebar-foot">{@render account()}</div>
+                <div class="app-sidebar-foot">{@render account("sidebar")}</div>
             </aside>
 
             <!-- Narrow: a bar with the toggle, and the sidebar as a drawer over the
@@ -607,16 +788,29 @@
                 {@render brand()}
                 {@render searchTrigger()}
                 {@render navLinks()}
-                <div class="app-sidebar-foot">{@render account()}</div>
+                <div class="app-sidebar-foot">{@render account("drawer")}</div>
             </aside>
 
-            {@render children?.()}
+            <!-- Keyed on the switch, so landing on the same address in another
+                 store still mounts the screen afresh and asks for its rows. -->
+            {#key storeEpoch}
+                {@render children?.()}
+            {/key}
 
             <!-- Inside the authenticated branch, not beside it: both are
                  modals over a panel, and neither has anything to search or
                  explain to somebody who has not signed in. -->
             <CommandPalette bind:open={paletteOpen} />
             <ShortcutHelp bind:open={helpOpen} />
+        {:else if ready && authenticated && myStores.state === "error"}
+            <div class="page">
+                <div class="wrapper sm m-auto txt-center p-t-base">
+                    <p class="txt-hint">The store could not be reached.</p>
+                    <button type="button" class="btn secondary" onclick={() => markStores("unknown")}>
+                        <span class="txt">Try again</span>
+                    </button>
+                </div>
+            </div>
         {:else}
             <div class="page"></div>
         {/if}
