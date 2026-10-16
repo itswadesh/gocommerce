@@ -32,6 +32,9 @@
          *  host disables saving; this stops offering moves that would be
          *  written against a list it does not fully hold. */
         partial = false,
+        /** What the list belongs to, for its wording: the showcase editor
+            orders its products with this same list. */
+        noun = "collection",
     } = $props();
 
     const SEARCH_LIMIT = 20;
@@ -232,8 +235,8 @@
                                 type="button"
                                 class="btn circle sm transparent secondary row-delete"
                                 {disabled}
-                                title="Remove from this collection"
-                                aria-label="Remove {product.title} from this collection"
+                                title="Remove from this {noun}"
+                                aria-label="Remove {product.title} from this {noun}"
                                 onclick={() => remove(index)}
                             >
                                 <i class="ri-close-line" aria-hidden="true"></i>
@@ -246,7 +249,7 @@
     </div>
 {:else}
     <div class="txt-hint txt-center p-base">
-        Nothing in this collection yet. The order you put products in here is the order a
+        Nothing in this {noun} yet. The order you put products in here is the order a
         storefront shows them.
     </div>
 {/if}
@@ -318,7 +321,7 @@
     {/if}
 
     <div class="field-help">
-        Added products go to the end of the list, and nothing is written until the collection is
+        Added products go to the end of the list, and nothing is written until the {noun} is
         saved.
     </div>
 

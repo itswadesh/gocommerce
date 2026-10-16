@@ -464,6 +464,20 @@ export const webhooks = {
  */
 const RECOVERY = "/api/admin/x/cart-recovery";
 
+/**
+ * showcases is ext/showcases (D88): a store's own videos, from YouTube or
+ * Facebook, beside the products they show.
+ */
+export const showcases = {
+    list: (params) => api.get("/api/admin/x/showcases" + query(params)),
+    get: (id) => api.get(`/api/admin/x/showcases/${id}`),
+    create: (body) => api.post("/api/admin/x/showcases", body),
+    update: (id, patch) => api.patch(`/api/admin/x/showcases/${id}`, patch),
+    remove: (id) => api.delete(`/api/admin/x/showcases/${id}`),
+    check: (url) => api.post("/api/admin/x/showcases/check", { url }),
+    makeCollection: (id, title) => api.post(`/api/admin/x/showcases/${id}/collection`, { title }),
+};
+
 export const recovery = {
     list: (params) => api.get(`${RECOVERY}/abandonments` + query(params)),
     summary: (params) => api.get(`${RECOVERY}/summary` + query(params)),

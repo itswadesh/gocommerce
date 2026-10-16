@@ -215,6 +215,9 @@ export const NAV = [
             { href: "/dash/feeds", label: "Feeds", right: "plugins.read", module: "feeds", keywords: "google merchant meta catalogue feed" },
             { href: "/dash/sitemap", label: "Sitemap", right: "plugins.read", module: "sitemaps", keywords: "sitemap.xml search console" },
             { href: "/dash/faq", label: "FAQ", right: "faq.read", module: "faq", keywords: "questions answers help support" },
+            // The store's own videos beside the products they show: storefront
+            // content, kept with its pages.
+            { href: "/dash/showcases", label: "Video showcases", right: "showcases.read", module: "showcases", keywords: "video youtube facebook live stream showcase demo shoppable" },
         ],
     },
     // "How much did we sell" and the full sales report — the by-period table,

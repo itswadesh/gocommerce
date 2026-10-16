@@ -213,6 +213,14 @@ export function rightScope(right) {
  * the same thing, and a right that is not here still falls back to its name.
  */
 const MODULE_RIGHTS = {
+    "showcases.read": {
+        label: "See video showcases",
+        scope: "The videos the storefront plays, their products and how they did",
+    },
+    "showcases.write": {
+        label: "Edit video showcases",
+        scope: "Making, publishing and running showcases, and which product is shown now",
+    },
     "abandonment.read": {
         label: "See abandoned checkouts",
         scope: "Baskets left behind, what was sent about them, and the recovery figures",
@@ -297,6 +305,7 @@ export const RESOURCE_LABELS = {
     pages: "Pages",
     menus: "Menus",
     faq: "FAQ",
+    showcases: "Video showcases",
     contact: "Contact messages",
     newsletter: "Newsletter",
     wishlists: "Wishlists",
@@ -366,7 +375,7 @@ export const RIGHT_SECTIONS = [
     },
     { section: "Discounts", resources: ["discounts"] },
     { section: "Notifications", resources: ["notifications"] },
-    { section: "Content", resources: ["media", "pages", "menus", "faq"] },
+    { section: "Content", resources: ["media", "pages", "menus", "faq", "showcases"] },
     { section: "Reports", resources: ["reports"] },
     { section: "Plugins", resources: ["plugins"] },
     // The big one, and honestly so: Settings is where a store is configured,
