@@ -11,6 +11,7 @@ import (
 	"time"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
+	"github.com/itswadesh/gocommerce/ext/translations"
 	"github.com/itswadesh/gocommerce/gctest"
 )
 
@@ -391,5 +392,23 @@ func TestTheLinkCheckAsksYouTube(t *testing.T) {
 	}
 	if rec := gctest.AdminRequest(t, app, http.MethodPost, "/api/admin/x/showcases/check", map[string]any{"url": "https://fb.watch/x/"}); rec.Code != http.StatusBadRequest {
 		t.Errorf("a short share link = %d, want 400", rec.Code)
+	}
+}
+
+// A buyer reading French sees the products' French titles here as on their
+// own pages: the showcase translates through the same hook core's reads use.
+func TestAShowcaseSpeaksTheBuyersLanguage(t *testing.T) {
+	app := gctest.NewWithConfig(t, gocommerce.Config{DefaultLanguage: "en", Languages: []string{"en", "fr"}},
+		New(Config{}), translations.New())
+	p := gctest.CreateProduct(t, app, "SC-FR", 1000, 3)
+	if rec := gctest.AdminRequest(t, app, http.MethodPut, "/api/admin/x/translations/product/"+itoa(p.ID)+"/fr",
+		map[string]any{"fields": map[string]string{"title": "Bague en or"}}); rec.Code != http.StatusOK {
+		t.Fatalf("translate = %d: %s", rec.Code, rec.Body)
+	}
+	s := newShowcase(t, app, "Gold", map[string]any{"product_ids": []int64{p.ID}, "status": StatusPublished})
+	var got publicShowcase
+	gctest.DecodeData(t, public(t, app, "/x/showcases/"+s.Slug+"?lang=fr", http.StatusOK), &got)
+	if len(got.Products) != 1 || got.Products[0].Title != "Bague en or" {
+		t.Errorf("in French = %+v", got.Products)
 	}
 }
