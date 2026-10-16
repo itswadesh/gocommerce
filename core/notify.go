@@ -230,10 +230,8 @@ func (a *App) subscribeNotifications() {
 
 func (a *App) notifyOrder(ctx context.Context, event string, ev *OrderEvent) error {
 	data := orderNotificationData(ev)
-	// The customer's own preference, then the store's choice, then the
-	// binary's. The middle one is new and is why this is not a bare fallback
-	// to Config any more: a shop that writes to its customers in Dutch should
-	// not have to be restarted to say so.
+	// The language the customer ordered in, while the store still sells in
+	// it, else the store's main language (D87).
 	lang := a.profile.MessageLanguage(ctx, ev.Language)
 
 	var failures []error

@@ -96,18 +96,27 @@ func (m *Module) items(ctx context.Context, kind, language, search, status strin
 		live = "e.status <> '" + gocommerce.ProductArchived + "'"
 	}
 
-	out := &Items{Language: language, Fields: fields, Items: []Item{}, Limit: limit, Offset: offset}
-	rows, err := m.db.QueryContext(ctx, `
-		SELECT e.id, jsonb_build_object(`+strings.Join(pairs, ", ")+`), t.fields, t.updated_at, count(*) OVER ()
-		FROM `+table+` e
+	// An item is translated once its title is: a description alone leaves the
+	// shopper reading the main language's name, which is what they see first.
+	from := `
+		FROM ` + table + ` e
 		LEFT JOIN translations_entries t
 		  ON t.kind = $1 AND t.entity_id = e.id AND lower(t.language) = lower($2)
-		WHERE `+live+`
+		WHERE ` + live + `
 		  AND ($3 = '' OR e.title ILIKE '%' || $3 || '%' ESCAPE '\')
-		  AND ($4 = '' OR ($4 = 'missing') = (t.entity_id IS NULL))
+		  AND ($4 = '' OR ($4 = 'translated') = coalesce(t.fields ? 'title', false))`
+	args := []any{kind, language, escapeLike(search), status}
+
+	out := &Items{Language: language, Fields: fields, Items: []Item{}, Limit: limit, Offset: offset}
+	// Counted on its own rather than beside each row, so a page past the end
+	// still knows how many there are and the screen can page back.
+	if err := m.db.QueryRowContext(ctx, `SELECT count(*)`+from, args...).Scan(&out.Matching); err != nil {
+		return nil, err
+	}
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT e.id, jsonb_build_object(`+strings.Join(pairs, ", ")+`), t.fields, t.updated_at`+from+`
 		ORDER BY lower(e.title), e.id
-		LIMIT $5 OFFSET $6`,
-		kind, language, escapeLike(search), status, limit, offset)
+		LIMIT $5 OFFSET $6`, append(args, limit, offset)...)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +124,7 @@ func (m *Module) items(ctx context.Context, kind, language, search, status strin
 	for rows.Next() {
 		var it Item
 		var original, translation []byte
-		if err := rows.Scan(&it.ID, &original, &translation, &it.UpdatedAt, &out.Matching); err != nil {
+		if err := rows.Scan(&it.ID, &original, &translation, &it.UpdatedAt); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(original, &it.Original); err != nil {
@@ -135,7 +144,7 @@ func (m *Module) items(ctx context.Context, kind, language, search, status strin
 	if err := m.db.QueryRowContext(ctx, `
 		SELECT (SELECT count(*) FROM `+table+` e WHERE `+live+`),
 		       (SELECT count(*) FROM translations_entries t
-		        WHERE t.kind = $1 AND lower(t.language) = lower($2)
+		        WHERE t.kind = $1 AND lower(t.language) = lower($2) AND t.fields ? 'title'
 		          AND EXISTS (SELECT 1 FROM `+table+` e WHERE e.id = t.entity_id AND `+live+`))`,
 		kind, language).Scan(&out.Total, &out.Translated); err != nil {
 		return nil, err
@@ -163,8 +172,8 @@ func (m *Module) categoryPaths(ctx context.Context, items []Item) error {
 		    UNION ALL
 		    SELECT chain.leaf, c.parent_id, c.title || ' / ' || chain.path, chain.depth + 1
 		    FROM categories c JOIN chain ON c.id = chain.parent_id
-		    WHERE chain.depth < 64)
-		SELECT leaf, path FROM chain WHERE parent_id IS NULL`, int64Array(ids))
+		    WHERE chain.depth < $2)
+		SELECT leaf, path FROM chain WHERE parent_id IS NULL`, int64Array(ids), gocommerce.MaxCategoryDepth)
 	if err != nil {
 		return err
 	}

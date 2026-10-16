@@ -189,3 +189,34 @@ func TestATranslationIsIntoAnotherOfTheStoresLanguages(t *testing.T) {
 		t.Errorf("stored = %+v, want one row spelt the store's way, fr", entries)
 	}
 }
+
+// A page past the end still knows how many there are, so the screen can say
+// so and page back; and an item counts as translated once its title is.
+func TestTheListCountsPastTheEndAndByTitle(t *testing.T) {
+	app := newApp(t)
+	first := gctest.CreateProduct(t, app, "TR-P1", 2500, 5)
+	gctest.CreateProduct(t, app, "TR-P2", 2500, 5)
+	gctest.CreateProduct(t, app, "TR-P3", 2500, 5)
+	put(t, app, first.ID, "fr", map[string]string{"description": "Seulement la description"})
+
+	list := func(query string) Items {
+		t.Helper()
+		rec := gctest.AdminRequest(t, app, http.MethodGet, "/api/admin/x/translations/product?"+query, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("list %s = %d: %s", query, rec.Code, rec.Body)
+		}
+		var out Items
+		gctest.DecodeData(t, rec, &out)
+		return out
+	}
+	if past := list("language=fr&offset=10"); past.Matching != 3 || len(past.Items) != 0 {
+		t.Errorf("past the end = matching %d, items %d; want 3, 0", past.Matching, len(past.Items))
+	}
+	all := list("language=fr")
+	if all.Translated != 0 {
+		t.Errorf("translated = %d, want 0: a description alone is not a translated product", all.Translated)
+	}
+	if missing := list("language=fr&status=missing"); missing.Matching != 3 {
+		t.Errorf("not translated = %d, want 3 including the one with only a description", missing.Matching)
+	}
+}
