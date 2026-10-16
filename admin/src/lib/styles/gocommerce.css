@@ -10193,3 +10193,26 @@ a.recovery-automation:focus-visible .recovery-automation-go > i {
         color: #000 !important;
     }
 }
+
+/* ---------------------------------------------------------- label colours */
+
+/*
+ * The panel's screens name a label's colour `label-success`, `label-warning`,
+ * `label-danger` and `label-info` — the provider and plugin screens, the B2B
+ * status maps, the inbox and the jobs list — while PocketBase's base.css
+ * colours `.label.success` and its siblings. Nothing matched, so an active
+ * email provider read the same grey as an inactive one. These give the
+ * panel's names the base colours, so "Active" is green wherever it is said.
+ */
+.label.label-info {
+    background: var(--surfaceInfoColor);
+}
+.label.label-success {
+    background: var(--surfaceSuccessColor);
+}
+.label.label-warning {
+    background: var(--surfaceWarningColor);
+}
+.label.label-danger {
+    background: var(--surfaceDangerColor);
+}
