@@ -226,6 +226,11 @@
     const unconfigured = $derived(
         channels.filter((c) => !c.delivers && vendorsOf(c).length > 0),
     );
+    // Notifications open by themselves while a channel is not really sending.
+    let notifyOpen = $state(false);
+    $effect(() => {
+        if (unwired.length || unconfigured.length) notifyOpen = true;
+    });
     /** The vendor names on a channel, for "SendGrid is installed but…". */
     const vendorNames = (c) => vendorsOf(c).map((b) => b.name).join(" and ");
     /** Where a channel's key is typed in. */
@@ -277,172 +282,170 @@
                      thing on this screen anybody came here to change. What
                      follows is what the binary was started with. -->
                 {#if draft}
-                    <h2 class="tw:mb-3 tw:text-sm tw:font-semibold">Store details</h2>
-                    <div class="grid m-b-base">
-                        {#each FIELDS as f (f.key)}
-                            <div class="col-md-4">
-                                <div class="field" class:readonly={!editable}>
-                                    <label for="sp-{f.key}">{f.label}</label>
-                                    {#if f.kind === "select" && optionsFor(f.key).length}
-                                        <select
-                                            id="sp-{f.key}"
-                                            disabled={!editable}
-                                            bind:value={draft[f.key]}
-                                        >
-                                            <!-- Blank is a real choice, not a
-                                                 prompt: it means "whatever the
-                                                 binary was started with". -->
-                                            <option value="">
-                                                {f.key === "timezone"
-                                                    ? "UTC (nothing set)"
-                                                    : "The binary's default"}
-                                            </option>
-                                            {#each optionsFor(f.key) as option (option)}
-                                                <option value={option}>{option}</option>
-                                            {/each}
-                                        </select>
-                                    {:else}
-                                        <input
-                                            id="sp-{f.key}"
-                                            type="text"
-                                            maxlength="200"
-                                            readonly={!editable}
-                                            bind:value={draft[f.key]}
-                                        />
-                                    {/if}
-                                    {#if f.hint}<div class="field-help">{f.hint}</div>{/if}
+                    <section class="card">
+                        <h2 class="tw:mb-3 tw:text-sm tw:font-semibold">Store details</h2>
+                        <!-- A form, so Enter in any field saves, like the button. -->
+                        <form class="grid" onsubmit={(e) => (e.preventDefault(), editable && saveProfile())}>
+                            {#each FIELDS as f (f.key)}
+                                <div class="col-md-4">
+                                    <div class="field" class:readonly={!editable}>
+                                        <label for="sp-{f.key}">{f.label}</label>
+                                        {#if f.kind === "select" && optionsFor(f.key).length}
+                                            <select
+                                                id="sp-{f.key}"
+                                                disabled={!editable}
+                                                bind:value={draft[f.key]}
+                                            >
+                                                <!-- Blank is a real choice, not a
+                                                     prompt: it means "whatever the
+                                                     binary was started with". -->
+                                                <option value="">
+                                                    {f.key === "timezone"
+                                                        ? "UTC (nothing set)"
+                                                        : "The binary's default"}
+                                                </option>
+                                                {#each optionsFor(f.key) as option (option)}
+                                                    <option value={option}>{option}</option>
+                                                {/each}
+                                            </select>
+                                        {:else}
+                                            <input
+                                                id="sp-{f.key}"
+                                                type="text"
+                                                maxlength="200"
+                                                readonly={!editable}
+                                                bind:value={draft[f.key]}
+                                            />
+                                        {/if}
+                                        {#if f.hint}<div class="field-help">{f.hint}</div>{/if}
+                                    </div>
                                 </div>
+                            {/each}
+                            <div class="col-12">
+                                {#if editable}
+                                    <button type="submit" class="btn sm" disabled={saving || !dirty}>
+                                        <span class="txt">{saving ? "Saving…" : "Save store details"}</span>
+                                    </button>
+                                {:else}
+                                    <div class="field-help">
+                                        These are the shop's own details, and changing them needs
+                                        store.write.
+                                    </div>
+                                {/if}
                             </div>
-                        {/each}
-                        <div class="col-12">
-                            {#if editable}
-                                <button
-                                    type="button"
-                                    class="btn sm"
-                                    disabled={saving || !dirty}
-                                    onclick={saveProfile}
-                                >
-                                    <span class="txt">{saving ? "Saving…" : "Save store details"}</span>
-                                </button>
-                            {:else}
-                                <div class="field-help">
-                                    These are the shop's own details, and changing them needs
-                                    store.write.
-                                </div>
-                            {/if}
-                        </div>
-                    </div>
+                        </form>
+                    </section>
                 {/if}
 
-                <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">How this store was started</h2>
-                <div class="grid">
-                    <div class="col-md-4">
-                        <div class="field readonly">
-                            <label for="currency">Settlement currency</label>
-                            <input id="currency" type="text" readonly value={store?.currency ?? ""} />
+                <!-- Everything below is read more than it is changed, so it is
+                     folded, as on Sitemap and Feeds, and each fold says on its
+                     heading what is inside. -->
+                <details class="card map-fold">
+                    <summary>
+                        <span class="map-fold-title">How this store was started</span>
+                        <span class="txt-hint txt-sm">Fixed when the engine starts; read only</span>
+                        <i class="ri-arrow-down-s-line map-fold-chevron" aria-hidden="true"></i>
+                        <span class="map-fold-values">
+                            <span class="map-fold-value">{store?.currency ?? "—"}</span>
+                            <span class="map-fold-value">{languageList || "—"}</span>
+                            <span class="map-fold-value">
+                                prices {store?.prices_include_tax ? "include tax" : "have tax added at checkout"}
+                            </span>
+                            <span class="map-fold-value">version {store?.version ?? "—"}</span>
+                        </span>
+                    </summary>
+                    <div class="map-fold-body grid">
+                        <div class="col-md-4">
+                            <div class="field readonly">
+                                <label for="currency">Settlement currency</label>
+                                <input id="currency" type="text" readonly value={store?.currency ?? ""} />
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="field readonly">
+                                <label for="language">Languages</label>
+                                <!-- The list, not the default alone: a store that
+                                     serves three languages negotiates one per
+                                     request, and the default is one of these, not
+                                     a fourth thing. -->
+                                <input id="language" type="text" readonly value={languageList} />
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="field readonly">
+                                <label for="version">Engine version</label>
+                                <input id="version" type="text" readonly value={store?.version ?? ""} />
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="field readonly">
+                                <label for="tax">Catalog prices</label>
+                                <input
+                                    id="tax"
+                                    type="text"
+                                    readonly
+                                    value={store?.prices_include_tax ? "Include tax" : "Have tax added at checkout"}
+                                />
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="field readonly">
+                                <label for="shipping">Flat shipping</label>
+                                <input id="shipping" type="text" readonly value={formatMoney(store?.flat_shipping)} />
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="field readonly">
+                                <label for="prefix">Order number prefix</label>
+                                <input id="prefix" type="text" readonly value={store?.order_prefix ?? ""} />
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="field readonly">
+                                <label for="cart-ttl">A cart is kept for</label>
+                                <input id="cart-ttl" type="text" readonly value={ttl(store?.cart_ttl_seconds)} />
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="field readonly">
+                                <label for="order-ttl">An unpaid order expires after</label>
+                                <input id="order-ttl" type="text" readonly value={ttl(store?.order_ttl_seconds)} />
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <div class="field-help">
+                                These come from the <code>Config</code> the binary was started with.
+                                Money is stored in minor units alongside its code, which is what lets
+                                any currency work without an engine change — and what makes changing
+                                one mid-flight a migration rather than a setting.
+                            </div>
                         </div>
                     </div>
-                    <div class="col-md-4">
-                        <div class="field readonly">
-                            <label for="language">Languages</label>
-                            <!-- The list, not the default alone. A store that
-                                 serves three languages negotiates one per
-                                 request, stamps it on every order and hands it
-                                 to every notifier — and until this said so, the
-                                 set the store was configured for appeared
-                                 nowhere in the panel at all. The default is
-                                 marked rather than shown on its own line,
-                                 because it is one of these and not a fourth
-                                 thing. -->
-                            <input id="language" type="text" readonly value={languageList} />
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="field readonly">
-                            <label for="version">Engine version</label>
-                            <input id="version" type="text" readonly value={store?.version ?? ""} />
-                        </div>
-                    </div>
+                </details>
 
-                    <div class="col-md-4">
-                        <div class="field readonly">
-                            <label for="tax">Catalog prices</label>
-                            <input
-                                id="tax"
-                                type="text"
-                                readonly
-                                value={store?.prices_include_tax
-                                    ? "Include tax"
-                                    : "Have tax added at checkout"}
-                            />
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="field readonly">
-                            <label for="shipping">Flat shipping</label>
-                            <input
-                                id="shipping"
-                                type="text"
-                                readonly
-                                value={formatMoney(store?.flat_shipping)}
-                            />
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="field readonly">
-                            <label for="prefix">Order number prefix</label>
-                            <input id="prefix" type="text" readonly value={store?.order_prefix ?? ""} />
-                        </div>
-                    </div>
-
-                    <div class="col-md-4">
-                        <div class="field readonly">
-                            <label for="cart-ttl">A cart is kept for</label>
-                            <input
-                                id="cart-ttl"
-                                type="text"
-                                readonly
-                                value={ttl(store?.cart_ttl_seconds)}
-                            />
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="field readonly">
-                            <label for="order-ttl">An unpaid order expires after</label>
-                            <input
-                                id="order-ttl"
-                                type="text"
-                                readonly
-                                value={ttl(store?.order_ttl_seconds)}
-                            />
-                        </div>
-                    </div>
-
-                    <div class="col-12">
-                        <div class="field-help">
-                            These come from the <code>Config</code> the binary was started with.
-                            Money is stored in minor units alongside its code, which is what lets
-                            any currency work without an engine change — and what makes changing
-                            one mid-flight a migration rather than a setting.
-                        </div>
-                    </div>
-
-                    <div class="col-12">
-                        <!-- The payment methods and the carriers used to be
-                             listed here as chips. They have had screens of
-                             their own since Settings › Payment methods and
-                             Settings › Shipping providers arrived, where each
-                             one is switched on and given its keys — so this was
-                             a second, read-only copy of a list the operator
-                             goes somewhere else to act on. -->
-
-                        <!-- Only when the store reported its channels. The
-                             engine always reports both, so an empty list is a
-                             binary that predates the field rather than a store
-                             with no channels — and a section that renders
-                             nothing but its own heading reads as a bug. -->
-                        {#if channels.length}
-                            <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Notifications</h2>
+                <!-- Only when the store reported its channels: the engine always
+                     reports both, so an empty list is an older binary, and a
+                     section with nothing in it reads as a bug. Open by itself
+                     while a channel is not really sending — that is bad news the
+                     owner has to see. -->
+                {#if channels.length}
+                    <details class="card map-fold" bind:open={notifyOpen}>
+                        <summary>
+                            <span class="map-fold-title">Notifications</span>
+                            <span class="txt-hint txt-sm">Who delivers order emails and texts</span>
+                            <i class="ri-arrow-down-s-line map-fold-chevron" aria-hidden="true"></i>
+                            {#if !notifyOpen}
+                                <span class="map-fold-values">
+                                    {#each channels as channel (channel.channel)}
+                                        <span class="map-fold-value" class:missing={!channel.delivers}>
+                                            <span class="txt-hint">{channelName(channel.channel)}:</span>
+                                            {channel.delivers ? "delivering" : "not sending"}
+                                        </span>
+                                    {/each}
+                                </span>
+                            {/if}
+                        </summary>
+                        <div class="map-fold-body">
                             <!-- The warning comes before the chips, because it is
                                  the thing to read: a channel with no delivery
                                  backend accepts every send and reports success. -->
@@ -469,10 +472,9 @@
                                 </div>
                             {/if}
                             {#if unconfigured.length}
-                                <!-- A different problem with a different fix:
-                                     the module is already compiled in, and what
-                                     is missing is a key somebody can type on
-                                     the next screen. -->
+                                <!-- A different problem with a different fix: the
+                                     module is compiled in, and what is missing is
+                                     a key somebody can type on the next screen. -->
                                 <div class="alert warning m-b-10">
                                     {#each unconfigured as c (c.channel)}
                                         <p>
@@ -512,19 +514,20 @@
                                 nobody sends on is a fine configuration — it should just be one
                                 somebody chose.
                             </div>
-                        {/if}
-                    </div>
+                        </div>
+                    </details>
+                {/if}
 
-                    <!-- The list of Go modules this binary was built with used
-                         to sit here. Nothing on this screen could act on it —
-                         the text said so itself, that changing it is a redeploy
-                         — and Plugins names what is installed in words a
-                         shopkeeper uses. Diagnostics identifies the build when
-                         that is the actual question. -->
-
-                    {#if settings.languages.length > 1}
-                        <div class="col-12">
-                            <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Read the catalog as a shopper</h2>
+                {#if settings.languages.length > 1}
+                    <details class="card map-fold">
+                        <summary>
+                            <span class="map-fold-title">Read the catalog as a shopper</span>
+                            <span class="txt-hint txt-sm">
+                                The public catalog in each of {settings.languages.length} languages
+                            </span>
+                            <i class="ri-arrow-down-s-line map-fold-chevron" aria-hidden="true"></i>
+                        </summary>
+                        <div class="map-fold-body">
                             <div class="field-help m-b-sm">
                                 The engine negotiates a language per request, renders the public
                                 catalog through the translator the store registered, stamps the
@@ -534,37 +537,34 @@
                             </div>
                             <div class="flex flex-wrap gap-5">
                                 {#each settings.languages as lang (lang)}
-                                    <a
-                                        class="btn sm secondary"
-                                        href="/api/products?lang={lang}"
-                                        target="_blank"
-                                        rel="noreferrer"
-                                    >
+                                    <a class="btn sm secondary" href="/api/products?lang={lang}" target="_blank" rel="noreferrer">
                                         <span class="txt">{lang}</span>
                                     </a>
                                 {/each}
                             </div>
                         </div>
-                    {/if}
+                    </details>
+                {/if}
 
-                    <div class="col-12">
-                        <!-- The one personal preference on a page of store facts. It
-                             used to sit in every screen's footer; a switch flipped
-                             twice a year does not earn thirty copies of itself. -->
-                        <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Appearance</h2>
+                <!-- The one personal preference on a page of store facts. -->
+                <details class="card map-fold">
+                    <summary>
+                        <span class="map-fold-title">Appearance</span>
+                        <span class="txt-hint txt-sm">
+                            Light or dark, for this browser{#if !settings.mediaUploadsEnabled}; and why there is no upload button{/if}
+                        </span>
+                        <i class="ri-arrow-down-s-line map-fold-chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="map-fold-body">
                         <div class="flex flex-wrap gap-10 m-b-10" style="align-items: center">
                             <ThemeToggle />
                             <span class="txt-hint txt-sm">
-                                Light or dark, for this browser. Until you choose, the panel
-                                follows the system setting.
+                                Until you choose, the panel follows the system setting.
                             </span>
                         </div>
-
-                        <!-- Only when uploads are off. Working is the ordinary
-                             case and needs no sentence; the warning explains a
+                        <!-- Only when uploads are off: the warning explains a
                              missing upload control, which is a real question. -->
                         {#if !settings.mediaUploadsEnabled}
-                            <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Media</h2>
                             <div class="field-help">
                                 No media backend is configured, so the library records files by URL
                                 and offers no upload control. That is a supported way to run —
@@ -572,12 +572,18 @@
                             </div>
                         {/if}
                     </div>
+                </details>
 
-                    <div class="col-12">
-                        <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">API</h2>
+                <details class="card map-fold">
+                    <summary>
+                        <span class="map-fold-title">API</span>
+                        <span class="txt-hint txt-sm">Everything here can be done with curl</span>
+                        <i class="ri-arrow-down-s-line map-fold-chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="map-fold-body">
                         <div class="field-help m-b-sm">
                             This panel is a client of the same API as anything else — it has no
-                            private endpoints. Everything you can do here, you can do with curl.
+                            private endpoints.
                         </div>
                         <div class="flex gap-10">
                             <a class="btn secondary" href="/docs" target="_blank" rel="noreferrer">
@@ -590,39 +596,43 @@
                             </a>
                         </div>
                     </div>
+                </details>
 
-                    {#if mayDelete}
-                        <div class="col-12">
-                            <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Delete this store</h2>
-                            <div class="store-delete">
-                                <p class="field-help m-b-sm">
-                                    Deletes {here.name} and everything in it — products, orders, customers,
-                                    settings — for good. Nobody can undo it. Your other stores are not touched.
-                                </p>
-                                <div class="field">
-                                    <label for="delete-confirm">Type <code>{here.slug}</code> to confirm</label>
-                                    <input
-                                        id="delete-confirm"
-                                        type="text"
-                                        autocomplete="off"
-                                        spellcheck="false"
-                                        bind:value={confirmSlug}
-                                    />
-                                </div>
-                                <button
-                                    type="button"
-                                    class="btn danger m-t-sm"
-                                    class:loading={deleting}
-                                    disabled={deleting || confirmSlug.trim() !== here.slug}
-                                    onclick={deleteStore}
-                                >
-                                    <i class="ri-delete-bin-line" aria-hidden="true"></i>
-                                    <span class="txt">Delete this store</span>
-                                </button>
+                {#if mayDelete}
+                    <details class="card map-fold store-delete-fold">
+                        <summary>
+                            <span class="map-fold-title">Delete this store</span>
+                            <span class="txt-hint txt-sm">For good; nobody can undo it</span>
+                            <i class="ri-arrow-down-s-line map-fold-chevron" aria-hidden="true"></i>
+                        </summary>
+                        <div class="map-fold-body store-delete">
+                            <p class="field-help m-b-sm">
+                                Deletes {here.name} and everything in it — products, orders, customers,
+                                settings — for good. Nobody can undo it. Your other stores are not touched.
+                            </p>
+                            <div class="field">
+                                <label for="delete-confirm">Type <code>{here.slug}</code> to confirm</label>
+                                <input
+                                    id="delete-confirm"
+                                    type="text"
+                                    autocomplete="off"
+                                    spellcheck="false"
+                                    bind:value={confirmSlug}
+                                />
                             </div>
+                            <button
+                                type="button"
+                                class="btn danger m-t-sm"
+                                class:loading={deleting}
+                                disabled={deleting || confirmSlug.trim() !== here.slug}
+                                onclick={deleteStore}
+                            >
+                                <i class="ri-delete-bin-line" aria-hidden="true"></i>
+                                <span class="txt">Delete this store</span>
+                            </button>
                         </div>
-                    {/if}
-                </div>
+                    </details>
+                {/if}
             {/if}
         </div>
 
