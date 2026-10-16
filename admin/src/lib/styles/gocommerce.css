@@ -4107,6 +4107,82 @@ button.media-check {
     transition: opacity 150ms ease-out;
 }
 
+/* Settings › Domains: one row per domain, and the DNS record to create
+   beneath a domain still waiting for it. */
+.domain-add {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+.domain-add input {
+    flex: 1;
+    min-width: 0;
+}
+.domain-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+}
+.domain-row {
+    padding: 10px 12px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+    transition: border-color 200ms ease-out, background 200ms ease-out;
+}
+.domain-row.verified {
+    border-color: var(--surfaceAlt2Color);
+}
+.domain-row:not(.verified) {
+    border-color: var(--warningColor);
+}
+.domain-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.domain-host {
+    font-weight: 600;
+    min-width: 0;
+}
+.domain-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-left: auto;
+}
+.domain-record {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--surfaceAlt2Color);
+}
+.domain-record-grid {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px 10px;
+    margin-top: 6px;
+    font-size: 12px;
+}
+.domain-record-grid code {
+    overflow: hidden;
+}
+.domain-not-found {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--dangerColor);
+    animation: storeErrorIn 200ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+    .domain-row {
+        transition: none;
+    }
+    .domain-not-found {
+        animation: none;
+    }
+}
+
 /* The orders list's customer: name over email and phone. */
 .order-customer {
     display: flex;
