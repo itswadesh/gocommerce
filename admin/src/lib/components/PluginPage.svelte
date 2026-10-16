@@ -102,7 +102,7 @@
                             <div class="plugin-title">{plugin.title}</div>
                             <div class="txt-hint txt-sm">Module {plugin.module}</div>
                         </div>
-                        <span class="label {state.cls}">{state.label}</span>
+                        <span class="label {state.cls}">{#if state.cls === "label-success"}<i class="ri-check-line state-tick" aria-hidden="true"></i>{/if}{state.label}</span>
                     </div>
                     <p class="plugin-description">{plugin.description}</p>
                     <div class="flex gap-10 m-t-sm">

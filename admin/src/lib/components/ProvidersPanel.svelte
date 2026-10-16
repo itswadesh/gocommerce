@@ -76,7 +76,9 @@
         providers.map((p) => {
             const plugin = p.module === "core" ? null : plugins.find((x) => x.module === p.module);
             let state;
-            if (p.module === "core") state = { label: "Built in", cls: "label-success" };
+            // Green is for "on and working" alone; a built-in method is simply
+            // there, so it reads neutral.
+            if (p.module === "core") state = { label: "Built in", cls: "" };
             else if (p.configured) state = { label: "Active", cls: "label-success" };
             else if (plugin?.enabled) state = { label: "Needs settings", cls: "label-warning" };
             else state = { label: "Inactive", cls: "" };
@@ -161,7 +163,9 @@
             {/if}
             <div class="card-grid provider-grid">
                 {#each inUse as card (card.code)}
-                    <section class="card provider-card" class:active={card.configured}>
+                    <!-- Green only when its label says Active: a built-in method is
+                         configured by nature, and green would read as "turned on". -->
+                    <section class="card provider-card" class:active={card.state.label === "Active"}>
                         <div class="flex gap-10">
                             <div class="flex-fill">
                                 <div class="provider-title">{card.plugin?.title ?? card.name}</div>
@@ -170,7 +174,7 @@
                                     <span class="txt-code">{card.code}</span>
                                 </div>
                             </div>
-                            <span class="label {card.state.cls}">{card.state.label}</span>
+                            <span class="label {card.state.cls}">{#if card.state.cls === "label-success"}<i class="ri-check-line state-tick" aria-hidden="true"></i>{/if}{card.state.label}</span>
                         </div>
                         {#if card.plugin}
                             <p class="provider-description">{card.plugin.description}</p>

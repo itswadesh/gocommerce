@@ -292,7 +292,7 @@
                                     {/if}
                                 </div>
                             </div>
-                            <span class="label {provider.state.cls}">{provider.state.label}</span>
+                            <span class="label {provider.state.cls}">{#if provider.state.cls === "label-success"}<i class="ri-check-line state-tick" aria-hidden="true"></i>{/if}{provider.state.label}</span>
                         </div>
                         {#if provider.name === "log"}
                             <p class="provider-description">
@@ -591,7 +591,7 @@
         display: inline-block;
         margin: 2px 4px 2px 0;
         padding: 1px 6px;
-        border-radius: var(--baseRadius);
+        border-radius: var(--borderRadius);
         background: var(--surfaceAlt2Color);
         font-size: var(--xsFontSize);
     }
