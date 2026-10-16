@@ -13,11 +13,11 @@
     import { page } from "$app/state";
     import { goto } from "$app/navigation";
     import { tick, untrack } from "svelte";
-    import { auth, events, can, session } from "$lib/api.js";
+    import { auth, events, can, session, stores } from "$lib/api.js";
     import { clearProfile, clearSettings } from "$lib/settings.svelte.js";
     import { forgetModules, hasModule } from "$lib/modules.svelte.js";
     import { forgetScreens } from "$lib/screens.svelte.js";
-    import { enterStore, ensureStore, forgetStores, markStores, myStores } from "$lib/stores.svelte.js";
+    import { applyEntry, ensureStore, forgetStores, markStores, myStores } from "$lib/stores.svelte.js";
     import { reloadStoreData } from "$lib/store-data.js";
     import { droppedNote, sectionFor, switchTarget } from "$lib/store-switch.js";
     import { health } from "$lib/health.svelte.js";
@@ -277,7 +277,10 @@
      * minutes. The Diagnostics screen is where failures are read.
      */
     $effect(() => {
-        if (!authenticated) return;
+        // Diagnostics are a store's: asked before one is chosen, they are 400s.
+        // Reading the store restarts the watch on a switch, so the badge
+        // reports the store on screen.
+        if (!authenticated || myStores.state !== "ok" || !myStores.current) return;
         return health.watch();
     });
 
@@ -394,17 +397,23 @@
     // Bumped as the page changes, so a switch that lands on the same address
     // still mounts the screen afresh and asks the new store for its rows.
     let storeEpoch = $state(0);
+    // True while a switch has the old store's page down and the new one is
+    // not up yet.
+    let parked = $state(false);
 
     async function switchStore(target) {
         const from = myStores.current;
         if (switching || target.id === from?.id) return;
         switching = target.id;
         switchError = "";
+        let entry;
         try {
-            await enterStore(target.id);
+            // Asked first and applied later: until the answer is in, the tab
+            // is still wholly in the store it was in.
+            entry = await stores.enter(target.id);
         } catch (err) {
             // The menu stays open with the reason in it, and nothing else
-            // changes: the tab is still in the store it was in.
+            // changes.
             switchError = err?.message || "Could not switch store.";
             switching = "";
             return;
@@ -412,23 +421,37 @@
         for (const el of document.querySelectorAll(".logged-user-dropdown")) {
             if (el.matches(":popover-open")) el.hidePopover();
         }
-        await reloadStoreData();
+        // Read before the page goes: where we are is what decides where to go.
+        const target0 = switchTarget(page.route.id, page.url);
+        let note = "";
 
-        let { href, dropped } = switchTarget(page.route.id, page.url);
-        const section = sectionFor(href.split("?")[0], NAV);
-        let note = dropped ? droppedNote(section, dropped, from?.name ?? "the other store") : "";
-        if (section && section.href !== "/dash") {
-            if (section.right && !can(section.right)) {
-                note = `You don't have access to ${section.label} in ${target.name}`;
-                href = "/dash";
-            } else if (section.module && !hasModule(section.module)) {
-                note = `${section.label} is not available in ${target.name}`;
-                href = "/dash";
-            }
-        }
+        /*
+         * The old store's page comes down before the store changes. Left up,
+         * it reacts to the new store — new rights, new settings — by asking
+         * the new store for the old store's rows, and says "not found" on
+         * the way out. Under a view transition the person sees none of this:
+         * the old page holds as a snapshot until the new one is ready.
+         */
         const move = async () => {
-            storeEpoch++;
+            parked = true;
+            await tick();
+            applyEntry(entry);
+            await reloadStoreData();
+            let href = target0.href;
+            const section = sectionFor(href.split("?")[0], NAV);
+            if (target0.dropped) note = droppedNote(section, target0.dropped, from?.name ?? "the other store");
+            if (section && section.href !== "/dash") {
+                if (section.right && !can(section.right)) {
+                    note = `You don't have access to ${section.label} in ${target.name}`;
+                    href = "/dash";
+                } else if (section.module && !hasModule(section.module)) {
+                    note = `${section.label} is not available in ${target.name}`;
+                    href = "/dash";
+                }
+            }
             await goto(base + href);
+            storeEpoch++;
+            parked = false;
             await tick();
         };
         const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -794,7 +817,9 @@
             <!-- Keyed on the switch, so landing on the same address in another
                  store still mounts the screen afresh and asks for its rows. -->
             {#key storeEpoch}
-                {@render children?.()}
+                {#if !parked}
+                    {@render children?.()}
+                {/if}
             {/key}
 
             <!-- Inside the authenticated branch, not beside it: both are
