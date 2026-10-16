@@ -21,12 +21,42 @@
      */
     import { base } from "$app/paths";
     import { settings, loadSettings } from "$lib/settings.svelte.js";
-    import { storeProfile, can } from "$lib/api.js";
-    import { loadStores } from "$lib/stores.svelte.js";
+    import { storeProfile, can, stores as storesAPI } from "$lib/api.js";
+    import { forgetStores, loadStores, myStores } from "$lib/stores.svelte.js";
     import { formatMoney, pluralize } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
+    import { forgetStore } from "$lib/store-scope.js";
+    import { goto } from "$app/navigation";
 
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
+
+    /*
+     * Deleting the store. Offered to its owner only, never on a demo store,
+     * and never for the install's last one — the engine refuses all three,
+     * and a control that can only fail is worse than none. The slug typed
+     * back is the whole of the confirmation: there is no undo to offer.
+     */
+    const here = $derived(myStores.current);
+    const mayDelete = $derived(
+        !!here && here.role === "owner" && !here.demo && myStores.list.length > 1,
+    );
+    let confirmSlug = $state("");
+    let deleting = $state(false);
+    async function deleteStore() {
+        if (!here || deleting || confirmSlug.trim() !== here.slug) return;
+        deleting = true;
+        try {
+            await storesAPI.remove(here.id, confirmSlug.trim());
+            toast.success(`${here.name} was deleted`);
+            forgetStore();
+            forgetStores();
+            await goto(`${base}/select-store`, { replaceState: true });
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            deleting = false;
+        }
+    }
 
     const store = $derived(settings.all);
 
@@ -560,6 +590,38 @@
                             </a>
                         </div>
                     </div>
+
+                    {#if mayDelete}
+                        <div class="col-12">
+                            <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Delete this store</h2>
+                            <div class="store-delete">
+                                <p class="field-help m-b-sm">
+                                    Deletes {here.name} and everything in it — products, orders, customers,
+                                    settings — for good. Nobody can undo it. Your other stores are not touched.
+                                </p>
+                                <div class="field">
+                                    <label for="delete-confirm">Type <code>{here.slug}</code> to confirm</label>
+                                    <input
+                                        id="delete-confirm"
+                                        type="text"
+                                        autocomplete="off"
+                                        spellcheck="false"
+                                        bind:value={confirmSlug}
+                                    />
+                                </div>
+                                <button
+                                    type="button"
+                                    class="btn danger m-t-sm"
+                                    class:loading={deleting}
+                                    disabled={deleting || confirmSlug.trim() !== here.slug}
+                                    onclick={deleteStore}
+                                >
+                                    <i class="ri-delete-bin-line" aria-hidden="true"></i>
+                                    <span class="txt">Delete this store</span>
+                                </button>
+                            </div>
+                        </div>
+                    {/if}
                 </div>
             {/if}
         </div>

@@ -37,6 +37,7 @@ func (a *App) mountStoreRoutes() {
 	a.Handle("GET /api/stores/my", a.personAuth(http.HandlerFunc(a.handleMyStores)))
 	a.Handle("POST /api/stores/switch", a.personAuth(http.HandlerFunc(a.handleSwitchStore)))
 	a.Handle("POST /api/stores/create", a.personAuth(http.HandlerFunc(a.handleCreateStore)))
+	a.Handle("POST /api/stores/delete", a.personAuth(http.HandlerFunc(a.handleDeleteStore)))
 }
 
 // personPath is a route about the person, never resolved to a store.
@@ -194,6 +195,69 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 	a.log.Info("store created", "store", st.ID, "slug", st.Slug)
 	a.setStoreCookie(w, r, st.ID)
 	Respond(w, http.StatusCreated, entry)
+}
+
+// handleDeleteStore deletes a store for good. Its owner only, and only with
+// the store's slug typed back as confirmation: there is no undo. The install's
+// last store stays, since the engine has nothing to serve without one, and a
+// demo store cannot be deleted from inside — its visitors are signed in as
+// its owners.
+func (a *App) handleDeleteStore(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		StoreID string `json:"store_id"`
+		Confirm string `json:"confirm"`
+	}
+	if err := DecodeJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	ctx := r.Context()
+	mine, err := a.myStores(ctx)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	want := strings.ToLower(strings.TrimSpace(in.StoreID))
+	var hit *MyStore
+	for i := range mine {
+		if strings.EqualFold(mine[i].ID, want) || mine[i].Slug == want {
+			hit = &mine[i]
+			break
+		}
+	}
+	switch {
+	case hit == nil:
+		RespondError(w, r, ErrNotAMember)
+		return
+	case hit.Role != RoleOwner:
+		RespondError(w, r, Forbiddenf("only an owner of %s can delete it", hit.Slug))
+		return
+	case hit.Demo || a.cfg.Demo:
+		RespondError(w, r, &APIError{Status: http.StatusForbidden, Code: "demo_frozen",
+			Message: "a demo store cannot be deleted from its panel; use the command line"})
+		return
+	case strings.TrimSpace(in.Confirm) != hit.Slug:
+		RespondError(w, r, Validationf("type the store's address name, %q, to confirm", hit.Slug))
+		return
+	}
+	n, err := a.stores.Count(ctx)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	if n <= 1 {
+		RespondError(w, r, Conflictf("this is the install's only store, and the engine needs one"))
+		return
+	}
+	if err := a.stores.Delete(ctx, hit.ID); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	a.log.Info("store deleted", "store", hit.ID, "slug", hit.Slug)
+	if c, err := r.Cookie(storeCookie); err == nil && c.Value == hit.ID {
+		a.clearStoreCookie(w, r)
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *App) enterStore(ctx context.Context, id string) (*storeEntry, error) {
