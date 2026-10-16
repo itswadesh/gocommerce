@@ -109,3 +109,37 @@ func migrate0054StoreScope(ctx context.Context, tx *sql.Tx) error {
 		SELECT $1, 'order', COALESCE(max(id), 0) FROM orders WHERE store_id = $1`, first)
 	return err
 }
+
+// migrate0057StoreNames gives each store the name its owner already typed in
+// Settings → Store details. Until now that name stayed in the store profile and
+// the store list showed the store's own, which store #1 got empty from 0053.
+// Each profile is read bound to its store, as row security requires.
+func migrate0057StoreNames(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM stores`)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		bound := WithStore(ctx, id)
+		if _, err := tx.ExecContext(bound, `
+			UPDATE stores SET name = p.name
+			FROM store_profile p
+			WHERE stores.id = $1 AND p.store_id = $1 AND p.name <> ''`, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}

@@ -22,6 +22,7 @@
     import { base } from "$app/paths";
     import { settings, loadSettings } from "$lib/settings.svelte.js";
     import { storeProfile, can } from "$lib/api.js";
+    import { loadStores } from "$lib/stores.svelte.js";
     import { formatMoney, pluralize } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
 
@@ -119,6 +120,9 @@
             profile = await storeProfile.save(draft);
             draft = { ...profile };
             toast.success("Store details saved");
+            // The name here is the store's name, so the account menu and the
+            // store list change with it.
+            loadStores().catch(() => {});
         } catch (err) {
             toast.error(err);
         } finally {
