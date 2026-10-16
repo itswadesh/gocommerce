@@ -238,16 +238,48 @@ export function recoveryProgress(row, now = Date.now()) {
 }
 
 /**
- * One line for an automation's sequence. Each step's wait runs from the one
- * before it, so the last email lands at the sum of them.
+ * An automation's row on the Automations list, as kitcommerce-admin words it:
+ * when a basket counts as abandoned, then each step by its action and its
+ * wait — the first counted from abandonment, the rest from the step before.
  */
-export function sequenceSummary(steps) {
-    const list = steps ?? [];
-    if (!list.length) return "No steps, so nothing is sent";
-    const first = list[0].wait_minutes;
-    const total = list.reduce((sum, s) => sum + (s.wait_minutes || 0), 0);
-    if (list.length === 1) return `1 email, ${durationWords(first)} after the basket is abandoned`;
-    return `${list.length} emails over ${durationWords(total)}, the first after ${durationWords(first)}`;
+export function describeSequence(automation, actionLabel = (key) => key) {
+    const head = `Abandoned after ${durationWords(automation?.abandon_after_minutes)} idle`;
+    const steps = automation?.steps ?? [];
+    if (!steps.length) return `${head} · No steps — nothing is sent`;
+    const waits = steps.map((s, i) => (i === 0 ? `${actionLabel(s.action)} after ` : "") + durationWords(s.wait_minutes));
+    return `${head} · ${steps.length} ${pluralize(steps.length, "step")}: ${waits.join(", then ")}`;
+}
+
+/**
+ * The workflow canvas's nodes, left to right: the trigger, the conditions the
+ * engine checks before every send, a wait and a message for each step, and
+ * the end. Pure, so the canvas and its tests read the same list; the screen
+ * passes its draft with waits already in minutes (null where a box does not
+ * parse, which the node says rather than drawing a duration).
+ */
+export function workflowNodes({ kind, threshold, steps, guards, actionLabel, templateTitle }) {
+    const when = (minutes) => (minutes === null || minutes === undefined ? "Set a time" : durationWords(minutes));
+    const nodes = [
+        {
+            id: "trigger",
+            kind: "trigger",
+            label: kind === "cart" ? "Cart abandoned" : "Checkout abandoned",
+            sub: threshold === null || threshold === undefined ? "Set a time" : `After ${durationWords(threshold)} idle`,
+        },
+        { id: "filter", kind: "filter", label: "Only continue if", sub: `${guards} ${pluralize(guards, "condition")}` },
+    ];
+    (steps ?? []).forEach((step, i) => {
+        nodes.push({ id: `wait-${step._key}`, kind: "wait", step: i, label: "Wait", sub: when(step.wait) });
+        nodes.push({
+            id: `send-${step._key}`,
+            kind: "action",
+            step: i,
+            label: `${i + 1}. ${actionLabel(step.action)}`,
+            sub: templateTitle(step.template) || "Choose a template",
+        });
+    });
+    nodes.push({ id: "end", kind: "end", label: "End", sub: steps?.length ? "No more messages" : "Nothing is sent" });
+    return nodes;
 }
 
 /* ------------------------------------------------------------ the timeline */

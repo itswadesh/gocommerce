@@ -375,7 +375,7 @@ threshold measured in minutes, writes to the shopper on a schedule, and credits
 the order the basket became. Four screens read it, all on `abandonment.read`:
 **Orders → Abandoned checkouts** (`/dash/abandoned`) and its record page, and a
 **Marketing** section after Discounts — Shopify's place for it — holding
-**Automations** and **Recovery analytics**. Everything in Marketing is this
+**Automations** and **Cart recovery**. Everything in Marketing is this
 module's today, so a binary without it has no Marketing section at all. The
 screen that used to be called "Abandoned carts" is **Carts** in the nav, which
 is what it always called itself: it lists every basket that has not become an
@@ -417,21 +417,31 @@ behind it. Copy link is a POST because handing the link out is recorded — it
 opens the basket for whoever holds it — and the panel never builds a link of
 its own.
 
-**The automation editors** edit one sequence each, but the engine replaces the
-whole settings object, so each sends its own half from the form and the other
-half exactly as it read it. Waits are typed in minutes, hours or days and sent
+**The automation editors** are a workflow, as kitcommerce-admin draws them:
+the trigger, the conditions the engine checks before every send, a wait and a
+message per step, and the end, as nodes on a dotted canvas with the selected
+node's settings in a panel beside it. A `+` between two nodes inserts a wait
+and a message there. The sequence is always a straight line, so the nodes are
+a row of buttons laid out by CSS, zoomed with `zoom`, and the panel ships no
+graph library for it. Each editor edits one sequence, but the engine replaces
+the whole settings object, so each sends its own half from the form and the
+other half exactly as it read it. Waits are typed in minutes, hours or days and sent
 as `wait_minutes`, refused at the box when they are not whole numbers rather
 than rounded. The action list is the module's, with the actions it cannot take
 yet shown disabled and its reason under each — the screen is built around a list
 of actions, not around email. A refused save names its field in the engine's
 sentence ("checkout step 2: wait_minutes must be …") and is put under that box.
-"Edit wording" opens Notifications › Setup Email with `?template=<event>`, which
+A message node's "Edit" opens Notifications › Setup Email with `?template=<event>`, which
 opens that message's editor and then drops the parameter, since it is an
 instruction rather than state.
 
-**Recovery analytics** is `GET …/analytics` with the browser's zone as `tz`. The
-funnel is drawn as proportional bars with a table under it carrying the counts
-and both ratios; the trend reuses the Reports chart's bars, with the quiet
+**Cart recovery** is `GET …/analytics` with the browser's zone as `tz`, laid
+out as kitcommerce-admin's report: six figures, the funnel, recovered revenue
+over time and the split by type, each in its card. It says "Messages sent"
+where kitcommerce-admin says "delivered", because the engine knows a message
+left, not that it arrived. The funnel is drawn as proportional bars with the
+step-to-step share between them and a table carrying the counts and both
+ratios; the trend reuses the Reports chart's bars, with the quiet
 periods put back as zero columns so neighbouring bars are neighbouring days.
 Both drawings are `aria-hidden` and the tables are their accessible copy.
 

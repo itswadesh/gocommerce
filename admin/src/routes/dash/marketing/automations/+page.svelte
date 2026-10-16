@@ -3,9 +3,10 @@
      * Marketing › Automations: what the store sends to shoppers unasked.
      *
      * Two today, both ext/cart-recovery's: the reminder sequence for a basket
-     * that reached checkout, and the one for a basket that did not. Each row
-     * says whether it is on, when a basket counts as abandoned and what the
-     * sequence sends, and leads to its editor. The two things that make every
+     * that reached checkout, and the one for a basket that did not. Laid out as
+     * kitcommerce-admin lays it out — a card per automation with its icon, an
+     * On/Off pill and one line saying when it starts and what it sends — and
+     * each card leads to its workflow. The two things that make every
      * step a no-op whatever the editors say — no email provider, no storefront
      * address for the link to land on — are said above the rows, with where to
      * fix each, because an automation that is "on" and sends nothing is the
@@ -14,7 +15,7 @@
     import { base } from "$app/paths";
     import { can, recovery } from "$lib/api.js";
     import { formatDate, relativeTime } from "$lib/format.js";
-    import { durationWords, sequenceSummary } from "$lib/recovery.js";
+    import { describeSequence } from "$lib/recovery.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
@@ -53,21 +54,23 @@
                       key: "checkout",
                       href: "/dash/marketing/automations/abandoned-checkout",
                       title: "Abandoned checkout recovery",
-                      what: "Baskets that reached checkout — the shopper typed an email address — and were left there.",
-                      icon: "ri-shopping-bag-3-line",
+                      what: "Shoppers who started checkout and left without paying",
+                      icon: "ri-bank-card-line",
                       a: view.settings.checkout,
                   },
                   {
                       key: "cart",
                       href: "/dash/marketing/automations/abandoned-cart",
                       title: "Abandoned cart recovery",
-                      what: "Baskets left before checkout. Reachable only when the shopper was signed in.",
+                      what: "Shoppers who added items and left before checkout",
                       icon: "ri-shopping-cart-2-line",
                       a: view.settings.cart,
                   },
               ]
             : [],
     );
+
+    const actionLabel = (key) => view?.actions?.find((a) => a.key === key)?.label ?? key;
 
     const storefront = $derived(view ? view.settings.storefront_url || view.storefront_fallback || "" : "");
 </script>
@@ -79,28 +82,17 @@
 {:else}
     <div class="page page-automations shopify-skin">
         <div class="page-content tw:bg-background tw:text-foreground">
-            <header class="page-header">
-                <nav class="breadcrumbs">
-                    <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Marketing</div>
-                    <div class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">Automations</div>
-                </nav>
-                <div class="inline-flex gap-sm">
-                    <button
-                        type="button"
-                        class="btn circle transparent secondary"
-                        title="Refresh"
-                        aria-label="Refresh"
-                        disabled={loading}
-                        onclick={load}
-                    >
-                        <i class="ri-refresh-line" aria-hidden="true"></i>
-                    </button>
+            <header class="page-header recovery-centred">
+                <div class="recovery-title-block">
+                    <h1 class="recovery-h1">Automations</h1>
+                    <p class="txt-hint">Messages the store sends on its own when a shopper leaves without buying.</p>
                 </div>
+                <div class="flex-fill"></div>
                 {#if !missing}
                     <div class="page-header-primary-btns">
                         <a class="btn sm secondary" href="{base}/dash/marketing/recovery">
                             <i class="ri-bar-chart-2-line" aria-hidden="true"></i>
-                            <span class="txt">Recovery analytics</span>
+                            <span class="txt">Cart recovery report</span>
                         </a>
                     </div>
                 {/if}
@@ -112,7 +104,7 @@
                     what="The recovery automations are ext/cart-recovery's, and this binary does not have it."
                 />
             {:else}
-                <div class="recovery-page">
+                <div class="recovery-page recovery-centred">
                     {#if view && !view.email_delivers}
                         <div class="alert warning recovery-banner" role="status">
                             <i class="ri-mail-close-line" aria-hidden="true"></i>
@@ -142,7 +134,7 @@
                         </div>
                     {/if}
 
-                    <div class="recovery-automations tw:rounded-xl tw:border tw:bg-card">
+                    <div class="recovery-automation-cards">
                         {#if loading && !view}
                             {#each Array(2) as _, i (i)}
                                 <div class="recovery-automation">
@@ -157,26 +149,27 @@
                                 <span class="recovery-automation-text">
                                     <span class="recovery-automation-title">
                                         {row.title}
-                                        <span class="recovery-state" class:is-on={row.a.enabled}>
-                                            <span class="recovery-dot {row.a.enabled ? 'success' : 'neutral'}" aria-hidden="true"></span>
+                                        <span class="recovery-pill {row.a.enabled ? 'success' : 'neutral'}">
+                                            <span class="recovery-pill-dot" aria-hidden="true"></span>
                                             {row.a.enabled ? "On" : "Off"}
                                         </span>
                                     </span>
                                     <span class="txt-hint txt-sm">{row.what}</span>
-                                    <span class="recovery-automation-facts txt-sm">
-                                        <span>Counts as abandoned after {durationWords(row.a.abandon_after_minutes)} without activity</span>
-                                        <span>{sequenceSummary(row.a.steps)}</span>
-                                    </span>
+                                    <span class="recovery-automation-facts txt-sm">{describeSequence(row.a, actionLabel)}</span>
                                 </span>
-                                <span class="recovery-automation-go txt-hint txt-sm">
-                                    Edit <i class="ri-arrow-right-line" aria-hidden="true"></i>
+                                <span class="recovery-automation-go txt-hint" aria-hidden="true">
+                                    <i class="ri-arrow-right-s-line"></i>
                                 </span>
                             </a>
                         {/each}
                     </div>
 
                     {#if view}
-                        <p class="txt-hint txt-sm m-t-sm">
+                        <p class="txt-hint txt-sm m-t-sm recovery-automations-foot">
+                            <i class="ri-mail-line" aria-hidden="true"></i>
+                            <span>
+                            Messages use the recovery templates in
+                            <a href="{base}/dash/notifications/email">Notifications › Setup Email</a>.
                             {#if view.customized && view.updated_at}
                                 Last changed <span title={formatDate(view.updated_at)}>{relativeTime(view.updated_at)}</span>{view.updated_by
                                     ? ` by ${view.updated_by === "token" ? "an admin token" : view.updated_by}`
@@ -184,11 +177,12 @@
                             {:else}
                                 Running the defaults this release ships — nobody has saved these yet.
                             {/if}
-                            Recovery was set up {formatDate(view.installed_at, { withTime: false })}; baskets left before then
-                            are listed and never written to.
+                            Recovery started on {formatDate(view.installed_at, { withTime: false })}; carts abandoned before
+                            then are listed but never messaged.
                             {#if storefront && !view.tracked}
                                 Clicks are not counted: the store has no public address of its own set.
                             {/if}
+                            </span>
                         </p>
                     {/if}
                 </div>

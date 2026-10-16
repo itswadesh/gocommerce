@@ -174,7 +174,7 @@ export const NAV = [
             },
             {
                 href: "/dash/marketing/recovery",
-                label: "Recovery analytics",
+                label: "Cart recovery",
                 right: "abandonment.read",
                 module: "cart-recovery",
                 keywords: "abandoned checkout recovery rate funnel recovered revenue report",

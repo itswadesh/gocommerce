@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import {
     actorMeta,
     customerLines,
+    describeSequence,
     durationWords,
     fillTrend,
     funnelRows,
@@ -21,13 +22,13 @@ import {
     rangeLabel,
     rangeWindow,
     recoveryProgress,
-    sequenceSummary,
     settingsError,
     splitMinutes,
     statusClass,
     timelineByDay,
     validStorefront,
     valueLabel,
+    workflowNodes,
 } from "../src/lib/recovery.js";
 
 test("a wait splits into the largest unit it divides into exactly", () => {
@@ -60,12 +61,6 @@ test("durations read as a person would say them", () => {
     assert.equal(durationWords(4140), "2 days 21 hours");
     assert.equal(durationWords(45), "45 minutes");
     assert.equal(durationWords(1441), "1 day 1 minute");
-});
-
-test("a sequence's summary counts each wait from the step before", () => {
-    const steps = [{ wait_minutes: 60 }, { wait_minutes: 1200 }, { wait_minutes: 2880 }];
-    assert.equal(sequenceSummary(steps), "3 emails over 2 days 21 hours, the first after 1 hour");
-    assert.equal(sequenceSummary([]), "No steps, so nothing is sent");
 });
 
 test("the recovery column says what went out and what comes next", () => {
@@ -280,4 +275,58 @@ test("a storefront address is absolute http(s) or nothing", () => {
     assert.ok(validStorefront("https://shop.example.com"));
     assert.ok(!validStorefront("shop.example.com"));
     assert.ok(!validStorefront("ftp://shop.example.com"));
+});
+
+test("an automation's row says when it starts and what it sends, step by step", () => {
+    const label = (key) => ({ send_email: "Send email" })[key] ?? key;
+    const a = {
+        abandon_after_minutes: 10,
+        steps: [
+            { wait_minutes: 60, action: "send_email" },
+            { wait_minutes: 1200, action: "send_email" },
+            { wait_minutes: 2880, action: "send_email" },
+        ],
+    };
+    assert.equal(
+        describeSequence(a, label),
+        "Abandoned after 10 minutes idle · 3 steps: Send email after 1 hour, then 20 hours, then 2 days",
+    );
+    assert.equal(
+        describeSequence({ abandon_after_minutes: 30, steps: [{ wait_minutes: 120, action: "send_email" }] }, label),
+        "Abandoned after 30 minutes idle · 1 step: Send email after 2 hours",
+    );
+    assert.equal(describeSequence({ abandon_after_minutes: 30, steps: [] }, label), "Abandoned after 30 minutes idle · No steps — nothing is sent");
+});
+
+test("the workflow is a trigger, its conditions, a wait and a message per step, and an end", () => {
+    const nodes = workflowNodes({
+        kind: "checkout",
+        threshold: 10,
+        steps: [
+            { _key: 1, wait: 60, action: "send_email", template: "cart.recovery.1" },
+            { _key: 2, wait: 1200, action: "send_email", template: "" },
+        ],
+        guards: 7,
+        actionLabel: () => "Send email",
+        templateTitle: (t) => (t === "cart.recovery.1" ? "Checkout recovery #1" : ""),
+    });
+    assert.deepEqual(
+        nodes.map((n) => [n.id, n.kind, n.label, n.sub]),
+        [
+            ["trigger", "trigger", "Checkout abandoned", "After 10 minutes idle"],
+            ["filter", "filter", "Only continue if", "7 conditions"],
+            ["wait-1", "wait", "Wait", "1 hour"],
+            ["send-1", "action", "1. Send email", "Checkout recovery #1"],
+            ["wait-2", "wait", "Wait", "20 hours"],
+            ["send-2", "action", "2. Send email", "Choose a template"],
+            ["end", "end", "End", "No more messages"],
+        ],
+    );
+    assert.equal(nodes[3].step, 0);
+    // A wait that does not parse says so rather than drawing a duration.
+    const odd = workflowNodes({ kind: "cart", threshold: null, steps: [{ _key: 9, wait: null, action: "send_email", template: "" }], guards: 7, actionLabel: () => "Send email", templateTitle: () => "" });
+    assert.equal(odd[0].label, "Cart abandoned");
+    assert.equal(odd[0].sub, "Set a time");
+    assert.equal(odd[2].sub, "Set a time");
+    assert.equal(workflowNodes({ kind: "cart", threshold: 30, steps: [], guards: 7, actionLabel: () => "", templateTitle: () => "" }).at(-1).sub, "Nothing is sent");
 });
