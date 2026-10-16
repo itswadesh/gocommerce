@@ -324,244 +324,261 @@
         {:else if loading && !plugin}
             <div class="block txt-center p-base"><span class="loader lg"></span></div>
         {:else if plugin}
-            <section class="card feed-card">
-                <div class="feed-card-head">
-                    <div>
-                        <h2 class="feed-card-title">Your sitemaps</h2>
-                        <p class="txt-hint txt-sm feed-card-sub">
-                            Read by fetching the files themselves, the way a crawler would. Each is
-                            generated at the moment it is asked for, so what is counted here is
-                            exactly what a crawler would have got a second ago.
-                        </p>
-                    </div>
-                    <button
-                        type="button"
-                        class="btn sm transparent secondary"
-                        class:loading={scanning}
-                        disabled={scanning || !plugin.enabled || !plugin.configured}
-                        onclick={scan}
-                    >
-                        <i class="ri-refresh-line" aria-hidden="true"></i>
-                        <span class="txt">Read them again</span>
-                    </button>
-                </div>
-
-                <!-- A true fraction: files fetched, out of files the index
-                     names. There is no honest percentage inside one
-                     generation, so the bar counts the thing that does have
-                     steps. -->
-                {#if scanning || (total > 0 && done < total)}
-                    <div class="map-progress" role="status" aria-live="polite">
-                        <div class="map-progress-head">
-                            <span>
-                                {#if total === 0}
-                                    Reading the sitemap index, which names the rest
-                                {:else}
-                                    Reading sitemap {Math.min(done + 1, total)} of {total}
-                                {/if}
-                            </span>
-                            <span class="map-progress-pct">{percent}%</span>
-                        </div>
-                        <div
-                            class="map-progress-track"
-                            role="progressbar"
-                            aria-valuenow={percent}
-                            aria-valuemin="0"
-                            aria-valuemax="100"
-                        >
-                            <div class="map-progress-bar" style="width: {percent}%"></div>
-                        </div>
-                    </div>
-                {/if}
-
+            <!-- The answer first: is it live, how much is in it, and the one
+                 address to hand a search engine. Everything else — the files,
+                 the settings, the how-to — is folded underneath, a click away,
+                 because most visits want only this card. -->
+            <section class="card feed-card map-summary">
                 {#if !plugin.enabled}
-                    <p class="txt-hint txt-sm feed-foot">
-                        The sitemap answers 404 while the plugin is off, so there is nothing to read.
-                    </p>
-                {:else if !plugin.configured}
-                    <p class="txt-hint txt-sm feed-foot">
-                        The sitemap answers 409 until the storefront URL is set below — without it
-                        an address has no host to be under.
-                    </p>
-                {:else if files.length}
-                    <div class="map-table">
-                        <div class="map-row map-head">
-                            <div>Sitemap</div>
-                            <div>Address</div>
-                            <div class="txt-right">Holds</div>
-                            <div class="txt-right">Size</div>
-                            <div class="txt-right">Newest</div>
-                        </div>
-                        {#each files as f (f.path)}
-                            <div class="map-row" class:is-bad={!f.ok}>
-                                <div class="txt-bold">{f.name}</div>
-                                <div class="map-url">
-                                    <a href={origin + f.path} target="_blank" rel="noreferrer" class="txt-code"
-                                        >{f.path}</a
-                                    >
-                                    <button
-                                        type="button"
-                                        class="btn sm transparent secondary map-copy"
-                                        onclick={() => copy(origin + f.path)}
-                                        aria-label="Copy {f.name} address"
-                                    >
-                                        <i class="ri-file-copy-line" aria-hidden="true"></i>
-                                    </button>
-                                </div>
-                                <div class="txt-right">
-                                    {#if f.ok}
-                                        {nf.format(f.count)}
-                                        <span class="txt-hint txt-sm">{f.kind}</span>
-                                    {:else}
-                                        <span class="txt-danger">HTTP {f.status}</span>
-                                    {/if}
-                                </div>
-                                <div class="txt-right txt-hint">{f.ok ? size(f.bytes) : "—"}</div>
-                                <div class="txt-right txt-hint">{when(f.newest)}</div>
-                            </div>
-                        {/each}
-                    </div>
-                    <p class="txt-hint txt-sm feed-foot">
-                        {nf.format(addresses)}
-                        {addresses === 1 ? "address" : "addresses"} across
-                        {files.length - 1}
-                        {files.length === 2 ? "sitemap" : "sitemaps"}, plus the index that points at
-                        them.{#if scannedAt}{" "}Read {scannedAt.toLocaleTimeString()}.{/if}
-                    </p>
-                {/if}
-            </section>
-
-            <section class="card feed-card">
-                <h2 class="feed-card-title">What goes in them</h2>
-                <p class="txt-hint txt-sm feed-card-sub">
-                    Every active product and collection, and every published page when the CMS
-                    module is installed. These settings say where the storefront puts each one, so
-                    the sitemap lists addresses that exist.
-                </p>
-                <div class="feed-form">
-                    <PluginFields fields={plugin.fields} bind:form idPrefix="map" />
-                </div>
-                {#if writable}
-                    <div class="feed-form-actions">
-                        <button
-                            type="button"
-                            class="btn sm"
-                            class:loading={saving}
-                            disabled={saving}
-                            onclick={save}
-                        >
-                            <span class="txt">Save</span>
-                        </button>
-                        <button
-                            type="button"
-                            class="btn sm transparent secondary"
-                            disabled={saving}
-                            onclick={resetForm}
-                        >
-                            <span class="txt">Discard</span>
-                        </button>
-                    </div>
-                {/if}
-            </section>
-
-            <section class="card feed-card">
-                <h2 class="feed-card-title">Tell the search engines</h2>
-                <p class="txt-hint txt-sm feed-card-sub">
-                    Submit the index, not the individual files — it names them, and a crawler
-                    follows it. Submitting once is enough; the file is rebuilt on every fetch.
-                </p>
-
-                <div class="feed-links">
-                    <div class="feed-link">
-                        <div class="feed-link-name">
-                            <span class="txt-bold">Sitemap index</span>
-                            <span class="txt-hint txt-sm">This is the one to submit</span>
-                        </div>
-                        <a
-                            class="feed-link-url txt-code"
-                            href={origin + INDEX}
-                            target="_blank"
-                            rel="noreferrer">{origin}{INDEX}</a
-                        >
-                        <div class="feed-link-actions">
-                            <button
-                                type="button"
-                                class="btn sm secondary"
-                                onclick={() => copy(origin + INDEX)}
-                            >
-                                <i class="ri-file-copy-line" aria-hidden="true"></i>
-                                <span class="txt">Copy</span>
-                            </button>
-                            <a
-                                class="btn sm transparent secondary"
-                                href={origin + INDEX}
-                                target="_blank"
-                                rel="noreferrer"
-                            >
-                                <i class="ri-external-link-line" aria-hidden="true"></i>
-                                <span class="txt">Open</span>
-                            </a>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="feed-tabs" role="tablist" aria-label="Where to submit">
-                    {#each ENGINES as e (e.key)}
-                        <button
-                            type="button"
-                            role="tab"
-                            class="feed-tab"
-                            class:on={tab === e.key}
-                            aria-selected={tab === e.key}
-                            onclick={() => (tab = e.key)}>{e.name.split(" ")[0]}</button
-                        >
-                    {/each}
-                </div>
-
-                <div class="feed-guide">
-                    <div class="feed-guide-head">
+                    <div class="map-summary-state">
+                        <span class="map-summary-icon off" aria-hidden="true"><i class="ri-map-2-line"></i></span>
                         <div>
-                            <h3 class="feed-guide-title">{engine.name}</h3>
-                            <p class="txt-hint txt-sm">{engine.blurb}</p>
+                            <h2 class="feed-card-title">The sitemap is off</h2>
+                            <p class="txt-hint txt-sm">
+                                Turn it on and search engines can find every product, collection and page.
+                            </p>
                         </div>
-                        <a
-                            class="btn sm transparent secondary"
-                            href={engine.docs}
-                            target="_blank"
-                            rel="noreferrer"
+                    </div>
+                {:else if !plugin.configured}
+                    <div class="map-summary-state">
+                        <span class="map-summary-icon warn" aria-hidden="true"><i class="ri-error-warning-line"></i></span>
+                        <div>
+                            <h2 class="feed-card-title">One setting left</h2>
+                            <p class="txt-hint txt-sm">
+                                Add the storefront's address under Settings below. Until then the sitemap has
+                                no host to list addresses under.
+                            </p>
+                        </div>
+                    </div>
+                {:else}
+                    <div class="map-summary-state">
+                        <span class="map-summary-icon on" aria-hidden="true"><i class="ri-map-2-line"></i></span>
+                        <div class="map-summary-text">
+                            <h2 class="feed-card-title">
+                                {#if files.length}
+                                    {nf.format(addresses)} {addresses === 1 ? "address" : "addresses"} listed
+                                {:else if scanning}
+                                    Reading your sitemap…
+                                {:else}
+                                    Your sitemap is live
+                                {/if}
+                            </h2>
+                            <p class="txt-hint txt-sm">
+                                Submit this one address to a search engine; it points at the rest and is
+                                rebuilt on every fetch.
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            class="btn sm transparent secondary map-summary-refresh"
+                            class:loading={scanning}
+                            disabled={scanning}
+                            onclick={scan}
+                            aria-label="Read the sitemap again"
+                            title="Read it again"
                         >
-                            <span class="txt">Their docs</span>
+                            <i class="ri-refresh-line" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    <div class="map-index">
+                        <a class="txt-code map-index-url" href={origin + INDEX} target="_blank" rel="noreferrer"
+                            >{origin}{INDEX}</a
+                        >
+                        <button type="button" class="btn sm secondary" onclick={() => copy(origin + INDEX)}>
+                            <i class="ri-file-copy-line" aria-hidden="true"></i>
+                            <span class="txt">Copy</span>
+                        </button>
+                        <a class="btn sm transparent secondary" href={origin + INDEX} target="_blank" rel="noreferrer">
+                            <i class="ri-external-link-line" aria-hidden="true"></i>
+                            <span class="txt">Open</span>
                         </a>
                     </div>
-                    <h4 class="feed-guide-heading">Steps</h4>
-                    <ol class="feed-steps">
-                        {#each engine.steps as step, i (i)}
-                            <li>
-                                <span class="feed-step-n">{i + 1}</span>
-                                <span>{step}</span>
-                            </li>
-                        {/each}
-                    </ol>
-                </div>
-
-                <h4 class="feed-guide-heading">Worth knowing</h4>
-                <ul class="feed-before">
-                    <li>
-                        <span class="txt-bold">Opening the address shows a table, not XML</span>
-                        — each file carries a stylesheet a browser applies. A crawler ignores it and
-                        reads the XML underneath.
-                    </li>
-                    <li>
-                        <span class="txt-bold">A sitemap is a hint, not an instruction</span>
-                        — it tells a crawler what exists and when it changed. It does not make anything
-                        get indexed.
-                    </li>
-                    <li>
-                        <span class="txt-bold">Drafts and archived products are not in it</span>
-                        — only what is active, which is the same rule the storefront serves under.
-                    </li>
-                </ul>
+                    <!-- A true fraction: files fetched, out of files the index
+                         names. There is no honest percentage inside one
+                         generation, so the bar counts the thing that does have
+                         steps. -->
+                    {#if scanning || (total > 0 && done < total)}
+                        <div class="map-progress" role="status" aria-live="polite">
+                            <div class="map-progress-head">
+                                <span>
+                                    {#if total === 0}
+                                        Reading the sitemap index, which names the rest
+                                    {:else}
+                                        Reading sitemap {Math.min(done + 1, total)} of {total}
+                                    {/if}
+                                </span>
+                                <span class="map-progress-pct">{percent}%</span>
+                            </div>
+                            <div
+                                class="map-progress-track"
+                                role="progressbar"
+                                aria-valuenow={percent}
+                                aria-valuemin="0"
+                                aria-valuemax="100"
+                            >
+                                <div class="map-progress-bar" style="width: {percent}%"></div>
+                            </div>
+                        </div>
+                    {/if}
+                {/if}
             </section>
+
+            {#if plugin.enabled && plugin.configured && files.length}
+                <details class="card feed-card map-fold">
+                    <summary>
+                        <span class="map-fold-title">The files</span>
+                        <span class="txt-hint txt-sm">
+                            {files.length - 1} {files.length === 2 ? "sitemap" : "sitemaps"} and the index{#if scannedAt}
+                                · read {scannedAt.toLocaleTimeString()}{/if}
+                        </span>
+                        <i class="ri-arrow-down-s-line map-fold-chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="map-fold-body">
+                        <p class="txt-hint txt-sm">
+                            Read by fetching each file the way a crawler would, so what is counted here is
+                            exactly what a crawler would have got a second ago.
+                        </p>
+                        <div class="map-table">
+                            <div class="map-row map-head">
+                                <div>Sitemap</div>
+                                <div>Address</div>
+                                <div class="txt-right">Holds</div>
+                                <div class="txt-right">Size</div>
+                                <div class="txt-right">Newest</div>
+                            </div>
+                            {#each files as f (f.path)}
+                                <div class="map-row" class:is-bad={!f.ok}>
+                                    <div class="txt-bold">{f.name}</div>
+                                    <div class="map-url">
+                                        <a href={origin + f.path} target="_blank" rel="noreferrer" class="txt-code"
+                                            >{f.path}</a
+                                        >
+                                        <button
+                                            type="button"
+                                            class="btn sm transparent secondary map-copy"
+                                            onclick={() => copy(origin + f.path)}
+                                            aria-label="Copy {f.name} address"
+                                        >
+                                            <i class="ri-file-copy-line" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
+                                    <div class="txt-right">
+                                        {#if f.ok}
+                                            {nf.format(f.count)}
+                                            <span class="txt-hint txt-sm">{f.kind}</span>
+                                        {:else}
+                                            <span class="txt-danger">HTTP {f.status}</span>
+                                        {/if}
+                                    </div>
+                                    <div class="txt-right txt-hint">{f.ok ? size(f.bytes) : "—"}</div>
+                                    <div class="txt-right txt-hint">{when(f.newest)}</div>
+                                </div>
+                            {/each}
+                        </div>
+                    </div>
+                </details>
+            {/if}
+
+            <!-- Open by itself while a setting is missing: that is the one
+                 thing the summary above just asked for. -->
+            <details class="card feed-card map-fold" open={plugin.enabled && !plugin.configured}>
+                <summary>
+                    <span class="map-fold-title">Settings</span>
+                    <span class="txt-hint txt-sm">Where the storefront puts each product, collection and page</span>
+                    <i class="ri-arrow-down-s-line map-fold-chevron" aria-hidden="true"></i>
+                </summary>
+                <div class="map-fold-body">
+                    <p class="txt-hint txt-sm">
+                        Every active product and collection is listed, and every published page when the CMS
+                        module is installed. These say where each lives, so the sitemap lists addresses that
+                        exist.
+                    </p>
+                    <div class="feed-form">
+                        <PluginFields fields={plugin.fields} bind:form idPrefix="map" />
+                    </div>
+                    {#if writable}
+                        <div class="feed-form-actions">
+                            <button
+                                type="button"
+                                class="btn sm"
+                                class:loading={saving}
+                                disabled={saving}
+                                onclick={save}
+                            >
+                                <span class="txt">Save</span>
+                            </button>
+                            <button
+                                type="button"
+                                class="btn sm transparent secondary"
+                                disabled={saving}
+                                onclick={resetForm}
+                            >
+                                <span class="txt">Discard</span>
+                            </button>
+                        </div>
+                    {/if}
+                </div>
+            </details>
+
+            <details class="card feed-card map-fold">
+                <summary>
+                    <span class="map-fold-title">How to submit it</span>
+                    <span class="txt-hint txt-sm">Google, Bing and the others, step by step</span>
+                    <i class="ri-arrow-down-s-line map-fold-chevron" aria-hidden="true"></i>
+                </summary>
+                <div class="map-fold-body">
+                    <div class="feed-tabs" role="tablist" aria-label="Where to submit">
+                        {#each ENGINES as e (e.key)}
+                            <button
+                                type="button"
+                                role="tab"
+                                class="feed-tab"
+                                class:on={tab === e.key}
+                                aria-selected={tab === e.key}
+                                onclick={() => (tab = e.key)}>{e.name.split(" ")[0]}</button
+                            >
+                        {/each}
+                    </div>
+
+                    <div class="feed-guide">
+                        <div class="feed-guide-head">
+                            <div>
+                                <h3 class="feed-guide-title">{engine.name}</h3>
+                                <p class="txt-hint txt-sm">{engine.blurb}</p>
+                            </div>
+                            <a class="btn sm transparent secondary" href={engine.docs} target="_blank" rel="noreferrer">
+                                <span class="txt">Their docs</span>
+                            </a>
+                        </div>
+                        <ol class="feed-steps">
+                            {#each engine.steps as step, i (i)}
+                                <li>
+                                    <span class="feed-step-n">{i + 1}</span>
+                                    <span>{step}</span>
+                                </li>
+                            {/each}
+                        </ol>
+                    </div>
+
+                    <h4 class="feed-guide-heading">Worth knowing</h4>
+                    <ul class="feed-before">
+                        <li>
+                            <span class="txt-bold">Opening the address shows a table, not XML</span>
+                            — each file carries a stylesheet a browser applies. A crawler ignores it and reads
+                            the XML underneath.
+                        </li>
+                        <li>
+                            <span class="txt-bold">A sitemap is a hint, not an instruction</span>
+                            — it tells a crawler what exists and when it changed. It does not make anything get
+                            indexed.
+                        </li>
+                        <li>
+                            <span class="txt-bold">Drafts and archived products are not in it</span>
+                            — only what is active, which is the same rule the storefront serves under.
+                        </li>
+                    </ul>
+                </div>
+            </details>
         {/if}
     </div>
 </div>
