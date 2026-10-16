@@ -4297,8 +4297,10 @@ button.media-check {
     background: var(--warningAltColor, var(--surfaceAlt1Color));
     color: var(--warningColor);
 }
-.map-summary-refresh {
+.map-summary-refresh,
+.map-summary-action {
     flex: none;
+    align-self: center;
 }
 .map-index {
     display: flex;
@@ -4351,6 +4353,34 @@ button.media-check {
 }
 .map-fold[open] > summary .map-fold-chevron {
     transform: rotate(180deg);
+}
+/* What a folded section is set to, on its heading. */
+.map-fold-values {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex-basis: 100%;
+    margin-top: 6px;
+    animation: emptyIn 200ms ease-out both;
+}
+.map-fold-value {
+    display: inline-flex;
+    gap: 4px;
+    max-width: 100%;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: var(--surfaceAlt1Color);
+    font-size: 12px;
+    min-width: 0;
+}
+.map-fold-value.missing {
+    background: var(--warningAltColor, var(--surfaceAlt1Color));
+    color: var(--warningColor);
+}
+@media (prefers-reduced-motion: reduce) {
+    .map-fold-values {
+        animation: none;
+    }
 }
 .map-fold-body {
     margin-top: 12px;
