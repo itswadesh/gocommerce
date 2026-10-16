@@ -127,20 +127,19 @@ func TestStoreProfileRoutes(t *testing.T) {
 // Neither belongs in Config. The timezone is a fact about where the shop is,
 // and it decides what "today" means on an invoice and in a report — a store in
 // Auckland running on a UTC server closes its day seventeen hours late. The
-// language is which one a customer is written to in when the order recorded no
-// preference of its own, which is a choice a shop makes and changes.
+// language is the store's main one (D87), which a shop chooses and changes.
 func TestAStoreKeepsItsOwnClockAndVoice(t *testing.T) {
 	app := newTestApp(t)
 	ctx := context.Background()
 
-	// Blank is a real answer: a store that has said nothing runs on UTC and
-	// writes in the language the binary was started with.
+	// A store that has said nothing runs on UTC and writes in the language
+	// the binary was started with.
 	fresh, err := app.Profile().Get(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fresh.Timezone != "" || fresh.Language != "" {
-		t.Errorf("a fresh store = %+v, want blanks", fresh)
+	if fresh.Timezone != "" || fresh.Language != app.cfg.DefaultLanguage {
+		t.Errorf("a fresh store = %+v, want no timezone and the binary's language", fresh)
 	}
 	if loc := app.Profile().LocationOf(ctx); loc != time.UTC {
 		t.Errorf("with nothing set the clock = %v, want UTC", loc)
