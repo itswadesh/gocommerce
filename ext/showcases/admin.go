@@ -1,6 +1,7 @@
 package showcases
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -77,7 +78,7 @@ func (m *Module) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 	s, err := m.get(r.Context(), "id = $1", id)
 	if err == nil {
-		s.Products, err = m.attached(r.Context(), s)
+		err = m.forEditor(r.Context(), s)
 	}
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
@@ -99,7 +100,7 @@ func (m *Module) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	s, err := m.update(r.Context(), id, in)
 	if err == nil {
-		s.Products, err = m.attached(r.Context(), s)
+		err = m.forEditor(r.Context(), s)
 	}
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
@@ -149,11 +150,15 @@ func (m *Module) handleMakeCollection(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
+	// Picks deleted since are left out: the list keeps them, by design, and
+	// a collection cannot.
+	ids, err := m.present(ctx, s.ProductIDs)
 	title := strings.TrimSpace(in.Title)
 	switch {
+	case err != nil:
 	case title == "":
 		err = gocommerce.Validationf("name the collection")
-	case len(s.ProductIDs) == 0:
+	case len(ids) == 0:
 		err = gocommerce.Validationf("pick the showcase's products first; they become the collection")
 	}
 	if err != nil {
@@ -162,7 +167,11 @@ func (m *Module) handleMakeCollection(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := m.app.Collections().Create(ctx, gocommerce.CollectionInput{Title: title})
 	if err == nil {
-		err = m.app.Collections().SetCollectionProducts(ctx, c.ID, s.ProductIDs)
+		if err = m.app.Collections().SetCollectionProducts(ctx, c.ID, ids); err != nil {
+			// Two service calls, so not one transaction: take the empty
+			// collection back out rather than leave one per failed try.
+			_ = m.app.Collections().Delete(context.WithoutCancel(ctx), c.ID)
+		}
 	}
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
@@ -170,7 +179,7 @@ func (m *Module) handleMakeCollection(w http.ResponseWriter, r *http.Request) {
 	}
 	s, err = m.update(ctx, id, Input{CollectionID: gocommerce.NullableID{Present: true, Value: &c.ID}})
 	if err == nil {
-		s.Products, err = m.attached(ctx, s)
+		err = m.forEditor(ctx, s)
 	}
 	if err != nil {
 		gocommerce.RespondError(w, r, err)

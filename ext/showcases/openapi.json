@@ -745,7 +745,8 @@
             "type": "integer"
           },
           "adds_to_cart": {
-            "type": "integer"
+            "type": "integer",
+            "description": "Baskets a showcase added to, each counted once."
           },
           "orders": {
             "type": "integer",
@@ -865,6 +866,13 @@
               "$ref": "#/components/schemas/ShowcaseProduct"
             },
             "description": "On a single read: what it holds, whatever their status."
+          },
+          "picked": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShowcaseProduct"
+            },
+            "description": "On a single read, while a collection is shown: the products picked before it, kept so the editor can return to them."
           }
         }
       },

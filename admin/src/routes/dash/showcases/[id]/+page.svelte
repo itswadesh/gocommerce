@@ -72,7 +72,9 @@
             on_collection: s.on_collection,
             on_products: s.on_products,
         };
-        members = s.collection_id ? [] : (s.products ?? []);
+        // While a collection is shown, the earlier picks wait in `picked`, so
+        // going back to picking starts from them rather than from nothing.
+        members = s.collection_id ? (s.picked ?? []) : (s.products ?? []);
     }
 
     // datetime-local speaks the browser's own clock, without a zone.
@@ -119,11 +121,13 @@
     }
 
     // ------------------------------------------- what saves the moment it is pressed
+    // Only the saved showcase is refreshed: an edit waiting on the save bar
+    // survives a product being featured or the broadcast going live.
     async function act(name, change, done) {
         if (acting) return;
         acting = name;
         try {
-            take(await showcases.update(id, change));
+            show = await showcases.update(id, change);
             if (done) toast.success(done);
         } catch (err) {
             toast.error(err);
@@ -150,11 +154,15 @@
 
     // --------------------------------------------------------------- collections
     let collections = $state([]);
+    // Asked once: a store with no collections answers an empty list, which
+    // must not read as "not asked yet".
+    let collectionsAsked = false;
     $effect(() => {
-        if (draft?.source === "collection" && !collections.length && can("collections.read")) {
+        if (draft?.source === "collection" && !collectionsAsked && can("collections.read")) {
+            collectionsAsked = true;
             api.get("/api/admin/collections" + query({ limit: 200 }))
                 .then((r) => (collections = (r?.data ?? r ?? []).map((c) => ({ value: c.id, label: c.title }))))
-                .catch(() => {});
+                .catch(() => (collectionsAsked = false));
         }
     });
     let newCollection = $state("");
@@ -196,6 +204,8 @@
         }
     }
     const shown = $derived(show?.products ?? []);
+    // Featuring a draft would point the storefront at nothing it shows.
+    const featurable = $derived(shown.filter((p) => p.status === "active"));
 </script>
 
 <svelte:head><title>{show?.title || "Showcase"} · GoCommerce</title></svelte:head>
@@ -300,12 +310,12 @@
                             <i class="ri-broadcast-line" aria-hidden="true"></i>
                             Showing now
                         </h6>
-                        {#if shown.length}
+                        {#if featurable.length}
                             <div class="sc-feature" role="group" aria-label="Featured product">
                                 <button type="button" class="btn sm {show.featured_product_id ? 'transparent secondary' : ''}" aria-pressed={!show.featured_product_id} disabled={!writable || !!acting} onclick={() => feature(null)}>
                                     <span class="txt">Nothing</span>
                                 </button>
-                                {#each shown as p (p.id)}
+                                {#each featurable as p (p.id)}
                                     <button type="button" class="btn sm {show.featured_product_id === p.id ? '' : 'transparent secondary'}" aria-pressed={show.featured_product_id === p.id} class:loading={acting === `feature-${p.id}`} disabled={!writable || !!acting} onclick={() => feature(p)}>
                                         <span class="txt">{p.title}</span>
                                     </button>

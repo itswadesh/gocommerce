@@ -68,6 +68,9 @@
     let title = $state("");
     let titleTouched = $state(false);
     let checked = $state(null);
+    // The link the check answered, so one edited and saved in one go is
+    // checked again rather than saved with the old answer.
+    let checkedFor = "";
     let checkError = $state("");
     let checking = $state(false);
     let saving = $state(false);
@@ -91,6 +94,7 @@
         checkError = "";
         try {
             checked = await showcases.check(url);
+            checkedFor = url;
             if (!titleTouched && checked.title) title = checked.title;
         } catch (err) {
             checked = null;
@@ -103,7 +107,7 @@
     async function create(e) {
         e?.preventDefault();
         if (saving) return;
-        if (!checked) await check();
+        if (!checked || checkedFor !== link.trim()) await check();
         if (!checked) return;
         saving = true;
         try {

@@ -34,8 +34,8 @@ products for sale.
 - **Text:** a title, a slug (from the title) and a short description.
 - **The video:**
   - The provider is `youtube` or `facebook`, and the address is checked on the
-    server: https only, an exact host list, and the platform's own path
-    shapes.
+    server: http or https, an exact host list, and the platform's own path
+    shapes. The player is always built on https.
   - What is stored is a reference: the YouTube id, or Facebook's canonical
     video URL. The embed, watch and thumbnail addresses are derived when read.
   - YouTube plays from `youtube-nocookie.com`, its privacy-enhanced mode.
@@ -47,10 +47,14 @@ products for sale.
 
     | Showcase | Label |
     |---|---|
-    | a video | `video` |
+    | a video, or a livestream the store has said nothing about | `video` |
     | scheduled, start time in the future | `scheduled` |
+    | scheduled with the start time passed | `video` (nobody said it began) |
     | live, for up to 12 hours since the store said so | `live` |
-    | live for longer, ended, or scheduled with the start time passed | `replay` |
+    | live for longer, or ended | `replay` |
+
+    Saying "live" again after the 12 hours lapsed starts them again, for the
+    next broadcast.
 - **Products:** either picked products (up to 50, in the store's order) or a
   collection, whose active products are read live.
   - "Create collection" turns the picked products into a new collection and
@@ -96,11 +100,14 @@ off embedding, 404 means the video is private or deleted.
 - There is no customer-specific price: price lists apply in the cart, against
   a proven email (D66).
 - **Events:** `{type: view | click | add_to_cart, product_id?, cart?}`.
-  - Rate-limited per address; 429 when over.
+  - Views and clicks are rate-limited per store, showcase and address; 429
+    when over.
   - No personal data is stored.
   - `add_to_cart` with the cart's token records which showcase the cart came
-    from. On `order.created`, an order from that cart counts once, with its
-    total.
+    from, and counts once per basket. It is not rate-limited: behind a proxy
+    every buyer shares one address, and a basket is something only the
+    store's own cart makes. On `order.created`, an order from that cart counts
+    once, with its total.
   - The storefront sends `add_to_cart` only after the cart has accepted the
     line.
 

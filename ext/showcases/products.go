@@ -139,6 +139,20 @@ func (m *Module) load(ctx context.Context, ids []int64) ([]*gocommerce.Product, 
 	return out, nil
 }
 
+// forEditor fills what the editor shows beside the showcase: what it holds,
+// and what was picked before a collection replaced the picks.
+func (m *Module) forEditor(ctx context.Context, s *Showcase) error {
+	var err error
+	if s.Products, err = m.attached(ctx, s); err != nil || s.CollectionID == nil || len(s.ProductIDs) == 0 {
+		return err
+	}
+	picked, err := m.load(ctx, s.ProductIDs)
+	for _, p := range picked {
+		s.Picked = append(s.Picked, summarize(p, true))
+	}
+	return err
+}
+
 // attached is what the editor lists: everything the showcase holds, whatever
 // its status, so a draft product can be seen and published.
 func (m *Module) attached(ctx context.Context, s *Showcase) ([]ProductSummary, error) {
