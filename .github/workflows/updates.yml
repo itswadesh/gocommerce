@@ -14,12 +14,21 @@ name: Updates
 #   INSTAGRAM_USER_ID, INSTAGRAM_ACCESS_TOKEN
 #                            an Instagram business account and a long-lived token
 # Variable, optional: INSTAGRAM_IMAGE_URL, the public image each post carries.
+#
+# With Content OS connected, nothing is posted from here: the push (its pull
+# request's title and description) is filed there, drafted for every channel
+# on the owner's subscription, and each draft waits for a person to approve.
+#   CONTENT_OS_SITE_KEY      the project's site key (Content OS, the project's
+#                            settings); set it and the direct posts stop
+# Variable: CONTENT_OS_URL, Content OS's address, such as https://cos.example.com
 on:
   push:
     branches: [main]
 
 permissions:
   contents: read
+  # To find the pull request a pushed commit was merged by.
+  pull-requests: read
 
 # Two pushes close together must not both rewrite updates.json at once.
 concurrency:
@@ -32,6 +41,7 @@ jobs:
     env:
       # Secrets cannot be read in a step's `if`; this can.
       HAS_LANDING: ${{ secrets.LANDING_PAGE_TOKEN != '' }}
+      HAS_CONTENT_OS: ${{ secrets.CONTENT_OS_SITE_KEY != '' && vars.CONTENT_OS_URL != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -73,7 +83,17 @@ jobs:
           done
           exit 1
 
+      - name: queue the drafts for review in Content OS
+        if: env.HAS_CONTENT_OS == 'true'
+        env:
+          AFTER: ${{ github.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+          CONTENT_OS_URL: ${{ vars.CONTENT_OS_URL }}
+          CONTENT_OS_SITE_KEY: ${{ secrets.CONTENT_OS_SITE_KEY }}
+        run: node .github/scripts/publish-update.mjs queue
+
       - name: announce
+        if: env.HAS_CONTENT_OS != 'true'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           X_API_KEY: ${{ secrets.X_API_KEY }}
