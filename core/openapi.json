@@ -8853,6 +8853,88 @@
         }
       }
     },
+    "/api/admin/notifications/{id}/preview": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "A logged message, as it reads",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "The message's wording filled with the data it carried, in the language it went out in. The log keeps a message's data, not its words, so this is today's wording: `edited_since` is true when the wording was changed after the message went out, and the message itself may have read differently. Personal details are masked on a demo store, as in the log. Needs orders.read.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "channel": {
+                          "type": "string",
+                          "enum": [
+                            "email",
+                            "sms"
+                          ]
+                        },
+                        "language": {
+                          "type": "string"
+                        },
+                        "subject": {
+                          "type": "string",
+                          "description": "An email's subject line; absent for a text."
+                        },
+                        "body": {
+                          "type": "string",
+                          "description": "Plain text, as the notifiers send it."
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "language",
+                            "main",
+                            "default"
+                          ]
+                        },
+                        "edited_since": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
     "/api/admin/notifications/{id}/resend": {
       "post": {
         "tags": [

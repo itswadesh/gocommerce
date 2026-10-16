@@ -19,6 +19,7 @@
     import { formatDate } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import EmptyState from "$lib/components/EmptyState.svelte";
+    import MessagePreview from "$lib/components/MessagePreview.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
@@ -36,6 +37,8 @@
     let meta = $state(null);
     let loading = $state(true);
     let resending = $state(0);
+    // The message whose preview is open.
+    let previewing = $state(null);
 
     $effect(() => {
         list.params;
@@ -247,7 +250,21 @@
                                 <td class="col-field-type-date min-width txt-hint" data-name="Created At">
                                     <span class="txt-nowrap">{formatDate(row.created_at)}</span>
                                 </td>
-                                <td class="col-meta min-width">
+                                <!-- row-actions: these buttons are the only way into a
+                                     row, so the cell stays on a phone. -->
+                                <td class="col-meta min-width row-actions">
+                                    {#if row.title}
+                                    <button
+                                        type="button"
+                                        class="btn sm secondary transparent"
+                                        title="See the message as it reads"
+                                        aria-label="Preview the {row.channel === 'sms' ? 'text' : 'email'} to {row.to}"
+                                        onclick={() => (previewing = row)}
+                                    >
+                                        <i class="ri-eye-line" aria-hidden="true"></i>
+                                        <span class="txt">Preview</span>
+                                    </button>
+                                    {/if}
                                     {#if writable}
                                         <button
                                             type="button"
@@ -317,6 +334,8 @@
         {/if}
     </div>
 </div>
+
+<MessagePreview message={previewing} onclose={() => (previewing = null)} />
 
 <style>
     .outcome {

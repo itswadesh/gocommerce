@@ -8,6 +8,7 @@ func (a *App) mountNotificationRoutes() {
 	// what it was told; sending is acting on it.
 	a.HandleAdminFunc("GET /api/admin/notifications", a.handleListNotifications, RightOrdersRead)
 	a.HandleAdminFunc("GET /api/admin/notifications/{id}", a.handleGetNotification, RightOrdersRead)
+	a.HandleAdminFunc("GET /api/admin/notifications/{id}/preview", a.handlePreviewNotification, RightOrdersRead)
 	a.HandleAdminFunc("POST /api/admin/notifications/{id}/resend", a.handleResendNotification, RightOrdersWrite)
 }
 
