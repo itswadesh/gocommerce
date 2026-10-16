@@ -24,6 +24,7 @@
      * number the code invented would be worse than no bar.
      */
     import { can, request } from "$lib/api.js";
+    import { activateNote } from "$lib/plugin-ready.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
@@ -31,6 +32,9 @@
     import PluginFields from "$lib/components/PluginFields.svelte";
 
     const PLUGIN = "sitemap";
+    // What has to be filled in before it can go on — said, not discovered by
+    // pressing Activate and being refused.
+    const note = $derived(plugin && !plugin.enabled ? activateNote(plugin) : "");
     const INDEX = "/x/sitemaps/sitemap.xml";
 
     const allowed = $derived(can("plugins.read"));
@@ -304,7 +308,8 @@
                             type="button"
                             class="btn sm {plugin.enabled ? 'secondary' : ''}"
                             class:loading={working}
-                            disabled={working}
+                            disabled={working || !!note}
+                            title={note || undefined}
                             onclick={toggle}
                         >
                             <span class="txt">{plugin.enabled ? "Deactivate" : "Activate"}</span>
@@ -329,7 +334,17 @@
                  the settings, the how-to — is folded underneath, a click away,
                  because most visits want only this card. -->
             <section class="card feed-card map-summary">
-                {#if !plugin.enabled}
+                {#if !plugin.enabled && note}
+                    <div class="map-summary-state">
+                        <span class="map-summary-icon warn" aria-hidden="true"><i class="ri-error-warning-line"></i></span>
+                        <div>
+                            <h2 class="feed-card-title">Step 1: tell it where your shop is</h2>
+                            <p class="txt-hint txt-sm">
+                                {note} It is under Settings, just below — then Activate turns on.
+                            </p>
+                        </div>
+                    </div>
+                {:else if !plugin.enabled}
                     <div class="map-summary-state">
                         <span class="map-summary-icon off" aria-hidden="true"><i class="ri-map-2-line"></i></span>
                         <div>
@@ -481,7 +496,7 @@
 
             <!-- Open by itself while a setting is missing: that is the one
                  thing the summary above just asked for. -->
-            <details class="card feed-card map-fold" open={plugin.enabled && !plugin.configured}>
+            <details class="card feed-card map-fold" open={!!note || (plugin.enabled && !plugin.configured)}>
                 <summary>
                     <span class="map-fold-title">Settings</span>
                     <span class="txt-hint txt-sm">Where the storefront puts each product, collection and page</span>

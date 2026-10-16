@@ -18,6 +18,7 @@
      */
     import { base } from "$app/paths";
     import { can, request } from "$lib/api.js";
+    import { activateNote } from "$lib/plugin-ready.js";
     import { toast } from "$lib/toast.svelte.js";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginSettingsDrawer from "$lib/components/PluginSettingsDrawer.svelte";
@@ -123,6 +124,14 @@
     }
 
     async function toggle(p) {
+        // Not switchable on yet: open what is missing instead of asking the
+        // engine to refuse, and say what to fill in.
+        const note = !p.enabled ? activateNote(p) : "";
+        if (note) {
+            toast.info(note);
+            open(p);
+            return;
+        }
         working = p.key;
         try {
             const updated = await request("PATCH", `/api/admin/plugins/${p.key}`, {
