@@ -382,6 +382,11 @@ func (s *Stores) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	// No media store, no files to remove — rows can outlive the
+	// configuration that wrote them.
+	if s.app.mediaStore == nil {
+		keys = nil
+	}
 	for _, key := range keys {
 		if err := s.app.mediaStore.Delete(bound, key); err != nil {
 			s.app.log.Error("could not delete a deleted store's file", "store", id, "key", key, "err", err)
