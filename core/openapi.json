@@ -99,6 +99,10 @@
     {
       "name": "stores",
       "description": "The stores a signed-in person works in: listing them, moving between them and opening a new one. These routes are never bound to a store, so a store named by header, query or cookie is ignored."
+    },
+    {
+      "name": "admin:domains",
+      "description": "A store's own domains. One routes requests to the store only once a DNS TXT record proves it is the store's; whether it is verified, and which domain is primary, are set by the engine alone."
     }
   ],
   "security": [],
@@ -13636,6 +13640,263 @@
           }
         }
       }
+    },
+    "/api/admin/domains": {
+      "get": {
+        "tags": [
+          "admin:domains"
+        ],
+        "summary": "List this store's domains",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Primary first, then oldest first. Each carries the TXT record that proves it.",
+        "responses": {
+          "200": {
+            "description": "The domains.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Domain"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin:domains"
+        ],
+        "summary": "Add a domain",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Adds the domain unverified and answers with the TXT record to create. Only the host is read from the body. A host under the install's base domain, an IP address, or one with a scheme, port or path is refused; one already attached to a store is 409. Frozen on a demo store. Needs store.write.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "host"
+                ],
+                "properties": {
+                  "host": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The domain.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Domain"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/domains/{host}/verify": {
+      "post": {
+        "tags": [
+          "admin:domains"
+        ],
+        "summary": "Look the domain's TXT record up now",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "description": "Waits for the DNS answer (up to 10 seconds) and stores the result. Verifying an already verified domain changes nothing. Needs store.write.",
+        "responses": {
+          "200": {
+            "description": "The domain.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Domain"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "Not verified: the TXT record was not found, or the domain must be verified first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/domains/{host}/primary": {
+      "post": {
+        "tags": [
+          "admin:domains"
+        ],
+        "summary": "Make a verified domain the store's primary",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "description": "Where the store says it lives, for instance the panel's Visit store link. Needs store.write.",
+        "responses": {
+          "200": {
+            "description": "The domain.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Domain"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "Not verified: the TXT record was not found, or the domain must be verified first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/domains/{host}": {
+      "delete": {
+        "tags": [
+          "admin:domains"
+        ],
+        "summary": "Remove a domain",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "description": "The domain stops routing to the store at once. Another store's domain reads as not found. Needs store.write.",
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -19372,6 +19633,42 @@
           "demo": {
             "type": "boolean",
             "description": "The store masks personal data on its admin routes and freezes who can sign in (gocommerce store demo <slug> on)."
+          }
+        }
+      },
+      "Domain": {
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string",
+            "example": "shop.example.com"
+          },
+          "verified": {
+            "type": "boolean",
+            "description": "Set by the engine when it finds the TXT record; never read from a request."
+          },
+          "verified_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "primary": {
+            "type": "boolean",
+            "description": "The domain the store is known by. Only a verified domain can be primary."
+          },
+          "txt_name": {
+            "type": "string",
+            "description": "Where the TXT record goes: _gocommerce.<host>.",
+            "example": "_gocommerce.shop.example.com"
+          },
+          "txt_value": {
+            "type": "string",
+            "description": "What the TXT record must say.",
+            "example": "gocommerce-verify=k7m2..."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }

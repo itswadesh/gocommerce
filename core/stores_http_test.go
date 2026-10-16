@@ -325,7 +325,7 @@ func TestTheStoreListSaysWhereEachStoreLives(t *testing.T) {
 	tok := signInAs(t, app, "where@example.com", RoleOwner)
 	b := addTestStore(t, app, "bee")
 	joinTestStore(t, app, b, "where@example.com", RoleStaff)
-	if _, err := app.db.Exec(`INSERT INTO store_domains (host, store_id) VALUES ('bee.example', $1)`, b); err != nil {
+	if _, err := app.db.Exec(`INSERT INTO store_domains (host, store_id, verified_at) VALUES ('bee.example', $1, now())`, b); err != nil {
 		t.Fatal(err)
 	}
 	rec := do(t, app, http.MethodGet, "/api/stores/my", bearer(tok))

@@ -123,7 +123,9 @@ func (s *Stores) ByHost(ctx context.Context, host string) (*Store, error) {
 	if i := strings.LastIndexByte(host, ':'); i >= 0 && !strings.Contains(host[i:], "]") {
 		host = host[:i]
 	}
-	st, err := s.one(ctx, `id = (SELECT store_id FROM store_domains WHERE host = $1)`, host)
+	// Only a domain whose TXT record was found routes: an added but unproven
+	// domain is somebody's claim, not yet the store's address.
+	st, err := s.one(ctx, `id = (SELECT store_id FROM store_domains WHERE host = $1 AND verified_at IS NOT NULL)`, host)
 	if err == nil || !errors.Is(err, ErrNotFound) {
 		return st, err
 	}

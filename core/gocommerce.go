@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os/signal"
@@ -351,6 +352,9 @@ type App struct {
 	// mediaStore is nil when the store has nowhere to put uploads, which is a
 	// supported configuration: the library still records media by URL.
 	mediaStore MediaStore
+	// lookupTXT answers a domain's verification (store_domains.go). A field
+	// so a test can answer it without the network.
+	lookupTXT func(ctx context.Context, name string) ([]string, error)
 
 	bus      *eventBus
 	outbox   *outbox
@@ -583,6 +587,7 @@ func (a *App) buildServices() {
 	a.taxes = &Taxes{app: a}
 	a.shipping = &Shipping{app: a}
 	a.reports = &Reports{app: a}
+	a.lookupTXT = net.DefaultResolver.LookupTXT
 
 	// An explicit store wins; otherwise a directory gets the built-in one; with
 	// neither, uploads are simply unavailable and the library is URL-only.
