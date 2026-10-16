@@ -59,9 +59,8 @@ There is no cgo toolchain, so `-race` is unavailable locally; CI covers it.
 ```powershell
 gofmt -l .                                  # must print nothing
 go vet ./...
-go test ./... -count=1 -timeout 60m
+go test ./core -run 'TheTestsYouTouched' -count=1   # the packages and tests the change touched
 go build -tags no_admin ./...               # the API-only build links
-go test -tags no_admin ./core -count=1 -timeout 60m
 .\scripts\check-docs.ps1                    # skills and links still match the code
 .\scripts\build.ps1                         # required after any admin/src change
 .\scripts\smoke.ps1                         # walks a whole sale; exits non-zero on any failure
@@ -115,8 +114,11 @@ version stamped in (`core.Version`), and publishes a GitHub release whose
 notes are the pull request's title and description. So write the description
 for the people reading the release.
 
-CI (`.github/workflows/ci.yml`) runs only when started by hand. Run the checks
-in "Verifying a change" before opening a pull request, and say in its
+The full suite (`go test ./...`, 15 minutes or so) does not run locally
+before a pull request: the owner asked not to wait on it. CI
+(`.github/workflows/ci.yml`) runs it when a pull request is merged into
+`main`, and by hand. Before opening a pull request, run the checks in
+"Verifying a change" for what the branch touched, and say in its
 description what ran.
 
 ## Working style

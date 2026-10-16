@@ -1,9 +1,12 @@
 name: CI
 
-# Run by hand only (Actions → CI → Run workflow). A run on every push and pull
-# request took longer than the change it was checking; the same checks run
-# locally before a pull request is opened (CLAUDE.md, "Verifying a change").
+# Runs once a pull request is merged into main, and by hand (Actions → CI →
+# Run workflow). Not on every push or pull request: the full suite takes
+# longer than the change it is checking, so a branch is checked with the tests
+# for what it touched and the whole suite runs after the merge.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 env:
