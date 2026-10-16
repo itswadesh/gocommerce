@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -18,7 +19,6 @@ import (
 // fooled. The second is the one that actually holds; the first exists so the
 // operator gets "a report may only read" instead of a Postgres error.
 func TestACustomReportRunsAndReturnsRows(t *testing.T) {
-	t.Skip("custom reports are off while stores share tables; they return with per-store reporting logins (D83, Part 4)")
 	app := newTestApp(t)
 	ctx := context.Background()
 	price := int64(1500)
@@ -61,7 +61,6 @@ func TestACustomReportRunsAndReturnsRows(t *testing.T) {
 // Everything that is not a single read is refused, and the message says why
 // rather than leaking a driver error.
 func TestACustomReportMayOnlyRead(t *testing.T) {
-	t.Skip("custom reports are off while stores share tables; they return with per-store reporting logins (D83, Part 4)")
 	app := newTestApp(t)
 	ctx := context.Background()
 
@@ -95,7 +94,6 @@ func TestACustomReportMayOnlyRead(t *testing.T) {
 
 // A plain SELECT and a read-only CTE are the two shapes that do run.
 func TestTheTwoShapesThatRun(t *testing.T) {
-	t.Skip("custom reports are off while stores share tables; they return with per-store reporting logins (D83, Part 4)")
 	app := newTestApp(t)
 	ctx := context.Background()
 
@@ -119,7 +117,6 @@ func TestTheTwoShapesThatRun(t *testing.T) {
 // write and the transaction is read-only, so two layers refuse it below the
 // parse. Proven by going around the parse deliberately.
 func TestTheTransactionRefusesAWriteTheParseMissed(t *testing.T) {
-	t.Skip("custom reports are off while stores share tables; they return with per-store reporting logins (D83, Part 4)")
 	app := newTestApp(t)
 	ctx := context.Background()
 	price := int64(1000)
@@ -216,7 +213,6 @@ func TestCustomReportsFailClosedWithoutARole(t *testing.T) {
 // back a prefix, which is the difference between a number an operator can
 // trust and one they cannot.
 func TestTooManyRowsIsReportedRatherThanHidden(t *testing.T) {
-	t.Skip("custom reports are off while stores share tables; they return with per-store reporting logins (D83, Part 4)")
 	app := newTestApp(t)
 	ctx := context.Background()
 
@@ -295,19 +291,88 @@ func TestWhoMayWriteAReport(t *testing.T) {
 }
 
 // A report is SQL its author writes, and under shared tenancy that SQL could
-// call set_config and read another store's rows. Until each store runs its
-// reports as a login of its own that the row policy is tied to (Part 4 of
-// D83), running one answers 503 and says why.
-func TestCustomReportsAreOffUntilEachStoreHasItsOwnLogin(t *testing.T) {
+// call set_config and name another store. It runs pinned to its own store by
+// a policy the reports login cannot get around (D83, Part 4): the run is
+// recorded against its connection in a table only the engine can write, and
+// set_config moves nothing that policy reads.
+func runReportOver(t *testing.T, app *App, store, query string) (int, string) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/reports/custom/run",
+		strings.NewReader(`{"sql":`+strconv.Quote(query)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-litekart-store", store)
+	withAdmin(req)
+	rec := httptest.NewRecorder()
+	app.Handler().ServeHTTP(rec, req)
+	return rec.Code, rec.Body.String()
+}
+
+func TestAReportReadsOnlyItsOwnStore(t *testing.T) {
 	app := newTestApp(t)
-	for _, path := range []string{"/api/admin/reports/custom/run", "/api/admin/reports/custom/1/run"} {
-		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"sql":"SELECT 1"}`))
-		req.Header.Set("Content-Type", "application/json")
-		withAdmin(req)
-		rec := httptest.NewRecorder()
-		app.Handler().ServeHTTP(rec, req)
-		if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "reports_unavailable") {
-			t.Fatalf("%s = %d: %s", path, rec.Code, rec.Body)
+	b := addTestStore(t, app, "bee")
+	for _, c := range []struct{ store, code string }{{app.DefaultStore(), "mine"}, {b, "theirs"}} {
+		if _, err := app.db.ExecContext(WithStore(context.Background(), c.store),
+			`INSERT INTO customer_groups (code, name) VALUES ($1, $1)`, c.code); err != nil {
+			t.Fatal(err)
 		}
+	}
+	for _, q := range []string{
+		"SELECT code FROM customer_groups",
+		// Naming the other store, the way the engine's own connection does.
+		"SELECT code FROM customer_groups WHERE set_config('gocommerce.store_id', '" + b + "', true) IS NOT NULL",
+		"SELECT code FROM customer_groups WHERE store_id = '" + b + "'",
+	} {
+		code, body := runReportOver(t, app, app.DefaultStore(), q)
+		if code != http.StatusOK {
+			t.Fatalf("%q = %d: %s", q, code, body)
+		}
+		if strings.Contains(body, "theirs") {
+			t.Fatalf("a report read another store's rows with %q: %s", q, body)
+		}
+	}
+	// And the other store's report sees its own.
+	if code, body := runReportOver(t, app, b, "SELECT code FROM customer_groups"); code != http.StatusOK ||
+		!strings.Contains(body, "theirs") || strings.Contains(body, "mine") {
+		t.Fatalf("store B's report = %d: %s", code, body)
+	}
+}
+
+// The tables that belong to no one store — people, their sessions, the store
+// directory — are not a report's to read at all.
+func TestAReportCannotReadTheInstallsOwnTables(t *testing.T) {
+	app := newTestApp(t)
+	for _, table := range []string{"superusers", "superuser_sessions", "superuser_password_resets",
+		"stores", "store_members", "api_key_index", "report_runs"} {
+		code, body := runReportOver(t, app, app.DefaultStore(), "SELECT count(*) FROM "+table)
+		if code != http.StatusBadRequest || !strings.Contains(body, "permission denied") {
+			t.Fatalf("reading %s = %d, want the database's permission denied: %s", table, code, body)
+		}
+	}
+}
+
+// A connection the engine did not record a run for sees nothing: the policy
+// fails closed rather than falling back to whatever store_id says.
+func TestAnUnrecordedReportConnectionSeesNothing(t *testing.T) {
+	app := newTestApp(t)
+	if _, err := app.db.ExecContext(WithStore(context.Background(), app.DefaultStore()),
+		`INSERT INTO customer_groups (code, name) VALUES ('hidden', 'hidden')`); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := app.reportsDB.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	// Naming the store first, in a statement of its own, as a session would.
+	if _, err := conn.ExecContext(context.Background(),
+		`SELECT set_config('gocommerce.store_id', '`+app.DefaultStore()+`', false)`); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := conn.QueryRowContext(context.Background(), `SELECT count(*) FROM customer_groups`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("an unrecorded reports connection read %d rows", n)
 	}
 }
