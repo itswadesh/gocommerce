@@ -250,7 +250,11 @@ gocommerce -store corner superuser create owner@corner.example a-long-password o
 
 and name it on requests with `x-litekart-store: <id>` (or `X-Store: corner`,
 `?store=corner`, or its host, `corner.<-base-domain>`). A person signs in once
-and works in each store they belong to.
+and works in each store they belong to. In the panel, the account menu at the
+foot of the sidebar lists their stores and switches between them, staying on
+the same screen; somebody in several stores picks one after signing in, and
+can open a new store from there. `GET /api/stores/my`, `POST
+/api/stores/switch` and `POST /api/stores/create` do the same for a script.
 
 Stores are kept apart by PostgreSQL row-level security, so **the engine must
 not connect as a superuser**: `gocommerce doctor` fails if it does, and
