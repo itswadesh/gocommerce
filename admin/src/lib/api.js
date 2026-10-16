@@ -336,6 +336,10 @@ export const stores = {
     async create(name, slug) {
         return await api.post("/api/stores/create", { name, slug });
     },
+    /** remove deletes a store for good; confirm is its slug, typed back. */
+    async remove(storeID, confirm) {
+        return await api.post("/api/stores/delete", { store_id: storeID, confirm });
+    },
 };
 
 export const storeProfile = {

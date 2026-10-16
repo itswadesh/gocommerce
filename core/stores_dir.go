@@ -345,6 +345,47 @@ func orderSequence(storeID string) string {
 	return "order_number_" + strings.ToLower(storeID)
 }
 
+// StoreDeleter is a module that keeps something of a store's outside the
+// database — documents in a search index, files on disk — and removes it when
+// the store is deleted. Rows need no hook: they cascade with the store.
+type StoreDeleter interface {
+	DeleteStore(ctx context.Context, storeID string) error
+}
+
+// Delete removes a store and everything it owns. Every store table references
+// stores(id) with ON DELETE CASCADE, and a cascade is a referential action, so
+// it reaches all of the store's rows whatever row security would let a query
+// see. Its order sequence goes in the same transaction. Modules then clear
+// what they keep elsewhere; a failure there is logged rather than undoing a
+// delete that has already happened.
+func (s *Stores) Delete(ctx context.Context, id string) error {
+	bound := WithStore(ctx, id)
+	err := InTx(bound, s.db, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(bound, `DELETE FROM stores WHERE id = $1`, id)
+		if err != nil {
+			return Internalf(err, "delete store")
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return NotFoundf("store not found")
+		}
+		if _, err := tx.ExecContext(bound, `DROP SEQUENCE IF EXISTS `+orderSequence(id)); err != nil {
+			return Internalf(err, "drop the store's order numbers")
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for _, mod := range s.app.modules {
+		if d, ok := mod.(StoreDeleter); ok {
+			if err := d.DeleteStore(bound, id); err != nil {
+				s.app.log.Error("a module could not clear a deleted store", "module", mod.Name(), "store", id, "err", err)
+			}
+		}
+	}
+	return nil
+}
+
 // StoreSeeder is a module with rows a new store starts with — what its
 // migrations seeded for the stores that existed when they ran. SeedStore is
 // called once per store opened afterwards, bound to that store.

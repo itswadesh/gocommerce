@@ -13581,6 +13581,61 @@
           }
         }
       }
+    },
+    "/api/stores/delete": {
+      "post": {
+        "tags": [
+          "stores"
+        ],
+        "summary": "Delete a store for good",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Deletes the store and every row it owns. Only an owner of the store may, and only with the store's slug typed back in `confirm`. The install's last store cannot be deleted (409), and neither can a demo store (403 `demo_frozen`), whose visitors are signed in as owners. There is no undo.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "store_id",
+                  "confirm"
+                ],
+                "properties": {
+                  "store_id": {
+                    "type": "string",
+                    "description": "The store's id or slug."
+                  },
+                  "confirm": {
+                    "type": "string",
+                    "description": "The store's slug, typed back."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
     }
   },
   "components": {

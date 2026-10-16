@@ -4095,6 +4095,18 @@ button.media-check {
     max-width: min(300px, calc(100vw - 32px));
     max-height: min(640px, calc(100vh - 100px));
 }
+/* Deleting a store: set apart, in the danger colour, so it is never mistaken
+   for the settings above it. */
+.store-delete {
+    padding: 14px;
+    border: 1px solid var(--dangerColor);
+    border-radius: var(--borderRadius);
+    background: var(--dangerAltColor, transparent);
+}
+.store-delete .btn[disabled] {
+    transition: opacity 150ms ease-out;
+}
+
 /* The orders list's customer: name over email and phone. */
 .order-customer {
     display: flex;
