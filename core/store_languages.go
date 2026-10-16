@@ -89,16 +89,27 @@ func (a *App) requestLanguages(ctx context.Context) []string {
 }
 
 // installLanguages is Config.Languages with Config.DefaultLanguage first, the
-// order a store's own list has. applyDefaults guarantees the default is in
-// the list, not that it leads it.
+// order a store's own list has, each spelt the way a store's own tags are —
+// "fr_ca" on the command line is "fr-CA" — so the two compare equal and a
+// translation or a wording stored under one is found under the other.
+// applyDefaults guarantees the default is in the list, not that it leads it.
 func (a *App) installLanguages() []string {
-	out := []string{a.cfg.DefaultLanguage}
+	out := []string{spelt(a.cfg.DefaultLanguage)}
 	for _, l := range a.cfg.Languages {
-		if !containsFold(out, l) {
+		if l = spelt(l); !containsFold(out, l) {
 			out = append(out, l)
 		}
 	}
 	return out
+}
+
+// spelt is a tag's usual spelling, or the tag as given when it is not one —
+// a start-up setting is not refused at the door here.
+func spelt(tag string) string {
+	if l, err := normalizeLanguage(tag); err == nil {
+		return l
+	}
+	return tag
 }
 
 // languagesOf is a store row's languages, or the install's.

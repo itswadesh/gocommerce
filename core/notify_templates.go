@@ -316,8 +316,8 @@ func (t *NotifyTemplates) GetIn(ctx context.Context, channel, event, language st
 	return overlay(def, lang, r, found), true, nil
 }
 
-// Render is the effective wording filled with an event's data. ok is false
-// for an event with no wording.
+// Render is the effective wording, in the store's main language, filled with
+// an event's data. ok is false for an event with no wording.
 func (t *NotifyTemplates) Render(ctx context.Context, channel, event string, data map[string]string) (subject, body string, ok bool, err error) {
 	tpl, ok, err := t.Get(ctx, channel, event)
 	if err != nil || !ok {
@@ -420,6 +420,27 @@ func (t *NotifyTemplates) ResetIn(ctx context.Context, channel, event, language 
 	}
 	out, _, err := t.GetIn(ctx, channel, event, lang)
 	return out, err
+}
+
+// keepOldWording labels wording stored before languages with the main language
+// it was written in, before that language stops being the main one. An empty
+// language reads as whichever language is main, so without this the old
+// wording would follow the move into a language it is not written in — and
+// wording the new main language would then replace it. A row the old main
+// language has already superseded is dropped instead.
+func (t *NotifyTemplates) keepOldWording(ctx context.Context, tx *sql.Tx, oldMain string) error {
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM notification_templates l
+		WHERE l.language = '' AND EXISTS (
+		    SELECT 1 FROM notification_templates o
+		    WHERE o.store_id = l.store_id AND o.channel = l.channel AND o.event = l.event AND o.language = $1)`,
+		oldMain); err != nil {
+		return Internalf(err, "keep the old wording")
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE notification_templates SET language = $1 WHERE language = ''`, oldMain); err != nil {
+		return Internalf(err, "keep the old wording")
+	}
+	return nil
 }
 
 // inLanguage names a language other than the main one in an audit summary.

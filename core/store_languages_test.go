@@ -164,3 +164,20 @@ func TestEachStoreHasItsOwnLanguages(t *testing.T) {
 		t.Errorf("the store that did not = %v, want the install's, default first: [en fr]", got)
 	}
 }
+
+// The install's own list is spelt the way a store's is, so a store that
+// never chose compares equal to its own list saved back.
+func TestTheInstallsLanguagesAreSpeltTheUsualWay(t *testing.T) {
+	dsn := requireDB(t)
+	cfg := testConfig(dsn)
+	cfg.DefaultLanguage = "en"
+	cfg.Languages = []string{"en", "fr_ca"}
+	app, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = app.Close() })
+	if got := app.Languages(context.Background()); !slices.Equal(got, []string{"en", "fr-CA"}) {
+		t.Errorf("install languages = %v, want [en fr-CA]", got)
+	}
+}

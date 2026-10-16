@@ -141,8 +141,8 @@ func (a *App) categoryNames(ctx context.Context, lang string, ids []int64) map[i
 		    UNION ALL
 		    SELECT chain.leaf, c.id, c.parent_id, c.title, chain.depth + 1
 		    FROM categories c JOIN chain ON c.id = chain.parent_id
-		    WHERE chain.depth < 64)
-		SELECT leaf, id, title FROM chain ORDER BY leaf, depth DESC`, int64Array(ids))
+		    WHERE chain.depth < $2)
+		SELECT leaf, id, title FROM chain ORDER BY leaf, depth DESC`, int64Array(ids), MaxCategoryDepth)
 	if err != nil {
 		a.log.Error("category names", "error", err)
 		return nil
@@ -153,6 +153,7 @@ func (a *App) categoryNames(ctx context.Context, lang string, ids []int64) map[i
 		title string
 	}
 	chains := map[int64][]link{}
+	seen := map[int64]bool{}
 	var all []int64
 	for rows.Next() {
 		var leaf int64
@@ -162,7 +163,10 @@ func (a *App) categoryNames(ctx context.Context, lang string, ids []int64) map[i
 			return nil
 		}
 		chains[leaf] = append(chains[leaf], l)
-		all = append(all, l.id)
+		if !seen[l.id] {
+			seen[l.id] = true
+			all = append(all, l.id)
+		}
 	}
 	if rows.Err() != nil {
 		return nil

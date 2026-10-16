@@ -331,6 +331,16 @@ func (m *Module) handlePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A row stored under another spelling of the same tag ("fr-ca") would sit
+	// beside this one and be read in its place half the time.
+	if _, err := m.db.ExecContext(r.Context(), `
+		DELETE FROM translations_entries
+		WHERE kind = $1 AND entity_id = $2 AND lower(language) = lower($3) AND language <> $3`,
+		kind, id, language); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+
 	// A replace rather than a merge, like every other whole-object PUT in this
 	// engine: the caller sent the translation it wants, and a merge would make
 	// removing one field impossible.

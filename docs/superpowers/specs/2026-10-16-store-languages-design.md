@@ -38,14 +38,15 @@ emails and texts in the customer's language. The panel itself stays English.
   - the request fallback;
   - the translator's skip;
   - a notification with no language;
-  - operator emails;
+  - store emails (the team invitation, the test email);
   - CSV order import;
   - cms;
   - identity;
   - the MCP `store_info` tool;
   - `/api/admin/settings`.
 - **What still uses the install's language:** `/health/ready` and the
-  start-up log, which D31 freezes.
+  start-up log, which D31 freezes, and an operator's password reset, which
+  belongs to a person rather than to a store.
 - **Editing, through `PATCH /api/admin/store`:**
   - `languages`, up to 30 tags. Each is normalised: `hi`, `fr-CA`, `zh-Hant`.
     Duplicates are dropped.
@@ -66,13 +67,15 @@ emails and texts in the customer's language. The panel itself stays English.
 - **What gets translated:**
   - Category and collection names gain the seam the module header says they
     lacked: kinds `category` and `collection`, applied on the public category
-    and collection reads.
-  - Fields: name, description and the SEO pair, the same set products already
-    have.
+    and collection reads and where they ride along on a product.
+  - Fields: a category's title (its whole path follows), and a collection's
+    title and description. Products keep their title, description and SEO
+    pair.
 - **A list route for the screen:**
   - `GET /api/admin/x/translations/{kind}?language=&q=&status=&page=`
     returns one page of the store's items. Each carries its original fields
-    and its translation, plus counts of how many are translated.
+    and its translation, plus counts of how many are translated. An item
+    counts as translated once its title is.
   - The module reads the catalogue through the services, never the tables.
 - **Panel, Products › Translations:**
   - pick a language (the store's non-main languages);
@@ -95,11 +98,14 @@ emails and texts in the customer's language. The panel itself stays English.
   3. a `''` row;
   4. the code's default.
 - **Saving:** saving the main language's wording deletes its `''` row, so one
-  wording is stored for it. Changing the main language needs no data change.
+  wording is stored for it.
+- **Changing the main language:** the `''` rows are labelled with the old main
+  language first. They were written in it, and otherwise they would follow the
+  move into a language they are not written in.
 - **API:**
-  - `NotifyTemplates().For(ctx, channel, event, language)` is new.
-  - `Get` keeps its meaning (the main language), so modules in other
-    repositories still compile.
+  - `GetIn`, `ListIn`, `SetIn` and `ResetIn` take a language.
+  - `Get`, `List`, `Set` and `Reset` keep their meaning (the main language),
+    so modules in other repositories still compile.
   - Resend, SendGrid and Twilio render `n.Language`.
 - **Customer language:** `MessageLanguage` uses the order's language while the
   store still sells in it, and the main language otherwise.

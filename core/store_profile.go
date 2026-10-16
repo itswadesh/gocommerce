@@ -213,6 +213,11 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 				stringArray(languages), p.app.storeOf(ctx)); err != nil {
 				return err
 			}
+			if oldMain := p.app.mainLanguage(ctx); languages[0] != oldMain {
+				if err := p.app.notifyTemplates.keepOldWording(ctx, tx, oldMain); err != nil {
+					return err
+				}
+			}
 		}
 		if _, err := tx.ExecContext(ctx, `
 		UPDATE store_profile SET

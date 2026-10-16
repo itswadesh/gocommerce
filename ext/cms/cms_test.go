@@ -1,6 +1,7 @@
 package cms
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -112,6 +113,25 @@ func TestFallsBackToTheStoreLanguage(t *testing.T) {
 	gctest.DecodeData(t, rec, &page)
 	if page.Language != "en" {
 		t.Errorf("language = %q, want the en fallback", page.Language)
+	}
+}
+
+// A page written before the store moved its main language is still served:
+// the fallback runs through every language the store sells in (D87).
+func TestAPageOutlivesAMoveOfTheMainLanguage(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	rec := gctest.AdminRequest(t, app, http.MethodPost, "/api/admin/x/cms/pages", map[string]any{
+		"slug": "returns", "title": "Returns", "status": StatusPublished, "language": "en",
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create = %d: %s", rec.Code, rec.Body)
+	}
+	if _, err := app.Profile().Set(context.Background(), gocommerce.StoreProfile{Languages: []string{"hi", "en"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	rec = gctest.Request(t, app, http.MethodGet, "/x/cms/pages/returns", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want the English page rather than a 404: %s", rec.Code, rec.Body)
 	}
 }
 

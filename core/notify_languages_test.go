@@ -133,3 +133,30 @@ func TestNotifyTemplateRoutesTakeALanguage(t *testing.T) {
 		t.Errorf("reset in Hindi = %d: %s", rec.Code, rec.Body)
 	}
 }
+
+// Wording from before languages belongs to the main language it was written
+// in: moving the main language labels it with that language, so wording the
+// new main language does not overwrite it.
+func TestMovingTheMainLanguageKeepsTheOldWording(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	sellIn(t, app, ctx, "en", "hi")
+	if _, err := app.db.ExecContext(ctx, `INSERT INTO notification_templates (channel, event, language, subject, body)
+		VALUES ('email', 'order.created', '', 'Old {{.order_number}}', 'Old body')`); err != nil {
+		t.Fatal(err)
+	}
+	sellIn(t, app, ctx, "hi", "en")
+	tpls := app.NotifyTemplates()
+	if got, _, _ := tpls.GetIn(ctx, ChannelEmail, EventOrderCreated, "en"); got.Source != WordingOwn || got.Subject != "Old {{.order_number}}" {
+		t.Errorf("English after the move = %+v, want its old wording as its own", got)
+	}
+	if got, _, _ := tpls.Get(ctx, ChannelEmail, EventOrderCreated); got.Source != WordingDefault {
+		t.Errorf("Hindi, now main, before it is worded = %+v, want the default", got)
+	}
+	if _, err := tpls.Set(ctx, ChannelEmail, EventOrderCreated, "नया {{.order_number}}", "नया"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := tpls.GetIn(ctx, ChannelEmail, EventOrderCreated, "en"); got.Subject != "Old {{.order_number}}" {
+		t.Errorf("English after Hindi was worded = %q, want the old English wording kept", got.Subject)
+	}
+}

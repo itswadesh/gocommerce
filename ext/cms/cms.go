@@ -145,10 +145,16 @@ func (m *Module) handleGetPublic(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 
 	page, err := m.bySlug(r.Context(), slug, lang, m.publicStatus())
-	if main := m.app.Languages(r.Context())[0]; errors.Is(err, sql.ErrNoRows) && lang != main {
-		// Fall back to the store's own language rather than 404ing a shopper
-		// whose browser asked for a translation nobody has written yet.
-		page, err = m.bySlug(r.Context(), slug, main, m.publicStatus())
+	// Fall back through the store's languages, main first, rather than 404ing
+	// a shopper whose browser asked for a translation nobody has written yet —
+	// or a page written before the store moved its main language.
+	for _, other := range m.app.Languages(r.Context()) {
+		if !errors.Is(err, sql.ErrNoRows) {
+			break
+		}
+		if other != lang {
+			page, err = m.bySlug(r.Context(), slug, other, m.publicStatus())
+		}
 	}
 	if errors.Is(err, sql.ErrNoRows) {
 		gocommerce.RespondError(w, r, gocommerce.NotFoundf("no page at %q", slug))
