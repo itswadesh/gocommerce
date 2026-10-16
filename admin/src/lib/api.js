@@ -333,8 +333,8 @@ export const stores = {
         return await api.post("/api/stores/switch", { store_id: storeID });
     },
     /** create opens a store with the caller as its owner, and enters it. */
-    async create(name, slug) {
-        return await api.post("/api/stores/create", { name, slug });
+    async create(name, slug, currency = "") {
+        return await api.post("/api/stores/create", { name, slug, currency });
     },
     /** remove deletes a store for good; confirm is its slug, typed back. */
     async remove(storeID, confirm) {

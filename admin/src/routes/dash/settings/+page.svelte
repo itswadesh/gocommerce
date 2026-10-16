@@ -30,6 +30,7 @@
 
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
     import { countryOptions } from "$lib/countries.js";
+    import { currencyOptions } from "$lib/currencies.js";
 
     /*
      * Deleting the store. Offered to its owner only, never on a demo store,
@@ -96,6 +97,9 @@
             kind: "select",
             hint: "How a customer is written to when their order recorded no preference of its own.",
         },
+        // The store's own currency (D85): chosen until its first order, then
+        // fixed, because changing it would change what every order means.
+        { key: "currency", label: "Currency", kind: "select" },
     ];
 
     /*
@@ -125,6 +129,7 @@
         if (key === "timezone") return zones;
         if (key === "language") return languages;
         if (key === "country") return countryOptions(draft?.country);
+        if (key === "currency") return currencyOptions(draft?.currency);
         return [];
     }
 
@@ -149,9 +154,13 @@
         if (saving || !dirty) return;
         saving = true;
         try {
+            const before = profile?.currency;
             profile = await storeProfile.save(draft);
             draft = { ...profile };
             toast.success("Store details saved");
+            // Every price on every screen is formatted in the store's currency,
+            // read once into the settings; a new one has to reach them now.
+            if (profile.currency !== before) loadSettings({ force: true }).catch(() => {});
             // The name here is the store's name, so the account menu and the
             // store list change with it.
             loadStores().catch(() => {});
@@ -295,19 +304,21 @@
                                         {#if f.kind === "select" && optionsFor(f.key).length}
                                             <select
                                                 id="sp-{f.key}"
-                                                disabled={!editable}
+                                                disabled={!editable || (f.key === "currency" && profile?.currency_locked)}
                                                 bind:value={draft[f.key]}
                                             >
                                                 <!-- Blank is a real choice, not a
                                                      prompt: it means "whatever the
-                                                     binary was started with". -->
-                                                <option value="">
+                                                     binary was started with". A
+                                                     store always sells in some
+                                                     currency, so that one has none. -->
+                                                {#if f.key !== "currency"}<option value="">
                                                     {f.key === "timezone"
                                                         ? "UTC (nothing set)"
                                                         : f.key === "country"
                                                           ? "Not set"
                                                           : "The binary's default"}
-                                                </option>
+                                                </option>{/if}
                                                 {#each optionsFor(f.key) as option (option.value ?? option)}
                                                     <option value={option.value ?? option}>{option.label ?? option}</option>
                                                 {/each}
@@ -321,7 +332,13 @@
                                                 bind:value={draft[f.key]}
                                             />
                                         {/if}
-                                        {#if f.hint}<div class="field-help">{f.hint}</div>{/if}
+                                        {#if f.key === "currency"}
+                                            <div class="field-help">
+                                                {profile?.currency_locked
+                                                    ? "Fixed: this store has orders, and changing it would change what their amounts mean."
+                                                    : "What the store sells in. Fixed once it takes its first order; changing it now relabels the prices already entered, without converting them."}
+                                            </div>
+                                        {:else if f.hint}<div class="field-help">{f.hint}</div>{/if}
                                     </div>
                                 </div>
                             {/each}
@@ -350,7 +367,6 @@
                         <span class="txt-hint txt-sm">Fixed when the engine starts; read only</span>
                         <i class="ri-arrow-down-s-line map-fold-chevron" aria-hidden="true"></i>
                         <span class="map-fold-values">
-                            <span class="map-fold-value">{store?.currency ?? "—"}</span>
                             <span class="map-fold-value">{languageList || "—"}</span>
                             <span class="map-fold-value">
                                 prices {store?.prices_include_tax ? "include tax" : "have tax added at checkout"}
@@ -359,12 +375,6 @@
                         </span>
                     </summary>
                     <div class="map-fold-body grid">
-                        <div class="col-md-4">
-                            <div class="field readonly">
-                                <label for="currency">Settlement currency</label>
-                                <input id="currency" type="text" readonly value={store?.currency ?? ""} />
-                            </div>
-                        </div>
                         <div class="col-md-4">
                             <div class="field readonly">
                                 <label for="language">Languages</label>
@@ -419,9 +429,7 @@
                         <div class="col-12">
                             <div class="field-help">
                                 These come from the <code>Config</code> the binary was started with.
-                                Money is stored in minor units alongside its code, which is what lets
-                                any currency work without an engine change — and what makes changing
-                                one mid-flight a migration rather than a setting.
+                                The store's currency is its own, under Store details above.
                             </div>
                         </div>
                     </div>
