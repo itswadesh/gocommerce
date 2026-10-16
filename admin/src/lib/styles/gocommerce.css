@@ -3886,9 +3886,9 @@ button.media-check {
     color: var(--surfaceTxtColor);
 }
 .app-brand-mark {
-    font-size: 18px;
-    line-height: 1;
-    color: var(--primary, currentColor);
+    flex: none;
+    fill: currentColor;
+    color: var(--surfaceTxtColor);
 }
 .app-brand-name {
     font-size: 13px;
