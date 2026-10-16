@@ -284,6 +284,7 @@ export const NAV = [
             // The store as a running system rather than as a shop.
             { href: "/dash/settings/diagnostics", label: "Diagnostics", right: "store.operate", health: true, keywords: "health checks doctor" },
             { href: "/dash/settings/events", label: "Event log", right: "store.operate", keywords: "outbox execution history dead letters" },
+            { href: "/dash/settings/errors", label: "Errors", right: "errors.read", keywords: "sentry crashes exceptions bugs failures 500 stack trace" },
             { href: "/dash/settings/api-keys", label: "API keys", right: "apikeys.read", keywords: "token credential integration machine partner bearer" },
             { href: "/dash/settings/webhooks", label: "Webhooks", right: "webhooks.read", module: "webhooks", keywords: "endpoints deliveries integrations" },
             { href: "/dash/settings/audit", label: "Audit trail", right: "store.operate", keywords: "who did what history" },

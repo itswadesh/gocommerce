@@ -384,6 +384,18 @@ export const events = {
 };
 
 /**
+ * errors is the store's error page (D86): failures grouped into issues, and
+ * the panel's own crashes reported to it. Reading needs errors.read; any
+ * signed-in operator may report.
+ */
+export const errors = {
+    list: (params) => api.get("/api/admin/errors" + query(params)),
+    get: (id) => api.get(`/api/admin/errors/${id}`),
+    setStatus: (id, status) => api.patch(`/api/admin/errors/${id}`, { status }),
+    report: (body) => api.post("/api/admin/errors", body),
+};
+
+/**
  * ops is the store as a running system rather than as a shop.
  *
  * Every one of these is the same code the CLI and the engine's own five-minute
