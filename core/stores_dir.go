@@ -360,7 +360,13 @@ type StoreDeleter interface {
 // delete that has already happened.
 func (s *Stores) Delete(ctx context.Context, id string) error {
 	bound := WithStore(ctx, id)
-	err := InTx(bound, s.db, func(tx *sql.Tx) error {
+	// Its files, read while its rows still name them: after the delete
+	// nothing says which files were the store's.
+	keys, err := s.mediaKeys(bound)
+	if err != nil {
+		return err
+	}
+	err = InTx(bound, s.db, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(bound, `DELETE FROM stores WHERE id = $1`, id)
 		if err != nil {
 			return Internalf(err, "delete store")
@@ -376,6 +382,16 @@ func (s *Stores) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	for _, key := range keys {
+		if err := s.app.mediaStore.Delete(bound, key); err != nil {
+			s.app.log.Error("could not delete a deleted store's file", "store", id, "key", key, "err", err)
+		}
+	}
+	if d, ok := s.app.mediaStore.(StoreDeleter); ok {
+		if err := d.DeleteStore(bound, id); err != nil {
+			s.app.log.Error("could not remove a deleted store's media folder", "store", id, "err", err)
+		}
+	}
 	for _, mod := range s.app.modules {
 		if d, ok := mod.(StoreDeleter); ok {
 			if err := d.DeleteStore(bound, id); err != nil {
@@ -384,6 +400,24 @@ func (s *Stores) Delete(ctx context.Context, id string) error {
 		}
 	}
 	return nil
+}
+
+// mediaKeys lists the storage keys of the files ctx's store holds.
+func (s *Stores) mediaKeys(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT storage_key FROM media WHERE storage_key <> ''")
+	if err != nil {
+		return nil, Internalf(err, "list the store's files")
+	}
+	defer rows.Close()
+	var keys []string
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			return nil, Internalf(err, "list the store's files")
+		}
+		keys = append(keys, k)
+	}
+	return keys, rows.Err()
 }
 
 // StoreSeeder is a module with rows a new store starts with — what its

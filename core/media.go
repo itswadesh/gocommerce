@@ -95,7 +95,14 @@ type LocalMediaStore struct {
 // trust is harder than not trusting it, and the display name is kept in the
 // database where it cannot be executed as a path.
 func (s *LocalMediaStore) Put(ctx context.Context, filename, contentType string, r io.Reader) (string, string, error) {
-	if err := os.MkdirAll(s.Dir, 0o755); err != nil {
+	// A store's files go in a folder of its own, stores/<store id>/, so they
+	// can be found — and removed with the store — without reading anyone
+	// else's. A store id is [0-9A-Z] after "store_", safe as a path segment.
+	folder := ""
+	if store, ok := StoreFrom(ctx); ok && ValidStoreID(store) {
+		folder = "stores/" + store + "/"
+	}
+	if err := os.MkdirAll(filepath.Join(s.Dir, filepath.FromSlash(folder)), 0o755); err != nil {
 		return "", "", fmt.Errorf("create media directory: %w", err)
 	}
 
@@ -118,11 +125,11 @@ func (s *LocalMediaStore) Put(ctx context.Context, filename, contentType string,
 	if _, err := rand.Read(buf[:]); err != nil {
 		return "", "", fmt.Errorf("generate media key: %w", err)
 	}
-	key := hex.EncodeToString(buf[:]) + ext
+	key := folder + hex.EncodeToString(buf[:]) + ext
 
 	// O_EXCL so a key collision fails loudly instead of overwriting a file
 	// some other product is still showing.
-	f, err := os.OpenFile(filepath.Join(s.Dir, key), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	f, err := os.OpenFile(filepath.Join(s.Dir, filepath.FromSlash(key)), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		return "", "", fmt.Errorf("create media file: %w", err)
 	}
@@ -136,15 +143,44 @@ func (s *LocalMediaStore) Put(ctx context.Context, filename, contentType string,
 }
 
 func (s *LocalMediaStore) Delete(ctx context.Context, key string) error {
-	// Reject anything that is not the flat name Put generates, so a corrupted
-	// or hand-edited row cannot walk out of the media directory.
-	if key == "" || key != filepath.Base(key) || strings.Contains(key, "..") {
+	// Reject anything that is not a name Put generates, so a corrupted or
+	// hand-edited row cannot walk out of the media directory.
+	path, ok := s.pathOf(key)
+	if !ok {
 		return fmt.Errorf("refusing to delete suspicious media key %q", key)
 	}
-	if err := os.Remove(filepath.Join(s.Dir, key)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return nil
+}
+
+// DeleteStore removes a deleted store's folder, after its files have gone
+// one by one through Delete; what is left is the folder and anything no row
+// named any more.
+func (s *LocalMediaStore) DeleteStore(ctx context.Context, storeID string) error {
+	if !ValidStoreID(storeID) {
+		return fmt.Errorf("refusing to remove media for %q", storeID)
+	}
+	return os.RemoveAll(filepath.Join(s.Dir, "stores", storeID))
+}
+
+// pathOf is where a key Put generated lives: a flat name (an upload from
+// before stores had folders) or stores/<store id>/<flat name>. Anything else
+// is refused.
+func (s *LocalMediaStore) pathOf(key string) (string, bool) {
+	flat := func(name string) bool {
+		return name != "" && name == filepath.Base(name) && !strings.Contains(name, "..") &&
+			!strings.ContainsAny(name, "/\\")
+	}
+	if flat(key) {
+		return filepath.Join(s.Dir, key), true
+	}
+	parts := strings.Split(key, "/")
+	if len(parts) == 3 && parts[0] == "stores" && ValidStoreID(parts[1]) && flat(parts[2]) {
+		return filepath.Join(s.Dir, "stores", parts[1], parts[2]), true
+	}
+	return "", false
 }
 
 // mimeExtensions returns the extensions a content type implies, canonical
@@ -267,6 +303,11 @@ func (m *Media) Upload(ctx context.Context, filename, contentType string, r io.R
 		return nil, Validationf("%q is not an image, a video, or a 3D model", filename)
 	}
 
+	// Bound to its store before it reaches the media store, which files it
+	// under that store (D83) — and an unbound caller has a default store.
+	if store := m.app.storeOf(ctx); store != "" {
+		ctx = WithStore(ctx, store)
+	}
 	key, url, err := m.app.mediaStore.Put(ctx, filename, contentType, r)
 	if err != nil {
 		return nil, Internalf(err, "store the upload")
