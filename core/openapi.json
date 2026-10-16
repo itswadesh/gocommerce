@@ -95,6 +95,10 @@
     {
       "name": "admin:platform",
       "description": "The store's plumbing: the event outbox, and what could not be delivered."
+    },
+    {
+      "name": "stores",
+      "description": "The stores a signed-in person works in: listing them, moving between them and opening a new one. These routes are never bound to a store, so a store named by header, query or cookie is ignored."
     }
   ],
   "security": [],
@@ -13362,6 +13366,221 @@
           }
         }
       }
+    },
+    "/api/stores/my": {
+      "get": {
+        "tags": [
+          "stores"
+        ],
+        "summary": "List the caller's stores",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "The stores the signed-in person is on the team of, oldest first, with their role in each. An API key belongs to one store and is refused.",
+        "responses": {
+          "200": {
+            "description": "The caller's stores.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MyStore"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/stores/switch": {
+      "post": {
+        "tags": [
+          "stores"
+        ],
+        "summary": "Move into one of the caller's stores",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Checks the caller is on the store's team and answers with their role and rights there, setting the `litekart_store_id` cookie. An unknown store and another person's store are both 403, so the answer does not say which stores exist. A suspended store is 503.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "store_id"
+                ],
+                "properties": {
+                  "store_id": {
+                    "type": "string",
+                    "description": "The store's id or slug."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The store, and the caller as that store sees them.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "store": {
+                          "$ref": "#/components/schemas/Store"
+                        },
+                        "record": {
+                          "allOf": [
+                            {
+                              "$ref": "#/components/schemas/Superuser"
+                            }
+                          ],
+                          "nullable": true,
+                          "description": "Role and rights in this store; null for a static admin token."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "`litekart_store_id=<store id>`: the store a new tab opens in.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "The store is suspended.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stores/create": {
+      "post": {
+        "tags": [
+          "stores"
+        ],
+        "summary": "Open a new store",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Creates a store with its starting rows, makes the caller its owner and moves them into it. Any signed-in person may open one.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "slug"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "slug": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The store, and the caller as that store sees them.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "store": {
+                          "$ref": "#/components/schemas/Store"
+                        },
+                        "record": {
+                          "allOf": [
+                            {
+                              "$ref": "#/components/schemas/Superuser"
+                            }
+                          ],
+                          "nullable": true,
+                          "description": "Role and rights in this store; null for a static admin token."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "`litekart_store_id=<store id>`: the store a new tab opens in.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -19031,6 +19250,61 @@
           },
           "builtin": {
             "type": "boolean"
+          }
+        }
+      },
+      "MyStore": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "store_01JA2Z3K4M5N6P7Q8R9S0T1V2W"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "suspended"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "description": "The caller's role in this store. A static admin token sees every store as owner."
+          }
+        }
+      },
+      "Store": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "suspended"
+            ]
+          },
+          "order_prefix": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }
