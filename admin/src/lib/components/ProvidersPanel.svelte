@@ -12,6 +12,7 @@
      * telling the truth about which ones can actually be used (D59).
      */
     import { can, request } from "$lib/api.js";
+    import { activateNote } from "$lib/plugin-ready.js";
     import { toast } from "$lib/toast.svelte.js";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginSettingsDrawer from "$lib/components/PluginSettingsDrawer.svelte";
@@ -83,6 +84,15 @@
         }),
     );
     const activeCount = $derived(cards.filter((c) => c.configured).length);
+    /*
+     * In use first, the rest folded. Eleven equal cards made the one way a
+     * store takes money as loud as ten it does not; what is on — built in,
+     * set up in code, active, or switched on and waiting for its key — is
+     * what this screen is about, and the others are a list to pick from.
+     */
+    const inUse = $derived(cards.filter((c) => c.module === "core" || c.configured || c.plugin?.enabled));
+    const idle = $derived(cards.filter((c) => !inUse.includes(c)));
+    let idleOpen = $state(false);
 
     async function toggle(card) {
         const p = card.plugin;
@@ -101,9 +111,27 @@
         }
     }
 
+    /*
+     * Set up: a gateway that still needs its keys can't be switched on (the
+     * engine refuses), so its button opens the settings instead, and saving
+     * them switches it on — one step for the owner, not "fill in, close,
+     * find Activate".
+     */
+    let settingUp = $state("");
+    function setUp(card) {
+        settingUp = card.plugin.key;
+        editing = card.plugin;
+    }
+
     async function saved(updated) {
         plugins = plugins.map((x) => (x.key === updated.key ? updated : x));
         editing = null;
+        if (settingUp === updated.key && !updated.enabled && !activateNote(updated)) {
+            settingUp = "";
+            await toggle({ plugin: updated });
+            return;
+        }
+        settingUp = "";
         await load();
     }
 </script>
@@ -132,7 +160,7 @@
                 <div class="txt-hint txt-sm m-b-base">{cards.length} {words.noun === "gateway" ? "payment methods" : "providers"}, {activeCount} active</div>
             {/if}
             <div class="card-grid provider-grid">
-                {#each cards as card (card.code)}
+                {#each inUse as card (card.code)}
                     <section class="card provider-card" class:active={card.configured}>
                         <div class="flex gap-10">
                             <div class="flex-fill">
@@ -177,6 +205,71 @@
                     <div class="txt-hint p-base">Loading…</div>
                 {/if}
             </div>
+            {#if idle.length}
+                <details class="card map-fold provider-more" bind:open={idleOpen}>
+                    <summary>
+                        <span class="map-fold-title">Add a {words.noun === "gateway" ? "payment method" : "carrier"}</span>
+                        <span class="txt-hint txt-sm">
+                            {idle.length} more installed, switched off
+                        </span>
+                        <i class="ri-arrow-down-s-line map-fold-chevron" aria-hidden="true"></i>
+                        {#if !idleOpen}
+                            <span class="map-fold-values">
+                                {#each idle as card (card.code)}
+                                    <span class="map-fold-value">{card.plugin?.title ?? card.name}</span>
+                                {/each}
+                            </span>
+                        {/if}
+                    </summary>
+                    <div class="map-fold-body provider-rows">
+                        {#each idle as card (card.code)}
+                            <div class="provider-row">
+                                <div class="provider-row-text">
+                                    <div class="provider-title">{card.plugin?.title ?? card.name}</div>
+                                    <p class="provider-description">
+                                        {card.plugin?.description ?? "Configured in code when the store was started, so it is switched on there."}
+                                    </p>
+                                </div>
+                                {#if card.plugin}
+                                <div class="provider-row-actions">
+                                    {#if activateNote(card.plugin)}
+                                        <button
+                                            type="button"
+                                            class="btn sm"
+                                            class:loading={working === card.plugin.key}
+                                            disabled={working === card.plugin.key}
+                                            title={activateNote(card.plugin)}
+                                            onclick={() => setUp(card)}
+                                        >
+                                            <span class="txt">Set up</span>
+                                        </button>
+                                    {:else}
+                                        <button
+                                            type="button"
+                                            class="btn sm"
+                                            class:loading={working === card.plugin.key}
+                                            disabled={working === card.plugin.key}
+                                            onclick={() => toggle(card)}
+                                        >
+                                            <span class="txt">Activate</span>
+                                        </button>
+                                        <button type="button" class="btn sm transparent secondary" onclick={() => (editing = card.plugin)}>
+                                            <i class="ri-settings-3-line" aria-hidden="true"></i>
+                                            <span class="txt">Configure</span>
+                                        </button>
+                                    {/if}
+                                    {#if card.plugin.docs}
+                                        <a class="btn sm transparent secondary" href={card.plugin.docs} target="_blank" rel="noreferrer">
+                                            <span class="txt">Docs</span>
+                                        </a>
+                                    {/if}
+                                </div>
+                                {/if}
+                            </div>
+                        {/each}
+                    </div>
+                </details>
+            {/if}
             {#if !loading && cards.length <= 1}
                 <p class="txt-hint txt-sm m-t-base">{words.none}</p>
             {/if}
@@ -201,6 +294,29 @@
     }
     .provider-title {
         font-weight: 600;
+    }
+    .provider-more {
+        margin-top: var(--smSpacing);
+    }
+    /* One row each, not a card each: a list to pick from. */
+    .provider-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px var(--smSpacing);
+        padding: 10px 0;
+        border-top: 1px solid var(--surfaceAlt2Color);
+    }
+    .provider-row:first-child {
+        border-top: 0;
+    }
+    .provider-row-text {
+        flex: 1 1 280px;
+        min-width: 0;
+    }
+    .provider-row-actions {
+        display: flex;
+        gap: 6px;
     }
     .provider-description {
         flex: 1 1 auto;
