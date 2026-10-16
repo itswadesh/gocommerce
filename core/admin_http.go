@@ -167,10 +167,17 @@ func ServeAdminPanel(w http.ResponseWriter, r *http.Request) {
 	// navigation or a form post could already, so this policy never stopped
 	// sending. What it does stop, script from elsewhere and fetches that read
 	// a reply, is unchanged.
+	//
+	// Frames are let in from exactly two players, YouTube's privacy-enhanced
+	// one and Facebook's video plugin, so the showcase editor (D88) can play
+	// the video it is attaching products to. A frame cannot read the panel or
+	// its token; the addresses are built on the server from a video's id,
+	// never pasted.
 	w.Header().Set("Content-Security-Policy",
 		"default-src 'self'; script-src 'self' 'unsafe-inline'; "+
 			"style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; "+
 			"font-src 'self'; connect-src 'self'; base-uri 'self'; "+
+			"frame-src https://www.youtube-nocookie.com https://www.facebook.com; "+
 			"object-src 'none'; frame-ancestors 'none'")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "same-origin")

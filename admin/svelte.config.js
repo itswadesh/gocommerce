@@ -44,6 +44,9 @@ export default {
                 "font-src": ["self"],
                 "connect-src": ["self"],
                 "base-uri": ["self"],
+                // The showcase editor's player preview (D88); the header in
+                // core/admin_http.go says the same and why.
+                "frame-src": ["https://www.youtube-nocookie.com", "https://www.facebook.com"],
                 "object-src": ["none"],
             },
         },

@@ -258,9 +258,9 @@ document is behind admin authentication and a link cannot carry a header, so
 `$lib/download.js` fetches it with the token and opens a blob in a new tab. The
 window is opened synchronously inside the click, because by the time the fetch
 resolves the browser no longer counts it as a user gesture. An iframe preview is
-not available and that is a CSP fact: the panel sends `frame-ancestors 'none'`
-and declares no `frame-src`, so a `blob:` frame falls back to `default-src
-'self'` and is refused.
+not available and that is a CSP fact: the panel sends `frame-ancestors 'none'`,
+and its `frame-src` names only the two video players the showcase editor plays
+(D88), so a `blob:` frame is refused.
 
 ## Diagnostics, and the buttons beside the rows
 

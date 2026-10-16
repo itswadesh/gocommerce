@@ -1,0 +1,1007 @@
+{
+  "paths": {
+    "/x/showcases": {
+      "get": {
+        "tags": [
+          "showcases"
+        ],
+        "summary": "The published showcases for a place on the storefront",
+        "description": "Every published showcase, or those for the home page (`on=home`), a product's page (`on=product&product=ID`) or a collection's (`on=collection&collection=ID`), in the store's order. 404 while the plugin is off.",
+        "parameters": [
+          {
+            "name": "on",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home",
+                "product",
+                "collection"
+              ]
+            }
+          },
+          {
+            "name": "product",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "collection",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The showcases.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ShowcaseCard"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/x/showcases/{slug}": {
+      "get": {
+        "tags": [
+          "showcases"
+        ],
+        "summary": "A showcase and the products it shows",
+        "description": "The video, its label, the store's name, the featured product and the products: only active ones the request's channel carries, in the request's language. A featured product that is not among them is null.",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Lang"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The showcase.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ShowcasePublic"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/x/showcases/{slug}/now": {
+      "get": {
+        "tags": [
+          "showcases"
+        ],
+        "summary": "What changes during a broadcast",
+        "description": "The label and the featured product, for a storefront to ask every few seconds while a showcase is live. Cacheable for five seconds.",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The label and the featured product.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "label": {
+                          "$ref": "#/components/schemas/ShowcaseLabel"
+                        },
+                        "featured_product_id": {
+                          "type": "integer",
+                          "format": "int64",
+                          "nullable": true
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/x/showcases/{slug}/events": {
+      "post": {
+        "tags": [
+          "showcases"
+        ],
+        "summary": "Count what a buyer did",
+        "description": "A view, a click on a product, or an add to the cart — sent once the cart has accepted the line, with the cart's token so the order it becomes is counted here. Nothing about the buyer is kept. Limited per address; 429 with Retry-After when over.",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "view",
+                      "click",
+                      "add_to_cart"
+                    ]
+                  },
+                  "product_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "cart": {
+                    "type": "string",
+                    "description": "The cart's token, on add_to_cart."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Counted."
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "description": "Too many events from this address; Retry-After says when to try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/x/showcases": {
+      "get": {
+        "tags": [
+          "showcases"
+        ],
+        "summary": "Every showcase, with its totals",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Needs showcases.read.",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "published",
+                "archived"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The showcases.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Showcase"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "showcases"
+        ],
+        "summary": "Make a showcase",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "A draft, from a title and a video link at least. The slug comes from the title, numbered when taken. Needs showcases.write.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShowcaseInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The showcase.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Showcase"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/showcases/check": {
+      "post": {
+        "tags": [
+          "showcases"
+        ],
+        "summary": "What a pasted link would play",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "The provider and the player's addresses, and for YouTube the video's title and whether its owner allows playing it elsewhere (from YouTube's oEmbed; a network failure there is not a refusal). Saves nothing. Needs showcases.write.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "url"
+                ],
+                "properties": {
+                  "url": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The check.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/ShowcaseVideo"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "problem": {
+                              "type": "string",
+                              "description": "Why the video will not play elsewhere, when the platform says so."
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/showcases/{id}": {
+      "get": {
+        "tags": [
+          "showcases"
+        ],
+        "summary": "One showcase, with its products",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Needs showcases.read.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The showcase.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Showcase"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "showcases"
+        ],
+        "summary": "Change a showcase",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Any field, including the status, the live state and the featured product. Needs showcases.write.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShowcaseInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The showcase.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Showcase"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "showcases"
+        ],
+        "summary": "Remove a showcase",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "With its counts. Archive it instead to keep them. Needs showcases.write.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/showcases/{id}/collection": {
+      "post": {
+        "tags": [
+          "showcases"
+        ],
+        "summary": "Make a collection of the picked products",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "A new collection holding the showcase's picked products in their order, which the showcase then shows. Through the collections service, so it is audited and announced like any other. Needs showcases.write and collections.write.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The showcase, now showing the collection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Showcase"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ShowcaseVideo": {
+        "type": "object",
+        "description": "How the video is played and linked. The player's address is built from the video's reference on the server; nothing the store pasted is put on a page.",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "youtube",
+              "facebook"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "description": "What the store pasted. Admin only."
+          },
+          "embed_url": {
+            "type": "string",
+            "description": "The platform's own player, for an iframe: YouTube's privacy-enhanced embed (youtube-nocookie.com) or Facebook's video plugin."
+          },
+          "watch_url": {
+            "type": "string",
+            "description": "The video on the platform, for when the player cannot play it here."
+          },
+          "thumbnail_url": {
+            "type": "string",
+            "description": "YouTube's still for the video. Absent for Facebook, whose needs its API."
+          }
+        }
+      },
+      "ShowcaseProduct": {
+        "type": "object",
+        "description": "A product as a showcase lists it: enough for a card and a quick add. No cost, stock count or metadata; the product's own page has the rest.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "Admin only: a draft product is attached but not shown."
+          },
+          "image_url": {
+            "type": "string"
+          },
+          "price": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "nullable": true,
+            "description": "The default variant's. Price lists apply in the cart against a proven address (D66), so this is the store's own price."
+          },
+          "compare_at_price": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "nullable": true
+          },
+          "available": {
+            "type": "boolean",
+            "description": "Whether any variant can be bought now, by the cart's rule."
+          },
+          "variant_count": {
+            "type": "integer"
+          },
+          "variant_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The default variant, for a quick add to the cart."
+          }
+        }
+      },
+      "ShowcaseLabel": {
+        "type": "string",
+        "enum": [
+          "video",
+          "scheduled",
+          "live",
+          "replay"
+        ],
+        "description": "What a storefront may honestly call it now: `live` only while the store says so and for twelve hours after, `scheduled` before a start time it gave, `replay` once a livestream ended, otherwise `video`. Never inferred from the link."
+      },
+      "ShowcaseStats": {
+        "type": "object",
+        "properties": {
+          "views": {
+            "type": "integer"
+          },
+          "clicks": {
+            "type": "integer"
+          },
+          "adds_to_cart": {
+            "type": "integer"
+          },
+          "orders": {
+            "type": "integer",
+            "description": "Orders from baskets a showcase filled, each counted once."
+          },
+          "revenue": {
+            "$ref": "#/components/schemas/Money"
+          }
+        }
+      },
+      "Showcase": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "video": {
+            "$ref": "#/components/schemas/ShowcaseVideo"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "video",
+              "live"
+            ],
+            "description": "The store's word for it: a recording, or a livestream it will run."
+          },
+          "live_state": {
+            "type": "string",
+            "enum": [
+              "none",
+              "scheduled",
+              "live",
+              "ended"
+            ]
+          },
+          "starts_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "live_since": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "label": {
+            "$ref": "#/components/schemas/ShowcaseLabel"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published",
+              "archived"
+            ]
+          },
+          "collection_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "When set, the products are this collection's, read when shown; otherwise product_ids."
+          },
+          "product_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "featured_product_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "on_home": {
+            "type": "boolean"
+          },
+          "on_collection": {
+            "type": "boolean"
+          },
+          "on_products": {
+            "type": "boolean"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/ShowcaseStats"
+          },
+          "products": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShowcaseProduct"
+            },
+            "description": "On a single read: what it holds, whatever their status."
+          }
+        }
+      },
+      "ShowcaseInput": {
+        "type": "object",
+        "description": "Every field is optional on a change; one left out is left as it is.",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "slug": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "video_url": {
+            "type": "string",
+            "description": "A YouTube or Facebook video's own address. A channel, a page or a short share link is refused with what to paste instead."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "video",
+              "live"
+            ]
+          },
+          "live_state": {
+            "type": "string",
+            "enum": [
+              "none",
+              "scheduled",
+              "live",
+              "ended"
+            ],
+            "description": "Only for a livestream. `scheduled` needs starts_at; `live` stamps live_since."
+          },
+          "starts_at": {
+            "type": "string",
+            "description": "RFC 3339; empty clears it."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published",
+              "archived"
+            ],
+            "description": "Publishing needs products or a collection."
+          },
+          "product_ids": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The products, in the order shown."
+          },
+          "collection_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "featured_product_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "One of the showcase's products; null for none. Changing it does not touch the video."
+          },
+          "on_home": {
+            "type": "boolean"
+          },
+          "on_collection": {
+            "type": "boolean"
+          },
+          "on_products": {
+            "type": "boolean"
+          },
+          "position": {
+            "type": "integer"
+          }
+        }
+      },
+      "ShowcaseCard": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "video": {
+            "$ref": "#/components/schemas/ShowcaseVideo"
+          },
+          "label": {
+            "$ref": "#/components/schemas/ShowcaseLabel"
+          },
+          "starts_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "featured_product_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        }
+      },
+      "ShowcasePublic": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ShowcaseCard"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "store": {
+                "type": "string",
+                "description": "The shop's own name, so a buyer knows whose people are showing these."
+              },
+              "products": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ShowcaseProduct"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -33,6 +33,7 @@ services:
       - -cms
       - -faq
       - -translations
+      - -showcases
       - -wishlist
       - -gateways
       - -carriers

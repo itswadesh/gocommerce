@@ -182,6 +182,33 @@ func TestCSPShowsPicturesTheStoreLinks(t *testing.T) {
 	}
 }
 
+// The showcase editor plays the video it is attaching products to (D88), so
+// both policies let frames in from the two players, and from nowhere else.
+func TestCSPFramesOnlyTheTwoVideoPlayers(t *testing.T) {
+	if !HasAdminPanel() {
+		t.Skip("built with -tags no_admin")
+	}
+	app := newTestApp(t)
+
+	rec := do(t, app, http.MethodGet, "/")
+	meta := regexp.MustCompile(`http-equiv="content-security-policy" content="([^"]*)"`).
+		FindStringSubmatch(rec.Body.String())
+	if meta == nil {
+		t.Fatal("the page ships no meta CSP")
+	}
+	want := []string{"https://www.facebook.com", "https://www.youtube-nocookie.com"}
+	for name, csp := range map[string]string{
+		"header": rec.Header().Get("Content-Security-Policy"),
+		"meta":   meta[1],
+	} {
+		src := strings.Fields(directive(csp, "frame-src"))
+		slices.Sort(src)
+		if !slices.Equal(src, want) {
+			t.Errorf("the %s CSP's frame-src is %q, want exactly %q", name, src, want)
+		}
+	}
+}
+
 // TestPanelAssetsTheShellNeedsAllResolve catches a build that emitted a shell
 // referencing files that are not there — another way to get a blank page with
 // a 200 on the document itself.
