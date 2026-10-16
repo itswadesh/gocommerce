@@ -53,7 +53,12 @@ export function markStores(state) {
     s.state = state;
 }
 
-function apply(entry) {
+/**
+ * applyEntry makes a switch's answer this tab's store. The shell calls it
+ * itself, after taking the old store's page down, so nothing on screen asks
+ * the new store for the old store's rows.
+ */
+export function applyEntry(entry) {
     setStore(entry.store.id);
     s.current = entry.store.id;
     s.state = "ok";
@@ -80,7 +85,7 @@ export async function ensureStore() {
         return "ok";
     }
     if (active.length === 1) {
-        apply(await storesAPI.enter(active[0].id));
+        applyEntry(await storesAPI.enter(active[0].id));
         return "ok";
     }
     // Remembered but gone, suspended or never theirs: naming it would 403
@@ -94,14 +99,14 @@ export async function ensureStore() {
 /** enterStore moves this tab into a store. The caller clears what was cached. */
 export async function enterStore(id) {
     const entry = await storesAPI.enter(id);
-    apply(entry);
+    applyEntry(entry);
     return entry;
 }
 
 /** createStore opens a store with this person as owner and moves into it. */
 export async function createStore(name, slug) {
     const entry = await storesAPI.create(name, slug);
-    apply(entry);
+    applyEntry(entry);
     await loadStores();
     return entry;
 }

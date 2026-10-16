@@ -4088,17 +4088,39 @@ button.media-check {
     font-weight: 400;
     color: var(--surfaceTxtHintColor);
 }
+/* Taller than a plain dropdown's 330px: the stores and the account rows
+   share it, and both should be in view without scrolling the menu. */
 .logged-user-dropdown {
     min-width: 232px;
     max-width: min(300px, calc(100vw - 32px));
+    max-height: min(560px, calc(100vh - 100px));
 }
+/* Short enough that "Create a store" and the account rows stay in view on a
+   phone; a long list scrolls inside itself. */
 .store-menu-list {
-    max-height: min(320px, 50vh);
+    max-height: min(240px, 35vh);
     overflow-y: auto;
+    overscroll-behavior: contain;
+}
+.store-menu-search,
+.select-store-search {
+    width: 100%;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--surfaceAlt3Color);
+    border-radius: var(--borderRadius);
+    background: var(--surfaceAlt1Color);
+    color: var(--surfaceTxtColor);
+    font: inherit;
+    outline: 0;
+    transition: border-color 150ms ease-out;
 }
 .store-menu-search {
-    width: 100%;
-    margin: 4px 0 6px;
+    margin: 2px 0 6px;
+}
+.store-menu-search:focus-visible,
+.select-store-search:focus-visible {
+    border-color: var(--primaryColor);
 }
 .store-menu-item {
     border: 0;
@@ -4138,9 +4160,12 @@ button.media-check {
     font-size: 11px;
     font-weight: 600;
 }
-.store-menu-item.current .store-menu-mark {
-    background: var(--primaryColor);
-    color: var(--primaryTxtColor);
+/* The text colour rather than the primary one: the dark theme's primary is
+   near-black, and the current store's mark has to stand out in both. */
+.store-menu-item.current .store-menu-mark,
+.select-store-item.current .store-menu-mark {
+    background: var(--surfaceTxtColor);
+    color: var(--surfaceColor);
 }
 .store-menu-text {
     display: flex;
@@ -4155,7 +4180,7 @@ button.media-check {
 }
 .store-menu-check {
     flex-shrink: 0;
-    color: var(--primaryColor);
+    color: var(--surfaceTxtColor);
     animation: storeCheckIn 200ms ease-out both;
 }
 .store-menu-empty {
@@ -4206,9 +4231,6 @@ button.media-check {
     flex-direction: column;
     gap: 6px;
 }
-.select-store-search {
-    width: 100%;
-}
 .select-store-item {
     display: flex;
     align-items: center;
@@ -4243,10 +4265,7 @@ button.media-check {
     cursor: default;
     opacity: 0.6;
 }
-.select-store-item.current .store-menu-mark {
-    background: var(--primaryColor);
-    color: var(--primaryTxtColor);
-}
+
 .select-store-text {
     display: flex;
     flex-direction: column;
