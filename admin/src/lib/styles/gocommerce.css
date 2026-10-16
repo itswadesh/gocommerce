@@ -4365,6 +4365,200 @@ button.media-check {
     }
 }
 
+/* "First: fill in X" — the one step a page needs before its switch works. */
+.setup-first {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--warningColor);
+    border-radius: var(--borderRadius);
+    background: var(--warningAltColor, transparent);
+    font-size: 13px;
+    animation: emptyIn 220ms ease-out both;
+}
+.setup-first > i {
+    color: var(--warningColor);
+    font-size: 16px;
+    line-height: 1.2;
+}
+@media (prefers-reduced-motion: reduce) {
+    .setup-first {
+        animation: none;
+    }
+}
+
+/* The setup guide: Home's checklist and the sidebar's progress link. The
+   bars grow with transform, the steps answer hover and press, and the next
+   step is the one thing drawn in the primary colour. */
+.setup-guide {
+    padding: 18px 20px;
+    animation: emptyIn 260ms ease-out both;
+}
+.setup-guide-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.setup-guide-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+.setup-guide-sub {
+    margin: 2px 0 0;
+    font-size: 13px;
+    color: var(--surfaceTxtHintColor);
+}
+.setup-guide-bar,
+.app-setup-bar {
+    position: relative;
+    overflow: hidden;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--surfaceAlt2Color);
+}
+.setup-guide-bar {
+    width: min(220px, 100%);
+}
+.setup-guide-fill,
+.app-setup-bar > span {
+    position: absolute;
+    inset: 0;
+    transform-origin: left;
+    background: var(--successColor);
+    transition: transform 300ms ease-out;
+}
+.setup-guide-group {
+    margin: 14px 0 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--surfaceTxtHintColor);
+}
+.setup-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.setup-step {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid transparent;
+    border-radius: var(--borderRadius);
+    transition:
+        background 150ms ease-out,
+        border-color 150ms ease-out,
+        opacity 150ms ease-out;
+}
+.setup-step:hover:not(.locked) {
+    background: var(--surfaceAlt1Color);
+}
+.setup-step.current {
+    border-color: var(--primaryColor);
+    background: var(--surfaceAlt1Color);
+}
+.setup-step.locked {
+    opacity: 0.55;
+}
+.setup-step-mark {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 1px solid var(--surfaceAlt3Color);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--surfaceTxtHintColor);
+}
+.setup-step.current .setup-step-mark {
+    border-color: var(--primaryColor);
+    background: var(--primaryColor);
+    color: var(--primaryTxtColor);
+}
+.setup-step.done .setup-step-mark {
+    border-color: var(--successColor);
+    background: var(--successColor);
+    color: #fff;
+    animation: storeCheckIn 200ms ease-out both;
+}
+.setup-step-text {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    line-height: 1.35;
+}
+.setup-step-title {
+    font-size: 14px;
+    font-weight: 500;
+}
+.setup-step.done .setup-step-title {
+    color: var(--surfaceTxtHintColor);
+}
+.setup-step-why {
+    font-size: 12px;
+    color: var(--surfaceTxtHintColor);
+}
+.setup-step .btn {
+    flex: none;
+}
+.app-setup-link {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 4px 0 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: 8px;
+    color: inherit;
+    text-decoration: none;
+    font-size: 12px;
+    transition: background 150ms ease-out, border-color 150ms ease-out;
+}
+.app-setup-link:hover,
+.app-setup-link:focus-visible {
+    background: var(--surfaceAlt1Color);
+    border-color: var(--surfaceAlt3Color);
+}
+.app-setup-text {
+    display: flex;
+    justify-content: space-between;
+    font-weight: 600;
+}
+.app-setup-count {
+    color: var(--surfaceTxtHintColor);
+}
+@media (max-width: 600px) {
+    .setup-step {
+        flex-wrap: wrap;
+    }
+    .setup-step .btn {
+        margin-left: 38px;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .setup-guide,
+    .setup-step.done .setup-step-mark {
+        animation: none;
+    }
+    .setup-guide-fill,
+    .app-setup-bar > span {
+        transition: none;
+    }
+}
+
 /* The orders list's customer: name over email and phone. */
 .order-customer {
     display: flex;

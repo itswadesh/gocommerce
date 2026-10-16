@@ -15,6 +15,7 @@
     import { formatMoney, relativeTime, orderStatusLabel } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import ReportsPanel from "$lib/components/ReportsPanel.svelte";
+    import SetupGuide from "$lib/components/SetupGuide.svelte";
 
     let loading = $state(true);
     let recent = $state([]);
@@ -174,6 +175,9 @@
                 {/if}
             </div>
         </header>
+
+        <!-- Until the store can sell, the next step comes before the numbers. -->
+        <SetupGuide />
 
         {#if cards.length}
             <!-- One column on a phone, two on a tablet, four on a desktop. The
