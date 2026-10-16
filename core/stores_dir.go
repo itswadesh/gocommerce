@@ -452,9 +452,28 @@ func (s *Stores) Create(ctx context.Context, name, slug string) (*Store, error) 
 // store row, the rows it cannot run without and its owner are one
 // transaction: a store nobody can enter is never left behind. Module seeds
 // follow, and a failure there takes the store back out.
+//
+// Without a name or an address it takes a suggested one (store_names.go); with
+// a name and no address, the address comes from the name, numbered when
+// taken, or is suggested for a name with no Latin letters to make one from.
+// An address given and taken is refused, since somebody chose it.
 func (s *Stores) CreateFor(ctx context.Context, name, slug string, ownerID int64) (*Store, error) {
 	slug = strings.ToLower(strings.TrimSpace(slug))
 	name = strings.TrimSpace(name)
+	if slug == "" {
+		var err error
+		switch from := storeSlugFrom(name); {
+		case name == "":
+			name, slug, err = s.SuggestName(ctx)
+		case from == "":
+			_, slug, err = s.SuggestName(ctx)
+		default:
+			slug, err = s.freeSlug(ctx, from)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
 	if !storeSlugRE.MatchString(slug) {
 		return nil, Validationf("a store's slug is lowercase letters, digits and hyphens, starting with a letter or digit")
 	}

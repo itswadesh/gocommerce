@@ -38,6 +38,7 @@ func (a *App) mountStoreRoutes() {
 	a.Handle("GET /api/stores/my", a.personAuth(http.HandlerFunc(a.handleMyStores)))
 	a.Handle("POST /api/stores/switch", a.personAuth(http.HandlerFunc(a.handleSwitchStore)))
 	a.Handle("POST /api/stores/create", a.personAuth(http.HandlerFunc(a.handleCreateStore)))
+	a.Handle("GET /api/stores/suggest", a.personAuth(http.HandlerFunc(a.handleSuggestStoreName)))
 	a.Handle("POST /api/stores/delete", a.personAuth(http.HandlerFunc(a.handleDeleteStore)))
 }
 
@@ -165,6 +166,17 @@ func (a *App) handleSwitchStore(w http.ResponseWriter, r *http.Request) {
 	}
 	a.setStoreCookie(w, r, hit.ID)
 	Respond(w, http.StatusOK, entry)
+}
+
+// handleSuggestStoreName is a name for the create form to offer, with an
+// address nobody has.
+func (a *App) handleSuggestStoreName(w http.ResponseWriter, r *http.Request) {
+	name, slug, err := a.stores.SuggestName(r.Context())
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, map[string]string{"name": name, "slug": slug})
 }
 
 // handleCreateStore opens a store with the caller as its owner. Any signed-in

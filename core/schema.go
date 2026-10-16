@@ -75,6 +75,7 @@ func coreMigrations() []Migration {
 		ScopeMigration("0064_scope_error_tracker", "error_issues", "error_events"),
 		{ID: "0065_store_languages", SQL: migration0065StoreLanguages},
 		{ID: "0066_notify_template_languages", SQL: migration0066NotifyTemplateLanguages},
+		{ID: "0067_name_unnamed_stores", Run: migrate0067NameUnnamedStores},
 	}
 }
 
