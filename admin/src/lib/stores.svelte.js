@@ -17,6 +17,17 @@ import { forgetStore, getStore, setStore } from "$lib/store-scope.js";
  */
 const s = $state({ list: [], loaded: false, current: getStore(), state: "unknown" });
 
+/*
+ * Bumped by forgetStores. An answer that arrives after a sign-out belongs to
+ * the person who left, and is dropped rather than shown to whoever signs in
+ * next; it would also mark the store settled and keep their boot from running.
+ */
+let generation = 0;
+class Superseded extends Error {}
+function stillCurrent(mine) {
+    if (mine !== generation) throw new Superseded();
+}
+
 export const myStores = {
     get list() {
         return s.list;
@@ -34,15 +45,19 @@ export const myStores = {
 };
 
 export async function loadStores() {
+    const mine = generation;
     // A store opened before stores had names (store #1 of an upgraded
     // install) is called by its slug rather than drawn as a blank row.
-    s.list = (await storesAPI.mine()).map((st) => ({ ...st, name: st.name || st.slug }));
+    const list = (await storesAPI.mine()).map((st) => ({ ...st, name: st.name || st.slug }));
+    stillCurrent(mine);
+    s.list = list;
     s.loaded = true;
     return s.list;
 }
 
 /** Called by the shell on sign-out: the next person has stores of their own. */
 export function forgetStores() {
+    generation++;
     s.list = [];
     s.loaded = false;
     s.state = "unknown";
@@ -74,6 +89,7 @@ export function applyEntry(entry) {
  * @returns {Promise<"ok" | "choose" | "none">}
  */
 export async function ensureStore() {
+    const mine = generation;
     const list = await loadStores();
     const want = getStore();
     const active = list.filter((st) => st.status === "active");
@@ -85,7 +101,9 @@ export async function ensureStore() {
         return "ok";
     }
     if (active.length === 1) {
-        applyEntry(await storesAPI.enter(active[0].id));
+        const entry = await storesAPI.enter(active[0].id);
+        stillCurrent(mine);
+        applyEntry(entry);
         return "ok";
     }
     // Remembered but gone, suspended or never theirs: naming it would 403
@@ -97,6 +115,11 @@ export async function ensureStore() {
 }
 
 /** enterStore moves this tab into a store. The caller clears what was cached. */
+/** isSuperseded says an error only means the session ended while waiting. */
+export function isSuperseded(err) {
+    return err instanceof Superseded;
+}
+
 export async function enterStore(id) {
     const entry = await storesAPI.enter(id);
     applyEntry(entry);
