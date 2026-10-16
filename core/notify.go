@@ -117,7 +117,7 @@ func (n *notifierSet) send(ctx context.Context, note Notification) error {
 
 // sendFrom is send with the row a resend points back at.
 func (n *notifierSet) sendFrom(ctx context.Context, note Notification, resendOf *int64) error {
-	targets := n.forChannel(note.Channel)
+	targets := carriers(ctx, n.forChannel(note.Channel), note)
 	outcome := notificationOutcome{resendOf: resendOf}
 	var failures []error
 	for _, target := range targets {
@@ -145,6 +145,33 @@ func (n *notifierSet) sendFrom(ctx context.Context, note Notification, resendOf 
 		n.record(ctx, note, outcome, err)
 	}
 	return err
+}
+
+// carriers is who takes this message on its channel (ScopedNotifier): the
+// scoped backends that serve it, alone, when there are any that are ready;
+// otherwise every backend that is not scoped. The log is always kept — it is
+// where a message is written whoever carries it.
+func carriers(ctx context.Context, all []notifierEntry, note Notification) []notifierEntry {
+	var scoped, general []notifierEntry
+	for _, e := range all {
+		s, isScoped := e.notifier.(ScopedNotifier)
+		switch {
+		case !isScoped:
+			general = append(general, e)
+		case ready(ctx, e.notifier) && s.Serves(ctx, note):
+			scoped = append(scoped, e)
+		}
+	}
+	if len(scoped) == 0 {
+		return general
+	}
+	out := scoped
+	for _, e := range general {
+		if _, isLog := e.notifier.(logNotifier); isLog {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // worthRetrying drops refusals from a send's error. The outbox retries what

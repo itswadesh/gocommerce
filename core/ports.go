@@ -206,6 +206,17 @@ type Notifier interface {
 	Notify(ctx context.Context, n Notification) error
 }
 
+// ScopedNotifier is a delivery backend that carries only some recipients —
+// MSG91, for Indian numbers and India-based stores. Serves says whether it
+// takes this message. Where a scoped backend on the channel serves a message,
+// it carries it alone and the channel's other backends stand aside, so the
+// recipient is not reached twice; a message no scoped backend serves goes to
+// the backends that are not scoped, as every message did before.
+type ScopedNotifier interface {
+	Notifier
+	Serves(ctx context.Context, n Notification) bool
+}
+
 // ErrNotificationRefused is what a Notifier wraps when the provider answered
 // and said no: a bad address, a sender on an unverified domain, an invalid
 // key. The message is recorded as failed, with the provider's reason, and is

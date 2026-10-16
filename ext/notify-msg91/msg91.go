@@ -116,7 +116,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	}
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "MSG91", Category: "notifications", DefaultEnabled: inCode,
-		Description: "Texts shoppers about their orders through MSG91's DLT flow templates. The wording is registered with MSG91; each event below names the template that carries it.",
+		Description: "Texts shoppers about their orders through MSG91's DLT flow templates: Indian numbers, and every number of a store whose country is India. The store's other SMS provider carries the rest, so nobody is texted twice. The wording is registered with MSG91; each event below names the template that carries it.",
 		Docs:        "https://docs.msg91.com/sms/send-sms",
 		Fields:      fields,
 	})
@@ -157,6 +157,44 @@ func (m *Module) templateID(ctx context.Context, event string) string {
 // message.
 func (m *Module) Configured(ctx context.Context) bool {
 	return m.authKey(ctx) != ""
+}
+
+// Serves implements gocommerce.ScopedNotifier. MSG91 carries India's texts —
+// a number with India's code, or any number of a store whose country is India
+// — and the store's other SMS provider carries the rest, so nobody is texted
+// twice. A message with no DLT template here is left to that provider too:
+// MSG91 would send nothing for it.
+func (m *Module) Serves(ctx context.Context, n gocommerce.Notification) bool {
+	if n.Channel != gocommerce.ChannelSMS || m.templateID(ctx, n.Event) == "" {
+		return false
+	}
+	if indianNumber(n.To) {
+		return true
+	}
+	p, err := m.app.Profile().Get(ctx)
+	return err == nil && p.Country == "IN"
+}
+
+// indianNumber is a number written with India's code: +91, 0091, or the
+// twelve digits 91 and a ten-digit number. A number with no code says nothing
+// about where it is.
+func indianNumber(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	var digits strings.Builder
+	for _, r := range raw {
+		if r >= '0' && r <= '9' {
+			digits.WriteRune(r)
+		}
+	}
+	d := digits.String()
+	switch {
+	case strings.HasPrefix(raw, "+"):
+		return strings.HasPrefix(d, "91")
+	case strings.HasPrefix(d, "0091"):
+		return true
+	default:
+		return len(d) == 12 && strings.HasPrefix(d, "91")
+	}
 }
 
 // Notify implements gocommerce.Notifier.
