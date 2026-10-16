@@ -104,6 +104,12 @@ wrong, say so in a trailer: `Update: fix`, `Update: feature`, or
 `Update: skip` for a change readers would not care about. The subject is
 what the public reads, so write it for them.
 
+Once Content OS is connected (`CONTENT_OS_SITE_KEY` and `CONTENT_OS_URL`),
+the push is not posted directly: the merged pull request's title and
+description go to Content OS, which drafts a post per channel for the owner
+to approve. Its "Testing" and "Code review" sections are left out, so the
+description above them is what readers see.
+
 ## Every merged pull request is a release
 
 Nothing is pushed to `main` directly: work reaches it through a pull request.

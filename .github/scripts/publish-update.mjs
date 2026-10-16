@@ -4,6 +4,8 @@
 //
 //   node publish-update.mjs record    commits -> <landing>/src/data/updates.json
 //   node publish-update.mjs announce  the rows record added -> the channels
+//   node publish-update.mjs queue     the rows record added -> Content OS,
+//                                     drafted per channel for review
 //
 // Plain Node with no packages, so the workflow needs no install step.
 //
@@ -26,6 +28,10 @@ const PAGE = env.UPDATES_PAGE_URL || 'https://kitcommerce.store/updates/'
 // What `record` hands `announce`: only the rows it added, so a re-run of the
 // workflow finds them already on the page and posts nothing twice.
 const HANDOFF = path.join(env.RUNNER_TEMP || '.', 'new-updates.json')
+// Every change in the push, for `queue`. Not the rows `record` added: a re-run
+// after Content OS failed finds those rows already on the page, and would file
+// nothing. Content OS keeps one update per ref, so sending them again is safe.
+const PUSHED = path.join(env.RUNNER_TEMP || '.', 'pushed-updates.json')
 
 const SKIP_PREFIX = /^(merge\b|release\b|revert "|(chore|docs|ci|test|build|style|refactor)(\(.+\))?!?:)/i
 const FIX_PREFIX = /^fix(\(.+\))?!?:\s*/i
@@ -74,6 +80,7 @@ function record() {
     writeFileSync(file, JSON.stringify(merged, null, 2) + '\n')
   }
   writeFileSync(HANDOFF, JSON.stringify(added))
+  writeFileSync(PUSHED, JSON.stringify(found))
   console.log(`${found.length} change(s) in the push, ${added.length} new.`)
 }
 
@@ -208,9 +215,61 @@ async function announce() {
   if (problems) process.exit(1)
 }
 
+// ── the review queue ───────────────────────────────────────────────────────
+//
+// With Content OS connected, the push is not posted from here. It is filed
+// there as one update, the writer drafts a native post for each channel on
+// the owner's subscription, and a person approves each draft.
+
+// updateFor is what Content OS files for the push's new rows: the merged pull
+// request's title and description when there is one, the commit otherwise.
+// Testing notes and the generated-by line are for reviewers, not readers.
+export function updateFor(rows, pr, sha, page) {
+  const points = rows.map((r) => (r.type === 'fix' ? `Fix: ${r.title}` : r.title))
+  const feats = rows.filter((r) => r.type === 'feature')
+  const fixes = rows.filter((r) => r.type === 'fix')
+  if (!pr) {
+    return { ref: `gocommerce@${sha.slice(0, 7)}`, title: `GoCommerce update: ${headline(feats, fixes)}`, body: points.join('\n'), points, link: page }
+  }
+  const body = (pr.body || '')
+    .replace(/\r\n/g, '\n')
+    .split(/^## (?:Testing|Verification|Code review)\b/im)[0]
+    .replace(/^🤖 Generated with .*$/m, '')
+    .replace(/^## What this does\s*$/im, '')
+    .trim()
+  return { ref: `gocommerce#${pr.number}`, title: pr.title, body: body || points.join('\n'), points, link: page }
+}
+
+// The pull request a commit was merged by, or null when it was pushed
+// directly. A lookup GitHub cannot answer throws: falling back to the commit
+// would file the change under its sha, and a re-run that then found the pull
+// request would file it again under its number.
+export async function pullRequestOf(sha, get = fetch) {
+  const res = await get(`https://api.github.com/repos/${REPO}/commits/${sha}/pulls`, {
+    headers: { accept: 'application/vnd.github+json', authorization: `Bearer ${env.GITHUB_TOKEN}` },
+  })
+  if (!res.ok) throw new Error(`GitHub answered ${res.status} for the pull request of ${sha}`)
+  const prs = await res.json()
+  return prs.find((p) => p.merged_at) || null
+}
+
+async function queue() {
+  const rows = existsSync(PUSHED) ? JSON.parse(readFileSync(PUSHED, 'utf8')) : []
+  if (!rows.length) return console.log('Nothing in this push to queue.')
+  const sha = env.AFTER || rows[rows.length - 1].sha
+  const update = updateFor(rows, await pullRequestOf(sha), sha, PAGE)
+  await send('Content OS', `${env.CONTENT_OS_URL.replace(/\/$/, '')}/api/site/updates`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${env.CONTENT_OS_SITE_KEY}` },
+    body: JSON.stringify(update),
+  })
+  if (problems) process.exit(1)
+}
+
 const mode = process.argv[2]
 if (mode === 'record') record()
 else if (mode === 'announce') await announce()
+else if (mode === 'queue') await queue()
 else if (mode === 'preview') {
   // Prints what each channel would get for a range, posting nothing:
   //   BEFORE=<sha> AFTER=<sha> node publish-update.mjs preview
@@ -220,6 +279,6 @@ else if (mode === 'preview') {
   for (const r of rows) console.log(`${r.date}  ${r.type.padEnd(7)}  ${r.title}`)
   if (rows.length) console.log('\n── X ──\n' + shortPost(feats, fixes, 245) + `\n\n${PAGE}`)
 } else if (mode) {
-  console.error(`unknown mode ${mode}; want record, announce or preview`)
+  console.error(`unknown mode ${mode}; want record, announce, queue or preview`)
   process.exit(2)
 }
