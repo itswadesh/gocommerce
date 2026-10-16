@@ -51,6 +51,9 @@ var demoFrozen = []string{
 	"/api/admin/password-reset",
 	"/api/admin/api-keys",
 	"/api/admin/roles",
+	// Where the store is reached: a visitor could otherwise take its real
+	// domain off it, or attach one of their own.
+	"/api/admin/domains",
 }
 
 // demoFrozenAny freezes a route for *every* method, a GET included, because

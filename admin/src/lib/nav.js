@@ -270,6 +270,7 @@ export const NAV = [
         // navigation is enough, and two was a menu inside a menu.
         children: [
             { href: "/dash/settings", label: "Store", exact: true, keywords: "currency languages version providers" },
+            { href: "/dash/settings/domains", label: "Domains", keywords: "custom domain dns txt verify primary host address" },
             { href: "/dash/settings/teams", label: "Team", right: "team.read", keywords: "operators staff invitations" },
             { href: "/dash/settings/roles", label: "Roles", right: "roles.write", keywords: "permissions rights" },
             { href: "/dash/settings/account", label: "Your account", keywords: "password profile sessions" },

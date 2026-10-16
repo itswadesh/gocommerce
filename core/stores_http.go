@@ -23,7 +23,8 @@ type MyStore struct {
 	Role   string `json:"role"`
 	// Demo says the store masks personal data (Stores.SetDemo).
 	Demo bool `json:"demo"`
-	// Domain is where the store's shop is: its first attached domain, else
+	// Domain is where the store's shop is: its primary verified domain, else
+	// its first verified one, else
 	// <slug>.<Config.BaseDomain>, else empty when neither exists.
 	Domain string `json:"domain"`
 }
@@ -75,7 +76,8 @@ func isAPIKeyShaped(token string) bool {
 // myStores lists the stores the caller may enter. A static admin token is the
 // install's operator, so it sees every store, as owner.
 func (a *App) myStores(ctx context.Context) ([]MyStore, error) {
-	const domain = `(SELECT host FROM store_domains d WHERE d.store_id = st.id ORDER BY created_at, host LIMIT 1)`
+	const domain = `(SELECT host FROM store_domains d WHERE d.store_id = st.id AND d.verified_at IS NOT NULL
+		ORDER BY is_primary DESC, created_at, host LIMIT 1)`
 	q := `SELECT st.id, st.slug, st.name, st.status, st.demo, m.role, ` + domain + `
 		FROM store_members m JOIN stores st ON st.id = m.store_id
 		WHERE m.superuser_id = $1 ORDER BY st.created_at, st.id`
