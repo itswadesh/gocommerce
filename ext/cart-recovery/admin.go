@@ -361,21 +361,25 @@ func (m *Module) handleList(w http.ResponseWriter, r *http.Request) {
 }
 
 // name fills each record's Name and Phone from the newest order placed with
-// its email — one query for the whole page.
+// its email — one query for the whole page. The emails are matched by
+// PostgreSQL's lower() on both sides and the answer keyed by the email as the
+// record holds it, so Go's case folding never has to agree with the
+// database's on an address outside ASCII.
 func (m *Module) name(ctx context.Context, list ...*Abandonment) error {
 	var emails []string
 	for _, a := range list {
 		if a.Email != "" {
-			emails = append(emails, strings.ToLower(a.Email))
+			emails = append(emails, a.Email)
 		}
 	}
 	if len(emails) == 0 {
 		return nil
 	}
 	rows, err := m.app.DB().QueryContext(ctx, `
-		SELECT DISTINCT ON (lower(email)) lower(email), coalesce(name, ''), coalesce(phone, '')
-		FROM orders WHERE lower(email) = ANY($1::text[])
-		ORDER BY lower(email), id DESC`, "{"+strings.Join(quoteArray(emails), ",")+"}")
+		SELECT DISTINCT ON (k.e) k.e, coalesce(o.name, ''), coalesce(o.phone, '')
+		FROM unnest($1::text[]) AS k(e)
+		JOIN orders o ON lower(o.email) = lower(k.e)
+		ORDER BY k.e, o.id DESC`, "{"+strings.Join(quoteArray(emails), ",")+"}")
 	if err != nil {
 		return err
 	}
@@ -394,7 +398,7 @@ func (m *Module) name(ctx context.Context, list ...*Abandonment) error {
 		return err
 	}
 	for _, a := range list {
-		if w, ok := byEmail[strings.ToLower(a.Email)]; ok && a.Email != "" {
+		if w, ok := byEmail[a.Email]; ok {
 			a.Name, a.Phone = w.name, w.phone
 		}
 	}
@@ -759,9 +763,6 @@ func (m *Module) get(ctx context.Context, id int64) (*Abandonment, error) {
 		return nil, err
 	}
 	a.StepsTotal = len(set.Settings.automation(a.Kind).Steps)
-	if err := m.name(ctx, a); err != nil {
-		return nil, err
-	}
 	return a, nil
 }
 
@@ -783,6 +784,9 @@ func (m *Module) handleGet(w http.ResponseWriter, r *http.Request) {
 func (m *Module) detail(ctx context.Context, id int64) (*Detail, error) {
 	a, err := m.get(ctx, id)
 	if err != nil {
+		return nil, err
+	}
+	if err := m.name(ctx, a); err != nil {
 		return nil, err
 	}
 	set, err := m.loadSettings(ctx)
@@ -1287,13 +1291,20 @@ func (m *Module) handleLink(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	// The link opens the cart, so it works for as long as the cart does.
+	// The link opens the cart, so it works for as long as the cart is kept.
+	// Core deletes a cart CartRetention after marking it abandoned, and an open
+	// one cannot be marked before it expires, so this is the earliest the link
+	// can stop working — later if the shopper comes back and revives it.
 	out := map[string]any{
 		"url":     m.link(set.Settings, linkToken, cur.token),
 		"tracked": m.app.Config().PanelURL != "",
 	}
 	if !cur.gone {
-		out["expires_at"] = cur.detail.ExpiresAt
+		from := cur.detail.ExpiresAt
+		if cur.detail.AbandonedAt != nil {
+			from = *cur.detail.AbandonedAt
+		}
+		out["works_until"] = from.Add(m.app.Config().CartRetention)
 	}
 	gocommerce.Respond(w, http.StatusOK, out)
 }
