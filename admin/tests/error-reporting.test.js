@@ -39,3 +39,8 @@ test("a report that fails to send is swallowed: reporting must not crash the pan
     });
     assert.doesNotThrow(() => reporter.handle({ error: err("Error", "boom", "") }, "/dash"));
 });
+
+test("a failed API call is not a crash: the server's own error is already recorded", () => {
+    const apiError = Object.assign(new Error("internal error"), { name: "ApiError", status: 500 });
+    assert.equal(reportFor({ reason: apiError }, "/dash"), null);
+});

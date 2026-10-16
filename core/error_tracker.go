@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -35,6 +36,10 @@ import (
 // errorEventsKept is how many occurrences an issue keeps; its count keeps
 // every one.
 const errorEventsKept = 20
+
+// panelIssuesPerDay caps how many new issues the panel's reports may open in
+// a store in a day.
+const panelIssuesPerDay = 500
 
 const migration0063ErrorTracker = `
 CREATE TABLE error_issues (
@@ -125,19 +130,80 @@ func fingerprint(c CapturedError) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-// Capture records an occurrence for the store ctx is bound to. It never fails
-// its caller: a tracker that broke the request it was recording would be the
-// worse bug, so what goes wrong here goes to the log.
+// Capture records an occurrence for the store ctx is bound to, off the
+// request: it is queued for one worker and the request goes on. Recording
+// inline put a transaction and a row lock on every failing request, so one
+// endpoint failing under load queued every request behind its own error and
+// took the pool with it. A full queue drops the occurrence (and says so in the
+// log) rather than slow anything down; a tracker that broke the requests it
+// was recording would be the worse bug.
 func (t *ErrorTracker) Capture(ctx context.Context, c CapturedError) {
 	store, ok := StoreFrom(ctx)
-	if !ok || store == installScope {
+	if !ok || store == installScope || t.app.errq == nil {
 		return
 	}
-	// Recorded even when the request that failed has gone, and not for long.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	if err := t.capture(ctx, c); err != nil {
-		t.app.log.Error("error tracker could not record", "error", err, "message", clip(c.Message, 200))
+	t.app.errq.enqueue(context.WithoutCancel(ctx), c)
+}
+
+// errorQueue is the one worker that records occurrences.
+type errorQueue struct {
+	app   *App
+	items chan queuedError
+	done  chan struct{}
+	once  sync.Once
+}
+
+type queuedError struct {
+	ctx     context.Context
+	err     CapturedError
+	barrier chan struct{} // flush: closed when everything before it is recorded
+}
+
+const errorQueueSize = 256
+
+func newErrorQueue(a *App) *errorQueue {
+	q := &errorQueue{app: a, items: make(chan queuedError, errorQueueSize), done: make(chan struct{})}
+	go q.run()
+	return q
+}
+
+func (q *errorQueue) enqueue(ctx context.Context, c CapturedError) {
+	defer func() { _ = recover() }() // a send on a queue shutdown has closed
+	select {
+	case q.items <- queuedError{ctx: ctx, err: c}:
+	default:
+		q.app.log.Warn("error tracker queue full; occurrence dropped", "message", clip(c.Message, 200))
+	}
+}
+
+func (q *errorQueue) run() {
+	defer close(q.done)
+	for it := range q.items {
+		if it.barrier != nil {
+			close(it.barrier)
+			continue
+		}
+		ctx, cancel := context.WithTimeout(it.ctx, 5*time.Second)
+		if err := q.app.Errors().capture(ctx, it.err); err != nil {
+			q.app.log.Error("error tracker could not record", "error", err, "message", clip(it.err.Message, 200))
+		}
+		cancel()
+	}
+}
+
+// flush waits until everything queued before it is recorded.
+func (q *errorQueue) flush() {
+	b := make(chan struct{})
+	q.items <- queuedError{barrier: b}
+	<-b
+}
+
+// stop records what is queued and ends the worker, within ctx.
+func (q *errorQueue) stop(ctx context.Context) {
+	q.once.Do(func() { close(q.items) })
+	select {
+	case <-q.done:
+	case <-ctx.Done():
 	}
 }
 
@@ -159,14 +225,31 @@ func (t *ErrorTracker) capture(ctx context.Context, c CapturedError) error {
 	if err != nil || c.Context == nil {
 		ctxJSON = []byte(`{}`)
 	}
+	fp := fingerprint(c)
 	return InTx(ctx, t.app.db, func(tx *sql.Tx) error {
+		// The panel's reports come from any signed-in browser, so a flood of
+		// different messages could bury the real ones: past panelIssuesPerDay
+		// new panel issues a day, only issues already open are counted.
+		if c.Source == "panel" {
+			var known bool
+			var recent int
+			if err := tx.QueryRowContext(ctx, `
+				SELECT EXISTS (SELECT 1 FROM error_issues WHERE fingerprint = $1),
+				       (SELECT count(*) FROM error_issues WHERE source = 'panel' AND first_seen > now() - interval '1 day')`,
+				fp).Scan(&known, &recent); err != nil {
+				return err
+			}
+			if !known && recent >= panelIssuesPerDay {
+				return nil
+			}
+		}
 		var issue int64
 		if err := tx.QueryRowContext(ctx, `
 			INSERT INTO error_issues (fingerprint, source, title, culprit) VALUES ($1, $2, $3, $4)
 			ON CONFLICT (store_id, fingerprint) DO UPDATE
 			SET count = error_issues.count + 1, last_seen = now(), title = EXCLUDED.title,
 			    status = CASE WHEN error_issues.status = 'resolved' THEN 'unresolved' ELSE error_issues.status END
-			RETURNING id`, fingerprint(c), c.Source, clip(title, 300), clip(c.Culprit, 300)).Scan(&issue); err != nil {
+			RETURNING id`, fp, c.Source, clip(title, 300), clip(c.Culprit, 300)).Scan(&issue); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx,
@@ -181,8 +264,27 @@ func (t *ErrorTracker) capture(ctx context.Context, c CapturedError) error {
 	})
 }
 
-// goCulprit is the first frame of a Go stack that is not the runtime, the
-// HTTP plumbing or the tracker itself: the code that failed.
+// plumbing is a frame that is not where anything failed: the runtime, net/http,
+// and the engine's own recording and recovering. Judged by the function, not
+// the file, because release builds are -trimpath and their paths carry none of
+// the prefixes a file test would look for.
+func plumbing(fn string) bool {
+	for _, p := range []string{"runtime.", "runtime/debug.", "net/http.", "panic("} {
+		if strings.HasPrefix(fn, p) {
+			return true
+		}
+	}
+	for _, own := range []string{"/core.RespondError", "/core.captureServerError", "/core.capturePanic",
+		"/core.(*App).recoverMW", "/core.(*ErrorTracker)."} {
+		if strings.Contains(fn, own) {
+			return true
+		}
+	}
+	return false
+}
+
+// goCulprit is the first frame of a Go stack that is not plumbing: the code
+// that failed.
 func goCulprit(stack string) string {
 	lines := strings.Split(stack, "\n")
 	for i := 0; i+1 < len(lines); i++ {
@@ -192,9 +294,7 @@ func goCulprit(stack string) string {
 			continue
 		}
 		file, _, _ := strings.Cut(loc, " +")
-		skip := strings.Contains(file, "/runtime/") || strings.Contains(file, "/net/http/") ||
-			strings.HasSuffix(file, "/error_tracker.go") || strings.HasSuffix(file, "/httpx.go")
-		if skip {
+		if plumbing(fn) {
 			continue
 		}
 		if at := strings.LastIndex(fn, "("); at > 0 {
@@ -203,7 +303,9 @@ func goCulprit(stack string) string {
 		if at := strings.LastIndex(fn, "/"); at >= 0 {
 			fn = fn[at+1:]
 		}
-		base := file
+		// The file without its line: a line moves with every edit above it,
+		// and the issue should not.
+		base, _, _ := strings.Cut(file, ":")
 		if at := strings.LastIndex(base, "/"); at >= 0 {
 			base = base[at+1:]
 		}
@@ -214,7 +316,12 @@ func goCulprit(stack string) string {
 
 var jsFrame = regexp.MustCompile(`(https?://[^\s)]+|/[^\s)]+):(\d+):\d+`)
 
-// jsCulprit is the first frame of a browser stack, as a path and a line.
+var chunkHash = regexp.MustCompile(`\.[A-Za-z0-9_-]{6,}(\.js)$`)
+
+// jsCulprit is the file of a browser stack's first frame, without the build's
+// content hash ("nodes/12.Ab3xYz9.js" is "nodes/12.js"): a hash and a line
+// number change with every release, and an issue that changed its name every
+// deploy would never be seen to come back.
 func jsCulprit(stack string) string {
 	m := jsFrame.FindStringSubmatch(stack)
 	if m == nil {
@@ -224,7 +331,7 @@ func jsCulprit(stack string) string {
 	if u, err := url.Parse(where); err == nil && u.Path != "" {
 		where = u.Path
 	}
-	return strings.TrimPrefix(where, "/") + ":" + m[2]
+	return chunkHash.ReplaceAllString(strings.TrimPrefix(where, "/"), "$1")
 }
 
 // List is a page of the store's issues, most recently seen first.
@@ -332,8 +439,34 @@ func noteStore(ctx context.Context, store string) {
 	}
 }
 
+var tokenish = regexp.MustCompile(`^[A-Za-z0-9_-]{20,}$`)
+
+// safePath is where a request went, without the secrets some paths carry: an
+// invitation's or a reset's token, a cart's. The route's own pattern when the
+// mux matched one ("/api/admin/invitations/accept/{token}"), else the path
+// with any token-like segment blanked.
+func safePath(r *http.Request) string {
+	if r.Pattern != "" {
+		if _, path, ok := strings.Cut(r.Pattern, " "); ok {
+			return path
+		}
+		return r.Pattern
+	}
+	return blankTokens(r.URL.Path)
+}
+
+func blankTokens(path string) string {
+	parts := strings.Split(path, "/")
+	for i, p := range parts {
+		if tokenish.MatchString(p) {
+			parts[i] = "{token}"
+		}
+	}
+	return strings.Join(parts, "/")
+}
+
 func requestContext(r *http.Request, status int) map[string]any {
-	c := map[string]any{"method": r.Method, "path": r.URL.Path, "status": status, "version": Version}
+	c := map[string]any{"method": r.Method, "path": safePath(r), "status": status, "version": Version}
 	if su := SuperuserFrom(r.Context()); su != nil {
 		c["operator"] = su.Email
 	}
@@ -438,6 +571,40 @@ func (a *App) handleSetErrorStatus(w http.ResponseWriter, r *http.Request) {
 	Respond(w, http.StatusOK, is)
 }
 
+// reportLimit is how many panel reports one operator may send a store a
+// minute; past it a report is answered as accepted and dropped.
+const reportLimit = 20
+
+type reportWindow struct {
+	start time.Time
+	n     int
+}
+
+var (
+	reportMu      sync.Mutex
+	reportWindows = map[string]*reportWindow{}
+)
+
+// allowReport counts a report against its store and operator.
+func allowReport(key string, now time.Time) bool {
+	reportMu.Lock()
+	defer reportMu.Unlock()
+	if len(reportWindows) > 10000 {
+		for k, w := range reportWindows {
+			if now.Sub(w.start) > time.Minute {
+				delete(reportWindows, k)
+			}
+		}
+	}
+	w := reportWindows[key]
+	if w == nil || now.Sub(w.start) > time.Minute {
+		reportWindows[key] = &reportWindow{start: now, n: 1}
+		return true
+	}
+	w.n++
+	return w.n <= reportLimit
+}
+
 func (a *App) handleReportPanelError(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Kind    string `json:"kind"`
@@ -453,12 +620,23 @@ func (a *App) handleReportPanelError(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, Validationf("a report needs the error's message"))
 		return
 	}
+	// Anybody signed in may report, so nobody may report without limit: a
+	// browser in a loop, or somebody filling the store's page on purpose.
+	who := "token"
+	if su := SuperuserFrom(r.Context()); su != nil {
+		who = su.Email
+	}
+	if store, _ := StoreFrom(r.Context()); !allowReport(store+"\x00"+who, time.Now()) {
+		Respond(w, http.StatusAccepted, map[string]bool{"recorded": false})
+		return
+	}
 	// The path only: a query string can carry a token or a search somebody
 	// typed, and the page is what says where it broke.
 	page := in.URL
 	if u, err := url.Parse(in.URL); err == nil {
 		page = u.Path
 	}
+	page = blankTokens(page)
 	c := map[string]any{"url": clip(page, 300), "user_agent": clip(r.UserAgent(), 300), "version": Version}
 	if su := SuperuserFrom(r.Context()); su != nil {
 		c["operator"] = su.Email

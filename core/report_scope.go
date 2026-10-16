@@ -40,6 +40,11 @@ CREATE FUNCTION gocommerce_report_store() RETURNS text
 REVOKE ALL ON FUNCTION gocommerce_report_store() FROM PUBLIC;
 `
 
+// reportsNeverRead are store tables a custom report may not read all the same:
+// the error tracker's (D86) carry what errors.read guards, and a saved report
+// would hand it to everyone with reports.read.
+var reportsNeverRead = map[string]bool{"error_issues": true, "error_events": true}
+
 // reportsRole is the login the reports pool connects as.
 func reportsRole(dsn string) (string, error) {
 	u, err := url.Parse(dsn)
@@ -104,7 +109,7 @@ func (a *App) ensureReportsAccess(ctx context.Context) error {
 		}
 		for _, t := range tables {
 			name := quoteIdent(t.name)
-			if !t.scoped {
+			if !t.scoped || reportsNeverRead[t.name] {
 				// No one store's: not a report's to read at all.
 				if err := exec(`REVOKE ALL ON ` + name + ` FROM ` + ident); err != nil {
 					return err
