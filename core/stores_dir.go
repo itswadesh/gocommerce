@@ -291,33 +291,44 @@ CREATE INDEX store_members_superuser_idx ON store_members (superuser_id);
 func (s *Stores) Seed(ctx context.Context, storeID string) error {
 	ctx = WithStore(ctx, storeID)
 	if err := InTx(ctx, s.db, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO roles (store_id, key, builtin)
-			VALUES ($1, 'owner', true), ($1, 'manager', true), ($1, 'staff', true), ($1, 'vendor', true)
-			ON CONFLICT (store_id, key) DO NOTHING`, storeID); err != nil {
-			return Internalf(err, "seed roles")
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO store_profile (store_id, name)
-			SELECT $1, name FROM stores WHERE id = $1
-			ON CONFLICT (store_id) DO NOTHING`, storeID); err != nil {
-			return Internalf(err, "seed store profile")
-		}
-		if _, err := tx.ExecContext(ctx,
-			`CREATE SEQUENCE IF NOT EXISTS `+orderSequence(storeID)); err != nil {
-			return Internalf(err, "seed order numbers")
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO locations (store_id, code, name, is_default, priority)
-			VALUES ($1, 'default', 'Main location', true, 0)
-			ON CONFLICT DO NOTHING`, storeID); err != nil {
-			return Internalf(err, "seed location")
-		}
-		return nil
+		return seedCore(ctx, tx, storeID)
 	}); err != nil {
 		return err
 	}
-	// Then each module's own starting rows, for modules that have any.
+	return s.seedModules(ctx)
+}
+
+// seedCore writes the rows a store cannot run without, inside the caller's
+// transaction so Create can write them with the store itself.
+func seedCore(ctx context.Context, tx *sql.Tx, storeID string) error {
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO roles (store_id, key, builtin)
+		VALUES ($1, 'owner', true), ($1, 'manager', true), ($1, 'staff', true), ($1, 'vendor', true)
+		ON CONFLICT (store_id, key) DO NOTHING`, storeID); err != nil {
+		return Internalf(err, "seed roles")
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO store_profile (store_id, name)
+		SELECT $1, name FROM stores WHERE id = $1
+		ON CONFLICT (store_id) DO NOTHING`, storeID); err != nil {
+		return Internalf(err, "seed store profile")
+	}
+	if _, err := tx.ExecContext(ctx,
+		`CREATE SEQUENCE IF NOT EXISTS `+orderSequence(storeID)); err != nil {
+		return Internalf(err, "seed order numbers")
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO locations (store_id, code, name, is_default, priority)
+		VALUES ($1, 'default', 'Main location', true, 0)
+		ON CONFLICT DO NOTHING`, storeID); err != nil {
+		return Internalf(err, "seed location")
+	}
+	return nil
+}
+
+// seedModules writes each module's own starting rows, for modules that have
+// any, bound to the store ctx is.
+func (s *Stores) seedModules(ctx context.Context) error {
 	for _, mod := range s.app.modules {
 		if seeder, ok := mod.(StoreSeeder); ok {
 			if err := seeder.SeedStore(ctx); err != nil {
@@ -345,6 +356,14 @@ type StoreSeeder interface {
 // its first minute. The slug is how the store is named in a header and in its
 // host, so it is checked here rather than left to the table's CHECK.
 func (s *Stores) Create(ctx context.Context, name, slug string) (*Store, error) {
+	return s.CreateFor(ctx, name, slug, 0)
+}
+
+// CreateFor is Create with ownerID (when not zero) made the store's owner. The
+// store row, the rows it cannot run without and its owner are one
+// transaction: a store nobody can enter is never left behind. Module seeds
+// follow, and a failure there takes the store back out.
+func (s *Stores) CreateFor(ctx context.Context, name, slug string, ownerID int64) (*Store, error) {
 	slug = strings.ToLower(strings.TrimSpace(slug))
 	name = strings.TrimSpace(name)
 	if !storeSlugRE.MatchString(slug) {
@@ -357,15 +376,33 @@ func (s *Stores) Create(ctx context.Context, name, slug string) (*Store, error) 
 	if err != nil {
 		return nil, Internalf(err, "make a store id")
 	}
-	if _, err := s.db.ExecContext(ctx,
-		`INSERT INTO stores (id, slug, name) VALUES ($1, $2, $3)`, id, slug, name); err != nil {
-		if isUniqueViolation(err) {
-			return nil, Conflictf("there is already a store called %q", slug)
+	bound := WithStore(ctx, id)
+	err = InTx(bound, s.db, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(bound,
+			`INSERT INTO stores (id, slug, name) VALUES ($1, $2, $3)`, id, slug, name); err != nil {
+			if isUniqueViolation(err) {
+				return Conflictf("there is already a store called %q", slug)
+			}
+			return Internalf(err, "create store")
 		}
-		return nil, Internalf(err, "create store")
+		if err := seedCore(bound, tx, id); err != nil {
+			return err
+		}
+		if ownerID == 0 {
+			return nil
+		}
+		if _, err := tx.ExecContext(bound, `
+			INSERT INTO store_members (store_id, superuser_id, role) VALUES ($1, $2, $3)`,
+			id, ownerID, RoleOwner); err != nil {
+			return Internalf(err, "make the creator the store's owner")
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	if err := s.Seed(ctx, id); err != nil {
-		// The store row without its seeds cannot sell; take it back out.
+	if err := s.seedModules(bound); err != nil {
+		// Without its modules' rows the store is half made; take it back out.
 		_, _ = s.db.ExecContext(context.WithoutCancel(ctx), `DELETE FROM stores WHERE id = $1`, id)
 		return nil, err
 	}
