@@ -207,27 +207,23 @@ they touch only `custom_reports`. Create the role with
 create it on a fresh volume from `REPORTS_DB_PASSWORD`, and `gocommerce doctor`
 fails on a superuser reports role and warns when the feature is off.
 
-**Custom reports are switched off while stores share tables (D83).** A report
-runs SQL its author writes, and that SQL could name another store; they come
-back once each store has a reporting login of its own that the row-security
-policy is tied to. What follows describes the schema-per-store design they
-ran under before.
+**A report reads one store, whatever its SQL says (D84).** Stores share tables
+(D83), and the engine's row policy reads the store from `gocommerce.store_id`,
+which any SQL can change with `set_config`. So the reports login gets a second,
+restrictive policy on every store table, keyed on something a query cannot
+touch: its connection. Before each run the engine writes "this backend runs a
+report for store X" into `report_runs`, a table the reports login has no
+rights on, and the policy admits only X's rows through
+`gocommerce_report_store()`, a `SECURITY DEFINER` function that reads that
+record. A connection with no record sees nothing. The tables that belong to no
+one store — people, their sessions and password resets, the store directory,
+API key routing, `report_runs` itself — are revoked from the reports login at
+every start, so a table added later is covered too. The setup runs at start,
+after the migrations, as the engine's login (which owns the tables); if it
+fails, reports are off and the log says why.
 
-**On a platform (D70, D79) a report reads one store because its login can reach
-one store.** The `GOCOMMERCE_REPORTS_DATABASE_URL` the platform is given is a
-template: when it boots a store it creates a login granted read on only that
-store's schema — its password cloned from the template — and points the store's
-reports pool at it. The report then authenticates as a role that is a member of
-no other store's, so it cannot reach another schema by qualified name
-(`SELECT … FROM other_store.customers`) or by switching role mid-query;
-`search_path` resolves unqualified names and is not a privilege boundary. A
-single shared login granted every schema would be exactly that cross-store hole.
-The per-store role is created and granted on boot (so it heals a store made
-before this), and dropped when the store is deleted. The platform's database
-role needs `CREATEROLE`.
-
-What it does **not** do is sandbox reading. The reports role selects every table
-the store has, which is everything.
+What it does **not** do is sandbox reading *within* the store. The reports
+login selects every table the store has, which is everything about that store.
 
 - **`reports.write` is owner's alone.** Saving a report is deciding what
   everybody with `reports.read` may look at, including tables holding buyers'

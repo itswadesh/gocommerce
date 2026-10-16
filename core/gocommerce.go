@@ -501,6 +501,17 @@ func New(cfg Config, mods ...Module) (*App, error) {
 		fail()
 		return nil, err
 	}
+	// Reports read a store's tables under a policy pinned to the store, and
+	// nothing else (report_scope.go). Set up after the migrations so a table
+	// they added is covered. A failure turns reports off rather than leaving
+	// them running with rights nobody checked (D78's fail-closed).
+	if a.reportsDB != nil {
+		if err := a.ensureReportsAccess(context.Background()); err != nil {
+			a.log.Error("custom reports are off: their access could not be set up", "err", err)
+			a.reportsDB.Close()
+			a.reportsDB = nil
+		}
+	}
 
 	// Core wiring first, in plain code, readable top to bottom — and mounted
 	// before any module, so a core route always exists before something else

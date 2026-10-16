@@ -30,6 +30,12 @@
 -- granted read on only that store's schema (D79), and reports never run as this
 -- one. Granting it any schema would hand that reach to every store at once.
 
+-- Under shared tenancy (D83, D84) the engine narrows these grants at every
+-- start: the reports login keeps SELECT on the store tables, under a policy
+-- that pins each run to one store, and loses everything on the tables that
+-- belong to no one store (people, sessions, the store directory). The broad
+-- grant below is only the starting point it works from.
+
 \set ON_ERROR_STOP on
 
 -- Defaults. `reports_password` has none: a report role with a blank or guessed
