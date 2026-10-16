@@ -357,9 +357,13 @@ exposed, you say so in `main()`.
 - **Writing an auth check.** `HandleAdmin` already did it. A hand-rolled one is
   the beginning of a second auth scheme.
 - **Editing a shipped migration.** Every existing database already ran it.
-- **Returning an error from a notifier for a permanent failure.** That buys
-  twelve delivery attempts learning the same thing. Retry transient vendor
-  failures; log and return nil for a malformed address.
+- **Returning nil, or a plain error, when the provider refuses a message.**
+  Nil reads as delivered — on the notification's record and on Setup Email's
+  test — and a plain error buys twelve attempts learning the same thing. Wrap
+  `gocommerce.ErrNotificationRefused` for a refusal (a malformed address, an
+  unverified sender, a bad key): it is recorded as failed, with your reason,
+  and never retried. Return a plain error only when the vendor could not be
+  reached.
 - **Forgetting the webhook is a raw-body route.** The engine applies no
   body-consuming middleware there precisely so you can verify the signature
   against the exact bytes — and then deduplicate on the gateway's event id.

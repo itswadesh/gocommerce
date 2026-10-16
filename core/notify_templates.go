@@ -422,6 +422,16 @@ If you were not expecting this, you can ignore it; nothing happens unless the li
 If it was not you, nothing has changed and you can ignore this message.`,
 	},
 
+	{
+		Channel: ChannelEmail, Event: EventNotificationTest, Title: "Test email",
+		Description: "Sent from Setup Email to check that the provider delivers.",
+		Variables:   []string{"store_name", "to"},
+		Subject:     "Test email from {{if .store_name}}{{.store_name}}{{else}}your store{{end}}",
+		Body: `This is a test email from {{if .store_name}}{{.store_name}}{{else}}your store{{end}}, sent to {{.to}}.
+
+If you are reading it, the store's email provider is set up and order emails will arrive.`,
+	},
+
 	// SMS is the same news in one line. A provider that sends through
 	// pre-approved templates of its own (MSG91's DLT flows) ignores these
 	// bodies and takes its template ids from its plugin settings instead.

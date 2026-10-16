@@ -2,6 +2,7 @@ package gocommerce
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 )
@@ -205,6 +206,15 @@ type Notifier interface {
 	Notify(ctx context.Context, n Notification) error
 }
 
+// ErrNotificationRefused is what a Notifier wraps when the provider answered
+// and said no: a bad address, a sender on an unverified domain, an invalid
+// key. The message is recorded as failed, with the provider's reason, and is
+// never retried, because it would be refused again. Any other error means the
+// provider could not be reached, and the outbox tries again. Returning nil for
+// a refusal reads as delivered — on the notification's record and on Setup
+// Email's test — which is exactly what an operator must not be told.
+var ErrNotificationRefused = errors.New("the provider refused the message")
+
 // Notification is a message to send, in the language the shopper used.
 type Notification struct {
 	Event    string            `json:"event"`
@@ -331,7 +341,9 @@ func (a *App) Notify(ctx context.Context, n Notification) error {
 	if n.Language == "" {
 		n.Language = a.cfg.DefaultLanguage
 	}
-	return a.notifier.send(ctx, n)
+	// A refusal is on the notification's record; it is not a reason for the
+	// caller — usually an outbox handler — to try again.
+	return worthRetrying(a.notifier.send(ctx, n))
 }
 
 // RegisterTranslator installs the catalog translator. Only one may exist:

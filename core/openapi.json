@@ -11537,6 +11537,77 @@
         }
       }
     },
+    "/api/admin/notifications/test-email": {
+      "post": {
+        "tags": [
+          "admin:settings"
+        ],
+        "summary": "Send a test email",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Sends the \"Test email\" message to one address now, through the store's email provider, so an operator can see that order emails will arrive. Refused with 409 while no email provider delivers, rather than writing to the log and reporting success. A provider that refuses the message (an unverified sender, an invalid key) or cannot be reached answers 422, with the provider's reason for a refusal. Recorded like any other notification. Needs notifications.write.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "to"
+                ],
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "Where to send it."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sent: the provider accepted it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "to": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "description": "The provider refused the message (code provider_refused, with its reason) or could not be reached (provider_unreachable)."
+          }
+        }
+      }
+    },
     "/api/admin/reports/payouts": {
       "get": {
         "tags": [

@@ -190,6 +190,12 @@ func TestARejectedMessageSettlesRatherThanRetrying(t *testing.T) {
 	}
 	// Nothing is left pending: a bad address is not a transient failure.
 	gctest.AssertOutboxEmpty(t, app)
+
+	// But it is not called delivered: Setup Email's test shows Resend's reason.
+	err := app.SendTestEmail(context.Background(), "owner@example.com")
+	if err == nil || !strings.Contains(err.Error(), "Invalid to field") {
+		t.Fatalf("test email after a refusal = %v, want Resend's reason", err)
+	}
 }
 
 // What the operator edits under Setup Email is what goes out, over both the

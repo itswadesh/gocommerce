@@ -147,6 +147,27 @@ func (n *notifierSet) sendFrom(ctx context.Context, note Notification, resendOf 
 	return err
 }
 
+// worthRetrying drops refusals from a send's error. The outbox retries what
+// could not be delivered, not what a provider has already said no to; the
+// refusal is on the notification's record either way. send joins one error per
+// backend, so one level of unwrapping sees each.
+func worthRetrying(err error) error {
+	joined, ok := err.(interface{ Unwrap() []error })
+	if !ok {
+		if errors.Is(err, ErrNotificationRefused) {
+			return nil
+		}
+		return err
+	}
+	var keep []error
+	for _, e := range joined.Unwrap() {
+		if !errors.Is(e, ErrNotificationRefused) {
+			keep = append(keep, e)
+		}
+	}
+	return errors.Join(keep...)
+}
+
 // logNotifier is the built-in backend: it writes the message to the log and
 // nothing else. The engine defines the notification abstraction and emits the
 // triggers; actually delivering email or SMS is a vendor's job, and a vendor
@@ -190,16 +211,16 @@ func (a *App) notifyOrder(ctx context.Context, event string, ev *OrderEvent) err
 
 	var failures []error
 	if ev.Email != "" {
-		if err := a.notifier.send(ctx, Notification{
+		if err := worthRetrying(a.notifier.send(ctx, Notification{
 			Event: event, Channel: ChannelEmail, To: ev.Email, Language: lang, Data: data,
-		}); err != nil {
+		})); err != nil {
 			failures = append(failures, fmt.Errorf("email: %w", err))
 		}
 	}
 	if ev.Phone != "" {
-		if err := a.notifier.send(ctx, Notification{
+		if err := worthRetrying(a.notifier.send(ctx, Notification{
 			Event: event, Channel: ChannelSMS, To: ev.Phone, Language: lang, Data: data,
-		}); err != nil {
+		})); err != nil {
 			failures = append(failures, fmt.Errorf("sms: %w", err))
 		}
 	}

@@ -9,6 +9,9 @@ func (a *App) mountNotifyTemplateRoutes() {
 	a.HandleAdminFunc("GET /api/admin/notifications/templates", a.handleListNotifyTemplates, RightNotificationsRead)
 	a.HandleAdminFunc("PUT /api/admin/notifications/templates/{channel}/{event}", a.handleSetNotifyTemplate, RightNotificationsWrite)
 	a.HandleAdminFunc("DELETE /api/admin/notifications/templates/{channel}/{event}", a.handleResetNotifyTemplate, RightNotificationsWrite)
+	// Sending a test is setting up the channel, so it asks what rewording a
+	// message asks.
+	a.HandleAdminFunc("POST /api/admin/notifications/test-email", a.handleSendTestEmail, RightNotificationsWrite)
 }
 
 func (a *App) handleListNotifyTemplates(w http.ResponseWriter, r *http.Request) {

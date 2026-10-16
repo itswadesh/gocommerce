@@ -231,13 +231,14 @@ func (m *Module) post(ctx context.Context, key, path string, payload any) error 
 		_ = json.Unmarshal(body, &result)
 		if strings.EqualFold(result.Type, "error") {
 			m.log.Error("MSG91 rejected the message", "detail", result.Message)
-			return nil // a rejected message will be rejected again; do not retry
+			// Rejected again if retried: a refusal, recorded and not retried.
+			return fmt.Errorf("msg91: %w: %s", gocommerce.ErrNotificationRefused, result.Message)
 		}
 		return nil
 	}
 	if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
 		m.log.Error("MSG91 rejected the request", "status", resp.Status, "detail", string(body))
-		return nil
+		return fmt.Errorf("msg91: %w: %s (%s)", gocommerce.ErrNotificationRefused, strings.TrimSpace(string(body)), resp.Status)
 	}
 	return fmt.Errorf("msg91: %s returned %s", path, resp.Status)
 }
