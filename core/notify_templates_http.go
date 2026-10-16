@@ -22,7 +22,7 @@ func (a *App) handleListNotifyTemplates(w http.ResponseWriter, r *http.Request) 
 		RespondError(w, r, Validationf("channel must be email or sms"))
 		return
 	}
-	out, err := a.notifyTemplates.List(r.Context(), channel)
+	out, err := a.notifyTemplates.ListIn(r.Context(), channel, r.URL.Query().Get("language"))
 	if err != nil {
 		RespondError(w, r, err)
 		return
@@ -39,7 +39,8 @@ func (a *App) handleSetNotifyTemplate(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	out, err := a.notifyTemplates.Set(r.Context(), r.PathValue("channel"), r.PathValue("event"), in.Subject, in.Body)
+	out, err := a.notifyTemplates.SetIn(r.Context(), r.PathValue("channel"), r.PathValue("event"),
+		r.URL.Query().Get("language"), in.Subject, in.Body)
 	if err != nil {
 		RespondError(w, r, err)
 		return
@@ -48,7 +49,7 @@ func (a *App) handleSetNotifyTemplate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleResetNotifyTemplate(w http.ResponseWriter, r *http.Request) {
-	out, err := a.notifyTemplates.Reset(r.Context(), r.PathValue("channel"), r.PathValue("event"))
+	out, err := a.notifyTemplates.ResetIn(r.Context(), r.PathValue("channel"), r.PathValue("event"), r.URL.Query().Get("language"))
 	if err != nil {
 		RespondError(w, r, err)
 		return

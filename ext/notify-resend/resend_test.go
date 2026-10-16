@@ -224,3 +224,51 @@ func TestPanelWordingWins(t *testing.T) {
 		t.Errorf("subject = %q, want %q", messages[0].Subject, want)
 	}
 }
+
+// A customer is written to in their language: the store's Hindi wording for a
+// Hindi message, and its main language's for one nobody has worded (D87).
+func TestACustomerIsWrittenToInTheirLanguage(t *testing.T) {
+	s := &stub{}
+	server := gctest.StubHTTP(t, s.handler)
+	app := gctest.New(t, New(Config{
+		APIKey: "re_test", BaseURL: server.URL,
+		Subjects: map[string]string{gocommerce.EventOrderShipped: "Code says {{.order_number}}"},
+	}))
+	ctx := context.Background()
+	if _, err := app.Profile().Set(ctx, gocommerce.StoreProfile{Languages: []string{"en", "hi"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	tpls := app.NotifyTemplates()
+	if _, err := tpls.Set(ctx, gocommerce.ChannelEmail, gocommerce.EventOrderShipped, "Shipped {{.order_number}}", "On its way"); err != nil {
+		t.Fatal(err)
+	}
+	send := func(lang string) string {
+		t.Helper()
+		before := len(s.all())
+		if err := app.Notify(ctx, gocommerce.Notification{
+			Event: gocommerce.EventOrderShipped, Channel: gocommerce.ChannelEmail, To: "asha@example.com",
+			Language: lang, Data: map[string]string{"order_number": "GC-7"},
+		}); err != nil {
+			t.Fatalf("notify in %s: %v", lang, err)
+		}
+		all := s.all()
+		if len(all) != before+1 {
+			t.Fatalf("messages = %d, want %d", len(all), before+1)
+		}
+		return all[len(all)-1].Subject
+	}
+	// Hindi with no wording of its own borrows the panel's English, not the
+	// code's: the panel is the nearer hand in every language.
+	if got := send("hi"); got != "Shipped GC-7" {
+		t.Errorf("Hindi before it is worded = %q, want the main language's", got)
+	}
+	if _, err := tpls.SetIn(ctx, gocommerce.ChannelEmail, gocommerce.EventOrderShipped, "hi", "भेज दिया {{.order_number}}", "रास्ते में"); err != nil {
+		t.Fatal(err)
+	}
+	if got := send("hi"); got != "भेज दिया GC-7" {
+		t.Errorf("Hindi = %q", got)
+	}
+	if got := send("en"); got != "Shipped GC-7" {
+		t.Errorf("English = %q", got)
+	}
+}

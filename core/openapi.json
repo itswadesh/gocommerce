@@ -11367,7 +11367,7 @@
             "adminToken": []
           }
         ],
-        "description": "Every message the store can send — the engine's order events and the ones modules add — with its effective subject and body: the operator's wording where one is stored, the default otherwise. Needs notifications.read.",
+        "description": "Every message the store can send — the engine's order events and the ones modules add — with its effective subject and body: the operator's wording where one is stored, the default otherwise. Needs notifications.read. Each message carries the wording a customer in `language` gets: its own, the main language's when it has none, or the default.",
         "parameters": [
           {
             "name": "channel",
@@ -11379,6 +11379,15 @@
                 "sms"
               ]
             }
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "example": "hi",
+            "description": "Which of the store's languages the wording is for; empty is its main language. A language the store does not sell in is refused (D87)."
           }
         ],
         "responses": {
@@ -11442,6 +11451,15 @@
               "type": "string"
             },
             "description": "The event name, e.g. order.shipped."
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "example": "hi",
+            "description": "Which of the store's languages the wording is for; empty is its main language. A language the store does not sell in is refused (D87)."
           }
         ],
         "requestBody": {
@@ -11528,11 +11546,20 @@
               "type": "string"
             },
             "description": "The event name, e.g. order.shipped."
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "example": "hi",
+            "description": "Which of the store's languages the wording is for; empty is its main language. A language the store does not sell in is refused (D87)."
           }
         ],
         "responses": {
           "200": {
-            "description": "The message, back to its default.",
+            "description": "The message as that language now has it: the main language's wording, or the default.",
             "content": {
               "application/json": {
                 "schema": {
@@ -19679,11 +19706,25 @@
           },
           "customized": {
             "type": "boolean",
-            "description": "Whether a stored row overrides the default."
+            "description": "Whether this language has wording of its own stored — what a reset removes."
           },
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "language": {
+            "type": "string",
+            "description": "The language this wording was asked for: one of the store's.",
+            "example": "hi"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "language",
+              "main",
+              "default"
+            ],
+            "description": "Whose wording this is: `language` when the language has its own, `main` when it borrows the main language's, `default` when nobody has worded the message and the engine's own stands."
           }
         }
       },
