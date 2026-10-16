@@ -68,3 +68,18 @@ func TestDeletingAStoreTakesItsFilesAndOnlyItsFiles(t *testing.T) {
 		t.Fatalf("the other store's file went too: %d", rec.Code)
 	}
 }
+
+// An install that holds no files (no media directory, no media store) may
+// still have rows naming files from when it did; deleting the store must not
+// trip over the store that is not there.
+func TestDeletingAStoreWithoutAMediaStore(t *testing.T) {
+	app := newTestApp(t)
+	doomed := addTestStore(t, app, "doomed")
+	if _, err := app.db.ExecContext(WithStore(context.Background(), doomed),
+		`INSERT INTO media (kind, url, storage_key) VALUES ('image', '/media/old.png', 'old.png')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Stores().Delete(context.Background(), doomed); err != nil {
+		t.Fatal(err)
+	}
+}
