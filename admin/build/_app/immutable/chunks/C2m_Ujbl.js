@@ -1,1 +1,0 @@
-import{O as t,M as i,P as c,Q as f}from"./-8M9NdbZ.js";import{B as y}from"./DOmapka1.js";const l=Symbol("NaN");function h(r,e,n){c&&f();var o=new y(r),s=!t();i(()=>{var a=e();a!==a&&(a=l),s&&a!==null&&typeof a=="object"&&(a={}),o.ensure(a,n)})}export{h as k};
