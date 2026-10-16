@@ -762,7 +762,7 @@ func (a *App) RequestLanguageValue(ctx context.Context) string {
 	if lang := Language(ctx); lang != "" {
 		return lang
 	}
-	return a.cfg.DefaultLanguage
+	return a.mainLanguage(ctx)
 }
 
 // ---------------------------------------------------------- placing by hand

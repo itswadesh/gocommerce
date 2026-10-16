@@ -872,7 +872,7 @@
           "system"
         ],
         "summary": "The store's name, and how a buyer reaches it",
-        "description": "What anyone may read about the shop: its trading name and the contact details it gives buyers — the fields at the foot of every email it sends. For a page a buyer opens before signing in, like the trade portal's sign-in (D77) or a storefront's footer. The address, legal name and tax number stay behind GET /api/admin/store. Every field is a string and may be empty; a store that has filled nothing in answers blanks.",
+        "description": "What anyone may read about the shop: its trading name, the contact details it gives buyers — the fields at the foot of every email it sends — and the languages it sells in. For a page a buyer opens before signing in, like the trade portal's sign-in (D77) or a storefront's footer. The address, legal name and tax number stay behind GET /api/admin/store. Every field is a string and may be empty; a store that has filled nothing in answers blanks.",
         "responses": {
           "200": {
             "description": "The store's public face.",
@@ -900,6 +900,18 @@
                         "support_url": {
                           "type": "string",
                           "description": "Where a buyer is sent for help."
+                        },
+                        "language": {
+                          "type": "string",
+                          "description": "The store's main language, which a request that asks for none is served in.",
+                          "example": "hi"
+                        },
+                        "languages": {
+                          "type": "array",
+                          "description": "Every language the store sells in, the main one first: what a storefront offers in its language switcher, passing the choice as ?lang=.",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       }
                     }
@@ -11818,7 +11830,20 @@
                         },
                         "language": {
                           "type": "string",
-                          "description": "Which language a customer is written to in when the order recorded no preference. Must be one of the languages the binary was started with; empty means its default. Distinct from settings.default_language, which is what an API request that asked for no language is served."
+                          "description": "The store's main language (D87): what a request that asks for none is served in, what its catalogue is written in, and what a customer is written to in when nothing says otherwise. Always the first of languages.",
+                          "example": "hi"
+                        },
+                        "languages": {
+                          "type": "array",
+                          "description": "Every language the store sells in, as BCP 47 tags, the main one first. Its own list, else the languages the binary was started with.",
+                          "items": {
+                            "type": "string"
+                          },
+                          "example": [
+                            "hi",
+                            "en",
+                            "or"
+                          ]
                         },
                         "currency": {
                           "type": "string",
@@ -11913,6 +11938,18 @@
                     "type": "string",
                     "format": "date-time",
                     "description": "When the profile was last changed."
+                  },
+                  "language": {
+                    "type": "string",
+                    "description": "The store's main language. It must be one of languages (the ones sent, else the ones stored), and saving it moves it to the front. Empty leaves it as it is."
+                  },
+                  "languages": {
+                    "type": "array",
+                    "maxItems": 30,
+                    "description": "Every language the store sells in, as BCP 47 tags such as hi, fr-CA or zh-Hant. Each is folded to its usual spelling and kept once; without language, the first is the main one. Empty leaves them as they are. They can change at any time: an order keeps the language it recorded.",
+                    "items": {
+                      "type": "string"
+                    }
                   },
                   "currency": {
                     "type": "string",
@@ -17875,12 +17912,12 @@
           },
           "default_language": {
             "type": "string",
-            "description": "The BCP 47 tag used when a request expresses no preference.",
+            "description": "The store's main language, used when a request expresses no preference: its own, else the install's (D87).",
             "example": "en"
           },
           "languages": {
             "type": "array",
-            "description": "Every tag this store serves. The default language is always one of them. Empty is impossible, and it is an array rather than null so a client can iterate it without a guard.",
+            "description": "Every tag the store this request is bound to serves, its main language first: its own list, else the install's (D87). Empty is impossible, and it is an array rather than null so a client can iterate it without a guard.",
             "items": {
               "type": "string"
             }

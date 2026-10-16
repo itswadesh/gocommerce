@@ -81,7 +81,8 @@ func (a *App) storeMW(next http.Handler) http.Handler {
 		}
 		noteStore(r.Context(), st.ID)
 		ctx := withStoreDemo(WithStore(r.Context(), st.ID), st.Demo)
-		next.ServeHTTP(w, r.WithContext(withStoreCurrency(ctx, a.currencyOf(st))))
+		ctx = withStoreLanguages(withStoreCurrency(ctx, a.currencyOf(st)), a.languagesOf(st))
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

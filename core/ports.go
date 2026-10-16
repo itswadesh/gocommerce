@@ -350,7 +350,7 @@ func (a *App) Notify(ctx context.Context, n Notification) error {
 		return Validationf("a notification needs a recipient")
 	}
 	if n.Language == "" {
-		n.Language = a.cfg.DefaultLanguage
+		n.Language = a.mainLanguage(ctx)
 	}
 	// A refusal is on the notification's record; it is not a reason for the
 	// caller — usually an outbox handler — to try again.

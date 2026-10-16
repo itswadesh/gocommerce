@@ -23,7 +23,10 @@ type Store struct {
 	// can sign in to it, as Config.Demo does for the whole install.
 	Demo bool `json:"demo"`
 	// Currency is what this store sells in; nil is Config.Currency (D85).
-	Currency  *string   `json:"currency"`
+	Currency *string `json:"currency"`
+	// Languages is what this store sells in, its main language first; nil is
+	// Config.Languages (D87).
+	Languages []string  `json:"languages"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -81,16 +84,18 @@ func (a *App) resolveDefaultStore(ctx context.Context) error {
 	return nil
 }
 
-const storeColumns = `id, slug, name, status, order_prefix, demo, currency, created_at`
+const storeColumns = `id, slug, name, status, order_prefix, demo, currency, to_jsonb(languages), created_at`
 
 // storeSlugRE is the shape the stores table's CHECK allows.
 var storeSlugRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 func scanStore(row interface{ Scan(...any) error }) (*Store, error) {
 	var st Store
-	if err := row.Scan(&st.ID, &st.Slug, &st.Name, &st.Status, &st.OrderPrefix, &st.Demo, &st.Currency, &st.CreatedAt); err != nil {
+	var langs []byte
+	if err := row.Scan(&st.ID, &st.Slug, &st.Name, &st.Status, &st.OrderPrefix, &st.Demo, &st.Currency, &langs, &st.CreatedAt); err != nil {
 		return nil, err
 	}
+	st.Languages = decodeLanguages(langs)
 	return &st, nil
 }
 

@@ -457,7 +457,7 @@ func (s *Invitations) email(ctx context.Context, inv *Invitation) (bool, string)
 		Event:    EventSuperuserInvitation,
 		Channel:  ChannelEmail,
 		To:       inv.Email,
-		Language: s.app.cfg.DefaultLanguage,
+		Language: s.app.mainLanguage(ctx),
 		Data: map[string]string{
 			"invite_url":       inv.AcceptURL,
 			"store_name":       store,
