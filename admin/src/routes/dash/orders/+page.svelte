@@ -20,6 +20,7 @@
     import { settings } from "$lib/settings.svelte.js";
     import { downloadFile } from "$lib/download.js";
     import BulkBar from "$lib/components/BulkBar.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
@@ -992,20 +993,43 @@
                     {/if}
 
                     {#if !loading && !orders.length}
-                        <tr>
-                            <td colspan={bulkable ? 9 : 8} class="txt-center txt-hint p-base">
-                                <div class="m-b-10">
-                                    <i
-                                        class="ri-shopping-bag-3-line"
-                                        style="font-size: 32px"
-                                        aria-hidden="true"
-                                    ></i>
-                                </div>
+                        <tr class="empty-row">
+                            <td colspan={bulkable ? 9 : 8}>
                                 {#if status || paymentStatus || search || email || list.params.from || list.params.to}
-                                    Nothing matches that. Try clearing a filter.
+                                    <EmptyState
+                                        icon="ri-filter-off-line"
+                                        title="No orders match these filters"
+                                        text="Try another status, payment or date — or clear them to see every order."
+                                    >
+                                        <button
+                                            type="button"
+                                            class="btn secondary"
+                                            onclick={() => {
+                                                draftSearch = "";
+                                                list.clear();
+                                            }}
+                                        >
+                                            <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                            <span class="txt">Clear filters</span>
+                                        </button>
+                                    </EmptyState>
                                 {:else}
-                                    No orders yet. Orders appear here the moment somebody checks
-                                    out.
+                                    <EmptyState
+                                        icon="ri-shopping-bag-3-line"
+                                        title="No orders yet"
+                                        text="Orders land here the moment somebody checks out. You can also take one yourself — over the phone, at a counter, or for a customer who emailed."
+                                    >
+                                        {#if writable}
+                                            <button type="button" class="btn" onclick={openCreate}>
+                                                <i class="ri-add-line" aria-hidden="true"></i>
+                                                <span class="txt">Create an order</span>
+                                            </button>
+                                        {/if}
+                                        <a class="btn secondary" href="{base}/dash/products">
+                                            <i class="ri-price-tag-3-line" aria-hidden="true"></i>
+                                            <span class="txt">Add products</span>
+                                        </a>
+                                    </EmptyState>
                                 {/if}
                             </td>
                         </tr>
