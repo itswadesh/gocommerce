@@ -29,7 +29,7 @@ func (m *Module) builtinTools() []Tool {
 			Call: func(ctx context.Context, _ json.RawMessage) (any, error) {
 				cfg := m.app.Config()
 				return map[string]any{
-					"currency":              cfg.Currency,
+					"currency":              m.app.Currency(ctx),
 					"default_language":      cfg.DefaultLanguage,
 					"languages":             cfg.Languages,
 					"payment_methods":       m.app.Pay().MethodsFor(ctx),

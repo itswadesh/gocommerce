@@ -1139,11 +1139,11 @@ func (s *Discounts) Redeemed(ctx context.Context, discountID int64) (Money, int,
 		FROM order_discounts od
 		JOIN orders o ON o.id = od.order_id
 		WHERE od.discount_id = $1 AND o.status <> 'cancelled'`,
-		discountID, s.app.cfg.Currency).Scan(&sum, &orders, &other)
+		discountID, s.app.Currency(ctx)).Scan(&sum, &orders, &other)
 	if err != nil {
 		return Money{}, 0, 0, err
 	}
-	return money(sum, s.app.cfg.Currency), orders, other, nil
+	return money(sum, s.app.Currency(ctx)), orders, other, nil
 }
 
 // matchedProducts answers which of these products a scoped rule reaches.

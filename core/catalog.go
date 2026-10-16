@@ -413,7 +413,7 @@ func (c *Catalog) CreateProduct(ctx context.Context, in ProductInput) (*Product,
 			                      product_type, vendor, tags, category_id,
 			                      seo_title, seo_description, metadata)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, `+tagsExpr(8)+`, $9, $10, $11, $12) RETURNING id`,
-			in.Slug, in.Title, in.Description, in.Status, c.app.cfg.Currency,
+			in.Slug, in.Title, in.Description, in.Status, c.app.Currency(ctx),
 			in.ProductType, in.Vendor, tags, in.CategoryID, in.SEOTitle, in.SEODescription, meta,
 		).Scan(&id); err != nil {
 			return translateCatalogErr(err)
@@ -954,7 +954,7 @@ func (c *Catalog) CreateVariant(ctx context.Context, productID int64, in Variant
 		}
 		after := map[string]any{
 			"variant_id": id, "sku": in.SKU,
-			"price_minor": in.PriceMinor, "currency": c.app.cfg.Currency,
+			"price_minor": in.PriceMinor, "currency": c.app.Currency(ctx),
 		}
 		if in.Barcode != "" {
 			after["barcode"] = in.Barcode
@@ -1664,6 +1664,7 @@ func (c *Catalog) selectVariants(ctx context.Context, where, orderBy, page strin
 	var variants []*Variant
 	ids := []int64{}
 	byID := map[int64]*Variant{}
+	currency := c.app.Currency(ctx) // once, not a read per variant
 	for rows.Next() {
 		v := &Variant{}
 		var meta []byte
@@ -1679,13 +1680,13 @@ func (c *Catalog) selectVariants(ctx context.Context, where, orderBy, page strin
 			&v.Position, &v.optionKey, &meta); err != nil {
 			return nil, err
 		}
-		v.Price.Currency = c.app.cfg.Currency
+		v.Price.Currency = currency
 		if compareAt.Valid {
-			m := money(compareAt.Int64, c.app.cfg.Currency)
+			m := money(compareAt.Int64, currency)
 			v.CompareAtPrice = &m
 		}
 		if cost.Valid {
-			m := money(cost.Int64, c.app.cfg.Currency)
+			m := money(cost.Int64, currency)
 			v.Cost = &m
 		}
 		if weight.Valid {

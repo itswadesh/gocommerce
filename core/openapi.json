@@ -11819,6 +11819,17 @@
                         "language": {
                           "type": "string",
                           "description": "Which language a customer is written to in when the order recorded no preference. Must be one of the languages the binary was started with; empty means its default. Distinct from settings.default_language, which is what an API request that asked for no language is served."
+                        },
+                        "currency": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z]{3}$",
+                          "description": "What the store sells in, an ISO 4217 code such as INR. Changing it is refused with 409 once the store has an order; before that it relabels the store's products and open carts (amounts are not converted). Empty leaves it as it is.",
+                          "readOnly": false
+                        },
+                        "currency_locked": {
+                          "type": "boolean",
+                          "readOnly": true,
+                          "description": "True once the store has an order, which fixes its currency."
                         }
                       }
                     }
@@ -11902,6 +11913,16 @@
                     "type": "string",
                     "format": "date-time",
                     "description": "When the profile was last changed."
+                  },
+                  "currency": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z]{3}$",
+                    "description": "What the store sells in, an ISO 4217 code such as INR. Changing it is refused with 409 once the store has an order; before that it relabels the store's products and open carts (amounts are not converted). Empty leaves it as it is."
+                  },
+                  "currency_locked": {
+                    "type": "boolean",
+                    "readOnly": true,
+                    "description": "True once the store has an order, which fixes its currency."
                   }
                 }
               }
@@ -11987,6 +12008,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       }
@@ -13598,6 +13622,11 @@
                   "slug": {
                     "type": "string",
                     "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+                  },
+                  "currency": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z]{3}$",
+                    "description": "What the new store sells in, an ISO 4217 code; empty is the install's currency (D85)."
                   }
                 }
               }
@@ -17568,7 +17597,7 @@
           },
           "currency": {
             "type": "string",
-            "description": "The store's single settlement currency, as an ISO 4217 code.",
+            "description": "What the store this request is bound to sells in: its own currency, else the install's (D85).",
             "example": "USD"
           },
           "default_language": {
@@ -19756,6 +19785,13 @@
           "demo": {
             "type": "boolean",
             "description": "The store masks personal data on its admin routes and freezes who can sign in (gocommerce store demo <slug> on)."
+          },
+          "currency": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What this store sells in, an ISO 4217 code; null is the install's currency (D85)."
           }
         }
       },

@@ -157,7 +157,7 @@ func (a *App) handlePaymentMethods(w http.ResponseWriter, r *http.Request) {
 	Respond(w, http.StatusOK, map[string]any{
 		"payment_methods": a.payments.MethodsFor(r.Context()),
 		"methods":         a.payments.Installed(),
-		"currency":        a.cfg.Currency,
+		"currency":        a.Currency(r.Context()),
 	})
 }
 

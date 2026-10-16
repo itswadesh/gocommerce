@@ -60,7 +60,7 @@ the cart page instead of surprising them at the end of checkout.
   atomic with the mutation that triggered it.
 - **Money is minor units plus a currency code.** `subtotal`, `unit_price`,
   `total` and `current_price` are all `{"amount_minor": 2499, "currency":
-  "USD"}`. The cart's currency comes from `Config.Currency`.
+  "USD"}`. The cart's currency is its store's, `app.Currency(ctx)` (D85).
 - **A cart expires, and what happens then depends on whether anything is in
   it.** `expires_at` is pushed forward by `touchCart` on every mutation
   (`Config.CartTTL`, 720h by default). Past it, the five-minute sweeper runs

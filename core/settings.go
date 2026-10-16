@@ -118,11 +118,11 @@ func (a *App) SettingsFor(ctx context.Context) StoreSettings {
 
 	return StoreSettings{
 		Version:          Version,
-		Currency:         a.cfg.Currency,
+		Currency:         a.Currency(ctx),
 		DefaultLanguage:  a.cfg.DefaultLanguage,
 		Languages:        langs,
 		PricesIncludeTax: a.cfg.PricesIncludeTax,
-		FlatShipping:     money(a.cfg.FlatShippingMinor, a.cfg.Currency),
+		FlatShipping:     money(a.cfg.FlatShippingMinor, a.Currency(ctx)),
 		OrderPrefix:      a.cfg.OrderPrefix,
 		// applyDefaults guarantees both are positive, so the division is safe
 		// and the answer is never a misleading zero.

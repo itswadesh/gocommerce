@@ -79,7 +79,8 @@ func (a *App) storeMW(next http.Handler) http.Handler {
 			RespondError(w, r, ErrStoreSuspended)
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(withStoreDemo(WithStore(r.Context(), st.ID), st.Demo)))
+		ctx := withStoreDemo(WithStore(r.Context(), st.ID), st.Demo)
+		next.ServeHTTP(w, r.WithContext(withStoreCurrency(ctx, a.currencyOf(st))))
 	})
 }
 

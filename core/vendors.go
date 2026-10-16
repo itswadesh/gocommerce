@@ -506,7 +506,7 @@ func (s *Vendors) Delete(ctx context.Context, id int64) error {
 const offerColumns = `id, vendor_id, variant_id, price_minor, stock_on_hand,
 	stock_reserved, track_inventory, status, metadata, created_at, updated_at`
 
-func (s *Vendors) scanOffer(row interface{ Scan(...any) error }) (*Offer, error) {
+func (s *Vendors) scanOffer(ctx context.Context, row interface{ Scan(...any) error }) (*Offer, error) {
 	var o Offer
 	var meta []byte
 	if err := row.Scan(
@@ -518,7 +518,7 @@ func (s *Vendors) scanOffer(row interface{ Scan(...any) error }) (*Offer, error)
 	if err := scanMetadata(meta, &o.Metadata); err != nil {
 		return nil, err
 	}
-	o.Price = Money{AmountMinor: o.PriceMinor, Currency: s.app.cfg.Currency}
+	o.Price = Money{AmountMinor: o.PriceMinor, Currency: s.app.Currency(ctx)}
 	o.Available = o.StockOnHand - o.StockReserved
 	return &o, nil
 }
@@ -577,7 +577,7 @@ func (s *Vendors) SetOffer(ctx context.Context, vendorID int64, in OfferInput) (
 			return Internalf(err, "read variant")
 		}
 
-		o, err := s.scanOffer(tx.QueryRowContext(ctx, `
+		o, err := s.scanOffer(ctx, tx.QueryRowContext(ctx, `
 			INSERT INTO vendor_offers (vendor_id, variant_id, price_minor, stock_on_hand,
 			                           track_inventory, status, metadata)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -628,7 +628,7 @@ func (s *Vendors) OffersForVariant(ctx context.Context, variantID int64) ([]*Off
 
 	out := []*Offer{}
 	for rows.Next() {
-		o, err := s.scanOffer(rows)
+		o, err := s.scanOffer(ctx, rows)
 		if err != nil {
 			return nil, Internalf(err, "scan offer")
 		}
@@ -651,7 +651,7 @@ func (s *Vendors) OffersForVendor(ctx context.Context, vendorID int64) ([]*Offer
 
 	out := []*Offer{}
 	for rows.Next() {
-		o, err := s.scanOffer(rows)
+		o, err := s.scanOffer(ctx, rows)
 		if err != nil {
 			return nil, Internalf(err, "scan offer")
 		}

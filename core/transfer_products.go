@@ -125,7 +125,7 @@ func (t *Transfer) ExportProducts(ctx context.Context, out io.Writer, q ProductQ
 	var writer productWriter
 	switch opts.Format {
 	case FormatShopify:
-		writer = shopifyProductWriter{exp: currencyExponent(t.app.cfg.Currency), opts: opts}
+		writer = shopifyProductWriter{exp: currencyExponent(t.app.Currency(ctx)), opts: opts}
 	default:
 		writer = nativeProductWriter{stockCols: stockCols, opts: opts}
 	}
@@ -323,7 +323,7 @@ func (t *Transfer) ImportProducts(ctx context.Context, in io.Reader, opts Import
 		if _, ok := cols["handle"]; !ok {
 			return nil, Validationf("a Shopify product file needs a Handle column")
 		}
-		translate = newShopifyProductReader(cols, t.app.cfg.Currency)
+		translate = newShopifyProductReader(cols, t.app.Currency(ctx))
 		// From here on the file is in the store's own columns.
 		header, cols = shopifyAsNative, translate.out
 	default:
@@ -500,7 +500,7 @@ func (t *Transfer) importProductGroup(ctx context.Context, rows []csvRow, stockC
 				INSERT INTO products (slug, title, description, status, currency,
 				                      vendor, product_type, tags, category_id, seo_title, seo_description)
 				VALUES ($1, $2, $3, $4, $5, $6, $7, `+tagsExpr(8)+`, $9, $10, $11) RETURNING id`,
-				slug, title, first.get("product_description"), status, t.app.cfg.Currency,
+				slug, title, first.get("product_description"), status, t.app.Currency(ctx),
 				first.get("vendor"), first.get("product_type"), tags, categoryID,
 				first.get("seo_title"), first.get("seo_description")).Scan(&productID); err != nil {
 				return translateCatalogErr(err)
