@@ -30,6 +30,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
@@ -212,12 +213,6 @@
             toast.error(err);
         }
     }
-
-    const emptyMessage = $derived(
-        list.pristine
-            ? "Nothing is parked. Every event this store has written was delivered, or is still on its way."
-            : "No event matches that. Try clearing a filter.",
-    );
 </script>
 
 <svelte:head><title>Events · GoCommerce</title></svelte:head>
@@ -390,9 +385,33 @@
                                 <tr><td colspan="6"><span class="skeleton-loader"></span></td></tr>
                             {/each}
                         {:else if !rows.length}
-                            <tr>
-                                <td colspan="6" class="txt-center txt-hint p-base">
-                                    {emptyMessage}
+                            <tr class="empty-row">
+                                <td colspan="6">
+                                    {#if list.pristine}
+                                        <EmptyState
+                                            icon="ri-checkbox-circle-line"
+                                            title="Every event was delivered"
+                                            text="Nothing is parked. Every event this store has written was delivered, or is still on its way."
+                                        />
+                                    {:else}
+                                        <EmptyState
+                                            icon="ri-filter-off-line"
+                                            title="No events match these filters"
+                                            text="Try another state or event name, or clear them to go back to the dead letters."
+                                        >
+                                            <button
+                                                type="button"
+                                                class="btn secondary"
+                                                onclick={() => {
+                                                    draftName = "";
+                                                    list.clear();
+                                                }}
+                                            >
+                                                <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                                <span class="txt">Clear filters</span>
+                                            </button>
+                                        </EmptyState>
+                                    {/if}
                                 </td>
                             </tr>
                         {/if}

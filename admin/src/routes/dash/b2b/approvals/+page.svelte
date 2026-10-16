@@ -19,6 +19,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import { formatDate, formatMoney, relativeTime } from "$lib/format.js";
     import { APPROVAL_STATUSES, approvalStatusClass, approvalStatusLabel } from "$lib/b2b.js";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
@@ -205,15 +206,36 @@
                                 </tr>
                             {/each}
                             {#if !loading && !approvals.length}
-                                <tr>
-                                    <td colspan="6" class="txt-hint txt-center p-base">
+                                <tr class="empty-row">
+                                    <td colspan="6">
                                         {#if list.params.status === "pending"}
-                                            Nothing is waiting for an approver.
+                                            <EmptyState
+                                                icon="ri-checkbox-circle-line"
+                                                title="Nothing waiting"
+                                                text="No request is waiting for an approver. A company's approvers decide them on the storefront."
+                                            />
                                         {:else if list.params.status || list.params.company_id}
-                                            No request matches that.
+                                            <EmptyState
+                                                icon="ri-filter-off-line"
+                                                title="No requests match these filters"
+                                                text="Try another status or company, or clear them to see every request."
+                                            >
+                                                <button type="button" class="btn secondary" onclick={() => list.clear()}>
+                                                    <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                                    <span class="txt">Clear filters</span>
+                                                </button>
+                                            </EmptyState>
                                         {:else}
-                                            No buyer has needed approval yet. Requests appear once a company
-                                            has an approval threshold and a buyer goes over it.
+                                            <EmptyState
+                                                icon="ri-shield-check-line"
+                                                title="No approval requests yet"
+                                                text="Requests appear once a company has an approval threshold and one of its buyers goes over it. The company's own approvers decide them."
+                                            >
+                                                <a class="btn secondary" href="{base}/dash/b2b/companies">
+                                                    <i class="ri-building-line" aria-hidden="true"></i>
+                                                    <span class="txt">See companies</span>
+                                                </a>
+                                            </EmptyState>
                                         {/if}
                                     </td>
                                 </tr>

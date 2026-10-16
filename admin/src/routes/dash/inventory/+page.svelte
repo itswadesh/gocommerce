@@ -17,6 +17,7 @@
     import ReceiveDelivery from "$lib/components/ReceiveDelivery.svelte";
     import MoveStock from "$lib/components/MoveStock.svelte";
     import { findVariants } from "$lib/components/VariantSearch.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
 
     const PER_PAGE = 25;
     const DEFAULT_THRESHOLD = 5;
@@ -809,35 +810,29 @@
                     {/if}
 
                     {#if !loading && !variants.length}
-                        <tr>
-                            <td colspan={selectable ? 7 : 6} class="txt-center txt-hint p-base">
-                                <div class="m-b-10">
-                                    <i
-                                        class={searching
-                                            ? "ri-search-line"
-                                            : "ri-checkbox-circle-line"}
-                                        style="font-size: 32px"
-                                        aria-hidden="true"
-                                    ></i>
-                                </div>
+                        <tr class="empty-row">
+                            <td colspan={selectable ? 7 : 6}>
                                 {#if searching}
-                                    Nothing matches <strong>{term}</strong>. Product search reads
-                                    titles and descriptions, so a SKU only answers when it is
-                                    typed in full and its product is active.
-                                    <a
-                                        href="#clear"
-                                        onclick={(e) => (e.preventDefault(), clearSearch())}
+                                    <EmptyState
+                                        icon="ri-filter-off-line"
+                                        title="Nothing matches “{term}”"
+                                        text="Product search reads titles and descriptions, so a SKU only answers when it is typed in full and its product is active."
                                     >
-                                        Back to what is running low</a
-                                    >.
+                                        <button type="button" class="btn secondary" onclick={clearSearch}>
+                                            <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                            <span class="txt">Back to what is running low</span>
+                                        </button>
+                                    </EmptyState>
                                 {:else}
-                                    Nothing is {threshold === 0 ? "out of stock" : "running low"}{chosenLocation
-                                        ? ` at ${chosenLocation.name}`
-                                        : ""}. Every tracked variant has more than
-                                    {threshold} available{chosenLocation ? " there" : ""}.
-                                    {#if canSearch}
-                                        Search above to reach any SKU, low or not.
-                                    {/if}
+                                    <EmptyState
+                                        icon="ri-checkbox-circle-line"
+                                        title="Nothing is {threshold === 0 ? 'out of stock' : 'running low'}{chosenLocation
+                                            ? ` at ${chosenLocation.name}`
+                                            : ''}"
+                                        text="Every tracked variant has more than {threshold} available{chosenLocation
+                                            ? ' there'
+                                            : ''}.{canSearch ? ' Search above to reach any SKU, low or not.' : ''}"
+                                    />
                                 {/if}
                             </td>
                         </tr>

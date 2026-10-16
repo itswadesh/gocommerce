@@ -14,6 +14,7 @@
     import { hasModule } from "$lib/modules.svelte.js";
     import { formatDate, relativeTime } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
 
     const allowed = $derived(can("store.operate"));
@@ -151,7 +152,22 @@
                                 </tr>
                             {/each}
                             {#if !loading && !imports.length}
-                                <tr><td colspan="4" class="txt-center txt-hint p-base">No imports yet. Products › Import from Amazon starts one.</td></tr>
+                                <tr class="empty-row">
+                                    <td colspan="4">
+                                        <EmptyState
+                                            icon="ri-download-cloud-2-line"
+                                            title="No imports yet"
+                                            text="Each product brought in from Amazon runs here as a job. Import from Amazon, on the Products screen, starts one."
+                                        >
+                                            {#if can("catalog.write")}
+                                                <a class="btn secondary" href="{base}/dash/products">
+                                                    <i class="ri-price-tag-3-line" aria-hidden="true"></i>
+                                                    <span class="txt">Go to products</span>
+                                                </a>
+                                            {/if}
+                                        </EmptyState>
+                                    </td>
+                                </tr>
                             {/if}
                         </tbody>
                     </table>
@@ -185,7 +201,15 @@
                             </tr>
                         {/each}
                         {#if !loading && !dead.rows.length}
-                            <tr><td colspan="5" class="txt-center txt-hint p-base">Nothing has given up. Every event reached where it was going.</td></tr>
+                            <tr class="empty-row">
+                                <td colspan="5">
+                                    <EmptyState
+                                        icon="ri-checkbox-circle-line"
+                                        title="Nothing has given up"
+                                        text="Every event reached where it was going, or is still on its way."
+                                    />
+                                </td>
+                            </tr>
                         {/if}
                     </tbody>
                 </table>

@@ -18,6 +18,7 @@
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Select from "$lib/components/Select.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
 
     const readable = $derived(can("catalog.read"));
     const writable = $derived(can("catalog.write"));
@@ -227,9 +228,7 @@
                     {#if loading && !menus.length}
                         <div class="txt-hint">Loading…</div>
                     {:else if !menus.length}
-                        <div class="txt-hint">
-                            No menus yet. Create one — a "Main menu" and a "Footer" is where most stores start.
-                        </div>
+                        <div class="txt-hint">No menus yet.</div>
                     {:else}
                         {#each menus as m (m.id)}
                             <button
@@ -249,7 +248,22 @@
                 </aside>
 
                 <section class="card menus-editor">
-                    {#if !selected}
+                    {#if !selected && !loading && !menus.length}
+                        <!-- In the editor pane rather than the narrow list beside
+                             it, which only has room to say there are none. -->
+                        <EmptyState
+                            icon="ri-menu-line"
+                            title="No menus yet"
+                            text="A menu is the list of links a storefront draws in its header or footer. A “Main menu” and a “Footer” is where most stores start."
+                        >
+                            {#if writable}
+                                <button type="button" class="btn" onclick={() => (createOpen = true)}>
+                                    <i class="ri-add-line" aria-hidden="true"></i>
+                                    <span class="txt">New menu</span>
+                                </button>
+                            {/if}
+                        </EmptyState>
+                    {:else if !selected}
                         <div class="txt-hint p-base txt-center">
                             Pick a menu on the left, or create one. A storefront reads a menu from
                             <code>/x/navigation/menus/&lt;handle&gt;</code>.

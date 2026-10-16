@@ -29,6 +29,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
@@ -269,19 +270,18 @@
                              is in the page header, which is where somebody who
                              has used the screen looks and not where somebody
                              reading "no endpoint yet" does. -->
-                        <div class="wh-empty">
-                            <i class="ri-send-plane-line" aria-hidden="true"></i>
-                            <p>
-                                No endpoint yet. Add one and every event it names will be POSTed to
-                                it, signed, with retries.
-                            </p>
+                        <EmptyState
+                            icon="ri-send-plane-line"
+                            title="No endpoints yet"
+                            text="Add one and every event it names will be POSTed to it, signed, with retries."
+                        >
                             {#if writable}
-                                <button type="button" class="btn sm" onclick={() => (addOpen = true)}>
+                                <button type="button" class="btn" onclick={() => (addOpen = true)}>
                                     <i class="ri-add-line" aria-hidden="true"></i>
                                     <span class="txt">Add endpoint</span>
                                 </button>
                             {/if}
-                        </div>
+                        </EmptyState>
                     {:else}
                         <div class="table-scroll">
                             <table class="table">
@@ -417,14 +417,36 @@
                     {#if loading && !deliveries.length}
                         <div class="block txt-center p-base"><span class="loader"></span></div>
                     {:else if !deliveries.length}
-                        <div class="wh-empty">
-                            <i class="ri-check-line" aria-hidden="true"></i>
-                            <p>
-                                {list.params.state === "pending"
-                                    ? "Nothing still trying. That is the answer you want."
-                                    : "No deliveries match this filter."}
-                            </p>
-                        </div>
+                        {#if list.params.endpoint_id}
+                            <EmptyState
+                                icon="ri-filter-off-line"
+                                title="No deliveries match these filters"
+                                text="Try another state or endpoint, or clear them to go back to what is still trying."
+                            >
+                                <button type="button" class="btn secondary" onclick={() => list.clear()}>
+                                    <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                    <span class="txt">Clear filters</span>
+                                </button>
+                            </EmptyState>
+                        {:else if list.params.state === "pending"}
+                            <EmptyState
+                                icon="ri-checkbox-circle-line"
+                                title="Nothing still trying"
+                                text="Every event so far was accepted by the other end, or given up on. That is the answer you want."
+                            />
+                        {:else if list.params.state === "dead"}
+                            <EmptyState
+                                icon="ri-checkbox-circle-line"
+                                title="Nothing given up on"
+                                text="No delivery has run out of attempts."
+                            />
+                        {:else}
+                            <EmptyState
+                                icon="ri-send-plane-line"
+                                title="No deliveries yet"
+                                text="A delivery is recorded each time an event one of the endpoints above names is sent to it."
+                            />
+                        {/if}
                     {:else}
                         <div class="table-scroll">
                             <table class="table">

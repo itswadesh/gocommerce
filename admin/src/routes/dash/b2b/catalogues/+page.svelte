@@ -18,6 +18,7 @@
     import { onNewShortcut } from "$lib/shortcuts.js";
     import { toast } from "$lib/toast.svelte.js";
     import { formatDate, pluralize } from "$lib/format.js";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
@@ -156,13 +157,43 @@
                                 </tr>
                             {/each}
                             {#if !loading && !rows.length}
-                                <tr>
-                                    <td colspan="4" class="txt-hint txt-center p-base">
+                                <tr class="empty-row">
+                                    <td colspan="4">
                                         {#if list.params.q}
-                                            No catalogue's name matches “{list.params.q}”.
+                                            <EmptyState
+                                                icon="ri-filter-off-line"
+                                                title="No catalogues match this search"
+                                                text="No catalogue's name matches “{list.params.q}”. Try fewer letters, or clear the search."
+                                            >
+                                                <button
+                                                    type="button"
+                                                    class="btn secondary"
+                                                    onclick={() => {
+                                                        draft = "";
+                                                        list.clear();
+                                                    }}
+                                                >
+                                                    <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                                    <span class="txt">Clear search</span>
+                                                </button>
+                                            </EmptyState>
                                         {:else}
-                                            No catalogues yet, so every company may buy everything. Add one to hold a
-                                            company to part of the range.
+                                            <EmptyState
+                                                icon="ri-book-2-line"
+                                                title="No catalogues yet"
+                                                text="Without one, every company may buy everything. Add a catalogue to hold a company to part of the range."
+                                            >
+                                                {#if writable}
+                                                    <button type="button" class="btn" onclick={openNew}>
+                                                        <i class="ri-add-line" aria-hidden="true"></i>
+                                                        <span class="txt">New catalogue</span>
+                                                    </button>
+                                                {/if}
+                                                <a class="btn secondary" href="{base}/dash/b2b/companies">
+                                                    <i class="ri-building-line" aria-hidden="true"></i>
+                                                    <span class="txt">See companies</span>
+                                                </a>
+                                            </EmptyState>
                                         {/if}
                                     </td>
                                 </tr>

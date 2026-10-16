@@ -43,6 +43,7 @@
     import { copyText } from "$lib/clipboard.js";
     import { rise } from "$lib/motion.js";
     import { toast } from "$lib/toast.svelte.js";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
@@ -334,6 +335,18 @@
             hint: "Recovered ÷ abandoned",
         },
     ]);
+
+    /* The empty state's sentence: when a basket counts as left behind, with
+       the thresholds once the automation has loaded. */
+    const emptyText = $derived(
+        "A basket lands here once it has sat untouched past its automation's threshold" +
+            (automation
+                ? ` — ${durationWords(automation.settings.checkout.abandon_after_minutes)} for a checkout, ` +
+                  `${durationWords(automation.settings.cart.abandon_after_minutes)} for a cart`
+                : "") +
+            " — whether or not anything is sent about it." +
+            (offSides.length ? ` Recovery emails are switched off for ${offSides.join(" and ")}.` : ""),
+    );
 
     /* Which sequences are off, for the empty state's one sentence. */
     const offSides = $derived.by(() => {
@@ -737,37 +750,33 @@
                                     <tr><td colspan="9"><span class="skeleton-loader"></span></td></tr>
                                 {/each}
                             {:else if !rows.length}
-                                <tr>
-                                    <td colspan="9" class="txt-center txt-hint p-base">
-                                        <div class="recovery-empty" in:rise>
-                                            <div class="m-b-10">
-                                                <i class="ri-shopping-cart-2-line" style="font-size: 32px" aria-hidden="true"></i>
-                                            </div>
-                                            {#if list.pristine}
-                                                <p class="tw:mx-auto tw:max-w-[62ch]">
-                                                    <strong>Nothing has been left behind yet.</strong>
-                                                    A basket lands here once it has sat untouched past its
-                                                    automation's threshold{#if automation}
-                                                        — {durationWords(automation.settings.checkout.abandon_after_minutes)}
-                                                        for a checkout, {durationWords(automation.settings.cart.abandon_after_minutes)}
-                                                        for a cart{/if} — whether or not anything is sent about it.
-                                                </p>
+                                <tr class="empty-row">
+                                    <td colspan="9">
+                                        {#if list.pristine}
+                                            <EmptyState
+                                                icon="ri-shopping-cart-2-line"
+                                                title="No abandoned checkouts yet"
+                                                text={emptyText}
+                                            >
                                                 {#if offSides.length}
-                                                    <p class="m-t-sm">
-                                                        Recovery emails are switched off for {offSides.join(" and ")}.
-                                                        <a class="recovery-arrow-link" href="{base}/dash/marketing/automations">
-                                                            Turn them on <span aria-hidden="true">→</span>
-                                                        </a>
-                                                    </p>
+                                                    <a class="btn secondary" href="{base}/dash/marketing/automations">
+                                                        <i class="ri-mail-send-line" aria-hidden="true"></i>
+                                                        <span class="txt">Turn on recovery emails</span>
+                                                    </a>
                                                 {/if}
-                                            {:else}
-                                                <p>No basket matches these filters.</p>
-                                                <button type="button" class="btn sm secondary m-t-sm" onclick={clearAll}>
-                                                    <i class="ri-close-line" aria-hidden="true"></i>
+                                            </EmptyState>
+                                        {:else}
+                                            <EmptyState
+                                                icon="ri-filter-off-line"
+                                                title="No abandoned checkouts match these filters"
+                                                text="Try another status or search, or clear them to see every basket."
+                                            >
+                                                <button type="button" class="btn secondary" onclick={clearAll}>
+                                                    <i class="ri-close-circle-line" aria-hidden="true"></i>
                                                     <span class="txt">Clear filters</span>
                                                 </button>
-                                            {/if}
-                                        </div>
+                                            </EmptyState>
+                                        {/if}
                                     </td>
                                 </tr>
                             {/if}

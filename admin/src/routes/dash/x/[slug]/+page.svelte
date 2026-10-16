@@ -27,6 +27,7 @@
     import { fieldText } from "$lib/fieldtext.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Select from "$lib/components/Select.svelte";
 
@@ -252,10 +253,22 @@
                             </tr>
                         {/each}
                         {#if !loading && !rows.length}
-                            <tr>
-                                <td colspan={screen.list.columns.length + (hasActions ? 1 : 0)}
-                                    class="txt-center txt-hint p-base">
-                                    {screen.list.empty || "Nothing here yet."}
+                            <tr class="empty-row">
+                                <td colspan={screen.list.columns.length + (hasActions ? 1 : 0)}>
+                                    <!-- The module knows what its rows are; the panel
+                                         does not, so the sentence is the module's own. -->
+                                    <EmptyState
+                                        icon="ri-inbox-line"
+                                        title="Nothing here yet"
+                                        text={screen.list.empty || `Rows appear here once ${screen.module} has something to list.`}
+                                    >
+                                        {#if canCreate}
+                                            <button type="button" class="btn" onclick={() => openRow(null)}>
+                                                <i class="ri-add-line" aria-hidden="true"></i>
+                                                <span class="txt">New</span>
+                                            </button>
+                                        {/if}
+                                    </EmptyState>
                                 </td>
                             </tr>
                         {/if}

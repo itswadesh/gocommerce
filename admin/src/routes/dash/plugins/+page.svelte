@@ -20,6 +20,7 @@
     import { can, request } from "$lib/api.js";
     import { activateNote } from "$lib/plugin-ready.js";
     import { toast } from "$lib/toast.svelte.js";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginSettingsDrawer from "$lib/components/PluginSettingsDrawer.svelte";
     import { homeOf } from "$lib/plugin-homes.js";
@@ -215,7 +216,33 @@
                 {#if loading}
                     <div class="txt-hint p-base">Loading…</div>
                 {:else if !shown.length}
-                    <div class="txt-hint p-base">Nothing matches.</div>
+                    {#if search || activeOnly}
+                        <EmptyState
+                            icon="ri-filter-off-line"
+                            title="No plugins match these filters"
+                            text={activeOnly && !search
+                                ? "No plugin is enabled yet. Turn off Enabled only to see every plugin."
+                                : "Try another word, or clear the search and Enabled only to see every plugin."}
+                        >
+                            <button
+                                type="button"
+                                class="btn secondary"
+                                onclick={() => {
+                                    search = "";
+                                    activeOnly = false;
+                                }}
+                            >
+                                <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                <span class="txt">Clear filters</span>
+                            </button>
+                        </EmptyState>
+                    {:else}
+                        <EmptyState
+                            icon="ri-plug-line"
+                            title="No plugins in this build"
+                            text="Plugins ship inside the binary, so there is nothing to download. This build carries none."
+                        />
+                    {/if}
                 {:else}
                     {#each groups as [category, items] (category)}
                         <h6 class="section-title">{CATEGORY_LABEL[category] ?? category}</h6>

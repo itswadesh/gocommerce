@@ -15,6 +15,7 @@
      * says so. Moving a field is a create, an edit of the categories naming it,
      * and a delete.
      */
+    import { base } from "$app/paths";
     import { api, can } from "$lib/api.js";
     import { rowKey } from "$lib/rowkey.js";
     import { toast } from "$lib/toast.svelte.js";
@@ -25,6 +26,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import { formatDate } from "$lib/format.js";
+    import EmptyState from "$lib/components/EmptyState.svelte";
 
     const PER_PAGE = 50;
 
@@ -266,21 +268,42 @@
                         {/if}
 
                         {#if !loading && !entries.length}
-                            <tr>
-                                <td colspan="5" class="txt-center txt-hint p-base">
-                                    <div class="m-b-10">
-                                        <i
-                                            class="ri-list-settings-line"
-                                            style="font-size: 32px"
-                                            aria-hidden="true"
-                                        ></i>
-                                    </div>
+                            <tr class="empty-row">
+                                <td colspan="5">
                                     {#if search}
-                                        Nothing matches “{search}”.
+                                        <EmptyState
+                                            icon="ri-filter-off-line"
+                                            title="No fields match “{search}”"
+                                            text="Try another word, or clear the search to see the whole dictionary."
+                                        >
+                                            <button
+                                                type="button"
+                                                class="btn secondary"
+                                                onclick={() => ((draftSearch = ""), list.set({ q: "" }))}
+                                            >
+                                                <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                                <span class="txt">Clear search</span>
+                                            </button>
+                                        </EmptyState>
                                     {:else}
-                                        The dictionary is empty. Add a field, or import Shopify's
-                                        under Import / export — the taxonomy brings hundreds of
-                                        them with it.
+                                        <EmptyState
+                                            icon="ri-list-settings-line"
+                                            title="No fields yet"
+                                            text="The dictionary holds the fields a product can be described by. Add one, or import Shopify's taxonomy, which brings hundreds of them with it."
+                                        >
+                                            {#if can("catalog.write")}
+                                                <button type="button" class="btn" onclick={openNew}>
+                                                    <i class="ri-add-line" aria-hidden="true"></i>
+                                                    <span class="txt">New field</span>
+                                                </button>
+                                            {/if}
+                                            {#if can("data.import")}
+                                                <a class="btn secondary" href="{base}/dash/data/import">
+                                                    <i class="ri-upload-2-line" aria-hidden="true"></i>
+                                                    <span class="txt">Import a taxonomy</span>
+                                                </a>
+                                            {/if}
+                                        </EmptyState>
                                     {/if}
                                 </td>
                             </tr>

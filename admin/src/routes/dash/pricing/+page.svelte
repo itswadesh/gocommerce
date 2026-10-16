@@ -22,6 +22,7 @@
     import Drawer from "$lib/components/Drawer.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Select from "$lib/components/Select.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
 
     const readable = $derived(can("discounts.read"));
     const writable = $derived(can("discounts.write"));
@@ -269,9 +270,20 @@
                             </tr>
                         {/each}
                         {#if !loading && !lists.length}
-                            <tr>
-                                <td colspan="7" class="txt-center txt-hint p-base">
-                                    No price lists yet. Everything sells at its catalogue price.
+                            <tr class="empty-row">
+                                <td colspan="7">
+                                    <EmptyState
+                                        icon="ri-price-tag-2-line"
+                                        title="No price lists yet"
+                                        text="Everything sells at its catalogue price. A price list sets other prices — for a customer group, a quantity break or a set window."
+                                    >
+                                        {#if writable}
+                                            <button type="button" class="btn" onclick={() => openList(null)}>
+                                                <i class="ri-add-line" aria-hidden="true"></i>
+                                                <span class="txt">New price list</span>
+                                            </button>
+                                        {/if}
+                                    </EmptyState>
                                 </td>
                             </tr>
                         {/if}
@@ -330,9 +342,21 @@
                             </tr>
                         {/each}
                         {#if !loading && !groups.length}
-                            <tr>
-                                <td colspan="4" class="txt-center txt-hint p-base">
-                                    No groups yet. A list with no group prices for everyone.
+                            <tr class="empty-row">
+                                <td colspan="4">
+                                    <EmptyState
+                                        icon="ri-group-line"
+                                        title="No customer groups yet"
+                                        text="A group gives a price list to some customers only. A list with no group prices for everyone."
+                                    >
+                                        {#if writable}
+                                            <button type="button" class="btn"
+                                                    onclick={() => { editingGroup = null; groupForm = { code: "", name: "" }; groupOpen = true; }}>
+                                                <i class="ri-add-line" aria-hidden="true"></i>
+                                                <span class="txt">New group</span>
+                                            </button>
+                                        {/if}
+                                    </EmptyState>
                                 </td>
                             </tr>
                         {/if}

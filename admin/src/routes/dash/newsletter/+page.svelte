@@ -14,6 +14,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
@@ -220,7 +221,42 @@
                                 <tr><td colspan="6"><span class="skeleton-loader"></span></td></tr>
                             {/each}
                         {:else if !rows.length}
-                            <tr><td colspan="6" class="txt-center txt-hint p-base">Nobody here yet. The storefront's signup box posts to <code>/x/newsletter/subscribe</code>.</td></tr>
+                            <tr class="empty-row">
+                                <td colspan="6">
+                                    {#if list.params.q || list.params.status !== "subscribed"}
+                                        <EmptyState
+                                            icon="ri-filter-off-line"
+                                            title="No subscribers match these filters"
+                                            text="Try another status or search, or clear them to see everyone subscribed."
+                                        >
+                                            <button
+                                                type="button"
+                                                class="btn secondary"
+                                                onclick={() => {
+                                                    draft = "";
+                                                    list.clear();
+                                                }}
+                                            >
+                                                <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                                <span class="txt">Clear filters</span>
+                                            </button>
+                                        </EmptyState>
+                                    {:else}
+                                        <EmptyState
+                                            icon="ri-mail-add-line"
+                                            title="No subscribers yet"
+                                            text="An address lands here when a shopper signs up through the storefront's signup box, which posts to /x/newsletter/subscribe. You can also add one by hand."
+                                        >
+                                            {#if operates}
+                                                <button type="button" class="btn" onclick={() => (addOpen = true)}>
+                                                    <i class="ri-add-line" aria-hidden="true"></i>
+                                                    <span class="txt">Add address</span>
+                                                </button>
+                                            {/if}
+                                        </EmptyState>
+                                    {/if}
+                                </td>
+                            </tr>
                         {/if}
                     </tbody>
                 </table>

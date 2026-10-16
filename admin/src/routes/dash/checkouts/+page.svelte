@@ -21,6 +21,7 @@
     import { formatMoney, formatDate, relativeTime, pluralize } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import Drawer from "$lib/components/Drawer.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
@@ -301,20 +302,25 @@
                             <tr><td colspan="7"><span class="skeleton-loader"></span></td></tr>
                         {/each}
                     {:else if !carts.length}
-                        <tr>
-                            <td colspan="7" class="txt-center txt-hint p-base">
-                                <div class="m-b-10">
-                                    <i
-                                        class="ri-shopping-cart-2-line"
-                                        style="font-size: 32px"
-                                        aria-hidden="true"
-                                    ></i>
-                                </div>
+                        <tr class="empty-row">
+                            <td colspan="7">
                                 {#if list.pristine}
-                                    Nothing abandoned yet. A basket lands here when a shopper
-                                    leaves one standing longer than the cart TTL.
+                                    <EmptyState
+                                        icon="ri-shopping-cart-2-line"
+                                        title="No abandoned carts yet"
+                                        text="A basket lands here when a shopper leaves one standing longer than the cart TTL. Carts are read-only: the basket belongs to the shopper."
+                                    />
                                 {:else}
-                                    No cart matches that. Try clearing a filter.
+                                    <EmptyState
+                                        icon="ri-filter-off-line"
+                                        title="No carts match these filters"
+                                        text="Try another state or email filter, or clear them to go back to abandoned baskets."
+                                    >
+                                        <button type="button" class="btn secondary" onclick={() => list.clear()}>
+                                            <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                            <span class="txt">Clear filters</span>
+                                        </button>
+                                    </EmptyState>
                                 {/if}
                             </td>
                         </tr>

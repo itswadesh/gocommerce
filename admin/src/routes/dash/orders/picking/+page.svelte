@@ -41,6 +41,7 @@
     } from "$lib/format.js";
     import { pickLines, countUnits } from "$lib/picking.js";
     import { toast } from "$lib/toast.svelte.js";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PrintSheet from "$lib/components/PrintSheet.svelte";
 
@@ -260,16 +261,40 @@
             {#if loading && !orders.length}
                 <div class="block txt-center p-base"><span class="loader lg"></span></div>
             {:else if !orders.length}
-                <div class="block txt-center txt-hint p-base">
-                    Nothing to pick. {ids.length
-                        ? "None of the selected orders could be read."
-                        : "No order matches that filter."}
-                    <div class="m-t-sm">
-                        <a class="btn sm secondary" href="{base}/dash/orders">
+                {#if ids.length}
+                    <EmptyState
+                        icon="ri-error-warning-line"
+                        title="None of the selected orders could be read"
+                        text="They may have been deleted since the selection was made. Select them again on the orders screen."
+                    >
+                        <a class="btn secondary" href="{base}/dash/orders">
+                            <i class="ri-arrow-left-line" aria-hidden="true"></i>
                             <span class="txt">Back to orders</span>
                         </a>
-                    </div>
-                </div>
+                    </EmptyState>
+                {:else if Object.values(filters).some(Boolean)}
+                    <EmptyState
+                        icon="ri-filter-off-line"
+                        title="No orders match these filters"
+                        text="The run takes the orders screen's filters. Change them there, then print the picking list again."
+                    >
+                        <a class="btn secondary" href="{base}/dash/orders{query(filters)}">
+                            <i class="ri-arrow-left-line" aria-hidden="true"></i>
+                            <span class="txt">Back to orders</span>
+                        </a>
+                    </EmptyState>
+                {:else}
+                    <EmptyState
+                        icon="ri-list-check-2"
+                        title="No orders to pick yet"
+                        text="A picking list sums every item across a run of orders, so one walk of the warehouse fills them all. It fills once orders come in."
+                    >
+                        <a class="btn secondary" href="{base}/dash/orders">
+                            <i class="ri-arrow-left-line" aria-hidden="true"></i>
+                            <span class="txt">Back to orders</span>
+                        </a>
+                    </EmptyState>
+                {/if}
             {:else}
                 <PrintSheet title="Picking list · {orders.length} {pluralize(orders.length, 'order')}" {auto}>
                     <div class="pick-head">

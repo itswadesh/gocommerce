@@ -18,6 +18,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
 
     const PER_PAGE = 25;
     const readable = $derived(can("customers.read"));
@@ -193,11 +194,26 @@
                                 <tr><td colspan="6"><span class="skeleton-loader"></span></td></tr>
                             {/each}
                         {:else if !rows.length}
-                            <tr>
-                                <td colspan="6" class="txt-center txt-hint p-base">
-                                    {list.params.stock === "out"
-                                        ? "Nothing wanted is out of stock — every saved product can be bought."
-                                        : "Nothing saved yet. A heart on the product page posts to /x/wishlist."}
+                            <tr class="empty-row">
+                                <td colspan="6">
+                                    {#if list.params.stock === "out"}
+                                        <EmptyState
+                                            icon="ri-checkbox-circle-line"
+                                            title="Nothing wanted is out of stock"
+                                            text="Every product a shopper has saved can be bought right now."
+                                        >
+                                            <button type="button" class="btn secondary" onclick={() => list.set({ stock: "", page: 1 })}>
+                                                <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                                <span class="txt">Clear filters</span>
+                                            </button>
+                                        </EmptyState>
+                                    {:else}
+                                        <EmptyState
+                                            icon="ri-heart-line"
+                                            title="No saved products yet"
+                                            text="Shoppers save products with the heart on the product page, which posts to /x/wishlist. The ones they want most show here."
+                                        />
+                                    {/if}
                                 </td>
                             </tr>
                         {/if}
@@ -242,7 +258,32 @@
                                 <tr><td colspan="4"><span class="skeleton-loader"></span></td></tr>
                             {/each}
                         {:else if !rows.length}
-                            <tr><td colspan="4" class="txt-center txt-hint p-base">No lists yet.</td></tr>
+                            <tr class="empty-row">
+                                <td colspan="4">
+                                    {#if list.params.q || list.params.stock}
+                                        <EmptyState
+                                            icon="ri-filter-off-line"
+                                            title="No wishlists match these filters"
+                                            text="Try another email, or clear the filters to see every list."
+                                        >
+                                            <button
+                                                type="button"
+                                                class="btn secondary"
+                                                onclick={() => ((draft = ""), list.set({ q: "", stock: "", page: 1 }))}
+                                            >
+                                                <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                                <span class="txt">Clear filters</span>
+                                            </button>
+                                        </EmptyState>
+                                    {:else}
+                                        <EmptyState
+                                            icon="ri-heart-line"
+                                            title="No wishlists yet"
+                                            text="A list starts when a shopper saves their first product with the heart on the product page."
+                                        />
+                                    {/if}
+                                </td>
+                            </tr>
                         {/if}
                     </tbody>
                 </table>

@@ -21,6 +21,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import { formatDate, formatMoney, relativeTime } from "$lib/format.js";
     import { QUOTE_STATUSES, quoteStatusClass, quoteStatusLabel } from "$lib/b2b.js";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
@@ -211,14 +212,32 @@
                                 </tr>
                             {/each}
                             {#if !loading && !quotes.length}
-                                <tr>
-                                    <td colspan="6" class="txt-hint txt-center p-base">
+                                <tr class="empty-row">
+                                    <td colspan="6">
                                         {#if list.params.status === "requested"}
-                                            Nothing is waiting for a price.
+                                            <EmptyState
+                                                icon="ri-checkbox-circle-line"
+                                                title="Nothing waiting"
+                                                text="No quote is waiting for a price. Buyers ask for quotes from the storefront."
+                                            />
+                                        {:else if list.params.status || list.params.company_id}
+                                            <EmptyState
+                                                icon="ri-filter-off-line"
+                                                title="No quotes match these filters"
+                                                text="Try another status or company, or clear them to see every quote."
+                                            >
+                                                <button type="button" class="btn secondary" onclick={() => list.clear()}>
+                                                    <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                                    <span class="txt">Clear filters</span>
+                                                </button>
+                                            </EmptyState>
                                         {:else}
-                                            No quote matches that.
+                                            <EmptyState
+                                                icon="ri-file-list-3-line"
+                                                title="No quotes yet"
+                                                text="Buyers ask for quotes from the storefront. Each one is a price for one basket, which the store fills in and sends back."
+                                            />
                                         {/if}
-                                        Buyers ask for quotes from the storefront.
                                     </td>
                                 </tr>
                             {/if}

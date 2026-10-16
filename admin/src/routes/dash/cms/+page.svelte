@@ -26,6 +26,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
 
     /* The starting page size, not the only one: `limit` is a listState key, so
        an operator can change it and the choice rides in the URL with the rest of
@@ -269,11 +270,33 @@
                                     <tr><td colspan="5"><span class="skeleton-loader"></span></td></tr>
                                 {/each}
                             {:else if !pages.length}
-                                <tr>
-                                    <td colspan="5" class="txt-center txt-hint p-base">
-                                        {list.pristine
-                                            ? "No pages yet. An about page, terms, a delivery policy — anything the storefront needs to read."
-                                            : "No page matches that. Try clearing a filter."}
+                                <tr class="empty-row">
+                                    <td colspan="5">
+                                        {#if list.pristine}
+                                            <EmptyState
+                                                icon="ri-file-text-line"
+                                                title="No pages yet"
+                                                text="An about page, terms, a delivery policy — anything the storefront needs to read. A new page starts as a draft, hidden from shoppers."
+                                            >
+                                                {#if can("catalog.write")}
+                                                    <button type="button" class="btn" onclick={openCreate}>
+                                                        <i class="ri-add-line" aria-hidden="true"></i>
+                                                        <span class="txt">New page</span>
+                                                    </button>
+                                                {/if}
+                                            </EmptyState>
+                                        {:else}
+                                            <EmptyState
+                                                icon="ri-filter-off-line"
+                                                title="No pages match these filters"
+                                                text="Try another language or status, or clear them to see every page."
+                                            >
+                                                <button type="button" class="btn secondary" onclick={() => list.clear()}>
+                                                    <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                                    <span class="txt">Clear filters</span>
+                                                </button>
+                                            </EmptyState>
+                                        {/if}
                                     </td>
                                 </tr>
                             {/if}

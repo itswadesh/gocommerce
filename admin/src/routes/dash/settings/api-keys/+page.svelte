@@ -26,6 +26,7 @@
     import { formatDate } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import Confirm from "$lib/components/Confirm.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Select from "$lib/components/Select.svelte";
 
@@ -238,10 +239,24 @@
                 {#if loading && !keys.length}
                     <div class="block txt-center p-base"><span class="loader lg"></span></div>
                 {:else if !keys.length}
-                    <p class="txt-hint m-t-sm">
-                        No keys yet. Everything machine-to-machine is going through the static admin
-                        token, which carries no role and can do anything.
-                    </p>
+                    <EmptyState
+                        icon="ri-key-2-line"
+                        title="No API keys yet"
+                        text="Everything machine-to-machine is going through the static admin token, which carries no role and can do anything. A key is held to a role instead."
+                    >
+                        {#if writable}
+                            <!-- The form is the card above; this only takes the
+                                 reader to its first field. -->
+                            <button
+                                type="button"
+                                class="btn"
+                                onclick={() => document.getElementById("key-name")?.focus()}
+                            >
+                                <i class="ri-add-line" aria-hidden="true"></i>
+                                <span class="txt">New key</span>
+                            </button>
+                        {/if}
+                    </EmptyState>
                 {:else}
                     <div class="map-table">
                         <div class="map-row key-row map-head">

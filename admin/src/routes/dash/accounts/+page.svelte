@@ -23,6 +23,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
@@ -218,11 +219,33 @@
                                     <tr><td colspan="4"><span class="skeleton-loader"></span></td></tr>
                                 {/each}
                             {:else if !accounts.length}
-                                <tr>
-                                    <td colspan="4" class="txt-center txt-hint p-base">
-                                        {search
-                                            ? "No account matches that. The search reads emails and names, never phone numbers."
-                                            : "Nobody has registered yet. A shopper can still check out as a guest — an account is optional."}
+                                <tr class="empty-row">
+                                    <td colspan="4">
+                                        {#if search}
+                                            <EmptyState
+                                                icon="ri-filter-off-line"
+                                                title="No accounts match this search"
+                                                text="The search reads emails and names, never phone numbers. Try one of those, or clear the search."
+                                            >
+                                                <button
+                                                    type="button"
+                                                    class="btn secondary"
+                                                    onclick={() => {
+                                                        draftSearch = "";
+                                                        list.set({ q: "" });
+                                                    }}
+                                                >
+                                                    <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                                    <span class="txt">Clear filters</span>
+                                                </button>
+                                            </EmptyState>
+                                        {:else}
+                                            <EmptyState
+                                                icon="ri-user-add-line"
+                                                title="No accounts yet"
+                                                text="An account appears here when a shopper registers on the storefront. Registering is optional: a shopper can still check out as a guest."
+                                            />
+                                        {/if}
                                     </td>
                                 </tr>
                             {/if}

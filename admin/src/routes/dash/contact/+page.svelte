@@ -17,6 +17,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
@@ -222,7 +223,35 @@
                                 <tr><td colspan="6"><span class="skeleton-loader"></span></td></tr>
                             {/each}
                         {:else if !rows.length}
-                            <tr><td colspan="6" class="txt-center txt-hint p-base">{list.params.status === "new" ? "Nothing new. The storefront's form posts to /x/contact/messages." : "Nothing here."}</td></tr>
+                            <tr class="empty-row">
+                                <td colspan="6">
+                                    {#if list.params.q || list.params.status !== "new"}
+                                        <EmptyState
+                                            icon="ri-filter-off-line"
+                                            title="No messages match these filters"
+                                            text="Try another status or search, or clear them to go back to new messages."
+                                        >
+                                            <button
+                                                type="button"
+                                                class="btn secondary"
+                                                onclick={() => {
+                                                    draft = "";
+                                                    list.clear();
+                                                }}
+                                            >
+                                                <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                                <span class="txt">Clear filters</span>
+                                            </button>
+                                        </EmptyState>
+                                    {:else}
+                                        <EmptyState
+                                            icon="ri-mail-line"
+                                            title="No new messages"
+                                            text="Messages shoppers send through the storefront's contact form land here. The form posts to /x/contact/messages."
+                                        />
+                                    {/if}
+                                </td>
+                            </tr>
                         {/if}
                     </tbody>
                 </table>

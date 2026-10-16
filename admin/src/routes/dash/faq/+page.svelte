@@ -15,6 +15,7 @@
     import Drawer from "$lib/components/Drawer.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
 
     const readable = $derived(can("catalog.read"));
     const writable = $derived(can("catalog.write"));
@@ -245,14 +246,18 @@
             {#if loading && !entries.length}
                 <div class="txt-hint p-base">Loading…</div>
             {:else if !entries.length}
-                <div class="block txt-center txt-hint p-base">
-                    <div class="m-b-10"><i class="ri-question-answer-line" style="font-size: 32px" aria-hidden="true"></i></div>
-                    <p class="tw:mx-auto tw:max-w-[62ch]">
-                        <strong>No questions yet.</strong>
-                        Start with the three every shop is asked: when it arrives, what delivery costs,
-                        and how to send something back.
-                    </p>
-                </div>
+                <EmptyState
+                    icon="ri-question-answer-line"
+                    title="No questions yet"
+                    text="Start with the three every shop is asked: when it arrives, what delivery costs, and how to send something back."
+                >
+                    {#if writable}
+                        <button type="button" class="btn" onclick={add}>
+                            <i class="ri-add-line" aria-hidden="true"></i>
+                            <span class="txt">New question</span>
+                        </button>
+                    {/if}
+                </EmptyState>
             {/if}
         {/if}
     </div>

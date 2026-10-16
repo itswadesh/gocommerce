@@ -25,6 +25,7 @@
     import { formatDate } from "$lib/format.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
@@ -341,13 +342,32 @@
                         </tr>
                     {/each}
                     {#if !loading && !vendors.length}
-                        <tr>
-                            <td colspan="5" class="txt-hint txt-center p-base">
+                        <tr class="empty-row">
+                            <td colspan="5">
                                 {#if list.params.q || list.params.status}
-                                    No vendor matches that.
+                                    <EmptyState
+                                        icon="ri-filter-off-line"
+                                        title="No vendors match these filters"
+                                        text="Try another status or search, or clear them to see every vendor."
+                                    >
+                                        <button type="button" class="btn secondary" onclick={() => list.clear()}>
+                                            <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                            <span class="txt">Clear filters</span>
+                                        </button>
+                                    </EmptyState>
                                 {:else}
-                                    No vendors yet. A shop selling only its own goods does not need
-                                    any — the price and stock on a variant are this store's own.
+                                    <EmptyState
+                                        icon="ri-store-3-line"
+                                        title="No vendors yet"
+                                        text="A vendor is somebody selling through this shop, as on a marketplace. A shop selling only its own goods does not need any: the price and stock on a variant are this store's own."
+                                    >
+                                        {#if writable}
+                                            <button type="button" class="btn" onclick={openNew}>
+                                                <i class="ri-add-line" aria-hidden="true"></i>
+                                                <span class="txt">New vendor</span>
+                                            </button>
+                                        {/if}
+                                    </EmptyState>
                                 {/if}
                             </td>
                         </tr>

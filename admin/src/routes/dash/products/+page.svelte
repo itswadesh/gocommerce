@@ -38,6 +38,7 @@
     import { hasModule } from "$lib/modules.svelte.js";
     import { settings } from "$lib/settings.svelte.js";
     import BulkBar from "$lib/components/BulkBar.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import CategoryPicker from "$lib/components/CategoryPicker.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
@@ -1270,17 +1271,45 @@
                     {/if}
 
                     {#if !loading && !products.length}
-                        <tr>
-                            <td colspan={writable ? 8 : 7} class="txt-center txt-hint p-base">
-                                <div class="m-b-10">
-                                    <i class="ri-price-tag-3-line" style="font-size: 32px" aria-hidden="true"></i>
-                                </div>
+                        <tr class="empty-row">
+                            <td colspan={writable ? 8 : 7}>
                                 {#if search || status || filtered}
-                                    No products match that. Try a different search or clear the
-                                    {chips.length > 1 ? "filters" : "filter"}.
+                                    <EmptyState
+                                        icon="ri-filter-off-line"
+                                        title="No products match these filters"
+                                        text="Try a different search or status, or clear the filters to see the whole catalogue."
+                                    >
+                                        <button
+                                            type="button"
+                                            class="btn secondary"
+                                            onclick={() => {
+                                                draftSearch = "";
+                                                list.clear();
+                                            }}
+                                        >
+                                            <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                            <span class="txt">Clear filters</span>
+                                        </button>
+                                    </EmptyState>
                                 {:else}
-                                    No products yet. A product needs at least one variant — the thing
-                                    that actually gets sold.
+                                    <EmptyState
+                                        icon="ri-price-tag-3-line"
+                                        title="No products yet"
+                                        text="Products are what the storefront sells. Each one needs at least one variant — the thing that actually gets sold."
+                                    >
+                                        {#if writable}
+                                            <button type="button" class="btn" onclick={openCreate}>
+                                                <i class="ri-add-line" aria-hidden="true"></i>
+                                                <span class="txt">New product</span>
+                                            </button>
+                                        {/if}
+                                        {#if can("data.import")}
+                                            <a class="btn secondary" href="{base}/dash/data/import">
+                                                <i class="ri-upload-2-line" aria-hidden="true"></i>
+                                                <span class="txt">Import products</span>
+                                            </a>
+                                        {/if}
+                                    </EmptyState>
                                 {/if}
                             </td>
                         </tr>
