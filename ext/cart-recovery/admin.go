@@ -490,6 +490,10 @@ type Analytics struct {
 	Breakdown []BreakdownBy `json:"breakdown"`
 	GroupBy   string        `json:"group_by"`
 	TZ        string        `json:"tz"`
+	// Tracked is whether clicks are counted at all. Without a PanelURL the
+	// link goes straight to the storefront, and a click rate of zero would be
+	// a figure nobody measured.
+	Tracked bool `json:"tracked"`
 }
 
 // FunnelStep is one stage. Each is a subset of the one before, which is what
@@ -551,7 +555,7 @@ func (m *Module) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	out := &Analytics{Summary: s, GroupBy: groupBy, TZ: tz,
+	out := &Analytics{Summary: s, GroupBy: groupBy, TZ: tz, Tracked: m.app.Config().PanelURL != "",
 		Funnel: []FunnelStep{
 			{Key: "abandoned", Label: "Abandoned", Count: s.Abandoned},
 			{Key: "recoverable", Label: "Recoverable", Count: s.Reachable},

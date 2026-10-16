@@ -320,7 +320,8 @@
             "recovered_revenue": {"$ref": "#/components/schemas/Money"},
             "recovery_rate_bp": {"type": "integer"}}}},
           "group_by": {"type": "string"},
-          "tz": {"type": "string"}
+          "tz": {"type": "string"},
+          "tracked": {"type": "boolean", "description": "Whether link clicks are counted: false when the engine has no PanelURL."}
         }
       },
       "CartRecoveryAutomation": {
