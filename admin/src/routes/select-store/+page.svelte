@@ -59,11 +59,14 @@
     $effect(() => {
         if (creating && !suggestion) suggest();
     });
+    // The address follows the name, as it does for a typed one, so editing
+    // "Saffron Orchard" into "Saffron Jewels" moves it too.
+    // The address follows the name, as it does for a typed one, so editing
+    // "Saffron Orchard" into "Saffron Jewels" moves it too.
     function useSuggestion() {
         if (!suggestion) return;
         name = suggestion.name;
-        slug = suggestion.slug;
-        slugTouched = true;
+        slugTouched = false;
     }
     // What the store sells in; empty is the install's. It can be changed on
     // Store settings until the first order.
@@ -116,9 +119,12 @@
         saving = true;
         error = "";
         // Left blank, the store is called what the form suggested.
-        if (!name.trim() && !slug.trim() && suggestion) useSuggestion();
+        if (!name.trim() && suggestion) name = suggestion.name;
         try {
-            await createStore(name.trim(), slug.trim(), currency, country);
+            // An address is sent only when somebody typed one. One worked out
+            // from the name is the engine's to work out, so a taken one gets a
+            // number rather than a refusal.
+            await createStore(name.trim(), slugTouched ? slug.trim() : "", currency, country);
             await reloadStoreData();
             await goto(base + "/dash", { replaceState: true });
         } catch (err) {
@@ -166,14 +172,14 @@
                             autofocus
                             maxlength="120"
                             placeholder={suggestion?.name ?? ""}
-                            aria-describedby="store_name_hint"
+                            aria-describedby="store_name_suggestion"
                             bind:value={name}
                         />
                     </div>
                     <div class="link-hint m-t-5 store-suggest" id="store_name_hint" aria-live="polite">
                         {#if suggestion}
                             {#key suggestion.slug}
-                                <small in:rise>
+                                <small id="store_name_suggestion" in:rise>
                                     Short and memorable works best. Need inspiration? How about
                                     <button type="button" class="store-suggest-use" onclick={useSuggestion}>{suggestion.name}</button>?
                                 </small>
@@ -182,7 +188,7 @@
                                 <i class="ri-refresh-line" aria-hidden="true"></i>
                             </button>
                         {:else}
-                            <small>Leave it blank and the store gets a name you can change later.</small>
+                            <small id="store_name_suggestion">Leave it blank and the store gets a name you can change later.</small>
                         {/if}
                     </div>
                 </div>

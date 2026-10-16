@@ -48,6 +48,18 @@ func TestASuggestionAvoidsATakenAddress(t *testing.T) {
 	if name != "Saffron Orchard" || !regexp.MustCompile(`^saffron-orchard-\d{3}$`).MatchString(slug) {
 		t.Errorf("suggestion = %q %q, want the name with a numbered address", name, slug)
 	}
+	// A taken pairing is tried again before a number is reached for.
+	tries := 0
+	second := func() (string, string) {
+		tries++
+		if tries == 1 {
+			return "Saffron Orchard", "saffron-orchard"
+		}
+		return "Golden Lane", "golden-lane"
+	}
+	if name, slug, _ := app.Stores().suggestName(context.Background(), second); name != "Golden Lane" || slug != "golden-lane" {
+		t.Errorf("after a taken pairing = %q %q, want the next free one", name, slug)
+	}
 
 	rec := do(t, app, http.MethodGet, "/api/stores/suggest", withAdmin)
 	var got struct{ Name, Slug string }
@@ -99,10 +111,19 @@ func TestAStoreIsNeverOpenedWithoutAName(t *testing.T) {
 	open(`{"name":"Again","slug":"varni-jewels"}`, http.StatusConflict)
 }
 
-// Stores that had no name were given one, in the directory and the profile.
+// Stores that had no name in the directory were given one; the profile's name,
+// which buyers see, is not touched, and lends itself when it has one.
 func TestUnnamedStoresAreGivenAName(t *testing.T) {
 	app := newTestApp(t)
 	ctx := context.Background()
+	named := addTestStore(t, app, "named")
+	lent := addTestStore(t, app, "lent")
+	if _, err := app.db.ExecContext(ctx, `UPDATE stores SET name = '' WHERE id = $1`, lent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.db.ExecContext(WithStore(ctx, lent), `UPDATE store_profile SET name = 'Varni Jewels'`); err != nil {
+		t.Fatal(err)
+	}
 	id := addTestStore(t, app, "nameless")
 	if _, err := app.db.ExecContext(ctx, `UPDATE stores SET name = '' WHERE id = $1`, id); err != nil {
 		t.Fatal(err)
@@ -118,8 +139,14 @@ func TestUnnamedStoresAreGivenAName(t *testing.T) {
 		t.Fatalf("the nameless store = %+v, %v", st, err)
 	}
 	profile, err := app.Profile().Get(WithStore(ctx, id))
-	if err != nil || profile.Name != st.Name {
-		t.Errorf("its profile's name = %q (%v), want %q", profile.Name, err, st.Name)
+	if err != nil || profile.Name != "" {
+		t.Errorf("its profile's name = %q (%v), want it left blank for its owner", profile.Name, err)
+	}
+	if st, _ := app.Stores().Get(ctx, lent); st == nil || st.Name != "Varni Jewels" {
+		t.Errorf("the store whose profile had a name = %+v, want that name", st)
+	}
+	if st, _ := app.Stores().Get(ctx, named); st == nil || st.Name != "named" {
+		t.Errorf("a store that had a name = %+v, want it untouched", st)
 	}
 	if other, _ := app.Stores().BySlug(ctx, "nameless"); other == nil || other.Slug != "nameless" {
 		t.Errorf("its address moved: %+v", other)
