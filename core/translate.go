@@ -13,6 +13,14 @@ import (
 // product — and nowhere on an admin route, where the operator edits the
 // store's own text.
 
+// TranslateProducts names products in the request's language, with their
+// category and collections, the way core's own storefront reads do. It is for
+// a module's public route that hands out products (ext/showcases), so a buyer
+// reading Hindi sees the same names there as on the product's own page.
+func (a *App) TranslateProducts(r *http.Request, products []*Product) {
+	a.translateProducts(r, products)
+}
+
 // translationLanguage is the language to translate this request into, or ""
 // when there is nothing to do: no translator, or a request already in the
 // store's main language, which is what its catalogue is written in.

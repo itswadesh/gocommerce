@@ -60,9 +60,9 @@ export async function downloadFile(path, filename, type = "text/html") {
  * popup, so a window opened after the await never appears.
  *
  * An in-panel iframe preview is not an option, and that is a CSP fact rather
- * than a preference: the panel is served with `frame-ancestors 'none'` and
- * neither that header nor the meta policy declares `frame-src`, so a blob:
- * frame falls back to `default-src 'self'` and is refused. A top-level blob:
+ * than a preference: the panel is served with `frame-ancestors 'none'`, and
+ * the frame-src of both its policies names only the two video players the
+ * showcase editor plays (D88), so a blob: frame is refused. A top-level blob:
  * window inherits the policy that admits the document's one inline <style>.
  */
 export async function openDocument(path, filename) {

@@ -48,6 +48,7 @@ import (
 	stripe "github.com/itswadesh/gocommerce/ext/payments-stripe"
 	reviews "github.com/itswadesh/gocommerce/ext/reviews"
 	meilisearch "github.com/itswadesh/gocommerce/ext/search-meilisearch"
+	showcases "github.com/itswadesh/gocommerce/ext/showcases"
 	sitemaps "github.com/itswadesh/gocommerce/ext/sitemaps"
 	translations "github.com/itswadesh/gocommerce/ext/translations"
 	webhooks "github.com/itswadesh/gocommerce/ext/webhooks"
@@ -65,6 +66,7 @@ func everyModule() []gocommerce.Module {
 		cms.New(cms.Config{}),
 		contact.New(contact.Config{}),
 		faq.New(faq.Config{}),
+		showcases.New(showcases.Config{}),
 		feeds.New(feeds.Config{}),
 		delhivery.New(delhivery.Config{}),
 		easyship.New(easyship.Config{}),
