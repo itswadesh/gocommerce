@@ -180,3 +180,22 @@ func TestASuppressionNoteMayRunToAThousandCharacters(t *testing.T) {
 		t.Errorf("1000 characters = %d %s, want it kept", rec.Code, rec.Body)
 	}
 }
+
+// The report must not show a click rate of zero for a store that cannot count
+// clicks: without a public address the link goes straight to the storefront.
+func TestTheReportSaysWhetherClicksAreCounted(t *testing.T) {
+	for _, panel := range []string{"", "https://admin.example.com"} {
+		h := newHarness(t, Config{StorefrontURL: "https://shop.example.com"}, gocommerce.Config{PanelURL: panel})
+		rec := gctest.AdminRequest(t, h.app, http.MethodGet, "/api/admin/x/cart-recovery/analytics", nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("analytics = %d %s", rec.Code, rec.Body)
+		}
+		var got struct {
+			Tracked bool `json:"tracked"`
+		}
+		gctest.DecodeData(t, rec, &got)
+		if got.Tracked != (panel != "") {
+			t.Errorf("with PanelURL %q tracked = %v", panel, got.Tracked)
+		}
+	}
+}
