@@ -2,6 +2,7 @@ package gocommerce
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"strings"
 	"testing"
@@ -250,5 +251,67 @@ func TestSigningOutNeedsNoStore(t *testing.T) {
 	}
 	if _, ok := app.Superusers().Resolve(context.Background(), sess.Token); ok {
 		t.Fatal("the session outlived signing out")
+	}
+}
+
+// A store has one name. Settings → Store details is where people change it,
+// so that is the name the store list shows.
+func TestRenamingTheStoreShowsInTheStoreList(t *testing.T) {
+	app := newTestApp(t)
+	tok := signInAs(t, app, "renamer@example.com", RoleOwner)
+	ctx := WithStore(context.Background(), app.DefaultStore())
+	profile, err := app.Profile().Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile.Name = "Corner Shop"
+	if _, err := app.Profile().Set(ctx, *profile, nil); err != nil {
+		t.Fatal(err)
+	}
+	rec := do(t, app, http.MethodGet, "/api/stores/my", bearer(tok))
+	var mine []MyStore
+	decodeData(t, rec, &mine)
+	if len(mine) == 0 || mine[0].Name != "Corner Shop" {
+		t.Fatalf("stores = %+v, want the first called Corner Shop", mine)
+	}
+}
+
+func TestANewStoresProfileCarriesItsName(t *testing.T) {
+	app := newTestApp(t)
+	st, err := app.Stores().Create(context.Background(), "Night Market", "night")
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := app.Profile().Get(WithStore(context.Background(), st.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profile.Name != "Night Market" {
+		t.Fatalf("profile name = %q, want the store's", profile.Name)
+	}
+}
+
+// A name typed into the profile before the two were joined is the store's
+// name after the upgrade.
+func TestTheUpgradeTakesTheStoreNameFromTheProfile(t *testing.T) {
+	app := newTestApp(t)
+	ctx := WithStore(context.Background(), app.DefaultStore())
+	if _, err := app.db.ExecContext(ctx, `UPDATE store_profile SET name = 'Old Name Shop'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.db.Exec(`UPDATE stores SET name = '' WHERE id = $1`, app.DefaultStore()); err != nil {
+		t.Fatal(err)
+	}
+	if err := InTx(context.Background(), app.db, func(tx *sql.Tx) error {
+		return migrate0057StoreNames(context.Background(), tx)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	st, err := app.Stores().Get(context.Background(), app.DefaultStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Name != "Old Name Shop" {
+		t.Fatalf("store name = %q, want the profile's", st.Name)
 	}
 }
