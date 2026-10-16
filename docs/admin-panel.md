@@ -387,11 +387,14 @@ sent exactly the filters the table sends, so the cards can never count a
 different set from the rows under them. The filters, the ordering and the page
 are in the URL. The date range is sent as instants at the reader's own
 midnights, because the engine reads a bare date at UTC midnight, and `to` is
-the midnight after the last day wanted. Status is several at once (contacted
-*or* recovered is a real question), so it is a row of toggles rather than a
-select. The one secondary fact the module chooses for a record — `indicator`,
-"Link opened", "No email provider" — is small text under the status chip, never
-a second chip. A row's menu offers what its status allows; the dialogs then
+the midnight after the last day wanted. The layout is kitcommerce-admin's: a
+count beside the title, six figures with icons, and one filter card with a live
+search on name, email or phone. Status is several at once (contacted *or*
+recovered is a real question), so it is a list of boxes behind a dashed
+"Status" button rather than a select. The one secondary fact the module chooses
+for a record — `indicator`, "Link clicked", "No email provider" — is small text
+under the status pill, never a second pill. A customer's name and phone are the
+newest order's for the email, read by the module; a cart has neither. A row's menu offers what its status allows; the dialogs then
 fetch the record, because what a send may use (channels, messages, the step the
 sequence would send next) is on the record's own `recovery` block and nowhere
 else.
@@ -400,8 +403,10 @@ else.
 request: the basket as it was beside the basket as it is, a reading of the
 orders placed with the address (the store keeps no customer record, and the card
 says so), the timeline already worded by the module, and which actions are
-possible now. The panel renders the timeline's sentences and adds only an icon
-and who did it; it never rebuilds one. An action the record does not allow is
+possible now. The panel renders the timeline's sentences, newest first and
+grouped by day, and adds only an icon, the time and who did it; it never
+rebuilds one. What happened is said once at the top, as a banner: recovered,
+expired, suppressed, or why nothing is scheduled. An action the record does not allow is
 shown disabled with the module's sentence beside it, not only in a tooltip a
 phone never shows; an action the role lacks is disabled with the right named.
 The page re-reads itself every thirty seconds while its tab is visible and at
