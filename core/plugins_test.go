@@ -123,13 +123,23 @@ func TestASecretIsMaskedAndKeptThroughTheMask(t *testing.T) {
 	if got := app.Plugins().String(ctx, "fake-mail", "api_key"); got != "sk-secret-1234" {
 		t.Errorf("the mask overwrote the key: %q", got)
 	}
-	// An empty value clears it, and the plugin is no longer configured.
+	// Emptying a required setting of a plugin that is on is refused, with
+	// what to do: a switched-on plugin missing its key would fail at its
+	// next use rather than here. The key and the switch are untouched.
+	if _, err := app.Plugins().Update(ctx, "fake-mail", PluginPatch{Settings: map[string]any{"api_key": ""}}); err == nil || !strings.Contains(err.Error(), "switch Fake Mail off first") {
+		t.Errorf("clearing a required key of a plugin that is on = %v, want refused", err)
+	}
+	if got := app.Plugins().String(ctx, "fake-mail", "api_key"); got != "sk-secret-1234" {
+		t.Errorf("a refused clear changed the key: %q", got)
+	}
+	// Switched off first, an empty value clears it, and the plugin is no
+	// longer configured.
+	off := false
+	if _, err := app.Plugins().Update(ctx, "fake-mail", PluginPatch{Enabled: &off}); err != nil {
+		t.Fatalf("switch off: %v", err)
+	}
 	if p, err := app.Plugins().Update(ctx, "fake-mail", PluginPatch{Settings: map[string]any{"api_key": ""}}); err != nil || p.Configured {
 		t.Errorf("clearing = %+v, %v", p, err)
-	}
-	enabled, _ := app.Plugins().Enabled(ctx, "fake-mail")
-	if !enabled {
-		t.Errorf("clearing a setting switched the plugin off")
 	}
 }
 

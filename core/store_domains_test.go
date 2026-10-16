@@ -69,14 +69,25 @@ func TestADomainRoutesOnlyOnceItsTXTRecordIsFound(t *testing.T) {
 func TestVerifiedIsTheEnginesWordAlone(t *testing.T) {
 	app := newTestApp(t)
 	fakeTXT(app, nil)
+	// A body that tries to say so is refused outright: the engine reads
+	// request bodies strictly, so a field it does not take is an error rather
+	// than something quietly honoured or quietly dropped.
 	rec := doBody(t, app, http.MethodPost, "/api/admin/domains", `{"host":"claimed.example.com","verified":true,"is_primary":true}`, withAdmin)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "verified") {
+		t.Fatalf("add claiming verified = %d: %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, app, http.MethodGet, "/api/admin/domains", withAdmin); strings.Contains(rec.Body.String(), "claimed.example.com") {
+		t.Fatalf("a refused add was stored: %s", rec.Body)
+	}
+	// Added plainly, it starts unverified and not primary.
+	rec = doBody(t, app, http.MethodPost, "/api/admin/domains", `{"host":"claimed.example.com"}`, withAdmin)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("add = %d: %s", rec.Code, rec.Body)
 	}
 	var d Domain
 	decodeData(t, rec, &d)
 	if d.Verified || d.Primary {
-		t.Fatalf("a client set what only the engine may: %+v", d)
+		t.Fatalf("a new domain = %+v, want unverified and not primary", d)
 	}
 }
 

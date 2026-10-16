@@ -494,6 +494,12 @@ var rightsExempt = map[string]bool{
 	// is: it is not a secret from the shop's own staff, and an invoice, an
 	// email footer and a packing slip all want it.
 	"GET /api/admin/store": true,
+	// The store's addresses, for Visit store and the account menu, which
+	// every role sees. Adding, verifying and removing one need store.write.
+	"GET /api/admin/domains": true,
+	// The setup guide: which steps are done, for the sidebar's progress link
+	// on every screen. It says whether payments are set up, never how.
+	"GET /api/admin/setup": true,
 }
 
 // requireRights refuses a request whose operator does not carry every right the
