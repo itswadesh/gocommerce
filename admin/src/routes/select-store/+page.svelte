@@ -8,7 +8,8 @@
     import { base } from "$app/paths";
     import { page } from "$app/state";
     import { goto } from "$app/navigation";
-    import { auth } from "$lib/api.js";
+    import { auth, stores as storesAPI } from "$lib/api.js";
+    import { rise } from "$lib/motion.js";
     import { createStore, enterStore, myStores } from "$lib/stores.svelte.js";
     import { reloadStoreData } from "$lib/store-data.js";
     import { safeNext } from "$lib/paths.js";
@@ -40,6 +41,30 @@
     let name = $state("");
     let slug = $state("");
     let slugTouched = $state(false);
+
+    /*
+     * A name to start from, the way GitHub offers one for a new repository:
+     * shown under the field, filled in by a click, and what a store left
+     * unnamed is called. The engine would choose one anyway; asking for it
+     * here means the store gets the name the form showed.
+     */
+    let suggestion = $state(null);
+    async function suggest() {
+        try {
+            suggestion = await storesAPI.suggest();
+        } catch {
+            suggestion = null; // the form still works; the engine names it
+        }
+    }
+    $effect(() => {
+        if (creating && !suggestion) suggest();
+    });
+    function useSuggestion() {
+        if (!suggestion) return;
+        name = suggestion.name;
+        slug = suggestion.slug;
+        slugTouched = true;
+    }
     // What the store sells in; empty is the install's. It can be changed on
     // Store settings until the first order.
     let currency = $state("");
@@ -90,6 +115,8 @@
         if (saving) return;
         saving = true;
         error = "";
+        // Left blank, the store is called what the form suggested.
+        if (!name.trim() && !slug.trim() && suggestion) useSuggestion();
         try {
             await createStore(name.trim(), slug.trim(), currency, country);
             await reloadStoreData();
@@ -130,19 +157,42 @@
         {:else if creating}
             <form class="grid select-store-form" onsubmit={create}>
                 <div class="col-12">
-                    <div class="field required">
+                    <div class="field">
                         <label for="store_name">Store name</label>
                         <!-- svelte-ignore a11y_autofocus -->
-                        <input id="store_name" type="text" required autofocus maxlength="120" bind:value={name} />
+                        <input
+                            id="store_name"
+                            type="text"
+                            autofocus
+                            maxlength="120"
+                            placeholder={suggestion?.name ?? ""}
+                            aria-describedby="store_name_hint"
+                            bind:value={name}
+                        />
+                    </div>
+                    <div class="link-hint m-t-5 store-suggest" id="store_name_hint" aria-live="polite">
+                        {#if suggestion}
+                            {#key suggestion.slug}
+                                <small in:rise>
+                                    Short and memorable works best. Need inspiration? How about
+                                    <button type="button" class="store-suggest-use" onclick={useSuggestion}>{suggestion.name}</button>?
+                                </small>
+                            {/key}
+                            <button type="button" class="btn xs circle transparent secondary store-suggest-again" aria-label="Suggest another name" title="Suggest another" onclick={suggest}>
+                                <i class="ri-refresh-line" aria-hidden="true"></i>
+                            </button>
+                        {:else}
+                            <small>Leave it blank and the store gets a name you can change later.</small>
+                        {/if}
                     </div>
                 </div>
                 <div class="col-12">
-                    <div class="field required">
+                    <div class="field">
                         <label for="store_slug">Address name</label>
                         <input
                             id="store_slug"
                             type="text"
-                            required
+                            placeholder={name.trim() ? "" : (suggestion?.slug ?? "")}
                             pattern="[a-z0-9][a-z0-9\-]{'{0,62}'}"
                             maxlength="63"
                             autocomplete="off"
@@ -243,3 +293,43 @@
         </p>
     </div>
 </div>
+
+<style>
+    .store-suggest {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .store-suggest small {
+        flex: 1 1 auto;
+    }
+    /* A word in the sentence that fills the field: a link to look at, a
+       button to the keyboard and to a screen reader. */
+    .store-suggest-use {
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--txtPrimaryColor);
+        font: inherit;
+        font-weight: 600;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        text-decoration-thickness: 1px;
+        cursor: pointer;
+        transition: text-decoration-thickness 150ms ease-out;
+    }
+    .store-suggest-use:hover,
+    .store-suggest-use:focus-visible {
+        text-decoration-thickness: 2px;
+    }
+    .store-suggest-again {
+        flex: 0 0 auto;
+        min-width: 32px;
+        min-height: 32px;
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .store-suggest-use {
+            transition: none;
+        }
+    }
+</style>
