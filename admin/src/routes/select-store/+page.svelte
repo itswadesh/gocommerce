@@ -13,6 +13,7 @@
     import { reloadStoreData } from "$lib/store-data.js";
     import { safeNext } from "$lib/paths.js";
     import { CURRENCIES } from "$lib/currencies.js";
+    import { COUNTRIES } from "$lib/countries.js";
     import Select from "$lib/components/Select.svelte";
 
     const next = $derived(safeNext(page.url.searchParams.get("next")));
@@ -42,6 +43,18 @@
     // What the store sells in; empty is the install's. It can be changed on
     // Store settings until the first order.
     let currency = $state("");
+    // Where the store is: its country on Store settings, and what its default
+    // shipping zone covers. A guess from the browser's region to start with.
+    let country = $state(browserCountry());
+
+    function browserCountry() {
+        try {
+            const region = new Intl.Locale(navigator.language).maximize().region ?? "";
+            return COUNTRIES.some((c) => c.value === region) ? region : "";
+        } catch {
+            return "";
+        }
+    }
     let saving = $state(false);
 
     /* The slug follows the name until somebody edits it: the shape the
@@ -78,7 +91,7 @@
         saving = true;
         error = "";
         try {
-            await createStore(name.trim(), slug.trim(), currency);
+            await createStore(name.trim(), slug.trim(), currency, country);
             await reloadStoreData();
             await goto(base + "/dash", { replaceState: true });
         } catch (err) {
@@ -140,6 +153,15 @@
                     </div>
                     <div class="link-hint m-t-5">
                         <small>Lowercase letters, digits and hyphens. Requests name the store by it.</small>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <div class="field">
+                        <label for="store_country">Country</label>
+                        <Select id="store_country" bind:value={country} options={COUNTRIES} placeholder="Choose a country" />
+                    </div>
+                    <div class="link-hint m-t-5">
+                        <small>Where the store is. Its first shipping zone covers this country.</small>
                     </div>
                 </div>
                 <div class="col-12">
