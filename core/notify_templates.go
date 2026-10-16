@@ -25,6 +25,13 @@ import (
 // The engine's own events are registered at boot; a module adds its own from
 // Register, the way it adds a plugin. A stored row overrides the default and
 // a delete restores it — the default is code, so it can never be lost.
+//
+// Each language a store sells in has its own wording (D87). A message in a
+// language nobody has worded goes out in the main language's wording, then in
+// the default: a Hindi-speaking customer of a store that has not written its
+// Hindi yet gets what every other customer gets, not nothing. A row stored
+// before languages existed has an empty language and stands for the main
+// language until the main language's own wording replaces it.
 
 // NotifyTemplate is the wording of one message on one channel.
 type NotifyTemplate struct {
@@ -41,10 +48,36 @@ type NotifyTemplate struct {
 	// Variables names the data keys the event carries, for the editor's
 	// hint. Documentation only — a template may name any key.
 	Variables []string `json:"variables,omitempty"`
-	// Customized is whether a stored row overrides the default.
+	// Language is what this wording was asked for in: one of the store's
+	// languages.
+	Language string `json:"language"`
+	// Source says whose wording this is: "language" when Language has its
+	// own, "main" when it borrows the main language's, "default" when nobody
+	// has worded it and the engine's own stands.
+	Source string `json:"source"`
+	// Customized is whether Language has wording of its own stored, which is
+	// what a reset removes.
 	Customized bool       `json:"customized"`
 	UpdatedAt  *time.Time `json:"updated_at,omitempty"`
 }
+
+// Where a message's wording comes from.
+const (
+	WordingOwn     = "language"
+	WordingMain    = "main"
+	WordingDefault = "default"
+)
+
+// migration0066NotifyTemplateLanguages gives each stored wording its language.
+// The rows already there keep an empty language — written before languages,
+// read as the main language's — rather than being stamped with a language a
+// migration cannot know: the main language is a store's own, and the install
+// default is only what a store that never chose one has.
+const migration0066NotifyTemplateLanguages = `
+ALTER TABLE notification_templates ADD COLUMN language text NOT NULL DEFAULT '';
+ALTER TABLE notification_templates DROP CONSTRAINT notification_templates_pkey,
+    ADD CONSTRAINT notification_templates_pkey PRIMARY KEY (store_id, channel, event, language);
+`
 
 func templateKey(channel, event string) string { return channel + "/" + event }
 
@@ -150,42 +183,93 @@ func RenderNotifyText(text string, data map[string]string) (string, error) {
 type notifyTemplateRow struct {
 	subject, body string
 	updatedAt     time.Time
+	source        string
 }
 
-func (t *NotifyTemplates) rows(ctx context.Context, channel string) (map[string]notifyTemplateRow, error) {
+// rows is the stored wording that answers for lang, per message: lang's own,
+// else the main language's, else a row from before languages — read as the
+// main language's own when lang is the main language.
+func (t *NotifyTemplates) rows(ctx context.Context, channel, event, lang, main string) (map[string]notifyTemplateRow, error) {
 	rows, err := t.app.db.QueryContext(ctx, `
-		SELECT channel, event, subject, body, updated_at FROM notification_templates
-		WHERE $1 = '' OR channel = $1`, channel)
+		SELECT channel, event, language, subject, body, updated_at FROM notification_templates
+		WHERE ($1 = '' OR channel = $1) AND ($2 = '' OR event = $2) AND language IN ($3, $4, '')`,
+		channel, event, lang, main)
 	if err != nil {
 		return nil, Internalf(err, "read notification templates")
 	}
 	defer rows.Close()
+	rank := func(language string) int {
+		switch language {
+		case lang:
+			return 0
+		case main:
+			return 1
+		}
+		return 2
+	}
+	best := map[string]int{}
 	out := map[string]notifyTemplateRow{}
 	for rows.Next() {
-		var ch, ev string
+		var ch, ev, language string
 		var r notifyTemplateRow
-		if err := rows.Scan(&ch, &ev, &r.subject, &r.body, &r.updatedAt); err != nil {
+		if err := rows.Scan(&ch, &ev, &language, &r.subject, &r.body, &r.updatedAt); err != nil {
 			return nil, Internalf(err, "scan notification template")
 		}
-		out[templateKey(ch, ev)] = r
+		key := templateKey(ch, ev)
+		if have, ok := best[key]; ok && have <= rank(language) {
+			continue
+		}
+		best[key] = rank(language)
+		r.source = WordingMain
+		if language == lang || (language == "" && lang == main) {
+			r.source = WordingOwn
+		}
+		out[key] = r
 	}
 	return out, rows.Err()
 }
 
-func overlay(def NotifyTemplate, r notifyTemplateRow, ok bool) NotifyTemplate {
+func overlay(def NotifyTemplate, lang string, r notifyTemplateRow, ok bool) NotifyTemplate {
+	def.Language, def.Source = lang, WordingDefault
 	if !ok {
 		return def
 	}
-	def.Subject, def.Body, def.Customized = r.subject, r.body, true
+	def.Subject, def.Body, def.Source = r.subject, r.body, r.source
+	def.Customized = r.source == WordingOwn
 	at := r.updatedAt
 	def.UpdatedAt = &at
 	return def
 }
 
+// languageOf is tag as the store spells it, or its main language for "" —
+// refused when the store does not sell in it, since wording in a language no
+// customer is written to in is never sent.
+func (t *NotifyTemplates) languageOf(ctx context.Context, tag string) (lang, main string, err error) {
+	langs := t.app.Languages(ctx)
+	if strings.TrimSpace(tag) == "" {
+		return langs[0], langs[0], nil
+	}
+	for _, l := range langs {
+		if strings.EqualFold(l, strings.TrimSpace(tag)) {
+			return l, langs[0], nil
+		}
+	}
+	return "", "", Validationf("this store does not sell in %q; add it on Store settings first", tag)
+}
+
 // List is every message on a channel ("" for all), in registration order,
-// each with its effective wording.
+// each with its effective wording in the store's main language.
 func (t *NotifyTemplates) List(ctx context.Context, channel string) ([]NotifyTemplate, error) {
-	stored, err := t.rows(ctx, channel)
+	return t.ListIn(ctx, channel, "")
+}
+
+// ListIn is List in one of the store's languages ("" for the main one).
+func (t *NotifyTemplates) ListIn(ctx context.Context, channel, language string) ([]NotifyTemplate, error) {
+	lang, main, err := t.languageOf(ctx, language)
+	if err != nil {
+		return nil, err
+	}
+	stored, err := t.rows(ctx, channel, "", lang, main)
 	if err != nil {
 		return nil, err
 	}
@@ -198,29 +282,38 @@ func (t *NotifyTemplates) List(ctx context.Context, channel string) ([]NotifyTem
 			continue
 		}
 		r, ok := stored[key]
-		out = append(out, overlay(def, r, ok))
+		out = append(out, overlay(def, lang, r, ok))
 	}
 	return out, nil
 }
 
-// Get is one message's effective wording; false when nobody registered the
-// event on that channel, which a notifier reads as "nothing to say".
+// Get is one message's effective wording in the store's main language; false
+// when nobody registered the event on that channel, which a notifier reads as
+// "nothing to say".
 func (t *NotifyTemplates) Get(ctx context.Context, channel, event string) (NotifyTemplate, bool, error) {
+	return t.GetIn(ctx, channel, event, "")
+}
+
+// GetIn is Get in a language — the one a notification is for. A language the
+// store does not sell in, which an old order may carry, is written to in the
+// main language rather than refused: the message still has to go.
+func (t *NotifyTemplates) GetIn(ctx context.Context, channel, event, language string) (NotifyTemplate, bool, error) {
 	def, ok := t.def(channel, event)
 	if !ok {
 		return NotifyTemplate{}, false, nil
 	}
-	var r notifyTemplateRow
-	err := t.app.db.QueryRowContext(ctx, `
-		SELECT subject, body, updated_at FROM notification_templates WHERE channel = $1 AND event = $2`,
-		channel, event).Scan(&r.subject, &r.body, &r.updatedAt)
-	switch {
-	case err == sql.ErrNoRows:
-		return def, true, nil
-	case err != nil:
-		return NotifyTemplate{}, false, Internalf(err, "read notification template")
+	lang, main, err := t.languageOf(ctx, language)
+	if err != nil {
+		if lang, main, err = t.languageOf(ctx, ""); err != nil {
+			return NotifyTemplate{}, false, err
+		}
 	}
-	return overlay(def, r, true), true, nil
+	stored, err := t.rows(ctx, channel, event, lang, main)
+	if err != nil {
+		return NotifyTemplate{}, false, err
+	}
+	r, found := stored[templateKey(channel, event)]
+	return overlay(def, lang, r, found), true, nil
 }
 
 // Render is the effective wording filled with an event's data. ok is false
@@ -239,8 +332,15 @@ func (t *NotifyTemplates) Render(ctx context.Context, channel, event string, dat
 	return subject, body, true, nil
 }
 
-// Set stores an operator's wording for one message.
+// Set stores an operator's wording for one message in the main language.
 func (t *NotifyTemplates) Set(ctx context.Context, channel, event, subject, body string) (NotifyTemplate, error) {
+	return t.SetIn(ctx, channel, event, "", subject, body)
+}
+
+// SetIn stores an operator's wording for one message in one of the store's
+// languages ("" for the main one). The main language's wording replaces a row
+// from before languages, so one wording is stored for it.
+func (t *NotifyTemplates) SetIn(ctx context.Context, channel, event, language, subject, body string) (NotifyTemplate, error) {
 	def, ok := t.def(channel, event)
 	if !ok {
 		return NotifyTemplate{}, NotFoundf("no %s message is sent for %q", channel, event)
@@ -248,35 +348,58 @@ func (t *NotifyTemplates) Set(ctx context.Context, channel, event, subject, body
 	if err := validateNotifyText(channel, subject, body); err != nil {
 		return NotifyTemplate{}, err
 	}
+	lang, main, err := t.languageOf(ctx, language)
+	if err != nil {
+		return NotifyTemplate{}, err
+	}
 	var out NotifyTemplate
-	err := InTx(ctx, t.app.db, func(tx *sql.Tx) error {
+	err = InTx(ctx, t.app.db, func(tx *sql.Tx) error {
 		var at time.Time
 		if err := tx.QueryRowContext(ctx, `
-			INSERT INTO notification_templates (channel, event, subject, body, updated_at)
-			VALUES ($1, $2, $3, $4, now())
-			ON CONFLICT (store_id, channel, event) DO UPDATE SET subject = EXCLUDED.subject, body = EXCLUDED.body, updated_at = now()
-			RETURNING updated_at`, channel, event, subject, body).Scan(&at); err != nil {
+			INSERT INTO notification_templates (channel, event, language, subject, body, updated_at)
+			VALUES ($1, $2, $3, $4, $5, now())
+			ON CONFLICT (store_id, channel, event, language) DO UPDATE SET subject = EXCLUDED.subject, body = EXCLUDED.body, updated_at = now()
+			RETURNING updated_at`, channel, event, lang, subject, body).Scan(&at); err != nil {
 			return Internalf(err, "store notification template")
 		}
-		out = overlay(def, notifyTemplateRow{subject: subject, body: body, updatedAt: at}, true)
+		if lang == main {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM notification_templates
+				WHERE channel = $1 AND event = $2 AND language = ''`, channel, event); err != nil {
+				return Internalf(err, "replace notification template")
+			}
+		}
+		out = overlay(def, lang, notifyTemplateRow{subject: subject, body: body, updatedAt: at, source: WordingOwn}, true)
 		return writeAudit(ctx, tx, auditRecord{
 			Action: AuditNotificationTemplateUpdate, Entity: AuditEntityNotificationTemplate,
 			Key: templateKey(channel, event), Label: def.Title,
-			Summary: "Edited the " + def.Title + " " + channel,
-			After:   map[string]any{"subject": subject, "body": body},
+			Summary: "Edited the " + def.Title + " " + channel + inLanguage(lang, main),
+			After:   map[string]any{"language": lang, "subject": subject, "body": body},
 		})
 	})
 	return out, err
 }
 
-// Reset drops the operator's wording and restores the default.
+// Reset drops the operator's wording in the main language and restores the
+// default.
 func (t *NotifyTemplates) Reset(ctx context.Context, channel, event string) (NotifyTemplate, error) {
+	return t.ResetIn(ctx, channel, event, "")
+}
+
+// ResetIn drops the operator's wording in one language and answers what that
+// language now gets: the main language's wording, or the default.
+func (t *NotifyTemplates) ResetIn(ctx context.Context, channel, event, language string) (NotifyTemplate, error) {
 	def, ok := t.def(channel, event)
 	if !ok {
 		return NotifyTemplate{}, NotFoundf("no %s message is sent for %q", channel, event)
 	}
-	err := InTx(ctx, t.app.db, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `DELETE FROM notification_templates WHERE channel = $1 AND event = $2`, channel, event)
+	lang, main, err := t.languageOf(ctx, language)
+	if err != nil {
+		return NotifyTemplate{}, err
+	}
+	err = InTx(ctx, t.app.db, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `DELETE FROM notification_templates
+			WHERE channel = $1 AND event = $2 AND (language = $3 OR ($4 AND language = ''))`,
+			channel, event, lang, lang == main)
 		if err != nil {
 			return Internalf(err, "reset notification template")
 		}
@@ -288,11 +411,23 @@ func (t *NotifyTemplates) Reset(ctx context.Context, channel, event string) (Not
 		return writeAudit(ctx, tx, auditRecord{
 			Action: AuditNotificationTemplateUpdate, Entity: AuditEntityNotificationTemplate,
 			Key: templateKey(channel, event), Label: def.Title,
-			Summary: "Restored the default " + def.Title + " " + channel,
-			After:   map[string]any{"subject": def.Subject, "body": def.Body},
+			Summary: "Restored the default " + def.Title + " " + channel + inLanguage(lang, main),
+			After:   map[string]any{"language": lang, "subject": def.Subject, "body": def.Body},
 		})
 	})
-	return def, err
+	if err != nil {
+		return NotifyTemplate{}, err
+	}
+	out, _, err := t.GetIn(ctx, channel, event, lang)
+	return out, err
+}
+
+// inLanguage names a language other than the main one in an audit summary.
+func inLanguage(lang, main string) string {
+	if lang == main {
+		return ""
+	}
+	return " in " + lang
 }
 
 // The engine's own messages. Order events carry the keys orderNotificationData

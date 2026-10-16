@@ -179,7 +179,7 @@ func (m *Module) Notify(ctx context.Context, n gocommerce.Notification) error {
 		// this is what keeps a direct call honest too.
 		return nil
 	}
-	tpl, ok, err := m.app.NotifyTemplates().Get(ctx, gocommerce.ChannelEmail, n.Event)
+	tpl, ok, err := m.app.NotifyTemplates().GetIn(ctx, gocommerce.ChannelEmail, n.Event, n.Language)
 	if err != nil {
 		return err
 	}
@@ -189,7 +189,7 @@ func (m *Module) Notify(ctx context.Context, n gocommerce.Notification) error {
 		return nil
 	}
 	subjectText, bodyText := tpl.Subject, tpl.Body
-	if !tpl.Customized {
+	if tpl.Source == gocommerce.WordingDefault {
 		// Code's override applies only where the operator has not spoken:
 		// the panel is the nearer hand.
 		if text, ok := m.cfg.Subjects[n.Event]; ok {

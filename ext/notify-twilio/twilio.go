@@ -155,7 +155,7 @@ func (m *Module) Notify(ctx context.Context, n gocommerce.Notification) error {
 		return nil
 	}
 
-	tpl, found, err := m.app.NotifyTemplates().Get(ctx, gocommerce.ChannelSMS, n.Event)
+	tpl, found, err := m.app.NotifyTemplates().GetIn(ctx, gocommerce.ChannelSMS, n.Event, n.Language)
 	if err != nil {
 		return err
 	}
