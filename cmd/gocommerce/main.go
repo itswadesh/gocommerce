@@ -345,12 +345,14 @@ environment:
 		// store has a domain of its own to verify.
 		if *withResend {
 			modules = append(modules, resend.New(resend.Config{
-				APIKey: os.Getenv("RESEND_API_KEY"), From: os.Getenv("RESEND_FROM"), FromName: os.Getenv("RESEND_FROM_NAME"),
+				APIKey: os.Getenv("RESEND_API_KEY"), From: firstEnv("RESEND_FROM", "DEFAULT_EMAIL_FROM_ADDRESS"),
+				FromName: os.Getenv("RESEND_FROM_NAME"),
 			}))
 		}
 		if *withSendgrid {
 			modules = append(modules, sendgrid.New(sendgrid.Config{
-				APIKey: os.Getenv("SENDGRID_API_KEY"), From: os.Getenv("SENDGRID_FROM"), FromName: os.Getenv("SENDGRID_FROM_NAME"),
+				APIKey: os.Getenv("SENDGRID_API_KEY"), From: firstEnv("SENDGRID_FROM", "DEFAULT_EMAIL_FROM_ADDRESS"),
+				FromName: os.Getenv("SENDGRID_FROM_NAME"),
 			}))
 		}
 		// Twilio before MSG91 for the reason Resend comes before SendGrid: it is
@@ -364,7 +366,7 @@ environment:
 			}))
 		}
 		if *withMsg91 {
-			modules = append(modules, msg91.New(msg91.Config{AuthKey: os.Getenv("MSG91_AUTH_KEY")}))
+			modules = append(modules, msg91.New(msg91.Config{AuthKey: firstEnv("MSG91_AUTH_KEY", "MSG91_AUTHKEY")}))
 		}
 		// Gateways and carriers install idle: nothing in Config, everything on
 		// the Payment methods and Shipping providers screens. A store that
@@ -822,4 +824,17 @@ func envTrue(name string) bool {
 		return false
 	}
 	return true
+}
+
+// firstEnv is the first of these variables that is set. A module's own
+// variable comes first and an install-wide default or an alias after it, so
+// DEFAULT_EMAIL_FROM_ADDRESS sends for any email backend not told otherwise,
+// and MSG91_AUTHKEY — the name MSG91's own dashboard uses — is read too.
+func firstEnv(keys ...string) string {
+	for _, k := range keys {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
+	}
+	return ""
 }
