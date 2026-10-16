@@ -19276,6 +19276,10 @@
           "role": {
             "type": "string",
             "description": "The caller's role in this store. A static admin token sees every store as owner."
+          },
+          "domain": {
+            "type": "string",
+            "description": "Where the store's shop is: its first attached domain, else <slug>.<base domain>, else empty."
           }
         }
       },
