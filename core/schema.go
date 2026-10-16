@@ -70,6 +70,7 @@ func coreMigrations() []Migration {
 		{ID: "0059_store_domain_verification", SQL: migration0059StoreDomainVerification},
 		{ID: "0060_report_runs", SQL: migration0060ReportRuns},
 		{ID: "0061_store_currency", SQL: migration0061StoreCurrency},
+		{ID: "0062_shipping_like_kitcommerce", SQL: migration0062ShippingLikeKitCommerce},
 	}
 }
 

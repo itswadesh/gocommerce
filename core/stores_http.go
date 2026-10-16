@@ -207,6 +207,12 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// A store opened here starts with the default shipping zone, so it can
+	// quote a delivery from its first product (the owner's choice).
+	if err := a.shipping.SeedDefaults(WithStore(ctx, st.ID)); err != nil {
+		RespondError(w, r, Internalf(err, "seed the new store's shipping"))
+		return
+	}
 	entry, err := a.enterStore(ctx, st.ID)
 	if err != nil {
 		RespondError(w, r, err)

@@ -51,8 +51,13 @@ type ShippingZone struct {
 	// which every more specific zone beats.
 	Countries []string `json:"countries"`
 	States    []string `json:"states"`
-	CreatedAt string   `json:"created_at"`
-	UpdatedAt string   `json:"updated_at"`
+	// Description is a line for the operator, under the name.
+	Description string `json:"description"`
+	// Active false switches the zone off without losing it: nothing in it is
+	// quoted, as KitCommerce's DISABLED zone.
+	Active    bool   `json:"active"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 // ShippingRate is one named method, priced over a band of basket subtotals.
@@ -72,6 +77,20 @@ type ShippingRate struct {
 	GroupID   *int64 `json:"group_id,omitempty"`
 	GroupCode string `json:"group_code,omitempty"`
 	GroupName string `json:"group_name,omitempty"`
+
+	// Description is shown to the shopper beside the name.
+	Description string `json:"description"`
+	// HandlingFeeMinor is added to the price; the shopper pays the sum.
+	HandlingFeeMinor int64 `json:"handling_fee_minor"`
+	// MinDays and MaxDays are the delivery estimate; nil is "not said".
+	MinDays *int `json:"min_days,omitempty"`
+	MaxDays *int `json:"max_days,omitempty"`
+	// Basis is what the band is measured on: "price", the basket's subtotal
+	// (MinSubtotalMinor, MaxSubtotalMinor), or "weight", the parcel's grams
+	// (MinWeightGrams, MaxWeightGrams). Both bands are [min, max).
+	Basis          string `json:"basis"`
+	MinWeightGrams int64  `json:"min_weight_grams"`
+	MaxWeightGrams *int64 `json:"max_weight_grams,omitempty"`
 }
 
 // ShippingQuery is a destination and a basket: everything a price depends on.
@@ -79,6 +98,9 @@ type ShippingQuery struct {
 	Country       string
 	State         string
 	SubtotalMinor int64
+	// WeightGrams is the parcel: each physical line's weight times its
+	// quantity, for rates banded by weight.
+	WeightGrams int64
 	// Email is the address whose customer groups' rates apply, and the caller
 	// is the one vouching for it, exactly as with Pricing.PriceFor: a cart
 	// passes its verified_email and never the email typed onto it (D66). Empty
@@ -90,15 +112,31 @@ type ShippingQuery struct {
 type ShippingQuote struct {
 	RateID int64  `json:"rate_id"`
 	Name   string `json:"name"`
-	Price  Money  `json:"price"`
-	ZoneID int64  `json:"zone_id"`
+	// Price is what the shopper pays: the rate's price and its handling fee.
+	Price       Money  `json:"price"`
+	ZoneID      int64  `json:"zone_id"`
+	Description string `json:"description,omitempty"`
+	MinDays     *int   `json:"min_days,omitempty"`
+	MaxDays     *int   `json:"max_days,omitempty"`
+}
+
+// quoteOf is what a shopper is offered for a rate.
+func quoteOf(r *ShippingRate) ShippingQuote {
+	price := r.Price
+	price.AmountMinor += r.HandlingFeeMinor
+	return ShippingQuote{RateID: r.ID, Name: r.Name, Price: price, ZoneID: r.ZoneID,
+		Description: r.Description, MinDays: r.MinDays, MaxDays: r.MaxDays}
 }
 
 // ShippingZoneInput creates or changes a zone.
 type ShippingZoneInput struct {
-	Name      string   `json:"name"`
-	Countries []string `json:"countries"`
-	States    []string `json:"states"`
+	Name        string   `json:"name"`
+	Countries   []string `json:"countries"`
+	States      []string `json:"states"`
+	Description string   `json:"description"`
+	// Active absent from a create is on; absent from an update leaves it as
+	// it is, so a client that never sends it cannot switch a zone back on.
+	Active *bool `json:"active"`
 }
 
 // ShippingRateInput creates or changes a rate.
@@ -116,9 +154,18 @@ type ShippingRateInput struct {
 	// a client written before groups would otherwise turn a dealer's free
 	// freight into everybody's by editing its price.
 	GroupID NullableID `json:"group_id"`
+
+	Description      string `json:"description"`
+	HandlingFeeMinor int64  `json:"handling_fee_minor"`
+	MinDays          *int   `json:"min_days"`
+	MaxDays          *int   `json:"max_days"`
+	// Basis is "price" (the default) or "weight".
+	Basis          string `json:"basis"`
+	MinWeightGrams int64  `json:"min_weight_grams"`
+	MaxWeightGrams *int64 `json:"max_weight_grams"`
 }
 
-const zoneColumns = `id, name, to_jsonb(countries), to_jsonb(states), created_at, updated_at`
+const zoneColumns = `id, name, to_jsonb(countries), to_jsonb(states), description, active, created_at, updated_at`
 
 // scanZone reads the arrays through to_jsonb for the reason catalog.go gives:
 // pgx's database/sql driver returns a text[] as its raw PostgreSQL literal, and
@@ -126,7 +173,7 @@ const zoneColumns = `id, name, to_jsonb(countries), to_jsonb(states), created_at
 func scanZone(row interface{ Scan(...any) error }) (*ShippingZone, error) {
 	var z ShippingZone
 	var countries, states []byte
-	if err := row.Scan(&z.ID, &z.Name, &countries, &states, &z.CreatedAt, &z.UpdatedAt); err != nil {
+	if err := row.Scan(&z.ID, &z.Name, &countries, &states, &z.Description, &z.Active, &z.CreatedAt, &z.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal(countries, &z.Countries); err != nil {
@@ -143,16 +190,30 @@ func scanZone(row interface{ Scan(...any) error }) (*ShippingZone, error) {
 // join to.
 const rateColumns = `id, zone_id, name, price_minor, min_subtotal_minor,
 	max_subtotal_minor, active, position, customer_group_id,
+	description, handling_fee_minor, min_days, max_days, basis, min_weight_grams, max_weight_grams,
 	coalesce((SELECT g.code FROM customer_groups g WHERE g.id = customer_group_id), ''),
 	coalesce((SELECT g.name FROM customer_groups g WHERE g.id = customer_group_id), '')`
 
 func scanRate(row interface{ Scan(...any) error }, currency string) (*ShippingRate, error) {
 	var r ShippingRate
-	var max, group sql.NullInt64
+	var max, group, maxWeight, minDays, maxDays sql.NullInt64
 	if err := row.Scan(&r.ID, &r.ZoneID, &r.Name, &r.Price.AmountMinor,
-		&r.MinSubtotalMinor, &max, &r.Active, &r.Position,
-		&group, &r.GroupCode, &r.GroupName); err != nil {
+		&r.MinSubtotalMinor, &max, &r.Active, &r.Position, &group,
+		&r.Description, &r.HandlingFeeMinor, &minDays, &maxDays, &r.Basis, &r.MinWeightGrams, &maxWeight,
+		&r.GroupCode, &r.GroupName); err != nil {
 		return nil, err
+	}
+	if maxWeight.Valid {
+		v := maxWeight.Int64
+		r.MaxWeightGrams = &v
+	}
+	if minDays.Valid {
+		v := int(minDays.Int64)
+		r.MinDays = &v
+	}
+	if maxDays.Valid {
+		v := int(maxDays.Int64)
+		r.MaxDays = &v
 	}
 	if max.Valid {
 		v := max.Int64
@@ -172,11 +233,13 @@ func (s *Shipping) CreateZone(ctx context.Context, in ShippingZoneInput) (*Shipp
 	if name == "" {
 		return nil, Validationf("a zone needs a name")
 	}
+	active := in.Active == nil || *in.Active
 	row := s.app.db.QueryRowContext(ctx, `
-		INSERT INTO shipping_zones (name, countries, states)
-		VALUES ($1, $2::text[], $3::text[])
+		INSERT INTO shipping_zones (name, countries, states, description, active)
+		VALUES ($1, $2::text[], $3::text[], $4, $5)
 		RETURNING `+zoneColumns,
-		name, stringArray(upperAll(in.Countries)), stringArray(zoneStates(in.Countries, in.States)))
+		name, stringArray(upperAll(in.Countries)), stringArray(zoneStates(in.Countries, in.States)),
+		strings.TrimSpace(in.Description), active)
 	return scanZone(row)
 }
 
@@ -188,10 +251,12 @@ func (s *Shipping) UpdateZone(ctx context.Context, id int64, in ShippingZoneInpu
 	}
 	row := s.app.db.QueryRowContext(ctx, `
 		UPDATE shipping_zones
-		SET name = $2, countries = $3::text[], states = $4::text[], updated_at = now()
+		SET name = $2, countries = $3::text[], states = $4::text[], description = $5,
+		    active = coalesce($6, active), updated_at = now()
 		WHERE id = $1
 		RETURNING `+zoneColumns,
-		id, name, stringArray(upperAll(in.Countries)), stringArray(zoneStates(in.Countries, in.States)))
+		id, name, stringArray(upperAll(in.Countries)), stringArray(zoneStates(in.Countries, in.States)),
+		strings.TrimSpace(in.Description), in.Active)
 	z, err := scanZone(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, NotFoundf("no shipping zone %d", id)
@@ -252,6 +317,7 @@ func (s *Shipping) Zones(ctx context.Context) ([]*ShippingZone, map[int64][]*Shi
 
 // CreateRate adds a rate to a zone.
 func (s *Shipping) CreateRate(ctx context.Context, in ShippingRateInput) (*ShippingRate, error) {
+	in.Basis = rateBasis(in.Basis)
 	group := in.GroupID.Value
 	if err := s.validateRate(ctx, in, group, 0); err != nil {
 		return nil, err
@@ -263,11 +329,14 @@ func (s *Shipping) CreateRate(ctx context.Context, in ShippingRateInput) (*Shipp
 	row := s.app.db.QueryRowContext(ctx, `
 		INSERT INTO shipping_rates
 		    (zone_id, name, price_minor, min_subtotal_minor, max_subtotal_minor, active, position,
-		     customer_group_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		     customer_group_id, description, handling_fee_minor, min_days, max_days, basis,
+		     min_weight_grams, max_weight_grams)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		RETURNING `+rateColumns,
 		in.ZoneID, strings.TrimSpace(in.Name), in.PriceMinor,
-		in.MinSubtotalMinor, in.MaxSubtotalMinor, active, in.Position, group)
+		in.MinSubtotalMinor, in.MaxSubtotalMinor, active, in.Position, group,
+		strings.TrimSpace(in.Description), in.HandlingFeeMinor, in.MinDays, in.MaxDays, in.Basis,
+		in.MinWeightGrams, in.MaxWeightGrams)
 	r, err := scanRate(row, s.app.Currency(ctx))
 	if err != nil {
 		return nil, translateRateErr(err, in.ZoneID, group)
@@ -277,6 +346,7 @@ func (s *Shipping) CreateRate(ctx context.Context, in ShippingRateInput) (*Shipp
 
 // UpdateRate changes one.
 func (s *Shipping) UpdateRate(ctx context.Context, id int64, in ShippingRateInput) (*ShippingRate, error) {
+	in.Basis = rateBasis(in.Basis)
 	group := in.GroupID.Value
 	if !in.GroupID.Present {
 		// Left alone, so the overlap check below has to know who the rate is
@@ -304,11 +374,15 @@ func (s *Shipping) UpdateRate(ctx context.Context, id int64, in ShippingRateInpu
 		UPDATE shipping_rates
 		SET zone_id = $2, name = $3, price_minor = $4, min_subtotal_minor = $5,
 		    max_subtotal_minor = $6, active = $7, position = $8,
-		    customer_group_id = $9, updated_at = now()
+		    customer_group_id = $9, description = $10, handling_fee_minor = $11,
+		    min_days = $12, max_days = $13, basis = $14, min_weight_grams = $15,
+		    max_weight_grams = $16, updated_at = now()
 		WHERE id = $1
 		RETURNING `+rateColumns,
 		id, in.ZoneID, strings.TrimSpace(in.Name), in.PriceMinor,
-		in.MinSubtotalMinor, in.MaxSubtotalMinor, active, in.Position, group)
+		in.MinSubtotalMinor, in.MaxSubtotalMinor, active, in.Position, group,
+		strings.TrimSpace(in.Description), in.HandlingFeeMinor, in.MinDays, in.MaxDays, in.Basis,
+		in.MinWeightGrams, in.MaxWeightGrams)
 	r, err := scanRate(row, s.app.Currency(ctx))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, NotFoundf("no shipping rate %d", id)
@@ -368,10 +442,29 @@ func (s *Shipping) validateRate(ctx context.Context, in ShippingRateInput, group
 		return Validationf("a band cannot start below zero")
 	case in.MaxSubtotalMinor != nil && *in.MaxSubtotalMinor <= in.MinSubtotalMinor:
 		return Validationf("a band that ends at or before it starts matches nothing")
+	case in.Basis != "price" && in.Basis != "weight":
+		return Validationf("a rate is priced on the order's value (basis \"price\") or the parcel's weight (\"weight\")")
+	case in.MinWeightGrams < 0:
+		return Validationf("a weight band cannot start below zero")
+	case in.MaxWeightGrams != nil && *in.MaxWeightGrams <= in.MinWeightGrams:
+		return Validationf("a weight band that ends at or before it starts matches nothing")
+	case in.HandlingFeeMinor < 0:
+		return Validationf("a handling fee cannot be negative")
+	case (in.MinDays != nil && *in.MinDays < 0) || (in.MaxDays != nil && *in.MaxDays < 0):
+		return Validationf("delivery days cannot be negative")
+	case in.MinDays != nil && in.MaxDays != nil && *in.MaxDays < *in.MinDays:
+		return Validationf("the delivery estimate ends before it starts")
+	}
+	// The band this rate is measured on.
+	min, max := in.MinSubtotalMinor, in.MaxSubtotalMinor
+	if in.Basis == "weight" {
+		min, max = in.MinWeightGrams, in.MaxWeightGrams
 	}
 
 	rows, err := s.app.db.QueryContext(ctx, `
-		SELECT min_subtotal_minor, max_subtotal_minor
+		SELECT basis,
+		       CASE WHEN basis = 'weight' THEN min_weight_grams ELSE min_subtotal_minor END,
+		       CASE WHEN basis = 'weight' THEN max_weight_grams ELSE max_subtotal_minor END
 		FROM shipping_rates
 		WHERE zone_id = $1 AND lower(name) = lower($2) AND id <> $3
 		  AND customer_group_id IS NOT DISTINCT FROM $4`,
@@ -381,18 +474,33 @@ func (s *Shipping) validateRate(ctx context.Context, in ShippingRateInput, group
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var min int64
-		var max sql.NullInt64
-		if err := rows.Scan(&min, &max); err != nil {
+		var basis string
+		var otherMin int64
+		var otherMax sql.NullInt64
+		if err := rows.Scan(&basis, &otherMin, &otherMax); err != nil {
 			return err
 		}
-		if bandsOverlap(in.MinSubtotalMinor, in.MaxSubtotalMinor, min, max) {
+		// One method, one measure: a price band beside a weight band of the
+		// same name would offer a basket the method twice.
+		if basis != in.Basis {
+			return Validationf("%q is already priced by %s in this zone; give this rate another name, or price it the same way", name, basis)
+		}
+		if bandsOverlap(min, max, otherMin, otherMax) {
 			return Validationf(
 				"%q already has a band covering part of that range in this zone, for the same customers; "+
 					"bands of one method must not overlap, or a basket would be offered it twice", name)
 		}
 	}
 	return rows.Err()
+}
+
+// rateBasis is what a rate is measured on; empty is the order's value.
+func rateBasis(b string) string {
+	b = strings.ToLower(strings.TrimSpace(b))
+	if b == "" {
+		return "price"
+	}
+	return b
 }
 
 // bandsOverlap treats both bands as half-open [min, max), so two that meet at a
@@ -446,7 +554,7 @@ func (s *Shipping) options(ctx context.Context, q rowQuerier, in ShippingQuery) 
 	states := stringArray(StateSpellings(country, in.State))
 
 	if email := strings.ToLower(strings.TrimSpace(in.Email)); email != "" {
-		mine, err := s.groupQuotes(ctx, q, country, states, in.SubtotalMinor, email)
+		mine, err := s.groupQuotes(ctx, q, country, states, in.SubtotalMinor, in.WeightGrams, email)
 		if err != nil {
 			return nil, false, err
 		}
@@ -459,7 +567,7 @@ func (s *Shipping) options(ctx context.Context, q rowQuerier, in ShippingQuery) 
 	if err != nil || !rated {
 		return nil, false, err
 	}
-	public, err := s.publicQuotes(ctx, q, country, states, in.SubtotalMinor)
+	public, err := s.publicQuotes(ctx, q, country, states, in.SubtotalMinor, in.WeightGrams)
 	return public, true, err
 }
 
@@ -477,7 +585,7 @@ func (s *Shipping) options(ctx context.Context, q rowQuerier, in ShippingQuery) 
 // naming the same method is a collision nobody configured on purpose, and it
 // is settled the way two price lists covering a line are: the cheaper stands,
 // because that is the one that cannot become a complaint.
-func (s *Shipping) groupQuotes(ctx context.Context, q rowQuerier, country, states string, subtotal int64, email string) ([]ShippingQuote, error) {
+func (s *Shipping) groupQuotes(ctx context.Context, q rowQuerier, country, states string, subtotal, weight int64, email string) ([]ShippingQuote, error) {
 	rows, err := q.QueryContext(ctx, `
 		WITH fits AS (
 		    SELECT r.id,
@@ -489,16 +597,15 @@ func (s *Shipping) groupQuotes(ctx context.Context, q rowQuerier, country, state
 		    JOIN shipping_zones z ON z.id = r.zone_id
 		    WHERE r.customer_group_id IN (
 		              SELECT m.group_id FROM customer_group_members m WHERE m.email = $3)
-		      AND r.active
-		      AND r.min_subtotal_minor <= $4
-		      AND (r.max_subtotal_minor IS NULL OR r.max_subtotal_minor > $4)
+		      AND r.active AND z.active
+		      AND `+rateFits("r", "$4", "$5")+`
 		      AND (cardinality(z.countries) = 0 OR $1 = ANY(z.countries))
 		      AND (cardinality(z.states) = 0 OR z.states && $2::text[])
 		)
 		SELECT `+rateColumns+`
 		FROM shipping_rates
 		WHERE id IN (SELECT id FROM fits WHERE place = 1)
-		ORDER BY position, price_minor, id`, country, states, email, subtotal)
+		ORDER BY position, price_minor, id`, country, states, email, subtotal, weight)
 	if err != nil {
 		return nil, err
 	}
@@ -516,7 +623,7 @@ func (s *Shipping) groupQuotes(ctx context.Context, q rowQuerier, country, state
 			continue
 		}
 		cheapest[key] = len(all)
-		all = append(all, ShippingQuote{RateID: r.ID, Name: r.Name, Price: r.Price, ZoneID: r.ZoneID})
+		all = append(all, quoteOf(r))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -533,7 +640,7 @@ func (s *Shipping) groupQuotes(ctx context.Context, q rowQuerier, country, state
 
 // publicQuotes is what anybody is offered: the rule D52 shipped, unchanged for
 // a store that has never named a group on a rate.
-func (s *Shipping) publicQuotes(ctx context.Context, q rowQuerier, country, states string, subtotal int64) ([]ShippingQuote, error) {
+func (s *Shipping) publicQuotes(ctx context.Context, q rowQuerier, country, states string, subtotal, weight int64) ([]ShippingQuote, error) {
 	// The winning zone, by the same specificity tax uses: a state match beats a
 	// country match beats the catch-all. One row out, so the rates below can be
 	// read without a second decision about which zone they came from.
@@ -548,7 +655,8 @@ func (s *Shipping) publicQuotes(ctx context.Context, q rowQuerier, country, stat
 	rows, qerr := q.QueryContext(ctx, `
 		SELECT z.id
 		FROM shipping_zones z
-		WHERE (cardinality(z.countries) = 0 OR $1 = ANY(z.countries))
+		WHERE z.active
+		  AND (cardinality(z.countries) = 0 OR $1 = ANY(z.countries))
 		  AND (cardinality(z.states) = 0 OR z.states && $2::text[])
 		  AND (NOT EXISTS (SELECT 1 FROM shipping_rates r WHERE r.zone_id = z.id)
 		       OR EXISTS (SELECT 1 FROM shipping_rates r
@@ -579,9 +687,8 @@ func (s *Shipping) publicQuotes(ctx context.Context, q rowQuerier, country, stat
 		SELECT `+rateColumns+`
 		FROM shipping_rates
 		WHERE zone_id = $1 AND active AND customer_group_id IS NULL
-		  AND min_subtotal_minor <= $2
-		  AND (max_subtotal_minor IS NULL OR max_subtotal_minor > $2)
-		ORDER BY position, price_minor, id`, zoneID, subtotal)
+		  AND `+rateFits("shipping_rates", "$2", "$3")+`
+		ORDER BY position, price_minor, id`, zoneID, subtotal, weight)
 	if err2 != nil {
 		return nil, err2
 	}
@@ -593,11 +700,19 @@ func (s *Shipping) publicQuotes(ctx context.Context, q rowQuerier, country, stat
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, ShippingQuote{
-			RateID: r.ID, Name: r.Name, Price: r.Price, ZoneID: r.ZoneID,
-		})
+		out = append(out, quoteOf(r))
 	}
 	return out, rateRows.Err()
+}
+
+// rateFits is the SQL that a rate's band holds the basket: its subtotal for a
+// rate priced on the order's value, its weight for one priced on weight. Both
+// bands are [min, max).
+func rateFits(r, subtotal, weight string) string {
+	return `((` + r + `.basis = 'price' AND ` + r + `.min_subtotal_minor <= ` + subtotal + `
+	          AND (` + r + `.max_subtotal_minor IS NULL OR ` + r + `.max_subtotal_minor > ` + subtotal + `))
+	      OR (` + r + `.basis = 'weight' AND ` + r + `.min_weight_grams <= ` + weight + `
+	          AND (` + r + `.max_weight_grams IS NULL OR ` + r + `.max_weight_grams > ` + weight + `)))`
 }
 
 // configured reports whether this store has any shipping rates for everybody.
@@ -612,7 +727,8 @@ func (s *Shipping) publicQuotes(ctx context.Context, q rowQuerier, country, stat
 // feature breaking the shop.
 func (s *Shipping) configured(ctx context.Context, q rowQuerier) (bool, error) {
 	rows, err := q.QueryContext(ctx,
-		`SELECT 1 FROM shipping_rates WHERE active AND customer_group_id IS NULL LIMIT 1`)
+		`SELECT 1 FROM shipping_rates r JOIN shipping_zones z ON z.id = r.zone_id
+		 WHERE r.active AND z.active AND r.customer_group_id IS NULL LIMIT 1`)
 	if err != nil {
 		return false, err
 	}

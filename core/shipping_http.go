@@ -53,10 +53,16 @@ func (a *App) handleShippingRates(w http.ResponseWriter, r *http.Request) {
 	// Quoted as whoever the cart is proven to belong to, so a dealer's basket
 	// is offered the dealer's freight — and as nobody in particular when it is
 	// not, whatever address was typed onto it (D66, D76).
+	weight, err := cartWeightGrams(r.Context(), a.db, cart.ID)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
 	quotes, err := a.shipping.Quote(r.Context(), ShippingQuery{
 		Country:       country,
 		State:         q.Get("state"),
 		SubtotalMinor: cart.Subtotal.AmountMinor,
+		WeightGrams:   weight,
 		Email:         cart.VerifiedEmail,
 	})
 	if err != nil {

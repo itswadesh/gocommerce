@@ -18420,6 +18420,14 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "description": {
+            "type": "string",
+            "description": "A line under the name: for the operator on a zone, for the shopper on a rate."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "False switches the zone off without losing it: nothing in it is quoted."
           }
         }
       },
@@ -18451,6 +18459,17 @@
               "KA"
             ],
             "description": "Each state is read against each of the zone's countries. In the United States, Canada, Australia and India a state is read by its code or its name (\"California\", \"ca\" and \"US-CA\" are all `CA`) and stored as its code; an address matches by either. Elsewhere it is matched as written, case and spacing aside."
+          },
+          "description": {
+            "type": "string",
+            "description": "A line under the name: for the operator on a zone, for the shopper on a rate."
+          },
+          "active": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Absent from a create is on; absent from an update leaves it as it is."
           }
         }
       },
@@ -18501,6 +18520,49 @@
           "group_name": {
             "type": "string",
             "description": "The group's name, beside group_id."
+          },
+          "description": {
+            "type": "string",
+            "description": "A line under the name: for the operator on a zone, for the shopper on a rate."
+          },
+          "handling_fee_minor": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Added to the price; the shopper pays the sum."
+          },
+          "min_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Delivery estimate, fewest days."
+          },
+          "max_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Delivery estimate, most days."
+          },
+          "basis": {
+            "type": "string",
+            "enum": [
+              "price",
+              "weight"
+            ],
+            "description": "What the band is measured on: the order's subtotal (min/max_subtotal_minor) or the parcel's weight (min/max_weight_grams). Both bands are [min, max). Default price."
+          },
+          "min_weight_grams": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_weight_grams": {
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         }
       },
@@ -18548,6 +18610,49 @@
             "format": "int64",
             "nullable": true,
             "description": "Who sees this rate: a customer group's id, or null for everybody. Absent on a create is everybody; absent on an update leaves the rate's audience as it was, so a client that does not know about groups cannot widen a group's rate to everybody by editing its price. Overlapping bands are refused only between rates offered to the same people. Naming a group needs no right beyond shipping.write."
+          },
+          "description": {
+            "type": "string",
+            "description": "A line under the name: for the operator on a zone, for the shopper on a rate."
+          },
+          "handling_fee_minor": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Added to the price; the shopper pays the sum."
+          },
+          "min_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Delivery estimate, fewest days."
+          },
+          "max_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Delivery estimate, most days."
+          },
+          "basis": {
+            "type": "string",
+            "enum": [
+              "price",
+              "weight"
+            ],
+            "description": "What the band is measured on: the order's subtotal (min/max_subtotal_minor) or the parcel's weight (min/max_weight_grams). Both bands are [min, max). Default price."
+          },
+          "min_weight_grams": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_weight_grams": {
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         }
       },
@@ -18563,11 +18668,27 @@
             "type": "string"
           },
           "price": {
-            "$ref": "#/components/schemas/Money"
+            "$ref": "#/components/schemas/Money",
+            "description": "What the shopper pays: the rate's price and its handling fee."
           },
           "zone_id": {
             "type": "integer",
             "format": "int64"
+          },
+          "description": {
+            "type": "string"
+          },
+          "min_days": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "max_days": {
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         }
       },
