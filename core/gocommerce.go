@@ -142,6 +142,15 @@ type Config struct {
 	// X-Forwarded-Host would carry a live token to a host they chose. Left
 	// empty, the reset email carries the bare token to paste instead.
 	PanelURL string
+	// CORSOrigins are the browser origins allowed to call the API directly —
+	// "https://shop.example.com", or "*" for any. Empty, the default, sends no
+	// CORS headers, and a storefront on another origin has to proxy.
+	//
+	// Credentials are never allowed. Storefront sessions travel as bearer
+	// tokens a page sets on purpose, so another site gains nothing a
+	// shopper's browser would attach for it — the panel's store cookie stays
+	// out of reach of every origin listed here, "*" included.
+	CORSOrigins []string
 	// MediaStore replaces the built-in local-disk store wholesale — the seam an
 	// S3 or GCS module uses. When set, MediaDir is ignored.
 	MediaStore MediaStore
@@ -823,6 +832,9 @@ func (a *App) Handler() http.Handler {
 	// fallback, so an unknown route still answers JSON.
 	h = a.storeMW(h)
 	h = a.languageMW(h)
+	// Outside storeMW and the demo guard, so a preflight is answered before
+	// anything can refuse it: a browser sends no X-Store and no token on one.
+	h = a.corsMW(h)
 	h = a.logMW(h)
 	h = a.recoverMW(h)
 	return h

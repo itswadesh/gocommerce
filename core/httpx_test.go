@@ -10,6 +10,43 @@ import (
 	"time"
 )
 
+// A storefront on another origin calls the engine straight from the browser.
+// The preflight carries no store and no token, so it has to be answered before
+// anything behind it can refuse it, and an origin nobody listed gets nothing.
+func TestCORSAllowsOnlyListedOrigins(t *testing.T) {
+	app := newTestApp(t)
+	app.cfg.CORSOrigins = []string{"https://shop.example.com"}
+
+	preflight := do(t, app, http.MethodOptions, "/api/carts",
+		header("Origin", "https://shop.example.com"),
+		header("Access-Control-Request-Method", "POST"),
+		header("Access-Control-Request-Headers", "content-type,x-store"))
+	if preflight.Code != http.StatusNoContent {
+		t.Fatalf("preflight = %d: %s", preflight.Code, preflight.Body)
+	}
+	if got := preflight.Header().Get("Access-Control-Allow-Origin"); got != "https://shop.example.com" {
+		t.Errorf("preflight Allow-Origin = %q", got)
+	}
+	if got := preflight.Header().Get("Access-Control-Allow-Headers"); got != "content-type,x-store" {
+		t.Errorf("preflight Allow-Headers = %q", got)
+	}
+	if got := preflight.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Errorf("credentials allowed: %q", got)
+	}
+
+	get := do(t, app, http.MethodGet, "/api/categories", header("Origin", "https://shop.example.com"))
+	if get.Code != http.StatusOK || get.Header().Get("Access-Control-Allow-Origin") != "https://shop.example.com" {
+		t.Errorf("GET = %d, Allow-Origin %q", get.Code, get.Header().Get("Access-Control-Allow-Origin"))
+	}
+
+	stranger := do(t, app, http.MethodOptions, "/api/carts",
+		header("Origin", "https://evil.example"),
+		header("Access-Control-Request-Method", "POST"))
+	if got := stranger.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("an unlisted origin was allowed: %q", got)
+	}
+}
+
 func TestAPIErrorIs(t *testing.T) {
 	t.Parallel()
 
