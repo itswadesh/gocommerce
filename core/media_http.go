@@ -34,18 +34,17 @@ func (a *App) mountMediaRoutes() {
 // mountLocalMedia serves MediaDir read-only.
 //
 // It deliberately does not use http.FileServer: that would serve directory
-// listings and follow any path the URL describes. Every stored key is a flat
-// random name, so the handler resolves exactly one file in exactly one
-// directory and refuses anything else.
+// listings and follow any path the URL describes. Every stored key is a
+// random name, flat or in its store's folder, so the handler resolves exactly
+// one file and refuses anything else (LocalMediaStore.pathOf).
 func (a *App) mountLocalMedia(store *LocalMediaStore) {
 	prefix := strings.TrimRight(store.Prefix, "/") + "/"
-	a.HandleFunc("GET "+prefix+"{key}", func(w http.ResponseWriter, r *http.Request) {
-		key := r.PathValue("key")
-		if key == "" || key != filepath.Base(key) || strings.Contains(key, "..") {
+	serve := func(w http.ResponseWriter, r *http.Request, key string) {
+		path, ok := store.pathOf(key)
+		if !ok {
 			RespondError(w, r, NotFoundf("no such media"))
 			return
 		}
-		path := filepath.Join(store.Dir, key)
 		f, err := os.Open(path)
 		if err != nil {
 			RespondError(w, r, NotFoundf("no such media"))
@@ -64,7 +63,14 @@ func (a *App) mountLocalMedia(store *LocalMediaStore) {
 		// Belt and braces against a file that slipped past the extension
 		// allow-list: never let the browser sniff an upload into markup.
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		http.ServeContent(w, r, key, info.ModTime(), f)
+		http.ServeContent(w, r, filepath.Base(path), info.ModTime(), f)
+	}
+	// A flat key from before stores had folders, and a store's own file.
+	a.HandleFunc("GET "+prefix+"{key}", func(w http.ResponseWriter, r *http.Request) {
+		serve(w, r, r.PathValue("key"))
+	})
+	a.HandleFunc("GET "+prefix+"stores/{store}/{key}", func(w http.ResponseWriter, r *http.Request) {
+		serve(w, r, "stores/"+r.PathValue("store")+"/"+r.PathValue("key"))
 	})
 }
 
