@@ -174,10 +174,21 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Name string `json:"name"`
 		Slug string `json:"slug"`
+		// Currency is what the store sells in; empty is the install's (D85).
+		Currency string `json:"currency"`
 	}
 	if err := DecodeJSON(w, r, &in); err != nil {
 		RespondError(w, r, err)
 		return
+	}
+	// Checked before anything is created, so a bad code opens no store.
+	if in.Currency != "" {
+		code, err := normalizeCurrency(in.Currency)
+		if err != nil {
+			RespondError(w, r, err)
+			return
+		}
+		in.Currency = code
 	}
 	ctx := r.Context()
 	var owner int64
@@ -188,6 +199,13 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		RespondError(w, r, err)
 		return
+	}
+	if in.Currency != "" {
+		// A new store has nothing priced yet, so nothing to relabel.
+		if _, err := a.db.ExecContext(ctx, `UPDATE stores SET currency = $1 WHERE id = $2`, in.Currency, st.ID); err != nil {
+			RespondError(w, r, Internalf(err, "set the new store's currency"))
+			return
+		}
 	}
 	entry, err := a.enterStore(ctx, st.ID)
 	if err != nil {

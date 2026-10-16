@@ -145,8 +145,8 @@ func (r *Reports) Payouts(ctx context.Context, q PayoutsQuery) (*PayoutsReport, 
 
 	// A store with no sales in the window still has a currency, and an
 	// empty response looks broken rather than quiet.
-	if _, ok := byCurrency[r.app.cfg.Currency]; !ok {
-		byCurrency[r.app.cfg.Currency] = &CurrencyPayouts{Currency: r.app.cfg.Currency, Methods: []MethodPayout{}}
+	if _, ok := byCurrency[r.app.Currency(ctx)]; !ok {
+		byCurrency[r.app.Currency(ctx)] = &CurrencyPayouts{Currency: r.app.Currency(ctx), Methods: []MethodPayout{}}
 	}
 
 	currencies := make([]string, 0, len(byCurrency))

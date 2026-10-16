@@ -3,6 +3,7 @@ package gocommerce
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -59,6 +60,13 @@ type StoreProfile struct {
 	Language string `json:"language"`
 	// SupportURL is where a buyer is sent for help, for the foot of an email.
 	SupportURL string `json:"support_url"`
+
+	// Currency is what the store sells in, an ISO 4217 code (D85). Saving a
+	// different one is refused once the store has an order; empty leaves it
+	// as it is, so a client that does not send it cannot reset it.
+	Currency string `json:"currency"`
+	// CurrencyLocked is true once the store has an order. Read only.
+	CurrencyLocked bool `json:"currency_locked"`
 }
 
 // MaxProfileField bounds every text field. One limit rather than a different
@@ -92,6 +100,10 @@ func (p *StoreProfiles) Get(ctx context.Context) (*StoreProfile, error) {
 	}
 	if err != nil {
 		return nil, Internalf(err, "read the store profile")
+	}
+	out.Currency = p.app.Currency(ctx)
+	if out.CurrencyLocked, err = p.app.hasOrders(ctx, p.app.db); err != nil {
+		return nil, Internalf(err, "read whether the store has orders")
 	}
 	return &out, nil
 }
@@ -151,11 +163,36 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 			in.Language, strings.Join(p.app.cfg.Languages, ", "))
 	}
 
+	// The currency: refused, not ignored, once there is an order, because an
+	// owner who chose INR and got USD would find out from a customer.
+	currency := ""
+	if strings.TrimSpace(in.Currency) != "" {
+		code, err := normalizeCurrency(in.Currency)
+		if err != nil {
+			return nil, err
+		}
+		if code != p.app.Currency(ctx) {
+			currency = code
+		}
+	}
+
 	var updatedBy *int64
 	if by != nil {
 		updatedBy = &by.ID
 	}
 	err := InTx(ctx, p.app.db, func(tx *sql.Tx) error {
+		if currency != "" {
+			locked, err := p.app.hasOrders(ctx, tx)
+			if err != nil {
+				return err
+			}
+			if locked {
+				return Conflictf("this store has orders, so its currency is fixed: changing it would change what their amounts mean")
+			}
+			if err := p.app.setCurrency(ctx, tx, currency); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.ExecContext(ctx, `
 		UPDATE store_profile SET
 		    name = $1, legal_name = $2, email = $3, phone = $4,
@@ -180,8 +217,15 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 			`UPDATE stores SET name = $1 WHERE id = $2`, in.Name, p.app.storeOf(ctx))
 		return err
 	})
+	var api *APIError
+	if errors.As(err, &api) {
+		return nil, api
+	}
 	if err != nil {
 		return nil, Internalf(err, "save the store profile")
+	}
+	if currency != "" {
+		ctx = withStoreCurrency(ctx, currency)
 	}
 	return p.Get(ctx)
 }

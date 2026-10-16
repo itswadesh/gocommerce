@@ -176,7 +176,7 @@ func (c *Carts) CreateInChannel(ctx context.Context, email, channelCode string) 
 		INSERT INTO carts (token, currency, email, channel_id, expires_at)
 		VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5))
 		RETURNING id`,
-		tok, c.app.cfg.Currency, nullString(email), channelID,
+		tok, c.app.Currency(ctx), nullString(email), channelID,
 		c.app.cfg.CartTTL.Seconds()).Scan(&id)
 	if err != nil {
 		return nil, err

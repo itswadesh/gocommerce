@@ -21,7 +21,9 @@ type Store struct {
 	OrderPrefix *string `json:"order_prefix"`
 	// Demo masks personal data on this store's admin routes and freezes who
 	// can sign in to it, as Config.Demo does for the whole install.
-	Demo      bool      `json:"demo"`
+	Demo bool `json:"demo"`
+	// Currency is what this store sells in; nil is Config.Currency (D85).
+	Currency  *string   `json:"currency"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -79,14 +81,14 @@ func (a *App) resolveDefaultStore(ctx context.Context) error {
 	return nil
 }
 
-const storeColumns = `id, slug, name, status, order_prefix, demo, created_at`
+const storeColumns = `id, slug, name, status, order_prefix, demo, currency, created_at`
 
 // storeSlugRE is the shape the stores table's CHECK allows.
 var storeSlugRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 func scanStore(row interface{ Scan(...any) error }) (*Store, error) {
 	var st Store
-	if err := row.Scan(&st.ID, &st.Slug, &st.Name, &st.Status, &st.OrderPrefix, &st.Demo, &st.CreatedAt); err != nil {
+	if err := row.Scan(&st.ID, &st.Slug, &st.Name, &st.Status, &st.OrderPrefix, &st.Demo, &st.Currency, &st.CreatedAt); err != nil {
 		return nil, err
 	}
 	return &st, nil

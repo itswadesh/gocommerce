@@ -180,7 +180,7 @@ func (s *Orders) Customers(ctx context.Context, q CustomerQuery) ([]*Customer, i
 			&c.FirstOrderAt, &c.LastOrderAt, &c.Name, &c.Phone, &addr); err != nil {
 			return nil, 0, Internalf(err, "scan customer")
 		}
-		c.Spent = money(spent, s.app.cfg.Currency)
+		c.Spent = money(spent, s.app.Currency(ctx))
 		if len(addr) > 0 {
 			_ = json.Unmarshal(addr, &c.Address)
 		}

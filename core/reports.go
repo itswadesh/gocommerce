@@ -444,7 +444,7 @@ func (r *Reports) Sales(ctx context.Context, q SalesQuery) (*SalesReport, error)
 		  LEFT JOIN agg   a ON a.currency = g.currency AND a.bucket = g.bucket
 		  LEFT JOIN units u ON u.currency = g.currency AND u.bucket = g.bucket
 		 ORDER BY g.currency, g.bucket`,
-		lo, hi, grain, tz, r.app.cfg.Currency, stringArray(saleStatuses))
+		lo, hi, grain, tz, r.app.Currency(ctx), stringArray(saleStatuses))
 	if err != nil {
 		return nil, Internalf(err, "read the sales report")
 	}
@@ -524,7 +524,7 @@ func (r *Reports) Sales(ctx context.Context, q SalesQuery) (*SalesReport, error)
 	// operator who has never heard of multi-currency must not find their
 	// figures behind a tab, and the dashboard reads the first block as the
 	// store's own.
-	own := r.app.cfg.Currency
+	own := r.app.Currency(ctx)
 	sort.Slice(report.Currencies, func(i, j int) bool {
 		a, b := report.Currencies[i].Currency, report.Currencies[j].Currency
 		if (a == own) != (b == own) {
@@ -595,7 +595,7 @@ func (r *Reports) TopProducts(ctx context.Context, q TopProductsQuery) ([]*Produ
 	}
 	currency := q.Currency
 	if currency == "" {
-		currency = r.app.cfg.Currency
+		currency = r.app.Currency(ctx)
 	}
 	tz, err := r.zone(ctx, q.TimeZone)
 	if err != nil {

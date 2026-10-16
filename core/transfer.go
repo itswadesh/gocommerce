@@ -384,7 +384,7 @@ func (t *Transfer) ExportCustomers(ctx context.Context, out io.Writer, q Custome
 	}
 	defer rows.Close()
 
-	currency := t.app.cfg.Currency
+	currency := t.app.Currency(ctx)
 	for rows.Next() {
 		var c exportCustomer
 		var addrRaw []byte
@@ -450,7 +450,7 @@ func (t *Transfer) ImportOrders(ctx context.Context, in io.Reader, opts ImportOp
 				return nil, Validationf("a Shopify orders file needs the column %q", required)
 			}
 		}
-		translate = newShopifyOrderReader(cols, t.app.cfg.Currency)
+		translate = newShopifyOrderReader(cols, t.app.Currency(ctx))
 		cols = translate.out
 	default:
 		for _, required := range []string{"number", "email", "sku", "quantity", "unit_price_minor"} {
@@ -605,7 +605,7 @@ func (t *Transfer) importOrderGroup(ctx context.Context, rows []csvRow, dryRun, 
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17)
 			RETURNING id`,
 			number, accessToken, status, payStatus, provider,
-			firstNonEmpty(first.get("currency"), t.app.cfg.Currency),
+			firstNonEmpty(first.get("currency"), t.app.Currency(ctx)),
 			subtotal, shipping, discount, total, importedRefunded(payStatus, total),
 			strings.ToLower(first.get("email")), nullString(first.get("phone")),
 			nullString(first.get("name")), addr, lang, createdAt).Scan(&orderID); err != nil {
@@ -632,8 +632,8 @@ func (t *Transfer) importOrderGroup(ctx context.Context, rows []csvRow, dryRun, 
 
 		if fireEvents {
 			o := &Order{ID: orderID, Number: number, Status: status, PaymentStatus: payStatus,
-				PaymentProvider: provider, Currency: t.app.cfg.Currency,
-				Total: money(total, t.app.cfg.Currency), Email: first.get("email"), Language: lang}
+				PaymentProvider: provider, Currency: t.app.Currency(ctx),
+				Total: money(total, t.app.Currency(ctx)), Email: first.get("email"), Language: lang}
 			if err := t.app.outbox.write(ctx, tx, EventOrderCreated, AggregateOrder, orderID,
 				t.app.orders.eventPayload(o)); err != nil {
 				return err

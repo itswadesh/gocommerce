@@ -68,7 +68,7 @@ func (a *App) handleShippingRates(w http.ResponseWriter, r *http.Request) {
 	}
 	Respond(w, http.StatusOK, map[string]any{
 		"rates":    quotes,
-		"currency": a.cfg.Currency,
+		"currency": a.Currency(r.Context()),
 	})
 }
 

@@ -241,7 +241,7 @@ func (s *Shipping) Zones(ctx context.Context) ([]*ShippingZone, map[int64][]*Shi
 
 	byZone := map[int64][]*ShippingRate{}
 	for rateRows.Next() {
-		r, err := scanRate(rateRows, s.app.cfg.Currency)
+		r, err := scanRate(rateRows, s.app.Currency(ctx))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -268,7 +268,7 @@ func (s *Shipping) CreateRate(ctx context.Context, in ShippingRateInput) (*Shipp
 		RETURNING `+rateColumns,
 		in.ZoneID, strings.TrimSpace(in.Name), in.PriceMinor,
 		in.MinSubtotalMinor, in.MaxSubtotalMinor, active, in.Position, group)
-	r, err := scanRate(row, s.app.cfg.Currency)
+	r, err := scanRate(row, s.app.Currency(ctx))
 	if err != nil {
 		return nil, translateRateErr(err, in.ZoneID, group)
 	}
@@ -309,7 +309,7 @@ func (s *Shipping) UpdateRate(ctx context.Context, id int64, in ShippingRateInpu
 		RETURNING `+rateColumns,
 		id, in.ZoneID, strings.TrimSpace(in.Name), in.PriceMinor,
 		in.MinSubtotalMinor, in.MaxSubtotalMinor, active, in.Position, group)
-	r, err := scanRate(row, s.app.cfg.Currency)
+	r, err := scanRate(row, s.app.Currency(ctx))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, NotFoundf("no shipping rate %d", id)
 	}
@@ -507,7 +507,7 @@ func (s *Shipping) groupQuotes(ctx context.Context, q rowQuerier, country, state
 	var all []ShippingQuote
 	cheapest := map[string]int{}
 	for rows.Next() {
-		r, err := scanRate(rows, s.app.cfg.Currency)
+		r, err := scanRate(rows, s.app.Currency(ctx))
 		if err != nil {
 			return nil, err
 		}
@@ -589,7 +589,7 @@ func (s *Shipping) publicQuotes(ctx context.Context, q rowQuerier, country, stat
 
 	var out []ShippingQuote
 	for rateRows.Next() {
-		r, err := scanRate(rateRows, s.app.cfg.Currency)
+		r, err := scanRate(rateRows, s.app.Currency(ctx))
 		if err != nil {
 			return nil, err
 		}
