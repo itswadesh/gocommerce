@@ -222,8 +222,11 @@ export function recoveryProgress(row, now = Date.now()) {
         next = ms > 0 ? `Next in ${shortDuration(ms)}` : "Next due now";
     }
     // Nothing has gone out: either something is about to, which is the news,
-    // or nothing is coming at all.
-    if (sent === 0) return next ? { text: next, hint: "", muted: false } : { text: "No contact", hint: "", muted: true };
+    // or nothing is coming — for want of an address, or for another reason.
+    if (sent === 0) {
+        if (next) return { text: next, hint: "", muted: false };
+        return { text: row?.email ? "Nothing sent" : "No contact", hint: "", muted: true };
+    }
 
     const clicks = row.clicks ?? 0;
     const clicked = clicks === 0 ? "" : clicks === 1 ? "Clicked" : `${clicks} clicks`;
@@ -292,7 +295,16 @@ export function timelineTone(kind) {
  * happened — "Today", "Yesterday", then the date — in the reader's own days.
  */
 export function timelineByDay(timeline, now = new Date()) {
-    const sorted = [...(timeline ?? [])].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+    // Keys counted oldest first, so an entry keeps its key when a newer one
+    // arrives, and two entries of a kind at one moment still differ.
+    const seen = new Map();
+    const keyed = (timeline ?? []).map((entry) => {
+        const base = `${entry.at}|${entry.kind}`;
+        const n = seen.get(base) ?? 0;
+        seen.set(base, n + 1);
+        return { ...entry, key: `${base}|${n}` };
+    });
+    const sorted = keyed.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
     const today = civilDate(now);
     const yesterday = civilDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
     const days = [];

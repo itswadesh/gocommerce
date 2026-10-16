@@ -16,6 +16,7 @@
      */
     import { untrack } from "svelte";
     import { base } from "$app/paths";
+    import { goto } from "$app/navigation";
     import { page as route } from "$app/state";
     import { api, can, query } from "$lib/api.js";
     import { rowKey } from "$lib/rowkey.js";
@@ -119,10 +120,15 @@
 
     /* An abandoned checkout's "Open cart" lands here with ?cart=<id>: the
        basket opens on arrival, wherever it sits in the list, or says why it
-       cannot (purged since). */
+       cannot (purged since). Once, per id: the list keeps the parameter as it
+       pages and filters, and closing the drawer takes it off the address. */
+    let openedFromLink = 0;
     $effect(() => {
         const id = Number(route.url.searchParams.get("cart"));
-        if (readable && id > 0) untrack(() => openById(id));
+        if (readable && id > 0 && id !== openedFromLink) {
+            openedFromLink = id;
+            untrack(() => openById(id));
+        }
     });
 
     async function openById(id) {
@@ -131,6 +137,15 @@
             detailOpen = true;
         } catch (err) {
             toast.error(err);
+        }
+    }
+
+    function closeDetail() {
+        detailOpen = false;
+        if (route.url.searchParams.has("cart")) {
+            const url = new URL(route.url);
+            url.searchParams.delete("cart");
+            goto(url, { replaceState: true, keepFocus: true, noScroll: true });
         }
     }
 
@@ -358,7 +373,7 @@
     </div>
 </div>
 
-<Drawer open={detailOpen} size="lg" title="Basket" onclose={() => (detailOpen = false)}>
+<Drawer open={detailOpen} size="lg" title="Basket" onclose={closeDetail}>
     {#if cart}
         <!-- The order drawer's own card recipe, reused rather than re-cut: this
              is the same kind of thing seen a step earlier, and a second set of

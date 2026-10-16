@@ -9510,6 +9510,11 @@ kbd + kbd {
     gap: 10px;
     padding: var(--smSpacing);
 }
+.recovery-pop-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
 .recovery-pop-title {
     font-weight: 600;
 }
@@ -9639,7 +9644,9 @@ kbd + kbd {
     border-radius: 999px;
     background: color-mix(in srgb, var(--pill) 12%, transparent);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pill) 25%, transparent);
-    color: color-mix(in srgb, var(--pill) 75%, var(--surfaceTxtColor));
+    /* Half the status, half the ink: at 12px on the tint this keeps 4.5:1
+       in both themes, which three-quarters did not. */
+    color: color-mix(in srgb, var(--pill) 50%, var(--surfaceTxtColor));
     font-size: 12px;
     font-weight: 500;
     line-height: 20px;

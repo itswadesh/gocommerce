@@ -73,6 +73,12 @@ test("the recovery column says what went out and what comes next", () => {
     const soon = new Date(now + 18 * 3600 * 1000).toISOString();
     const past = new Date(now - 60 * 1000).toISOString();
     assert.deepEqual(recoveryProgress({ email: "" }, now), { text: "No contact", hint: "", muted: true });
+    // An address and nothing sent or coming says that, not "no contact".
+    assert.deepEqual(recoveryProgress({ email: "a@b.c", status: "abandoned", messages_sent: 0 }, now), {
+        text: "Nothing sent",
+        hint: "",
+        muted: true,
+    });
     assert.deepEqual(
         recoveryProgress({ email: "a@b.c", status: "scheduled", messages_sent: 0, next_step_at: soon }, now),
         { text: "Next in 18h", hint: "", muted: false },
@@ -166,6 +172,14 @@ test("the timeline is newest first, under the day it happened", () => {
         days[0].entries.map((e) => e.kind),
         ["sent", "scheduled"],
     );
+    // Each entry keeps its key when a newer one arrives, and two entries at
+    // the same moment of the same kind still have keys of their own.
+    const twin = { at: at(9, 14), kind: "sent" };
+    const keys = timelineByDay([{ at: at(9, 14), kind: "sent" }, twin], now)[0].entries.map((e) => e.key);
+    assert.equal(new Set(keys).size, 2);
+    const before = timelineByDay([{ at: at(9, 11), kind: "scheduled" }], now)[0].entries[0].key;
+    const after = timelineByDay([{ at: at(9, 11), kind: "scheduled" }, { at: at(9, 14), kind: "sent" }], now)[0].entries[1].key;
+    assert.equal(before, after);
 });
 
 test("the value and date filters say what they hold", () => {

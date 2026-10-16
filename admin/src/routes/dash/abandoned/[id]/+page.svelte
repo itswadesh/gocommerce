@@ -65,6 +65,9 @@
     const noSuppressRight = `Your role does not carry “${rightLabel("abandonment.suppress")}”`;
 
     let record = $state(null);
+    /** A read somebody asked for: the first, the refresh buttons, an action's
+        re-read. The thirty-second poll is not one, so nothing on the page
+        spins or announces itself twice a minute. */
     let loading = $state(true);
     /** "missing" for a 404, the message for anything else, "" when read. */
     let failure = $state("");
@@ -96,7 +99,7 @@
      */
     async function load({ quiet = false } = {}) {
         const mine = ++reqId;
-        loading = true;
+        if (!quiet) loading = true;
         try {
             const next = await recovery.get(id);
             if (mine !== reqId) return;
@@ -116,7 +119,7 @@
                 toast.error(err);
             }
         } finally {
-            if (mine === reqId) loading = false;
+            if (mine === reqId && !quiet) loading = false;
         }
     }
 
@@ -303,7 +306,7 @@
                 <div class="flex-fill"></div>
 
                 {#if record}
-                    <span class="txt-hint txt-sm recovery-updated" aria-live="polite">
+                    <span class="txt-hint txt-sm recovery-updated">
                         {loading ? "Refreshing…" : loadedAt ? `Updated ${time(loadedAt)}` : ""}
                     </span>
                     <!-- Every button here leads with an icon: below 550px the
@@ -362,16 +365,18 @@
                             <i class="ri-more-fill" aria-hidden="true"></i>
                         </button>
                         <div id="abandoned-more" class="dropdown sm nowrap dropdown-left" popover="auto" role="menu">
-                            {#if record.email}
+                            {#if record.email && can("customers.read")}
                                 <a role="menuitem" class="dropdown-item" href="{base}/dash/customers?q={encodeURIComponent(record.email)}">
                                     <i class="ri-user-3-line" aria-hidden="true"></i>
                                     <span class="txt">Open customer</span>
                                 </a>
                             {/if}
-                            <a role="menuitem" class="dropdown-item" href="{base}/dash/checkouts?state=any&cart={record.cart_id}">
-                                <i class="ri-shopping-cart-2-line" aria-hidden="true"></i>
-                                <span class="txt">Open cart</span>
-                            </a>
+                            {#if record.cart?.exists && can("orders.read")}
+                                <a role="menuitem" class="dropdown-item" href="{base}/dash/checkouts?state=any&cart={record.cart_id}">
+                                    <i class="ri-shopping-cart-2-line" aria-hidden="true"></i>
+                                    <span class="txt">Open cart</span>
+                                </a>
+                            {/if}
                             {#if record.recovered_order}
                                 <a role="menuitem" class="dropdown-item" href="{base}/dash/orders/{record.recovered_order.id}">
                                     <i class="ri-shopping-bag-3-line" aria-hidden="true"></i>
@@ -565,7 +570,7 @@
                                 <div class="recovery-day">
                                     <div class="recovery-day-label">{day.label}</div>
                                     <ol class="recovery-events">
-                                        {#each day.entries as entry, i (entry.at + entry.kind + i)}
+                                        {#each day.entries as entry (entry.key)}
                                             {@const meta = [time(entry.at), actorMeta(entry.actor)].filter(Boolean).join(" · ")}
                                             <li class="recovery-event" in:rise>
                                                 <span class="recovery-event-icon is-{timelineTone(entry.kind)}" aria-hidden="true">
@@ -739,6 +744,15 @@
                                 <p class="recovery-blocked">
                                     <i class="ri-information-line" aria-hidden="true"></i>
                                     <span>{options.send_blocked_reason}</span>
+                                </p>
+                            {/if}
+                            <!-- The link button is disabled when the link cannot be
+                                 had, and a disabled button's title reaches neither a
+                                 phone nor the keyboard: the reason is said here. -->
+                            {#if showLink && options && !options.can_copy_link && options.link_blocked_reason && options.link_blocked_reason !== options.send_blocked_reason}
+                                <p class="recovery-blocked">
+                                    <i class="ri-link" aria-hidden="true"></i>
+                                    <span>{options.link_blocked_reason}</span>
                                 </p>
                             {/if}
                         </section>
