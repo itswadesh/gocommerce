@@ -941,7 +941,18 @@
                                 </a>
                             </td>
                             <td class="col-field-type-text" data-name="Customer">
-                                <span class="txt-ellipsis">{row.name || "—"}</span>
+                                <!-- The name, and beneath it how to reach them: the
+                                     person with a shopper on the phone is matching an
+                                     address or a number, not a name. On a demo store
+                                     both arrive masked. -->
+                                <div class="order-customer">
+                                    <span class="txt-ellipsis">{row.name || row.email || "—"}</span>
+                                    {#if (row.name && row.email) || row.phone}
+                                        <span class="txt-hint txt-sm txt-ellipsis">
+                                            {[row.name ? row.email : "", row.phone].filter(Boolean).join(" · ")}
+                                        </span>
+                                    {/if}
+                                </div>
                             </td>
                             <td class="col-field-type-select" data-name="Status">
                                 <span class="label {orderStatusClass(row.status)}">
