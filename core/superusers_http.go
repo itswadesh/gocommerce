@@ -176,7 +176,7 @@ func (a *App) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The store the next person on this browser opens in is theirs to choose.
-	clearStoreCookie(w, r)
+	a.clearStoreCookie(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
