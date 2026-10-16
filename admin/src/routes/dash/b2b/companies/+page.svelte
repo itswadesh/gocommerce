@@ -38,6 +38,7 @@
         termsLabel,
     } from "$lib/b2b.js";
     import CompanyEditor from "$lib/components/CompanyEditor.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
@@ -294,13 +295,34 @@
                                     </tr>
                                 {/each}
                                 {#if !loading && !rows.length}
-                                    <tr>
-                                        <td colspan="5" class="txt-hint txt-center p-base">
+                                    <tr class="empty-row">
+                                        <td colspan="5">
                                             {#if list.params.country || list.params.company_id}
-                                                No territory matches that.
+                                                <EmptyState
+                                                    icon="ri-filter-off-line"
+                                                    title="No territories match these filters"
+                                                    text="Try another country or dealer, or clear them to see every territory."
+                                                >
+                                                    <button
+                                                        type="button"
+                                                        class="btn secondary"
+                                                        onclick={() => list.set({ country: "", company_id: "" })}
+                                                    >
+                                                        <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                                        <span class="txt">Clear filters</span>
+                                                    </button>
+                                                </EmptyState>
                                             {:else}
-                                                No dealer has a territory yet, so every enquiry stays with
-                                                the store. Give one on a company's page.
+                                                <EmptyState
+                                                    icon="ri-map-pin-line"
+                                                    title="No territories yet"
+                                                    text="No dealer has a territory yet, so every enquiry stays with the store. A territory is given on a company's page."
+                                                >
+                                                    <button type="button" class="btn secondary" onclick={() => showView("")}>
+                                                        <i class="ri-building-line" aria-hidden="true"></i>
+                                                        <span class="txt">See companies</span>
+                                                    </button>
+                                                </EmptyState>
                                             {/if}
                                         </td>
                                     </tr>
@@ -366,13 +388,39 @@
                                     </tr>
                                 {/each}
                                 {#if !loading && !rows.length}
-                                    <tr>
-                                        <td colspan="6" class="txt-hint txt-center p-base">
+                                    <tr class="empty-row">
+                                        <td colspan="6">
                                             {#if list.params.q}
-                                                No company's name or code matches “{list.params.q}”.
+                                                <EmptyState
+                                                    icon="ri-filter-off-line"
+                                                    title="No companies match this search"
+                                                    text="No company's name or code matches “{list.params.q}”. Try fewer letters, or clear the search."
+                                                >
+                                                    <button
+                                                        type="button"
+                                                        class="btn secondary"
+                                                        onclick={() => {
+                                                            draft = "";
+                                                            list.set({ q: "" });
+                                                        }}
+                                                    >
+                                                        <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                                        <span class="txt">Clear search</span>
+                                                    </button>
+                                                </EmptyState>
                                             {:else}
-                                                No companies yet. Add one, then add the people who buy for
-                                                it.
+                                                <EmptyState
+                                                    icon="ri-building-line"
+                                                    title="No companies yet"
+                                                    text="A company buys on its own terms: a credit limit, payment terms and its group's prices. Add one, then add the people who buy for it."
+                                                >
+                                                    {#if writable}
+                                                        <button type="button" class="btn" onclick={openNew}>
+                                                            <i class="ri-add-line" aria-hidden="true"></i>
+                                                            <span class="txt">New company</span>
+                                                        </button>
+                                                    {/if}
+                                                </EmptyState>
                                             {/if}
                                         </td>
                                     </tr>

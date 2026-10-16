@@ -23,6 +23,7 @@
     import { COUNTRIES } from "$lib/countries.js";
     import BulkBar from "$lib/components/BulkBar.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import CategoryPicker from "$lib/components/CategoryPicker.svelte";
@@ -674,20 +675,32 @@
                     {/if}
 
                     {#if !loading && !visible.length}
-                        <tr>
-                            <td colspan={mayWrite ? 7 : 6} class="txt-center txt-hint p-base">
+                        <tr class="empty-row">
+                            <td colspan={mayWrite ? 7 : 6}>
                                 {#if rates.length}
-                                    No rate matches “{filter}”.
+                                    <EmptyState
+                                        icon="ri-filter-off-line"
+                                        title="No rates match “{filter}”"
+                                        text="Try a name, a country or a percentage, or clear the filter to see every rate."
+                                    >
+                                        <button type="button" class="btn secondary" onclick={clearFilter}>
+                                            <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                            <span class="txt">Clear filters</span>
+                                        </button>
+                                    </EmptyState>
                                 {:else}
-                                    <div class="m-b-10">
-                                        <i
-                                            class="ri-percent-line"
-                                            style="font-size: 32px"
-                                            aria-hidden="true"
-                                        ></i>
-                                    </div>
-                                    No rates yet, so nothing is taxed. Add one for the country you
-                                    sell into.
+                                    <EmptyState
+                                        icon="ri-percent-line"
+                                        title="No tax rates yet"
+                                        text="Until a rate exists, nothing is taxed. Add one for the country you sell into."
+                                    >
+                                        {#if mayWrite}
+                                            <button type="button" class="btn" onclick={openNew}>
+                                                <i class="ri-add-line" aria-hidden="true"></i>
+                                                <span class="txt">New rate</span>
+                                            </button>
+                                        {/if}
+                                    </EmptyState>
                                 {/if}
                             </td>
                         </tr>

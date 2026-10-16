@@ -33,6 +33,7 @@
     import Confirm from "$lib/components/Confirm.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
 
     /* The starting page size, not the only one: `limit` is a listState key, so
        an operator can change it and the choice rides in the URL with the rest of
@@ -308,11 +309,24 @@
                                 <tr><td colspan="5"><span class="skeleton-loader"></span></td></tr>
                             {/each}
                         {:else if !collections.length}
-                            <tr>
-                                <td colspan="5" class="txt-hint txt-center p-base">
-                                    No collections yet. A collection is a hand-curated list of
-                                    products — a storefront's “New in” or “Gifts under £25” — and
-                                    a product can be in as many as you like.
+                            <tr class="empty-row">
+                                <td colspan="5">
+                                    <EmptyState
+                                        icon="ri-stack-line"
+                                        title="No collections yet"
+                                        text="A collection is a hand-curated list of products — a storefront's “New in” or “Gifts under £25” — and a product can be in as many as you like."
+                                    >
+                                        {#if writable}
+                                            <button type="button" class="btn" onclick={openCreate}>
+                                                <i class="ri-add-line" aria-hidden="true"></i>
+                                                <span class="txt">New collection</span>
+                                            </button>
+                                        {/if}
+                                        <a class="btn secondary" href="{base}/dash/products">
+                                            <i class="ri-price-tag-3-line" aria-hidden="true"></i>
+                                            <span class="txt">View products</span>
+                                        </a>
+                                    </EmptyState>
                                 </td>
                             </tr>
                         {/if}

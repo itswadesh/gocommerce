@@ -38,6 +38,7 @@
     import Confirm from "$lib/components/Confirm.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import { fieldText } from "$lib/fieldtext.js";
+    import EmptyState from "$lib/components/EmptyState.svelte";
 
     /* The starting page size, not the only one: `limit` is a listState key, so
        an operator can change it and the choice rides in the URL with the rest of
@@ -836,27 +837,32 @@
                     {/if}
 
                     {#if !loading && !discounts.length}
-                        <tr>
-                            <td colspan={writable ? 8 : 7} class="txt-center txt-hint p-base">
-                                <div class="m-b-10">
-                                    <i
-                                        class="ri-price-tag-2-line"
-                                        style="font-size: 32px"
-                                        aria-hidden="true"
-                                    ></i>
-                                </div>
+                        <tr class="empty-row">
+                            <td colspan={writable ? 8 : 7}>
                                 {#if search || activeFilter}
-                                    Nothing matches {search ? "that search" : "that state"}{search &&
-                                    activeFilter
-                                        ? " and state"
-                                        : ""}.
-                                    <a
-                                        href="#clear"
-                                        onclick={(e) => (e.preventDefault(), clearFilters())}
-                                        >Clear the filters</a
-                                    >.
+                                    <EmptyState
+                                        icon="ri-filter-off-line"
+                                        title="No discounts match these filters"
+                                        text="Try a different code or state, or clear the filters to see every discount."
+                                    >
+                                        <button type="button" class="btn secondary" onclick={clearFilters}>
+                                            <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                            <span class="txt">Clear filters</span>
+                                        </button>
+                                    </EmptyState>
                                 {:else}
-                                    No discounts yet. Create one to take money off a basket.
+                                    <EmptyState
+                                        icon="ri-coupon-3-line"
+                                        title="No discounts yet"
+                                        text="A discount takes money off a basket when a shopper enters its code."
+                                    >
+                                        {#if writable}
+                                            <button type="button" class="btn" onclick={openNew}>
+                                                <i class="ri-add-line" aria-hidden="true"></i>
+                                                <span class="txt">New discount</span>
+                                            </button>
+                                        {/if}
+                                    </EmptyState>
                                 {/if}
                             </td>
                         </tr>

@@ -11,6 +11,7 @@
      * because it is behind admin authentication and a link cannot carry a
      * header. See $lib/download.js.
      */
+    import { base } from "$app/paths";
     import { api, can } from "$lib/api.js";
     import { rowKey } from "$lib/rowkey.js";
     import { listState } from "$lib/liststate.svelte.js";
@@ -18,6 +19,7 @@
     import { downloadFile, openDocument, safeFilename } from "$lib/download.js";
     import { formatDate, formatMoney } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
@@ -189,9 +191,18 @@
                                     <tr><td colspan="5"><span class="skeleton-loader"></span></td></tr>
                                 {/each}
                             {:else if !invoices.length}
-                                <tr>
-                                    <td colspan="5" class="txt-center txt-hint p-base">
-                                        No invoices yet. One is issued for each order as it is paid.
+                                <tr class="empty-row">
+                                    <td colspan="5">
+                                        <EmptyState
+                                            icon="ri-file-list-3-line"
+                                            title="No invoices yet"
+                                            text="One is issued for each order as it is paid, so the first paid order brings the first invoice."
+                                        >
+                                            <a class="btn secondary" href="{base}/dash/orders">
+                                                <i class="ri-shopping-bag-3-line" aria-hidden="true"></i>
+                                                <span class="txt">Go to orders</span>
+                                            </a>
+                                        </EmptyState>
                                     </td>
                                 </tr>
                             {/if}

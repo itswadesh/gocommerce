@@ -27,6 +27,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import { formatDate, formatMoney, paymentStatusClass } from "$lib/format.js";
     import BulkBar from "$lib/components/BulkBar.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
@@ -271,14 +272,43 @@
                                 </tr>
                             {/each}
                             {#if !loading && !orders.length}
-                                <tr>
-                                    <td colspan="7" class="txt-hint txt-center p-base">
+                                <tr class="empty-row">
+                                    <td colspan="7">
                                         {#if list.params.q}
-                                            No order on account matches “{list.params.q}”.
+                                            <EmptyState
+                                                icon="ri-filter-off-line"
+                                                title="No orders match this search"
+                                                text="No order on account matches “{list.params.q}”. Try a PO number, an order number or an email, or clear the search."
+                                            >
+                                                <button
+                                                    type="button"
+                                                    class="btn secondary"
+                                                    onclick={() => {
+                                                        draft = "";
+                                                        list.clear();
+                                                    }}
+                                                >
+                                                    <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                                    <span class="txt">Clear filters</span>
+                                                </button>
+                                            </EmptyState>
                                         {:else if list.params.overdue}
-                                            Nothing is overdue.
+                                            <EmptyState
+                                                icon="ri-checkbox-circle-line"
+                                                title="Nothing overdue"
+                                                text="Every order on account is either paid or still inside its company's payment terms."
+                                            />
                                         {:else}
-                                            No company has ordered on account yet.
+                                            <EmptyState
+                                                icon="ri-bank-card-line"
+                                                title="No orders on account yet"
+                                                text="An order lands here when a company with a credit limit places it on account. Credit limits and payment terms are set on the company's page."
+                                            >
+                                                <a class="btn secondary" href="{base}/dash/b2b/companies">
+                                                    <i class="ri-building-line" aria-hidden="true"></i>
+                                                    <span class="txt">See companies</span>
+                                                </a>
+                                            </EmptyState>
                                         {/if}
                                     </td>
                                 </tr>

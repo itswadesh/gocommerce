@@ -40,6 +40,7 @@
         routedByLabel,
     } from "$lib/b2b.js";
     import Drawer from "$lib/components/Drawer.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
@@ -406,15 +407,45 @@
                                 </tr>
                             {/each}
                             {#if !loading && !leads.length}
-                                <tr>
-                                    <td colspan="6" class="txt-hint txt-center p-base">
+                                <tr class="empty-row">
+                                    <td colspan="6">
                                         {#if unrouted && !list.params.status && !list.params.q}
-                                            Nothing is unrouted — every enquiry so far reached a dealer.
+                                            <EmptyState
+                                                icon="ri-checkbox-circle-line"
+                                                title="Nothing unrouted"
+                                                text="Every enquiry so far reached a dealer, so none is waiting on the store."
+                                            />
                                         {:else if !list.pristine}
-                                            No lead matches that.
+                                            <EmptyState
+                                                icon="ri-filter-off-line"
+                                                title="No leads match these filters"
+                                                text="Try another dealer, route or status, or clear them to see every lead."
+                                            >
+                                                <button
+                                                    type="button"
+                                                    class="btn secondary"
+                                                    onclick={() => {
+                                                        draft = "";
+                                                        list.clear();
+                                                    }}
+                                                >
+                                                    <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                                    <span class="txt">Clear filters</span>
+                                                </button>
+                                            </EmptyState>
                                         {:else}
-                                            No enquiries yet. They arrive from the storefront's dealer form
-                                            (<code>POST /x/b2b/leads</code>).
+                                            <EmptyState
+                                                icon="ri-user-search-line"
+                                                title="No leads yet"
+                                                text="Enquiries arrive from the storefront's dealer form and go to the dealer whose territory covers the address."
+                                            >
+                                                {#if companiesReadable}
+                                                    <a class="btn secondary" href="{base}/dash/b2b/companies?view=territories">
+                                                        <i class="ri-map-pin-line" aria-hidden="true"></i>
+                                                        <span class="txt">See territories</span>
+                                                    </a>
+                                                {/if}
+                                            </EmptyState>
                                         {/if}
                                     </td>
                                 </tr>

@@ -30,6 +30,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Select from "$lib/components/Select.svelte";
 
@@ -315,17 +316,18 @@
                     {#if !groups.length}
                         <!-- A store with no zones is correctly configured: it
                              charges one rate. Said plainly, not as an alert. -->
-                        <div class="block txt-center txt-hint p-base">
-                            <div class="m-b-10">
-                                <i class="ri-truck-line" style="font-size: 32px" aria-hidden="true"></i>
-                            </div>
-                            <p class="tw:mx-auto tw:max-w-[62ch]">
-                                <strong>No zones yet, so every order is charged the flat rate this store
-                                was configured with.</strong>
-                                Add a zone and the shopper starts choosing from the rates you price in
-                                it — and this store stops accepting orders going anywhere no zone covers.
-                            </p>
-                        </div>
+                        <EmptyState
+                            icon="ri-truck-line"
+                            title="No shipping zones yet"
+                            text="Until there is one, every order is charged the flat rate this store was configured with. Add a zone and the shopper chooses from the rates you price in it, and orders going anywhere no zone covers stop being accepted."
+                        >
+                            {#if writable}
+                                <button type="button" class="btn" onclick={() => openZone(null)}>
+                                    <i class="ri-add-line" aria-hidden="true"></i>
+                                    <span class="txt">Add shipping zone</span>
+                                </button>
+                            {/if}
+                        </EmptyState>
                     {/if}
 
                     {#each groups as g (g.zone.id)}

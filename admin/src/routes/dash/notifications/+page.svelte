@@ -18,6 +18,7 @@
     import { listState } from "$lib/liststate.svelte.js";
     import { formatDate } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
@@ -103,10 +104,7 @@
         return row.title || row.event;
     }
 
-    const emptyMessage = $derived.by(() => {
-        if (list.params.q || list.params.status || list.params.channel) return "Nothing matches.";
-        return "Nothing has been sent yet — the first order's confirmation lands here.";
-    });
+    const filtered = $derived(Boolean(list.params.q || list.params.status || list.params.channel));
 </script>
 
 <svelte:head><title>Notification History · GoCommerce</title></svelte:head>
@@ -272,8 +270,41 @@
                                 <tr><td colspan="6"><span class="skeleton-loader"></span></td></tr>
                             {/each}
                         {:else if !rows.length}
-                            <tr>
-                                <td colspan="6" class="txt-center txt-hint p-base">{emptyMessage}</td>
+                            <tr class="empty-row">
+                                <td colspan="6">
+                                    {#if filtered}
+                                        <EmptyState
+                                            icon="ri-filter-off-line"
+                                            title="No notifications match these filters"
+                                            text="Try another channel, status or search, or clear them to see everything sent."
+                                        >
+                                            <button
+                                                type="button"
+                                                class="btn secondary"
+                                                onclick={() => {
+                                                    draft = "";
+                                                    list.clear();
+                                                }}
+                                            >
+                                                <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                                <span class="txt">Clear filters</span>
+                                            </button>
+                                        </EmptyState>
+                                    {:else}
+                                        <EmptyState
+                                            icon="ri-notification-3-line"
+                                            title="No notifications yet"
+                                            text="Every email and SMS the store sends a shopper is logged here. The first order's confirmation will be the first row."
+                                        >
+                                            {#if can("notifications.read")}
+                                                <a class="btn secondary" href="{base}/dash/notifications/email">
+                                                    <i class="ri-mail-settings-line" aria-hidden="true"></i>
+                                                    <span class="txt">Setup Email</span>
+                                                </a>
+                                            {/if}
+                                        </EmptyState>
+                                    {/if}
+                                </td>
                             </tr>
                         {/if}
                     </tbody>

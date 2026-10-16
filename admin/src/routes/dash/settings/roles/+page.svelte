@@ -21,6 +21,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
 
     let loading = $state(true);
     let matrix = $state(null);
@@ -276,9 +277,31 @@
                         {#if loading && !matrix}
                             <tr><td colspan="4"><span class="skeleton-loader"></span></td></tr>
                         {:else if !rows.length}
-                            <tr>
-                                <td colspan="4" class="txt-center txt-hint p-base">
-                                    No role matches that.
+                            <tr class="empty-row">
+                                <td colspan="4">
+                                    {#if search}
+                                        <EmptyState
+                                            icon="ri-filter-off-line"
+                                            title="No roles match this search"
+                                            text="Nothing matches “{search.trim()}” in a role's name or rights. Try a shorter word, or clear the search."
+                                        >
+                                            <button type="button" class="btn secondary" onclick={() => (search = "")}>
+                                                <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                                <span class="txt">Clear search</span>
+                                            </button>
+                                        </EmptyState>
+                                    {:else}
+                                        <EmptyState
+                                            icon="ri-shield-user-line"
+                                            title="No roles yet"
+                                            text="A role is a named set of rights, given to every operator who holds it."
+                                        >
+                                            <button type="button" class="btn" onclick={openAdd}>
+                                                <i class="ri-add-line" aria-hidden="true"></i>
+                                                <span class="txt">Add role</span>
+                                            </button>
+                                        </EmptyState>
+                                    {/if}
                                 </td>
                             </tr>
                         {/if}

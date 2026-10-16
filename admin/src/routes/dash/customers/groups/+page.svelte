@@ -20,6 +20,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
 
     /* The routes take groups.read and groups.write; this screen used to ask
@@ -175,9 +176,24 @@
                         {#if loading && !groups.length}
                             <tr><td colspan="4"><span class="skeleton-loader"></span></td></tr>
                         {:else if !groups.length}
-                            <tr>
-                                <td colspan="4" class="txt-center txt-hint p-base">
-                                    No groups yet. Add one, then price it under <a href="{base}/dash/pricing">Price lists</a>.
+                            <tr class="empty-row">
+                                <td colspan="4">
+                                    <EmptyState
+                                        icon="ri-group-line"
+                                        title="No groups yet"
+                                        text="A group sets customers apart, such as trade or wholesale buyers, so a price list or a delivery rate can aim at them. Add one, then price it under Price lists."
+                                    >
+                                        {#if writable}
+                                            <button type="button" class="btn" onclick={add}>
+                                                <i class="ri-add-line" aria-hidden="true"></i>
+                                                <span class="txt">New group</span>
+                                            </button>
+                                        {/if}
+                                        <a class="btn secondary" href="{base}/dash/pricing">
+                                            <i class="ri-price-tag-3-line" aria-hidden="true"></i>
+                                            <span class="txt">Price lists</span>
+                                        </a>
+                                    </EmptyState>
                                 </td>
                             </tr>
                         {/if}

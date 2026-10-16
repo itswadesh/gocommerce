@@ -18,6 +18,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
 
     const PER_PAGE = 25;
     const readable = $derived(can("catalog.read"));
@@ -226,7 +227,46 @@
                                 <tr><td colspan="7"><span class="skeleton-loader"></span></td></tr>
                             {/each}
                         {:else if !rows.length}
-                            <tr><td colspan="7" class="txt-center txt-hint p-base">{list.params.status === "pending" ? "Nothing waiting. The storefront posts reviews to /x/reviews." : "Nothing here."}</td></tr>
+                            <tr class="empty-row">
+                                <td colspan="7">
+                                    {#if list.params.q || (list.params.status !== "pending" && list.params.status !== "any")}
+                                        <EmptyState
+                                            icon="ri-filter-off-line"
+                                            title="No reviews match these filters"
+                                            text="Try another search or status, or clear them to go back to what is waiting."
+                                        >
+                                            <button
+                                                type="button"
+                                                class="btn secondary"
+                                                onclick={() => {
+                                                    draft = "";
+                                                    list.clear();
+                                                }}
+                                            >
+                                                <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                                <span class="txt">Clear filters</span>
+                                            </button>
+                                        </EmptyState>
+                                    {:else if list.params.status === "pending"}
+                                        <EmptyState
+                                            icon="ri-chat-check-line"
+                                            title="No reviews waiting"
+                                            text="Shoppers write reviews on the storefront, which posts them to /x/reviews. Each one waits here until you approve or reject it."
+                                        >
+                                            <button type="button" class="btn secondary" onclick={() => list.set({ status: "any" })}>
+                                                <i class="ri-list-check" aria-hidden="true"></i>
+                                                <span class="txt">See every review</span>
+                                            </button>
+                                        </EmptyState>
+                                    {:else}
+                                        <EmptyState
+                                            icon="ri-star-line"
+                                            title="No reviews yet"
+                                            text="Shoppers write reviews on the storefront, which posts them to /x/reviews. Each one waits here until you approve or reject it."
+                                        />
+                                    {/if}
+                                </td>
+                            </tr>
                         {/if}
                     </tbody>
                 </table>

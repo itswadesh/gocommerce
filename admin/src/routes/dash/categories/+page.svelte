@@ -33,6 +33,7 @@
     import CategoryMove from "$lib/components/CategoryMove.svelte";
     import RecordHistory from "$lib/components/RecordHistory.svelte";
     import Pager from "$lib/components/Pager.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
 
     /* A page of matches rather than the default fifty: this is the screen the
        tree belongs to, not a dropdown, so it can afford to show more of an
@@ -1082,14 +1083,38 @@
                             <tr><td colspan={writable ? 6 : 5}><span class="skeleton-loader"></span></td></tr>
                         {/each}
                     {:else if !rows.length}
-                        <tr>
-                            <td colspan={writable ? 6 : 5} class="txt-hint txt-center p-base">
+                        <tr class="empty-row">
+                            <td colspan={writable ? 6 : 5}>
                                 {#if search}
-                                    No category matches “{search}”. The search reads the whole
-                                    tree, not the branches you have opened.
+                                    <EmptyState
+                                        icon="ri-filter-off-line"
+                                        title="No categories match “{search}”"
+                                        text="The search reads the whole tree, not only the branches you have opened. Try another word, or clear it."
+                                    >
+                                        <button type="button" class="btn secondary" onclick={clearSearch}>
+                                            <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                            <span class="txt">Clear search</span>
+                                        </button>
+                                    </EmptyState>
                                 {:else}
-                                    No categories yet. A category is where a product sits in your
-                                    taxonomy — one place, with a parent.
+                                    <EmptyState
+                                        icon="ri-node-tree"
+                                        title="No categories yet"
+                                        text="A category is where a product sits in your taxonomy — one place, with a parent. Build the tree here, or import one."
+                                    >
+                                        {#if writable}
+                                            <button type="button" class="btn" onclick={() => openCreate(null)}>
+                                                <i class="ri-add-line" aria-hidden="true"></i>
+                                                <span class="txt">New category</span>
+                                            </button>
+                                        {/if}
+                                        {#if can("data.import")}
+                                            <a class="btn secondary" href="{base}/dash/data/import">
+                                                <i class="ri-upload-2-line" aria-hidden="true"></i>
+                                                <span class="txt">Import a taxonomy</span>
+                                            </a>
+                                        {/if}
+                                    </EmptyState>
                                 {/if}
                             </td>
                         </tr>

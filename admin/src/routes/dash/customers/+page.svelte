@@ -25,6 +25,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import BulkBar from "$lib/components/BulkBar.svelte";
     import CustomerDetail from "$lib/components/CustomerDetail.svelte";
+    import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import SortHeader from "$lib/components/SortHeader.svelte";
@@ -422,11 +423,31 @@
                             <tr><td colspan="8"><span class="skeleton-loader"></span></td></tr>
                         {/each}
                     {:else if !customers.length}
-                        <tr>
-                            <td colspan="8" class="txt-center txt-hint p-base">
-                                {search
-                                    ? "No customer matches that."
-                                    : "Nobody has ordered yet. A customer appears here with their first order."}
+                        <tr class="empty-row">
+                            <td colspan="8">
+                                {#if search}
+                                    <EmptyState
+                                        icon="ri-filter-off-line"
+                                        title="No customers match this search"
+                                        text="Check the spelling, or clear the search to see every customer."
+                                    >
+                                        <button type="button" class="btn secondary" onclick={clearSearch}>
+                                            <i class="ri-close-circle-line" aria-hidden="true"></i>
+                                            <span class="txt">Clear filters</span>
+                                        </button>
+                                    </EmptyState>
+                                {:else}
+                                    <EmptyState
+                                        icon="ri-user-3-line"
+                                        title="No customers yet"
+                                        text="A customer is everyone who has ordered, grouped by email. They appear here with their first order."
+                                    >
+                                        <a class="btn secondary" href="{base}/dash/orders">
+                                            <i class="ri-shopping-bag-3-line" aria-hidden="true"></i>
+                                            <span class="txt">Go to orders</span>
+                                        </a>
+                                    </EmptyState>
+                                {/if}
                             </td>
                         </tr>
                     {/if}
