@@ -19,6 +19,7 @@
     import { forgetScreens } from "$lib/screens.svelte.js";
     import { applyEntry, ensureStore, forgetStores, isSuperseded, markStores, myStores } from "$lib/stores.svelte.js";
     import { reloadStoreData } from "$lib/store-data.js";
+    import { forgetSetup, loadSetup, setup } from "$lib/setup.svelte.js";
     import { copyText } from "$lib/clipboard.js";
     import { droppedNote, sectionFor, switchTarget } from "$lib/store-switch.js";
     import { health } from "$lib/health.svelte.js";
@@ -284,6 +285,21 @@
         await auth.refresh().catch(() => {});
         reloadStoreData();
     }
+
+    /*
+     * The setup guide, asked again on every navigation and every switch:
+     * a step is finished on its own screen, and the sidebar's progress link
+     * and Home's checklist should have moved on by the time anyone looks.
+     */
+    $effect(() => {
+        page.url.pathname;
+        storeEpoch;
+        if (!authenticated || myStores.state !== "ok") {
+            untrack(forgetSetup);
+            return;
+        }
+        untrack(loadSetup);
+    });
 
     /*
      * The health report, for the badge. Svelte runs the returned teardown when
@@ -618,6 +634,22 @@
     </a>
 {/snippet}
 
+{#snippet setupLink()}
+    <!-- Until the store can sell: how far along, and one click to the next
+         step. Gone the moment the required steps are done. -->
+    {#if setup.loaded && !setup.requiredDone}
+        <a href="{base}/dash" class="app-setup-link">
+            <span class="app-setup-text">
+                <span class="txt">Set up your store</span>
+                <span class="app-setup-count">{setup.progress.done}/{setup.progress.total}</span>
+            </span>
+            <span class="app-setup-bar" aria-hidden="true">
+                <span style="transform: scaleX({setup.progress.total ? setup.progress.done / setup.progress.total : 0})"></span>
+            </span>
+        </a>
+    {/if}
+{/snippet}
+
 {#snippet searchTrigger()}
     <!-- The omnibox, as a button rather than a box. It opens the palette, which
          owns the real field: two inputs claiming to be "search" — one in the
@@ -852,6 +884,7 @@
             <aside class="app-sidebar">
                 {@render brand()}
                 {@render searchTrigger()}
+                {@render setupLink()}
                 {@render navLinks()}
                 <div class="app-sidebar-foot">{@render account("sidebar")}</div>
             </aside>
@@ -905,6 +938,7 @@
             <aside class="app-drawer" class:open={menuOpen} aria-hidden={!menuOpen}>
                 {@render brand()}
                 {@render searchTrigger()}
+                {@render setupLink()}
                 {@render navLinks()}
                 <div class="app-sidebar-foot">{@render account("drawer")}</div>
             </aside>

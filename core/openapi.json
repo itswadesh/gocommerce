@@ -13897,6 +13897,58 @@
           }
         }
       }
+    },
+    "/api/admin/setup": {
+      "get": {
+        "tags": [
+          "admin:settings"
+        ],
+        "summary": "The store's setup guide",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "The steps a new store goes through, in order, each read from what the store actually has: its details, an active product, a way to pay, a delivery zone with a rate, then — recommended — email delivery and its own domain. A required step not yet done locks every step after it.",
+        "responses": {
+          "200": {
+            "description": "The guide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "steps": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/SetupStep"
+                          }
+                        },
+                        "next": {
+                          "type": "string",
+                          "description": "The first step not yet done; empty when all are."
+                        },
+                        "required_done": {
+                          "type": "boolean"
+                        },
+                        "complete": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -19669,6 +19721,42 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "SetupStep": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "details",
+              "products",
+              "payments",
+              "shipping",
+              "email",
+              "domain"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          },
+          "href": {
+            "type": "string",
+            "description": "The panel screen where the step is done."
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "done": {
+            "type": "boolean"
+          },
+          "locked": {
+            "type": "boolean",
+            "description": "True while an earlier required step is not done."
           }
         }
       }
