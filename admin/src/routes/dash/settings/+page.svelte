@@ -373,7 +373,12 @@
                                                 {#if i === 0}
                                                     <span class="label sm success">Main</span>
                                                 {:else if editable}
-                                                    <button type="button" class="btn sm transparent secondary" onclick={() => makeMain(tag)}>
+                                                    <button
+                                                        type="button"
+                                                        class="btn sm transparent secondary"
+                                                        aria-label="Make {languageName(tag)} the main language"
+                                                        onclick={() => makeMain(tag)}
+                                                    >
                                                         <span class="txt">Make main</span>
                                                     </button>
                                                     <button
@@ -390,14 +395,22 @@
                                         {/each}
                                     </ul>
                                     {#if editable}
-                                        <div class="field langs-add">
-                                            <label for="sp-add-language">Add a language</label>
-                                            <select id="sp-add-language" bind:value={adding} onchange={addLanguage}>
-                                                <option value="">Choose one…</option>
-                                                {#each languageOptions(draft.languages ?? []) as option (option.value)}
-                                                    <option value={option.value}>{option.label}</option>
-                                                {/each}
-                                            </select>
+                                        <!-- A button rather than adding on change: arrowing
+                                             through a closed select fires change on every key,
+                                             which would add each language passed on the way. -->
+                                        <div class="langs-add">
+                                            <div class="field">
+                                                <label for="sp-add-language">Add a language</label>
+                                                <select id="sp-add-language" bind:value={adding}>
+                                                    <option value="">Choose one…</option>
+                                                    {#each languageOptions(draft.languages ?? []) as option (option.value)}
+                                                        <option value={option.value}>{option.label}</option>
+                                                    {/each}
+                                                </select>
+                                            </div>
+                                            <button type="button" class="btn sm secondary" disabled={!adding} onclick={addLanguage}>
+                                                <span class="txt">Add</span>
+                                            </button>
                                         </div>
                                     {/if}
                                 </div>
@@ -743,7 +756,14 @@
         overflow-wrap: anywhere;
     }
     .langs-add {
-        max-width: 360px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        max-width: 440px;
+    }
+    .langs-add .field {
+        flex: 1 1 auto;
+        min-width: 0;
     }
     @media (prefers-reduced-motion: reduce) {
         .langs-item {
