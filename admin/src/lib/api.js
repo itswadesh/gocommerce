@@ -328,6 +328,10 @@ export const stores = {
     async mine() {
         return (await api.get("/api/stores/my")) ?? [];
     },
+    /** suggest is a name for a new store, with an address nobody has. */
+    async suggest() {
+        return await api.get("/api/stores/suggest");
+    },
     /** enter answers with the store and the caller as it sees them. */
     async enter(storeID) {
         return await api.post("/api/stores/switch", { store_id: storeID });
