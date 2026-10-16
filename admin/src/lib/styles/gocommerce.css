@@ -9317,14 +9317,112 @@ kbd + kbd {
 
 /* -------------------------------------------------------------- the list */
 
-/* The filters under the tiles: one row of controls, each as wide as what it
-   holds, wrapping on a narrow window rather than squeezing. */
+/* The title carries the count beside it, as kitcommerce-admin's does: the
+   records the filters let through, in a quiet mono badge. */
+.recovery-h1 {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 1.5rem;
+    line-height: 1.25;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    /* The breadcrumb trail greys everything but its last part; a title is
+       not a trail. */
+    color: var(--surfaceTxtColor);
+}
+.recovery-count {
+    padding: 1px 8px;
+    border-radius: var(--borderRadius);
+    background: var(--surfaceAlt2Color);
+    color: var(--surfaceTxtColor);
+    font-family: var(--monospaceFontFamily);
+    font-size: var(--smFontSize);
+    font-weight: 500;
+    letter-spacing: 0;
+}
+/* The refresh glyph turns while a read is in flight, so "it is working" is
+   said where the click was. */
+.recovery-refresh.is-spinning > i {
+    animation: recoverySpin 800ms linear infinite;
+}
+@keyframes recoverySpin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.recovery-tile-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--xsFontSize, 12px);
+    font-weight: 500;
+    color: var(--surfaceTxtHintColor);
+}
+.recovery-tile-label > i {
+    font-size: 14px;
+}
+.recovery-tile-label.is-success > i {
+    color: var(--successColor);
+}
+.recovery-figures-error {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: -4px 0 10px;
+    font-size: var(--smFontSize);
+    color: var(--dangerColor);
+}
+
+/* One card holds the search and every filter, the way kitcommerce-admin
+   frames them: the search first and wide, the controls wrapping under it. */
+.recovery-filter-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding: 12px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+    background: var(--cardFace, var(--surfaceColor));
+}
+.recovery-search {
+    position: relative;
+    display: block;
+    max-width: 320px;
+    margin: 0;
+}
+.recovery-search > i {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--surfaceTxtHintColor);
+    pointer-events: none;
+}
+.recovery-search input {
+    width: 100%;
+    height: var(--smBtnHeight);
+    padding: 0 10px 0 32px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+    background: var(--surfaceColor);
+    color: var(--surfaceTxtColor);
+    transition: border-color var(--animationSpeed) ease-out, box-shadow var(--animationSpeed) ease-out;
+}
+.recovery-search input:focus-visible {
+    outline: none;
+    border-color: var(--ring, var(--primaryColor));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring, var(--primaryColor)), transparent 75%);
+}
 .recovery-filters {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
-    margin-bottom: 8px;
 }
 .recovery-filters .field {
     width: auto;
@@ -9332,26 +9430,243 @@ kbd + kbd {
     flex: 0 0 auto;
     margin: 0;
 }
-.recovery-filters .field.recovery-value {
-    min-width: 0;
-    width: 120px;
-}
-.recovery-value-error {
-    margin-top: -4px;
+.recovery-filters > .btn.sm,
+.recovery-seg,
+.recovery-search input {
+    height: 32px;
+    min-height: 32px;
 }
 
-/* Status is several at once, so it is a row of toggles — the Carts screen's
-   chip, pressed or not — with the status's own colour as a dot beside the
-   word rather than as the whole chip. */
-.recovery-chips {
+/* The segmented type switch: one bordered group, the chosen part filled. */
+.recovery-seg {
+    display: inline-flex;
+    padding: 2px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+    background: var(--surfaceColor);
+}
+.recovery-seg-btn {
+    height: 26px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: var(--borderRadius);
+    background: none;
+    color: var(--surfaceTxtHintColor);
+    font: inherit;
+    font-size: var(--smFontSize);
+    cursor: pointer;
+    transition:
+        background-color var(--animationSpeed) ease-out,
+        color var(--animationSpeed) ease-out,
+        transform var(--activeAnimationSpeed) ease-out;
+}
+.recovery-seg-btn:hover {
+    color: var(--surfaceTxtColor);
+}
+.recovery-seg-btn:active {
+    transform: scale(0.96);
+}
+.recovery-seg-btn:focus-visible {
+    outline: 2px solid var(--ring, var(--primaryColor));
+    outline-offset: 1px;
+}
+.recovery-seg-btn[aria-pressed="true"] {
+    background: var(--primaryColor);
+    color: var(--primaryTxtColor, #fff);
+}
+
+/* A filter that adds to a set is drawn dashed, the way a "+ Status" control
+   is in the panels it copies; what it holds shows as small chips inside. */
+.btn.recovery-dashed {
+    background: transparent;
+    border: 1px dashed var(--surfaceAlt3Color, var(--surfaceTxtHintColor));
+}
+.btn.recovery-dashed:hover {
+    background: var(--surfaceAlt1Color);
+}
+.recovery-sep {
+    width: 1px;
+    height: 14px;
+    background: var(--surfaceAlt3Color, var(--surfaceAlt2Color));
+}
+.recovery-chip-sm {
+    padding: 0 6px;
+    border-radius: var(--borderRadius);
+    background: var(--surfaceAlt2Color);
+    font-size: 11px;
+    font-weight: 500;
+}
+
+/* The filter popovers are small forms, so they opt out of what `.dropdown`
+   assumes of a menu: the invoker's width, and a scroll box that clips focus. */
+.dropdown.recovery-pop {
+    width: 240px;
+    max-width: calc(100vw - 20px);
+    max-height: none;
+    overflow: visible;
+}
+.dropdown.recovery-pop-form {
+    width: 280px;
+    gap: 10px;
+    padding: var(--smSpacing);
+}
+.recovery-pop-title {
+    font-weight: 600;
+}
+.recovery-pop-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+.recovery-pop-pair .field {
+    margin: 0;
+    min-width: 0;
+}
+.recovery-pop-actions {
     display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin: 4px 0 12px;
-}
-.recovery-chip {
+    justify-content: flex-end;
     gap: 6px;
 }
+.recovery-presets {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+}
+.recovery-presets .btn {
+    justify-content: flex-start;
+    height: 28px;
+    min-height: 28px;
+    padding: 0 8px;
+    font-weight: 400;
+}
+.recovery-presets .btn[aria-pressed="true"] {
+    background: var(--surfaceAlt2Color);
+    color: var(--surfaceTxtColor);
+}
+.recovery-pop-clear {
+    justify-content: center;
+    border-top: 1px solid var(--surfaceAlt2Color);
+    color: var(--surfaceTxtHintColor);
+}
+/* A box beside each status: ticked or not, drawn rather than an input so the
+   whole row stays one button. */
+.recovery-box {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 16px;
+    height: 16px;
+    border: 1px solid var(--surfaceAlt3Color, var(--surfaceTxtHintColor));
+    border-radius: var(--borderRadius);
+    color: transparent;
+    transition:
+        background-color var(--animationSpeed) ease-out,
+        border-color var(--animationSpeed) ease-out,
+        color var(--animationSpeed) ease-out;
+}
+.recovery-box > i {
+    font-size: 12px;
+    transform: scale(0.6);
+    transition: transform var(--animationSpeed) ease-out;
+}
+.recovery-box.is-on {
+    border-color: var(--primaryColor);
+    background: var(--primaryColor);
+    color: var(--primaryTxtColor, #fff);
+}
+.recovery-box.is-on > i {
+    transform: scale(1);
+}
+
+/* A refetch keeps the rows on screen, dimmed, under a bar that runs along the
+   top: the table is being re-read, not emptied. */
+.recovery-table-wrap {
+    position: relative;
+}
+.recovery-table-wrap tbody {
+    transition: opacity var(--animationSpeed) ease-out;
+}
+.recovery-table-wrap.is-refetching tbody {
+    opacity: 0.6;
+}
+.recovery-progress {
+    position: absolute;
+    z-index: 3;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    overflow: hidden;
+}
+.recovery-progress::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: 40%;
+    background: var(--primaryColor);
+    animation: recoveryProgress 1s ease-in-out infinite;
+}
+@keyframes recoveryProgress {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(250%);
+    }
+}
+
+.recovery-who {
+    max-width: 14rem;
+}
+.recovery-table th.txt-right {
+    text-align: right;
+}
+.recovery-row-link {
+    color: inherit;
+    font-weight: 500;
+    text-decoration: none;
+}
+
+/* The status as a pill with a dot, in the colours kitcommerce-admin gives
+   them: a tinted ground, the status's ink, and a ring a shade stronger. */
+.recovery-pill {
+    --pill: var(--surfaceTxtHintColor);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 1px 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--pill) 12%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pill) 25%, transparent);
+    color: color-mix(in srgb, var(--pill) 75%, var(--surfaceTxtColor));
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 20px;
+    white-space: nowrap;
+}
+.recovery-pill.warning {
+    --pill: var(--warningColor);
+}
+.recovery-pill.info {
+    --pill: var(--infoColor);
+}
+.recovery-pill.success {
+    --pill: var(--successColor);
+}
+.recovery-pill.danger {
+    --pill: var(--dangerColor);
+}
+.recovery-pill-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--pill);
+}
+.recovery-pill-hint {
+    margin-top: 2px;
+}
+
 .recovery-dot {
     display: inline-block;
     flex: none;
@@ -9445,11 +9760,210 @@ kbd + kbd {
 
 /* ------------------------------------------------------------ the record */
 
-/* The status chip re-arrives when the status moves — suppressed, recovered —
-   so the change is seen where it happened. */
-.recovery-status-badge {
-    animation: recoveryPop 220ms ease-out;
+/* ------------------------------------------------------------ the record */
+
+.recovery-detail-header {
+    align-items: flex-start;
 }
+.recovery-back {
+    flex: none;
+}
+.recovery-title-block {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.recovery-h1-hint {
+    font-weight: 400;
+}
+.recovery-subline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
+    font-size: var(--smFontSize);
+    color: var(--surfaceTxtHintColor);
+}
+.recovery-updated {
+    align-self: center;
+}
+/* A send that cannot happen stays where it is, faded, with the reason in its
+   title, rather than vanishing and leaving the operator to wonder. */
+.btn.is-blocked {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.recovery-link-btn {
+    min-width: 11rem;
+    justify-content: center;
+}
+.recovery-banner.alert {
+    align-items: center;
+}
+.recovery-banner.alert > p,
+.recovery-banner.alert > div {
+    flex: 1;
+    min-width: 0;
+}
+.recovery-banner.alert p {
+    margin: 0;
+}
+.recovery-banner.is-muted {
+    background: var(--surfaceAlt1Color);
+    color: var(--surfaceTxtColor);
+}
+.recovery-banner-meta {
+    margin-top: 4px;
+    opacity: 0.8;
+}
+.recovery-card-desc {
+    margin: -6px 0 10px;
+}
+.recovery-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+.recovery-changed {
+    margin-bottom: 10px;
+}
+.recovery-changed p {
+    margin: 0;
+}
+
+/* The items as kitcommerce-admin lists them: a picture, the name with what
+   changed under it, and the money on the right. */
+.recovery-items {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.recovery-item {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: start;
+    padding: 10px 0;
+}
+.recovery-item + .recovery-item {
+    border-top: 1px solid var(--surfaceAlt2Color);
+}
+.recovery-thumb {
+    width: 48px;
+    height: 48px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+    object-fit: cover;
+    background: var(--surfaceAlt1Color);
+}
+.recovery-thumb.is-empty {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: var(--surfaceTxtHintColor);
+}
+.recovery-item-text {
+    min-width: 0;
+}
+.recovery-item-money {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    white-space: nowrap;
+}
+.recovery-line-notes {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
+    margin-top: 6px;
+}
+
+/* The timeline, newest first under each day: a round icon in its tone's
+   ring, the sentence, and the time with who did it underneath. */
+.recovery-day + .recovery-day {
+    margin-top: 12px;
+}
+.recovery-day-label {
+    margin-bottom: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--surfaceTxtHintColor);
+}
+.recovery-events {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.recovery-event {
+    position: relative;
+    display: flex;
+    gap: 10px;
+    padding-bottom: 12px;
+}
+/* The rail between one icon and the next. */
+.recovery-event:not(:last-child)::before {
+    content: "";
+    position: absolute;
+    left: 13px;
+    top: 30px;
+    bottom: 2px;
+    width: 1px;
+    background: var(--surfaceAlt2Color);
+}
+.recovery-event-icon {
+    --tone: var(--surfaceTxtHintColor);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--tone) 10%, var(--cardFace, var(--surfaceColor)));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 35%, transparent);
+    color: var(--tone);
+    font-size: 14px;
+}
+.recovery-event-icon.is-danger {
+    --tone: var(--dangerColor);
+}
+.recovery-event-icon.is-warning {
+    --tone: var(--warningColor);
+}
+.recovery-event-icon.is-info {
+    --tone: var(--infoColor);
+}
+.recovery-event-icon.is-success {
+    --tone: var(--successColor);
+}
+.recovery-event-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    padding-top: 4px;
+    overflow-wrap: anywhere;
+}
+
+.recovery-customer-name {
+    margin-bottom: 8px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+.recovery-customer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 12px 0 6px;
+}
+
 @keyframes recoveryPop {
     from {
         opacity: 0;
@@ -9463,93 +9977,6 @@ kbd + kbd {
     animation: recoveryPop 220ms ease-out;
 }
 
-/* The items table may be wider than the rail leaves it on a phone; it scrolls
-   inside the card rather than pushing the page sideways. */
-.recovery-lines-scroll {
-    overflow-x: auto;
-}
-.recovery-lines {
-    min-width: 460px;
-}
-.recovery-lines th {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--surfaceTxtHintColor);
-}
-.recovery-lines td {
-    vertical-align: top;
-}
-/* Shown on a phone in place of the two price columns. */
-.recovery-line-compact {
-    display: none;
-}
-.recovery-line-notes {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin-top: 4px;
-}
-
-/* The timeline is the order screen's History, as an ordered list: a story
-   reads top to bottom, and it is one. */
-.recovery-timeline {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    /* list.css paints a list with the page surface, which in dark is a step
-       below the card it sits in. */
-    background: none;
-}
-/* base.css spaces every list item 5px apart; the rail is the spacing here. */
-.recovery-timeline > li {
-    margin: 0;
-}
-/* The time sits at the row's end; there is no spacer element, so on a phone
-   the phrase keeps the whole line when the time drops under it. */
-.recovery-timeline time {
-    margin-left: auto;
-    text-align: right;
-}
-.recovery-timeline .list-item.is-danger > i {
-    color: var(--dangerColor);
-    border-color: var(--dangerColor);
-}
-.recovery-timeline .list-item.is-success > i {
-    color: var(--successColor);
-    border-color: var(--successColor);
-}
-
-/* How the story ended, at the top of the Recovery card: bought, suppressed or
-   expired. A tinted ground for the good outcome, the plain step for the rest. */
-.recovery-outcome {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-    margin-bottom: 12px;
-    padding: 10px 12px;
-    border-radius: var(--borderRadius);
-    background: var(--surfaceAlt1Color);
-    border: 1px solid var(--surfaceAlt2Color);
-}
-.recovery-outcome > i {
-    font-size: 18px;
-    line-height: 20px;
-    color: var(--surfaceTxtHintColor);
-}
-/* A tint mixed from the card, not PocketBase's success surface: that one is a
-   saturated green in dark, and the figure on it stopped being readable. */
-.recovery-outcome.is-success {
-    background: color-mix(in srgb, var(--successColor) 10%, var(--cardFace));
-    border-color: color-mix(in srgb, var(--successColor), transparent 55%);
-}
-.recovery-outcome .order-total {
-    color: var(--surfaceTxtColor);
-}
-.recovery-outcome.is-success > i {
-    color: var(--successColor);
-}
 .recovery-note {
     margin: 4px 0;
     white-space: pre-wrap;
@@ -9569,6 +9996,8 @@ kbd + kbd {
     gap: 10px;
 }
 .recovery-facts dt {
+    flex: none;
+    white-space: nowrap;
     color: var(--surfaceTxtHintColor);
 }
 .recovery-facts dd {
@@ -9587,13 +10016,6 @@ kbd + kbd {
 }
 .recovery-blocked > i {
     flex: none;
-}
-
-.recovery-email {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    min-width: 0;
 }
 
 /* ------------------------------------------------------------ the dialogs */
@@ -9616,17 +10038,42 @@ kbd + kbd {
     text-transform: uppercase;
     color: var(--surfaceTxtHintColor);
 }
-/* form.css lays a checkbox label out as a flex row; the reason a choice is
-   unavailable goes on a line of its own under the choice's name. */
-.recovery-choices .field label {
-    flex-wrap: wrap;
+/* A reason is a bordered row to pick, the whole row the target. */
+.recovery-radio-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+    cursor: pointer;
+    transition:
+        border-color var(--animationSpeed) ease-out,
+        background-color var(--animationSpeed) ease-out;
 }
-.recovery-choice-note {
-    display: block;
-    flex-basis: 100%;
-    margin-top: 2px;
-    font-size: var(--smFontSize);
-    color: var(--surfaceTxtHintColor);
+.recovery-radio-card:hover {
+    background: var(--surfaceAlt1Color);
+}
+.recovery-radio-card.is-on {
+    border-color: var(--primaryColor);
+    background: color-mix(in srgb, var(--primaryColor) 6%, transparent);
+}
+.recovery-radio-card input {
+    margin: 0;
+    accent-color: var(--primaryColor);
+}
+.recovery-label-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+}
+.recovery-link-row {
+    display: flex;
+    gap: 6px;
+}
+.recovery-link-row input {
+    flex: 1;
+    min-width: 0;
 }
 .recovery-dialog .alert {
     margin-bottom: 12px;
@@ -10002,21 +10449,24 @@ a.recovery-automation:focus-visible .recovery-automation-go > i {
     .page-abandoned .page-table-wrapper {
         min-height: 0;
     }
-    /* The record's items lose their two price columns, which say themselves
-       under the item instead. */
-    .recovery-lines {
-        min-width: 0;
+    /* The money goes under the item rather than beside it. */
+    .recovery-item {
+        grid-template-columns: 48px minmax(0, 1fr);
     }
-    .recovery-lines .recovery-price-col {
+    .recovery-item-money {
+        grid-column: 2;
+        flex-direction: row;
+        align-items: baseline;
+        justify-content: space-between;
+    }
+    .recovery-search {
+        max-width: none;
+    }
+    .recovery-updated {
         display: none;
     }
-    .recovery-line-compact {
-        display: block;
-    }
-    /* Under the phrase, where order-history puts a time on a phone. */
-    .recovery-timeline time {
-        margin-left: 0;
-        text-align: left;
+    .recovery-detail-header {
+        flex-wrap: wrap;
     }
 }
 
@@ -10054,10 +10504,25 @@ a.recovery-automation:focus-visible .recovery-automation-go > i {
 /* The movement goes; the feedback stays, as a fade. */
 @media (prefers-reduced-motion: reduce) {
     .recovery-figure,
-    .recovery-status-badge,
     .recovery-copy.is-copied > i,
     .recovery-refusal {
         animation: fadeIn var(--animationSpeed) ease-out;
+    }
+    .recovery-refresh.is-spinning > i {
+        animation: none;
+        opacity: 0.5;
+    }
+    .recovery-progress::before {
+        animation: none;
+        width: 100%;
+        opacity: 0.5;
+    }
+    .recovery-box > i,
+    .recovery-seg-btn {
+        transition: none;
+    }
+    .recovery-box > i {
+        transform: none;
     }
     .recovery-funnel-fill,
     .recovery-chart .recovery-bar {
