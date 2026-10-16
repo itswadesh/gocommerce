@@ -136,9 +136,13 @@ func TestMediaUploadIgnoresHostileFilenames(t *testing.T) {
 		}
 	}
 
-	entries, err := os.ReadDir(dir)
+	// Each in the store's own folder, and nowhere else.
+	entries, err := os.ReadDir(filepath.Join(dir, "stores", app.DefaultStore()))
 	if err != nil {
 		t.Fatalf("read media dir: %v", err)
+	}
+	if top, _ := os.ReadDir(dir); len(top) != 1 || top[0].Name() != "stores" {
+		t.Fatalf("the media directory holds more than the stores folder: %v", top)
 	}
 	if len(entries) != 4 {
 		t.Fatalf("expected 4 files in the media directory, found %d", len(entries))

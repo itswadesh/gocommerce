@@ -57,6 +57,19 @@ func (f *fakeMeili) handler(w http.ResponseWriter, r *http.Request) {
 		}
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte(`{"taskUid":4}`))
+	case r.Method == http.MethodPost && path == "/indexes/products/documents/delete":
+		// Delete by filter; the one filter this module sends is a store's.
+		var q struct {
+			Filter string `json:"filter"`
+		}
+		_ = json.Unmarshal(body, &q)
+		for id, d := range f.docs {
+			if store, _ := d["store_id"].(string); q.Filter == `store_id = "`+store+`"` {
+				delete(f.docs, id)
+			}
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"taskUid":5}`))
 	case r.Method == http.MethodGet && path == "/indexes/products/documents":
 		var results []map[string]any
 		for id, d := range f.docs {
@@ -266,5 +279,48 @@ func TestStoresShareOneIndexEachSeeingItsOwn(t *testing.T) {
 	mod.stateFor(ctxA).lastSync = time.Time{}
 	if mod.stateFor(ctxB).lastSync.IsZero() {
 		t.Fatal("store B's sync time went with store A's")
+	}
+}
+
+// A deleted store's documents leave the shared index with it; the other
+// stores' stay.
+func TestDeletingAStoreTakesItsDocumentsOutOfTheIndex(t *testing.T) {
+	fake := newFake()
+	srv := httptest.NewServer(http.HandlerFunc(fake.handler))
+	t.Cleanup(srv.Close)
+	mod := New(Config{Host: srv.URL, APIKey: "master", SearchKey: "search", Poll: -1})
+	app := gctest.New(t, mod)
+	b, err := app.Stores().Create(context.Background(), "Second", "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	price := int64(1000)
+	for _, ctx := range []context.Context{context.Background(), gocommerce.WithStore(context.Background(), b.ID)} {
+		on := true
+		if _, err := app.Plugins().Update(ctx, pluginKey, gocommerce.PluginPatch{Enabled: &on}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := app.Products().CreateProduct(ctx, gocommerce.ProductInput{Title: "Mug", Status: "active", PriceMinor: &price}); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := mod.Sync(ctx, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(fake.docs) != 2 {
+		t.Fatalf("index holds %d documents, want one per store", len(fake.docs))
+	}
+	if err := app.Stores().Delete(context.Background(), b.ID); err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.docs) != 1 {
+		t.Fatalf("index holds %d documents after the store went, want the other store's one", len(fake.docs))
+	}
+	for _, d := range fake.docs {
+		if d["store_id"] == b.ID {
+			t.Fatal("the deleted store's document is still in the index")
+		}
 	}
 }

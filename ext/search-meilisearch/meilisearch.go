@@ -205,6 +205,27 @@ func (m *Module) connection(ctx context.Context) (connection, error) {
 	return c, nil
 }
 
+// DeleteStore takes a deleted store's documents out of the shared index
+// (gocommerce.StoreDeleter), and forgets its sync. It reaches the index the
+// install configured: the store's own plugin settings went with its rows, and
+// a store that pointed at a Meilisearch of its own kept its documents there.
+func (m *Module) DeleteStore(ctx context.Context, storeID string) error {
+	m.mu.Lock()
+	delete(m.states, storeID)
+	m.mu.Unlock()
+	conn := connection{
+		host:   strings.TrimRight(m.cfg.Host, "/"),
+		apiKey: m.cfg.APIKey,
+		index:  first(m.cfg.Index, defaultIndex),
+	}
+	if !conn.configured() {
+		return nil
+	}
+	_, _, err := m.call(ctx, conn, conn.apiKey, http.MethodPost, "/indexes/"+conn.index+"/documents/delete",
+		map[string]string{"filter": fmt.Sprintf("store_id = %q", storeID)})
+	return err
+}
+
 // storeOf is the store ctx is bound to, or the engine's default.
 func (m *Module) storeOf(ctx context.Context) string {
 	if store, ok := gocommerce.StoreFrom(ctx); ok {
