@@ -25,7 +25,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import { NAV, visibleNav as allowedNav } from "$lib/nav.js";
     import { safeNext } from "$lib/paths.js";
-    import { isBareKey, isTypingTarget, modalIsOpen, NEW_EVENT } from "$lib/shortcuts.js";
+    import { findSaveTarget, isBareKey, isTypingTarget, modalIsOpen, NEW_EVENT } from "$lib/shortcuts.js";
     import Toasts from "$lib/components/Toasts.svelte";
     import Login from "$lib/components/Login.svelte";
     import CommandPalette from "$lib/components/CommandPalette.svelte";
@@ -134,6 +134,22 @@
             if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "k") {
                 event.preventDefault();
                 paletteOpen = true;
+                return;
+            }
+            // Save, from inside any field: that is where the operator is when
+            // they want it. A showing save bar binds its own (SaveBar), so the
+            // shell steps aside for it; anywhere else it presses the Save of
+            // the form being worked in. The browser's "save page as" is never
+            // what somebody in the panel meant, so it is prevented either way.
+            if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "s") {
+                if (document.querySelector(".save-bar:not([hidden])")) return;
+                event.preventDefault();
+                const target = findSaveTarget();
+                if (!target) return;
+                target.button?.classList.add("shortcut-pressed");
+                setTimeout(() => target.button?.classList.remove("shortcut-pressed"), 250);
+                if (target.form) target.form.requestSubmit(target.button);
+                else target.button.click();
                 return;
             }
             if (!isBareKey(event) || isTypingTarget(event.target) || modalIsOpen()) return;
