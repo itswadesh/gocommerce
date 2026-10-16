@@ -4076,6 +4076,208 @@ button.media-check {
 }
 
 /*
+ * The store this tab is in, above who you are in it (D83). The menu lists the
+ * person's stores first; every row answers hover, press and focus within
+ * 150–200 ms, and the one being entered shows a spinner until it is.
+ */
+.app-account-store {
+    font-size: 12px;
+    font-weight: 600;
+}
+.app-account-store + .app-account-name {
+    font-weight: 400;
+    color: var(--surfaceTxtHintColor);
+}
+.logged-user-dropdown {
+    min-width: 232px;
+    max-width: min(300px, calc(100vw - 32px));
+}
+.store-menu-list {
+    max-height: min(320px, 50vh);
+    overflow-y: auto;
+}
+.store-menu-search {
+    width: 100%;
+    margin: 4px 0 6px;
+}
+.store-menu-item {
+    border: 0;
+    background: none;
+    font: inherit;
+    text-align: left;
+    transition:
+        background 150ms ease-out,
+        transform 150ms ease-out,
+        opacity 150ms ease-out;
+}
+.store-menu-item:active:not([disabled]) {
+    transform: scale(0.98);
+}
+.store-menu-item:focus-visible {
+    background: var(--surfaceAlt1Color);
+}
+.store-menu-item.current {
+    background: var(--surfaceAlt1Color);
+}
+.store-menu-item[disabled] {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+.store-menu-item.busy {
+    opacity: 0.8;
+}
+.store-menu-mark {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: var(--surfaceAlt2Color);
+    font-size: 11px;
+    font-weight: 600;
+}
+.store-menu-item.current .store-menu-mark {
+    background: var(--primaryColor);
+    color: var(--primaryTxtColor);
+}
+.store-menu-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+    line-height: 1.25;
+}
+.store-menu-role {
+    font-size: 11px;
+    color: var(--surfaceTxtHintColor);
+}
+.store-menu-check {
+    flex-shrink: 0;
+    color: var(--primaryColor);
+    animation: storeCheckIn 200ms ease-out both;
+}
+.store-menu-empty {
+    margin: 6px 12px;
+    font-size: 12px;
+}
+.store-menu-error {
+    margin: 4px 12px 6px;
+    font-size: 12px;
+    color: var(--dangerColor);
+    animation: storeErrorIn 200ms ease-out both;
+}
+@keyframes storeCheckIn {
+    from {
+        opacity: 0;
+        transform: scale(0.6);
+    }
+}
+@keyframes storeErrorIn {
+    from {
+        opacity: 0;
+        transform: translateY(-3px);
+    }
+}
+
+/* The switch itself: the old store's page cross-fades into the new one's in
+   200 ms. Only under .store-vt, so no other navigation picks it up. */
+:root.store-vt::view-transition-old(root) {
+    animation: storeFadeOut 200ms ease-in both;
+}
+:root.store-vt::view-transition-new(root) {
+    animation: storeFadeIn 200ms ease-out both;
+}
+@keyframes storeFadeOut {
+    to {
+        opacity: 0;
+    }
+}
+@keyframes storeFadeIn {
+    from {
+        opacity: 0;
+    }
+}
+
+/* The store picker: the login card's frame, with a list in it. */
+.select-store-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.select-store-search {
+    width: 100%;
+}
+.select-store-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+    background: var(--surfaceColor);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition:
+        background 150ms ease-out,
+        border-color 150ms ease-out,
+        transform 150ms ease-out;
+}
+.select-store-item:hover:not([disabled]),
+.select-store-item:focus-visible {
+    background: var(--surfaceAlt1Color);
+    border-color: var(--surfaceAlt3Color);
+}
+.select-store-item:focus-visible {
+    outline: 2px solid var(--primaryColor);
+    outline-offset: 1px;
+}
+.select-store-item:active:not([disabled]) {
+    transform: scale(0.99);
+}
+.select-store-item[disabled] {
+    cursor: default;
+    opacity: 0.6;
+}
+.select-store-item.current .store-menu-mark {
+    background: var(--primaryColor);
+    color: var(--primaryTxtColor);
+}
+.select-store-text {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+.select-store,
+.select-store-error {
+    animation: storeErrorIn 200ms ease-out both;
+}
+
+/* Still: no scaling, sliding or cross-fade; the colour changes, the check,
+   the spinner and the inline error all stay. */
+@media (prefers-reduced-motion: reduce) {
+    .store-menu-item,
+    .select-store-item {
+        transition-property: background, border-color;
+    }
+    .store-menu-item:active:not([disabled]),
+    .select-store-item:active:not([disabled]) {
+        transform: none;
+    }
+    .store-menu-check,
+    .store-menu-error,
+    .select-store,
+    .select-store-error {
+        animation: none;
+    }
+}
+
+/*
  * Below 768px — their `md` — the rail becomes a drawer over the page, with a
  * bar carrying the toggle. The drawer is translated rather than removed, so it
  * slides rather than appearing, and it is always in the DOM for the transition

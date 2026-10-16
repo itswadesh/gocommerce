@@ -39,6 +39,20 @@ export function setStore(store) {
     write(globalThis.localStorage, store);
 }
 
+/**
+ * forgetStore drops the remembered store, here and for new tabs: it is no
+ * longer one this person can open, and naming it would 403 every request.
+ */
+export function forgetStore() {
+    for (const storage of [globalThis.sessionStorage, globalThis.localStorage]) {
+        try {
+            storage?.removeItem(KEY);
+        } catch {
+            // Nothing was kept, so nothing to forget.
+        }
+    }
+}
+
 /** storeHeaders is the header naming this tab's store, if it has one. */
 export function storeHeaders() {
     const store = getStore();

@@ -319,6 +319,25 @@ export const auth = {
  * TTLs the binary was started with, and read-only for good reason. These change
  * when a shop moves premises, so they are a form.
  */
+/**
+ * The stores a person works in (D83). These routes belong to the person, so
+ * the engine never binds them to a store — they are how the panel finds one.
+ */
+export const stores = {
+    /** mine lists the caller's stores with their role in each, oldest first. */
+    async mine() {
+        return (await api.get("/api/stores/my")) ?? [];
+    },
+    /** enter answers with the store and the caller as it sees them. */
+    async enter(storeID) {
+        return await api.post("/api/stores/switch", { store_id: storeID });
+    },
+    /** create opens a store with the caller as its owner, and enters it. */
+    async create(name, slug) {
+        return await api.post("/api/stores/create", { name, slug });
+    },
+};
+
 export const storeProfile = {
     get: () => api.get("/api/admin/store"),
     save: (profile) => request("PATCH", "/api/admin/store", { body: profile }),

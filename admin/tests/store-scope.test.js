@@ -39,3 +39,11 @@ test("a new tab opens in the store used last", () => {
     sessionStorage.removeItem("gc_store");
     assert.equal(getStore(), "store_B");
 });
+
+test("forgetting the store forgets it in this tab and for new ones", async () => {
+    const { forgetStore } = await import("../src/lib/store-scope.js");
+    setStore("store_C");
+    forgetStore();
+    assert.equal(getStore(), "");
+    assert.deepEqual(storeHeaders(), {});
+});
