@@ -23,7 +23,7 @@ Only `DBURL` and one admin token are required.
 | `DBURL` | — | PostgreSQL connection string. Required. |
 | `Addr` | `:8080` | Listen address. |
 | `Currency` | `USD` | One settlement currency per store, ISO 4217. |
-| `DefaultLanguage` / `Languages` | `en` / `["en"]` | Negotiated per request. |
+| `DefaultLanguage` / `Languages` | `en` / `["en"]` | What a store sells in until it chooses its own languages on Store settings (D87). Each request is negotiated against its store's list. |
 | `AdminTokens` | — | At least one, unless `Dev`. Several allow rotation. |
 | `AdminAuth` | bearer tokens | Replace to add sessions, OIDC or RBAC. |
 | `CORSOrigins` | none | Browser origins allowed to call the API directly (`GOCOMMERCE_CORS_ORIGINS`, comma-separated, `*` for any). Unset, a storefront on another origin has to proxy. Credentials are never allowed. |

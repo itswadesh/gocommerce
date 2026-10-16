@@ -286,7 +286,7 @@ machine with no Node.js. Details in [development](development.md) and
 The reference binary's commands: `serve` (default), `migrate`, `superuser
 create|update|list`, `doctor` (with `-json`), `spec`, `version`, and `platform` for many stores (below).
 Flags: `-db`,
-`-addr`, `-admin-token`, `-currency`, `-languages`, `-dev`, `-demo`, `-v`,
+`-addr`, `-admin-token`, `-currency`, `-languages` (what a store sells in until it chooses its own, D87), `-dev`, `-demo`, `-v`,
 `-json`, and for `platform` `-base-domain`, `-platform-host`, `-api-host`,
 `-platform-token` and `-namespace`. `DATABASE_URL`, `GOCOMMERCE_ADMIN_TOKEN`, `GOCOMMERCE_DEMO`,
 `GOCOMMERCE_DEMO_ACCOUNT`, `GOCOMMERCE_ADMIN_EMAIL` and

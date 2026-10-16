@@ -200,14 +200,26 @@ func (m *Module) Notify(ctx context.Context, n gocommerce.Notification) error {
     if n.Channel != gocommerce.ChannelEmail || n.To == "" {
         return nil
     }
-    subject, body := m.render(n.Event, n.Language, n.Data)
+    tpl, ok, err := m.app.NotifyTemplates().GetIn(ctx, n.Channel, n.Event, n.Language)
+    if err != nil || !ok {
+        return err
+    }
+    subject, err := gocommerce.RenderNotifyText(tpl.Subject, n.Data)
+    if err != nil {
+        return err
+    }
+    body, err := gocommerce.RenderNotifyText(tpl.Body, n.Data)
+    if err != nil {
+        return err
+    }
     return m.send(ctx, n.To, subject, body)
 }
 ```
 
-Templates belong to your module. The engine sends flat data — order number,
-total, item summary, customer name — and never rendered copy, because wording
-and branding are the store's business.
+The wording is the store's, edited under Setup Email and Setup SMS (D58), and a
+store has it per language (D87): `GetIn` answers the customer's language, else
+the main language's wording, else the default. The engine sends flat data —
+order number, total, item summary, customer name — and never rendered copy.
 
 Returning an error asks the outbox to retry, which is right for a vendor being
 briefly unreachable. For a permanent rejection — a malformed address — log it
