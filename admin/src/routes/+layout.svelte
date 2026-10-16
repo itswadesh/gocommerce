@@ -591,7 +591,13 @@
         icon set every other glyph in this panel comes from.
     -->
     <a href="{base}/dash" class="app-brand" aria-label="GoCommerce">
-        <i class="ri-shopping-bag-3-fill app-brand-mark" aria-hidden="true"></i>
+        <!-- kitcommerce.store's mark, drawn as the site draws it: from parts,
+             in currentColor, so it takes the theme like the text beside it. -->
+        <svg class="app-brand-mark" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+            <rect x="4" y="4" width="3.6" height="16" rx="1" />
+            <path d="M9.6 12 15.4 4h4.4l-5.8 8z" />
+            <path d="M9.6 12h4.4l5.8 8h-4.4z" />
+        </svg>
         <span class="app-brand-name">GoCommerce</span>
     </a>
 {/snippet}
