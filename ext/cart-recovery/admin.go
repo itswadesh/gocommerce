@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
 )
@@ -25,9 +26,14 @@ type Abandonment struct {
 	// Indicator is the one secondary fact worth a word under the status —
 	// "email_sent", "clicked", "no_contact" — chosen here so every screen
 	// that draws a record says the same thing about it.
-	Indicator    string           `json:"indicator,omitempty"`
-	HoldReason   string           `json:"hold_reason,omitempty"`
-	Email        string           `json:"email,omitempty"`
+	Indicator  string `json:"indicator,omitempty"`
+	HoldReason string `json:"hold_reason,omitempty"`
+	Email      string `json:"email,omitempty"`
+	// Name and Phone are what the newest order placed with Email says, the
+	// reading the Customers screen makes (D22): a basket has neither, and a
+	// first-time shopper has no order to read them from.
+	Name         string           `json:"name,omitempty"`
+	Phone        string           `json:"phone,omitempty"`
 	ItemCount    int              `json:"item_count"`
 	Subtotal     gocommerce.Money `json:"subtotal"`
 	DiscountCode string           `json:"discount_code,omitempty"`
@@ -208,7 +214,12 @@ func parseFilter(r *http.Request) (*filter, error) {
 		f.add("a.abandoned_at < ?", t)
 	}
 	if v := strings.TrimSpace(q.Get("q")); v != "" {
-		f.add("lower(a.email) LIKE ?", "%"+escapeLike(strings.ToLower(v))+"%")
+		// The email, or the name or phone on any order placed with it. An IN
+		// over one pass of orders rather than a per-record EXISTS: orders has
+		// no index on the email, and this is one scan however long the list.
+		f.add(`(lower(a.email) LIKE ? OR lower(a.email) IN (
+			SELECT lower(o.email) FROM orders o WHERE lower(o.name) LIKE ? OR o.phone LIKE ?))`,
+			"%"+escapeLike(strings.ToLower(v))+"%")
 	}
 	for _, p := range []struct{ key, op string }{{"min_value_minor", ">="}, {"max_value_minor", "<="}} {
 		if v := q.Get(p.key); v != "" {
@@ -342,7 +353,62 @@ func (m *Module) handleList(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
+	if err := m.name(ctx, out...); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
 	gocommerce.RespondList(w, out, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})
+}
+
+// name fills each record's Name and Phone from the newest order placed with
+// its email — one query for the whole page.
+func (m *Module) name(ctx context.Context, list ...*Abandonment) error {
+	var emails []string
+	for _, a := range list {
+		if a.Email != "" {
+			emails = append(emails, strings.ToLower(a.Email))
+		}
+	}
+	if len(emails) == 0 {
+		return nil
+	}
+	rows, err := m.app.DB().QueryContext(ctx, `
+		SELECT DISTINCT ON (lower(email)) lower(email), coalesce(name, ''), coalesce(phone, '')
+		FROM orders WHERE lower(email) = ANY($1::text[])
+		ORDER BY lower(email), id DESC`, "{"+strings.Join(quoteArray(emails), ",")+"}")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	type who struct{ name, phone string }
+	byEmail := map[string]who{}
+	for rows.Next() {
+		var email string
+		var w who
+		if err := rows.Scan(&email, &w.name, &w.phone); err != nil {
+			return err
+		}
+		byEmail[email] = w
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, a := range list {
+		if w, ok := byEmail[strings.ToLower(a.Email)]; ok && a.Email != "" {
+			a.Name, a.Phone = w.name, w.phone
+		}
+	}
+	return nil
+}
+
+// quoteArray makes each string safe inside a PostgreSQL array literal, where
+// a comma or a quote in an email would otherwise split or end the element.
+func quoteArray(list []string) []string {
+	out := make([]string, len(list))
+	for i, s := range list {
+		out[i] = `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
+	}
+	return out
 }
 
 // Summary is the cards above the list: the same records, counted.
@@ -567,14 +633,16 @@ type Detail struct {
 
 // DetailLine sets one line as it was beside the line as it is.
 type DetailLine struct {
-	VariantID    int64            `json:"variant_id"`
-	ProductID    int64            `json:"product_id"`
-	SKU          string           `json:"sku"`
-	Title        string           `json:"title"`
-	VariantLabel string           `json:"variant_label,omitempty"`
-	Quantity     int              `json:"quantity"`
-	UnitPrice    gocommerce.Money `json:"unit_price"`
-	Total        gocommerce.Money `json:"total"`
+	VariantID    int64  `json:"variant_id"`
+	ProductID    int64  `json:"product_id"`
+	SKU          string `json:"sku"`
+	Title        string `json:"title"`
+	VariantLabel string `json:"variant_label,omitempty"`
+	// ImageURL is the product's lead picture now, empty when it has none.
+	ImageURL  string           `json:"image_url,omitempty"`
+	Quantity  int              `json:"quantity"`
+	UnitPrice gocommerce.Money `json:"unit_price"`
+	Total     gocommerce.Money `json:"total"`
 	// CurrentPrice is nil when the line is no longer in the basket — its
 	// variant was deleted, which cascades the cart line away.
 	CurrentPrice *gocommerce.Money `json:"current_price,omitempty"`
@@ -597,7 +665,10 @@ type CartState struct {
 // from its orders — the engine has no customer record (D22), so this is a
 // reading of orders by email and says so.
 type Customer struct {
-	Email           string           `json:"email"`
+	Email string `json:"email"`
+	// Name and Phone are the record's own, from the newest order.
+	Name            string           `json:"name,omitempty"`
+	Phone           string           `json:"phone,omitempty"`
 	Orders          int              `json:"orders"`
 	LifetimeValue   gocommerce.Money `json:"lifetime_value"`
 	LastOrderAt     *time.Time       `json:"last_order_at,omitempty"`
@@ -651,7 +722,7 @@ type SuppressionLabel struct {
 
 var suppressReasons = []SuppressionLabel{
 	{"contacted_manually", "Customer contacted manually"},
-	{"requested_no_contact", "Customer requested no further contact"},
+	{"requested_no_contact", "Customer requested no contact"},
 	{"invalid_customer", "Invalid customer"},
 	{"fraud_or_test", "Fraud or test order"},
 	{"other", "Other"},
@@ -688,6 +759,9 @@ func (m *Module) get(ctx context.Context, id int64) (*Abandonment, error) {
 		return nil, err
 	}
 	a.StepsTotal = len(set.Settings.automation(a.Kind).Steps)
+	if err := m.name(ctx, a); err != nil {
+		return nil, err
+	}
 	return a, nil
 }
 
@@ -765,16 +839,63 @@ func (m *Module) detail(ctx context.Context, id int64) (*Detail, error) {
 		d.Lines = append(d.Lines, line)
 	}
 
+	if err := m.pictures(ctx, d.Lines); err != nil {
+		return nil, err
+	}
 	if a.Email != "" {
 		if d.Customer, err = m.customer(ctx, a.Email); err != nil {
 			return nil, err
 		}
+		d.Customer.Name, d.Customer.Phone = a.Name, a.Phone
 	}
 	if d.Timeline, err = m.timeline(ctx, a); err != nil {
 		return nil, err
 	}
 	d.Recovery = m.options(ctx, set, a, cur)
 	return d, nil
+}
+
+// pictures gives each line its product's lead picture: the first image by
+// position, the one the product list and a storefront lead with.
+func (m *Module) pictures(ctx context.Context, lines []DetailLine) error {
+	var ids []int64
+	for _, l := range lines {
+		if l.ProductID > 0 {
+			ids = append(ids, l.ProductID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = strconv.FormatInt(id, 10)
+	}
+	rows, err := m.app.DB().QueryContext(ctx, `
+		SELECT DISTINCT ON (pm.product_id) pm.product_id, m.url
+		FROM product_media pm JOIN media m ON m.id = pm.media_id
+		WHERE pm.product_id = ANY($1::bigint[]) AND m.kind = 'image'
+		ORDER BY pm.product_id, pm.position, pm.media_id`, "{"+strings.Join(parts, ",")+"}")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	lead := map[int64]string{}
+	for rows.Next() {
+		var id int64
+		var url string
+		if err := rows.Scan(&id, &url); err != nil {
+			return err
+		}
+		lead[id] = url
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range lines {
+		lines[i].ImageURL = lead[lines[i].ProductID]
+	}
+	return nil
 }
 
 func (m *Module) customer(ctx context.Context, email string) (*Customer, error) {
@@ -803,8 +924,8 @@ func (m *Module) customer(ctx context.Context, email string) (*Customer, error) 
 
 func (m *Module) timeline(ctx context.Context, a *Abandonment) ([]TimelineEvent, error) {
 	out := []TimelineEvent{
-		{At: a.CartCreated, Kind: "cart_created", Label: "Basket opened", Actor: actorShopper},
-		{At: a.LastActiveAt, Kind: "last_activity", Label: "Last activity in the basket", Actor: actorShopper},
+		{At: a.CartCreated, Kind: "cart_created", Label: labelOf("cart_created", nil, ""), Actor: actorShopper},
+		{At: a.LastActiveAt, Kind: "last_activity", Label: labelOf("last_activity", nil, ""), Actor: actorShopper},
 	}
 	rows, err := m.app.DB().QueryContext(ctx, `
 		SELECT at, kind, detail, actor FROM cart_recovery_events
@@ -853,40 +974,55 @@ func labelOf(kind string, d map[string]any, currency string) string {
 		return ""
 	}
 	str := func(k string) string { s, _ := d[k].(string); return s }
+	// The wording is kitcommerce-admin's, so an operator who knows one panel
+	// reads the other. The amounts stay out of the sentences: money leaves the
+	// engine as minor units, never as text (rule 3).
 	switch kind {
+	case "cart_created":
+		return "Cart created"
+	case "last_activity":
+		return "Last activity in the cart"
 	case "abandoned":
-		s := "Marked abandoned after " + humanMinutes(d["idle_minutes"]) + " without activity"
+		what := "Checkout"
+		if str("kind") == kindCart {
+			what = "Cart"
+		}
+		s := what + " abandoned after " + humanMinutes(d["idle_minutes"]) + " without activity"
 		if h := holdLabels[str("hold_reason")]; h != "" && str("hold_reason") != holdSequenceDone {
-			s += " — not chased: " + h
+			s += " — not followed up: " + h
 		}
 		return s
 	case "scheduled":
-		return "Recovery email #" + num("step") + " scheduled to go out " + humanMinutes(d["wait_minutes"]) + " later"
+		from := "after the previous email"
+		if num("step") == "1" {
+			from = "after abandonment"
+		}
+		return "Recovery email #" + num("step") + " scheduled " + humanMinutes(d["wait_minutes"]) + " " + from
 	case "sent":
 		if manual, _ := d["manual"].(bool); manual {
 			return "Recovery email sent by hand to " + str("to")
 		}
 		return "Recovery email #" + num("step") + " sent to " + str("to")
 	case "send_failed":
-		return "Recovery email #" + num("step") + " failed: " + str("error")
+		return "Recovery email #" + num("step") + " could not be sent: " + str("error")
 	case "skipped":
-		return "Recovery email #" + num("step") + " not sent: " + holdLabels[str("reason")]
+		return "Recovery email #" + num("step") + " skipped: " + holdLabels[str("reason")]
 	case "link_copied":
 		return "Recovery link copied"
 	case "clicked":
-		return "Recovery link opened"
+		return "Customer opened the recovery link"
 	case "resumed":
-		return "Shopper came back to the basket"
+		return "Customer came back to the cart"
 	case "recovered":
-		s := "Order " + str("order_number") + " placed — recovered"
+		s := "Recovered through order " + str("order_number")
 		if after, _ := d["after_message"].(bool); !after {
-			s += " without a message"
+			s += ", without a recovery message"
 		}
 		return s
 	case "suppressed":
 		return "Recovery suppressed: " + suppressLabel(str("reason"))
 	case "expired":
-		return "Basket deleted — expired"
+		return "Expired: the cart was deleted"
 	}
 	return kind
 }
@@ -1151,10 +1287,15 @@ func (m *Module) handleLink(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	gocommerce.Respond(w, http.StatusOK, map[string]any{
+	// The link opens the cart, so it works for as long as the cart does.
+	out := map[string]any{
 		"url":     m.link(set.Settings, linkToken, cur.token),
 		"tracked": m.app.Config().PanelURL != "",
-	})
+	}
+	if !cur.gone {
+		out["expires_at"] = cur.detail.ExpiresAt
+	}
+	gocommerce.Respond(w, http.StatusOK, out)
 }
 
 // SuppressRequest stops the reminders for one basket.
@@ -1185,8 +1326,8 @@ func (m *Module) handleSuppress(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, gocommerce.Validationf("say why in the note when the reason is other"))
 		return
 	}
-	if len(req.Note) > 500 {
-		gocommerce.RespondError(w, r, gocommerce.Validationf("note must be at most 500 characters"))
+	if utf8.RuneCountInString(req.Note) > 1000 {
+		gocommerce.RespondError(w, r, gocommerce.Validationf("note must be at most 1000 characters"))
 		return
 	}
 

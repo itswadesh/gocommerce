@@ -94,7 +94,8 @@
         "parameters": [{"$ref": "#/components/parameters/PathID"}],
         "responses": {
           "200": {"description": "The link.", "content": {"application/json": {"schema": {"type": "object", "properties": {
-            "data": {"type": "object", "properties": {"url": {"type": "string"}, "tracked": {"type": "boolean"}}}}}}}},
+            "data": {"type": "object", "properties": {"url": {"type": "string"}, "tracked": {"type": "boolean"},
+              "expires_at": {"type": "string", "format": "date-time", "description": "When the cart, and so the link, stops working. Absent when the cart is gone."}}}}}}}},
           "404": {"$ref": "#/components/responses/NotFound"},
           "409": {"$ref": "#/components/responses/Conflict"}
         }
@@ -108,7 +109,7 @@
         "parameters": [{"$ref": "#/components/parameters/PathID"}],
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["reason"], "properties": {
           "reason": {"type": "string", "enum": ["contacted_manually", "requested_no_contact", "invalid_customer", "fraud_or_test", "other"]},
-          "note": {"type": "string", "maxLength": 500, "description": "Required when the reason is other."}
+          "note": {"type": "string", "maxLength": 1000, "description": "Required when the reason is other."}
         }}}}},
         "responses": {
           "200": {"description": "The record.", "content": {"application/json": {"schema": {"type": "object", "properties": {
@@ -189,7 +190,7 @@
       "CartRecoveryKind": {"name": "kind", "in": "query", "description": "Comma-separated: cart, checkout.", "schema": {"type": "string"}},
       "CartRecoveryFrom": {"name": "from", "in": "query", "description": "Abandoned on or after: a date or an RFC 3339 time.", "schema": {"type": "string"}},
       "CartRecoveryTo": {"name": "to", "in": "query", "description": "Abandoned before; a bare date includes that whole day.", "schema": {"type": "string"}},
-      "CartRecoveryQuery": {"name": "q", "in": "query", "description": "Part of the email address.", "schema": {"type": "string"}},
+      "CartRecoveryQuery": {"name": "q", "in": "query", "description": "Part of the email address, or of the name or phone on an order placed with it.", "schema": {"type": "string"}},
       "CartRecoveryMinValue": {"name": "min_value_minor", "in": "query", "schema": {"type": "integer", "format": "int64"}},
       "CartRecoveryMaxValue": {"name": "max_value_minor", "in": "query", "schema": {"type": "integer", "format": "int64"}},
       "CartRecoveryReachable": {"name": "reachable", "in": "query", "description": "true: has an email address.", "schema": {"type": "boolean"}},
@@ -206,6 +207,8 @@
           "indicator": {"type": "string", "description": "purchased, clicked, email_sent, inventory_unavailable, send_failed, no_email_provider, scheduled, no_contact, automation_off, no_steps, before_install or sequence_done."},
           "hold_reason": {"type": "string"},
           "email": {"type": "string"},
+          "name": {"type": "string", "description": "From the newest order placed with the email; absent for a shopper with no order."},
+          "phone": {"type": "string", "description": "From the newest order placed with the email."},
           "item_count": {"type": "integer"},
           "subtotal": {"$ref": "#/components/schemas/Money"},
           "discount_code": {"type": "string"},
@@ -240,6 +243,7 @@
               "variant_id": {"type": "integer", "format": "int64"},
               "product_id": {"type": "integer", "format": "int64"},
               "sku": {"type": "string"}, "title": {"type": "string"}, "variant_label": {"type": "string"},
+              "image_url": {"type": "string", "description": "The product's lead picture now."},
               "quantity": {"type": "integer"},
               "unit_price": {"$ref": "#/components/schemas/Money"},
               "total": {"$ref": "#/components/schemas/Money"},
@@ -252,7 +256,7 @@
               "updated_at": {"type": "string", "format": "date-time"},
               "expires_at": {"type": "string", "format": "date-time"}}},
             "customer": {"type": "object", "properties": {
-              "email": {"type": "string"}, "orders": {"type": "integer"},
+              "email": {"type": "string"}, "name": {"type": "string"}, "phone": {"type": "string"}, "orders": {"type": "integer"},
               "lifetime_value": {"$ref": "#/components/schemas/Money"},
               "last_order_at": {"type": "string", "format": "date-time"},
               "last_order_number": {"type": "string"},
