@@ -10195,6 +10195,53 @@ a.recovery-automation:focus-visible .recovery-automation-go > i {
     transform: translateX(3px);
 }
 
+/* The Automations list as kitcommerce-admin draws it: a narrow centred
+   column, a card per automation with a 40px icon tile, and a footnote. */
+.recovery-centred {
+    width: 100%;
+    max-width: min(768px, 100%);
+    margin-left: auto;
+    margin-right: auto;
+}
+.recovery-automation-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.recovery-automation-cards .recovery-automation {
+    border: 1px solid var(--border);
+    border-radius: var(--borderRadius);
+    background: var(--cardFace, var(--surfaceColor));
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+    transition:
+        background-color var(--animationSpeed) ease-out,
+        transform var(--animationSpeed) ease-out;
+}
+.recovery-automation-cards .recovery-automation + .recovery-automation {
+    border-top: 1px solid var(--border);
+}
+.recovery-automation-cards a.recovery-automation:active {
+    transform: scale(0.99);
+}
+.recovery-automation-cards .recovery-automation-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--borderRadius);
+    background: var(--surfaceAlt1Color);
+    color: var(--surfaceTxtColor);
+}
+.recovery-automation-cards .recovery-automation-facts {
+    color: var(--surfaceTxtHintColor);
+}
+.recovery-automations-foot {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+}
+.recovery-automations-foot > i {
+    margin-top: 2px;
+}
+
 /* On or off, as DESIGN.md's status pill: a dot and a word, never colour alone. */
 .recovery-state {
     display: inline-flex;
@@ -10214,6 +10261,310 @@ a.recovery-automation:focus-visible .recovery-automation-go > i {
 }
 
 /* ------------------------------------------------------------ the editor */
+
+/* The workflow, as kitcommerce-admin's canvas draws it: nodes on a dotted
+   ground, joined left to right, with the selected node's settings in a panel
+   beside it. The row scrolls inside the canvas; the zoom and "Add node"
+   controls stay where they are. */
+.recovery-workflow-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.recovery-workflow-switch {
+    width: auto;
+    margin: 0;
+}
+.recovery-flow-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 20rem;
+    gap: 12px;
+}
+.recovery-canvas {
+    position: relative;
+    min-height: 280px;
+    overflow: hidden;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+    background-color: var(--surfaceAlt1Color);
+    background-image: radial-gradient(
+        color-mix(in srgb, var(--surfaceTxtHintColor) 35%, transparent) 1px,
+        transparent 1px
+    );
+    background-size: 16px 16px;
+}
+.recovery-canvas-scroll {
+    display: flex;
+    align-items: center;
+    min-height: 280px;
+    overflow-x: auto;
+}
+/* The editor takes the page's width: a workflow is read sideways, and a
+   column sized for a form would show three nodes of nine. */
+.wrapper.recovery-editor-page {
+    /* PocketBase's .wrapper is a fixed 850px width, not a cap. */
+    width: min(1280px, 100%);
+    max-width: 100%;
+}
+.recovery-flow {
+    display: flex;
+    align-items: flex-start;
+    width: max-content;
+    padding: 64px 28px 72px;
+    transition: opacity var(--animationSpeed) ease-out;
+}
+/* Inactive: the workflow is still there and still editable, just quieter. */
+.recovery-canvas.is-off .recovery-flow {
+    opacity: 0.6;
+}
+.recovery-node {
+    --tone: var(--surfaceTxtHintColor);
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 112px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: center;
+    cursor: pointer;
+}
+.recovery-node.is-trigger {
+    --tone: #f97316;
+}
+.recovery-node.is-filter {
+    --tone: #0ea5e9;
+}
+.recovery-node.is-wait {
+    --tone: #f59e0b;
+}
+.recovery-node.is-action {
+    --tone: #10b981;
+}
+.recovery-node-box {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 80px;
+    height: 80px;
+    border: 2px solid var(--surfaceAlt3Color, var(--border));
+    border-radius: var(--borderRadius);
+    background: var(--cardFace, var(--surfaceColor));
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+    transition:
+        transform var(--animationSpeed) ease-out,
+        border-color var(--animationSpeed) ease-out,
+        box-shadow var(--animationSpeed) ease-out;
+}
+/* The trigger is round on the side nothing comes from; the end is a circle.
+   Round things stay round under the one-corner rule. */
+.recovery-node.is-trigger .recovery-node-box {
+    border-radius: 40px var(--borderRadius) var(--borderRadius) 40px;
+}
+.recovery-node.is-end .recovery-node-box {
+    width: 56px;
+    height: 56px;
+    margin-top: 12px;
+    border-radius: 50%;
+}
+.recovery-node:hover .recovery-node-box {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--surfaceTxtColor) 30%, transparent);
+}
+.recovery-node:active .recovery-node-box {
+    transform: scale(0.96);
+    transition-duration: var(--activeAnimationSpeed);
+}
+.recovery-node:focus-visible {
+    outline: none;
+}
+.recovery-node:focus-visible .recovery-node-box {
+    outline: 2px solid var(--ring, var(--primaryColor));
+    outline-offset: 3px;
+}
+.recovery-node.is-selected .recovery-node-box {
+    border-color: var(--primaryColor);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--primaryColor) 15%, transparent);
+}
+.recovery-node.has-error .recovery-node-box {
+    border-color: var(--dangerColor);
+}
+.recovery-node-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--borderRadius);
+    background: color-mix(in srgb, var(--tone) 14%, transparent);
+    color: var(--tone);
+    font-size: 22px;
+}
+.recovery-node.is-end .recovery-node-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    font-size: 16px;
+}
+.recovery-node-zap {
+    position: absolute;
+    left: -12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #f97316;
+    font-size: 20px;
+}
+.recovery-node-badge {
+    position: absolute;
+    top: -10px;
+    right: -10px;
+    border-radius: 50%;
+    background: var(--cardFace, var(--surfaceColor));
+    color: var(--dangerColor);
+    font-size: 20px;
+    line-height: 1;
+    animation: recoveryPop 220ms ease-out;
+}
+.recovery-node-label {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.2;
+}
+.recovery-node-sub {
+    display: -webkit-box;
+    max-width: 112px;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    font-size: 11px;
+    line-height: 1.25;
+    color: var(--surfaceTxtHintColor);
+}
+/* The link between two nodes, drawn from box edge to box edge at the boxes'
+   middle, with an arrowhead, and a + to put a wait and a message there. */
+.recovery-edge {
+    position: relative;
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 80px;
+}
+.recovery-edge::before {
+    content: "";
+    position: absolute;
+    left: -16px;
+    right: -16px;
+    top: 50%;
+    height: 2px;
+    margin-top: -1px;
+    background: var(--surfaceAlt3Color, var(--border));
+}
+.recovery-edge::after {
+    content: "";
+    position: absolute;
+    right: -17px;
+    top: 50%;
+    margin-top: -5px;
+    border: 5px solid transparent;
+    border-left: 6px solid var(--surfaceAlt3Color, var(--border));
+    border-right: 0;
+}
+.recovery-edge-add {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px dashed var(--surfaceAlt3Color, var(--border));
+    border-radius: var(--borderRadius);
+    background: var(--cardFace, var(--surfaceColor));
+    color: var(--surfaceTxtHintColor);
+    cursor: pointer;
+    transition:
+        transform var(--animationSpeed) ease-out,
+        color var(--animationSpeed) ease-out,
+        border-color var(--animationSpeed) ease-out;
+}
+.recovery-edge-add:hover {
+    border-color: var(--primaryColor);
+    color: var(--primaryColor);
+    transform: scale(1.08);
+}
+.recovery-edge-add:active {
+    transform: scale(0.94);
+    transition-duration: var(--activeAnimationSpeed);
+}
+.recovery-edge-add:focus-visible {
+    outline: 2px solid var(--ring, var(--primaryColor));
+    outline-offset: 2px;
+}
+.recovery-canvas-controls {
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    display: flex;
+    gap: 4px;
+}
+.recovery-canvas-add {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+}
+.recovery-inspector {
+    min-height: 280px;
+    padding: 14px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+    background: var(--cardFace, var(--surfaceColor));
+}
+.recovery-inspector-empty {
+    padding: 24px 6px;
+    text-align: center;
+}
+.recovery-inspector-empty > i {
+    font-size: 24px;
+    color: var(--surfaceTxtHintColor);
+}
+.recovery-inspector-empty ul {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 10px 0 0;
+    padding-left: 18px;
+    text-align: left;
+}
+.recovery-inspector-title {
+    margin: 0 0 10px;
+    font-weight: 600;
+}
+.recovery-inspector-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 14px;
+}
+@media (max-width: 900px) {
+    .recovery-flow-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .recovery-inspector {
+        min-height: 0;
+    }
+}
 
 /* "A checkout counts as abandoned after [10] [minutes] without activity" —
    the boxes sit in the sentence they complete. */
@@ -10437,6 +10788,43 @@ a.recovery-automation:focus-visible .recovery-automation-go > i {
     font-weight: normal;
 }
 
+/* The report as kitcommerce-admin frames it: each chart in a card with its
+   title, a line under it saying how to read it, and the step-to-step
+   conversion said between the funnel's bars. */
+.recovery-report-controls {
+    margin-bottom: 12px;
+}
+.recovery-report-card {
+    margin-bottom: 16px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--borderRadius);
+    background: var(--cardFace, var(--surfaceColor));
+}
+.recovery-report-title {
+    margin: 0 0 8px;
+    font-size: var(--baseFontSize, 14px);
+    font-weight: 600;
+}
+.recovery-report-headline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+    margin: 4px 0 12px;
+}
+.recovery-funnel-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.recovery-funnel-step {
+    padding-left: 2px;
+}
+.recovery-funnel-fill.is-last {
+    background: var(--successColor);
+}
+
 .recovery-empty-block {
     padding: 32px 20px;
     text-align: center;
@@ -10530,6 +10918,21 @@ a.recovery-automation:focus-visible .recovery-automation-go > i {
     }
     .recovery-box > i {
         transform: none;
+    }
+    .recovery-node-box,
+    .recovery-edge-add,
+    .recovery-automation-cards .recovery-automation {
+        transition: none;
+    }
+    .recovery-node:hover .recovery-node-box,
+    .recovery-node:active .recovery-node-box,
+    .recovery-edge-add:hover,
+    .recovery-edge-add:active,
+    .recovery-automation-cards a.recovery-automation:active {
+        transform: none;
+    }
+    .recovery-node-badge {
+        animation: fadeIn var(--animationSpeed) ease-out;
     }
     .recovery-funnel-fill,
     .recovery-chart .recovery-bar {

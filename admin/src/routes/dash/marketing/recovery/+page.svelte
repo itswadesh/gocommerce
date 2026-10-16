@@ -1,6 +1,9 @@
 <script>
     /**
-     * Recovery analytics: is the sequence bringing baskets back, and how much.
+     * Cart recovery: is the sequence bringing baskets back, and how much. Laid
+     * out as kitcommerce-admin's report is — six figures, the funnel, recovered
+     * revenue over time, and the split by type — with each chart's table kept
+     * under it for anybody who cannot see the bars.
      *
      * One request — `GET …/analytics` — answers the whole screen, and every
      * figure in it is counted by PostgreSQL over the window: the summary, a
@@ -24,6 +27,7 @@
         funnelRows,
         kindLabel,
         periodLabel,
+        rangeLabel,
         rangeWindow,
         rateText,
         shareText,
@@ -100,38 +104,64 @@
     const summary = $derived(data?.summary ?? null);
     const currency = $derived(summary?.potential?.currency ?? "USD");
 
+    const count = (n) => new Intl.NumberFormat().format(n ?? 0);
+
+    /* "Messages sent", not kitcommerce-admin's "delivered": the engine knows a
+       message left, not that it arrived. */
     const cards = $derived([
         {
             label: "Potential lost revenue",
+            icon: "ri-cash-line",
             value: summary && formatMoney(summary.potential),
-            hint: summary ? `${summary.abandoned} ${pluralize(summary.abandoned, "basket")} left behind` : "",
+            hint: summary ? `${count(summary.abandoned)} abandoned` : "",
         },
         {
             label: "Recovered revenue",
+            icon: "ri-wallet-3-line",
+            success: true,
             value: summary && formatMoney(summary.recovered_revenue),
-            hint: summary ? `${formatMoney(summary.recovered_after_message_revenue)} after an email` : "",
+            hint: summary ? `${formatMoney(summary.recovered_after_message_revenue)} after a message` : "",
         },
         {
             label: "Recovery rate",
+            icon: "ri-percent-line",
             value: summary && rateText(summary.recovery_rate_bp),
-            hint: summary ? `${summary.recovered} of ${summary.abandoned} recovered` : "",
+            hint: "Recovered ÷ abandoned",
         },
         {
-            label: "Emails sent",
-            value: summary && String(summary.messages_sent),
-            hint: summary ? `To ${summary.contacted} ${pluralize(summary.contacted, "basket")}` : "",
+            label: "Messages sent",
+            icon: "ri-mail-check-line",
+            value: summary && count(summary.messages_sent),
+            hint: summary ? `to ${count(summary.contacted)} ${pluralize(summary.contacted, "cart")}` : "",
         },
         {
             label: "Link clicks",
-            value: summary && String(summary.clicked),
-            hint: "Baskets whose recovery link was opened",
+            icon: "ri-cursor-line",
+            value: summary && count(summary.clicked),
+            hint: summary ? (summary.contacted ? `${shareText(summary.clicked, summary.contacted)} of contacted` : "Nobody contacted yet") : "",
         },
         {
             label: "Recovered orders",
-            value: summary && String(summary.recovered),
-            hint: summary ? `${summary.recovered_after_message} after an email` : "",
+            icon: "ri-checkbox-circle-line",
+            success: true,
+            value: summary && count(summary.recovered),
+            hint: summary ? `${count(summary.recovered_after_message)} after a message` : "",
         },
     ]);
+
+    /* The period's recovered revenue and orders, for the chart card's headline. */
+    const recoveredTotal = $derived(summary ? formatMoney(summary.recovered_revenue) : "");
+
+    const KINDS = [
+        { value: "", label: "All" },
+        { value: "checkout", label: "Checkouts" },
+        { value: "cart", label: "Carts" },
+    ];
+    const GRAINS = [
+        ["day", "Daily"],
+        ["week", "Weekly"],
+        ["month", "Monthly"],
+    ];
 
     const funnel = $derived(funnelRows(data?.funnel));
 
@@ -175,7 +205,7 @@
     });
 </script>
 
-<svelte:head><title>Recovery analytics · GoCommerce</title></svelte:head>
+<svelte:head><title>Cart recovery · GoCommerce</title></svelte:head>
 
 {#if !readable && !missing}
     <NoAccess right="abandonment.read" what="the recovery figures" />
@@ -186,57 +216,21 @@
              as on Reports. -->
         <div class="page-content tw:bg-background tw:text-foreground">
             <header class="page-header">
-                <nav class="breadcrumbs">
-                    <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Marketing</div>
-                    <div class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">Recovery analytics</div>
-                </nav>
-                <div class="inline-flex gap-sm">
-                    <button
-                        type="button"
-                        class="btn circle transparent secondary"
-                        title="Refresh"
-                        aria-label="Refresh"
-                        disabled={loading}
-                        onclick={load}
-                    >
-                        <i class="ri-refresh-line" aria-hidden="true"></i>
-                    </button>
+                <div class="recovery-title-block">
+                    <h1 class="recovery-h1">Cart recovery</h1>
+                    <p class="txt-hint txt-sm">{rangeLabel(list.params.range, list.params.from, list.params.to)}, in {tz}</p>
                 </div>
+                <div class="flex-fill"></div>
                 {#if !missing}
-                    <div class="page-header-primary-btns recovery-controls">
-                        <div class="field">
-                            <Select ariaLabel="Window" value={list.params.range} options={RANGES} onchange={chooseRange} />
-                        </div>
-                        {#if list.params.range === "custom"}
-                            <div class="field">
-                                <input
-                                    type="date"
-                                    aria-label="From"
-                                    value={list.params.from}
-                                    onchange={(e) => list.set({ from: e.currentTarget.value })}
-                                />
-                            </div>
-                            <div class="field">
-                                <input
-                                    type="date"
-                                    aria-label="To, inclusive"
-                                    value={list.params.to}
-                                    onchange={(e) => list.set({ to: e.currentTarget.value })}
-                                />
-                            </div>
-                        {/if}
-                        <div class="field">
-                            <Select
-                                ariaLabel="Type"
-                                value={list.params.kind}
-                                options={[
-                                    { value: "", label: "Checkouts and carts" },
-                                    { value: "checkout", label: "Checkouts" },
-                                    { value: "cart", label: "Carts" },
-                                ]}
-                                onchange={(v) => list.set({ kind: v })}
-                            />
-                        </div>
+                    <div class="page-header-primary-btns">
+                        <a class="btn sm secondary" href="{base}/dash/abandoned">
+                            <i class="ri-inbox-line" aria-hidden="true"></i>
+                            <span class="txt">Abandoned checkouts</span>
+                        </a>
+                        <a class="btn sm secondary" href="{base}/dash/marketing/automations">
+                            <i class="ri-flow-chart" aria-hidden="true"></i>
+                            <span class="txt">Automations</span>
+                        </a>
                     </div>
                 {/if}
             </header>
@@ -247,23 +241,71 @@
                     what="The recovery figures are ext/cart-recovery's, and this binary does not have it."
                 />
             {:else}
-                <div class="recovery-tiles tw:mb-6 tw:grid tw:grid-cols-2 tw:gap-3 tw:md:grid-cols-3 tw:xl:grid-cols-6">
+                <div class="recovery-filters recovery-report-controls" role="group" aria-label="Filters">
+                    <div class="recovery-seg" role="group" aria-label="Type">
+                        {#each KINDS as k (k.value)}
+                            <button
+                                type="button"
+                                class="recovery-seg-btn"
+                                aria-pressed={list.params.kind === k.value}
+                                onclick={() => list.set({ kind: k.value })}
+                            >
+                                {k.label}
+                            </button>
+                        {/each}
+                    </div>
+                    <div class="field recovery-select">
+                        <Select ariaLabel="Window" value={list.params.range} options={RANGES} onchange={chooseRange} />
+                    </div>
+                    {#if list.params.range === "custom"}
+                        <div class="field">
+                            <input
+                                type="date"
+                                aria-label="From"
+                                value={list.params.from}
+                                onchange={(e) => list.set({ from: e.currentTarget.value })}
+                            />
+                        </div>
+                        <div class="field">
+                            <input
+                                type="date"
+                                aria-label="To, inclusive"
+                                value={list.params.to}
+                                onchange={(e) => list.set({ to: e.currentTarget.value })}
+                            />
+                        </div>
+                    {/if}
+                    <button
+                        type="button"
+                        class="btn circle sm transparent secondary recovery-refresh"
+                        class:is-spinning={loading}
+                        title={loading ? "Refreshing" : "Refresh"}
+                        aria-label={loading ? "Refreshing" : "Refresh"}
+                        disabled={loading}
+                        onclick={load}
+                    >
+                        <i class="ri-refresh-line" aria-hidden="true"></i>
+                    </button>
+                </div>
+
+                <div class="recovery-tiles tw:mb-4 tw:grid tw:grid-cols-2 tw:gap-3 tw:md:grid-cols-3 tw:xl:grid-cols-6">
                     {#each cards as card (card.label)}
-                        <div class="recovery-tile tw:flex tw:min-h-[110px] tw:flex-col tw:justify-between tw:rounded-xl tw:border tw:bg-card tw:p-4">
-                            <span class="tw:text-xs tw:font-medium tw:tracking-wide tw:text-muted-foreground tw:uppercase">
+                        <div class="recovery-tile tw:flex tw:min-h-24 tw:flex-col tw:justify-between tw:rounded-lg tw:border tw:bg-card tw:p-3 tw:sm:p-4">
+                            <span class="recovery-tile-label" class:is-success={card.success}>
+                                <i class={card.icon} aria-hidden="true"></i>
                                 {card.label}
                             </span>
                             <div>
                                 {#if loading && !summary}
-                                    <div class="tw:h-8 tw:w-24 tw:animate-pulse tw:rounded-md tw:bg-muted"></div>
+                                    <div class="tw:h-7 tw:w-20 tw:animate-pulse tw:rounded-md tw:bg-muted"></div>
                                 {:else}
                                     {#key card.value}
-                                        <div class="recovery-figure tw:text-2xl tw:font-bold tw:tracking-tight tw:tabular-nums tw:sm:text-3xl">
+                                        <div class="recovery-figure tw:text-xl tw:font-semibold tw:tracking-tight tw:tabular-nums tw:sm:text-2xl">
                                             {card.value ?? "—"}
                                         </div>
                                     {/key}
+                                    <p class="tw:mt-1 tw:truncate tw:text-xs tw:text-muted-foreground">{card.hint}</p>
                                 {/if}
-                                <p class="tw:mt-1 tw:text-xs tw:text-muted-foreground">{card.hint}</p>
                             </div>
                         </div>
                     {/each}
@@ -272,185 +314,199 @@
                 {#if loading && !data}
                     <span class="skeleton-loader" style="height: 180px"></span>
                 {:else if data && !summary.abandoned}
-                    <div class="recovery-empty-block tw:rounded-xl tw:border tw:bg-card" >
+                    <div class="recovery-empty-block recovery-report-card">
                         <i class="ri-bar-chart-2-line" aria-hidden="true"></i>
-                        <p><strong>Nothing was abandoned {windowWords}.</strong></p>
+                        <p><strong>No abandoned carts in this period</strong></p>
                         <p class="txt-hint">
-                            Figures appear here once a basket sits idle past its automation's threshold.
+                            Figures appear here once a cart sits idle past its automation's threshold.
                             <a class="recovery-arrow-link" href="{base}/dash/marketing/automations">
                                 See the automations <span aria-hidden="true">→</span>
                             </a>
                         </p>
                     </div>
                 {:else if data}
-                    <h2 class="tw:mb-3 tw:text-sm tw:font-semibold">Funnel</h2>
-                    <div class="recovery-funnel tw:rounded-xl tw:border tw:bg-card" aria-hidden="true">
-                        {#each funnel as stage (stage.key)}
-                            <div class="recovery-funnel-row">
-                                <span class="recovery-funnel-label">{stage.label}</span>
-                                <span class="recovery-funnel-track">
-                                    <span class="recovery-funnel-fill" style="--w: {stage.ofFirst}"></span>
-                                </span>
-                                <span class="recovery-funnel-count">{stage.count}</span>
-                            </div>
-                        {/each}
-                    </div>
-
-                    <div class="page-table-wrapper tw:mt-3 tw:rounded-xl tw:border">
-                        <table class="table responsive-table">
-                            <caption class="tw:sr-only">The recovery funnel</caption>
-                            <thead class="sticky">
-                                <tr>
-                                    <th class="col-field-name-id">Stage</th>
-                                    <th class="col-field-type-number min-width">Baskets</th>
-                                    <th class="col-field-type-number min-width">Of the stage before</th>
-                                    <th class="col-field-type-number min-width">Of abandoned</th>
-                                </tr>
+                    <section class="recovery-report-card">
+                        <h2 class="recovery-report-title">Recovery funnel</h2>
+                        <p class="txt-hint txt-sm recovery-card-desc">Bars against all abandoned; arrows step to step</p>
+                        <div class="recovery-funnel-bars" aria-hidden="true">
+                            {#each funnel as stage, i (stage.key)}
+                                <!-- A share of nothing is not a figure: after an empty
+                                     stage the arrow stays and the percentage does not. -->
+                                {#if i > 0}
+                                    <div class="recovery-funnel-step txt-hint txt-sm">
+                                        ↓{stage.prevCount ? ` ${shareText(stage.count, stage.prevCount)} of the step before` : ""}
+                                    </div>
+                                {/if}
+                                <div class="recovery-funnel-row">
+                                    <span class="recovery-funnel-label">{stage.label}</span>
+                                    <span class="recovery-funnel-track">
+                                        <span
+                                            class="recovery-funnel-fill"
+                                            class:is-last={i === funnel.length - 1}
+                                            style="--w: {stage.ofFirst}"
+                                        ></span>
+                                    </span>
+                                    <span class="recovery-funnel-count">{count(stage.count)}</span>
+                                </div>
+                            {/each}
+                        </div>
+                        <table class="tw:sr-only">
+                            <caption>The recovery funnel</caption>
+                            <thead>
+                                <tr><th>Stage</th><th>Carts</th><th>Of the stage before</th><th>Of abandoned</th></tr>
                             </thead>
                             <tbody>
                                 {#each funnel as stage (stage.key)}
                                     <tr>
-                                        <td class="col-field-name-id" data-name="Stage">{stage.label}</td>
-                                        <td class="col-field-type-number min-width txt-bold" data-name="Baskets">{stage.count}</td>
-                                        <td class="col-field-type-number min-width" data-name="Of the stage before">
-                                            {stage.prevCount === null ? "—" : shareText(stage.count, stage.prevCount)}
-                                        </td>
-                                        <td class="col-field-type-number min-width txt-hint" data-name="Of abandoned">
-                                            {shareText(stage.count, funnel[0]?.count)}
-                                        </td>
+                                        <td>{stage.label}</td>
+                                        <td>{stage.count}</td>
+                                        <td>{stage.prevCount === null ? "—" : shareText(stage.count, stage.prevCount)}</td>
+                                        <td>{shareText(stage.count, funnel[0]?.count)}</td>
                                     </tr>
                                 {/each}
                             </tbody>
                         </table>
-                    </div>
-                    <p class="tw:mt-2 tw:text-xs tw:text-muted-foreground">
-                        Each stage is a part of the one above it. "Recovered orders" here are those bought after a
-                        recovery email; a shopper who came back on their own is counted in the figures above and
-                        not in the funnel the emails are judged by.
-                    </p>
+                        <p class="tw:mt-3 tw:text-xs tw:text-muted-foreground">
+                            Each stage is a part of the one above it. "Recovered orders" here are those bought after a
+                            recovery message; a shopper who came back on their own is counted in the figures above and
+                            not in the funnel the messages are judged by.
+                        </p>
+                    </section>
 
-                    <h2 class="tw:mt-8 tw:mb-3 tw:flex tw:flex-wrap tw:items-center tw:gap-2 tw:text-sm tw:font-semibold">
-                        Recovered revenue over time
-                        <span class="recovery-segmented" role="group" aria-label="Group by">
-                            {#each [["day", "Daily"], ["week", "Weekly"], ["month", "Monthly"]] as [value, label] (value)}
-                                <button
-                                    type="button"
-                                    class="btn sm pill"
-                                    class:secondary={grain !== value}
-                                    aria-pressed={grain === value}
-                                    onclick={() => list.set({ group_by: value })}
-                                >
-                                    {label}
-                                </button>
-                            {/each}
-                        </span>
-                    </h2>
-
-                    <div class="report-legend">
-                        <span><i class="report-key recovery-key-back" aria-hidden="true"></i> Recovered revenue</span>
-                        <span><i class="report-key" aria-hidden="true"></i> Value abandoned</span>
-                    </div>
-                    <!-- The column's height is a scale rather than a height, so a
-                         change of window or type moves the bars on the
-                         compositor instead of re-laying the row out each frame. -->
-                    <figure class="report-chart recovery-chart" aria-hidden="true">
-                        {#each series as p (p.period)}
-                            {@const c = column(p)}
-                            <div class="report-bar recovery-bar" style="--k: {c.h / 100}" title={tooltip(p)}>
-                                <span class="report-seg recovery-seg-back" style="--seg: {c.seg}%"></span>
+                    <section class="recovery-report-card">
+                        <div class="recovery-card-head">
+                            <div>
+                                <h2 class="recovery-report-title">Recovered revenue</h2>
+                                <p class="txt-hint txt-sm recovery-card-desc">In {data.tz}</p>
                             </div>
-                        {/each}
-                    </figure>
-                    {#if series.length}
-                        <div class="report-axis">
-                            <span>{periodLabel(series[0].period, grain)}</span>
-                            <span>{periodLabel(series[series.length - 1].period, grain)}</span>
+                            <div class="recovery-seg" role="group" aria-label="Group by">
+                                {#each GRAINS as [value, label] (value)}
+                                    <button
+                                        type="button"
+                                        class="recovery-seg-btn"
+                                        aria-pressed={grain === value}
+                                        onclick={() => list.set({ group_by: value })}
+                                    >
+                                        {label}
+                                    </button>
+                                {/each}
+                            </div>
                         </div>
-                    {/if}
+                        <div class="recovery-report-headline">
+                            {#key recoveredTotal}
+                                <span class="recovery-figure tw:text-2xl tw:font-semibold tw:tabular-nums">{recoveredTotal}</span>
+                            {/key}
+                            <span class="txt-hint txt-sm">from {count(summary.recovered)} recovered {pluralize(summary.recovered, "order")}</span>
+                        </div>
 
-                    <div class="page-table-wrapper tw:mt-3 tw:rounded-xl tw:border">
-                        <table class="table responsive-table">
-                            <caption class="tw:sr-only">Abandoned and recovered, by {grain}</caption>
-                            <thead class="sticky">
-                                <tr>
-                                    <th class="col-field-name-id">Period</th>
-                                    <th class="col-field-type-number min-width">Abandoned</th>
-                                    <th class="col-field-type-number min-width">Value abandoned</th>
-                                    <th class="col-field-type-number min-width">Recovered</th>
-                                    <th class="col-field-type-number min-width">Recovered revenue</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {#each data.trend as p (p.period)}
+                        <div class="report-legend">
+                            <span><i class="report-key recovery-key-back" aria-hidden="true"></i> Recovered revenue</span>
+                            <span><i class="report-key" aria-hidden="true"></i> Value abandoned</span>
+                        </div>
+                        <!-- The column's height is a scale rather than a height, so a
+                             change of window or type moves the bars on the
+                             compositor instead of re-laying the row out each frame. -->
+                        <figure class="report-chart recovery-chart" aria-hidden="true">
+                            {#each series as p (p.period)}
+                                {@const c = column(p)}
+                                <div class="report-bar recovery-bar" style="--k: {c.h / 100}" title={tooltip(p)}>
+                                    <span class="report-seg recovery-seg-back" style="--seg: {c.seg}%"></span>
+                                </div>
+                            {/each}
+                        </figure>
+                        {#if series.length}
+                            <div class="report-axis">
+                                <span>{periodLabel(series[0].period, grain)}</span>
+                                <span>{periodLabel(series[series.length - 1].period, grain)}</span>
+                            </div>
+                        {/if}
+
+                        <div class="page-table-wrapper tw:mt-3 tw:rounded-lg tw:border">
+                            <table class="table responsive-table">
+                                <caption class="tw:sr-only">Abandoned and recovered, by {grain}</caption>
+                                <thead class="sticky">
                                     <tr>
-                                        <td class="col-field-name-id" data-name="Period">{periodLabel(p.period, grain, true)}</td>
-                                        <td class="col-field-type-number min-width" data-name="Abandoned">{p.abandoned}</td>
-                                        <td class="col-field-type-number min-width txt-hint" data-name="Value abandoned">
-                                            {formatMoney(p.potential)}
-                                        </td>
-                                        <td class="col-field-type-number min-width" data-name="Recovered">{p.recovered}</td>
-                                        <td class="col-field-type-number min-width txt-bold" data-name="Recovered revenue">
-                                            {formatMoney(p.recovered_revenue)}
-                                        </td>
+                                        <th class="col-field-name-id">Period</th>
+                                        <th class="col-field-type-number min-width">Abandoned</th>
+                                        <th class="col-field-type-number min-width">Value abandoned</th>
+                                        <th class="col-field-type-number min-width">Recovered</th>
+                                        <th class="col-field-type-number min-width">Recovered revenue</th>
                                     </tr>
-                                {/each}
-                            </tbody>
-                        </table>
-                    </div>
-                    <p class="tw:mt-2 tw:text-xs tw:text-muted-foreground">
-                        By the {grain} a basket was abandoned, in {data.tz}. Periods with nothing abandoned are drawn
-                        as empty columns and left out of the table.
-                    </p>
+                                </thead>
+                                <tbody>
+                                    {#each data.trend as p (p.period)}
+                                        <tr>
+                                            <td class="col-field-name-id" data-name="Period">{periodLabel(p.period, grain, true)}</td>
+                                            <td class="col-field-type-number min-width" data-name="Abandoned">{p.abandoned}</td>
+                                            <td class="col-field-type-number min-width txt-hint" data-name="Value abandoned">
+                                                {formatMoney(p.potential)}
+                                            </td>
+                                            <td class="col-field-type-number min-width" data-name="Recovered">{p.recovered}</td>
+                                            <td class="col-field-type-number min-width txt-bold" data-name="Recovered revenue">
+                                                {formatMoney(p.recovered_revenue)}
+                                            </td>
+                                        </tr>
+                                    {/each}
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="tw:mt-2 tw:text-xs tw:text-muted-foreground">
+                            By the {grain} a cart was abandoned. Periods with nothing abandoned are drawn as empty columns
+                            and left out of the table.
+                        </p>
+                    </section>
 
-                    <h2 class="tw:mt-8 tw:mb-3 tw:text-sm tw:font-semibold">Carts and checkouts</h2>
-                    <div class="page-table-wrapper tw:rounded-xl tw:border">
-                        <table class="table responsive-table">
-                            <thead class="sticky">
-                                <tr>
-                                    <th class="col-field-name-id">Type</th>
-                                    <th class="col-field-type-number min-width">Abandoned</th>
-                                    <th class="col-field-type-number min-width">Recovered</th>
-                                    <th class="col-field-type-number min-width">Recovered revenue</th>
-                                    <th class="col-field-type-number min-width">Recovery rate</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {#each breakdown as b (b.key)}
+                    <section class="recovery-report-card">
+                        <h2 class="recovery-report-title">By type</h2>
+                        <div class="page-table-wrapper tw:mt-2 tw:rounded-lg tw:border">
+                            <table class="table responsive-table">
+                                <thead class="sticky">
                                     <tr>
-                                        <td class="col-field-name-id" data-name="Type">
-                                            {kindLabel(b.key)}
-                                            <div class="txt-hint txt-sm">
-                                                {b.key === "checkout" ? "Reached checkout" : "Left before checkout"}
-                                            </div>
-                                        </td>
-                                        <td class="col-field-type-number min-width" data-name="Abandoned">{b.abandoned}</td>
-                                        <td class="col-field-type-number min-width" data-name="Recovered">{b.recovered}</td>
-                                        <td class="col-field-type-number min-width txt-bold" data-name="Recovered revenue">
-                                            {formatMoney(b.recovered_revenue)}
-                                        </td>
-                                        <td class="col-field-type-number min-width" data-name="Recovery rate">
-                                            <span class="recovery-rate">
-                                                <span class="recovery-rate-track" aria-hidden="true">
-                                                    <span class="recovery-funnel-fill" style="--w: {b.recovery_rate_bp / 10000}"></span>
+                                        <th class="col-field-name-id">Type</th>
+                                        <th class="col-field-type-number min-width">Abandoned</th>
+                                        <th class="col-field-type-number min-width">Recovered</th>
+                                        <th class="col-field-type-number min-width">Rate</th>
+                                        <th class="col-field-type-number min-width">Revenue</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {#each breakdown as b (b.key)}
+                                        <tr>
+                                            <td class="col-field-name-id" data-name="Type">
+                                                {kindLabel(b.key)}
+                                                <div class="txt-hint txt-sm">
+                                                    {b.key === "checkout" ? "Reached checkout" : "Left before checkout"}
+                                                </div>
+                                            </td>
+                                            <td class="col-field-type-number min-width" data-name="Abandoned">{b.abandoned}</td>
+                                            <td class="col-field-type-number min-width" data-name="Recovered">{b.recovered}</td>
+                                            <td class="col-field-type-number min-width" data-name="Rate">
+                                                <span class="recovery-rate">
+                                                    <span class="recovery-rate-track" aria-hidden="true">
+                                                        <span class="recovery-funnel-fill" style="--w: {b.recovery_rate_bp / 10000}"></span>
+                                                    </span>
+                                                    {rateText(b.recovery_rate_bp)}
                                                 </span>
-                                                {rateText(b.recovery_rate_bp)}
-                                            </span>
-                                        </td>
-                                    </tr>
-                                {/each}
-                            </tbody>
-                        </table>
-                    </div>
+                                            </td>
+                                            <td class="col-field-type-number min-width txt-bold" data-name="Revenue">
+                                                {formatMoney(b.recovered_revenue)}
+                                            </td>
+                                        </tr>
+                                    {/each}
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
                 {/if}
 
                 <footer class="page-footer tw:text-xs tw:text-muted-foreground">
                     <span class="txt txt-hint">
-                        Baskets abandoned {windowWords}{list.params.kind ? `, ${kindLabel(list.params.kind).toLowerCase()}s only` : ""} ·
+                        Carts abandoned {windowWords}{list.params.kind ? `, ${kindLabel(list.params.kind).toLowerCase()}s only` : ""} ·
                         times in {tz}
                     </span>
                     <div class="flex-fill"></div>
                     <a class="recovery-arrow-link" href="{base}/dash/abandoned">
-                        The baskets <span aria-hidden="true">→</span>
+                        The carts <span aria-hidden="true">→</span>
                     </a>
                 </footer>
             {/if}

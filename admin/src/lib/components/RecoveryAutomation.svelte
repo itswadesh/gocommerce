@@ -17,9 +17,14 @@
      *
      * A refused save names its field in the engine's own sentence ("checkout
      * step 2: wait_minutes must be …"), and the message is put under that box.
+     *
+     * Drawn as kitcommerce-admin draws it: a workflow of nodes — the trigger,
+     * the conditions, a wait and a message per step, the end — with the
+     * selected node's settings beside it. Its canvas is a library there; here
+     * the sequence is always a straight line, so the nodes are a row of
+     * buttons laid out by CSS and the panel ships no graph library for it.
      */
     import { base } from "$app/paths";
-    import { flip } from "svelte/animate";
     import { can, recovery } from "$lib/api.js";
     import { formatDate, relativeTime } from "$lib/format.js";
     import {
@@ -29,10 +34,11 @@
         settingsError,
         splitMinutes,
         validStorefront,
+        workflowNodes,
     } from "$lib/recovery.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { rightLabel } from "$lib/rights.js";
-    import { flipDuration, rise } from "$lib/motion.js";
+    import { rise } from "$lib/motion.js";
     import { toast } from "$lib/toast.svelte.js";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
@@ -46,12 +52,12 @@
         checkout: {
             title: "Abandoned checkout recovery",
             noun: "checkout",
-            what: "A basket that reached checkout: the shopper typed an email address, then left.",
+            what: "Writes to shoppers who started checkout — typed their email address — and left without paying.",
         },
         cart: {
             title: "Abandoned cart recovery",
             noun: "cart",
-            what: "A basket left before checkout. It can be written to only when the shopper was signed in, through their account's address.",
+            what: "Writes to shoppers who added items to their cart and left before starting checkout. Only a shopper who was signed in can be reached.",
         },
     };
     const words = $derived(WORDS[kind]);
@@ -207,6 +213,8 @@
         if (!draft || saving) return;
         if (!validate()) {
             toast.warning("Some fields need a look before this can be saved");
+            const bad = nodes.find((n) => nodeError(n));
+            if (bad) selected = bad.id;
             return;
         }
         saving = true;
@@ -251,17 +259,77 @@
         toast.info("The defaults are in the form. Save to keep them.");
     }
 
-    function addStep() {
-        if (draft.steps.length >= MAX_STEPS) return;
-        const n = draft.steps.length;
-        const template = templateOptions[Math.min(n, templateOptions.length - 1)]?.value ?? "";
+    /* ------------------------------------------------------------ canvas */
+
+    /** The node whose settings are open beside the canvas, by id. */
+    let selected = $state("");
+    let zoom = $state(1);
+    let canvas = $state(null);
+
+    const ZOOM_MIN = 0.4;
+    const ZOOM_MAX = 1.5;
+
+    const stepAt = (id) => draft?.steps.findIndex((s) => id === `wait-${s._key}` || id === `send-${s._key}`) ?? -1;
+    const selectedStep = $derived(stepAt(selected));
+    const selectedNode = $derived(nodes.find((n) => n.id === selected) ?? null);
+
+    const templateTitle = (event) => templateOptions.find((t) => t.value === event)?.label ?? "";
+    const actionLabel = (key) => actionOptions.find((a) => a.value === key)?.label ?? key;
+
+    const nodes = $derived(
+        draft
+            ? workflowNodes({
+                  kind,
+                  threshold: joinMinutes(draft.threshold.value, draft.threshold.unit),
+                  steps: draft.steps.map((s) => ({ ...s, wait: joinMinutes(s.value, s.unit) })),
+                  guards: view?.guards?.length ?? 0,
+                  actionLabel,
+                  templateTitle,
+              })
+            : [],
+    );
+
+    /** Whether a node carries a refused or unparseable value, for its badge. */
+    function nodeError(node) {
+        if (node.kind === "trigger") return !!errors.threshold;
+        if (node.step !== undefined) return !!errors.steps?.[node.step];
+        return false;
+    }
+
+    function select(id) {
+        selected = selected === id ? "" : id;
+    }
+
+    function setZoom(next) {
+        zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(next * 10) / 10));
+    }
+
+    /* Fit: the whole row in the canvas's width, never larger than life. The
+       row's natural width is known from its parts — 112px a node, 36px a link
+       and 56px of padding, as the stylesheet draws them — rather than read
+       back through a zoom, and the step is rounded down so it always fits. */
+    function fit() {
+        if (!canvas) return;
+        const natural = nodes.length * 112 + (nodes.length - 1) * 36 + 56;
+        const room = canvas.clientWidth / natural;
+        zoom = Math.min(1, Math.max(ZOOM_MIN, Math.floor(room * 10) / 10));
+    }
+
+    /** A wait and a message, inserted at `at` — between two nodes, or at the end. */
+    function insertStep(at) {
+        if (!writable || draft.steps.length >= MAX_STEPS) return;
+        const template = templateOptions[Math.min(at, templateOptions.length - 1)]?.value ?? "";
         const action = actionOptions.find((a) => !a.disabled)?.value ?? "";
-        draft.steps = [...draft.steps, { _key: ++keySeq, value: 1, unit: "days", action, template }];
+        const step = { _key: ++keySeq, value: 1, unit: "days", action, template };
+        draft.steps = [...draft.steps.slice(0, at), step, ...draft.steps.slice(at)];
+        errors = { ...errors, steps: {} };
+        selected = `send-${step._key}`;
     }
 
     function removeStep(index) {
         draft.steps = draft.steps.filter((_, i) => i !== index);
         errors = { ...errors, steps: {} };
+        selected = "";
     }
 
     function moveStep(index, by) {
@@ -271,6 +339,22 @@
         [next[index], next[to]] = [next[to], next[index]];
         draft.steps = next;
         errors = { ...errors, steps: {} };
+    }
+
+    /* When each step lands, from abandonment — for the header and the waits. */
+    const lastArrival = $derived(arrivals.length ? arrivals[arrivals.length - 1] : null);
+
+    const NODE_ICONS = {
+        filter: "ri-filter-3-line",
+        wait: "ri-time-line",
+        action: "ri-mail-line",
+        end: "ri-flag-line",
+    };
+    const nodeIcon = (node) =>
+        node.kind === "trigger" ? (kind === "cart" ? "ri-shopping-cart-2-line" : "ri-bank-card-line") : NODE_ICONS[node.kind];
+
+    function onKey(event) {
+        if (event.key === "Escape" && selected) selected = "";
     }
 
     const readOnlyNote = `Your role can see this automation but not change it: that needs “${rightLabel("abandonment.automate")}”.`;
@@ -285,17 +369,22 @@
         <div class="page-content full-height">
             <SaveBar {dirty} {saving} onsave={save} ondiscard={discard} />
 
-            <header class="page-header">
-                <nav class="breadcrumbs">
-                    <a href="{base}/dash/marketing/automations">Automations</a>
-                    <div>{words.title}</div>
-                </nav>
+            <header class="page-header recovery-detail-header">
+                <a
+                    class="btn circle transparent secondary recovery-back"
+                    href="{base}/dash/marketing/automations"
+                    aria-label="Back to automations"
+                    title="Back to automations"
+                >
+                    <i class="ri-arrow-left-line" aria-hidden="true"></i>
+                </a>
+                <div class="recovery-title-block">
+                    <h1 class="recovery-h1">{words.title}</h1>
+                    <p class="txt-hint txt-sm">{words.what}</p>
+                </div>
+                <div class="flex-fill"></div>
                 {#if view && draft}
                     <div class="page-header-primary-btns">
-                        <span class="recovery-state" class:is-on={draft.enabled}>
-                            <span class="recovery-dot {draft.enabled ? 'success' : 'neutral'}" aria-hidden="true"></span>
-                            {draft.enabled ? "On" : "Off"}
-                        </span>
                         <button
                             type="button"
                             class="btn sm secondary"
@@ -321,7 +410,7 @@
                     <section class="card"><span class="skeleton-loader"></span><span class="skeleton-loader"></span><span class="skeleton-loader"></span></section>
                 </div>
             {:else if draft && view}
-                <div class="wrapper recovery-page">
+                <div class="wrapper recovery-page recovery-editor-page">
                     {#if !writable}
                         <div class="alert info m-b-sm" role="status">
                             <p>{readOnlyNote}</p>
@@ -346,205 +435,308 @@
                         </div>
                     {/if}
 
-                    <section class="card">
-                        <h6 class="section-title">
-                            <i class="ri-flow-chart" aria-hidden="true"></i>
-                            {words.title}
-                        </h6>
-                        <p class="txt-hint m-b-sm">{words.what}</p>
-                        <div class="field">
-                            <input
-                                type="checkbox"
-                                id="recovery-enabled-{kind}"
-                                class="switch"
-                                disabled={!writable}
-                                bind:checked={draft.enabled}
-                            />
-                            <label for="recovery-enabled-{kind}">
-                                {draft.enabled ? "On — the sequence below runs" : "Off — nothing is sent"}
-                            </label>
-                        </div>
-                        <div class="field-help">
-                            Switching it off stops every pending reminder the moment you save; switching it on
-                            schedules them again from each basket's last message.
-                        </div>
-                    </section>
-
-                    <section class="card">
-                        <h6 class="section-title">
-                            <i class="ri-timer-line" aria-hidden="true"></i>
-                            When a {words.noun} counts as abandoned
-                        </h6>
-                        <div class="recovery-sentence">
-                            <span>A {words.noun} counts as abandoned after</span>
-                            <div class="field recovery-num" class:error={!!errors.threshold}>
+                    <section class="card recovery-workflow">
+                        <div class="recovery-workflow-head">
+                            <div>
+                                <h6 class="section-title m-b-0">Workflow</h6>
+                                <p class="txt-hint txt-sm m-0">
+                                    {draft.steps.length} of {MAX_STEPS} messages{lastArrival !== null && draft.steps.length
+                                        ? ` · last ≈ ${durationWords(lastArrival)} after abandonment`
+                                        : ""}
+                                </p>
+                            </div>
+                            <div class="field recovery-workflow-switch">
                                 <input
-                                    type="number"
-                                    min="1"
-                                    step="1"
-                                    inputmode="numeric"
-                                    aria-label="Threshold"
+                                    type="checkbox"
+                                    id="recovery-enabled-{kind}"
+                                    class="switch"
                                     disabled={!writable}
-                                    bind:value={draft.threshold.value}
+                                    bind:checked={draft.enabled}
                                 />
+                                <label for="recovery-enabled-{kind}">{draft.enabled ? "Active" : "Inactive"}</label>
                             </div>
-                            <div class="field recovery-unit">
-                                <Select
-                                    ariaLabel="Threshold unit"
-                                    value={draft.threshold.unit}
-                                    options={unitOptions}
-                                    disabled={!writable}
-                                    onchange={(v) => (draft.threshold.unit = v)}
-                                />
-                            </div>
-                            <span>without activity.</span>
                         </div>
-                        {#if errors.threshold}
-                            <div class="field-help error" transition:rise>{errors.threshold}</div>
-                        {:else}
-                            <div class="field-help">
-                                Any change to the basket — an item added, an address typed — starts the clock again. A
-                                basket abandoned is recorded whether or not this automation is on.
-                            </div>
-                        {/if}
-                    </section>
 
-                    <section class="card">
-                        <h6 class="section-title">
-                            <i class="ri-mail-send-line" aria-hidden="true"></i>
-                            The sequence
-                        </h6>
-
-                        {#if draft.steps.length}
-                            <ol class="recovery-steps">
-                                {#each draft.steps as step, i (step._key)}
-                                    <li
-                                        class="recovery-step"
-                                        class:has-error={!!errors.steps?.[i]}
-                                        animate:flip={{ duration: flipDuration() }}
-                                        transition:rise
-                                    >
-                                        <span class="recovery-step-n" aria-hidden="true">{i + 1}</span>
-                                        <div class="recovery-step-main">
-                                            <div class="recovery-step-row">
-                                                <span class="recovery-step-word">Wait</span>
-                                                <div class="field recovery-num" class:error={!!errors.steps?.[i]}>
-                                                    <input
-                                                        type="number"
-                                                        min="1"
-                                                        step="1"
-                                                        inputmode="numeric"
-                                                        aria-label="Wait before step {i + 1}"
-                                                        disabled={!writable}
-                                                        bind:value={step.value}
-                                                    />
-                                                </div>
-                                                <div class="field recovery-unit">
-                                                    <Select
-                                                        ariaLabel="Wait unit for step {i + 1}"
-                                                        value={step.unit}
-                                                        options={unitOptions}
-                                                        disabled={!writable}
-                                                        onchange={(v) => (step.unit = v)}
-                                                    />
-                                                </div>
-                                                <span class="recovery-step-arrow" aria-hidden="true">→</span>
-                                                <div class="field recovery-action">
-                                                    <Select
-                                                        ariaLabel="Action for step {i + 1}"
-                                                        value={step.action}
-                                                        options={actionOptions}
-                                                        disabled={!writable}
-                                                        onchange={(v) => (step.action = v)}
-                                                    />
-                                                </div>
-                                                <span class="recovery-step-word">using</span>
-                                                <div class="field recovery-template">
-                                                    <Select
-                                                        ariaLabel="Message for step {i + 1}"
-                                                        value={step.template}
-                                                        options={templateOptions}
-                                                        disabled={!writable}
-                                                        onchange={(v) => (step.template = v)}
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div class="recovery-step-foot">
-                                                {#if errors.steps?.[i]}
-                                                    <span class="field-help error" transition:rise>{errors.steps[i]}</span>
-                                                {:else}
-                                                    <span class="txt-hint txt-sm">{whenWords(i)}</span>
+                        <div class="recovery-flow-layout">
+                            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+                            <div
+                                class="recovery-canvas"
+                                class:is-off={!draft.enabled}
+                                bind:this={canvas}
+                                role="group"
+                                aria-label="Workflow"
+                                onkeydown={onKey}
+                            >
+                                <div class="recovery-canvas-scroll">
+                                <div class="recovery-flow" style:zoom={zoom}>
+                                    {#each nodes as node, i (node.id)}
+                                        {#if i > 0}
+                                            {@const insertAt =
+                                                node.kind === "wait" ? node.step : node.kind === "end" ? draft.steps.length : -1}
+                                            <span class="recovery-edge" aria-hidden={insertAt < 0 || !writable}>
+                                                {#if insertAt >= 0 && writable && draft.steps.length < MAX_STEPS}
+                                                    <button
+                                                        type="button"
+                                                        class="recovery-edge-add"
+                                                        aria-label="Add a wait and a message here"
+                                                        title="Add node"
+                                                        onclick={() => insertStep(insertAt)}
+                                                    >
+                                                        <i class="ri-add-line" aria-hidden="true"></i>
+                                                    </button>
                                                 {/if}
-                                                <!-- The words the step sends, one click away: the
-                                                     template editor opens on this message. -->
-                                                <a
-                                                    class="recovery-arrow-link recovery-step-edit"
-                                                    href="{base}/dash/notifications/email?template={encodeURIComponent(step.template)}"
-                                                >
-                                                    Edit wording <span aria-hidden="true">→</span>
-                                                </a>
+                                            </span>
+                                        {/if}
+                                        <button
+                                            type="button"
+                                            class="recovery-node is-{node.kind}"
+                                            class:is-selected={selected === node.id}
+                                            class:has-error={nodeError(node)}
+                                            aria-pressed={selected === node.id}
+                                            aria-label="{node.label}: {node.sub}{nodeError(node) ? ' (needs a look)' : ''}"
+                                            onclick={() => select(node.id)}
+                                            in:rise
+                                        >
+                                            <span class="recovery-node-box">
+                                                {#if node.kind === "trigger"}
+                                                    <i class="ri-flashlight-fill recovery-node-zap" aria-hidden="true"></i>
+                                                {/if}
+                                                <span class="recovery-node-icon" aria-hidden="true">
+                                                    <i class={nodeIcon(node)}></i>
+                                                </span>
+                                                {#if nodeError(node)}
+                                                    <span class="recovery-node-badge" aria-hidden="true">
+                                                        <i class="ri-error-warning-fill"></i>
+                                                    </span>
+                                                {/if}
+                                            </span>
+                                            <span class="recovery-node-label">{node.label}</span>
+                                            <span class="recovery-node-sub">{node.sub}</span>
+                                        </button>
+                                    {/each}
+                                </div>
+                                </div>
+
+                                <div class="recovery-canvas-controls">
+                                    <button
+                                        type="button"
+                                        class="btn xs circle secondary"
+                                        aria-label="Zoom out"
+                                        title="Zoom out"
+                                        disabled={zoom <= ZOOM_MIN}
+                                        onclick={() => setZoom(zoom - 0.1)}
+                                    >
+                                        <i class="ri-zoom-out-line" aria-hidden="true"></i>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn xs circle secondary"
+                                        aria-label="Zoom in"
+                                        title="Zoom in"
+                                        disabled={zoom >= ZOOM_MAX}
+                                        onclick={() => setZoom(zoom + 0.1)}
+                                    >
+                                        <i class="ri-zoom-in-line" aria-hidden="true"></i>
+                                    </button>
+                                    <button type="button" class="btn xs circle secondary" aria-label="Fit to view" title="Fit to view" onclick={fit}>
+                                        <i class="ri-fullscreen-exit-line" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                                {#if writable}
+                                    <button
+                                        type="button"
+                                        class="btn xs secondary recovery-canvas-add"
+                                        disabled={draft.steps.length >= MAX_STEPS}
+                                        title={draft.steps.length >= MAX_STEPS ? `Up to ${MAX_STEPS} messages can be connected` : undefined}
+                                        onclick={() => insertStep(draft.steps.length)}
+                                    >
+                                        <i class="ri-add-line" aria-hidden="true"></i>
+                                        <span class="txt">Add node</span>
+                                    </button>
+                                {/if}
+                            </div>
+
+                            <aside class="recovery-inspector" aria-live="polite">
+                                {#if !selectedNode}
+                                    <div class="recovery-inspector-empty" in:rise>
+                                        <i class="ri-cursor-line" aria-hidden="true"></i>
+                                        <p class="txt-bold">Select a node to edit it</p>
+                                        <ul class="txt-hint txt-sm">
+                                            <li>Click <strong>+</strong> between two nodes to add a wait and a message there.</li>
+                                            <li>Select a message to choose its template, move it or delete it.</li>
+                                            <li>Select the trigger to change when a {words.noun} counts as abandoned.</li>
+                                        </ul>
+                                    </div>
+                                {:else if selectedNode.kind === "trigger"}
+                                    <div in:rise>
+                                        <h6 class="recovery-inspector-title">{selectedNode.label}</h6>
+                                        <p class="txt-sm m-b-sm">When should a {words.noun} become abandoned?</p>
+                                        <div class="recovery-sentence">
+                                            <div class="field recovery-num" class:error={!!errors.threshold}>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    step="1"
+                                                    inputmode="numeric"
+                                                    aria-label="Threshold"
+                                                    disabled={!writable}
+                                                    bind:value={draft.threshold.value}
+                                                />
                                             </div>
+                                            <div class="field recovery-unit">
+                                                <Select
+                                                    ariaLabel="Threshold unit"
+                                                    value={draft.threshold.unit}
+                                                    options={unitOptions}
+                                                    disabled={!writable}
+                                                    onchange={(v) => (draft.threshold.unit = v)}
+                                                />
+                                            </div>
+                                            <span>of inactivity</span>
                                         </div>
-                                        {#if writable}
-                                            <div class="recovery-step-tools">
-                                                <button
-                                                    type="button"
-                                                    class="btn circle sm transparent secondary"
-                                                    aria-label="Move step {i + 1} up"
-                                                    title="Move up"
-                                                    disabled={i === 0}
-                                                    onclick={() => moveStep(i, -1)}
-                                                >
-                                                    <i class="ri-arrow-up-line" aria-hidden="true"></i>
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    class="btn circle sm transparent secondary"
-                                                    aria-label="Move step {i + 1} down"
-                                                    title="Move down"
-                                                    disabled={i === draft.steps.length - 1}
-                                                    onclick={() => moveStep(i, 1)}
-                                                >
-                                                    <i class="ri-arrow-down-line" aria-hidden="true"></i>
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    class="btn circle sm transparent secondary"
-                                                    aria-label="Remove step {i + 1}"
-                                                    title="Remove"
-                                                    onclick={() => removeStep(i)}
-                                                >
-                                                    <i class="ri-close-line" aria-hidden="true"></i>
-                                                </button>
+                                        {#if errors.threshold}
+                                            <div class="field-help error" transition:rise>{errors.threshold}</div>
+                                        {:else}
+                                            <div class="field-help">
+                                                Any change to the {words.noun} — an item added, an address typed — starts the
+                                                clock again. It is recorded as abandoned whether or not this automation is on.
                                             </div>
                                         {/if}
-                                    </li>
-                                {/each}
-                            </ol>
-                        {:else}
-                            <p class="txt-hint recovery-no-steps" in:rise>
-                                No steps. Baskets are still recorded as abandoned, and nothing is sent about them.
-                            </p>
-                        {/if}
-
-                        {#if writable}
-                            <div class="recovery-add-step">
-                                <button
-                                    type="button"
-                                    class="btn sm secondary"
-                                    disabled={draft.steps.length >= MAX_STEPS}
-                                    title={draft.steps.length >= MAX_STEPS ? `At most ${MAX_STEPS} steps` : undefined}
-                                    onclick={addStep}
-                                >
-                                    <i class="ri-add-line" aria-hidden="true"></i>
-                                    <span class="txt">Add step</span>
-                                </button>
-                                <span class="txt-hint txt-sm">{draft.steps.length} of {MAX_STEPS}</span>
-                            </div>
-                        {/if}
-                        <div class="field-help">
-                            Each wait runs from the step before it. A manual send from a basket's page does not move
-                            the sequence on.
+                                    </div>
+                                {:else if selectedNode.kind === "filter"}
+                                    <div in:rise>
+                                        <h6 class="recovery-inspector-title">Only continue if</h6>
+                                        <ul class="recovery-guard-list">
+                                            {#each view.guards as guard (guard)}
+                                                <li><i class="ri-check-line" aria-hidden="true"></i>{guard}</li>
+                                            {/each}
+                                        </ul>
+                                        <div class="field-help">
+                                            Built in and always on, and checked again at the moment of each send. {words.noun ===
+                                            "cart"
+                                                ? "Carts"
+                                                : "Checkouts"} that went idle before recovery was set up for this store are listed but
+                                            never messaged.
+                                        </div>
+                                    </div>
+                                {:else if selectedNode.kind === "wait" && selectedStep >= 0}
+                                    {@const step = draft.steps[selectedStep]}
+                                    <div in:rise>
+                                        <h6 class="recovery-inspector-title">Wait</h6>
+                                        <div class="recovery-sentence">
+                                            <span>Wait for</span>
+                                            <div class="field recovery-num" class:error={!!errors.steps?.[selectedStep]}>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    step="1"
+                                                    inputmode="numeric"
+                                                    aria-label="Wait before message {selectedStep + 1}"
+                                                    disabled={!writable}
+                                                    bind:value={step.value}
+                                                />
+                                            </div>
+                                            <div class="field recovery-unit">
+                                                <Select
+                                                    ariaLabel="Wait unit"
+                                                    value={step.unit}
+                                                    options={unitOptions}
+                                                    disabled={!writable}
+                                                    onchange={(v) => (step.unit = v)}
+                                                />
+                                            </div>
+                                        </div>
+                                        {#if errors.steps?.[selectedStep]}
+                                            <div class="field-help error" transition:rise>{errors.steps[selectedStep]}</div>
+                                        {:else}
+                                            <div class="field-help">
+                                                {selectedStep === 0 ? "Counted from abandonment." : "Counted from the message before."}
+                                                {#if arrivals[selectedStep] !== null && arrivals[selectedStep] !== undefined}
+                                                    Message {selectedStep + 1} goes ≈ {durationWords(arrivals[selectedStep])} after
+                                                    abandonment.
+                                                {/if}
+                                            </div>
+                                        {/if}
+                                    </div>
+                                {:else if selectedNode.kind === "action" && selectedStep >= 0}
+                                    {@const step = draft.steps[selectedStep]}
+                                    <div in:rise>
+                                        <h6 class="recovery-inspector-title">Message {selectedStep + 1}</h6>
+                                        <div class="field">
+                                            <label for="recovery-action-{kind}">Action</label>
+                                            <Select
+                                                id="recovery-action-{kind}"
+                                                value={step.action}
+                                                options={actionOptions}
+                                                disabled={!writable}
+                                                onchange={(v) => (step.action = v)}
+                                            />
+                                        </div>
+                                        <div class="field m-t-sm">
+                                            <label for="recovery-template-{kind}" class="recovery-label-row">
+                                                Template
+                                                <a
+                                                    class="txt-sm"
+                                                    href="{base}/dash/notifications/email?template={encodeURIComponent(step.template)}"
+                                                >
+                                                    Edit <span aria-hidden="true">↗</span>
+                                                </a>
+                                            </label>
+                                            <Select
+                                                id="recovery-template-{kind}"
+                                                value={step.template}
+                                                options={templateOptions}
+                                                disabled={!writable}
+                                                onchange={(v) => (step.template = v)}
+                                            />
+                                        </div>
+                                        {#if errors.steps?.[selectedStep]}
+                                            <div class="field-help error" transition:rise>{errors.steps[selectedStep]}</div>
+                                        {/if}
+                                        {#if writable}
+                                            <div class="recovery-inspector-tools">
+                                                <button
+                                                    type="button"
+                                                    class="btn sm secondary"
+                                                    disabled={selectedStep === 0}
+                                                    onclick={() => moveStep(selectedStep, -1)}
+                                                >
+                                                    <i class="ri-arrow-left-line" aria-hidden="true"></i>
+                                                    <span class="txt">Earlier</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="btn sm secondary"
+                                                    disabled={selectedStep === draft.steps.length - 1}
+                                                    onclick={() => moveStep(selectedStep, 1)}
+                                                >
+                                                    <i class="ri-arrow-right-line" aria-hidden="true"></i>
+                                                    <span class="txt">Later</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="btn sm transparent danger m-l-auto"
+                                                    onclick={() => removeStep(selectedStep)}
+                                                >
+                                                    <i class="ri-delete-bin-line" aria-hidden="true"></i>
+                                                    <span class="txt">Delete node</span>
+                                                </button>
+                                            </div>
+                                            <div class="field-help">Deleting a message takes its wait with it.</div>
+                                        {/if}
+                                    </div>
+                                {:else if selectedNode.kind === "end"}
+                                    <div in:rise>
+                                        <h6 class="recovery-inspector-title">End</h6>
+                                        <p class="txt-sm">
+                                            {draft.steps.length
+                                                ? "Nothing more is sent after the last message."
+                                                : "No messages are connected, so nothing is sent. The carts are still recorded."}
+                                        </p>
+                                        <div class="field-help">Up to {MAX_STEPS} messages can be connected.</div>
+                                    </div>
+                                {/if}
+                            </aside>
                         </div>
                     </section>
 
@@ -583,22 +775,6 @@
                         {/if}
                     </section>
 
-                    <section class="card recovery-guards">
-                        <h6 class="section-title">
-                            <i class="ri-shield-check-line" aria-hidden="true"></i>
-                            A reminder is only sent if
-                            <span class="label sm">For information</span>
-                        </h6>
-                        <ul class="recovery-guard-list">
-                            {#each view.guards as guard (guard)}
-                                <li><i class="ri-check-line" aria-hidden="true"></i>{guard}</li>
-                            {/each}
-                        </ul>
-                        <div class="field-help">
-                            Checked again at the moment of each send, against the basket as it is then. These are
-                            built in and cannot be switched off.
-                        </div>
-                    </section>
                 </div>
 
                 <footer class="page-footer">
