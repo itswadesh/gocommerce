@@ -55,6 +55,23 @@
     let scannedAt = $state(null);
     let tab = $state("google");
 
+    /*
+     * Settings, folded, still show what they are set to: a closed section
+     * that only describes itself makes the owner open it to find out whether
+     * there is anything to do. Open by itself while a required one is empty.
+     */
+    let settingsOpen = $state(false);
+    $effect(() => {
+        if (note || (plugin?.enabled && !plugin?.configured)) settingsOpen = true;
+    });
+    const settingsPreview = $derived(
+        (plugin?.fields ?? []).map((f) => {
+            const v = plugin?.settings?.[f.key];
+            const set = v !== undefined && v !== null && String(v).trim() !== "";
+            return { label: f.label, value: set ? String(v) : f.required ? "not set" : "default", missing: !set && f.required };
+        }),
+    );
+
     const origin = $derived(typeof window === "undefined" ? "" : window.location.origin);
     const percent = $derived(total === 0 ? 0 : Math.round((done / total) * 100));
 
@@ -347,12 +364,26 @@
                 {:else if !plugin.enabled}
                     <div class="map-summary-state">
                         <span class="map-summary-icon off" aria-hidden="true"><i class="ri-map-2-line"></i></span>
-                        <div>
+                        <div class="map-summary-text">
                             <h2 class="feed-card-title">The sitemap is off</h2>
                             <p class="txt-hint txt-sm">
                                 Turn it on and search engines can find every product, collection and page.
                             </p>
                         </div>
+                        <!-- The card says what to do, so it carries the button
+                             that does it, not only the page header. -->
+                        {#if writable}
+                            <button
+                                type="button"
+                                class="btn sm map-summary-action"
+                                class:loading={working}
+                                disabled={working}
+                                onclick={toggle}
+                            >
+                                <i class="ri-toggle-line" aria-hidden="true"></i>
+                                <span class="txt">Turn it on</span>
+                            </button>
+                        {/if}
                     </div>
                 {:else if !plugin.configured}
                     <div class="map-summary-state">
@@ -496,11 +527,21 @@
 
             <!-- Open by itself while a setting is missing: that is the one
                  thing the summary above just asked for. -->
-            <details class="card feed-card map-fold" open={!!note || (plugin.enabled && !plugin.configured)}>
+            <details class="card feed-card map-fold" bind:open={settingsOpen}>
                 <summary>
                     <span class="map-fold-title">Settings</span>
                     <span class="txt-hint txt-sm">Where the storefront puts each product, collection and page</span>
                     <i class="ri-arrow-down-s-line map-fold-chevron" aria-hidden="true"></i>
+                    {#if !settingsOpen}
+                        <span class="map-fold-values">
+                            {#each settingsPreview as v (v.label)}
+                                <span class="map-fold-value" class:missing={v.missing}>
+                                    <span class="txt-hint">{v.label}:</span>
+                                    <span class="txt-ellipsis">{v.value}</span>
+                                </span>
+                            {/each}
+                        </span>
+                    {/if}
                 </summary>
                 <div class="map-fold-body">
                     <p class="txt-hint txt-sm">
