@@ -892,10 +892,15 @@ func (s *Superusers) CountPeople(ctx context.Context) (int, error) {
 func (a *App) Superusers() *Superusers { return a.superusers }
 
 // Bootstrap creates the first superuser, and only the first. It is what the
-// `superuser create` command and GOCOMMERCE_ADMIN_EMAIL both call, so an
-// unattended deploy converges on exactly one operator however it is run.
+// installer and GOCOMMERCE_ADMIN_EMAIL both call, so an unattended deploy
+// converges on exactly one operator however it is run.
+//
+// The first of the install, not of the store in ctx: a store opened by
+// `gocommerce store create` has nobody in it until its owner is added from the
+// command line, and counting its members would hand it to whoever reached the
+// installer at its address first.
 func (s *Superusers) Bootstrap(ctx context.Context, email, password string) (*Superuser, bool, error) {
-	n, err := s.Count(ctx)
+	n, err := s.CountPeople(ctx)
 	if err != nil {
 		return nil, false, err
 	}

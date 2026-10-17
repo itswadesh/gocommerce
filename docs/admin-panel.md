@@ -662,6 +662,17 @@ gocommerce serve
 The environment path is create-only: if an operator already exists, a stale
 variable must not silently reset their password.
 
+The panel's form is for a fresh install only: once anybody can sign in, it is
+shut at every store's address. A store opened later with
+`gocommerce store create` has nobody in it, and gets its owner from the CLI:
+
+```powershell
+gocommerce -store second-shop superuser create owner@example.com "a good password" owner
+```
+
+Counting that store's members instead would hand an empty store to whoever
+found its address first.
+
 ### Signing up
 
 An install that hosts stores for other people can let anybody make an account

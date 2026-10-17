@@ -883,6 +883,55 @@ func TestAuthStateAndInstall(t *testing.T) {
 	})
 }
 
+// TestAStoreWithNoOwnerCannotBeClaimed: `gocommerce store create` opens a
+// store with nobody in it, and its owner is added from the command line. Until
+// then, the installer at that store's address must stay shut — it is the first
+// account of the install, not of each store, or whoever finds the address
+// first owns the shop.
+func TestAStoreWithNoOwnerCannotBeClaimed(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+
+	if _, _, err := app.Superusers().Bootstrap(ctx, "owner@example.com", "the-owners-password"); err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	st, err := app.Stores().Create(ctx, "Second Shop", "second-shop")
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	atStore := header("X-Store", st.Slug)
+
+	rec := do(t, app, http.MethodGet, "/api/admin/auth-state", atStore)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("auth-state status = %d, want 200: %s", rec.Code, rec.Body)
+	}
+	var state map[string]any
+	decodeData(t, rec, &state)
+	if state["installed"] != true {
+		t.Errorf("installed = %v at a store with no owner, want true — the panel offers the first-account form", state["installed"])
+	}
+
+	rec = do(t, app, http.MethodPost, "/api/admin/install",
+		jsonBody(t, map[string]string{"email": "stranger@example.com", "password": "a-strangers-password"}), atStore)
+	if rec.Code != http.StatusConflict {
+		t.Errorf("install at a store with no owner = %d, want 409: %s", rec.Code, rec.Body)
+	}
+	n, err := app.Superusers().CountPeople(ctx)
+	if err != nil {
+		t.Fatalf("count people: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("there are %d people, want 1 — the refused install made an account", n)
+	}
+	members, err := app.Superusers().Count(WithStore(ctx, st.ID))
+	if err != nil {
+		t.Fatalf("count members: %v", err)
+	}
+	if members != 0 {
+		t.Errorf("the store has %d members, want 0 — a stranger owns it", members)
+	}
+}
+
 // ---------------------------------------------------------------- throttling
 
 func TestLoginThrottle(t *testing.T) {
