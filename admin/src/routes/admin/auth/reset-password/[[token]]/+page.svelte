@@ -22,9 +22,14 @@
     import { base } from "$app/paths";
     import { goto } from "$app/navigation";
     import { api } from "$lib/api.js";
-    import { relativeTime } from "$lib/format.js";
+    import { relativeTime, sentence } from "$lib/format.js";
     import { beginSession } from "$lib/session.svelte.js";
+    import { forgetStores } from "$lib/stores.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
+    import { rise } from "$lib/motion.js";
+    import AuthShell from "$lib/components/AuthShell.svelte";
+
+    const LOGIN = `${base}/admin/auth/login`;
 
     const linked = $derived(page.params.token ?? "");
 
@@ -41,6 +46,7 @@
     let showPassword = $state(false);
     let submitting = $state(false);
     let error = $state("");
+    let attempt = $state(0);
 
     // "expires in an hour" beats a timestamp: the question is how long is left.
     const expiry = $derived(target?.expires_at ? relativeTime(target.expires_at) : "soon");
@@ -70,6 +76,7 @@
         e.preventDefault();
         if (submitting) return;
         if (password !== confirm) {
+            attempt += 1;
             error = "The two passwords do not match.";
             return;
         }
@@ -84,12 +91,16 @@
             // The engine returns what a sign-in returns, so arriving by a reset
             // link and arriving by password end in exactly the same state.
             const record = beginSession(result);
+            // Whoever was signed in on this browser before, the store list
+            // the shell holds is theirs: have it settle again, as at sign-in.
+            forgetStores();
             toast.success(`Your password has been changed, ${record.email}`);
             // `goto`, not a document load: the shell reads the session from a
             // rune, so signing in re-renders it.
             await goto(base + "/dash");
         } catch (err) {
-            error = err.message;
+            attempt += 1;
+            error = sentence(err.message);
         } finally {
             submitting = false;
         }
@@ -98,123 +109,118 @@
 
 <svelte:head><title>Reset your password · GoCommerce</title></svelte:head>
 
-<div class="page shopify-skin">
-    <div class="wrapper sm m-auto p-b-base">
-        <header class="txt-center m-b-base">
-            <img class="main-logo" src="{base}/images/logo.svg" alt="" aria-hidden="true" />
-            <h5 class="m-t-10">
-                {#if checking}Checking your link{:else if problem}This link no longer
-                    works{:else if !token}Paste your reset code{:else}Choose a new password{/if}
-            </h5>
+<AuthShell>
+    {#if checking}
+        <header class="auth-head">
+            <h1 class="auth-title">Checking your link</h1>
         </header>
-
-        {#if checking}
-            <div class="block txt-center"><span class="loader lg"></span></div>
-        {:else if problem}
-            <div class="content txt-center txt-hint m-b-base">
-                <p>{problem}</p>
-                <p>Ask for a new link from the sign-in page.</p>
-            </div>
-            <a href="{base}/dash" class="btn lg block secondary">
-                <span class="txt">Go to the sign-in page</span>
+        <div class="block txt-center"><span class="loader lg" aria-label="Checking"></span></div>
+    {:else if problem}
+        <header class="auth-head">
+            <h1 class="auth-title">This link no longer works</h1>
+            <p class="auth-lede">{sentence(problem)} Ask for a new one; it takes a minute.</p>
+        </header>
+        <div class="auth-actions">
+            <a class="btn lg block next" href="{base}/admin/auth/forgot-password">
+                <span class="txt">Email me a new link</span>
+                <i class="ri-arrow-right-line" aria-hidden="true"></i>
             </a>
-        {:else if !token}
-            <!-- A store with no Config.PanelURL mails a code rather than a link.
-                 This is where it is spent. -->
-            <div class="content txt-center txt-hint m-b-base">
-                <small>The email you were sent carries a code. Paste it here.</small>
-            </div>
-            <form class="grid" onsubmit={(e) => (e.preventDefault(), load(pasted))}>
-                <div class="col-12">
-                    <div class="field required">
-                        <label for="reset_code">Reset code</label>
-                        <!-- svelte-ignore a11y_autofocus -->
-                        <input id="reset_code" required autofocus bind:value={pasted} />
-                    </div>
-                </div>
-                <div class="col-12">
-                    <button type="submit" class="btn lg block next" disabled={!pasted}>
-                        <span class="txt">Continue</span>
-                        <i class="ri-arrow-right-line" aria-hidden="true"></i>
-                    </button>
-                </div>
-            </form>
-            <a href="{base}/dash" class="btn lg block transparent">
+            <a class="btn lg block secondary" href={LOGIN}>
                 <span class="txt">Back to sign in</span>
             </a>
-        {:else}
-            <div class="content txt-center txt-hint m-b-base">
-                <small>
-                    Choose a password — nobody else will ever see it. This link works once, and
-                    expires {expiry}.
-                </small>
+        </div>
+    {:else if !token}
+        <!-- A store with no Config.PanelURL mails a code rather than a link.
+             This is where it is spent. -->
+        <header class="auth-head">
+            <h1 class="auth-title">Enter your reset code</h1>
+            <p class="auth-lede">The email you were sent carries a code. Paste it here.</p>
+        </header>
+        <form class="auth-form" onsubmit={(e) => (e.preventDefault(), load(pasted.trim()))}>
+            <div class="field">
+                <label for="reset_code">Reset code</label>
+                <!-- svelte-ignore a11y_autofocus -->
+                <input
+                    id="reset_code"
+                    required
+                    autofocus
+                    autocomplete="one-time-code"
+                    autocapitalize="off"
+                    spellcheck="false"
+                    bind:value={pasted}
+                />
             </div>
+            <button type="submit" class="btn lg block next" disabled={!pasted.trim()}>
+                <span class="txt">Continue</span>
+                <i class="ri-arrow-right-line" aria-hidden="true"></i>
+            </button>
+        </form>
+        <p class="auth-alt">
+            <a class="auth-link" href={LOGIN}>Back to sign in</a>
+        </p>
+    {:else}
+        <header class="auth-head">
+            <h1 class="auth-title">Choose a new password</h1>
+            <p class="auth-lede">This link works once, and expires {expiry}.</p>
+        </header>
 
-            <form class="grid" onsubmit={submit}>
-                <div class="col-12">
-                    <div class="fields">
-                        <div class="field required" class:error={!!error}>
-                            <label for="reset_pass">New password</label>
-                            <!-- svelte-ignore a11y_autofocus -->
-                            <input
-                                id="reset_pass"
-                                required
-                                autofocus
-                                type={showPassword ? "text" : "password"}
-                                autocomplete="new-password"
-                                bind:value={password}
-                                oninput={() => (error = "")}
-                            />
-                        </div>
-                        <div class="field addon">
-                            <button
-                                type="button"
-                                tabindex="-1"
-                                class="btn sm transparent secondary circle"
-                                aria-label={showPassword ? "Hide password" : "Show password"}
-                                onclick={() => (showPassword = !showPassword)}
-                            >
-                                <i
-                                    class={showPassword ? "ri-eye-off-line" : "ri-eye-line"}
-                                    aria-hidden="true"
-                                ></i>
-                            </button>
-                        </div>
-                    </div>
+        <form class="auth-form" onsubmit={submit}>
+            <div class="fields">
+                <div class="field" class:error={!!error}>
+                    <label for="reset_pass">New password</label>
+                    <!-- svelte-ignore a11y_autofocus -->
+                    <input
+                        id="reset_pass"
+                        required
+                        minlength="8"
+                        autofocus
+                        type={showPassword ? "text" : "password"}
+                        autocomplete="new-password"
+                        bind:value={password}
+                        oninput={() => (error = "")}
+                    />
                 </div>
-
-                <div class="col-12">
-                    <div class="field required" class:error={!!error}>
-                        <label for="reset_confirm">New password again</label>
-                        <input
-                            id="reset_confirm"
-                            required
-                            type={showPassword ? "text" : "password"}
-                            autocomplete="new-password"
-                            bind:value={confirm}
-                            oninput={() => (error = "")}
-                        />
-                    </div>
-                    {#if error}<div class="field-help error">{error}</div>{/if}
-                    <!-- The second sentence is what the transaction actually
-                         does, and what somebody should know before clicking. -->
-                    <div class="field-help">
-                        At least 8 characters. Resetting signs you out of every device.
-                    </div>
-                </div>
-
-                <div class="col-12">
+                <div class="field addon">
                     <button
-                        type="submit"
-                        class="btn lg block next"
-                        class:loading={submitting}
-                        disabled={submitting}
+                        type="button"
+                        class="btn sm transparent secondary circle"
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                        aria-pressed={showPassword}
+                        onclick={() => (showPassword = !showPassword)}
                     >
-                        <span class="txt">Set the password and sign in</span>
-                        <i class="ri-arrow-right-line" aria-hidden="true"></i>
+                        <i class={showPassword ? "ri-eye-off-line" : "ri-eye-line"} aria-hidden="true"></i>
                     </button>
                 </div>
-            </form>
-        {/if}
-    </div>
-</div>
+            </div>
+
+            <div>
+                <div class="field" class:error={!!error}>
+                    <label for="reset_confirm">New password again</label>
+                    <input
+                        id="reset_confirm"
+                        required
+                        type={showPassword ? "text" : "password"}
+                        autocomplete="new-password"
+                        enterkeyhint="go"
+                        bind:value={confirm}
+                        oninput={() => (error = "")}
+                    />
+                </div>
+                <!-- The second sentence is what the transaction actually does,
+                     and what somebody should know before pressing the button. -->
+                <div class="field-help">At least 8 characters. Resetting signs you out of every device.</div>
+            </div>
+
+            {#key attempt}
+                {#if error}
+                    <p class="field-help error auth-refusal" role="alert" in:rise>{error}</p>
+                {/if}
+            {/key}
+
+            <button type="submit" class="btn lg block next" class:loading={submitting} disabled={submitting}>
+                <span class="txt">Save and sign in</span>
+                <i class="ri-arrow-right-line" aria-hidden="true"></i>
+            </button>
+        </form>
+    {/if}
+</AuthShell>

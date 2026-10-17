@@ -1,8 +1,9 @@
 /*
- * The "your session ended" notice sits inside the login card, above the form.
- * It used to be a sibling of the card inside .page, a flex row: the notice
- * took the row's whole width and height and squeezed the card to a strip
- * 88px wide. Source-reading, because node:test cannot render a .svelte file.
+ * The "your session ended" notice sits inside the sign-in card, above the
+ * form. It used to be a sibling of the card inside .page, a flex row: the
+ * notice took the row's whole width and height and squeezed the card to a
+ * strip 88px wide. Source-reading, because node:test cannot render a .svelte
+ * file.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -12,15 +13,15 @@ const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
 const layout = read("../src/routes/+layout.svelte");
 const login = read("../src/lib/components/Login.svelte");
 
-test("the shell does not render the notice beside the login card", () => {
-    const page = layout.slice(layout.indexOf('<div class="page">'), layout.indexOf("{:else if isPublic}"));
-    assert.doesNotMatch(page, /alert warning/);
-    assert.match(page, /<Login[^>]*notice=/);
+test("the shell does not render the notice beside the sign-in card", () => {
+    const branch = layout.slice(layout.indexOf("{#if onLogin}"), layout.indexOf("{:else if isPublic}"));
+    assert.doesNotMatch(branch, /alert warning/);
+    assert.match(branch, /<Login[^>]*notice=/);
 });
 
-test("the login card renders the notice inside its own wrapper, above the form", () => {
-    const wrapper = login.indexOf('<div class="wrapper sm m-auto p-b-base">');
+test("the sign-in card renders the notice inside its own shell, above the form", () => {
+    const shell = login.indexOf("<AuthShell>");
     const notice = login.indexOf("{#if notice}");
     const form = login.indexOf("<form");
-    assert.ok(wrapper >= 0 && notice > wrapper && notice < form, "notice must be inside the wrapper, before the form");
+    assert.ok(shell >= 0 && notice > shell && notice < form, "notice must be inside the shell, before the form");
 });

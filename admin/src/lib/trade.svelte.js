@@ -18,7 +18,7 @@
 
 import { browser } from "$app/environment";
 import { ApiError } from "$lib/api.js";
-import { formatMoney } from "$lib/format.js";
+import { formatMoney, sentence } from "$lib/format.js";
 
 const SESSION_KEY = "gocommerce_trade_session";
 // Per account, so two buyers taking turns at one browser never fill each
@@ -482,13 +482,9 @@ export function rejectedWords(line) {
     }
 }
 
-/** sentence capitalises an engine message and ends it, so it reads as one. */
-export function sentence(text) {
-    const t = String(text ?? "").trim();
-    if (!t) return "";
-    const s = t[0].toUpperCase() + t.slice(1);
-    return /[.!?]$/.test(s) ? s : s + ".";
-}
+// sentence lives in format.js, beside the panel's other wording helpers;
+// the portal's screens import it from here as they always have.
+export { sentence };
 
 /**
  * explain turns a refusal into what the buyer should read. Most of the

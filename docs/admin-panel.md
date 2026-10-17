@@ -662,6 +662,29 @@ gocommerce serve
 The environment path is create-only: if an operator already exists, a stale
 variable must not silently reset their password.
 
+### Signing up
+
+An install that hosts stores for other people can let anybody make an account
+and open a store with it: `-signup`, or `GOCOMMERCE_SIGNUP=1`. Off by default,
+because a shop run for one business adds its staff by invitation. When it is
+on, the sign-in screen offers **Create a store**, and `/admin/auth/signup` takes
+two steps: an email and a password (`POST /api/admin/signup`, which signs the
+new person in), then the store picker's create form, with its suggested name,
+country and currency. The account belongs to no store until that form opens
+one. An address that already has an account is told to sign in or reset it,
+and one client address may try 20 times an hour.
+
+### Getting back in
+
+**Forgot password?** sits under the password field when the install can send
+email, and opens `/admin/auth/forgot-password` with the address already typed.
+The email carries a link to `/admin/auth/reset-password/<token>` when
+`GOCOMMERCE_PANEL_URL` says where the panel is reached, and a code to paste on
+that screen when it does not: a link built from the request's own host would
+let anybody mail a real operator a link to a host they chose. The link works
+once, for an hour, ends every session the person had, and signs them in. With
+no way to send email, the sign-in screen says to ask an owner instead.
+
 ### How passwords are stored
 
 PBKDF2-HMAC-SHA256 at 600,000 iterations with a per-user salt, from the
@@ -703,8 +726,9 @@ and a module's `/x/`, so nothing competes for `/` — and the store's address is
 the dashboard's address.
 
 The screens themselves sit under **`/dash`** — `/dash/orders`,
-`/dash/settings/teams`, `/dash/shipping-settings` — and signing in, resetting a
-password and accepting an invitation under `/admin/auth`. Those are the
+`/dash/settings/teams`, `/dash/shipping-settings` — and signing in, signing up,
+a forgotten password, resetting it and accepting an invitation under
+`/admin/auth`, all in one phone-first layout (`AuthShell`) with the store picker. Those are the
 KitCommerce admin's addresses, so a person who works in both finds an order at
 the same place. `/` sends a visitor to `/dash`, or to `/admin/auth/login` first.
 Every address from before the move redirects to its new one with the query

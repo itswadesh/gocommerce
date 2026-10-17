@@ -16,6 +16,9 @@
     import { forgetStores } from "$lib/stores.svelte.js";
     import { rightLabel } from "$lib/rights.js";
     import { toast } from "$lib/toast.svelte.js";
+    import { sentence } from "$lib/format.js";
+    import { rise } from "$lib/motion.js";
+    import AuthShell from "$lib/components/AuthShell.svelte";
 
     const token = $derived(page.params.token);
     // The store that sent the link. An install serves many stores (D83), and
@@ -31,6 +34,7 @@
     let showPassword = $state(false);
     let submitting = $state(false);
     let error = $state("");
+    let attempt = $state(0);
 
     $effect(() => {
         load(token, store);
@@ -55,6 +59,7 @@
         e.preventDefault();
         if (submitting) return;
         if (password !== confirm) {
+            attempt += 1;
             error = "The two passwords do not match.";
             return;
         }
@@ -78,7 +83,8 @@
             // as long as the shell decided once, on mount, from localStorage.
             await goto(base + "/dash");
         } catch (err) {
-            error = err.message;
+            attempt += 1;
+            error = sentence(err.message);
         } finally {
             submitting = false;
         }
@@ -87,108 +93,95 @@
 
 <svelte:head><title>Accept your invitation · GoCommerce</title></svelte:head>
 
-<div class="page shopify-skin">
-    <div class="wrapper sm m-auto p-b-base">
-        <header class="txt-center m-b-base">
-            <img class="main-logo" src="{base}/images/logo.svg" alt="" aria-hidden="true" />
-            <h5 class="m-t-10">
-                {#if loading}Checking your invitation{:else if problem}This link no longer
-                    works{:else}Join as {invitation.email}{/if}
-            </h5>
+<AuthShell>
+    {#if loading}
+        <header class="auth-head">
+            <h1 class="auth-title">Checking your invitation</h1>
+        </header>
+        <div class="block txt-center"><span class="loader lg" aria-label="Checking"></span></div>
+    {:else if problem}
+        <header class="auth-head">
+            <h1 class="auth-title">This link no longer works</h1>
+            <p class="auth-lede">{sentence(problem)} Ask whoever invited you to send a new one.</p>
+        </header>
+        <div class="auth-actions">
+            <a href="{base}/admin/auth/login" class="btn lg block secondary">
+                <span class="txt">Go to sign in</span>
+            </a>
+        </div>
+    {:else}
+        <header class="auth-head">
+            <h1 class="auth-title">Join as {invitation.email}</h1>
+            <p class="auth-lede">
+                {invitation.invited_by ? `${invitation.invited_by} invited you` : "You have been invited"}
+                as <strong>{invitation.role}</strong>. Choose a password — nobody else will ever see it. If
+                you already work in another store here, use the password you sign in with there.
+            </p>
         </header>
 
-        {#if loading}
-            <div class="block txt-center"><span class="loader lg"></span></div>
-        {:else if problem}
-            <div class="content txt-center txt-hint m-b-base">
-                <p>{problem}</p>
-                <p>Ask whoever invited you to send a new one.</p>
-            </div>
-            <a href="{base}/dash" class="btn lg block secondary">
-                <span class="txt">Go to the sign-in page</span>
-            </a>
-        {:else}
-            <div class="content txt-center txt-hint m-b-base">
-                <small>
-                    {invitation.invited_by
-                        ? `${invitation.invited_by} invited you`
-                        : "You have been invited"}
-                    as <strong>{invitation.role}</strong>. Choose a password — nobody else
-                    will ever see it. If you already work in another store on this
-                    platform, use the password you sign in with there.
-                </small>
-            </div>
-
-            <div class="list m-b-base">
-                {#each invitation.rights as right (right)}
-                    <div class="list-item">
-                        <i class="ri-check-line" aria-hidden="true"></i>
-                        <span class="txt">{rightLabel(right)}</span>
-                    </div>
-                {/each}
-            </div>
-
-            <form class="grid" onsubmit={submit}>
-                <div class="col-12">
-                    <div class="fields">
-                        <div class="field required" class:error={!!error}>
-                            <label for="invite_pass">Password</label>
-                            <!-- svelte-ignore a11y_autofocus -->
-                            <input
-                                id="invite_pass"
-                                required
-                                autofocus
-                                type={showPassword ? "text" : "password"}
-                                autocomplete="new-password"
-                                bind:value={password}
-                                oninput={() => (error = "")}
-                            />
-                        </div>
-                        <div class="field addon">
-                            <button
-                                type="button"
-                                tabindex="-1"
-                                class="btn sm transparent secondary circle"
-                                aria-label={showPassword ? "Hide password" : "Show password"}
-                                onclick={() => (showPassword = !showPassword)}
-                            >
-                                <i
-                                    class={showPassword ? "ri-eye-off-line" : "ri-eye-line"}
-                                    aria-hidden="true"
-                                ></i>
-                            </button>
-                        </div>
-                    </div>
+        <div class="list m-b-base">
+            {#each invitation.rights as right (right)}
+                <div class="list-item">
+                    <i class="ri-check-line" aria-hidden="true"></i>
+                    <span class="txt">{rightLabel(right)}</span>
                 </div>
+            {/each}
+        </div>
 
-                <div class="col-12">
-                    <div class="field required" class:error={!!error}>
-                        <label for="invite_confirm">Password again</label>
-                        <input
-                            id="invite_confirm"
-                            required
-                            type={showPassword ? "text" : "password"}
-                            autocomplete="new-password"
-                            bind:value={confirm}
-                            oninput={() => (error = "")}
-                        />
-                    </div>
-                    {#if error}<div class="field-help error">{error}</div>{/if}
-                    <div class="field-help">At least 8 characters.</div>
+        <form class="auth-form" onsubmit={submit}>
+            <div class="fields">
+                <div class="field" class:error={!!error}>
+                    <label for="invite_pass">Password</label>
+                    <!-- svelte-ignore a11y_autofocus -->
+                    <input
+                        id="invite_pass"
+                        required
+                        autofocus
+                        type={showPassword ? "text" : "password"}
+                        autocomplete="new-password"
+                        bind:value={password}
+                        oninput={() => (error = "")}
+                    />
                 </div>
-
-                <div class="col-12">
+                <div class="field addon">
                     <button
-                        type="submit"
-                        class="btn lg block next"
-                        class:loading={submitting}
-                        disabled={submitting}
+                        type="button"
+                        class="btn sm transparent secondary circle"
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                        aria-pressed={showPassword}
+                        onclick={() => (showPassword = !showPassword)}
                     >
-                        <span class="txt">Join the team</span>
-                        <i class="ri-arrow-right-line" aria-hidden="true"></i>
+                        <i class={showPassword ? "ri-eye-off-line" : "ri-eye-line"} aria-hidden="true"></i>
                     </button>
                 </div>
-            </form>
-        {/if}
-    </div>
-</div>
+            </div>
+
+            <div>
+                <div class="field" class:error={!!error}>
+                    <label for="invite_confirm">Password again</label>
+                    <input
+                        id="invite_confirm"
+                        required
+                        type={showPassword ? "text" : "password"}
+                        autocomplete="new-password"
+                        enterkeyhint="go"
+                        bind:value={confirm}
+                        oninput={() => (error = "")}
+                    />
+                </div>
+                <div class="field-help">At least 8 characters.</div>
+            </div>
+
+            {#key attempt}
+                {#if error}
+                    <p class="field-help error auth-refusal" role="alert" in:rise>{error}</p>
+                {/if}
+            {/key}
+
+            <button type="submit" class="btn lg block next" class:loading={submitting} disabled={submitting}>
+                <span class="txt">Join the team</span>
+                <i class="ri-arrow-right-line" aria-hidden="true"></i>
+            </button>
+        </form>
+    {/if}
+</AuthShell>

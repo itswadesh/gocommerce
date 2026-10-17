@@ -16,8 +16,11 @@
     import { CURRENCIES } from "$lib/currencies.js";
     import { COUNTRIES } from "$lib/countries.js";
     import Select from "$lib/components/Select.svelte";
+    import AuthShell from "$lib/components/AuthShell.svelte";
 
     const next = $derived(safeNext(page.url.searchParams.get("next")));
+    // Arrived from signing up: this form is the second of its two steps.
+    const fromSignup = $derived(page.url.searchParams.has("signup"));
 
     let query = $state("");
     let entering = $state("");
@@ -145,160 +148,163 @@
     <title>Choose a store · GoCommerce</title>
 </svelte:head>
 
-<div class="page select-store-page">
-    <div class="wrapper sm m-auto p-b-base select-store">
-        <header class="txt-center m-b-base">
-            <img class="main-logo" src="{base}/images/logo.svg" alt="" aria-hidden="true" />
-            <h5 class="m-t-10">
-                {#if creating && !myStores.list.length}Create your first store{:else if creating}Create a store{:else}Choose a store{/if}
-            </h5>
-        </header>
-
-        {#if error}
-            <div class="alert danger m-b-base select-store-error" role="alert"><p>{error}</p></div>
-        {/if}
-
-        {#if !myStores.loaded}
-            <div class="block txt-center"><span class="loader lg"></span></div>
-        {:else if creating}
-            <form class="grid select-store-form" onsubmit={create}>
-                <div class="col-12">
-                    <div class="field">
-                        <label for="store_name">Store name</label>
-                        <!-- svelte-ignore a11y_autofocus -->
-                        <input
-                            id="store_name"
-                            type="text"
-                            autofocus
-                            maxlength="120"
-                            placeholder={suggestion?.name ?? ""}
-                            aria-describedby="store_name_suggestion"
-                            bind:value={name}
-                        />
-                    </div>
-                    <div class="link-hint m-t-5 store-suggest" id="store_name_hint" aria-live="polite">
-                        {#if suggestion}
-                            {#key suggestion.slug}
-                                <small id="store_name_suggestion" in:rise>
-                                    Short and memorable works best. Need inspiration? How about
-                                    <button type="button" class="store-suggest-use" onclick={useSuggestion}>{suggestion.name}</button>?
-                                </small>
-                            {/key}
-                            <button type="button" class="btn xs circle transparent secondary store-suggest-again" aria-label="Suggest another name" title="Suggest another" onclick={suggest}>
-                                <i class="ri-refresh-line" aria-hidden="true"></i>
-                            </button>
-                        {:else}
-                            <small id="store_name_suggestion">Leave it blank and the store gets a name you can change later.</small>
-                        {/if}
-                    </div>
-                </div>
-                <div class="col-12">
-                    <div class="field">
-                        <label for="store_slug">Address name</label>
-                        <input
-                            id="store_slug"
-                            type="text"
-                            placeholder={name.trim() ? "" : (suggestion?.slug ?? "")}
-                            pattern="[a-z0-9][a-z0-9\-]{'{0,62}'}"
-                            maxlength="63"
-                            autocomplete="off"
-                            spellcheck="false"
-                            bind:value={slug}
-                            oninput={() => (slugTouched = true)}
-                        />
-                    </div>
-                    <div class="link-hint m-t-5">
-                        <small>Lowercase letters, digits and hyphens. Requests name the store by it.</small>
-                    </div>
-                </div>
-                <div class="col-12">
-                    <div class="field">
-                        <label for="store_country">Country</label>
-                        <Select id="store_country" bind:value={country} options={COUNTRIES} placeholder="Choose a country" />
-                    </div>
-                    <div class="link-hint m-t-5">
-                        <small>Where the store is. Its first shipping zone covers this country.</small>
-                    </div>
-                </div>
-                <div class="col-12">
-                    <div class="field">
-                        <label for="store_currency">Currency</label>
-                        <Select id="store_currency" bind:value={currency} options={CURRENCIES} placeholder="The install's default" />
-                    </div>
-                    <div class="link-hint m-t-5">
-                        <small>What the store sells in. You can change it until the first order.</small>
-                    </div>
-                </div>
-                <div class="col-12">
-                    <button class="btn lg block next" class:loading={saving} disabled={saving}>
-                        <span class="txt">Create store</span>
-                        <i class="ri-arrow-right-line" aria-hidden="true"></i>
-                    </button>
-                </div>
-                {#if myStores.list.length}
-                    <div class="col-12">
-                        <button type="button" class="btn lg block secondary" onclick={() => (creating = false)}>
-                            <span class="txt">Back to your stores</span>
-                        </button>
-                    </div>
-                {/if}
-            </form>
+<AuthShell>
+    <header class="auth-head">
+        {#if creating && fromSignup && !myStores.list.length}
+            <p class="auth-step">Step 2 of 2</p>
+            <h1 class="auth-title">Name your store</h1>
+            <p class="auth-lede">A name to start with, and where it sells. The name can be changed later.</p>
         {:else}
-            <!-- Past seven, as in the account menu: one rule for both lists. -->
-            {#if myStores.list.length > 7}
-                <input
-                    type="search"
-                    class="select-store-search m-b-sm"
-                    placeholder="Find a store"
-                    aria-label="Find a store"
-                    bind:value={query}
-                />
-            {/if}
-            <div class="select-store-list">
-                {#each shown as st (st.id)}
-                    {@const current = st.id === myStores.current?.id}
-                    <button
-                        type="button"
-                        class="select-store-item"
-                        class:current
-                        disabled={st.status !== "active" || !!entering}
-                        onclick={() => choose(st)}
-                    >
-                        <span class="store-menu-mark" aria-hidden="true">{(st.name || st.slug)[0].toUpperCase()}</span>
-                        <span class="select-store-text">
-                            <span class="txt txt-ellipsis">
-                                {st.name}
-                                {#if st.demo}<span class="store-demo-tag">Demo</span>{/if}
-                            </span>
-                            <span class="txt-hint txt-sm txt-ellipsis">
-                                {st.slug} · {roleName(st.role)}{st.status !== "active" ? ` · ${st.status}` : ""}
-                            </span>
-                        </span>
-                        {#if entering === st.id}
-                            <span class="loader sm" aria-label="Opening"></span>
-                        {:else if current}
-                            <i class="ri-check-line store-menu-check" aria-hidden="true"></i>
-                        {:else}
-                            <i class="ri-arrow-right-s-line txt-hint" aria-hidden="true"></i>
-                        {/if}
-                    </button>
-                {:else}
-                    <p class="txt-hint txt-center">No store matches “{query}”.</p>
-                {/each}
-            </div>
-            <button type="button" class="btn lg block secondary m-t-base" onclick={() => (creating = true)}>
-                <i class="ri-add-line" aria-hidden="true"></i>
-                <span class="txt">Create a store</span>
-            </button>
+            <h1 class="auth-title">
+                {#if creating && !myStores.list.length}Create your first store{:else if creating}Create a store{:else}Choose a store{/if}
+            </h1>
         {/if}
+    </header>
 
-        <p class="txt-center m-t-base">
-            <button type="button" class="btn sm transparent secondary" onclick={signOut}>
-                <span class="txt">Sign out</span>
-            </button>
-        </p>
-    </div>
-</div>
+    {#if error}
+        <div class="alert danger m-b-base select-store-error" role="alert"><p>{error}</p></div>
+    {/if}
+
+    {#if !myStores.loaded}
+        <div class="block txt-center"><span class="loader lg"></span></div>
+    {:else if creating}
+        <form class="grid select-store-form" onsubmit={create}>
+            <div class="col-12">
+                <div class="field">
+                    <label for="store_name">Store name</label>
+                    <!-- svelte-ignore a11y_autofocus -->
+                    <input
+                        id="store_name"
+                        type="text"
+                        autofocus
+                        maxlength="120"
+                        placeholder={suggestion?.name ?? ""}
+                        aria-describedby="store_name_suggestion"
+                        bind:value={name}
+                    />
+                </div>
+                <div class="link-hint m-t-5 store-suggest" id="store_name_hint" aria-live="polite">
+                    {#if suggestion}
+                        {#key suggestion.slug}
+                            <small id="store_name_suggestion" in:rise>
+                                Short and memorable works best. Need inspiration? How about
+                                <button type="button" class="store-suggest-use" onclick={useSuggestion}>{suggestion.name}</button>?
+                            </small>
+                        {/key}
+                        <button type="button" class="btn xs circle transparent secondary store-suggest-again" aria-label="Suggest another name" title="Suggest another" onclick={suggest}>
+                            <i class="ri-refresh-line" aria-hidden="true"></i>
+                        </button>
+                    {:else}
+                        <small id="store_name_suggestion">Leave it blank and the store gets a name you can change later.</small>
+                    {/if}
+                </div>
+            </div>
+            <div class="col-12">
+                <div class="field">
+                    <label for="store_slug">Address name</label>
+                    <input
+                        id="store_slug"
+                        type="text"
+                        placeholder={name.trim() ? "" : (suggestion?.slug ?? "")}
+                        pattern="[a-z0-9][a-z0-9\-]{'{0,62}'}"
+                        maxlength="63"
+                        autocomplete="off"
+                        spellcheck="false"
+                        bind:value={slug}
+                        oninput={() => (slugTouched = true)}
+                    />
+                </div>
+                <div class="link-hint m-t-5">
+                    <small>Lowercase letters, digits and hyphens. Requests name the store by it.</small>
+                </div>
+            </div>
+            <div class="col-12">
+                <div class="field">
+                    <label for="store_country">Country</label>
+                    <Select id="store_country" bind:value={country} options={COUNTRIES} placeholder="Choose a country" />
+                </div>
+                <div class="link-hint m-t-5">
+                    <small>Where the store is. Its first shipping zone covers this country.</small>
+                </div>
+            </div>
+            <div class="col-12">
+                <div class="field">
+                    <label for="store_currency">Currency</label>
+                    <Select id="store_currency" bind:value={currency} options={CURRENCIES} placeholder="The install's default" />
+                </div>
+                <div class="link-hint m-t-5">
+                    <small>What the store sells in. You can change it until the first order.</small>
+                </div>
+            </div>
+            <div class="col-12">
+                <button class="btn lg block next" class:loading={saving} disabled={saving}>
+                    <span class="txt">Create store</span>
+                    <i class="ri-arrow-right-line" aria-hidden="true"></i>
+                </button>
+            </div>
+            {#if myStores.list.length}
+                <div class="col-12">
+                    <button type="button" class="btn lg block secondary" onclick={() => (creating = false)}>
+                        <span class="txt">Back to your stores</span>
+                    </button>
+                </div>
+            {/if}
+        </form>
+    {:else}
+        <!-- Past seven, as in the account menu: one rule for both lists. -->
+        {#if myStores.list.length > 7}
+            <input
+                type="search"
+                class="select-store-search m-b-sm"
+                placeholder="Find a store"
+                aria-label="Find a store"
+                bind:value={query}
+            />
+        {/if}
+        <div class="select-store-list">
+            {#each shown as st (st.id)}
+                {@const current = st.id === myStores.current?.id}
+                <button
+                    type="button"
+                    class="select-store-item"
+                    class:current
+                    disabled={st.status !== "active" || !!entering}
+                    onclick={() => choose(st)}
+                >
+                    <span class="store-menu-mark" aria-hidden="true">{(st.name || st.slug)[0].toUpperCase()}</span>
+                    <span class="select-store-text">
+                        <span class="txt txt-ellipsis">
+                            {st.name}
+                            {#if st.demo}<span class="store-demo-tag">Demo</span>{/if}
+                        </span>
+                        <span class="txt-hint txt-sm txt-ellipsis">
+                            {st.slug} · {roleName(st.role)}{st.status !== "active" ? ` · ${st.status}` : ""}
+                        </span>
+                    </span>
+                    {#if entering === st.id}
+                        <span class="loader sm" aria-label="Opening"></span>
+                    {:else if current}
+                        <i class="ri-check-line store-menu-check" aria-hidden="true"></i>
+                    {:else}
+                        <i class="ri-arrow-right-s-line txt-hint" aria-hidden="true"></i>
+                    {/if}
+                </button>
+            {:else}
+                <p class="txt-hint txt-center">No store matches “{query}”.</p>
+            {/each}
+        </div>
+        <button type="button" class="btn lg block secondary m-t-base" onclick={() => (creating = true)}>
+            <i class="ri-add-line" aria-hidden="true"></i>
+            <span class="txt">Create a store</span>
+        </button>
+    {/if}
+
+    <p class="txt-center m-t-base">
+        <button type="button" class="btn sm transparent secondary" onclick={signOut}>
+            <span class="txt">Sign out</span>
+        </button>
+    </p>
+</AuthShell>
 
 <style>
     .store-suggest {
