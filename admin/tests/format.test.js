@@ -22,6 +22,7 @@ import {
     summarizeEdit,
     paymentLabel,
     paymentStatusClass,
+    sentence,
 } from "../src/lib/format.js";
 
 test("toMinor refuses a value the old guards accepted", () => {
@@ -207,4 +208,14 @@ test("a pending event is neutral until it is genuinely stuck", () => {
     // the default rather than paint a class that does not exist.
     assert.equal(eventStateClass({ state: "nonsense" }), "");
     assert.equal(eventStateClass(null), "");
+});
+
+// The engine writes its refusals as lower-case clauses, for a log line as much
+// as a person; a screen shows them as sentences.
+test("sentence capitalises an engine message and ends it once", () => {
+    assert.equal(sentence("this password reset link is invalid or has expired"), "This password reset link is invalid or has expired.");
+    assert.equal(sentence("  too many attempts; try again in 5s  "), "Too many attempts; try again in 5s.");
+    assert.equal(sentence("Already one."), "Already one.");
+    assert.equal(sentence(""), "");
+    assert.equal(sentence(undefined), "");
 });

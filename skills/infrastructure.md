@@ -286,12 +286,12 @@ machine with no Node.js. Details in [development](development.md) and
 The reference binary's commands: `serve` (default), `migrate`, `superuser
 create|update|list`, `doctor` (with `-json`), `spec`, `version`, and `platform` for many stores (below).
 Flags: `-db`,
-`-addr`, `-admin-token`, `-currency`, `-languages` (what a store sells in until it chooses its own, D87), `-dev`, `-demo`, `-v`,
+`-addr`, `-admin-token`, `-currency`, `-languages` (what a store sells in until it chooses its own, D87), `-dev`, `-demo`, `-signup` (anybody may make an account and open a store), `-v`,
 `-json`, and for `platform` `-base-domain`, `-platform-host`, `-api-host`,
-`-platform-token` and `-namespace`. `DATABASE_URL`, `GOCOMMERCE_ADMIN_TOKEN`, `GOCOMMERCE_DEMO`,
+`-platform-token` and `-namespace`. `DATABASE_URL`, `GOCOMMERCE_ADMIN_TOKEN`, `GOCOMMERCE_DEMO`, `GOCOMMERCE_SIGNUP`,
 `GOCOMMERCE_DEMO_ACCOUNT`, `GOCOMMERCE_ADMIN_EMAIL` and
 `GOCOMMERCE_ADMIN_PASSWORD` are the environment equivalents.
-`GOCOMMERCE_DEMO` is the one variable here read as a word rather than as
+`GOCOMMERCE_DEMO` and `GOCOMMERCE_SIGNUP` are the variables here read as a word rather than as
 "non-empty": `0`, `false`, `no` and `off` mean off, because a deployment that
 wrote `GOCOMMERCE_DEMO=false` and got a panel anybody could sign into would
 have been right to expect better.

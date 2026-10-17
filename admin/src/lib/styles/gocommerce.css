@@ -4878,7 +4878,6 @@ button.media-check {
     flex: 1;
     min-width: 0;
 }
-.select-store,
 .select-store-error {
     animation: storeErrorIn 200ms ease-out both;
 }
@@ -4896,7 +4895,6 @@ button.media-check {
     }
     .store-menu-check,
     .store-menu-error,
-    .select-store,
     .select-store-error {
         animation: none;
     }
@@ -11027,4 +11025,250 @@ html .tw\:rounded-lg,
 html .tw\:rounded-xl,
 html .tw\:rounded-2xl {
     border-radius: var(--borderRadius);
+}
+
+/* ------------------------------------------------------------ signed out */
+
+/*
+ * Signing in, signing up, a forgotten password, a reset link, an invitation
+ * and the store picker (AuthShell.svelte). Phone first: the form is
+ * top-aligned with a 20px gutter, so the keyboard opening never moves it, and
+ * the fields and buttons keep PocketBase's full size — 45px and up — rather
+ * than the compact scale the store's own screens use. From 600px the column
+ * becomes a bordered card in the middle of a tinted page.
+ */
+.auth-shell {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 100vh;
+    min-height: 100svh;
+    color: var(--surfaceTxtColor);
+    background: var(--surfaceColor);
+}
+.auth-bar {
+    display: flex;
+    align-items: center;
+    height: 56px;
+    padding: 0 20px;
+    flex: none;
+}
+.auth-brand {
+    padding: 0;
+}
+.auth-brand .app-brand-name {
+    font-size: 15px;
+}
+.auth-main {
+    display: flex;
+    flex-direction: column;
+    flex: 1 0 auto;
+    padding: 12px 20px 40px;
+}
+.auth-card {
+    width: 100%;
+    max-width: 400px;
+    margin: 0 auto;
+    view-transition-name: auth-card;
+    animation: authCardIn 220ms ease-out both;
+}
+@media (min-width: 600px) {
+    .auth-shell {
+        background: var(--surfaceAlt1Color);
+    }
+    .auth-main {
+        justify-content: center;
+        padding: 24px 24px 72px;
+    }
+    .auth-card {
+        max-width: 440px;
+        padding: 36px 40px 40px;
+        background: var(--surfaceColor);
+        border: 1px solid var(--surfaceAlt2Color);
+        border-radius: var(--borderRadius);
+    }
+}
+
+.auth-step {
+    margin: 0 0 6px;
+    font-size: var(--smFontSize);
+    color: var(--surfaceTxtHintColor);
+}
+.auth-title {
+    margin: 0;
+    font-size: 26px;
+    line-height: 32px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    overflow-wrap: anywhere;
+}
+.auth-lede {
+    margin: 8px 0 0;
+    color: var(--surfaceTxtHintColor);
+    overflow-wrap: anywhere;
+}
+.auth-head {
+    margin-bottom: 28px;
+}
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.auth-form .btn.block {
+    margin-top: 4px;
+}
+/* A link in a sentence: underlined at rest, so it is told from the words
+   around it by more than its colour, and fully underlined under the pointer. */
+.auth-link {
+    color: var(--surfaceTxtColor);
+    font-weight: 500;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
+    transition: text-decoration-color 150ms ease-out;
+}
+.auth-link:hover,
+.auth-link:focus-visible {
+    text-decoration-color: currentColor;
+}
+/* Inside a refusal the way out reads as part of it. */
+.auth-refusal .auth-link {
+    color: inherit;
+}
+/* A link under the password field, at its right edge, where a thumb finds
+   it. On its own line, so it gets a 32px target without moving the text. */
+.auth-field-foot {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: -8px;
+}
+.auth-field-foot .auth-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+}
+.auth-alt {
+    margin: 24px 0 0;
+    color: var(--surfaceTxtHintColor);
+}
+.auth-note {
+    margin: 16px 0 0;
+    color: var(--surfaceTxtHintColor);
+    font-size: var(--smFontSize);
+    line-height: var(--smLineHeight);
+}
+/* A command to type stands on its own line, where it can be read whole. */
+.auth-note code {
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    margin-top: 6px;
+    overflow-wrap: anywhere;
+}
+.auth-refusal {
+    margin: 0;
+}
+.auth-notice {
+    margin-bottom: 20px;
+}
+.auth-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 24px;
+}
+
+/* The eye toggle beside a password is a 40px target, not PocketBase's 35. */
+.auth-shell .field.addon .btn.circle {
+    width: 40px;
+    height: 40px;
+}
+
+/* 16px text in a field is what stops iOS Safari zooming the page on focus. */
+@media (max-width: 599px) {
+    .auth-shell .field input {
+        font-size: 16px;
+    }
+}
+
+/* A button sinks under the finger: the colour change alone never shows on a
+   fast tap. */
+.auth-shell .btn {
+    transition:
+        color var(--animationSpeed),
+        background var(--animationSpeed),
+        transform var(--activeAnimationSpeed) ease-out;
+}
+.auth-shell .btn:active:not(:disabled) {
+    transform: scale(0.97);
+}
+
+@keyframes authCardIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* Between two signed-out screens the card is what moves: the old one lifts
+   away, the new one rises into place, and the brand bar holds still. The
+   card's own entrance is off meanwhile, or it would rise twice. */
+:root.auth-vt::view-transition-old(root),
+:root.auth-vt::view-transition-new(root) {
+    animation: none;
+}
+:root.auth-vt .auth-card {
+    animation: none;
+}
+::view-transition-old(auth-card) {
+    animation: authCardOut 140ms ease-in both;
+}
+::view-transition-new(auth-card) {
+    animation: authCardIn 220ms ease-out both;
+}
+@keyframes authCardOut {
+    to {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+}
+
+/* The movement goes; the feedback stays, as a fade. */
+@media (prefers-reduced-motion: reduce) {
+    .auth-card,
+    ::view-transition-new(auth-card) {
+        animation: fadeIn 150ms ease-out both;
+    }
+    ::view-transition-old(auth-card) {
+        animation: authCardFade 120ms ease-out both;
+    }
+    .auth-shell .btn:active:not(:disabled) {
+        transform: none;
+    }
+    .auth-link {
+        transition: none;
+    }
+}
+@keyframes authCardFade {
+    to {
+        opacity: 0;
+    }
+}
+
+/* A word in a sentence that does something: the link's look, a button's
+   behaviour. */
+.auth-inline-btn {
+    display: inline;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    cursor: pointer;
 }

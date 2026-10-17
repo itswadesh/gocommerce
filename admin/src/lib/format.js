@@ -394,3 +394,15 @@ export function summarizeEdit(change, currency) {
     }
     return out;
 }
+
+/**
+ * sentence capitalises an engine message and ends it, so it reads as one. The
+ * engine writes refusals as lower-case clauses, for a log line as much as for
+ * a person.
+ */
+export function sentence(text) {
+    const t = String(text ?? "").trim();
+    if (!t) return "";
+    const s = t[0].toUpperCase() + t.slice(1);
+    return /[.!?]$/.test(s) ? s : s + ".";
+}

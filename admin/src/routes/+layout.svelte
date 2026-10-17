@@ -872,19 +872,16 @@
          is no `load` in this panel, so it only ever fires for a missing route. -->
     <svelte:boundary>
         {#if onLogin}
-            <div class="page">
-                <!-- Why the login form is back, when it is back because a
-                     credential stopped resolving mid-session rather than
-                     because nobody has signed in yet. Said inside the card:
-                     .page is a flex row, and a notice beside the card took its
-                     whole width and left the form an 88px strip. -->
-                {#if ready && !authenticated}
-                    <Login
-                        onauthenticated={onAuthenticated}
-                        notice={session.expired ? "Your session ended. Sign in to continue." : ""}
-                    />
-                {/if}
-            </div>
+            <!-- The notice says why the form is back when a credential stopped
+                 resolving mid-session, rather than because nobody has signed
+                 in yet. It is said inside the card, which brings its own
+                 page (AuthShell). -->
+            {#if ready && !authenticated}
+                <Login
+                    onauthenticated={onAuthenticated}
+                    notice={session.expired ? "Your session ended. Sign in to continue." : ""}
+                />
+            {/if}
         {:else if isPublic}
             <!-- No header, no nav: there is nothing yet to navigate as. -->
             {@render children?.()}
