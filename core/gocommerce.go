@@ -142,6 +142,11 @@ type Config struct {
 	// X-Forwarded-Host would carry a live token to a host they chose. Left
 	// empty, the reset email carries the bare token to paste instead.
 	PanelURL string
+	// Signup lets anybody make an account on the panel's sign-in screen and
+	// open a store with it (POST /api/admin/signup). It is for an install that
+	// hosts stores for other people; a shop run for one business leaves it off
+	// and adds its staff by invitation.
+	Signup bool
 	// CORSOrigins are the browser origins allowed to call the API directly —
 	// "https://shop.example.com", or "*" for any. Empty, the default, sends no
 	// CORS headers, and a storefront on another origin has to proxy.

@@ -1599,6 +1599,10 @@
                         "password_reset": {
                           "type": "boolean",
                           "description": "An email notifier is installed, so a reset link can actually be sent. False when the only backend is the built-in logger."
+                        },
+                        "signup": {
+                          "type": "boolean",
+                          "description": "Anybody may make an account with POST /api/admin/signup (Config.Signup)."
                         }
                       }
                     }
@@ -1636,6 +1640,56 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/admin/signup": {
+      "post": {
+        "tags": [
+          "admin:auth"
+        ],
+        "summary": "Make an account",
+        "description": "Public, and refused with 403 `signup_closed` unless the install opens sign-up (Config.Signup, `GOCOMMERCE_SIGNUP`). Makes a person who works in no store yet — whatever store the request reached — and signs them in; their store is opened next with POST /api/stores/create. An address that already has an account is 409 `email_taken`: an open sign-up cannot refuse an address without saying why, so every attempt from one client address counts against a limit (20 an hour), and past it the answer is 429.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialsInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/AuthResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "403": {
+            "description": "This install does not take sign-ups (`signup_closed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "description": "Too many sign-ups from this address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }
@@ -15143,6 +15197,10 @@
               "none"
             ],
             "description": "How this store delivers a link. `none` means no email backend is installed, nothing will arrive, and no token was written — a fact about configuration, the same for every caller."
+          },
+          "link": {
+            "type": "boolean",
+            "description": "The email carries a link to the panel's reset screen (Config.PanelURL is set). False, it carries a code to paste at /admin/auth/reset-password. Configuration again, the same for every caller."
           }
         }
       },

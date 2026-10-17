@@ -81,6 +81,15 @@ func tooManyResetAttempts(retryAfter time.Duration) *APIError {
 type ResetRequest struct {
 	Accepted bool   `json:"accepted"`
 	Delivery string `json:"delivery"`
+	// Link says the email carries a link rather than a code to paste: whether
+	// Config.PanelURL is set. Like Delivery it is configuration, the same for
+	// every caller, so the panel can say which to look for.
+	Link bool `json:"link"`
+}
+
+// accepted is the one answer a reset request gets, whoever asked.
+func (s *Superusers) accepted(delivery string) ResetRequest {
+	return ResetRequest{Accepted: true, Delivery: delivery, Link: s.app.cfg.PanelURL != ""}
 }
 
 // ResetTarget is everything a lookup will say about a link: when it dies.
@@ -121,7 +130,7 @@ func (s *Superusers) RequestReset(ctx context.Context, email, clientIP string) (
 	// nothing. The branch is on configuration, which is the same for every
 	// caller, so it enumerates nothing.
 	if !s.app.notifier.delivers(ctx, ChannelEmail) {
-		return ResetRequest{Accepted: true, Delivery: DeliveryNone}, nil
+		return s.accepted(DeliveryNone), nil
 	}
 
 	var id int64
@@ -129,7 +138,7 @@ func (s *Superusers) RequestReset(ctx context.Context, email, clientIP string) (
 		`SELECT id FROM superusers WHERE email = $1`, email).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		// Nothing written, nothing sent, same answer.
-		return ResetRequest{Accepted: true, Delivery: DeliveryEmail}, nil
+		return s.accepted(DeliveryEmail), nil
 	}
 	if err != nil {
 		return ResetRequest{}, Internalf(err, "look up superuser")
@@ -140,7 +149,7 @@ func (s *Superusers) RequestReset(ctx context.Context, email, clientIP string) (
 		return ResetRequest{}, err
 	}
 	s.deliverReset(ctx, id, email, token)
-	return ResetRequest{Accepted: true, Delivery: DeliveryEmail}, nil
+	return s.accepted(DeliveryEmail), nil
 }
 
 // RequestResetFor mails a link to an operator the caller named by id: the
@@ -166,7 +175,7 @@ func (s *Superusers) RequestResetFor(ctx context.Context, id int64) (ResetReques
 	}
 
 	if !s.app.notifier.delivers(ctx, ChannelEmail) {
-		return ResetRequest{Accepted: true, Delivery: DeliveryNone}, nil
+		return s.accepted(DeliveryNone), nil
 	}
 
 	token, err := s.issueReset(ctx, id)
@@ -174,7 +183,7 @@ func (s *Superusers) RequestResetFor(ctx context.Context, id int64) (ResetReques
 		return ResetRequest{}, err
 	}
 	s.deliverReset(ctx, id, email, token)
-	return ResetRequest{Accepted: true, Delivery: DeliveryEmail}, nil
+	return s.accepted(DeliveryEmail), nil
 }
 
 // LookupReset says whether a link is still alive, so the reset screen can show
