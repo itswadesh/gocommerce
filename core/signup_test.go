@@ -35,10 +35,13 @@ func newApp(t *testing.T, cfg Config, mods ...Module) *App {
 	return app
 }
 
-// signupApp is an install that takes sign-ups and can send email.
+// signupApp is an install that takes sign-ups and can send email, and has
+// its owner (sign-up waits for one).
 func signupApp(t *testing.T) *App {
 	t.Helper()
-	return newApp(t, signupConfig(t), &notifyModule{rec: &recordingNotifier{}})
+	app := newApp(t, signupConfig(t), &notifyModule{rec: &recordingNotifier{}})
+	newSuperuser(t, app, "operator@example.com", "the operator's password")
+	return app
 }
 
 func signUp(t *testing.T, app *App, email, password string, opts ...func(*http.Request)) *httptest.ResponseRecorder {
@@ -96,6 +99,24 @@ func TestSignUpIsClosedOnADemo(t *testing.T) {
 	cfg := signupConfig(t)
 	cfg.Demo = true
 	assertSignupClosed(t, newApp(t, cfg, &notifyModule{rec: &recordingNotifier{}}))
+}
+
+// A fresh install belongs to whoever runs the installer, and a stranger who
+// signed up first and opened a store would shut it (it is open only while no
+// store has anybody in it), leaving the first store with no owner. So sign-up
+// waits for the install's first owner.
+func TestSignUpWaitsForTheInstallsFirstOwner(t *testing.T) {
+	app := newApp(t, signupConfig(t), &notifyModule{rec: &recordingNotifier{}})
+	assertSignupClosed(t, app)
+
+	install := do(t, app, http.MethodPost, "/api/admin/install",
+		jsonBody(t, map[string]string{"email": "operator@example.com", "password": "the operator's password"}))
+	if install.Code != http.StatusCreated {
+		t.Fatalf("install after a refused sign-up = %d, want 201: %s", install.Code, install.Body)
+	}
+	if !signupState(t, app) {
+		t.Error("sign-up is still closed once the install has its owner")
+	}
 }
 
 func TestAuthStateSaysSignUpIsOpen(t *testing.T) {
@@ -193,7 +214,10 @@ func TestSigningUpNeedsNoStoreNamed(t *testing.T) {
 	cfg := signupConfig(t)
 	cfg.DefaultStore = ""
 	app := newApp(t, cfg, &notifyModule{rec: &recordingNotifier{}})
-	addTestStore(t, app, "two")
+	two := addTestStore(t, app, "two")
+	if _, err := app.Superusers().Create(WithStore(context.Background(), two), "operator@example.com", "the operator's password", RoleOwner); err != nil {
+		t.Fatalf("the install's owner: %v", err)
+	}
 
 	rec := signUp(t, app, "unbound@example.com", "a long password")
 	if rec.Code != http.StatusCreated {
