@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -17,19 +18,41 @@ import (
 //
 // Unlike the login and reset routes, this one says when an address is taken.
 // An open sign-up cannot refuse an address without saying why, short of making
-// its first step an email; that would make opening a store depend on the
-// install's mail, and an account made with somebody else's address becomes
-// theirs the moment they reset its password. What is left of the oracle is
-// rationed by signupLimit, which counts every attempt.
+// its first step an email; that would make opening a store wait on the mail,
+// and an account made with somebody else's address becomes theirs the moment
+// they reset its password. That last part holds only where a reset email can
+// reach them, so sign-up stays shut until the install has email of its own
+// (signupOpen). What is left of the oracle is rationed by Superusers.signups,
+// which counts every attempt that could make an account or name a taken one.
 
 const (
-	// signupsPerWindow over signupWindow, per client address. Behind a proxy
-	// that does not pass the peer through, every client is the proxy, so this
-	// is the install's rate rather than one person's; generous enough for a
-	// store a minute, tight enough that the 409 is no way to walk a list.
+	// signupsPerWindow over signupWindow, per client address (an IPv6 /64).
+	// Behind a proxy that does not pass the peer through, every client is the
+	// proxy, so this is then the install's rate rather than one person's.
 	signupsPerWindow = 20
 	signupWindow     = time.Hour
+
+	// storeOpensPerDay is how many stores one person may open in a day where
+	// strangers can make accounts.
+	storeOpensPerDay = 10
 )
+
+// signupOpen says whether the sign-in screen may offer an account, and
+// whether POST /api/admin/signup makes one. Config.Signup is the install's
+// choice; the rest is what that choice needs to be safe:
+//
+//   - Not on a demo, which signs every visitor in as its one account, so an
+//     account of your own could never be signed back in to.
+//   - Only with email of the install's own. A new person works in no store,
+//     or in one they opened, so their reset goes out on the install's channel
+//     (identityMailScope), and a reset is the only way an address a stranger
+//     signed up with comes back to its owner.
+func (a *App) signupOpen(ctx context.Context) bool {
+	if !a.cfg.Signup || a.cfg.Demo {
+		return false
+	}
+	return a.notifier.delivers(WithStore(context.WithoutCancel(ctx), installScope), ChannelEmail)
+}
 
 func signupClosed() *APIError {
 	return &APIError{
@@ -47,24 +70,46 @@ func emailTaken(email string) *APIError {
 	}
 }
 
+// inMinutes is a wait as a person counts it: whole minutes, rounded up, so a
+// wait of twenty seconds is never "0s".
+func inMinutes(wait time.Duration) string {
+	m := int((wait + time.Minute - 1) / time.Minute)
+	if m <= 1 {
+		return "1 minute"
+	}
+	return fmt.Sprintf("%d minutes", m)
+}
+
 func tooManySignups(retryAfter time.Duration) *APIError {
 	return &APIError{
 		Status:  http.StatusTooManyRequests,
 		Code:    "too_many_attempts",
-		Message: fmt.Sprintf("too many sign-ups from this address; try again in %s", retryAfter.Round(time.Minute)),
+		Message: "too many sign-ups from this address; try again in " + inMinutes(retryAfter),
+	}
+}
+
+func tooManyStoreOpens(retryAfter time.Duration) *APIError {
+	return &APIError{
+		Status:  http.StatusTooManyRequests,
+		Code:    "too_many_attempts",
+		Message: fmt.Sprintf("%d stores is a day's limit for one account; try again in %s", storeOpensPerDay, inMinutes(retryAfter)),
 	}
 }
 
 // SignUp makes a person with no store and signs them in.
 func (s *Superusers) SignUp(ctx context.Context, email, password, clientIP string) (*Superuser, *Session, error) {
-	if !s.app.cfg.Signup {
+	if !s.app.signupOpen(ctx) {
 		return nil, nil, signupClosed()
 	}
-	if wait, ok := s.signups.take(clientIP, time.Now()); !ok {
-		return nil, nil, tooManySignups(wait)
-	}
+	// The shape is checked before the limit is charged: an address that is not
+	// one, or a password that is too short, tells nobody anything about who has
+	// an account, and charging for it would let a stream of empty bodies shut
+	// the door on everybody behind one proxy.
 	if err := validateCredentials(email, password); err != nil {
 		return nil, nil, err
+	}
+	if wait, ok := s.signups.take(limitKey(clientIP), time.Now()); !ok {
+		return nil, nil, tooManySignups(wait)
 	}
 	email = normalizeEmail(email)
 	hash, err := hashPassword(password)
@@ -119,15 +164,26 @@ func (a *App) handleSignUp(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// limitKey is the client a limit counts: the address itself for IPv4, and its
+// /64 for IPv6, which is what one subscriber is handed and can walk at will.
+func limitKey(clientIP string) string {
+	ip := net.ParseIP(clientIP)
+	if ip == nil || ip.To4() != nil {
+		return clientIP
+	}
+	return ip.Mask(net.CIDRMask(64, 128)).String() + "/64"
+}
+
 // windowLimit allows n events per key in any span of per. In-process, like
 // loginThrottle, and for the same reason. It is a window rather than that
 // throttle's growing delay because a sign-up is not a failure: an address
 // that opened three stores yesterday has done nothing to be slowed for today.
 type windowLimit struct {
-	mu   sync.Mutex
-	n    int
-	per  time.Duration
-	hits map[string][]time.Time
+	mu    sync.Mutex
+	n     int
+	per   time.Duration
+	hits  map[string][]time.Time
+	swept time.Time
 }
 
 func newWindowLimit(n int, per time.Duration) *windowLimit {
@@ -140,25 +196,27 @@ func (l *windowLimit) take(key string, now time.Time) (time.Duration, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	cutoff := now.Add(-l.per)
-	// Every key is pruned on every call: the map is small (one entry per
-	// client in the last window) and this keeps it from growing for ever.
-	for k, times := range l.hits {
-		kept := times[:0]
-		for _, at := range times {
-			if at.After(cutoff) {
-				kept = append(kept, at)
+	// The other keys are swept at most once a window, which is all it takes
+	// to keep the map to the clients seen in the last two.
+	if now.Sub(l.swept) > l.per {
+		for k, times := range l.hits {
+			if !times[len(times)-1].After(cutoff) {
+				delete(l.hits, k)
 			}
 		}
-		if len(kept) == 0 {
-			delete(l.hits, k)
-		} else {
-			l.hits[k] = kept
-		}
+		l.swept = now
 	}
 	times := l.hits[key]
-	if len(times) >= l.n {
-		return times[0].Add(l.per).Sub(now), false
+	kept := times[:0]
+	for _, at := range times {
+		if at.After(cutoff) {
+			kept = append(kept, at)
+		}
 	}
-	l.hits[key] = append(times, now)
+	if len(kept) >= l.n {
+		l.hits[key] = kept
+		return kept[0].Add(l.per).Sub(now), false
+	}
+	l.hits[key] = append(kept, now)
 	return 0, true
 }

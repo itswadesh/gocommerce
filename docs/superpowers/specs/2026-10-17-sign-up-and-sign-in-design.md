@@ -69,6 +69,18 @@ opened (its suggested name, country and currency included).
 makes every reset email carry a link. Both are environment settings for the
 owner to set on the server.
 
+### Tightened after review
+
+- Sign-up stays shut on a demo, and while the install has no email of its own,
+  because a reset is the only way a squatted address comes back to its owner.
+  `doctor` warns when it is asked for and kept shut.
+- The limit counts well-formed attempts only, per IPv6 /64.
+- Where sign-up is on, one person opens at most 10 stores a day. The platform's
+  own host names (`www`, `admin`, `api`, `mail` and the like) are no store's.
+- The signed-out card plays its entrance only outside a view transition.
+- After signing in, the page keeps a spinner until the shell knows where to go.
+- Fields and links are 44px targets.
+
 ## Not doing
 
 - Email verification before an account works. It would make opening a store

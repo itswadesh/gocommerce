@@ -107,6 +107,11 @@ func (s *Stores) freeSlug(ctx context.Context, base string) (string, error) {
 }
 
 func (s *Stores) slugTaken(ctx context.Context, slug string) (bool, error) {
+	// A reserved address is taken by the platform, so a name or a suggestion
+	// that would land on one is numbered like any other taken address.
+	if reservedSlug(slug) {
+		return true, nil
+	}
 	var taken bool
 	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM stores WHERE slug = $1)`, slug).Scan(&taken); err != nil {
 		return false, Internalf(err, "check a store address")
@@ -153,3 +158,20 @@ func migrate0067NameUnnamedStores(ctx context.Context, tx *sql.Tx) error {
 	}
 	return nil
 }
+
+// reservedSlugs are addresses no store may have. A store's address is also a
+// host, <slug>.<Config.BaseDomain>, and where strangers can open stores
+// (Config.Signup) one called "admin" or "login" is a page that looks like the
+// platform's own; the mail and DNS names are the hosts a domain's provider
+// expects to find there.
+var reservedSlugs = map[string]bool{
+	"www": true, "admin": true, "api": true, "app": true, "auth": true, "login": true,
+	"signin": true, "signup": true, "account": true, "accounts": true, "billing": true,
+	"dash": true, "dashboard": true, "panel": true, "console": true, "platform": true,
+	"shops": true, "docs": true, "help": true, "support": true, "status": true, "blog": true,
+	"cdn": true, "static": true, "assets": true, "media": true, "secure": true,
+	"mail": true, "email": true, "webmail": true, "smtp": true, "imap": true, "pop": true,
+	"mx": true, "ns1": true, "ns2": true, "ftp": true, "autodiscover": true, "localhost": true,
+}
+
+func reservedSlug(slug string) bool { return reservedSlugs[slug] }

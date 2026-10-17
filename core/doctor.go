@@ -247,6 +247,14 @@ func (a *App) checkAdminAccess(ctx context.Context) Diagnostic {
 			d.Hint = "set Config.PanelURL to where the panel is reached, e.g. https://shop.example.com"
 		}
 	}
+	// Sign-up asked for and kept shut: say why, since from the sign-in screen
+	// it only looks like the setting did nothing.
+	if a.cfg.Signup && !a.signupOpen(ctx) && d.Status != StatusFail {
+		d.Status = StatusWarn
+		d.Detail += "; sign-up is on but stays closed: it needs email of the install's own and no demo"
+		d.Hint = "give the install its own email provider in the environment (RESEND_API_KEY or SENDGRID_API_KEY), " +
+			"so a reset can reach whoever signs up; a store's own email settings do not count"
+	}
 	// Config.Dev is deliberately not reported here. It is only dangerous while
 	// serving, and the CLI sets it for its own offline commands — including
 	// this one — so a warning keyed on it would fire on every doctor run and

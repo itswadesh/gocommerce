@@ -69,8 +69,12 @@ func (a *App) handleAuthState(w http.ResponseWriter, r *http.Request) {
 		// somebody who cannot sign in to read it — and a Forgot-password button
 		// that 202s into silence is worse than no button at all.
 		"password_reset": a.notifier.delivers(r.Context(), ChannelEmail),
-		// Whether the sign-in screen may offer to make an account.
-		"signup": a.cfg.Signup,
+		// Whether the sign-in screen may offer to make an account: the
+		// install's choice, where it can be kept safely (signupOpen).
+		"signup": a.signupOpen(r.Context()),
+		// Whether a reset email carries a link or a code to paste, so the
+		// forgot-password screen can say which before it is asked.
+		"reset_link": a.cfg.PanelURL != "",
 	})
 }
 

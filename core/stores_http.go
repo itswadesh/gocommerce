@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -214,6 +215,15 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 	var owner int64
 	if su := SuperuserFrom(ctx); su != nil {
 		owner = su.ID
+		// Where anybody can make an account, one of them opens stores at a
+		// measured pace: each is a row of seeds, a sequence and a host. The
+		// install's own token is not a stranger, and is not counted.
+		if a.cfg.Signup {
+			if wait, ok := a.storeOpens.take(strconv.FormatInt(su.ID, 10), time.Now()); !ok {
+				RespondError(w, r, tooManyStoreOpens(wait))
+				return
+			}
+		}
 	}
 	st, err := a.stores.CreateFor(ctx, in.Name, in.Slug, owner)
 	if err != nil {

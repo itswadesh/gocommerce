@@ -492,6 +492,9 @@ func (s *Stores) createOne(ctx context.Context, name, slug string, ownerID int64
 	if !storeSlugRE.MatchString(slug) {
 		return nil, Validationf("a store's slug is lowercase letters, digits and hyphens, starting with a letter or digit")
 	}
+	if reservedSlug(slug) {
+		return nil, Validationf("%q is kept for the platform's own use; choose another address", slug)
+	}
 	if name == "" {
 		name = slug
 	}
