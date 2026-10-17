@@ -30,6 +30,7 @@
     import { findSaveTarget, isBareKey, isTypingTarget, modalIsOpen, NEW_EVENT } from "$lib/shortcuts.js";
     import Toasts from "$lib/components/Toasts.svelte";
     import Login from "$lib/components/Login.svelte";
+    import AuthShell from "$lib/components/AuthShell.svelte";
     import CommandPalette from "$lib/components/CommandPalette.svelte";
     import ShortcutHelp from "$lib/components/ShortcutHelp.svelte";
 
@@ -881,6 +882,16 @@
                     onauthenticated={onAuthenticated}
                     notice={session.expired ? "Your session ended. Sign in to continue." : ""}
                 />
+            {:else if ready}
+                <!-- Signed in, and the person's stores still being asked for:
+                     the same page with a spinner, rather than a blank one
+                     until the redirect below has somewhere to go. -->
+                <AuthShell>
+                    <div class="block txt-center" role="status">
+                        <span class="loader lg" aria-hidden="true"></span>
+                        <p class="auth-note">Signing you in…</p>
+                    </div>
+                </AuthShell>
             {/if}
         {:else if isPublic}
             <!-- No header, no nav: there is nothing yet to navigate as. -->

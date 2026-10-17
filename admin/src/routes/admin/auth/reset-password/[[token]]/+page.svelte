@@ -72,6 +72,32 @@
         }
     }
 
+    /*
+     * A pasted code is checked in place: a code that does not match is most
+     * often a code mistyped, and the answer to that is the field again, not a
+     * screen saying the link has died.
+     */
+    let codeChecking = $state(false);
+    let codeProblem = $state("");
+    let codeAttempt = $state(0);
+    async function checkCode(e) {
+        e.preventDefault();
+        const t = pasted.trim();
+        if (codeChecking || !t) return;
+        codeChecking = true;
+        codeProblem = "";
+        try {
+            target = await api.get(`/api/admin/password-reset/${encodeURIComponent(t)}`, { admin: false });
+            token = t;
+        } catch (err) {
+            codeAttempt += 1;
+            // "nomatch" is said in the markup, with the way to a new code in it.
+            codeProblem = err.status === 429 ? sentence(err.message) : "nomatch";
+        } finally {
+            codeChecking = false;
+        }
+    }
+
     async function submit(e) {
         e.preventDefault();
         if (submitting) return;
@@ -136,8 +162,8 @@
             <h1 class="auth-title">Enter your reset code</h1>
             <p class="auth-lede">The email you were sent carries a code. Paste it here.</p>
         </header>
-        <form class="auth-form" onsubmit={(e) => (e.preventDefault(), load(pasted.trim()))}>
-            <div class="field">
+        <form class="auth-form" onsubmit={checkCode}>
+            <div class="field" class:error={!!codeProblem}>
                 <label for="reset_code">Reset code</label>
                 <!-- svelte-ignore a11y_autofocus -->
                 <input
@@ -147,10 +173,25 @@
                     autocomplete="one-time-code"
                     autocapitalize="off"
                     spellcheck="false"
+                    aria-invalid={!!codeProblem}
+                    aria-describedby={codeProblem ? "code_refusal" : undefined}
                     bind:value={pasted}
+                    oninput={() => (codeProblem = "")}
                 />
             </div>
-            <button type="submit" class="btn lg block next" disabled={!pasted.trim()}>
+            {#key codeAttempt}
+                {#if codeProblem}
+                    <p class="field-help error auth-refusal" id="code_refusal" role="alert" in:rise>
+                        {#if codeProblem === "nomatch"}
+                            That code doesn't match a live reset. Check it against the email, or
+                            <a class="auth-link" href="{base}/admin/auth/forgot-password">ask for a new one</a>.
+                        {:else}
+                            {codeProblem}
+                        {/if}
+                    </p>
+                {/if}
+            {/key}
+            <button type="submit" class="btn lg block next" class:loading={codeChecking} disabled={codeChecking || !pasted.trim()}>
                 <span class="txt">Continue</span>
                 <i class="ri-arrow-right-line" aria-hidden="true"></i>
             </button>

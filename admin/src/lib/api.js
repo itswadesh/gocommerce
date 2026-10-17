@@ -86,11 +86,12 @@ function storeQuery(store) {
  * server treats them identically, so nothing here has to know which it holds.
  */
 export async function request(method, path, options = {}) {
-    const { body, admin = true, raw = false, headers = {} } = options;
+    const { body, admin = true, raw = false, headers = {}, store = true } = options;
 
     // Every request names the store this tab works in (D83); a caller that
-    // names one itself, such as an invitation link's, is left alone.
-    const init = { method, headers: { ...storeHeaders(), ...headers } };
+    // names one itself, such as an invitation link's, is left alone, and one
+    // that belongs to no store at all, such as signing up, names none.
+    const init = { method, headers: { ...(store ? storeHeaders() : {}), ...headers } };
 
     if (admin) {
         const token = getToken();
@@ -232,6 +233,25 @@ export const auth = {
             { admin: false },
         );
         return beginSession(result);
+    },
+
+    /**
+     * signup makes an account in no store and signs in with it, where the
+     * install takes sign-ups. It names no store: the one this browser last
+     * worked in is somebody else's business, and may since have been
+     * suspended.
+     */
+    async signup(email, password) {
+        const result = await api.post("/api/admin/signup", { email, password }, { admin: false, store: false });
+        return beginSession(result);
+    },
+
+    /**
+     * requestReset asks for a reset email. The answer is the same for every
+     * address; what it says is how this install delivers (delivery, link).
+     */
+    async requestReset(email) {
+        return await api.post("/api/admin/password-reset", { identity: email }, { admin: false });
     },
 
     /** install creates the first operator on a fresh database and signs in. */
