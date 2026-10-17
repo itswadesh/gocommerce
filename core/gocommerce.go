@@ -348,6 +348,9 @@ type App struct {
 	superusers      *Superusers
 	roles           *RoleRights
 	stores          *Stores
+	// storeOpens paces how fast one person opens stores where strangers can
+	// make accounts (Config.Signup; signup.go).
+	storeOpens *windowLimit
 	// defaultStore is Config.DefaultStore resolved to an id ("first" becomes
 	// the oldest store's); empty under `serve`.
 	defaultStore string
@@ -607,6 +610,7 @@ func (a *App) buildServices() {
 	a.roles = &RoleRights{app: a}
 	a.superusers = newSuperusers(a)
 	a.stores = &Stores{app: a, db: a.db}
+	a.storeOpens = newWindowLimit(storeOpensPerDay, 24*time.Hour)
 	a.media = &Media{app: a}
 	a.discounts = &Discounts{app: a}
 	a.locations = &Locations{app: a}

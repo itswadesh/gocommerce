@@ -671,8 +671,24 @@ on, the sign-in screen offers **Create a store**, and `/admin/auth/signup` takes
 two steps: an email and a password (`POST /api/admin/signup`, which signs the
 new person in), then the store picker's create form, with its suggested name,
 country and currency. The account belongs to no store until that form opens
-one. An address that already has an account is told to sign in or reset it,
-and one client address may try 20 times an hour.
+one. An address that already has an account is told to sign in or reset it.
+
+Turning it on is not always enough, and `gocommerce doctor` says when:
+
+- **It needs email of the install's own,** a provider key in the environment
+  (`RESEND_API_KEY` or `SENDGRID_API_KEY`), not a store's own email settings. A
+  new person's reset goes out on the install's channel, and a reset is the
+  only way an address somebody else signed up with comes back to its owner.
+- **It stays shut on a demo,** which signs every visitor in as one account.
+
+**Limits:**
+- One client address (an IPv6 /64) may try 20 times an hour. An attempt
+  refused for its shape, such as a short password, costs nothing. Behind a
+  proxy that does not pass the client's address through, that is the whole
+  install's 20.
+- One person may open 10 stores a day.
+- The addresses a platform keeps for itself (`www`, `admin`, `api`, `mail` and
+  the like) are nobody's store. A store named after one is numbered.
 
 ### Getting back in
 
