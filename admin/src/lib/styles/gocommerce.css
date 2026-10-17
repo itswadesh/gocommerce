@@ -11071,6 +11071,8 @@ html .tw\:rounded-2xl {
     max-width: 400px;
     margin: 0 auto;
     view-transition-name: auth-card;
+}
+.auth-card-enter {
     animation: authCardIn 220ms ease-out both;
 }
 @media (min-width: 600px) {
@@ -11122,6 +11124,9 @@ html .tw\:rounded-2xl {
 /* A link in a sentence: underlined at rest, so it is told from the words
    around it by more than its colour, and fully underlined under the pointer. */
 .auth-link {
+    /* Padding on an inline box widens what a finger hits without moving a
+       line: a 44px target inside a sentence. */
+    padding-block: 12px;
     color: var(--surfaceTxtColor);
     font-weight: 500;
     text-decoration: underline;
@@ -11139,16 +11144,17 @@ html .tw\:rounded-2xl {
     color: inherit;
 }
 /* A link under the password field, at its right edge, where a thumb finds
-   it. On its own line, so it gets a 32px target without moving the text. */
+   it. On its own line, so it gets a 44px target of its own. */
 .auth-field-foot {
     display: flex;
     justify-content: flex-end;
-    margin-top: -8px;
+    margin: -14px 0 -8px;
 }
 .auth-field-foot .auth-link {
     display: inline-flex;
     align-items: center;
-    min-height: 32px;
+    min-height: 44px;
+    padding-block: 0;
 }
 .auth-alt {
     margin: 24px 0 0;
@@ -11181,15 +11187,15 @@ html .tw\:rounded-2xl {
     margin-top: 24px;
 }
 
-/* The eye toggle beside a password is a 40px target, not PocketBase's 35. */
+/* The eye toggle beside a password is a 44px target, not PocketBase's 35. */
 .auth-shell .field.addon .btn.circle {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
 }
 
 /* 16px text in a field is what stops iOS Safari zooming the page on focus. */
 @media (max-width: 599px) {
-    .auth-shell .field input {
+    .auth-shell input:not([type="checkbox"]):not([type="radio"]) {
         font-size: 16px;
     }
 }
@@ -11200,7 +11206,7 @@ html .tw\:rounded-2xl {
     transition:
         color var(--animationSpeed),
         background var(--animationSpeed),
-        transform var(--activeAnimationSpeed) ease-out;
+        transform 150ms ease-out;
 }
 .auth-shell .btn:active:not(:disabled) {
     transform: scale(0.97);
@@ -11218,13 +11224,10 @@ html .tw\:rounded-2xl {
 }
 
 /* Between two signed-out screens the card is what moves: the old one lifts
-   away, the new one rises into place, and the brand bar holds still. The
-   card's own entrance is off meanwhile, or it would rise twice. */
+   away, the new one rises into place, and the brand bar holds still. A card
+   that arrives this way has no entrance of its own (AuthShell). */
 :root.auth-vt::view-transition-old(root),
 :root.auth-vt::view-transition-new(root) {
-    animation: none;
-}
-:root.auth-vt .auth-card {
     animation: none;
 }
 ::view-transition-old(auth-card) {
@@ -11242,7 +11245,7 @@ html .tw\:rounded-2xl {
 
 /* The movement goes; the feedback stays, as a fade. */
 @media (prefers-reduced-motion: reduce) {
-    .auth-card,
+    .auth-card-enter,
     ::view-transition-new(auth-card) {
         animation: fadeIn 150ms ease-out both;
     }

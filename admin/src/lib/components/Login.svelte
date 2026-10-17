@@ -105,7 +105,7 @@
         <h1 class="auth-title">{installed === false ? "Create the first account" : "Sign in"}</h1>
         <p class="auth-lede">
             {#if installed === false}
-                Nobody can sign in here yet. The account you make now owns this install.
+                Nobody can sign in here yet. The account you make now becomes this store's owner.
             {:else}
                 Welcome back. Sign in to run your store.
             {/if}
@@ -135,6 +135,8 @@
                     autocomplete="username"
                     autocapitalize="off"
                     spellcheck="false"
+                    aria-invalid={!!error}
+                    aria-describedby={error ? "login_refusal" : undefined}
                     bind:value={identity}
                     oninput={() => (error = "")}
                 />
@@ -151,6 +153,8 @@
                             type={showPassword ? "text" : "password"}
                             autocomplete={installed ? "current-password" : "new-password"}
                             enterkeyhint="go"
+                            aria-invalid={!!error}
+                            aria-describedby={error ? "login_refusal" : undefined}
                             bind:value={password}
                             oninput={() => (error = "")}
                         />
@@ -184,7 +188,7 @@
 
             {#key attempt}
                 {#if error}
-                    <p class="field-help error auth-refusal" role="alert" in:rise>{error}</p>
+                    <p class="field-help error auth-refusal" id="login_refusal" role="alert" in:rise>{error}</p>
                 {/if}
             {/key}
 

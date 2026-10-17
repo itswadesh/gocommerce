@@ -25,6 +25,14 @@
     const SIGNED_OUT = ["/admin/auth", "/select-store"];
     const signedOut = (path) => SIGNED_OUT.some((p) => path.replace(base, "").startsWith(p));
 
+    /*
+     * The card rises in once, when the page first opens. A card that arrives
+     * inside a view transition has that transition as its entrance, and an
+     * animation of its own as well would play again the moment the
+     * transition's class came off the root — a second rise, after the first.
+     */
+    const enter = typeof document === "undefined" || !document.documentElement.classList.contains("auth-vt");
+
     onNavigate((navigation) => {
         if (typeof document.startViewTransition !== "function" || navigation.willUnload) return;
         const from = navigation.from?.url.pathname;
@@ -56,7 +64,7 @@
         </span>
     </header>
     <div class="auth-main">
-        <div class="auth-card">
+        <div class="auth-card" class:auth-card-enter={enter}>
             {@render children?.()}
         </div>
     </div>

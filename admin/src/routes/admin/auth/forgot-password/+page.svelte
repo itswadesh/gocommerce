@@ -13,7 +13,7 @@
     import { onMount } from "svelte";
     import { base } from "$app/paths";
     import { page } from "$app/state";
-    import { api, auth } from "$lib/api.js";
+    import { auth } from "$lib/api.js";
     import { rise } from "$lib/motion.js";
     import { sentence } from "$lib/format.js";
     import AuthShell from "$lib/components/AuthShell.svelte";
@@ -23,6 +23,9 @@
     let email = $state("");
     // null while the install is asked; then whether a link can be sent at all.
     let canReset = $state(null);
+    // Whether the email will carry a link or a code, so the form can say which
+    // before it is sent; the 202's own answer replaces it after.
+    let link = $state(true);
     let sending = $state(false);
     // What was sent, once it was: the address, and the engine's answer.
     let sent = $state(null);
@@ -32,7 +35,10 @@
     onMount(() => {
         email = page.url.searchParams.get("email") ?? "";
         auth.state()
-            .then((s) => (canReset = !!s.password_reset))
+            .then((s) => {
+                canReset = !!s.password_reset;
+                link = s.reset_link !== false;
+            })
             // Unknown is not "can": a button that 202s into silence is worse
             // than the sentence saying nothing can be sent.
             .catch(() => (canReset = false));
@@ -44,11 +50,7 @@
         sending = true;
         problem = "";
         try {
-            const result = await api.post(
-                "/api/admin/password-reset",
-                { identity: email.trim() },
-                { admin: false },
-            );
+            const result = await auth.requestReset(email.trim());
             sent = { email: email.trim(), delivery: result?.delivery || "email", link: !!result?.link };
         } catch (err) {
             // A malformed address or the throttle; neither depends on whether
@@ -114,7 +116,10 @@
     {:else}
         <header class="auth-head">
             <h1 class="auth-title">Reset your password</h1>
-            <p class="auth-lede">Type the email you sign in with, and we'll send a link to choose a new password.</p>
+            <p class="auth-lede">
+                Type the email you sign in with, and we'll send a {link ? "link" : "code"} to choose a new
+                password.
+            </p>
         </header>
         <form class="auth-form" onsubmit={submit}>
             <div class="field" class:error={!!problem}>
@@ -130,17 +135,19 @@
                     autocapitalize="off"
                     spellcheck="false"
                     enterkeyhint="send"
+                    aria-invalid={!!problem}
+                    aria-describedby={problem ? "forgot_refusal" : undefined}
                     bind:value={email}
                     oninput={() => (problem = "")}
                 />
             </div>
             {#key attempt}
                 {#if problem}
-                    <p class="field-help error auth-refusal" role="alert" in:rise>{problem}</p>
+                    <p class="field-help error auth-refusal" id="forgot_refusal" role="alert" in:rise>{problem}</p>
                 {/if}
             {/key}
             <button type="submit" class="btn lg block next" class:loading={sending} disabled={sending || !email.trim()}>
-                <span class="txt">Email me a link</span>
+                <span class="txt">Email me a {link ? "link" : "code"}</span>
                 <i class="ri-mail-send-line" aria-hidden="true"></i>
             </button>
         </form>

@@ -74,8 +74,7 @@ test("sign-in offers a reset link and sign-up only when the install can do them"
 // store is opened, so the sign-up page makes the account and goes there.
 test("signing up makes the account, then opens the store picker's create form", () => {
     const signup = read("../src/routes/admin/auth/signup/+page.svelte");
-    assert.match(signup, /"\/api\/admin\/signup"/);
-    assert.match(signup, /beginSession\(/);
+    assert.match(signup, /auth\.signup\(/);
     assert.match(signup, /select-store\?signup/);
     assert.doesNotMatch(signup, /\/api\/stores\/create/);
     const picker = read("../src/routes/select-store/+page.svelte");
@@ -89,6 +88,8 @@ test("the forgot-password screen reads link or code from the engine's answer", (
     const forgot = read("../src/routes/admin/auth/forgot-password/+page.svelte");
     assert.match(forgot, /link: !!result\?\.link/);
     assert.match(forgot, /\{#if sent\.link\}/);
+    // And before it is asked, from the install's own answer.
+    assert.match(forgot, /link = s\.reset_link !== false/);
 });
 
 test("every screen before a store shares the signed-out layout", () => {
@@ -110,8 +111,36 @@ test("the signed-out card moves, and has a reduced-motion path", () => {
     assert.match(section, /view-transition-name: auth-card/);
     assert.match(section, /::view-transition-new\(auth-card\)/);
     const reduced = section.slice(section.indexOf("@media (prefers-reduced-motion: reduce)"));
-    assert.match(reduced, /\.auth-card/);
+    assert.match(reduced, /\.auth-card-enter/);
     assert.match(reduced, /fadeIn/);
     // iOS zooms the page into a field whose text is under 16px.
-    assert.match(section, /\.auth-shell \.field input \{\s*font-size: 16px;/);
+    assert.match(section, /\.auth-shell input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\) \{\s*font-size: 16px;/);
+});
+
+// A card that arrives inside a view transition has that as its entrance; one
+// of its own would replay the moment the transition's class came off the root.
+test("the card rises in once, not again after a view transition", () => {
+    const shell = read("../src/lib/components/AuthShell.svelte");
+    assert.match(shell, /const enter = [^;]*!document\.documentElement\.classList\.contains\("auth-vt"\)/);
+    assert.match(shell, /class:auth-card-enter=\{enter\}/);
+    const css = read("../src/lib/styles/gocommerce.css");
+    const start = css.indexOf(".auth-card {");
+    assert.doesNotMatch(css.slice(start, css.indexOf("}", start)), /animation/);
+    assert.match(css, /\.auth-card-enter \{\s*animation: authCardIn/);
+});
+
+// Signed in on the sign-in address, the shell still has to ask which stores
+// the person has before it can send them anywhere; the page stays meanwhile.
+test("signing in keeps the page, with a spinner, until the shell knows where to go", () => {
+    const layout = read("../src/routes/+layout.svelte");
+    const branch = layout.slice(layout.indexOf("{#if onLogin}"), layout.indexOf("{:else if isPublic}"));
+    assert.match(branch, /\{:else if ready\}[\s\S]*<AuthShell>[\s\S]*loader/);
+});
+
+// Signing up belongs to no store, so it names none: the one this browser last
+// worked in may since have been suspended.
+test("signing up sends no store", () => {
+    const api = read("../src/lib/api.js");
+    assert.match(api, /"\/api\/admin\/signup", \{ email, password \}, \{ admin: false, store: false \}/);
+    assert.match(api, /\.\.\.\(store \? storeHeaders\(\) : \{\}\)/);
 });

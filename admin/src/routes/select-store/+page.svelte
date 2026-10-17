@@ -300,7 +300,7 @@
     {/if}
 
     <p class="txt-center m-t-base">
-        <button type="button" class="btn sm transparent secondary" onclick={signOut}>
+        <button type="button" class="btn transparent secondary" onclick={signOut}>
             <span class="txt">Sign out</span>
         </button>
     </p>
@@ -336,8 +336,8 @@
     }
     .store-suggest-again {
         flex: 0 0 auto;
-        min-width: 32px;
-        min-height: 32px;
+        min-width: 44px;
+        min-height: 44px;
     }
     @media (prefers-reduced-motion: reduce) {
         .store-suggest-use {

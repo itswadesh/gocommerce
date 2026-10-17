@@ -14,8 +14,7 @@
     import { onMount } from "svelte";
     import { base } from "$app/paths";
     import { goto } from "$app/navigation";
-    import { api, auth } from "$lib/api.js";
-    import { beginSession } from "$lib/session.svelte.js";
+    import { auth } from "$lib/api.js";
     import { forgetStores } from "$lib/stores.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
     import { rise } from "$lib/motion.js";
@@ -24,37 +23,39 @@
 
     const LOGIN = `${base}/admin/auth/login`;
 
-    // null while the install is asked; then whether it takes sign-ups.
-    let open = $state(null);
+    // What the install said: "loading", "open", "closed", "uninstalled", or
+    // "unreachable" when it could not be asked.
+    let state = $state("loading");
     let email = $state("");
     let password = $state("");
     let showPassword = $state(false);
     let submitting = $state(false);
     let problem = $state("");
+    // Which field a refusal is about, so only that one is marked: "email",
+    // "password", or "" for one about neither (the limit, say).
+    let problemField = $state("");
     // The address the engine said is taken, so the refusal can offer the way
     // in for exactly that address.
     let taken = $state("");
     let attempt = $state(0);
 
-    onMount(() => {
+    function probe() {
+        state = "loading";
         auth.state()
-            .then((s) => (open = !!s.signup && !!s.installed))
-            .catch(() => (open = false));
-    });
+            .then((s) => (state = !s.installed ? "uninstalled" : s.signup ? "open" : "closed"))
+            .catch(() => (state = "unreachable"));
+    }
+    onMount(probe);
 
     async function submit(e) {
         e.preventDefault();
         if (submitting) return;
         submitting = true;
         problem = "";
+        problemField = "";
         taken = "";
         try {
-            const result = await api.post(
-                "/api/admin/signup",
-                { email: email.trim(), password },
-                { admin: false },
-            );
-            beginSession(result);
+            await auth.signup(email.trim(), password);
             // Whoever was signed in on this browser before, the store list the
             // shell holds is theirs: have it settle again, as at sign-in.
             forgetStores();
@@ -66,19 +67,45 @@
                 taken = email.trim();
             } else {
                 problem = sentence(err.message) || "Could not make the account.";
+                // The engine's validation names the field it refused.
+                if (err.status === 400) problemField = /password/i.test(problem) ? "password" : /email|address/i.test(problem) ? "email" : "";
             }
         } finally {
             submitting = false;
         }
     }
+
+    const emailRefused = $derived(!!taken || problemField === "email");
+    const passwordRefused = $derived(problemField === "password");
 </script>
 
 <svelte:head><title>Create your store · GoCommerce</title></svelte:head>
 
 <AuthShell>
-    {#if open === null}
+    {#if state === "loading"}
         <div class="block txt-center"><span class="loader lg" aria-label="Loading"></span></div>
-    {:else if !open}
+    {:else if state === "unreachable"}
+        <header class="auth-head">
+            <h1 class="auth-title">Couldn't reach the store</h1>
+            <p class="auth-lede">Check your connection, then try again.</p>
+        </header>
+        <div class="auth-actions">
+            <button type="button" class="btn lg block next" onclick={probe}>
+                <span class="txt">Try again</span>
+            </button>
+        </div>
+    {:else if state === "uninstalled"}
+        <header class="auth-head">
+            <h1 class="auth-title">Nobody can sign in here yet</h1>
+            <p class="auth-lede">The first account is made on the sign-in screen, and it owns this store.</p>
+        </header>
+        <div class="auth-actions">
+            <a class="btn lg block next" href={LOGIN}>
+                <span class="txt">Make the first account</span>
+                <i class="ri-arrow-right-line" aria-hidden="true"></i>
+            </a>
+        </div>
+    {:else if state === "closed"}
         <header class="auth-head">
             <h1 class="auth-title">Sign-up is closed here</h1>
             <p class="auth-lede">
@@ -100,7 +127,7 @@
         </header>
 
         <form class="auth-form" onsubmit={submit}>
-            <div class="field" class:error={!!taken}>
+            <div class="field" class:error={emailRefused}>
                 <label for="signup_email">Email</label>
                 <!-- svelte-ignore a11y_autofocus -->
                 <input
@@ -112,14 +139,19 @@
                     autocomplete="email"
                     autocapitalize="off"
                     spellcheck="false"
+                    aria-invalid={emailRefused}
+                    aria-describedby={emailRefused ? "signup_refusal" : undefined}
                     bind:value={email}
-                    oninput={() => (taken = "")}
+                    oninput={() => {
+                        taken = "";
+                        if (problemField === "email") problem = problemField = "";
+                    }}
                 />
             </div>
 
             <div>
                 <div class="fields">
-                    <div class="field" class:error={!!problem}>
+                    <div class="field" class:error={passwordRefused}>
                         <label for="signup_pass">Password</label>
                         <input
                             id="signup_pass"
@@ -128,9 +160,12 @@
                             type={showPassword ? "text" : "password"}
                             autocomplete="new-password"
                             enterkeyhint="go"
-                            aria-describedby="signup_pass_help"
+                            aria-invalid={passwordRefused}
+                            aria-describedby={passwordRefused ? "signup_refusal signup_pass_help" : "signup_pass_help"}
                             bind:value={password}
-                            oninput={() => (problem = "")}
+                            oninput={() => {
+                                if (problemField === "password") problem = problemField = "";
+                            }}
                         />
                     </div>
                     <div class="field addon">
@@ -150,13 +185,13 @@
 
             {#key attempt}
                 {#if taken}
-                    <p class="field-help error auth-refusal" role="alert" in:rise>
+                    <p class="field-help error auth-refusal" id="signup_refusal" role="alert" in:rise>
                         {taken} already has an account.
-                        <a class="auth-link" href="{LOGIN}">Sign in</a> or
+                        <a class="auth-link" href={LOGIN}>Sign in</a> or
                         <a class="auth-link" href="{base}/admin/auth/forgot-password?email={encodeURIComponent(taken)}">reset the password</a>.
                     </p>
                 {:else if problem}
-                    <p class="field-help error auth-refusal" role="alert" in:rise>{problem}</p>
+                    <p class="field-help error auth-refusal" id="signup_refusal" role="alert" in:rise>{problem}</p>
                 {/if}
             {/key}
 
