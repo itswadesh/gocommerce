@@ -1590,7 +1590,7 @@
                       "properties": {
                         "installed": {
                           "type": "boolean",
-                          "description": "At least one superuser exists."
+                          "description": "At least one superuser exists anywhere in the install, whichever store the address names."
                         },
                         "token_auth": {
                           "type": "boolean",
@@ -1624,7 +1624,7 @@
           "admin:auth"
         ],
         "summary": "Create the first superuser",
-        "description": "Public only while no superuser exists; afterwards it is 409 for everyone. This is the one-time window that lets a fresh install become usable without shell access.",
+        "description": "Public only while the install has no superuser at all; afterwards it is 409 for everyone, at every store's address. This is the one-time window that lets a fresh install become usable without shell access. A store opened later gets its first operator from the command line (`gocommerce -store <slug> superuser create <email> <password> owner`), never from here, so a store with nobody in it cannot be claimed by whoever finds its address.",
         "requestBody": {
           "required": true,
           "content": {
