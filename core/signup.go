@@ -39,19 +39,28 @@ const (
 
 // signupOpen says whether the sign-in screen may offer an account, and
 // whether POST /api/admin/signup makes one. Config.Signup is the install's
-// choice; the rest is what that choice needs to be safe:
+// choice; the rest is what that choice needs to be safe (signupSafe), and an
+// owner: a fresh install belongs to whoever runs the installer, and a stranger
+// who signed up first and opened a store would shut it (Bootstrap), leaving
+// the first store with nobody in charge.
+func (a *App) signupOpen(ctx context.Context) bool {
+	if !a.cfg.Signup || !a.signupSafe(ctx) {
+		return false
+	}
+	n, err := a.superusers.CountPeople(ctx)
+	return err == nil && n > 0
+}
+
+// signupSafe is what an open sign-up needs of the install:
 //
 //   - Not on a demo, which signs every visitor in as its one account, so an
 //     account of your own could never be signed back in to.
-//   - Only with email of the install's own. A new person works in no store,
-//     or in one they opened, so their reset goes out on the install's channel
+//   - Email of the install's own. A new person works in no store, or in one
+//     they opened, so their reset goes out on the install's channel
 //     (identityMailScope), and a reset is the only way an address a stranger
 //     signed up with comes back to its owner.
-func (a *App) signupOpen(ctx context.Context) bool {
-	if !a.cfg.Signup || a.cfg.Demo {
-		return false
-	}
-	return a.notifier.delivers(WithStore(context.WithoutCancel(ctx), installScope), ChannelEmail)
+func (a *App) signupSafe(ctx context.Context) bool {
+	return !a.cfg.Demo && a.notifier.delivers(WithStore(context.WithoutCancel(ctx), installScope), ChannelEmail)
 }
 
 func signupClosed() *APIError {

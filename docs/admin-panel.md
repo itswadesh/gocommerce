@@ -691,6 +691,9 @@ Turning it on is not always enough, and `gocommerce doctor` says when:
   new person's reset goes out on the install's channel, and a reset is the
   only way an address somebody else signed up with comes back to its owner.
 - **It stays shut on a demo,** which signs every visitor in as one account.
+- **It waits for the install's first owner.** The installer shuts once anybody
+  can sign in, so a stranger who signed up first would leave the first store
+  with nobody in charge.
 
 **Limits:**
 - One client address (an IPv6 /64) may try 20 times an hour. An attempt

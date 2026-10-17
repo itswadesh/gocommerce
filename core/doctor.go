@@ -249,7 +249,7 @@ func (a *App) checkAdminAccess(ctx context.Context) Diagnostic {
 	}
 	// Sign-up asked for and kept shut: say why, since from the sign-in screen
 	// it only looks like the setting did nothing.
-	if a.cfg.Signup && !a.signupOpen(ctx) && d.Status != StatusFail {
+	if a.cfg.Signup && !a.signupSafe(ctx) && d.Status != StatusFail {
 		d.Status = StatusWarn
 		d.Detail += "; sign-up is on but stays closed: it needs email of the install's own and no demo"
 		d.Hint = "give the install its own email provider in the environment (RESEND_API_KEY or SENDGRID_API_KEY), " +
