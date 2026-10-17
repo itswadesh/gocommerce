@@ -149,6 +149,8 @@ environment:
   GOCOMMERCE_BASE_DOMAIN
                     used when -base-domain is not given: every store also
                     answers at <slug>.<base domain>
+  GOCOMMERCE_SIGNUP same as -signup. Off when unset, empty, "0", "false", "no"
+                    or "off"; any other value is on
   GOCOMMERCE_DEMO   same as -demo. Off when unset, empty, "0", "false", "no"
                     or "off"; any other value is on
   GOCOMMERCE_DEMO_ACCOUNT
@@ -169,6 +171,7 @@ environment:
 		langs        = fs.String("languages", gocommerce.DefaultLanguage, "served languages, comma-separated; the first is the default")
 		dev          = fs.Bool("dev", false, "development mode: permits booting with no admin token")
 		demo         = fs.Bool("demo", false, "public demo: mask every email address and phone number on admin responses and freeze operators, keys and roles; with $GOCOMMERCE_DEMO_ACCOUNT set, any email and password sign in as that account (default $GOCOMMERCE_DEMO)")
+		signup       = fs.Bool("signup", false, "anybody may make an account on the sign-in screen and open a store with it, for an install that hosts stores for other people (default $GOCOMMERCE_SIGNUP)")
 		verbose      = fs.Bool("v", false, "verbose (debug) logging")
 		jsonOut      = fs.Bool("json", false, "machine-readable output (doctor)")
 		mediaDir     = fs.String("media-dir", "", "directory for uploaded media (default $GOCOMMERCE_MEDIA_DIR; empty disables uploads)")
@@ -268,6 +271,9 @@ environment:
 		// about the deployment. It is the base of a password-reset link and of a
 		// recovery email's tracked link.
 		PanelURL: os.Getenv("GOCOMMERCE_PANEL_URL"),
+		// Whether strangers may make an account and open a store: a choice
+		// about who this install is for, so a flag as well as the environment.
+		Signup: *signup || envTrue("GOCOMMERCE_SIGNUP"),
 		// Env only, for the same reason: which storefronts call this engine
 		// is a fact about the deployment.
 		CORSOrigins: corsOrigins(os.Getenv("GOCOMMERCE_CORS_ORIGINS")),

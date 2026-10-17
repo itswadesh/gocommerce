@@ -98,6 +98,8 @@ type Superusers struct {
 	// reason to ask for a reset, so a shared budget would also block the remedy
 	// at the moment it is needed.
 	resets *loginThrottle
+	// signups rations POST /api/admin/signup per client address (signup.go).
+	signups *windowLimit
 	// deliveries tracks the reset emails in flight, so Close waits for one
 	// rather than dropping it and a test has a deterministic seam.
 	deliveries sync.WaitGroup
@@ -107,6 +109,7 @@ func newSuperusers(app *App) *Superusers {
 	return &Superusers{
 		app: app, db: app.db, roles: app.roles,
 		throttle: newLoginThrottle(), resets: newLoginThrottle(),
+		signups: newWindowLimit(signupsPerWindow, signupWindow),
 	}
 }
 

@@ -14,6 +14,9 @@ func (a *App) mountSuperuserRoutes() {
 	a.HandleFunc("GET /api/admin/auth-state", a.handleAuthState)
 	a.HandleFunc("POST /api/admin/auth-with-password", a.handleAuthWithPassword)
 	a.HandleFunc("POST /api/admin/install", a.handleInstall)
+	// Public by definition, and refused unless the install opened it
+	// (Config.Signup).
+	a.HandleFunc("POST /api/admin/signup", a.handleSignUp)
 
 	a.HandleAdminFunc("POST /api/admin/auth-refresh", a.handleAuthRefresh)
 	// A person's, not one store's: somebody still choosing a store (or in
@@ -66,6 +69,8 @@ func (a *App) handleAuthState(w http.ResponseWriter, r *http.Request) {
 		// somebody who cannot sign in to read it — and a Forgot-password button
 		// that 202s into silence is worse than no button at all.
 		"password_reset": a.notifier.delivers(r.Context(), ChannelEmail),
+		// Whether the sign-in screen may offer to make an account.
+		"signup": a.cfg.Signup,
 	})
 }
 
