@@ -132,6 +132,26 @@ func TestATakenAddressIsToldToSignIn(t *testing.T) {
 	signIn(t, app, "owner@example.com", "the owner's password", "10.0.0.5")
 }
 
+// The way `serve` runs it: several stores, no default, and a sign-up page that
+// names none of them — the person has none yet. Like signing in, signing up is
+// not one store's.
+func TestSigningUpNeedsNoStoreNamed(t *testing.T) {
+	cfg := testConfig(requireDB(t))
+	cfg.DefaultStore = ""
+	cfg.Signup = true
+	app, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = app.Close() })
+	addTestStore(t, app, "two")
+
+	rec := signUp(t, app, "unbound@example.com", "a long password")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201: %s", rec.Code, rec.Body)
+	}
+}
+
 func TestSignUpRefusesWhatSignInWouldRefuse(t *testing.T) {
 	app := signupApp(t)
 	for _, c := range []struct{ email, password string }{
