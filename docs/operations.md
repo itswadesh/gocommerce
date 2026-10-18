@@ -135,6 +135,13 @@ default until a store enters its own:
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` | Sends texts through Twilio. |
 | `MSG91_AUTH_KEY` (or `MSG91_AUTHKEY`) | Sends texts through MSG91. |
 
+Sign-up and password-reset links are listed too:
+
+| Variable | What it does |
+|---|---|
+| `GOCOMMERCE_PANEL_URL` | Where the panel is reached, e.g. `https://shop.example.com`. A password-reset email links there; without it the email carries only a code. |
+| `GOCOMMERCE_SIGNUP` | `1` lets anybody make an account on the sign-in screen and open a store. It stays shut until the install has email of its own: `RESEND_API_KEY` or `SENDGRID_API_KEY` here, not a store's own email settings. |
+
 Notifications › Setup Email has a **Send test email** button: it sends one
 message now and shows the provider's answer, such as an unverified sender.
 
