@@ -70,6 +70,13 @@ services:
       # these set does not reset a password on every restart.
       GOCOMMERCE_ADMIN_EMAIL: ${GOCOMMERCE_ADMIN_EMAIL:-admin@example.com}
       GOCOMMERCE_ADMIN_PASSWORD: ${GOCOMMERCE_ADMIN_PASSWORD:?set GOCOMMERCE_ADMIN_PASSWORD}
+      # Where the panel is reached, e.g. https://shop.example.com: the base of
+      # a password-reset link. Unset, a reset email carries only a code.
+      GOCOMMERCE_PANEL_URL: ${GOCOMMERCE_PANEL_URL:-}
+      # 1 lets anybody make an account on the sign-in screen and open a store.
+      # It stays shut until the install has email of its own (RESEND_API_KEY
+      # or SENDGRID_API_KEY below), so whoever signs up can reset a password.
+      GOCOMMERCE_SIGNUP: ${GOCOMMERCE_SIGNUP:-}
       # Email and SMS delivery, every one optional: a backend without its key
       # installs idle and waits for Notifications › Setup Email / Setup SMS.
       # The engine sees only what is listed here, so a key set in the host's
