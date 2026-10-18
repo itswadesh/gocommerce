@@ -127,8 +127,8 @@ export async function enterStore(id) {
 }
 
 /** createStore opens a store with this person as owner and moves into it. */
-export async function createStore(name, slug, currency = "", country = "") {
-    const entry = await storesAPI.create(name, slug, currency, country);
+export async function createStore(name, slug, currency = "", country = "", sampleProducts = false) {
+    const entry = await storesAPI.create(name, slug, currency, country, sampleProducts);
     applyEntry(entry);
     await loadStores();
     return entry;

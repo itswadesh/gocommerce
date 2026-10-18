@@ -13,6 +13,7 @@
     import { createStore, enterStore, myStores } from "$lib/stores.svelte.js";
     import { reloadStoreData } from "$lib/store-data.js";
     import { safeNext } from "$lib/paths.js";
+    import { toast } from "$lib/toast.svelte.js";
     import { CURRENCIES } from "$lib/currencies.js";
     import { COUNTRIES } from "$lib/countries.js";
     import Select from "$lib/components/Select.svelte";
@@ -77,6 +78,8 @@
     // Where the store is: its country on Store settings, and what its default
     // shipping zone covers. A guess from the browser's region to start with.
     let country = $state(browserCountry());
+    // Off unless asked: a sample nobody wanted is something to clean up (D94).
+    let sampleProducts = $state(false);
 
     function browserCountry() {
         try {
@@ -127,7 +130,9 @@
             // An address is sent only when somebody typed one. One worked out
             // from the name is the engine's to work out, so a taken one gets a
             // number rather than a refusal.
-            await createStore(name.trim(), slugTouched ? slug.trim() : "", currency, country);
+            const entry = await createStore(name.trim(), slugTouched ? slug.trim() : "", currency, country, sampleProducts);
+            // The store opened either way; this says only that its samples did not all arrive.
+            if (entry.sample_products?.error) toast.warning(entry.sample_products.error);
             await reloadStoreData();
             await goto(base + "/dash", { replaceState: true });
         } catch (err) {
@@ -237,6 +242,21 @@
                 </div>
             </div>
             <div class="col-12">
+                <div class="field store-samples">
+                    <input
+                        id="store_samples"
+                        type="checkbox"
+                        class="switch"
+                        aria-describedby="store_samples_hint"
+                        bind:checked={sampleProducts}
+                    />
+                    <label for="store_samples">Add sample products</label>
+                </div>
+                <div class="link-hint" id="store_samples_hint">
+                    <small>Eight products with prices and stock, some in sizes and colours. Erase them all from Products when you are ready.</small>
+                </div>
+            </div>
+            <div class="col-12">
                 <button class="btn lg block next" class:loading={saving} disabled={saving}>
                     <span class="txt">Create store</span>
                     <i class="ri-arrow-right-line" aria-hidden="true"></i>
@@ -338,6 +358,22 @@
         flex: 0 0 auto;
         min-width: 44px;
         min-height: 44px;
+    }
+    /* The switch's row is a 44px target like the rest of these screens; the
+       track and its knob (3px inside it, gocommerce.css) move down to stay
+       centred in it. Two classes on the field, because form.css's
+       `.field:has(input[type="checkbox"]) input.switch ~ label` outranks one,
+       and Svelte's scoping adds no weight past the first. */
+    .field.store-samples input.switch ~ label {
+        display: flex;
+        align-items: center;
+        min-height: 44px;
+    }
+    .field.store-samples input.switch ~ label::before {
+        top: calc((44px - var(--switchH)) / 2);
+    }
+    .field.store-samples input.switch ~ label::after {
+        top: calc((44px - var(--switchH)) / 2 + 3px);
     }
     @media (prefers-reduced-motion: reduce) {
         .store-suggest-use {
