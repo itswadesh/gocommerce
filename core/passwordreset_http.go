@@ -5,7 +5,7 @@ import "net/http"
 func (a *App) mountPasswordResetRoutes() {
 	// Unauthenticated, and necessarily so: a reset cannot require the credential
 	// it replaces, for the same reason a login route cannot. The emailed token
-	// is the credential — the arrangement the invitation accept pair uses.
+	// or code is the credential — the arrangement the invitation accept pair uses.
 	a.HandleFunc("POST /api/admin/password-reset", a.handleRequestPasswordReset)
 	a.HandleFunc("GET /api/admin/password-reset/{token}", a.handleLookupPasswordReset)
 	a.HandleFunc("POST /api/admin/password-reset/confirm", a.handleConfirmPasswordReset)
@@ -58,14 +58,24 @@ func (a *App) handleConfirmPasswordReset(w http.ResponseWriter, r *http.Request)
 		// The token travels in the body rather than the path, so the one
 		// request that actually spends it is not repeated in an access log's
 		// request line.
-		Token    string `json:"token"`
+		Token string `json:"token"`
+		// Or the code, with the address it was sent to under the same pair of
+		// names the request route takes.
+		Identity string `json:"identity"`
+		Email    string `json:"email"`
+		Code     string `json:"code"`
 		Password string `json:"password"`
 	}
 	if err := DecodeJSON(w, r, &in); err != nil {
 		RespondError(w, r, err)
 		return
 	}
-	su, sess, err := a.superusers.ConfirmReset(r.Context(), in.Token, in.Password, clientIP(r))
+	email := in.Identity
+	if email == "" {
+		email = in.Email
+	}
+	proof := ResetProof{Token: in.Token, Email: email, Code: in.Code}
+	su, sess, err := a.superusers.ConfirmReset(r.Context(), proof, in.Password, clientIP(r))
 	if err != nil {
 		RespondError(w, r, err)
 		return

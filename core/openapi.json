@@ -1765,8 +1765,8 @@
         "tags": [
           "admin:auth"
         ],
-        "summary": "Ask for a password reset link",
-        "description": "Public, because a reset cannot require the credential it replaces. The answer is 202 whatever address goes in — identical in body and in status for an address that belongs to an operator and one that does not — so the route cannot be used to discover who has an account. `delivery` is `none` when the store has no email backend beyond the built-in logger; nothing will arrive, and no token is written at all. Repeated requests are throttled, on a budget separate from the login one.",
+        "summary": "Ask for a password reset code and link",
+        "description": "Public, because a reset cannot require the credential it replaces. The email carries a 6-digit code, and a link as well when `GOCOMMERCE_PANEL_URL` is set. The answer is 202 whatever address goes in — identical in body and in status for an address that belongs to an operator and one that does not — so the route cannot be used to discover who has an account. `delivery` is `none` when the store has no email backend beyond the built-in logger; nothing will arrive, and no token is written at all. Repeated requests are throttled, on a budget separate from the login one. Because a code can be guessed, an operator who already holds 5 unexpired resets, or was sent 10 in the last day, is sent nothing more, with the same 202.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1881,8 +1881,8 @@
         "tags": [
           "admin:auth"
         ],
-        "summary": "Spend a reset link and sign in",
-        "description": "Public. The token travels in the body rather than the path, so the one request that spends it is not repeated in an access log. It is claimed and spent in a single transaction, so two people opening one link cannot both win; every session that operator held ends with it, as does every other outstanding link of theirs, and the session in the response is new. The password is validated before the token is touched, so a typo does not burn the link.",
+        "summary": "Spend a reset link or code and sign in",
+        "description": "Public. Send exactly one proof: the `token` from the emailed link, or the `email` the reset went to with the 6-digit `code` it carried. The token travels in the body rather than the path, so the one request that spends it is not repeated in an access log. A code works only with its own address and takes 5 tries, however many clients they come from; the link from the same email is never charged for them. The reset is claimed and spent in a single transaction, so two people cannot both win; every session that operator held ends with it, as does every other outstanding link and code of theirs, and the session in the response is new. The password is validated before the link or code is touched, so a typo costs neither the link nor a try.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1890,13 +1890,26 @@
               "schema": {
                 "type": "object",
                 "required": [
-                  "token",
                   "password"
                 ],
                 "properties": {
                   "token": {
                     "type": "string",
-                    "description": "The token from the emailed link."
+                    "description": "The token from the emailed link. Send it, or `email` and `code`, not both."
+                  },
+                  "identity": {
+                    "type": "string",
+                    "description": "The address the code was sent to. Named `identity` for PocketBase compatibility; `email` is accepted as a synonym.",
+                    "format": "email"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "code": {
+                    "type": "string",
+                    "description": "The 6 digits from the email. Spaces are ignored.",
+                    "example": "042917"
                   },
                   "password": {
                     "type": "string",
@@ -1913,7 +1926,7 @@
             "$ref": "#/components/responses/AuthResponse"
           },
           "400": {
-            "description": "An invalid or expired token, or a password that is too short.",
+            "description": "`invalid_token`: a link or code that is unknown, expired, already spent or out of tries, or a code sent with an address that has no account; one answer for all of them. `validation_failed`: a password that is too short, both a token and a code or neither, an email without a code, or a code that is not 6 digits; a malformed code costs no try.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1940,8 +1953,8 @@
         "tags": [
           "admin:auth"
         ],
-        "summary": "Mail an operator a reset link",
-        "description": "Requires `team.write`, the right that can already set that operator's password outright — so this grants nothing new, and replaces the practice of choosing somebody's password for them.",
+        "summary": "Mail an operator a reset code and link",
+        "description": "Requires `team.write`, the right that can already set that operator's password outright — so this grants nothing new, and replaces the practice of choosing somebody's password for them. Unlike the public route it is never capped, so an owner can always send a fresh email.",
         "security": [
           {
             "adminToken": []
@@ -15313,11 +15326,11 @@
               "email",
               "none"
             ],
-            "description": "How this store delivers a link. `none` means no email backend is installed, nothing will arrive, and no token was written — a fact about configuration, the same for every caller."
+            "description": "How this store delivers a reset. `none` means no email backend is installed, nothing will arrive, and no token was written — a fact about configuration, the same for every caller."
           },
           "link": {
             "type": "boolean",
-            "description": "The email carries a link to the panel's reset screen (Config.PanelURL is set). False, it carries a code to paste at /admin/auth/reset-password. Configuration again, the same for every caller."
+            "description": "The email carries a link to the panel's reset screen beside its 6-digit code (Config.PanelURL is set). False, it carries the code alone, typed at /admin/auth/reset-password. Configuration again, the same for every caller."
           }
         }
       },

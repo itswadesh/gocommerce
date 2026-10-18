@@ -61,16 +61,16 @@ func (a *App) handleAuthState(w http.ResponseWriter, r *http.Request) {
 		// Whether a static token would also be accepted. The panel never uses
 		// one, but an operator debugging a 401 benefits from seeing it.
 		"token_auth": len(a.cfg.AdminTokens) > 0,
-		// Whether a reset link could actually leave the building. The built-in
-		// logger does not count — a link written to a log file is no use to
+		// Whether a reset email could actually leave the building. The built-in
+		// logger does not count — a code written to a log file is no use to
 		// somebody who cannot sign in to read it — and a Forgot-password button
 		// that 202s into silence is worse than no button at all.
 		"password_reset": a.notifier.delivers(r.Context(), ChannelEmail),
 		// Whether the sign-in screen may offer to make an account: the
 		// install's choice, where it can be kept safely (signupOpen).
 		"signup": a.signupOpen(r.Context()),
-		// Whether a reset email carries a link or a code to paste, so the
-		// forgot-password screen can say which before it is asked.
+		// Whether a reset email carries a link beside its code, so the
+		// forgot-password screen can say what to look for before it is asked.
 		"reset_link": a.cfg.PanelURL != "",
 	})
 }
