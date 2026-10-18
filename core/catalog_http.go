@@ -41,6 +41,9 @@ func (a *App) mountCatalogRoutes() {
 	a.HandleAdminFunc("POST /api/admin/products/{id}/variants", a.handleCreateVariant, RightCatalogWrite)
 	a.HandleAdminFunc("PATCH /api/admin/variants/{id}", a.handleUpdateVariant, RightCatalogWrite)
 	a.HandleAdminFunc("DELETE /api/admin/variants/{id}", a.handleDeleteVariant, RightCatalogWrite)
+	// The sample catalogue a store may start with (D94).
+	a.HandleAdminFunc("GET /api/admin/sample-products", a.handleSampleProductCount, RightCatalogRead)
+	a.HandleAdminFunc("DELETE /api/admin/sample-products", a.handleDeleteSampleProducts, RightCatalogWrite)
 }
 
 // ------------------------------------------------------------------- public

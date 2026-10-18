@@ -3278,6 +3278,90 @@
         }
       }
     },
+    "/api/admin/sample-products": {
+      "get": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Count the sample products",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "How many of the store's products are samples (D94): the catalogue a store opened with `sample_products` started with, counted whether or not anybody has edited them since. Needs catalog.read.",
+        "responses": {
+          "200": {
+            "description": "The count.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "count": {
+                          "type": "integer",
+                          "example": 8
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Erase the sample products",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Deletes every sample product, edited or not, one at a time as DELETE /api/admin/products/{id} would: each gets its audit row and its product.deleted event, and orders that sold one keep their lines. The merchant's own products are never touched; no request can mark a product as a sample. Needs catalog.write.",
+        "responses": {
+          "200": {
+            "description": "How many were deleted. Zero when there were none.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "deleted": {
+                          "type": "integer",
+                          "example": 8
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
     "/api/admin/variants/{id}": {
       "patch": {
         "tags": [
@@ -15385,6 +15469,10 @@
           },
           "currency": {
             "type": "string"
+          },
+          "sample": {
+            "type": "boolean",
+            "description": "True for a product the engine added as a sample catalogue (D94), which DELETE /api/admin/sample-products erases. Set only by the engine; no input can set or clear it."
           },
           "product_type": {
             "type": "string",

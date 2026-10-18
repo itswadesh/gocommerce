@@ -28,6 +28,9 @@ type Product struct {
 	Description string `json:"description"`
 	Status      string `json:"status"`
 	Currency    string `json:"currency"`
+	// Sample marks a product the engine added as a sample catalogue (D94). No
+	// input sets it, so erasing the samples never takes the merchant's own.
+	Sample bool `json:"sample"`
 
 	// Organisation. ProductType and Vendor are free text an operator groups
 	// and filters by; Tags is a set, normalised on write (see normalizeTags).
@@ -207,6 +210,10 @@ type ProductInput struct {
 	SKU        string `json:"sku"`
 	PriceMinor *int64 `json:"price_minor"`
 	Stock      *int   `json:"stock"`
+
+	// sample is unexported so that only AddSampleProducts can set it: neither
+	// a request body nor a module can file its product among the samples.
+	sample bool
 }
 
 // OptionInput defines one axis and its values, in display order.
@@ -411,10 +418,10 @@ func (c *Catalog) CreateProduct(ctx context.Context, in ProductInput) (*Product,
 		if err := tx.QueryRowContext(ctx, `
 			INSERT INTO products (slug, title, description, status, currency,
 			                      product_type, vendor, tags, category_id,
-			                      seo_title, seo_description, metadata)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, `+tagsExpr(8)+`, $9, $10, $11, $12) RETURNING id`,
+			                      seo_title, seo_description, metadata, sample)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, `+tagsExpr(8)+`, $9, $10, $11, $12, $13) RETURNING id`,
 			in.Slug, in.Title, in.Description, in.Status, c.app.Currency(ctx),
-			in.ProductType, in.Vendor, tags, in.CategoryID, in.SEOTitle, in.SEODescription, meta,
+			in.ProductType, in.Vendor, tags, in.CategoryID, in.SEOTitle, in.SEODescription, meta, in.sample,
 		).Scan(&id); err != nil {
 			return translateCatalogErr(err)
 		}
@@ -1265,7 +1272,7 @@ func (c *Catalog) DeleteVariant(ctx context.Context, id int64) error {
 // back on the way in. See tagsValue.
 const productColumns = `p.id, p.slug, p.title, p.description, p.status, p.currency,
 	p.product_type, p.vendor, to_jsonb(p.tags), p.seo_title, p.seo_description,
-	p.metadata, p.created_at, p.updated_at`
+	p.metadata, p.created_at, p.updated_at, p.sample`
 
 // scanProduct reads one productColumns row. Both the single-row and the list
 // query go through it, so a column added to one is never missing from the
@@ -1275,7 +1282,7 @@ func scanProduct(row interface{ Scan(...any) error }) (*Product, error) {
 	var tags, meta []byte
 	if err := row.Scan(&p.ID, &p.Slug, &p.Title, &p.Description, &p.Status, &p.Currency,
 		&p.ProductType, &p.Vendor, &tags, &p.SEOTitle, &p.SEODescription,
-		&meta, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		&meta, &p.CreatedAt, &p.UpdatedAt, &p.Sample); err != nil {
 		return nil, err
 	}
 	if err := scanMetadata(meta, &p.Metadata); err != nil {
