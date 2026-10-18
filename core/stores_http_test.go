@@ -334,12 +334,17 @@ func TestTheStoreListSaysWhereEachStoreLives(t *testing.T) {
 	if len(mine) != 2 || mine[0].Domain != mine[0].Slug+".shops.test" || mine[1].Domain != "bee.example" {
 		t.Fatalf("stores = %+v, want slug.shops.test then bee.example", mine)
 	}
+	// A store with a domain of its own still answers at its subdomain, and
+	// the Domains screen says so.
+	if mine[0].Subdomain != mine[0].Slug+".shops.test" || mine[1].Subdomain != "bee.shops.test" {
+		t.Fatalf("subdomains = %q, %q, want slug.shops.test and bee.shops.test", mine[0].Subdomain, mine[1].Subdomain)
+	}
 
 	app.cfg.BaseDomain = ""
 	rec = do(t, app, http.MethodGet, "/api/stores/my", bearer(tok))
 	decodeData(t, rec, &mine)
-	if mine[0].Domain != "" {
-		t.Fatalf("with no base domain, the first store's domain = %q, want none", mine[0].Domain)
+	if mine[0].Domain != "" || mine[0].Subdomain != "" {
+		t.Fatalf("with no base domain, the first store lives at %q / %q, want nowhere", mine[0].Domain, mine[0].Subdomain)
 	}
 }
 
