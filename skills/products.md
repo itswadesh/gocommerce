@@ -415,6 +415,28 @@ their `product_id` is `ON DELETE SET NULL`, and they keep their own snapshot of
 sku, title, label and price, so a historical order stays readable after the
 catalog moves on. See [carts](carts.md) for why cart lines cascade instead.
 
+## Sample products
+
+A store can start with a sample catalogue (D94): `POST /api/stores/create` with
+`"sample_products": true`, or `app.Products().AddSampleProducts(ctx)` for the
+store `ctx` is bound to. It makes eight active, stocked products through
+`CreateProduct`, priced from a table in major units scaled by the store's
+currency, and skips a slug the store already has, so a second call adds nothing.
+
+Each carries `"sample": true`. The flag is the column `products.sample`, set only
+by `AddSampleProducts` through an unexported field on `ProductInput`; a request
+that sends `sample` is a 400 like any unknown field, and a module cannot set it
+either. So erasing never takes the merchant's own products:
+
+```http
+GET    /api/admin/sample-products    → {"data": {"count": 8}}     (catalog.read)
+DELETE /api/admin/sample-products    → {"data": {"deleted": 8}}   (catalog.write)
+```
+
+`DeleteSampleProducts` deletes each through `DeleteProduct`, so each has its
+audit row and its `product.deleted` event, one transaction per product. An
+edited sample is still a sample.
+
 ## Common mistakes
 
 - **Trying to set stock through `UpdateProduct` or `UpdateVariant`.** Stock is

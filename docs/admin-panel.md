@@ -621,6 +621,27 @@ list tied to a group prices only that group's customers. When two live lists
 cover one line, the engine takes the most specific quantity break first, then
 the higher priority, then the cheaper of the two.
 
+## Sample products
+
+The store picker's create form has an **Add sample products** switch, off by
+default (D94). Turned on, the new store opens with eight active products: four
+with sizes or colours, every variant in stock at the default location, and no
+pictures. Prices come from one table in whole units, scaled by the store's
+currency, so a tee is 25.00 in dollars, 25 in yen and 25.000 in dinars. If
+adding them fails, the store still opens and a warning says not every sample
+arrived.
+
+On Products, a store that still has samples shows a banner with the count
+(`GET /api/admin/sample-products`), and each sample row carries a grey
+**Sample** label beside its status. An operator with `catalog.write` gets
+**Erase sample products** in the banner; the confirmation names the count and
+says edited samples go too. Erasing (`DELETE /api/admin/sample-products`)
+removes each one as a delete by hand would, with its audit row and its
+`product.deleted` event, and orders that sold one keep their lines. The
+merchant's own products are never touched: only the engine marks a product as
+a sample, and no edit can set or clear the mark. Once the count reads 0 the
+screen stops asking for it on that visit.
+
 ## Authentication
 
 Two kinds of credential exist, because scripts and people want different
