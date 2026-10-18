@@ -20547,6 +20547,10 @@
             "type": "string",
             "description": "Where the store's shop is: its first attached domain, else <slug>.<base domain>, else empty."
           },
+          "subdomain": {
+            "type": "string",
+            "description": "<slug>.<base domain>, the address the store has without adding a domain of its own; empty when the install has no base domain."
+          },
           "demo": {
             "type": "boolean",
             "description": "The store masks personal data on its admin routes and freezes who can sign in (gocommerce store demo <slug> on)."

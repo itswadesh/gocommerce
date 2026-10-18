@@ -28,6 +28,10 @@ type MyStore struct {
 	// its first verified one, else
 	// <slug>.<Config.BaseDomain>, else empty when neither exists.
 	Domain string `json:"domain"`
+	// Subdomain is <slug>.<Config.BaseDomain>, the address a store has
+	// without adding a domain of its own; empty when the install has no
+	// base domain.
+	Subdomain string `json:"subdomain"`
 }
 
 // storeCookie only says which store a new tab opens in. The panel keeps each
@@ -102,9 +106,12 @@ func (a *App) myStores(ctx context.Context) ([]MyStore, error) {
 		if err := rows.Scan(&s.ID, &s.Slug, &s.Name, &s.Status, &s.Demo, &s.Role, &host); err != nil {
 			return nil, Internalf(err, "scan store")
 		}
+		if a.cfg.BaseDomain != "" {
+			s.Subdomain = s.Slug + "." + strings.ToLower(a.cfg.BaseDomain)
+		}
 		s.Domain = host.String
-		if s.Domain == "" && a.cfg.BaseDomain != "" {
-			s.Domain = s.Slug + "." + strings.ToLower(a.cfg.BaseDomain)
+		if s.Domain == "" {
+			s.Domain = s.Subdomain
 		}
 		out = append(out, s)
 	}
