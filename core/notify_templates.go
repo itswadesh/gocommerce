@@ -564,16 +564,20 @@ If you were not expecting this, you can ignore it; nothing happens unless the li
 	{
 		Channel: ChannelEmail, Event: EventSuperuserPasswordReset, Title: "Operator password reset",
 		Description: "To a member of the team who asked to reset their panel password.",
-		Variables:   []string{"operator_email", "reset_url", "reset_token", "expires_in_minutes"},
+		Variables:   []string{"operator_email", "reset_url", "reset_code", "reset_token", "expires_in_minutes"},
 		Subject:     "Reset your GoCommerce password",
 		// The absence of reset_url is meaningful: without a panel URL the
-		// engine cannot build a link, and the code stands in for it.
+		// engine cannot build a link, and the code is the whole message.
 		Body: `Somebody asked to reset the password for {{.operator_email}}. If that was you,
-{{if .reset_url}}open this link within {{.expires_in_minutes}} minutes:
+{{if .reset_url}}open this link within {{.expires_in_minutes}} minutes to choose a new password:
 
-{{.reset_url}}{{else}}use this code within {{.expires_in_minutes}} minutes:
+{{.reset_url}}
 
-{{.reset_token}}{{end}}
+Or, if you would rather type it, enter this code on the sign-in screen's "Forgot password?" page:
+
+{{.reset_code}}{{else}}enter this code within {{.expires_in_minutes}} minutes on the sign-in screen's "Forgot password?" page:
+
+{{.reset_code}}{{end}}
 
 If it was not you, nothing has changed and you can ignore this message.`,
 	},

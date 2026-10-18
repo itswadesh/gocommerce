@@ -729,12 +729,26 @@ Turning it on is not always enough, and `gocommerce doctor` says when:
 
 **Forgot password?** sits under the password field when the install can send
 email, and opens `/admin/auth/forgot-password` with the address already typed.
-The email carries a link to `/admin/auth/reset-password/<token>` when
-`GOCOMMERCE_PANEL_URL` says where the panel is reached, and a code to paste on
-that screen when it does not: a link built from the request's own host would
-let anybody mail a real operator a link to a host they chose. The link works
-once, for an hour, ends every session the person had, and signs them in. With
-no way to send email, the sign-in screen says to ask an owner instead.
+Every reset email carries a 6-digit code, typed on
+`/admin/auth/reset-password` with the address and the new password on one
+form. The code lasts an hour and allows 5 tries, and it works only with the
+address it was sent to, because six digits name nobody on their own. At most
+5 codes can be live for one person, and at most 10 are sent in a day; past
+either, the form says the same as always and nothing is sent. When
+`GOCOMMERCE_PANEL_URL` says where the panel is reached, the email also carries
+a link to `/admin/auth/reset-password/<token>`. It is never built from the
+request's own host, which would let anybody mail a real operator a link to a
+host they chose. The link cannot be guessed, so wrong codes never use it up.
+Spending either the link or the code kills both, ends every session the person
+had, and signs them in.
+
+Without `GOCOMMERCE_PANEL_URL`, the code is all the email carries, and someone
+who knows an operator's address can use up that day's codes with wrong
+guesses; the real person then sees the usual answer and gets no working code.
+The ways back are another owner sending a reset from Settings › Team, which no
+cap applies to, or `gocommerce superuser update` on the server. With the panel
+URL set this cannot happen, because every email still carries a link. With no
+way to send email, the sign-in screen says to ask an owner instead.
 
 ### How passwords are stored
 
