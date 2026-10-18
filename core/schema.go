@@ -76,6 +76,7 @@ func coreMigrations() []Migration {
 		{ID: "0065_store_languages", SQL: migration0065StoreLanguages},
 		{ID: "0066_notify_template_languages", SQL: migration0066NotifyTemplateLanguages},
 		{ID: "0067_name_unnamed_stores", Run: migrate0067NameUnnamedStores},
+		{ID: "0068_product_sample", SQL: migration0068ProductSample},
 	}
 }
 

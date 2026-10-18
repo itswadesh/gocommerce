@@ -1,0 +1,196 @@
+package gocommerce
+
+import (
+	"context"
+	"net/http"
+	"testing"
+)
+
+// Sample products (D94): a new store may start with a small catalogue to look
+// at, marked so it can be erased in one go without touching anything else.
+
+func sampleCount(t *testing.T, app *App, ctx context.Context) int {
+	t.Helper()
+	n, err := app.Products().SampleProductCount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func TestSampleProductsAreAddedOnceWithStockToSell(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	price, stock := int64(4000), 2
+	// The merchant already sells a tote under the sample's address: theirs
+	// stays, and the sample is skipped rather than refused.
+	if _, err := app.Products().CreateProduct(ctx, ProductInput{
+		Slug: "canvas-tote-bag", Title: "Our own tote", Status: ProductActive,
+		PriceMinor: &price, Stock: &stock,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	added, err := app.Products().AddSampleProducts(ctx)
+	if err != nil {
+		t.Fatalf("add samples: %v", err)
+	}
+	if added != 7 {
+		t.Fatalf("added = %d, want 7 (eight, less the tote the store already has)", added)
+	}
+	if got := sampleCount(t, app, ctx); got != 7 {
+		t.Fatalf("count = %d, want 7", got)
+	}
+
+	tee, err := app.Products().GetProductBySlug(ctx, "cotton-crew-tee")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tee.Sample || tee.Status != ProductActive || len(tee.Variants) != 6 {
+		t.Fatalf("tee = sample %v, status %q, %d variants; want a sample, active, 6 variants",
+			tee.Sample, tee.Status, len(tee.Variants))
+	}
+	first := tee.Variants[0]
+	if first.SKU != "COTTON-CREW-TEE-S-BLACK" || first.Price != (Money{AmountMinor: 2500, Currency: "USD"}) || first.StockOnHand != 12 {
+		t.Fatalf("first tee variant = %s at %+v with %d on hand, want COTTON-CREW-TEE-S-BLACK at 2500 USD with 12",
+			first.SKU, first.Price, first.StockOnHand)
+	}
+
+	own, err := app.Products().GetProductBySlug(ctx, "canvas-tote-bag")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if own.Sample || own.Title != "Our own tote" {
+		t.Fatalf("the merchant's tote = sample %v, %q; want it untouched", own.Sample, own.Title)
+	}
+
+	var variants, onHand int
+	if err := app.DB().QueryRowContext(ctx, `
+		SELECT count(*), COALESCE(sum(s.on_hand), 0)
+		FROM variants v JOIN products p ON p.id = v.product_id
+		JOIN variant_stock s ON s.variant_id = v.id
+		WHERE p.sample`).Scan(&variants, &onHand); err != nil {
+		t.Fatal(err)
+	}
+	if variants != 17 || onHand != 221 {
+		t.Fatalf("samples hold %d variants with %d on hand, want 17 with 221", variants, onHand)
+	}
+	// Stock to sell means a shopper can put one in a basket.
+	cart := newCart(t, app)
+	if got := addToCart(t, app, cart.Token, first.ID, 2); len(got.Lines) != 1 || got.Lines[0].Quantity != 2 {
+		t.Fatalf("basket = %+v, want one line of 2 tees", got.Lines)
+	}
+
+	again, err := app.Products().AddSampleProducts(ctx)
+	if err != nil {
+		t.Fatalf("add samples again: %v", err)
+	}
+	if again != 0 || sampleCount(t, app, ctx) != 7 {
+		t.Fatalf("a second add made %d, count %d; want 0 and still 7", again, sampleCount(t, app, ctx))
+	}
+}
+
+func TestErasingSampleProductsLeavesTheMerchantsOwn(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	if _, err := app.Products().AddSampleProducts(ctx); err != nil {
+		t.Fatal(err)
+	}
+	own := simpleProduct(t, app, "OWN-1", 1500, 3)
+	// An edited sample is still a sample: the flag is the engine's, not a
+	// field the merchant's edit can clear.
+	tee, err := app.Products().GetProductBySlug(ctx, "cotton-crew-tee")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renamed := "Our first tee"
+	if _, err := app.Products().UpdateProduct(ctx, tee.ID, ProductPatch{Title: &renamed}); err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := app.Products().DeleteSampleProducts(ctx)
+	if err != nil {
+		t.Fatalf("erase samples: %v", err)
+	}
+	if deleted != 8 || sampleCount(t, app, ctx) != 0 {
+		t.Fatalf("erased %d, %d left; want 8 and none", deleted, sampleCount(t, app, ctx))
+	}
+	if got, err := app.Products().GetProduct(ctx, own.ID); err != nil || got.Title != "Test OWN-1" {
+		t.Fatalf("the merchant's product after the erase = %v, %v; want it kept", got, err)
+	}
+	if got := len(outboxEvents(t, app, EventProductDeleted)); got != 8 {
+		t.Errorf("product.deleted events = %d, want one per sample, 8", got)
+	}
+	var audited int
+	if err := app.DB().QueryRowContext(ctx,
+		`SELECT count(*) FROM admin_audit WHERE action = $1`, AuditProductDelete).Scan(&audited); err != nil {
+		t.Fatal(err)
+	}
+	if audited != 8 {
+		t.Errorf("audited deletes = %d, want 8", audited)
+	}
+
+	again, err := app.Products().DeleteSampleProducts(ctx)
+	if err != nil || again != 0 {
+		t.Fatalf("a second erase = %d, %v; want 0", again, err)
+	}
+}
+
+func TestSampleProductsAreCountedAndErasedOverTheAdminAPI(t *testing.T) {
+	app := newTestApp(t)
+	if _, err := app.Products().AddSampleProducts(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	staff := signInAs(t, app, "staff@example.com", RoleStaff)
+
+	var count struct {
+		Count int `json:"count"`
+	}
+	rec := do(t, app, http.MethodGet, "/api/admin/sample-products", bearer(staff))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("count as staff = %d: %s", rec.Code, rec.Body)
+	}
+	decodeData(t, rec, &count)
+	if count.Count != 8 {
+		t.Fatalf("count = %d, want 8", count.Count)
+	}
+	// Reading is catalog.read; erasing is catalog.write, which staff lacks.
+	if rec := do(t, app, http.MethodDelete, "/api/admin/sample-products", bearer(staff)); rec.Code != http.StatusForbidden {
+		t.Fatalf("erase as staff = %d, want 403: %s", rec.Code, rec.Body)
+	}
+
+	rec = do(t, app, http.MethodDelete, "/api/admin/sample-products", withAdmin)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("erase = %d: %s", rec.Code, rec.Body)
+	}
+	var erased struct {
+		Deleted int `json:"deleted"`
+	}
+	decodeData(t, rec, &erased)
+	if erased.Deleted != 8 {
+		t.Fatalf("deleted = %d, want 8", erased.Deleted)
+	}
+	decodeData(t, do(t, app, http.MethodGet, "/api/admin/sample-products", withAdmin), &count)
+	if count.Count != 0 {
+		t.Fatalf("count after the erase = %d, want 0", count.Count)
+	}
+}
+
+// The flag is the engine's alone: a client cannot mark its own product a
+// sample, which would put it in the next erase.
+func TestAClientCannotMarkAProductASample(t *testing.T) {
+	app := newTestApp(t)
+	rec := doBody(t, app, http.MethodPost, "/api/admin/products",
+		`{"title":"Mine","status":"active","price_minor":100,"sample":true}`, withAdmin)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("create with sample = %d, want 400: %s", rec.Code, rec.Body)
+	}
+	p := simpleProduct(t, app, "MINE-1", 100, 1)
+	rec = doBody(t, app, http.MethodPatch, "/api/admin/products/"+itoa(p.ID), `{"sample":true}`, withAdmin)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("patch with sample = %d, want 400: %s", rec.Code, rec.Body)
+	}
+	if got := sampleCount(t, app, context.Background()); got != 0 {
+		t.Fatalf("count = %d, want 0", got)
+	}
+}

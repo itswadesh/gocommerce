@@ -229,6 +229,16 @@ Content-Type: application/json
 
 { "compare_at_price_minor": null }
 
+### How many sample products the store has: the catalogue a store opened with
+# "sample_products": true on POST /api/stores/create started with (D94).
+GET {{host}}/api/admin/sample-products
+Authorization: Bearer {{token}}
+
+### Erase them all, edited or not. The store's own products are never touched:
+# only the engine marks a product as a sample.
+DELETE {{host}}/api/admin/sample-products
+Authorization: Bearer {{token}}
+
 ### A collection, curated. The order sent is the order a storefront shows, and
 # it is the only order the collection has. This replaces the WHOLE membership —
 # including rows this client never fetched — so read it back first.
