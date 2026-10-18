@@ -13928,6 +13928,11 @@
                     "type": "string",
                     "pattern": "^[A-Za-z]{2}$",
                     "description": "Where the store is, an ISO 3166-1 alpha-2 code: its profile's country, and what its default shipping zone (\"Local\") covers. Empty is a default zone covering everywhere."
+                  },
+                  "sample_products": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Start the store with the sample catalogue (D94): eight active, stocked products, some with sizes or colours, priced in the store's currency, with no pictures. They are marked `sample` and DELETE /api/admin/sample-products erases them."
                   }
                 }
               }
@@ -13956,6 +13961,20 @@
                           ],
                           "nullable": true,
                           "description": "Role and rights in this store; null for a static admin token."
+                        },
+                        "sample_products": {
+                          "type": "object",
+                          "description": "Present only when `sample_products` was asked for. A failure to add them does not fail the request, since the store is made and usable without them: `error` says so, and `added` counts the ones that were.",
+                          "properties": {
+                            "added": {
+                              "type": "integer",
+                              "example": 8
+                            },
+                            "error": {
+                              "type": "string",
+                              "description": "Absent when every sample was added."
+                            }
+                          }
                         }
                       }
                     }

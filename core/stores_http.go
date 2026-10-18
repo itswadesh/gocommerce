@@ -192,6 +192,8 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 		// Country is where the store is: its profile's country, and what its
 		// default shipping zone covers. Empty is a zone covering everywhere.
 		Country string `json:"country"`
+		// SampleProducts starts the store with the sample catalogue (D94).
+		SampleProducts bool `json:"sample_products"`
 	}
 	if err := DecodeJSON(w, r, &in); err != nil {
 		RespondError(w, r, err)
@@ -251,6 +253,19 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, Internalf(err, "seed the new store's shipping"))
 		return
 	}
+	// The samples come after the currency, which prices them. A failure is
+	// reported beside the store rather than failing the request: the store
+	// is made and usable without them, and a client retrying a failed create
+	// would open a second store.
+	var samples *sampleProductsResult
+	if in.SampleProducts {
+		n, err := a.catalog.AddSampleProducts(bound)
+		samples = &sampleProductsResult{Added: n}
+		if err != nil {
+			a.log.Error("add sample products", "store", st.ID, "err", err)
+			samples.Error = "The store was opened, but not every sample product could be added."
+		}
+	}
 	entry, err := a.enterStore(ctx, st.ID)
 	if err != nil {
 		RespondError(w, r, err)
@@ -258,7 +273,21 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 	}
 	a.log.Info("store created", "store", st.ID, "slug", st.Slug)
 	a.setStoreCookie(w, r, st.ID)
-	Respond(w, http.StatusCreated, entry)
+	Respond(w, http.StatusCreated, createdStore{storeEntry: entry, SampleProducts: samples})
+}
+
+// createdStore is what opening a store answers with: the store entry, and the
+// sample products when they were asked for.
+type createdStore struct {
+	*storeEntry
+	SampleProducts *sampleProductsResult `json:"sample_products,omitempty"`
+}
+
+// sampleProductsResult says how many sample products a new store got, and why
+// not all of them when adding failed part way.
+type sampleProductsResult struct {
+	Added int    `json:"added"`
+	Error string `json:"error,omitempty"`
 }
 
 // handleDeleteStore deletes a store for good. Its owner only, and only with
