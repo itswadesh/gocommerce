@@ -10,10 +10,13 @@
     import { can, request } from "$lib/api.js";
     import { copyText } from "$lib/clipboard.js";
     import { formatDate } from "$lib/format.js";
-    import { loadStores } from "$lib/stores.svelte.js";
+    import { loadStores, myStores } from "$lib/stores.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
 
     const writable = $derived(can("store.write"));
+    // <slug>.<base domain>: the engine's to say, and empty on an install
+    // without one.
+    const subdomain = $derived(myStores.current?.subdomain ?? "");
 
     let domains = $state([]);
     let loading = $state(true);
@@ -127,14 +130,31 @@
 
         <section class="card feed-card">
             <h2 class="feed-card-title">This store's domains</h2>
+            {#if subdomain}
+                <div class="domain-list">
+                    <div class="domain-row verified">
+                        <div class="domain-head">
+                            <span class="domain-host txt-ellipsis">{subdomain}</span>
+                            <span class="label">Included</span>
+                            <div class="domain-actions">
+                                <a class="btn sm transparent secondary" href="https://{subdomain}" target="_blank" rel="noreferrer">
+                                    <i class="ri-external-link-line" aria-hidden="true"></i>
+                                    <span class="txt">Visit</span>
+                                </a>
+                            </div>
+                        </div>
+                        <p class="txt-hint txt-sm m-t-5">Every store has this address. It needs no DNS record.</p>
+                    </div>
+                </div>
+            {/if}
             {#if loading && !domains.length}
                 <div class="block txt-center p-base"><span class="loader lg"></span></div>
-            {:else if !domains.length}
+            {:else if !domains.length && !subdomain}
                 <p class="txt-hint m-t-sm">
                     None yet. The store is reached at the install's own address until a domain is
                     added and verified.
                 </p>
-            {:else}
+            {:else if domains.length}
                 <div class="domain-list">
                     {#each domains as d (d.host)}
                         <div class="domain-row" class:verified={d.verified}>
