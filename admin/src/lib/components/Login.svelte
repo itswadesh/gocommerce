@@ -10,7 +10,7 @@
      * A forgotten password and signing up are addresses of their own
      * (/admin/auth/forgot-password, /admin/auth/signup) rather than modes of
      * this card, so a phone's back button returns here instead of leaving the
-     * panel. Each is offered only when the install can do it: a reset link
+     * panel. Each is offered only when the install can do it: a reset email
      * only where an email can leave the building, and sign-up only where the
      * install takes strangers (Config.Signup).
      */
@@ -36,7 +36,7 @@
     // null while we are still asking; true once we know an operator exists.
     let installed = $state(null);
     /*
-     * Whether a reset link can actually leave the building. It stays false when
+     * Whether a reset email can actually leave the building. It stays false when
      * the probe fails: the panel does not know a fact about the store then, and
      * offering a button that 202s into silence is the worse of the two guesses.
      */
@@ -176,9 +176,9 @@
                 {/if}
             </div>
 
-            <!-- Only once there is an account to reset, and only when a link
-                 could actually be delivered: a link that silently does nothing
-                 is worse than none. When nothing can be sent, the honest
+            <!-- Only once there is an account to reset, and only when a reset
+                 email could actually be delivered: a button that silently does
+                 nothing is worse than none. When nothing can be sent, the honest
                  sentence goes in its place. -->
             {#if installed && canReset}
                 <div class="auth-field-foot">
@@ -200,7 +200,7 @@
 
         {#if installed && !canReset}
             <p class="auth-note">
-                Forgotten your password? This install cannot send reset links, so ask an owner to set
+                Forgotten your password? This install cannot send reset emails, so ask an owner to set
                 a new one for you from Settings &rarr; Team.
             </p>
         {/if}

@@ -1,17 +1,20 @@
 <script>
     /**
-     * Asking for a reset link.
+     * Asking for a reset code, and a link beside it where there is one.
      *
      * The engine answers 202 for every address — it will not say which ones
      * have an account — so there is nothing to read back but how this install
      * delivers: whether anything can be sent at all, and whether the email
-     * carries a link or a code to paste (Config.PanelURL). Both are facts about
-     * the install, the same for every caller, and this screen says which.
+     * carries a link beside its 6-digit code (Config.PanelURL). Both are facts
+     * about the install, the same for every caller, and this screen says which.
      *
-     * The link itself is spent on /admin/auth/reset-password/<token>.
+     * The code is spent on /admin/auth/reset-password, which is offered
+     * whether or not a link is coming. The address goes there in history
+     * state rather than the URL, so it is not typed twice and reaches no log.
      */
     import { onMount } from "svelte";
     import { base } from "$app/paths";
+    import { goto } from "$app/navigation";
     import { page } from "$app/state";
     import { auth } from "$lib/api.js";
     import { rise } from "$lib/motion.js";
@@ -21,10 +24,10 @@
     const LOGIN = `${base}/admin/auth/login`;
 
     let email = $state("");
-    // null while the install is asked; then whether a link can be sent at all.
+    // null while the install is asked; then whether a reset can be sent at all.
     let canReset = $state(null);
-    // Whether the email will carry a link or a code, so the form can say which
-    // before it is sent; the 202's own answer replaces it after.
+    // Whether the email will carry a link beside the code, so the form can say
+    // so before it is sent; the 202's own answer replaces it after.
     let link = $state(true);
     let sending = $state(false);
     // What was sent, once it was: the address, and the engine's answer.
@@ -56,10 +59,14 @@
             // A malformed address or the throttle; neither depends on whether
             // an account exists, so the engine's words can be shown as they are.
             attempt += 1;
-            problem = sentence(err.message) || "Could not ask for a reset link.";
+            problem = sentence(err.message) || "Could not ask for a reset code.";
         } finally {
             sending = false;
         }
+    }
+
+    function enterCode(address) {
+        goto(`${base}/admin/auth/reset-password`, { state: { email: address } });
     }
 </script>
 
@@ -70,22 +77,16 @@
         <header class="auth-head">
             <h1 class="auth-title">Check your inbox</h1>
             <p class="auth-lede">
-                {#if sent.link}
-                    If <strong>{sent.email}</strong> has an account here, a link to choose a new password
-                    is on its way. It works once, for an hour.
-                {:else}
-                    If <strong>{sent.email}</strong> has an account here, a code to choose a new password
-                    is on its way. Enter it on the next screen; it works once, for an hour.
-                {/if}
+                If <strong>{sent.email}</strong> has an account here, a 6&#8209;digit code to choose a new
+                password is on its way. Enter it on the next screen{#if sent.link}, or open the link in the
+                email{/if}. It works once, for an hour.
             </p>
         </header>
         <div class="auth-actions">
-            {#if !sent.link}
-                <a class="btn lg block next" href="{base}/admin/auth/reset-password">
-                    <span class="txt">Enter the code</span>
-                    <i class="ri-arrow-right-line" aria-hidden="true"></i>
-                </a>
-            {/if}
+            <button type="button" class="btn lg block next" onclick={() => enterCode(sent.email)}>
+                <span class="txt">Enter the code</span>
+                <i class="ri-arrow-right-line" aria-hidden="true"></i>
+            </button>
             <a class="btn lg block secondary" href={LOGIN}>
                 <span class="txt">Back to sign in</span>
             </a>
@@ -93,14 +94,14 @@
         <p class="auth-note">
             Nothing after a few minutes? Check the spam folder, or
             <button type="button" class="auth-link auth-inline-btn" onclick={() => (sent = null)}>try another address</button>.
-            An owner can also send you a link from Settings &rarr; Team.
+            An owner can also send you a reset email from Settings &rarr; Team.
         </p>
     {:else if sent || canReset === false}
         <!-- The fresher answer is the 202's; either way nothing can be sent,
              and a sentence is more use than a form that cannot work. -->
         <header class="auth-head">
-            <h1 class="auth-title">No reset link can be sent</h1>
-            <p class="auth-lede">This install has no way to send email yet, so there is nowhere to send a link.</p>
+            <h1 class="auth-title">No reset code can be sent</h1>
+            <p class="auth-lede">This install has no way to send email yet, so there is nowhere to send a code.</p>
         </header>
         <p class="auth-note">
             Ask an owner to set a new password for you from Settings &rarr; Team. With access to the
@@ -117,8 +118,9 @@
         <header class="auth-head">
             <h1 class="auth-title">Reset your password</h1>
             <p class="auth-lede">
-                Type the email you sign in with, and we'll send a {link ? "link" : "code"} to choose a new
-                password.
+                <!-- A non-breaking hyphen, so a phone never wraps "6-" from "digit". -->
+                Type the email you sign in with, and we'll send a {link ? "link and a 6\u2011digit code" : "6\u2011digit code"}
+                to choose a new password.
             </p>
         </header>
         <form class="auth-form" onsubmit={submit}>
@@ -147,10 +149,14 @@
                 {/if}
             {/key}
             <button type="submit" class="btn lg block next" class:loading={sending} disabled={sending || !email.trim()}>
-                <span class="txt">Email me a {link ? "link" : "code"}</span>
+                <span class="txt">{link ? "Email me a link and code" : "Email me a code"}</span>
                 <i class="ri-mail-send-line" aria-hidden="true"></i>
             </button>
         </form>
+        <p class="auth-alt">
+            Have a code already?
+            <button type="button" class="auth-link auth-inline-btn" onclick={() => enterCode(email.trim())}>Enter it</button>
+        </p>
         <p class="auth-alt">
             Remembered it? <a class="auth-link" href={LOGIN}>Back to sign in</a>
         </p>

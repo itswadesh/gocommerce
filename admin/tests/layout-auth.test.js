@@ -57,9 +57,9 @@ test("signing up and a forgotten password have addresses of their own", () => {
     assert.doesNotMatch(login, /mode = "reset"/);
 });
 
-// Each is offered only when the install can do it: a link only where an
+// Each is offered only when the install can do it: a reset only where an
 // email can leave, sign-up only where the install takes strangers.
-test("sign-in offers a reset link and sign-up only when the install can do them", () => {
+test("sign-in offers a reset and sign-up only when the install can do them", () => {
     const login = read("../src/lib/components/Login.svelte");
     assert.match(login, /canReset = !!s\.password_reset/);
     assert.match(login, /canSignUp = !!s\.signup/);
@@ -82,14 +82,43 @@ test("signing up makes the account, then opens the store picker's create form", 
     assert.match(picker, /Step 2 of 2/);
 });
 
-// The forgot-password screen says link or code from the engine's answer,
-// never from a guess.
-test("the forgot-password screen reads link or code from the engine's answer", () => {
+// Every email carries a code; whether a link comes with it is the engine's
+// answer, never a guess.
+test("the forgot-password screen says whether a link comes with the code from the engine's answer", () => {
     const forgot = read("../src/routes/admin/auth/forgot-password/+page.svelte");
     assert.match(forgot, /link: !!result\?\.link/);
-    assert.match(forgot, /\{#if sent\.link\}/);
+    assert.match(forgot, /\{#if sent\.link\}, or open the link/);
     // And before it is asked, from the install's own answer.
     assert.match(forgot, /link = s\.reset_link !== false/);
+    assert.match(forgot, /link \? "Email me a link and code" : "Email me a code"/);
+});
+
+// The code is spent with its address, and the address travels in history
+// state: an email in a URL would reach access logs and Referer headers.
+test("entering the code is always offered, and the address never rides in the URL", () => {
+    const forgot = read("../src/routes/admin/auth/forgot-password/+page.svelte");
+    assert.match(forgot, /goto\(`\$\{base\}\/admin\/auth\/reset-password`, \{ state: \{ email: address \} \}\)/);
+    const sent = forgot.slice(forgot.indexOf("Check your inbox"), forgot.indexOf("{:else if sent || canReset === false}"));
+    assert.match(sent, /onclick=\{\(\) => enterCode\(sent\.email\)\}[\s\S]*Enter the code/);
+    assert.doesNotMatch(sent, /\{#if !sent\.link\}/);
+
+    const reset = read("../src/routes/admin/auth/reset-password/[[token]]/+page.svelte");
+    assert.match(reset, /let email = \$state\(page\.state\?\.email \?\? ""\)/);
+    assert.doesNotMatch(reset, /searchParams|location\.hash|url\.hash/);
+    assert.match(reset, /\{ email: email\.trim\(\), code, password \}/);
+    assert.match(reset, /linked\s*\?\s*\{ token, password \}/);
+    const code = reset.slice(reset.indexOf('id="reset_code"'), reset.indexOf("/>", reset.indexOf('id="reset_code"')));
+    assert.match(code, /inputmode="numeric"/);
+    assert.match(code, /autocomplete="one-time-code"/);
+    // A saved copy of the old template mails the link's 43-character token with
+    // no link; the field has to take it, and spend it as a token without an address.
+    assert.doesNotMatch(code, /maxlength/);
+    assert.match(reset, /const pastedToken = \$derived\(typed\.length > 7 && !\/\^\\d\+\$\/\.test\(typed\)\)/);
+    assert.match(reset, /pastedToken\s*\?\s*\{ token: typed, password \}/);
+    assert.match(reset, /required=\{!pastedToken\}/);
+    // A refused code is said under the code field, with the way to a new one.
+    assert.match(reset, /err\.code === "invalid_token"\) codeRefused = true/);
+    assert.match(reset, /id="code_refusal"[\s\S]*ask for a new code/);
 });
 
 test("every screen before a store shares the signed-out layout", () => {
