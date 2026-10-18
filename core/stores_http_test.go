@@ -380,3 +380,73 @@ func TestAStoreAndItsOwnerAreWrittenTogether(t *testing.T) {
 		t.Fatal("the store row outlived its failed owner")
 	}
 }
+
+func TestANewStoreStartsWithSampleProductsOnlyWhenAsked(t *testing.T) {
+	app := newTestApp(t)
+	tok := signInAs(t, app, "founder@example.com", RoleStaff)
+
+	rec := doBody(t, app, http.MethodPost, "/api/stores/create",
+		`{"name":"Sampled","slug":"sampled","sample_products":true}`, bearer(tok))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create with samples = %d: %s", rec.Code, rec.Body)
+	}
+	var with struct {
+		Store          Store `json:"store"`
+		SampleProducts *struct {
+			Added int    `json:"added"`
+			Error string `json:"error"`
+		} `json:"sample_products"`
+	}
+	decodeData(t, rec, &with)
+	if with.SampleProducts == nil || with.SampleProducts.Added != 8 || with.SampleProducts.Error != "" {
+		t.Fatalf("sample_products = %+v, want 8 added", with.SampleProducts)
+	}
+	if got := sampleCount(t, app, WithStore(context.Background(), with.Store.ID)); got != 8 {
+		t.Fatalf("the new store holds %d samples, want 8", got)
+	}
+
+	rec = doBody(t, app, http.MethodPost, "/api/stores/create", `{"name":"Plain","slug":"plain"}`, bearer(tok))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create without samples = %d: %s", rec.Code, rec.Body)
+	}
+	var without struct {
+		Store          Store `json:"store"`
+		SampleProducts any   `json:"sample_products"`
+	}
+	decodeData(t, rec, &without)
+	if without.SampleProducts != nil {
+		t.Fatalf("sample_products = %v on a store that did not ask, want it absent", without.SampleProducts)
+	}
+	if got := sampleCount(t, app, WithStore(context.Background(), without.Store.ID)); got != 0 {
+		t.Fatalf("a store opened without samples holds %d", got)
+	}
+}
+
+// The sample table is written in major units, so a tee is 25 in every
+// currency: 2500 minor units in dollars, 25 in yen, which has no decimals, and
+// 25000 in dinars, which have three.
+func TestSamplePricesFollowTheNewStoresCurrency(t *testing.T) {
+	app := newTestApp(t)
+	tok := signInAs(t, app, "yen@example.com", RoleStaff)
+	for _, tc := range []struct {
+		currency string
+		want     int64
+	}{{"JPY", 25}, {"KWD", 25000}} {
+		rec := doBody(t, app, http.MethodPost, "/api/stores/create",
+			`{"name":"Shop `+tc.currency+`","currency":"`+tc.currency+`","sample_products":true}`, bearer(tok))
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("create %s store = %d: %s", tc.currency, rec.Code, rec.Body)
+		}
+		var out struct {
+			Store Store `json:"store"`
+		}
+		decodeData(t, rec, &out)
+		tee, err := app.Products().GetProductBySlug(WithStore(context.Background(), out.Store.ID), "cotton-crew-tee")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := tee.Variants[0].Price; got != (Money{AmountMinor: tc.want, Currency: tc.currency}) {
+			t.Errorf("%s tee = %+v, want %d %s", tc.currency, got, tc.want, tc.currency)
+		}
+	}
+}
