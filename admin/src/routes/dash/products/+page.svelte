@@ -35,6 +35,7 @@
         pluralize,
     } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
+    import { rise } from "$lib/motion.js";
     import { hasModule } from "$lib/modules.svelte.js";
     import { settings } from "$lib/settings.svelte.js";
     import BulkBar from "$lib/components/BulkBar.svelte";
@@ -342,6 +343,36 @@
     let confirmOpen = $state(false);
     let pendingDelete = $state(null);
 
+    /* How many sample products the store still has (D94), or null before it
+       answers. Samples arrive only when a store is opened, so once this reads
+       0 it is not asked again on this visit. A refusal reads as 0 too: the
+       banner is an offer, not something the list needs. */
+    let sampleCount = $state(null);
+    let eraseOpen = $state(false);
+    // The count the dialog names, kept from when it opened: the live one
+    // drops to 0 as the erase lands, while the dialog is still fading out.
+    let eraseCount = $state(0);
+
+    async function loadSampleCount() {
+        try {
+            sampleCount = (await api.get("/api/admin/sample-products")).count;
+        } catch {
+            sampleCount = 0;
+        }
+    }
+
+    async function eraseSamples() {
+        try {
+            const { deleted } = await api.delete("/api/admin/sample-products");
+            toast.success(`Erased ${deleted} sample ${pluralize(deleted, "product")}`);
+            sampleCount = 0;
+        } catch (err) {
+            toast.error(err);
+        }
+        sel.clear();
+        await load();
+    }
+
     function blankForm() {
         return { title: "", slug: "", status: "draft", sku: "", price: "", stock: 0 };
     }
@@ -404,6 +435,9 @@
             if (mine !== reqId) return;
             products = result.data ?? [];
             meta = result.meta;
+            // After the await, so the effect that calls load() does not also
+            // re-run whenever the count changes. A deleted sample lowers it.
+            if (sampleCount !== 0) loadSampleCount();
         } catch (err) {
             toast.error(err);
         } finally {
@@ -1064,6 +1098,28 @@
             </div>
         {/if}
 
+        {#if sampleCount > 0}
+            <div class="alert info m-b-sm sample-banner" transition:rise>
+                <p>
+                    This store has {sampleCount} sample {pluralize(sampleCount, "product")},
+                    added when it was opened.
+                </p>
+                {#if writable}
+                    <button
+                        type="button"
+                        class="btn sm secondary"
+                        onclick={() => {
+                            eraseCount = sampleCount;
+                            eraseOpen = true;
+                        }}
+                    >
+                        <i class="ri-delete-bin-line" aria-hidden="true"></i>
+                        <span class="txt">Erase sample products</span>
+                    </button>
+                {/if}
+            </div>
+        {/if}
+
         <!-- DESIGN.md §5: separation is a border and a background step, not a
              shadow. Only the edge changes here — gocommerce.css already gives
              this wrapper a border and a radius, and these two swap in the
@@ -1214,6 +1270,9 @@
                                 <span class="label status-chip {statusLabel[product.status] ?? ''}">
                                     {product.status}
                                 </span>
+                                {#if product.sample}
+                                    <span class="label sm m-l-5" title="Erased with the other sample products">Sample</span>
+                                {/if}
                             </td>
                             <td class="col-field-type-number min-width" data-name="Variants">
                                 {product.variants?.length ?? 0}
@@ -1802,6 +1861,15 @@
     onconfirm={doDelete}
 />
 
+<Confirm
+    bind:open={eraseOpen}
+    title="Erase {eraseCount} sample {pluralize(eraseCount, 'product')}?"
+    message="This removes {eraseCount} sample {pluralize(eraseCount, 'product')}, including any you have edited, with their variants and stock. Your own products are not touched, and orders that included a sample keep their own copy."
+    confirmLabel="Erase"
+    danger
+    onconfirm={eraseSamples}
+/>
+
 <!-- A second Confirm rather than a shared one with a mode flag: this message
      names a count and the other names a product, and one component asked to say
      both ends up saying neither. -->
@@ -1866,3 +1934,18 @@
         </button>
     {/snippet}
 </Drawer>
+
+<style>
+    /* The erase button shares the line where there is room, and drops under
+       the sentence on a phone rather than squeezing it. */
+    .sample-banner {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px 16px;
+    }
+    .sample-banner p {
+        margin: 0;
+    }
+</style>
