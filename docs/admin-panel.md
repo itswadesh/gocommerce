@@ -640,7 +640,10 @@ around, so every screen has something in it:
   no stock. They announce nothing, then or later, whatever is done to them: no
   confirmation email, SMS, webhook or invoice ever follows a sample order, and
   the customers' addresses are at example.com, where nobody receives mail.
-- With the modules installed, **a review on each product** by a customer whose
+- With the banners module, **three slides** on the home page (New in,
+  Apparel, For the home) and a **Shop by category** grid of the four
+  categories.
+- With the other modules installed, **a review on each product** by a customer whose
   sample order bought it (so it is marked verified), **About us, Shipping and
   delivery, and Returns pages**, **five questions and answers**, and **links**
   to the categories in the header menu and to the pages in the footer. The
@@ -686,6 +689,30 @@ every install has them whether or not it can store uploads. They are under the
 | Linen napkins | [Svitlana](https://unsplash.com/photos/HbiRi1Owk9k) |
 | Leather card holder | [Mason Supply](https://unsplash.com/photos/-lN0HnySy7w) |
 | A5 notebook | [Brando Makes Branding](https://unsplash.com/photos/TPoARluSmYs) |
+| Banner: New in | [Kajetan Sumila](https://unsplash.com/photos/RYHvzYdeoCI) |
+| Banner: Apparel | [No Revisions](https://unsplash.com/photos/kWVImL5QxJI) |
+| Banner: For the home | [Eric Prouzet](https://unsplash.com/photos/5lUMTeo7-bE) |
+
+## Banners
+
+**Content → Banners** (`ext/banners`, D99) holds the pictures on the
+storefront's pages. Each page is shown as it reads: its **slides** across the
+top, then each **grid** of tiles under its heading. A banner is a picture, an
+optional narrower picture for phones, a title (also its alternative text) and a
+link, a path on the storefront such as `/collections/new-in` or a full web
+address. A picture is chosen from Files or typed in as a link; neither a
+picture nor a link may be `javascript:`, `data:` or `//host`.
+
+A switch on each row takes a banner off the storefront without losing it, and
+the arrows move it one place among the slides or among the tiles of its grid;
+the page's whole order is saved at once (`PUT /api/admin/x/banners/order`).
+Seeing the screen is `banners.read` (managers and staff by default), changing
+it `banners.write` (managers).
+
+The storefront reads one page's live banners at `GET /x/banners?page=home`,
+already split into `slides` and `grids`. The storefront connector puts them on
+the page record svelte-commerce renders: the slides as its desktop, tablet and
+phone sliders, the grids as its sections.
 
 ## Authentication
 
