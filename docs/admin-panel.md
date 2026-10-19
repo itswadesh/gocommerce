@@ -641,8 +641,9 @@ around, so every screen has something in it:
   confirmation email, SMS, webhook or invoice ever follows a sample order, and
   the customers' addresses are at example.com, where nobody receives mail.
 - With the banners module, **three slides** on the home page (New in,
-  Apparel, For the home) and a **Shop by category** grid of the four
-  categories.
+  Apparel, For the home) and a **Shop by collection** grid of the two
+  collections. The categories carry pictures of their own (`metadata.image`),
+  which the storefront's own category tiles show.
 - With the other modules installed, **a review on each product** by a customer whose
   sample order bought it (so it is marked verified), **About us, Shipping and
   delivery, and Returns pages**, **five questions and answers**, and **links**
