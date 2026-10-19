@@ -8,7 +8,9 @@
      * export had no link to this at all.
      */
     import { can, request } from "$lib/api.js";
+    import { detectDialect, importBlocker, importKinds as kindsFor, importUrl } from "$lib/importer.js";
     import { hasModule } from "$lib/modules.svelte.js";
+    import { rise } from "$lib/motion.js";
     import { toast } from "$lib/toast.svelte.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import DirtyGuard from "$lib/components/DirtyGuard.svelte";
@@ -16,8 +18,9 @@
 
     const mayImport = $derived(can("data.import"));
 
-    let importing = $state(false);
-    let dryRun = $state(true);
+    /* Which of the two run buttons is working: "dry", "import", or "" for
+       neither. Both wait while either runs, and the pressed one spins. */
+    let running = $state("");
     let fireEvents = $state(false);
     // Overwrite is Shopify's own switch, with the opposite default: a
     // re-import of an edited export is what most files here are, and it
@@ -37,40 +40,15 @@
 
     /* The engine reads the dialect off the header, so there is no switch to
        get wrong; the line under the textarea says what it saw. */
-    const detected = $derived.by(() => {
-        const header = csv.trimStart().split(/\r?\n/, 1)[0]?.toLowerCase() ?? "";
-        if (!header) return "";
-        const has = (name) => header.split(",").some((h) => h.replace(/^"|"$/g, "").trim() === name);
-        if (kind === "products") return has("handle") ? "shopify" : has("product_slug") ? "gocommerce" : "";
-        if (kind === "orders") return has("lineitem quantity") ? "shopify" : has("number") ? "gocommerce" : "";
-        if (kind === "inventory") return has("on hand") || has("handle") ? "shopify" : has("sku") ? "gocommerce" : "";
-        return "";
-    });
+    const detected = $derived(detectDialect(kind, csv));
 
-    /*
-     * Where each file goes in. The engine's own kinds live under
-     * /api/admin/import/; a module's live under its own prefix, because a
-     * module cannot add a verb to the engine's namespace and should not want
-     * to — the door is the module's, and it closes when the module is not in
-     * the binary.
-     */
-    const IMPORT_PATHS = {
-        reviews: "/api/admin/x/reviews/import",
-        menus: "/api/admin/x/navigation/import",
-    };
-    const importPath = (k) => IMPORT_PATHS[k] ?? `/api/admin/import/${k}`;
+    /* What stops a run, printed beside the buttons so a greyed-out one is
+       never left unexplained. */
+    const blocker = $derived(importBlocker(csv));
 
-    /* What this store can actually be given, in the order the list reads. A
-       module that is not installed contributes nothing rather than an option
-       that answers 404. */
-    const importKinds = $derived([
-        { value: "products", label: "Products and variants" },
-        { value: "inventory", label: "Inventory counts" },
-        { value: "orders", label: "Historical orders" },
-        { value: "categories", label: "Category tree" },
-        ...(hasModule("reviews") ? [{ value: "reviews", label: "Product reviews" }] : []),
-        ...(hasModule("navigation") ? [{ value: "menus", label: "Menus" }] : []),
-    ]);
+    /* What this store can actually be given; a module that is not installed
+       contributes no tab. */
+    const importKinds = $derived(kindsFor(hasModule));
 
     /* A kind the store lost — the module went away while this screen was
        open, or a stale URL — falls back rather than posting into nothing. */
@@ -90,25 +68,26 @@
         event.target.value = "";
     }
 
-    async function runImport() {
-        if (!csv.trim() || importing) return;
-        importing = true;
+    /*
+     * Both buttons come here. A dry run and an import are one request apart —
+     * the engine rolls the first back — so they share everything but the
+     * flag, and neither button's name depends on a switch. When the name did
+     * depend on one ("Dry run", on by default), the screen never showed a
+     * button called Import at all.
+     */
+    async function runImport(dry) {
+        if (blocker || running) return;
+        running = dry ? "dry" : "import";
         result = null;
         try {
-            const params = new URLSearchParams();
-            if (dryRun) params.set("dry_run", "1");
-            if (kind === "orders" && fireEvents) params.set("fire_events", "1");
-            if (kind === "products" && !overwrite) params.set("overwrite", "0");
-            const suffix = params.toString() ? "?" + params.toString() : "";
-
-            result = await request("POST", importPath(kind) + suffix, {
+            result = await request("POST", importUrl(kind, { dryRun: dry, fireEvents, overwrite }), {
                 body: csv,
                 headers: { "Content-Type": "text/csv" },
             });
 
             if (result.errors?.length) {
                 toast.warning(`${result.errors.length} row(s) had problems`);
-            } else if (dryRun) {
+            } else if (dry) {
                 toast.success("Dry run looks good — nothing was written");
             } else {
                 toast.success(`Imported: ${result.created} created, ${result.updated} updated`);
@@ -116,7 +95,7 @@
         } catch (err) {
             toast.error(err);
         } finally {
-            importing = false;
+            running = "";
         }
     }
 
@@ -173,7 +152,7 @@
     <!-- The settings rail already hides the link; this is the direct URL. -->
     <NoAccess right="data.import" what="imports" />
 {:else}
-<div class="page page-data shopify-skin">
+<div class="page page-data page-import shopify-skin">
     <div class="page-content tw:bg-background tw:text-foreground">
         <header class="page-header">
             <nav class="breadcrumbs">
@@ -197,7 +176,9 @@
                     is also the remedy if a run times out. It can take a minute.
                 </div>
 
-                <div class="flex gap-10">
+                <!-- Wraps: on a 360px phone the second button ran off the
+                     right edge, cut in half. -->
+                <div class="flex gap-10 flex-wrap">
                     <button
                         type="button"
                         class="btn secondary"
@@ -333,36 +314,27 @@
                 {/if}
             </div>
 
-            <div class="flex gap-20 flex-wrap m-t-base">
-                <div class="field">
-                    <input type="checkbox" id="dry-run" class="switch" bind:checked={dryRun} />
-                    <label for="dry-run">Dry run</label>
-                </div>
-                {#if kind === "products"}
-                    <div class="field">
-                        <input type="checkbox" id="overwrite" class="switch" bind:checked={overwrite} />
-                        <label for="overwrite">Update products that already exist</label>
-                    </div>
-                {/if}
-                {#if kind === "orders"}
-                    <div class="field">
-                        <input
-                            type="checkbox"
-                            id="fire-events"
-                            class="switch"
-                            bind:checked={fireEvents}
-                        />
-                        <label for="fire-events">Fire events</label>
-                    </div>
-                {/if}
-            </div>
-
-            {#if dryRun}
-                <div class="alert info m-t-base">
-                    <p>
-                        A dry run validates the whole file and rolls back, reporting what it
-                        <em>would</em> have done. Worth doing first, always.
-                    </p>
+            <!-- The switches that change what an import does. Dry run is not
+                 one of them any more: it is a button beside Import. -->
+            {#if kind === "products" || kind === "orders"}
+                <div class="flex gap-20 flex-wrap m-t-base">
+                    {#if kind === "products"}
+                        <div class="field">
+                            <input type="checkbox" id="overwrite" class="switch" bind:checked={overwrite} />
+                            <label for="overwrite">Update products that already exist</label>
+                        </div>
+                    {/if}
+                    {#if kind === "orders"}
+                        <div class="field">
+                            <input
+                                type="checkbox"
+                                id="fire-events"
+                                class="switch"
+                                bind:checked={fireEvents}
+                            />
+                            <label for="fire-events">Fire events</label>
+                        </div>
+                    {/if}
                 </div>
             {/if}
 
@@ -422,12 +394,15 @@
                 hidden
             />
 
-            <div class="flex gap-10 m-t-base">
+            <!-- Choose, then run: the file on the left, the two ways to run it
+                 on the right. Dry run and Import are both always here, under
+                 their own names. Until there is something to run they are
+                 greyed out, and the line under them says so. -->
+            <div class="import-run flex gap-10 flex-wrap m-t-base">
                 <button type="button" class="btn secondary" onclick={pickFile}>
                     <i class="ri-folder-open-line" aria-hidden="true"></i>
                     <span class="txt">Choose a file…</span>
                 </button>
-                <div class="flex-fill"></div>
                 {#if csv}
                     <button
                         type="button"
@@ -437,79 +412,112 @@
                         <span class="txt">Clear</span>
                     </button>
                 {/if}
+                <div class="flex-fill"></div>
+                <button
+                    type="button"
+                    class="btn secondary expanded"
+                    class:loading={running === "dry"}
+                    disabled={!!blocker || !!running}
+                    aria-describedby={blocker ? "import-blocker" : undefined}
+                    onclick={() => runImport(true)}
+                >
+                    <i class="ri-test-tube-line" aria-hidden="true"></i>
+                    <span class="txt">Dry run</span>
+                </button>
                 <button
                     type="button"
                     class="btn expanded"
-                    class:loading={importing}
-                    disabled={!csv.trim() || importing}
-                    onclick={runImport}
+                    class:loading={running === "import"}
+                    disabled={!!blocker || !!running}
+                    aria-describedby={blocker ? "import-blocker" : undefined}
+                    onclick={() => runImport(false)}
                 >
-                    <span class="txt">{dryRun ? "Dry run" : "Import"}</span>
+                    <i class="ri-upload-2-line" aria-hidden="true"></i>
+                    <span class="txt">Import</span>
                 </button>
             </div>
 
+            {#if blocker}
+                <p id="import-blocker" class="field-help m-t-sm" in:rise>{blocker}</p>
+            {/if}
+            <div class="field-help m-t-sm">
+                A dry run validates the whole file and rolls back, reporting what an import
+                <em>would</em> do. Worth doing first, always.
+            </div>
+
             {#if result}
-                <h6 class="section-title">
-                    <i
-                        class={result.errors?.length
-                            ? "ri-error-warning-line"
-                            : "ri-checkbox-circle-line"}
-                        aria-hidden="true"
-                    ></i>
-                    {result.dry_run ? "Dry run result" : "Import result"}
-                    <span class="label">{result.duration}</span>
-                </h6>
+                <div class="import-result" in:rise>
+                    <h6 class="section-title">
+                        <i
+                            class={result.errors?.length
+                                ? "ri-error-warning-line"
+                                : "ri-checkbox-circle-line"}
+                            aria-hidden="true"
+                        ></i>
+                        {result.dry_run ? "Dry run result" : "Import result"}
+                        <span class="label">{result.duration}</span>
+                    </h6>
 
-                <div class="grid">
-                    <div class="col-4">
-                        <div class="stat-card">
-                            <span class="stat-label">Created</span>
-                            <span class="stat-value txt-success">{result.created}</span>
+                    <div class="grid">
+                        <div class="col-4">
+                            <div class="stat-card">
+                                <span class="stat-label">Created</span>
+                                <span class="stat-value txt-success">{result.created}</span>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="stat-card">
+                                <span class="stat-label">Updated</span>
+                                <span class="stat-value">{result.updated}</span>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="stat-card">
+                                <span class="stat-label">Skipped</span>
+                                <span class="stat-value txt-hint">{result.skipped}</span>
+                            </div>
                         </div>
                     </div>
-                    <div class="col-4">
-                        <div class="stat-card">
-                            <span class="stat-label">Updated</span>
-                            <span class="stat-value">{result.updated}</span>
-                        </div>
-                    </div>
-                    <div class="col-4">
-                        <div class="stat-card">
-                            <span class="stat-label">Skipped</span>
-                            <span class="stat-value txt-hint">{result.skipped}</span>
-                        </div>
-                    </div>
-                </div>
 
-                {#if result.errors?.length}
-                    <h6 class="section-title">Rows that need attention</h6>
+                    {#if result.errors?.length}
+                        <h6 class="section-title">Rows that need attention</h6>
 
-                    <table class="table responsive-table">
-                        <thead class="sticky">
-                            <tr>
-                                <th class="col-field-type-number min-width">Line</th>
-                                <th>Problem</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {#each result.errors as row, i (i)}
+                        <table class="table responsive-table">
+                            <thead class="sticky">
                                 <tr>
-                                    <td
-                                        class="col-field-type-number min-width txt-code"
-                                        data-name="Line"
-                                    >
-                                        {row.line}
-                                    </td>
-                                    <td class="txt-danger" data-name="Problem">{row.message}</td>
+                                    <th class="col-field-type-number min-width">Line</th>
+                                    <th>Problem</th>
                                 </tr>
-                            {/each}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {#each result.errors as row, i (i)}
+                                    <tr>
+                                        <td
+                                            class="col-field-type-number min-width txt-code"
+                                            data-name="Line"
+                                        >
+                                            {row.line}
+                                        </td>
+                                        <td class="txt-danger" data-name="Problem">{row.message}</td>
+                                    </tr>
+                                {/each}
+                            </tbody>
+                        </table>
 
-                    <div class="field-help">
-                        A bad row never aborts the file — the good ones still applied.
-                    </div>
-                {/if}
+                        <div class="field-help">
+                            A bad row never aborts the file —
+                            {result.dry_run ? "on Import, the good rows still apply." : "the good ones still applied."}
+                        </div>
+                    {/if}
+
+                    <!-- After a rehearsal the next step is the real thing, and
+                         the button for it is the one beside Dry run. -->
+                    {#if result.dry_run}
+                        <div class="field-help m-t-sm">
+                            A dry run writes nothing. Press Import to apply the file.
+                        </div>
+                    {/if}
+                </div>
             {/if}
             </section>
 

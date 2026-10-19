@@ -6053,6 +6053,51 @@ kbd + kbd {
     margin-top: 0;
 }
 
+/* The kind tabs wrap rather than shrink. Six of them on a 360px phone were
+   squeezed to about 45px each, "Products and variants" broken over three
+   lines; a second row of whole labels reads, a column of fragments does not. */
+.shopify-skin .import-panel .tabs-header {
+    flex-wrap: wrap;
+    row-gap: 4px;
+}
+.shopify-skin .import-panel .tabs-header .tab-item {
+    white-space: nowrap;
+}
+
+/* On a phone the run buttons take a line of their own and share it, so
+   Import is never a stub squeezed in after "Choose a file…". */
+@media (max-width: 600px) {
+    .import-run > .flex-fill {
+        flex-basis: 100%;
+        height: 0;
+    }
+    .import-run > .btn.expanded {
+        flex: 1 1 0;
+    }
+}
+
+/* Every button and tab on the Import screen sinks a little under the finger,
+   as the portal's do: PocketBase's press is a 70ms colour change, which a
+   quick tap on a phone never shows. With reduced motion the colour change is
+   the whole of it. */
+.page-import .btn,
+.page-import .tab-item {
+    transition:
+        color var(--animationSpeed),
+        background var(--animationSpeed),
+        transform var(--animationSpeed) ease-out;
+}
+.page-import .btn:active:not(:disabled),
+.page-import .tab-item:active {
+    transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+    .page-import .btn:active:not(:disabled),
+    .page-import .tab-item:active {
+        transform: none;
+    }
+}
+
 
 
 /* ------------------------------------------------------------- roles */
