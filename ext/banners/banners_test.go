@@ -54,7 +54,6 @@ func TestBannersAreServedByPageInTheShopsOrder(t *testing.T) {
 	addBanner(t, app, map[string]any{"placement": "grid", "group_title": "Shop by category", "title": "Home",
 		"image_url": "/media/home.webp", "link": "/categories/home"})
 	addBanner(t, app, map[string]any{"title": "Hidden", "image_url": "/media/c.webp", "active": false})
-	addBanner(t, app, map[string]any{"page": "about", "title": "About us", "image_url": "/media/d.webp"})
 
 	// The shop drags the first one up.
 	var all []Banner
@@ -81,9 +80,6 @@ func TestBannersAreServedByPageInTheShopsOrder(t *testing.T) {
 		home.Grids[0].Banners[0].Link != "/categories/apparel" {
 		t.Fatalf("grids = %+v, want one grid of two tiles in the order added", home.Grids)
 	}
-	if about := publicBanners(t, app, "about"); len(about.Slides) != 1 || len(about.Grids) != 0 {
-		t.Fatalf("about = %+v, want its one slide", about)
-	}
 	if none := publicBanners(t, app, "contact"); len(none.Slides) != 0 || none.Slides == nil || none.Grids == nil {
 		t.Fatalf("a page with no banners = %+v, want empty lists, not nulls", none)
 	}
@@ -101,6 +97,15 @@ func TestABannerNeedsAPictureAndSafeAddresses(t *testing.T) {
 		{"title": "Protocol-relative", "image_url": "//evil.example/a.webp"},
 		{"title": "Placement", "image_url": "/media/a.webp", "placement": "sidebar"},
 		{"title": "Page", "image_url": "/media/a.webp", "page": "Not a slug"},
+		// Only the home page shows banners on a storefront yet, so a banner
+		// for another page would be one nobody ever sees.
+		{"title": "About", "image_url": "/media/a.webp", "page": "about"},
+		// A tab or a newline inside a path is dropped by the browser, which
+		// turns "/\t/evil.example" into //evil.example; spaces break srcset.
+		{"title": "Tab", "image_url": "/media/a.webp", "link": "/\t/evil.example"},
+		{"title": "Newline", "image_url": "/media/a.webp", "link": "/\n/evil.example"},
+		{"title": "Space", "image_url": "/media/a b.webp"},
+		{"title": "Nul", "image_url": "/media/a.webp", "link": "/\x00x"},
 	} {
 		if rec := gctest.AdminRequest(t, app, http.MethodPost, "/api/admin/x/banners", in); rec.Code != http.StatusBadRequest {
 			t.Errorf("%v = %d, want 400: %s", in, rec.Code, rec.Body)
@@ -120,15 +125,34 @@ func TestABannerNeedsAPictureAndSafeAddresses(t *testing.T) {
 	}
 }
 
-// An order that does not name every banner on the page is refused rather
-// than half applied.
-func TestAReorderMustNameEveryBannerOnThePage(t *testing.T) {
+// An order that does not name every banner on the page, once each, is
+// refused rather than half applied.
+func TestAReorderMustNameEveryBannerOnThePageOnce(t *testing.T) {
 	app := gctest.New(t, New(Config{}))
 	a := addBanner(t, app, map[string]any{"title": "A", "image_url": "/media/a.webp"})
-	addBanner(t, app, map[string]any{"title": "B", "image_url": "/media/b.webp"})
-	if rec := gctest.AdminRequest(t, app, http.MethodPut, "/api/admin/x/banners/order",
-		map[string]any{"page": "home", "ids": []int64{a.ID}}); rec.Code != http.StatusBadRequest {
-		t.Fatalf("a partial order = %d, want 400: %s", rec.Code, rec.Body)
+	b := addBanner(t, app, map[string]any{"title": "B", "image_url": "/media/b.webp"})
+	addBanner(t, app, map[string]any{"title": "C", "image_url": "/media/c.webp"})
+	for _, ids := range [][]int64{{a.ID}, {b.ID, b.ID, a.ID}} {
+		if rec := gctest.AdminRequest(t, app, http.MethodPut, "/api/admin/x/banners/order",
+			map[string]any{"page": "home", "ids": ids}); rec.Code != http.StatusBadRequest {
+			t.Errorf("order %v = %d, want 400: %s", ids, rec.Code, rec.Body)
+		}
+	}
+}
+
+// A save that does not mention the switch leaves it where it was.
+func TestASaveWithoutTheSwitchKeepsItsState(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	b := addBanner(t, app, map[string]any{"title": "Off", "image_url": "/media/a.webp", "active": false})
+	rec := gctest.AdminRequest(t, app, http.MethodPatch, "/api/admin/x/banners/"+itoa(b.ID),
+		map[string]any{"title": "Still off", "image_url": "/media/a.webp"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update = %d %s", rec.Code, rec.Body)
+	}
+	var got Banner
+	gctest.DecodeData(t, rec, &got)
+	if got.Active {
+		t.Fatal("a save without active switched the banner back on")
 	}
 }
 

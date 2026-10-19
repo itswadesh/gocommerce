@@ -189,7 +189,13 @@ func (m *Module) list(ctx context.Context, page string, activeOnly bool) ([]*Ban
 // safeURL accepts a web address or a path on this site, and nothing a
 // browser would run or fetch from somewhere unnamed: no javascript: or data:,
 // and no protocol-relative //host, which reads as a path and is not one.
+// Whitespace and control characters are refused anywhere in it: a browser
+// drops a tab or a newline from a URL, which turns a path written "/<tab>/host"
+// into //host after this check, and a space breaks a picture's srcset.
 func safeURL(s string) bool {
+	if strings.IndexFunc(s, func(r rune) bool { return r <= ' ' || r == 0x7f }) >= 0 {
+		return false
+	}
 	if strings.HasPrefix(s, "/") {
 		return !strings.HasPrefix(s, "//") && !strings.HasPrefix(s, `/\`)
 	}
@@ -214,6 +220,11 @@ func validate(in BannerInput) (BannerInput, error) {
 	switch {
 	case !pageRE.MatchString(in.Page):
 		return in, gocommerce.Validationf("the page is its address name, lowercase letters, digits and hyphens, such as %q", "home")
+	case in.Page != "home":
+		// The column names a page so others can follow; until a storefront
+		// shows banners anywhere but its home page, one put elsewhere would
+		// be a banner nobody sees.
+		return in, gocommerce.Validationf("banners show on the home page for now")
 	case in.Placement != PlacementSlide && in.Placement != PlacementGrid:
 		return in, gocommerce.Validationf("placement is %q or %q", PlacementSlide, PlacementGrid)
 	case in.ImageURL == "":
@@ -350,15 +361,12 @@ func (m *Module) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	active := true
-	if in.Active != nil {
-		active = *in.Active
-	}
+	// A save that does not mention the switch leaves it where it was.
 	b, err := scan(m.db.QueryRowContext(r.Context(), `
 		UPDATE banners SET page = $2, placement = $3, group_title = $4, title = $5, link = $6,
-		       image_url = $7, mobile_image_url = $8, active = $9, updated_at = now()
+		       image_url = $7, mobile_image_url = $8, active = coalesce($9, active), updated_at = now()
 		WHERE id = $1 RETURNING `+bannerColumns,
-		id, in.Page, in.Placement, in.GroupTitle, in.Title, in.Link, in.ImageURL, in.MobileImageURL, active))
+		id, in.Page, in.Placement, in.GroupTitle, in.Title, in.Link, in.ImageURL, in.MobileImageURL, in.Active))
 	if err == sql.ErrNoRows {
 		gocommerce.RespondError(w, r, gocommerce.NotFoundf("no banner %d", id))
 		return
@@ -411,6 +419,15 @@ func (m *Module) handleReorder(w http.ResponseWriter, r *http.Request) {
 		}
 		if held != len(in.IDs) {
 			return gocommerce.Validationf("the order must name every banner on the page: %d sent, %d held", len(in.IDs), held)
+		}
+		// Once each: a repeat would leave another banner off the order with
+		// the position it had, tied with one that moved.
+		seen := map[int64]bool{}
+		for _, id := range in.IDs {
+			if seen[id] {
+				return gocommerce.Validationf("the order names banner %d twice", id)
+			}
+			seen[id] = true
 		}
 		for i, id := range in.IDs {
 			res, err := tx.ExecContext(r.Context(),
