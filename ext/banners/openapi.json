@@ -117,7 +117,7 @@
             "adminToken": []
           }
         ],
-        "description": "Added last on its page. A picture is required; a picture or a link must be a path on this site or an http(s) address, never javascript:, data: or a protocol-relative //host. `page` defaults to `home` and `placement` to `slide`. Needs banners.write.",
+        "description": "Added last on its page. A picture is required; a picture or a link must be a path on this site or an http(s) address, never javascript:, data: or a protocol-relative //host, and never with whitespace or control characters in it. `page` is `home`, the only page a storefront shows banners on yet; `placement` defaults to `slide`. Needs banners.write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -167,7 +167,7 @@
             "adminToken": []
           }
         ],
-        "description": "Every field is sent, as on create; its place on the page is kept. Needs banners.write.",
+        "description": "Every field is sent, as on create, except `active`, which a save may leave out to keep the banner on or off as it was. Its place on the page is kept. Needs banners.write.",
         "parameters": [
           {
             "name": "id",
@@ -266,7 +266,7 @@
             "adminToken": []
           }
         ],
-        "description": "Every banner of the page, by id, in the order it should read. An order that misses one, or names one from another page, is refused rather than half applied. Needs banners.write.",
+        "description": "Every banner of the page, by id, once each, in the order it should read. An order that misses one, repeats one or names one from another page is refused rather than half applied. Needs banners.write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -335,7 +335,7 @@
           "page": {
             "type": "string",
             "example": "home",
-            "description": "The storefront page it shows on, by its address name."
+            "description": "The storefront page it shows on. Only `home` for now: no storefront shows banners on another page yet, so the column waits for one."
           },
           "placement": {
             "type": "string",
@@ -389,7 +389,8 @@
           "page": {
             "type": "string",
             "example": "home",
-            "description": "The storefront page it shows on, by its address name."
+            "description": "The storefront page it shows on. Only `home` for now: no storefront shows banners on another page yet, so the column waits for one.",
+            "default": "home"
           },
           "placement": {
             "type": "string",
@@ -410,19 +411,20 @@
           "link": {
             "type": "string",
             "example": "/collections/new-in",
-            "description": "A path on the storefront or a full web address; empty goes nowhere."
+            "description": "A path on the storefront or a full web address; empty goes nowhere. No whitespace or control characters."
           },
           "image_url": {
             "type": "string",
-            "description": "The picture, wide enough for a desktop: a path on this site such as /media/… or a web address."
+            "description": "The picture, wide enough for a desktop: a path on this site such as /media/… or a web address. No whitespace or control characters."
           },
           "mobile_image_url": {
             "type": "string",
-            "description": "A narrower crop for a phone. Empty uses image_url."
+            "description": "A narrower crop for a phone. Empty uses image_url. No whitespace or control characters."
           },
           "active": {
             "type": "boolean",
-            "default": true
+            "default": true,
+            "description": "On create, true when omitted. On a save, omitted leaves it as it was."
           }
         },
         "required": [
