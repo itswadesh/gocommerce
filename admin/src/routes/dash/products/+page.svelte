@@ -357,13 +357,18 @@
     let eraseSummary = $state("");
     let addingSamples = $state(false);
 
-    const sampleWritable = $derived(SAMPLE_RIGHTS.every((right) => can(right)));
+    /* Every right adding or erasing needs, as the engine reports it: its own
+       areas' and each installed module's. The core list stands in until the
+       count answers. */
+    let sampleRights = $state(SAMPLE_RIGHTS);
+    const sampleWritable = $derived(sampleRights.every((right) => can(right)));
 
     async function loadSampleCount() {
         try {
             const res = await api.get("/api/admin/sample-content");
             sampleCounts = res.counts ?? {};
             sampleTotal = res.total ?? 0;
+            if (Array.isArray(res.rights)) sampleRights = res.rights;
         } catch {
             sampleTotal = 0;
         }
@@ -375,13 +380,14 @@
         try {
             await api.post("/api/admin/sample-content");
             toast.success("Added the sample shop");
-            sampleTotal = null;
-            await load();
         } catch (err) {
             toast.error(err);
         } finally {
             addingSamples = false;
         }
+        // Either way: a failure part way still added some of it.
+        sampleTotal = null;
+        await load();
     }
 
     async function eraseSamples() {

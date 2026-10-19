@@ -636,13 +636,16 @@ around, so every screen has something in it:
 - **Two discount codes**, WELCOME10 and BUNDLE15, which only ever apply to the
   sample products, so one left switched on cannot take money off anything else.
 - **Twelve orders over the last month** from **six customers**, most paid, two
-  awaiting payment and one cancelled. They are numbered SAMPLE-1001 on, move no
-  stock and send nothing: no confirmation email, SMS or webhook goes out, and
+  awaiting payment and one cancelled. They are numbered SAMPLE-1001 on and move
+  no stock. They announce nothing, then or later, whatever is done to them: no
+  confirmation email, SMS, webhook or invoice ever follows a sample order, and
   the customers' addresses are at example.com, where nobody receives mail.
 - With the modules installed, **a review on each product** by a customer whose
   sample order bought it (so it is marked verified), **About us, Shipping and
   delivery, and Returns pages**, **five questions and answers**, and **links**
-  to the categories in the header menu and to the pages in the footer.
+  to the categories in the header menu and to the pages in the footer. The
+  pages and answers promise nothing a store has not decided, such as a number
+  of days for returns: they are there to be replaced.
 
 If adding fails part way, the store still opens and a warning says so; adding
 again (`POST /api/admin/sample-content`) fills in only what is missing. A slug,
@@ -653,14 +656,18 @@ On Products, a store with any of it left shows a banner naming what it holds
 (`GET /api/admin/sample-content`), and each sample product carries a grey
 **Sample** label beside its status. An operator who holds `catalog.write`,
 `categories.write`, `collections.write`, `discounts.write`, `orders.write` and
-`media.write` gets **Erase the sample shop** in the banner, and, on a store with
-no products, **Add a sample shop** beside **New product**. Erasing
+`media.write`, and the write right of each installed module that adds samples
+(`pages.write`, `faq.write`, `reviews.moderate`, `menus.write`), gets **Erase
+the sample shop** in the banner, and, on a store with no products, **Add a
+sample shop** beside **New product**. Erasing
 (`DELETE /api/admin/sample-content`) removes all of it, edited or not, and
 nothing of the merchant's: every sample row is marked by a column only the
 engine sets. Products, discounts and collections go as a delete by hand would,
-with their audit rows and events. A sample category the merchant has filed one
-of their own products in is kept, and a menu the merchant has saved by hand
-keeps its links as their own. Erase it before the store opens: the reviews and
+with their audit rows and events, and each sample order leaves an audit row
+too. A sample category the merchant has filed one of their own products in,
+and a sample photo they have put on one, are kept and become theirs. A menu
+saved by hand keeps its sample links marked, so they go with the pages and
+categories they point at. Erase it before the store opens: the reviews and
 orders are made up, and a real shopper should not see them.
 
 The photographs are built into the engine and served at `/sample-media/1/`, so
