@@ -1278,7 +1278,7 @@
 <!-- `shopify-skin` re-skins this one screen: grey ground, white cards, labels
      above their fields. It is scoped to the page rather than global so the rest
      of the panel stays PocketBase — see the block in gocommerce.css. -->
-<div class="page page-products shopify-skin skin-recessed">
+<div class="page page-products page-product shopify-skin skin-recessed">
     <div class="page-content full-height">
         <!-- `dirty` includes the option draft, because Save now applies it.
              This used to say the opposite — that the matrix held something Save
