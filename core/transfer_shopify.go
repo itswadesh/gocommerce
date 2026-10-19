@@ -49,6 +49,10 @@ type ImportOptions struct {
 	// themselves. Off unless asked, because five thousand old orders must not
 	// send five thousand emails.
 	FireEvents bool
+	// sample marks every order the import writes as a sample (D96). Unexported,
+	// so only AddSampleShop sets it: no file or request can file a real order
+	// among the samples, where the next erase would take it.
+	sample bool
 }
 
 func (o ImportOptions) overwrite() bool { return o.Overwrite == nil || *o.Overwrite }

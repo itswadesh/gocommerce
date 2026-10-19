@@ -3291,21 +3291,21 @@
         }
       }
     },
-    "/api/admin/sample-products": {
+    "/api/admin/sample-content": {
       "get": {
         "tags": [
           "admin:catalog"
         ],
-        "summary": "Count the sample products",
+        "summary": "Count the sample shop",
         "security": [
           {
             "adminToken": []
           }
         ],
-        "description": "How many of the store's products are samples (D94): the catalogue a store opened with `sample_products` started with, counted whether or not anybody has edited them since. Needs catalog.read.",
+        "description": "How much of the sample shop (D96) the store still has, counted whether or not anybody has edited it since. Needs catalog.read.",
         "responses": {
           "200": {
-            "description": "The count.",
+            "description": "The counts.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3314,9 +3314,76 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "count": {
+                        "counts": {
+                          "type": "object",
+                          "description": "How many of each kind, keyed by kind: products, categories, collections, discounts, orders and customers from the engine, and reviews, pages, faq and menu_links from the modules that are installed. Customers are a reading of the orders rather than rows of their own.",
+                          "additionalProperties": {
+                            "type": "integer"
+                          },
+                          "example": {
+                            "products": 8,
+                            "categories": 4,
+                            "collections": 2,
+                            "discounts": 2,
+                            "orders": 12,
+                            "customers": 6
+                          }
+                        },
+                        "total": {
                           "type": "integer",
-                          "example": 8
+                          "description": "Every sample row the counts name, customers aside: zero when the store has none left."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Add the sample shop",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Adds the sample shop (D96) to the store, or whatever of it the store does not have: eight products with photographs, four categories they are filed in, two collections, two percentage discounts that only ever apply to the sample products, twelve orders over the last month from six customers at example.com, and the installed modules' own samples (reviews, pages, questions and answers, menu links). The orders are numbered SAMPLE-1001 on, move no stock and announce nothing, so no email, SMS or webhook goes out for them. A slug, code or order number the store already has is skipped, so asking again adds only what is missing. Needs catalog.write, categories.write, collections.write, discounts.write, orders.write and media.write.",
+        "responses": {
+          "200": {
+            "description": "What was added.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "added": {
+                          "type": "object",
+                          "description": "How many of each kind, keyed by kind: products, categories, collections, discounts, orders and customers from the engine, and reviews, pages, faq and menu_links from the modules that are installed. Customers are a reading of the orders rather than rows of their own.",
+                          "additionalProperties": {
+                            "type": "integer"
+                          },
+                          "example": {
+                            "products": 8,
+                            "categories": 4,
+                            "collections": 2,
+                            "discounts": 2,
+                            "orders": 12,
+                            "customers": 6
+                          }
                         }
                       }
                     }
@@ -3337,16 +3404,16 @@
         "tags": [
           "admin:catalog"
         ],
-        "summary": "Erase the sample products",
+        "summary": "Erase the sample shop",
         "security": [
           {
             "adminToken": []
           }
         ],
-        "description": "Deletes every sample product, edited or not, one at a time as DELETE /api/admin/products/{id} would: each gets its audit row and its product.deleted event, and orders that sold one keep their lines. The merchant's own products are never touched; no request can mark a product as a sample. Needs catalog.write.",
+        "description": "Erases everything of the sample shop (D96), edited or not, and nothing else: the modules' samples, the sample orders (with their lines, their notification log rows and any announcement still waiting to go out), the discounts, the collections, the products with their photographs, and then the categories. A sample category the merchant has filed one of their own products in is kept. Products, discounts and collections go through their services, so each has its audit row and its event. Needs the same rights as adding.",
         "responses": {
           "200": {
-            "description": "How many were deleted. Zero when there were none.",
+            "description": "What was erased.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3355,9 +3422,20 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "deleted": {
-                          "type": "integer",
-                          "example": 8
+                        "erased": {
+                          "type": "object",
+                          "description": "How many of each kind, keyed by kind: products, categories, collections, discounts, orders and customers from the engine, and reviews, pages, faq and menu_links from the modules that are installed. Customers are a reading of the orders rather than rows of their own.",
+                          "additionalProperties": {
+                            "type": "integer"
+                          },
+                          "example": {
+                            "products": 8,
+                            "categories": 4,
+                            "collections": 2,
+                            "discounts": 2,
+                            "orders": 12,
+                            "customers": 6
+                          }
                         }
                       }
                     }
@@ -13978,10 +14056,16 @@
                     "pattern": "^[A-Za-z]{2}$",
                     "description": "Where the store is, an ISO 3166-1 alpha-2 code: its profile's country, and what its default shipping zone (\"Local\") covers. Empty is a default zone covering everywhere."
                   },
+                  "sample_content": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Start the store with the sample shop (D96), as POST /api/admin/sample-content adds it: products with photographs priced in the store's currency, categories, collections, discounts, a month of orders and their customers, and the installed modules' samples. All of it is marked, and DELETE /api/admin/sample-content erases it."
+                  },
                   "sample_products": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Start the store with the sample catalogue (D94): eight active, stocked products, some with sizes or colours, priced in the store's currency, with no pictures. They are marked `sample` and DELETE /api/admin/sample-products erases them."
+                    "deprecated": true,
+                    "description": "The name `sample_content` had before the samples grew past products (D94). Still taken, and asks for the same."
                   }
                 }
               }
@@ -14011,13 +14095,16 @@
                           "nullable": true,
                           "description": "Role and rights in this store; null for a static admin token."
                         },
-                        "sample_products": {
+                        "sample_content": {
                           "type": "object",
-                          "description": "Present only when `sample_products` was asked for. A failure to add them does not fail the request, since the store is made and usable without them: `error` says so, and `added` counts the ones that were.",
+                          "description": "Present only when `sample_content` was asked for. A failure to add it does not fail the request, since the store is made and usable without it: `error` says so, and `added` counts what was.",
                           "properties": {
                             "added": {
-                              "type": "integer",
-                              "example": 8
+                              "type": "object",
+                              "description": "How many of each kind were added, keyed by kind, as POST /api/admin/sample-content reports.",
+                              "additionalProperties": {
+                                "type": "integer"
+                              }
                             },
                             "error": {
                               "type": "string",
@@ -15540,7 +15627,7 @@
           },
           "sample": {
             "type": "boolean",
-            "description": "True for a product the engine added as a sample catalogue (D94), which DELETE /api/admin/sample-products erases. Set only by the engine; no input can set or clear it."
+            "description": "True for a product the engine added as part of the sample shop (D94, D96), which DELETE /api/admin/sample-content erases. Set only by the engine; no input can set or clear it."
           },
           "product_type": {
             "type": "string",

@@ -47,6 +47,9 @@ type CollectionInput struct {
 	Description string   `json:"description"`
 	Position    *int     `json:"position"`
 	Metadata    Metadata `json:"metadata"`
+	// sample marks a collection of the sample shop (D96), and only the
+	// engine sets it.
+	sample bool
 }
 
 // CollectionPatch updates one. A nil field is left alone, which is what
@@ -119,9 +122,9 @@ func (s *Collections) Create(ctx context.Context, in CollectionInput) (*Collecti
 	err = InTx(ctx, s.app.db, func(tx *sql.Tx) error {
 		var cerr error
 		c, cerr = scanCollection(tx.QueryRowContext(ctx, `
-			INSERT INTO collections (slug, title, description, position, metadata)
-			VALUES ($1, $2, $3, $4, $5) RETURNING `+collectionColumns,
-			in.Slug, in.Title, in.Description, position, meta))
+			INSERT INTO collections (slug, title, description, position, metadata, sample)
+			VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+collectionColumns,
+			in.Slug, in.Title, in.Description, position, meta, in.sample))
 		if cerr != nil {
 			return translateCollectionErr(cerr)
 		}

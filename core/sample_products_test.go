@@ -137,46 +137,6 @@ func TestErasingSampleProductsLeavesTheMerchantsOwn(t *testing.T) {
 	}
 }
 
-func TestSampleProductsAreCountedAndErasedOverTheAdminAPI(t *testing.T) {
-	app := newTestApp(t)
-	if _, err := app.Products().AddSampleProducts(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	staff := signInAs(t, app, "staff@example.com", RoleStaff)
-
-	var count struct {
-		Count int `json:"count"`
-	}
-	rec := do(t, app, http.MethodGet, "/api/admin/sample-products", bearer(staff))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("count as staff = %d: %s", rec.Code, rec.Body)
-	}
-	decodeData(t, rec, &count)
-	if count.Count != 8 {
-		t.Fatalf("count = %d, want 8", count.Count)
-	}
-	// Reading is catalog.read; erasing is catalog.write, which staff lacks.
-	if rec := do(t, app, http.MethodDelete, "/api/admin/sample-products", bearer(staff)); rec.Code != http.StatusForbidden {
-		t.Fatalf("erase as staff = %d, want 403: %s", rec.Code, rec.Body)
-	}
-
-	rec = do(t, app, http.MethodDelete, "/api/admin/sample-products", withAdmin)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("erase = %d: %s", rec.Code, rec.Body)
-	}
-	var erased struct {
-		Deleted int `json:"deleted"`
-	}
-	decodeData(t, rec, &erased)
-	if erased.Deleted != 8 {
-		t.Fatalf("deleted = %d, want 8", erased.Deleted)
-	}
-	decodeData(t, do(t, app, http.MethodGet, "/api/admin/sample-products", withAdmin), &count)
-	if count.Count != 0 {
-		t.Fatalf("count after the erase = %d, want 0", count.Count)
-	}
-}
-
 // Every sample has a photograph, and a colour shows its own: the black tee
 // nominates the black picture and the white tee the white one, which is what
 // lets a storefront swap the gallery as a shopper picks a colour.

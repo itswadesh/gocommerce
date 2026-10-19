@@ -468,7 +468,7 @@ func (t *Transfer) ImportOrders(ctx context.Context, in io.Reader, opts ImportOp
 		if len(group) == 0 {
 			return
 		}
-		t.importOrderGroup(ctx, group, opts.DryRun, opts.FireEvents, result)
+		t.importOrderGroup(ctx, group, opts, result)
 		group = nil
 	}
 
@@ -520,7 +520,8 @@ func importedRefunded(paymentStatus string, total int64) int64 {
 	return 0
 }
 
-func (t *Transfer) importOrderGroup(ctx context.Context, rows []csvRow, dryRun, fireEvents bool, result *ImportResult) {
+func (t *Transfer) importOrderGroup(ctx context.Context, rows []csvRow, opts ImportOptions, result *ImportResult) {
+	dryRun, fireEvents := opts.DryRun, opts.FireEvents
 	first := rows[0]
 	number := first.get("number")
 
@@ -601,14 +602,14 @@ func (t *Transfer) importOrderGroup(ctx context.Context, rows []csvRow, dryRun, 
 			INSERT INTO orders (number, access_token, status, payment_status, payment_provider,
 			                    currency, subtotal_minor, shipping_minor, discount_minor,
 			                    total_minor, refunded_minor, email, phone, name, address, lang,
-			                    created_at, updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17)
+			                    created_at, updated_at, sample)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17,$18)
 			RETURNING id`,
 			number, accessToken, status, payStatus, provider,
 			firstNonEmpty(first.get("currency"), t.app.Currency(ctx)),
 			subtotal, shipping, discount, total, importedRefunded(payStatus, total),
 			strings.ToLower(first.get("email")), nullString(first.get("phone")),
-			nullString(first.get("name")), addr, lang, createdAt).Scan(&orderID); err != nil {
+			nullString(first.get("name")), addr, lang, createdAt, opts.sample).Scan(&orderID); err != nil {
 			return err
 		}
 

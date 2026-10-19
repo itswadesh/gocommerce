@@ -199,7 +199,10 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 		// Country is where the store is: its profile's country, and what its
 		// default shipping zone covers. Empty is a zone covering everywhere.
 		Country string `json:"country"`
-		// SampleProducts starts the store with the sample catalogue (D94).
+		// SampleContent starts the store with the sample shop (D96).
+		SampleContent bool `json:"sample_content"`
+		// SampleProducts is SampleContent's name before the samples grew past
+		// products (D94), still taken so a caller written then keeps working.
 		SampleProducts bool `json:"sample_products"`
 	}
 	if err := DecodeJSON(w, r, &in); err != nil {
@@ -264,13 +267,13 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 	// reported beside the store rather than failing the request: the store
 	// is made and usable without them, and a client retrying a failed create
 	// would open a second store.
-	var samples *sampleProductsResult
-	if in.SampleProducts {
-		n, err := a.catalog.AddSampleProducts(bound)
-		samples = &sampleProductsResult{Added: n}
+	var samples *sampleContentResult
+	if in.SampleContent || in.SampleProducts {
+		added, err := a.AddSampleShop(bound)
+		samples = &sampleContentResult{Added: added}
 		if err != nil {
-			a.log.Error("add sample products", "store", st.ID, "err", err)
-			samples.Error = "The store was opened, but not every sample product could be added."
+			a.log.Error("add the sample shop", "store", st.ID, "err", err)
+			samples.Error = "The store was opened, but not all of the sample content could be added. Add the rest from Products."
 		}
 	}
 	entry, err := a.enterStore(ctx, st.ID)
@@ -280,21 +283,21 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 	}
 	a.log.Info("store created", "store", st.ID, "slug", st.Slug)
 	a.setStoreCookie(w, r, st.ID)
-	Respond(w, http.StatusCreated, createdStore{storeEntry: entry, SampleProducts: samples})
+	Respond(w, http.StatusCreated, createdStore{storeEntry: entry, SampleContent: samples})
 }
 
 // createdStore is what opening a store answers with: the store entry, and the
-// sample products when they were asked for.
+// sample shop when it was asked for.
 type createdStore struct {
 	*storeEntry
-	SampleProducts *sampleProductsResult `json:"sample_products,omitempty"`
+	SampleContent *sampleContentResult `json:"sample_content,omitempty"`
 }
 
-// sampleProductsResult says how many sample products a new store got, and why
-// not all of them when adding failed part way.
-type sampleProductsResult struct {
-	Added int    `json:"added"`
-	Error string `json:"error,omitempty"`
+// sampleContentResult says what of the sample shop a new store got, and why
+// not all of it when adding failed part way.
+type sampleContentResult struct {
+	Added SampleCounts `json:"added"`
+	Error string       `json:"error,omitempty"`
 }
 
 // handleDeleteStore deletes a store for good. Its owner only, and only with
