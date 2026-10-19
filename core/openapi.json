@@ -3375,6 +3375,42 @@
         }
       }
     },
+    "/sample-media/1/{file}": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "A sample product's picture",
+        "description": "One of the photographs the sample products link to (D96), served from the engine's own binary, so every install has them whether or not it can store uploads. Public, like a store's own media, and cached as immutable: a changed picture takes a new version in the path. The photographs are under the Unsplash License; their photographers are credited in docs/admin-panel.md.",
+        "parameters": [
+          {
+            "name": "file",
+            "in": "path",
+            "required": true,
+            "description": "The picture's file name, such as `cotton-crew-tee-black.webp`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The picture.",
+            "content": {
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/admin/variants/{id}": {
       "patch": {
         "tags": [

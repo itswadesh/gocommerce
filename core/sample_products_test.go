@@ -3,6 +3,7 @@ package gocommerce
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -72,8 +73,8 @@ func TestSampleProductsAreAddedOnceWithStockToSell(t *testing.T) {
 		WHERE p.sample`).Scan(&variants, &onHand); err != nil {
 		t.Fatal(err)
 	}
-	if variants != 17 || onHand != 221 {
-		t.Fatalf("samples hold %d variants with %d on hand, want 17 with 221", variants, onHand)
+	if variants != 16 || onHand != 221 {
+		t.Fatalf("samples hold %d variants with %d on hand, want 16 with 221", variants, onHand)
 	}
 	// Stock to sell means a shopper can put one in a basket.
 	cart := newCart(t, app)
@@ -173,6 +174,70 @@ func TestSampleProductsAreCountedAndErasedOverTheAdminAPI(t *testing.T) {
 	decodeData(t, do(t, app, http.MethodGet, "/api/admin/sample-products", withAdmin), &count)
 	if count.Count != 0 {
 		t.Fatalf("count after the erase = %d, want 0", count.Count)
+	}
+}
+
+// Every sample has a photograph, and a colour shows its own: the black tee
+// nominates the black picture and the white tee the white one, which is what
+// lets a storefront swap the gallery as a shopper picks a colour.
+func TestSampleProductsComeWithTheirPhotos(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	if _, err := app.Products().AddSampleProducts(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var bare int
+	if err := app.DB().QueryRowContext(ctx, `
+		SELECT count(*) FROM products p
+		WHERE p.sample AND NOT EXISTS (SELECT 1 FROM product_media pm WHERE pm.product_id = p.id)`).Scan(&bare); err != nil {
+		t.Fatal(err)
+	}
+	if bare != 0 {
+		t.Fatalf("%d sample products have no picture, want none", bare)
+	}
+
+	tee, err := app.Products().GetProductBySlug(ctx, "cotton-crew-tee")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range tee.Variants {
+		if len(v.Images) != 1 {
+			t.Fatalf("tee %v shows %d pictures, want its colour's one", v.Options, len(v.Images))
+		}
+		colour := strings.ToLower(v.Options[1])
+		if !strings.HasSuffix(v.Images[0].URL, "/cotton-crew-tee-"+colour+".webp") || v.Images[0].Alt == "" {
+			t.Fatalf("tee %v shows %q (alt %q), want the %s tee's picture with alt text",
+				v.Options, v.Images[0].URL, v.Images[0].Alt, colour)
+		}
+	}
+
+	// The picture is the engine's own, served from the binary on every
+	// install, with or without somewhere to put uploads.
+	url := tee.Variants[0].Images[0].URL
+	if !strings.HasPrefix(url, "/sample-media/") {
+		t.Fatalf("picture url = %q, want one the engine serves under /sample-media/", url)
+	}
+	rec := do(t, app, http.MethodGet, url)
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/webp" ||
+		!strings.HasPrefix(rec.Body.String(), "RIFF") {
+		t.Fatalf("GET %s = %d %q, want 200 image/webp with the picture", url, rec.Code, rec.Header().Get("Content-Type"))
+	}
+	if rec := do(t, app, http.MethodGet, "/sample-media/1/../sample_products.go"); rec.Code == http.StatusOK {
+		t.Fatalf("a path outside the pictures was served")
+	}
+
+	// Erasing the samples takes their pictures out of the media library too.
+	if _, err := app.Products().DeleteSampleProducts(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var left int
+	if err := app.DB().QueryRowContext(ctx,
+		`SELECT count(*) FROM media WHERE url LIKE '/sample-media/%'`).Scan(&left); err != nil {
+		t.Fatal(err)
+	}
+	if left != 0 {
+		t.Fatalf("%d sample pictures left in the media library, want none", left)
 	}
 }
 

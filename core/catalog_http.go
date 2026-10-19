@@ -44,6 +44,8 @@ func (a *App) mountCatalogRoutes() {
 	// The sample catalogue a store may start with (D94).
 	a.HandleAdminFunc("GET /api/admin/sample-products", a.handleSampleProductCount, RightCatalogRead)
 	a.HandleAdminFunc("DELETE /api/admin/sample-products", a.handleDeleteSampleProducts, RightCatalogWrite)
+	// The sample products' pictures, from the binary (D96).
+	a.HandleFunc("GET "+samplePhotoPrefix+"{file}", a.handleSamplePhoto)
 }
 
 // ------------------------------------------------------------------- public
