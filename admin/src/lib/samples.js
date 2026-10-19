@@ -19,6 +19,7 @@ const SAMPLE_KINDS = [
     ["pages", "page", "pages"],
     ["faq", "question", "questions"],
     ["menu_links", "menu link", "menu links"],
+    ["banners", "banner", "banners"],
 ];
 
 /** describeSamples reads the engine's counts as a phrase: "8 products, … and 7 menu links". */

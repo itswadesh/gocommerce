@@ -504,6 +504,18 @@ export const showcases = {
     makeCollection: (id, title) => api.post(`/api/admin/x/showcases/${id}/collection`, { title }),
 };
 
+/**
+ * banners is ext/banners (D99): the pictures on the storefront's pages, slides
+ * across the top and grids of tiles under a heading.
+ */
+export const banners = {
+    list: (params) => api.get("/api/admin/x/banners" + query(params)),
+    create: (body) => api.post("/api/admin/x/banners", body),
+    update: (id, body) => api.patch(`/api/admin/x/banners/${id}`, body),
+    remove: (id) => api.delete(`/api/admin/x/banners/${id}`),
+    reorder: (page, ids) => api.put("/api/admin/x/banners/order", { page, ids }),
+};
+
 export const recovery = {
     list: (params) => api.get(`${RECOVERY}/abandonments` + query(params)),
     summary: (params) => api.get(`${RECOVERY}/summary` + query(params)),

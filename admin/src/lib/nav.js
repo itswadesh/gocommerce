@@ -207,10 +207,11 @@ export const NAV = [
         icon: "ri-layout-line",
         right: "catalog.read",
         accent: "blue",
-        keywords: "media files pages menus cms feeds sitemap",
+        keywords: "media files pages banners menus cms feeds sitemap",
         children: [
             { href: "/dash/media", label: "Files", right: "media.read", keywords: "media images pictures uploads" },
             { href: "/dash/cms", label: "Pages", right: "pages.read", module: "cms", keywords: "content copy about" },
+            { href: "/dash/banners", label: "Banners", right: "banners.read", module: "banners", keywords: "banner slider hero carousel home page pictures grid" },
             { href: "/dash/menus", label: "Menus", right: "menus.read", module: "navigation", keywords: "navigation header footer links" },
             { href: "/dash/feeds", label: "Feeds", right: "plugins.read", module: "feeds", keywords: "google merchant meta catalogue feed" },
             { href: "/dash/sitemap", label: "Sitemap", right: "plugins.read", module: "sitemaps", keywords: "sitemap.xml search console" },

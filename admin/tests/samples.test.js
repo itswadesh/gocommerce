@@ -28,7 +28,11 @@ test("customers are the orders' shoppers, not a separate thing to erase", () => 
 });
 
 test("a kind the panel does not know yet is not shown as a raw key", () => {
-    assert.equal(describeSamples({ products: 8, banners: 3 }), "8 products");
+    assert.equal(describeSamples({ products: 8, widgets: 3 }), "8 products");
+});
+
+test("banners are named with the rest", () => {
+    assert.equal(describeSamples({ products: 8, banners: 7 }), "8 products and 7 banners");
 });
 
 test("adding or erasing asks for every right the engine checks", () => {
