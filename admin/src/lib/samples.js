@@ -31,9 +31,10 @@ export function describeSamples(counts) {
 }
 
 /*
- * What adding or erasing the sample shop needs, as the engine checks it: the
- * write right of every area it touches, so nobody does through it what they
- * could not do by hand.
+ * What adding or erasing the sample shop needs of the engine's own areas: the
+ * write right of each it touches, so nobody does through it what they could
+ * not do by hand. The engine adds each installed module's right and reports
+ * the whole list with the counts, which the panel prefers once it has it.
  */
 export const SAMPLE_RIGHTS = [
     "catalog.write",

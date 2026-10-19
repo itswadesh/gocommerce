@@ -442,11 +442,15 @@ DELETE /api/admin/sample-content  → {"data": {"erased": {"products": 8, …}}}
 ```
 
 Adding and erasing need `catalog.write`, `categories.write`,
-`collections.write`, `discounts.write`, `orders.write` and `media.write`.
+`collections.write`, `discounts.write`, `orders.write` and `media.write`, plus
+each seeder's `SampleRights()`; `GET` lists them all. A sample order never
+reaches the outbox (`outbox.write` drops its events), so nothing follows one.
 `EraseSampleShop` asks the modules first, then deletes the sample orders, the
 discounts, the collections and the products through their services (each with
-its audit row and event), and the categories last; a sample category holding a
-product of the merchant's stays. An edited sample is still a sample.
+its audit row and event), and the categories last; a sample category or photo
+the merchant uses stays and loses its mark. An edited sample is still a sample.
+D94's `GET`/`DELETE /api/admin/sample-products` still answer, the DELETE erasing
+the whole sample shop.
 
 ## Common mistakes
 
