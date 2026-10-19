@@ -91,6 +91,7 @@ CREATE INDEX faq_entries_order_idx ON faq_entries (section, position, id);
 `,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "faq_entries"),
+		{ID: "0003_sample", SQL: migrationSample},
 	}
 }
 

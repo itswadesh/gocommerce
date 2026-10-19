@@ -127,6 +127,7 @@ CREATE INDEX reviews_status_idx  ON reviews (status, id DESC);
 `,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "reviews"),
+		{ID: "0003_sample", SQL: migrationSample},
 	}
 }
 
