@@ -93,6 +93,7 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			CREATE INDEX cms_pages_published_idx ON cms_pages (status, published_at DESC);`,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "cms_pages"),
+		{ID: "0003_sample", SQL: migrationSample},
 	}
 }
 

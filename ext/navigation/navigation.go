@@ -122,6 +122,7 @@ CREATE INDEX navigation_items_menu_idx ON navigation_items (menu_id, parent_id, 
 		SQL: defaultMenusSQL,
 	},
 		gocommerce.ScopeMigration("0003_store_scope", "navigation_menus", "navigation_items"),
+		{ID: "0004_sample", SQL: migrationSample},
 	}
 }
 
