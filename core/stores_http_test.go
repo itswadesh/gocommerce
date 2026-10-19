@@ -386,41 +386,46 @@ func TestAStoreAndItsOwnerAreWrittenTogether(t *testing.T) {
 	}
 }
 
-func TestANewStoreStartsWithSampleProductsOnlyWhenAsked(t *testing.T) {
+func TestANewStoreStartsWithTheSampleShopOnlyWhenAsked(t *testing.T) {
 	app := newTestApp(t)
 	tok := signInAs(t, app, "founder@example.com", RoleStaff)
 
-	rec := doBody(t, app, http.MethodPost, "/api/stores/create",
-		`{"name":"Sampled","slug":"sampled","sample_products":true}`, bearer(tok))
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("create with samples = %d: %s", rec.Code, rec.Body)
-	}
-	var with struct {
-		Store          Store `json:"store"`
-		SampleProducts *struct {
-			Added int    `json:"added"`
-			Error string `json:"error"`
-		} `json:"sample_products"`
-	}
-	decodeData(t, rec, &with)
-	if with.SampleProducts == nil || with.SampleProducts.Added != 8 || with.SampleProducts.Error != "" {
-		t.Fatalf("sample_products = %+v, want 8 added", with.SampleProducts)
-	}
-	if got := sampleCount(t, app, WithStore(context.Background(), with.Store.ID)); got != 8 {
-		t.Fatalf("the new store holds %d samples, want 8", got)
+	// sample_products is the name a caller written for D94 sends; it asks for
+	// the whole sample shop now, as sample_content does.
+	for i, field := range []string{"sample_content", "sample_products"} {
+		rec := doBody(t, app, http.MethodPost, "/api/stores/create",
+			`{"name":"Sampled","slug":"sampled-`+itoa(int64(i))+`","`+field+`":true}`, bearer(tok))
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("create with %s = %d: %s", field, rec.Code, rec.Body)
+		}
+		var with struct {
+			Store         Store `json:"store"`
+			SampleContent *struct {
+				Added SampleCounts `json:"added"`
+				Error string       `json:"error"`
+			} `json:"sample_content"`
+		}
+		decodeData(t, rec, &with)
+		if with.SampleContent == nil || with.SampleContent.Added["products"] != 8 ||
+			with.SampleContent.Added["orders"] != 12 || with.SampleContent.Error != "" {
+			t.Fatalf("%s: sample_content = %+v, want 8 products and 12 orders added", field, with.SampleContent)
+		}
+		if got := sampleCount(t, app, WithStore(context.Background(), with.Store.ID)); got != 8 {
+			t.Fatalf("the new store holds %d samples, want 8", got)
+		}
 	}
 
-	rec = doBody(t, app, http.MethodPost, "/api/stores/create", `{"name":"Plain","slug":"plain"}`, bearer(tok))
+	rec := doBody(t, app, http.MethodPost, "/api/stores/create", `{"name":"Plain","slug":"plain"}`, bearer(tok))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create without samples = %d: %s", rec.Code, rec.Body)
 	}
 	var without struct {
-		Store          Store `json:"store"`
-		SampleProducts any   `json:"sample_products"`
+		Store         Store `json:"store"`
+		SampleContent any   `json:"sample_content"`
 	}
 	decodeData(t, rec, &without)
-	if without.SampleProducts != nil {
-		t.Fatalf("sample_products = %v on a store that did not ask, want it absent", without.SampleProducts)
+	if without.SampleContent != nil {
+		t.Fatalf("sample_content = %v on a store that did not ask, want it absent", without.SampleContent)
 	}
 	if got := sampleCount(t, app, WithStore(context.Background(), without.Store.ID)); got != 0 {
 		t.Fatalf("a store opened without samples holds %d", got)

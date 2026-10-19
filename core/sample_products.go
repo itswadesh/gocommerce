@@ -135,10 +135,7 @@ var sampleCatalogue = []sampleProduct{
 // product.created event like any other. A slug the store already uses is
 // skipped, so a second run adds nothing.
 func (c *Catalog) AddSampleProducts(ctx context.Context) (int, error) {
-	scale := int64(1)
-	for range currencyExponent(c.app.Currency(ctx)) {
-		scale *= 10
-	}
+	scale := currencyScale(c.app.Currency(ctx))
 	added := 0
 	for _, s := range sampleCatalogue {
 		in := ProductInput{
@@ -289,22 +286,4 @@ func (a *App) listIDs(ctx context.Context, query, what string, args ...any) ([]i
 		return nil, Internalf(err, "list %s", what)
 	}
 	return ids, nil
-}
-
-func (a *App) handleSampleProductCount(w http.ResponseWriter, r *http.Request) {
-	n, err := a.catalog.SampleProductCount(r.Context())
-	if err != nil {
-		RespondError(w, r, err)
-		return
-	}
-	Respond(w, http.StatusOK, map[string]int{"count": n})
-}
-
-func (a *App) handleDeleteSampleProducts(w http.ResponseWriter, r *http.Request) {
-	n, err := a.catalog.DeleteSampleProducts(r.Context())
-	if err != nil {
-		RespondError(w, r, err)
-		return
-	}
-	Respond(w, http.StatusOK, map[string]int{"deleted": n})
 }

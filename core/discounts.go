@@ -239,6 +239,9 @@ type DiscountInput struct {
 	OncePerEmail     bool       `json:"once_per_email"`
 	Active           *bool      `json:"active"`
 	Metadata         Metadata   `json:"metadata"`
+	// sample marks a discount of the sample shop (D96), and only the engine
+	// sets it.
+	sample bool
 }
 
 // DiscountPatch updates one. Only the keys present are written.
@@ -583,13 +586,13 @@ func (s *Discounts) Create(ctx context.Context, in DiscountInput) (*Discount, er
 		d, derr = scanDiscount(tx.QueryRowContext(ctx, `
 			INSERT INTO discounts (code, title, kind, value_bp, value_minor, scope,
 			                       min_subtotal_minor, starts_at, ends_at, usage_limit,
-			                       once_per_email, active, metadata)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+			                       once_per_email, active, metadata, sample)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 			RETURNING `+discountColumns,
 			nullString(strings.TrimSpace(in.Code)), in.Title, in.Kind,
 			nullInt(in.ValueBP), nullInt64(in.ValueMinor), in.Scope,
 			in.MinSubtotalMinor, in.StartsAt, in.EndsAt, in.UsageLimit,
-			in.OncePerEmail, active, meta))
+			in.OncePerEmail, active, meta, in.sample))
 		if derr != nil {
 			return translateDiscountErr(derr)
 		}

@@ -78,6 +78,7 @@ func coreMigrations() []Migration {
 		{ID: "0067_name_unnamed_stores", Run: migrate0067NameUnnamedStores},
 		{ID: "0068_product_sample", SQL: migration0068ProductSample},
 		{ID: "0069_password_reset_codes", SQL: migration0069PasswordResetCodes},
+		{ID: "0070_sample_shop", SQL: migration0070SampleShop},
 	}
 }
 

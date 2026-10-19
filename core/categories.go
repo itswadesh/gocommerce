@@ -70,6 +70,9 @@ type CategoryInput struct {
 	Title    string   `json:"title"`
 	Position *int     `json:"position"`
 	Metadata Metadata `json:"metadata"`
+	// sample marks a category of the sample shop (D96). Unexported, so no
+	// request can file the merchant's own category for the next erase.
+	sample bool
 }
 
 // CategoryPatch updates one. ParentID uses NullableID because moving a category
@@ -158,9 +161,9 @@ func (s *Categories) Create(ctx context.Context, in CategoryInput) (*Category, e
 			}
 		}
 		c, err := scanCategory(tx.QueryRowContext(ctx, `
-			INSERT INTO categories (parent_id, slug, title, position, metadata)
-			VALUES ($1, $2, $3, $4, $5) RETURNING `+categoryColumns,
-			in.ParentID, in.Slug, in.Title, position, meta))
+			INSERT INTO categories (parent_id, slug, title, position, metadata, sample)
+			VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+categoryColumns,
+			in.ParentID, in.Slug, in.Title, position, meta, in.sample))
 		if err != nil {
 			return translateCategoryErr(err)
 		}
