@@ -82,17 +82,17 @@
     />
 </div>
 <div class="image-field-row">
+    <!-- Not keyed on the value: typing an address would replay the entrance
+         and fetch a picture per keystroke. -->
     {#if value}
-        {#key value}
-            <span class="image-field-preview" in:rise>
-                {#if broken}
-                    <i class="ri-image-line" aria-hidden="true"></i>
-                    <span class="txt-hint txt-sm">This picture did not load.</span>
-                {:else}
-                    <img src={value} alt="" onerror={() => (broken = true)} />
-                {/if}
-            </span>
-        {/key}
+        <span class="image-field-preview" in:rise>
+            {#if broken}
+                <i class="ri-image-line" aria-hidden="true"></i>
+                <span class="txt-hint txt-sm">This picture did not load.</span>
+            {:else}
+                <img src={value} alt="" loading="lazy" onerror={() => (broken = true)} />
+            {/if}
+        </span>
     {/if}
     {#if pickable}
         <button

@@ -3,7 +3,8 @@
      * Banners (ext/banners, D99): the pictures on the storefront's pages.
      *
      * Each page is shown as it reads — its slides across the top, then each
-     * grid under its heading — and every banner is edited in place: a drawer
+     * grid under its heading; only the home page for now, the one page a
+     * storefront shows banners on — and every banner is edited in place: a drawer
      * for its picture, title and link, a switch to take it off the storefront
      * without losing it, and arrows to move it one place among its kind. The
      * arrows send the page's whole order, as the engine wants it.
@@ -112,7 +113,11 @@
     }
 
     // A banner switched off stays on this screen and leaves the storefront.
+    // Its switch waits for the save, so two flips cannot land out of order.
+    let toggling = $state(new Set());
     async function toggle(banner) {
+        if (toggling.has(banner.id)) return;
+        toggling = new Set([...toggling, banner.id]);
         const next = !banner.active;
         rows = rows.map((r) => (r.id === banner.id ? { ...r, active: next } : r));
         try {
@@ -121,6 +126,8 @@
         } catch (err) {
             rows = rows.map((r) => (r.id === banner.id ? { ...r, active: banner.active } : r));
             toast.error(err);
+        } finally {
+            toggling = new Set([...toggling].filter((id) => id !== banner.id));
         }
     }
 
@@ -149,9 +156,13 @@
     let confirmOpen = $state(false);
     async function remove() {
         const banner = removing;
-        await bannersAPI.remove(banner.id);
-        rows = rows.filter((r) => r.id !== banner.id);
-        toast.success("Banner removed");
+        try {
+            await bannersAPI.remove(banner.id);
+            rows = rows.filter((r) => r.id !== banner.id);
+            toast.success("Banner removed");
+        } catch (err) {
+            toast.error(err);
+        }
     }
 </script>
 
@@ -172,18 +183,27 @@
         </div>
         {#if writable}
             <div class="bn-actions">
-                <!-- In a .field, where the panel draws a checkbox.switch as a switch. -->
+                <!-- In a .field, where the panel draws a checkbox.switch as a
+                     switch; the label draws it, so the name is on the input. -->
                 <div class="field bn-toggle">
-                    <input type="checkbox" class="switch" id="bn-on-{banner.id}" checked={banner.active} onchange={() => toggle(banner)} />
-                    <label for="bn-on-{banner.id}"><span class="hidden">Show {banner.title || "this banner"} on the storefront</span></label>
+                    <input
+                        type="checkbox"
+                        class="switch"
+                        id="bn-on-{banner.id}"
+                        checked={banner.active}
+                        disabled={toggling.has(banner.id)}
+                        onchange={() => toggle(banner)}
+                        aria-label="Show {banner.title || 'this banner'} on the storefront"
+                    />
+                    <label for="bn-on-{banner.id}"></label>
                 </div>
-                <button type="button" class="btn sm circle transparent secondary" disabled={moving || i === 0} onclick={() => move(banner, -1)} aria-label="Move up">
+                <button type="button" class="btn sm circle transparent secondary" disabled={moving || i === 0} onclick={() => move(banner, -1)} aria-label="Move {banner.title || 'this banner'} up">
                     <i class="ri-arrow-up-line" aria-hidden="true"></i>
                 </button>
-                <button type="button" class="btn sm circle transparent secondary" disabled={moving || i === kin.length - 1} onclick={() => move(banner, 1)} aria-label="Move down">
+                <button type="button" class="btn sm circle transparent secondary" disabled={moving || i === kin.length - 1} onclick={() => move(banner, 1)} aria-label="Move {banner.title || 'this banner'} down">
                     <i class="ri-arrow-down-line" aria-hidden="true"></i>
                 </button>
-                <button type="button" class="btn sm circle transparent secondary" onclick={() => startEdit(banner)} aria-label="Edit">
+                <button type="button" class="btn sm circle transparent secondary" onclick={() => startEdit(banner)} aria-label="Edit {banner.title || 'this banner'}">
                     <i class="ri-pencil-line" aria-hidden="true"></i>
                 </button>
                 <button
@@ -193,7 +213,7 @@
                         removing = banner;
                         confirmOpen = true;
                     }}
-                    aria-label="Remove"
+                    aria-label="Remove {banner.title || 'this banner'}"
                 >
                     <i class="ri-delete-bin-line" aria-hidden="true"></i>
                 </button>
@@ -336,11 +356,6 @@
                 hint="A narrower crop for phones, about 720 × 380 pixels. Without one, phones show the picture above."
             />
         </div>
-        <div class="field m-t-sm">
-            <label for="bn-page">Page</label>
-            <input id="bn-page" type="text" autocomplete="off" spellcheck="false" bind:value={form.page} />
-        </div>
-        <div class="field-help">home for the home page, or a content page's address name, such as about.</div>
         <div class="field m-t-sm bn-on">
             <input id="bn-active" type="checkbox" class="switch" bind:checked={form.active} />
             <label for="bn-active">Show on the storefront</label>
@@ -471,14 +486,6 @@
         display: flex;
         align-items: center;
         gap: 8px;
-    }
-    .hidden {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip: rect(0 0 0 0);
-        white-space: nowrap;
     }
     @media (prefers-reduced-motion: reduce) {
         .bn-thumb,
