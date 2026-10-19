@@ -1179,6 +1179,14 @@ func TestTheVocabularyIsReachable(t *testing.T) {
 		t.Fatalf("exempt group: %v", err)
 	}
 
+	// The sample shop's erase, the one way an order is ever deleted (D96).
+	if _, err := app.AddSampleShop(ctx); err != nil {
+		t.Fatalf("add the sample shop: %v", err)
+	}
+	if _, err := app.EraseSampleShop(ctx); err != nil {
+		t.Fatalf("erase the sample shop: %v", err)
+	}
+
 	// pending names the actions whose call sites live in files this change does
 	// not own: the guarded admin-placed-order write in checkout.go, bulk import
 	// in transfer.go, the options service, invitations and role sets. Each one
