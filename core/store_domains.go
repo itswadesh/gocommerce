@@ -81,10 +81,26 @@ func (a *App) normalizeHost(raw string) (string, error) {
 			return bad()
 		}
 	}
-	if base := strings.ToLower(a.cfg.BaseDomain); base != "" && (h == base || strings.HasSuffix(h, "."+base)) {
-		return "", Validationf("%s is under this install's own domain, which every store has already", h)
-	}
 	return h, nil
+}
+
+// underBaseDomain refuses an address under the install's base domain: each
+// store already answers at <slug>.<base domain>, so the useful answer names
+// this store's own.
+func (a *App) underBaseDomain(ctx context.Context, host string) *APIError {
+	base := strings.ToLower(a.cfg.BaseDomain)
+	if base == "" || (host != base && !strings.HasSuffix(host, "."+base)) {
+		return nil
+	}
+	st, err := a.Stores().Get(ctx, a.storeOf(ctx))
+	if err != nil {
+		return Validationf("addresses under %s come with each store; add a domain you own instead, such as shop.example.com", base)
+	}
+	own := st.Slug + "." + base
+	if host == own {
+		return Validationf("%s is already this store's address, so there is nothing to add; this is for a domain you own, such as shop.example.com", host)
+	}
+	return Validationf("%s cannot be added: addresses under %s come with each store, and this store's is %s; add a domain you own instead, such as shop.example.com", host, base, own)
 }
 
 func (a *App) mountDomainRoutes() {
@@ -162,6 +178,10 @@ func (a *App) handleAddDomain(w http.ResponseWriter, r *http.Request) {
 	}
 	host, err := a.normalizeHost(in.Host)
 	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	if err := a.underBaseDomain(r.Context(), host); err != nil {
 		RespondError(w, r, err)
 		return
 	}

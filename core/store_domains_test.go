@@ -28,6 +28,28 @@ func addDomain(t *testing.T, app *App, host string, opts ...func(*http.Request))
 	return rec.Code, d
 }
 
+// An address under the base domain is refused with the store's own address in
+// the answer, since that is what the owner was looking for.
+func TestAnAddressUnderTheBaseDomainIsAnsweredWithTheStoresOwn(t *testing.T) {
+	app := newTestApp(t)
+	app.cfg.BaseDomain = "shops.test"
+	st, err := app.Stores().Get(context.Background(), app.DefaultStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	own := st.Slug + ".shops.test"
+	for host, want := range map[string]string{
+		own:                own + " is already this store's address",
+		"other.shops.test": "this store's is " + own,
+		"shops.test":       "this store's is " + own,
+	} {
+		rec := doBody(t, app, http.MethodPost, "/api/admin/domains", `{"host":"`+host+`"}`, withAdmin)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("add %s = %d %s, want 400 saying %q", host, rec.Code, rec.Body, want)
+		}
+	}
+}
+
 func TestADomainRoutesOnlyOnceItsTXTRecordIsFound(t *testing.T) {
 	app := newTestApp(t)
 	records := map[string][]string{}
