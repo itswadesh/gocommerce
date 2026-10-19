@@ -415,27 +415,38 @@ their `product_id` is `ON DELETE SET NULL`, and they keep their own snapshot of
 sku, title, label and price, so a historical order stays readable after the
 catalog moves on. See [carts](carts.md) for why cart lines cascade instead.
 
-## Sample products
+## The sample shop
 
-A store can start with a sample catalogue (D94): `POST /api/stores/create` with
-`"sample_products": true`, or `app.Products().AddSampleProducts(ctx)` for the
-store `ctx` is bound to. It makes eight active, stocked products through
-`CreateProduct`, priced from a table in major units scaled by the store's
-currency, and skips a slug the store already has, so a second call adds nothing.
+A store can start with a sample shop (D94, D96): `POST /api/stores/create` with
+`"sample_content": true` (`"sample_products"` is still taken), or
+`app.AddSampleShop(ctx)` for the store `ctx` is bound to. It makes eight active,
+stocked products through `CreateProduct`, each with a photograph linked from the
+binary (`/sample-media/1/`), priced from a table in major units scaled by the
+store's currency; four categories they are filed in; two collections; two
+percentage discounts scoped to the sample products; and twelve orders through
+the orders importer, numbered `SAMPLE-1001` on, which move no stock and fire no
+events. A module adds its own by implementing `SampleSeeder` (and
+`SampleLinker` when its samples link to the others'). Whatever the store already
+has is skipped, so a second call adds nothing.
 
-Each carries `"sample": true`. The flag is the column `products.sample`, set only
-by `AddSampleProducts` through an unexported field on `ProductInput`; a request
-that sends `sample` is a 400 like any unknown field, and a module cannot set it
-either. So erasing never takes the merchant's own products:
+Each sample row is marked by a `sample` column set only by the engine, through
+unexported fields on `ProductInput`, `CategoryInput`, `CollectionInput`,
+`DiscountInput` and `ImportOptions`; a request that sends `sample` is a 400 like
+any unknown field, and a module cannot set it either. So erasing never takes the
+merchant's own:
 
 ```http
-GET    /api/admin/sample-products    → {"data": {"count": 8}}     (catalog.read)
-DELETE /api/admin/sample-products    → {"data": {"deleted": 8}}   (catalog.write)
+GET    /api/admin/sample-content  → {"data": {"counts": {"products": 8, …}, "total": 51}}  (catalog.read)
+POST   /api/admin/sample-content  → {"data": {"added": {"products": 8, …}}}
+DELETE /api/admin/sample-content  → {"data": {"erased": {"products": 8, …}}}
 ```
 
-`DeleteSampleProducts` deletes each through `DeleteProduct`, so each has its
-audit row and its `product.deleted` event, one transaction per product. An
-edited sample is still a sample.
+Adding and erasing need `catalog.write`, `categories.write`,
+`collections.write`, `discounts.write`, `orders.write` and `media.write`.
+`EraseSampleShop` asks the modules first, then deletes the sample orders, the
+discounts, the collections and the products through their services (each with
+its audit row and event), and the categories last; a sample category holding a
+product of the merchant's stays. An edited sample is still a sample.
 
 ## Common mistakes
 
