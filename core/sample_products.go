@@ -1,9 +1,14 @@
 package gocommerce
 
 import (
+	"bytes"
 	"context"
+	"embed"
 	"errors"
 	"net/http"
+	"path"
+	"slices"
+	"time"
 )
 
 // migration0068ProductSample marks the products the engine added as a sample
@@ -17,13 +22,13 @@ ALTER TABLE products ADD COLUMN sample boolean NOT NULL DEFAULT false;
 CREATE INDEX products_sample_idx ON products (store_id) WHERE sample;
 `
 
-// sampleProduct is one entry of the sample catalogue. None has a picture: a
-// missing asset is left absent rather than faked.
+// sampleProduct is one entry of the sample catalogue.
 type sampleProduct struct {
 	slug, title, productType, description string
 	grams                                 int
 	options                               []OptionInput
 	variants                              []sampleVariant
+	photos                                []samplePhoto
 }
 
 // sampleVariant is priced in major units. AddSampleProducts scales them by
@@ -34,6 +39,16 @@ type sampleVariant struct {
 	options []string
 	price   int64
 	stock   int
+}
+
+// samplePhoto is one picture of a sample product: a photograph under the
+// Unsplash License, which allows this use without asking or crediting, and is
+// credited here anyway (D96). colour names the option value it shows, so
+// that colour's variants nominate it; empty shows the product as a whole.
+type samplePhoto struct {
+	file, colour, alt string
+	// credit and source are the photographer and the photograph's page.
+	credit, source string
 }
 
 var sampleCatalogue = []sampleProduct{
@@ -48,6 +63,12 @@ var sampleCatalogue = []sampleProduct{
 			{[]string{"S", "Black"}, 25, 12}, {[]string{"M", "Black"}, 25, 15}, {[]string{"L", "Black"}, 25, 8},
 			{[]string{"S", "White"}, 25, 10}, {[]string{"M", "White"}, 25, 12}, {[]string{"L", "White"}, 25, 6},
 		},
+		photos: []samplePhoto{
+			{"cotton-crew-tee-black", "Black", "A man wearing a plain black crew-neck t-shirt",
+				"Or Hakim", "https://unsplash.com/photos/XaPmwu1npkQ"},
+			{"cotton-crew-tee-white", "White", "A plain white crew-neck t-shirt laid flat",
+				"mockupbee", "https://unsplash.com/photos/4rUYuwJ2vGw"},
+		},
 	},
 	{
 		slug: "hooded-sweatshirt", title: "Hooded sweatshirt", productType: "Apparel", grams: 550,
@@ -56,38 +77,55 @@ var sampleCatalogue = []sampleProduct{
 		variants: []sampleVariant{
 			{[]string{"S"}, 55, 6}, {[]string{"M"}, 55, 10}, {[]string{"L"}, 55, 10}, {[]string{"XL"}, 55, 4},
 		},
+		photos: []samplePhoto{{"hooded-sweatshirt", "", "A white hooded sweatshirt hanging on a rope",
+			"Mediamodifier", "https://unsplash.com/photos/kJXGTOY1wLQ"}},
 	},
 	{
 		slug: "canvas-tote-bag", title: "Canvas tote bag", productType: "Accessories", grams: 200,
 		description: "A cotton canvas tote, 38 by 42 cm, with two shoulder straps and an inside pocket.",
 		variants:    []sampleVariant{{nil, 18, 30}},
+		photos: []samplePhoto{{"canvas-tote-bag", "", "A plain canvas tote bag on a grey background",
+			"Brando Makes Branding", "https://unsplash.com/photos/smTDI-z1rlY"}},
 	},
 	{
 		slug: "ceramic-mug", title: "Ceramic mug", productType: "Home", grams: 350,
-		description: "A 350 ml stoneware mug with a glazed finish.",
-		options:     []OptionInput{{Name: "Colour", Values: []string{"White", "Sage"}}},
-		variants:    []sampleVariant{{[]string{"White"}, 14, 20}, {[]string{"Sage"}, 14, 14}},
+		description: "A 350 ml ceramic mug with a white glaze.",
+		variants:    []sampleVariant{{nil, 14, 34}},
+		photos: []samplePhoto{{"ceramic-mug", "", "A white ceramic mug on a white table",
+			"Vanesa Giaconi", "https://unsplash.com/photos/VVcggzlkYgE"}},
 	},
 	{
 		slug: "wool-beanie", title: "Wool beanie", productType: "Accessories", grams: 90,
-		description: "A ribbed knit beanie in a wool blend, with a turned-up cuff.",
-		options:     []OptionInput{{Name: "Colour", Values: []string{"Charcoal", "Mustard"}}},
-		variants:    []sampleVariant{{[]string{"Charcoal"}, 22, 15}, {[]string{"Mustard"}, 22, 9}},
+		description: "A warm knit beanie in a wool blend.",
+		options:     []OptionInput{{Name: "Colour", Values: []string{"Grey", "Yellow"}}},
+		variants:    []sampleVariant{{[]string{"Grey"}, 22, 15}, {[]string{"Yellow"}, 22, 9}},
+		photos: []samplePhoto{
+			{"wool-beanie-grey", "Grey", "A grey knit beanie with a turned-up cuff",
+				"Rainier Watch", "https://unsplash.com/photos/2MMaMLOECjA"},
+			{"wool-beanie-yellow", "Yellow", "A yellow cable-knit beanie with a bobble",
+				"Kerim Ayar", "https://unsplash.com/photos/WWpJViNdatc"},
+		},
 	},
 	{
 		slug: "linen-napkins", title: "Linen napkins, set of four", productType: "Home", grams: 220,
 		description: "Four 45 by 45 cm napkins in washed linen, hemmed on all sides.",
 		variants:    []sampleVariant{{nil, 30, 12}},
+		photos: []samplePhoto{{"linen-napkins", "", "Folded linen napkins stacked on a wooden stool",
+			"Svitlana", "https://unsplash.com/photos/HbiRi1Owk9k"}},
 	},
 	{
 		slug: "leather-card-holder", title: "Leather card holder", productType: "Accessories", grams: 40,
-		description: "A slim card holder with four card slots and a centre pocket.",
+		description: "A slim leather card holder with four card slots and a centre pocket.",
 		variants:    []sampleVariant{{nil, 35, 18}},
+		photos: []samplePhoto{{"leather-card-holder", "", "Two black leather card holders on a grey surface",
+			"Mason Supply", "https://unsplash.com/photos/-lN0HnySy7w"}},
 	},
 	{
-		slug: "a5-dotted-notebook", title: "A5 dotted notebook", productType: "Stationery", grams: 300,
-		description: "An A5 notebook with 192 dotted pages, a card cover and a binding that lies flat.",
+		slug: "a5-notebook", title: "A5 notebook", productType: "Stationery", grams: 300,
+		description: "An A5 notebook with 192 plain pages, a card cover and a binding that lies flat.",
 		variants:    []sampleVariant{{nil, 12, 40}},
+		photos: []samplePhoto{{"a5-notebook", "", "An open notebook with blank pages",
+			"Brando Makes Branding", "https://unsplash.com/photos/TPoARluSmYs"}},
 	},
 }
 
@@ -115,16 +153,75 @@ func (c *Catalog) AddSampleProducts(ctx context.Context) (int, error) {
 		}
 		// SKUs are left to be derived, and a derived one walks past a taken
 		// code, so the one conflict left is the slug.
-		_, err := c.CreateProduct(ctx, in)
+		p, err := c.CreateProduct(ctx, in)
 		if errors.Is(err, ErrConflict) {
 			continue
 		}
 		if err != nil {
 			return added, err
 		}
+		if err := c.app.media.attachSamplePhotos(ctx, p, s.photos); err != nil {
+			return added, err
+		}
 		added++
 	}
 	return added, nil
+}
+
+// attachSamplePhotos gives a sample product its pictures, and each colour's
+// variants the picture of that colour.
+//
+// Linked rather than uploaded: the engine serves the files from its own
+// binary (handleSamplePhoto), so every install has them whether or not it has
+// somewhere to put uploads, and a store's samples cost no disk.
+func (m *Media) attachSamplePhotos(ctx context.Context, p *Product, photos []samplePhoto) error {
+	ids := make([]int64, 0, len(photos))
+	for _, ph := range photos {
+		item, err := m.AddURL(ctx, samplePhotoPrefix+ph.file+".webp", MediaImage, ph.alt)
+		if err != nil {
+			return err
+		}
+		ids = append(ids, item.ID)
+	}
+	if err := m.SetProductMedia(ctx, p.ID, ids); err != nil {
+		return err
+	}
+	for i, ph := range photos {
+		if ph.colour == "" {
+			continue
+		}
+		for _, v := range p.Variants {
+			if slices.Contains(v.Options, ph.colour) {
+				if err := m.SetVariantMedia(ctx, v.ID, []int64{ids[i]}); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+//go:embed sample/*.webp
+var samplePhotos embed.FS
+
+// samplePhotoPrefix is where the engine serves the sample pictures. The 1 is
+// their version: they are cached as immutable, so a changed picture takes a
+// new number rather than leaving the old one in a shopper's cache.
+const samplePhotoPrefix = "/sample-media/1/"
+
+// handleSamplePhoto serves one sample picture from the binary. Public, like a
+// store's own media, because a storefront shows it to anybody.
+func (a *App) handleSamplePhoto(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("file")
+	body, err := samplePhotos.ReadFile("sample/" + name)
+	if err != nil || path.Ext(name) != ".webp" {
+		RespondError(w, r, NotFoundf("no such picture"))
+		return
+	}
+	w.Header().Set("Content-Type", "image/webp")
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(body))
 }
 
 // SampleProductCount is how many sample products the store still has, edited
@@ -142,22 +239,9 @@ func (c *Catalog) SampleProductCount(ctx context.Context) (int, error) {
 // row and its product.deleted event, and an order that sold one keeps its
 // lines. A failure part way leaves the rest for the next run.
 func (c *Catalog) DeleteSampleProducts(ctx context.Context) (int, error) {
-	rows, err := c.app.db.QueryContext(ctx, `SELECT id FROM products WHERE sample ORDER BY id`)
+	ids, err := c.app.listIDs(ctx, `SELECT id FROM products WHERE sample ORDER BY id`, "sample products")
 	if err != nil {
-		return 0, Internalf(err, "list sample products")
-	}
-	var ids []int64
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return 0, Internalf(err, "scan sample product")
-		}
-		ids = append(ids, id)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return 0, Internalf(err, "list sample products")
+		return 0, err
 	}
 	deleted := 0
 	for _, id := range ids {
@@ -170,7 +254,41 @@ func (c *Catalog) DeleteSampleProducts(ctx context.Context) (int, error) {
 		}
 		deleted++
 	}
+	// Their pictures go too, every version of them: they are samples as
+	// well, and left behind they would fill the media library with pictures of
+	// products the store no longer has.
+	pictures, err := c.app.listIDs(ctx, `SELECT id FROM media WHERE url LIKE '/sample-media/%'`, "sample pictures")
+	if err != nil {
+		return deleted, err
+	}
+	for _, id := range pictures {
+		if err := c.app.media.Delete(ctx, id); err != nil && !errors.Is(err, ErrNotFound) {
+			return deleted, err
+		}
+	}
 	return deleted, nil
+}
+
+// listIDs runs a query of one id column and returns them, what naming them in
+// an error.
+func (a *App) listIDs(ctx context.Context, query, what string, args ...any) ([]int64, error) {
+	rows, err := a.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, Internalf(err, "list %s", what)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, Internalf(err, "list %s", what)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, Internalf(err, "list %s", what)
+	}
+	return ids, nil
 }
 
 func (a *App) handleSampleProductCount(w http.ResponseWriter, r *http.Request) {
