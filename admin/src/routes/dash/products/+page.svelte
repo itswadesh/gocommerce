@@ -40,6 +40,7 @@
     import { settings } from "$lib/settings.svelte.js";
     import BulkBar from "$lib/components/BulkBar.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
+    import { describeSamples, SAMPLE_RIGHTS } from "$lib/samples.js";
     import CategoryPicker from "$lib/components/CategoryPicker.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
@@ -343,29 +344,52 @@
     let confirmOpen = $state(false);
     let pendingDelete = $state(null);
 
-    /* How many sample products the store still has (D94), or null before it
-       answers. Samples arrive only when a store is opened, so once this reads
-       0 it is not asked again on this visit. A refusal reads as 0 too: the
-       banner is an offer, not something the list needs. */
-    let sampleCount = $state(null);
+    /* How much of the sample shop the store still has (D94, D96): its total,
+       or null before it answers, and the count of each kind. Once the total
+       reads 0 it is not asked again on this visit, unless this screen adds
+       the samples itself. A refusal reads as 0 too: the banner is an offer,
+       not something the list needs. */
+    let sampleTotal = $state(null);
+    let sampleCounts = $state({});
     let eraseOpen = $state(false);
-    // The count the dialog names, kept from when it opened: the live one
-    // drops to 0 as the erase lands, while the dialog is still fading out.
-    let eraseCount = $state(0);
+    // What the dialog names, kept from when it opened: the live counts drop
+    // to nothing as the erase lands, while the dialog is still fading out.
+    let eraseSummary = $state("");
+    let addingSamples = $state(false);
+
+    const sampleWritable = $derived(SAMPLE_RIGHTS.every((right) => can(right)));
 
     async function loadSampleCount() {
         try {
-            sampleCount = (await api.get("/api/admin/sample-products")).count;
+            const res = await api.get("/api/admin/sample-content");
+            sampleCounts = res.counts ?? {};
+            sampleTotal = res.total ?? 0;
         } catch {
-            sampleCount = 0;
+            sampleTotal = 0;
+        }
+    }
+
+    async function addSamples() {
+        if (addingSamples) return;
+        addingSamples = true;
+        try {
+            await api.post("/api/admin/sample-content");
+            toast.success("Added the sample shop");
+            sampleTotal = null;
+            await load();
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            addingSamples = false;
         }
     }
 
     async function eraseSamples() {
         try {
-            const { deleted } = await api.delete("/api/admin/sample-products");
-            toast.success(`Erased ${deleted} sample ${pluralize(deleted, "product")}`);
-            sampleCount = 0;
+            await api.delete("/api/admin/sample-content");
+            toast.success("Erased the sample shop");
+            sampleTotal = 0;
+            sampleCounts = {};
         } catch (err) {
             toast.error(err);
         }
@@ -437,7 +461,7 @@
             meta = result.meta;
             // After the await, so the effect that calls load() does not also
             // re-run whenever the count changes. A deleted sample lowers it.
-            if (sampleCount !== 0) loadSampleCount();
+            if (sampleTotal !== 0) loadSampleCount();
         } catch (err) {
             toast.error(err);
         } finally {
@@ -1098,23 +1122,23 @@
             </div>
         {/if}
 
-        {#if sampleCount > 0}
+        {#if sampleTotal > 0}
             <div class="alert info m-b-sm sample-banner" transition:rise>
                 <p>
-                    This store has {sampleCount} sample {pluralize(sampleCount, "product")},
-                    added when it was opened.
+                    This store has a sample shop: {describeSamples(sampleCounts)}. Erase it before you open, so
+                    shoppers see only what is yours.
                 </p>
-                {#if writable}
+                {#if sampleWritable}
                     <button
                         type="button"
                         class="btn sm secondary"
                         onclick={() => {
-                            eraseCount = sampleCount;
+                            eraseSummary = describeSamples(sampleCounts);
                             eraseOpen = true;
                         }}
                     >
                         <i class="ri-delete-bin-line" aria-hidden="true"></i>
-                        <span class="txt">Erase sample products</span>
+                        <span class="txt">Erase the sample shop</span>
                     </button>
                 {/if}
             </div>
@@ -1359,6 +1383,18 @@
                                                 <i class="ri-upload-2-line" aria-hidden="true"></i>
                                                 <span class="txt">Import products</span>
                                             </a>
+                                        {/if}
+                                        {#if sampleWritable}
+                                            <button
+                                                type="button"
+                                                class="btn secondary"
+                                                class:loading={addingSamples}
+                                                disabled={addingSamples}
+                                                onclick={addSamples}
+                                            >
+                                                <i class="ri-store-2-line" aria-hidden="true"></i>
+                                                <span class="txt">Add a sample shop</span>
+                                            </button>
                                         {/if}
                                     </EmptyState>
                                 {/if}
@@ -1863,8 +1899,8 @@
 
 <Confirm
     bind:open={eraseOpen}
-    title="Erase {eraseCount} sample {pluralize(eraseCount, 'product')}?"
-    message="This removes {eraseCount} sample {pluralize(eraseCount, 'product')}, including any you have edited, with their variants and stock. Your own products are not touched, and orders that included a sample keep their own copy."
+    title="Erase the sample shop?"
+    message="This removes everything the sample shop added, including anything you have edited: {eraseSummary}. Your own products, orders, pages and the rest are not touched."
     confirmLabel="Erase"
     danger
     onconfirm={eraseSamples}

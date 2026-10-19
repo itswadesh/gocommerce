@@ -78,8 +78,8 @@
     // Where the store is: its country on Store settings, and what its default
     // shipping zone covers. A guess from the browser's region to start with.
     let country = $state(browserCountry());
-    // Off unless asked: a sample nobody wanted is something to clean up (D94).
-    let sampleProducts = $state(false);
+    // Off unless asked: a sample nobody wanted is something to clean up (D94, D96).
+    let sampleContent = $state(false);
 
     function browserCountry() {
         try {
@@ -130,9 +130,9 @@
             // An address is sent only when somebody typed one. One worked out
             // from the name is the engine's to work out, so a taken one gets a
             // number rather than a refusal.
-            const entry = await createStore(name.trim(), slugTouched ? slug.trim() : "", currency, country, sampleProducts);
+            const entry = await createStore(name.trim(), slugTouched ? slug.trim() : "", currency, country, sampleContent);
             // The store opened either way; this says only that its samples did not all arrive.
-            if (entry.sample_products?.error) toast.warning(entry.sample_products.error);
+            if (entry.sample_content?.error) toast.warning(entry.sample_content.error);
             await reloadStoreData();
             await goto(base + "/dash", { replaceState: true });
         } catch (err) {
@@ -248,12 +248,12 @@
                         type="checkbox"
                         class="switch"
                         aria-describedby="store_samples_hint"
-                        bind:checked={sampleProducts}
+                        bind:checked={sampleContent}
                     />
-                    <label for="store_samples">Add sample products</label>
+                    <label for="store_samples">Start with a sample shop</label>
                 </div>
                 <div class="link-hint" id="store_samples_hint">
-                    <small>Eight products with prices and stock, some in sizes and colours. Erase them all from Products when you are ready.</small>
+                    <small>Eight products with photos, with categories, discounts and a month of orders around them, plus reviews, pages and menu links where the store has those. Nobody is emailed. Erase it all from Products before you open.</small>
                 </div>
             </div>
             <div class="col-12">
