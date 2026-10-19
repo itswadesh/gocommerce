@@ -81,3 +81,28 @@ export function detectDialect(kind, csv) {
 export function importBlocker(csv) {
     return csv.trim() ? "" : "Nothing to import yet: choose a file, or paste CSV into the box above.";
 }
+
+/**
+ * The last run's result, if it belongs under the tab now open. A products dry
+ * run left showing under Orders would say "Press Import to apply the file"
+ * about a file that was never an orders file. Edits to the box keep it: its
+ * table of bad rows is what the edits are fixing.
+ *
+ * @param {{ kind: string, result: object } | null} run
+ * @param {string} kind
+ */
+export function resultFor(run, kind) {
+    return run && run.kind === kind ? run.result : null;
+}
+
+/**
+ * Whether the box holds a CSV that leaving would lose. A dry run writes
+ * nothing, so a file that has only been rehearsed is still unsaved; it stops
+ * counting once a real import has reported.
+ *
+ * @param {string} csv
+ * @param {{ dry_run?: boolean } | null} result
+ */
+export function unsavedCsv(csv, result) {
+    return !!csv.trim() && (!result || !!result.dry_run);
+}

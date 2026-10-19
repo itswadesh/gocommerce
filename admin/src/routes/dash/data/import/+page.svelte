@@ -8,7 +8,14 @@
      * export had no link to this at all.
      */
     import { can, request } from "$lib/api.js";
-    import { detectDialect, importBlocker, importKinds as kindsFor, importUrl } from "$lib/importer.js";
+    import {
+        detectDialect,
+        importBlocker,
+        importKinds as kindsFor,
+        importUrl,
+        resultFor,
+        unsavedCsv,
+    } from "$lib/importer.js";
     import { hasModule } from "$lib/modules.svelte.js";
     import { rise } from "$lib/motion.js";
     import { toast } from "$lib/toast.svelte.js";
@@ -28,7 +35,10 @@
     let overwrite = $state(true);
     let kind = $state("products");
     let csv = $state("");
-    let result = $state(null);
+    /* The last run and the tab it ran under; `result` is what of it belongs
+       on screen now. */
+    let run = $state(null);
+    const result = $derived(resultFor(run, kind));
     let fileInput = $state(null);
 
     // Taxonomy import, the other half of this screen.
@@ -64,8 +74,14 @@
         const file = event.target.files?.[0];
         if (!file) return;
         csv = await file.text();
+        run = null;
         toast.info(`Loaded ${file.name}`);
         event.target.value = "";
+    }
+
+    function clearCsv() {
+        csv = "";
+        run = null;
     }
 
     /*
@@ -78,19 +94,22 @@
     async function runImport(dry) {
         if (blocker || running) return;
         running = dry ? "dry" : "import";
-        result = null;
+        run = null;
+        // The tab as it was when the file went, not when the answer came.
+        const ranKind = kind;
         try {
-            result = await request("POST", importUrl(kind, { dryRun: dry, fireEvents, overwrite }), {
+            const answer = await request("POST", importUrl(ranKind, { dryRun: dry, fireEvents, overwrite }), {
                 body: csv,
                 headers: { "Content-Type": "text/csv" },
             });
+            run = { kind: ranKind, result: answer };
 
-            if (result.errors?.length) {
-                toast.warning(`${result.errors.length} row(s) had problems`);
+            if (answer.errors?.length) {
+                toast.warning(`${answer.errors.length} row(s) had problems`);
             } else if (dry) {
                 toast.success("Dry run looks good — nothing was written");
             } else {
-                toast.success(`Imported: ${result.created} created, ${result.updated} updated`);
+                toast.success(`Imported: ${answer.created} created, ${answer.updated} updated`);
             }
         } catch (err) {
             toast.error(err);
@@ -138,14 +157,15 @@
 
 <svelte:head><title>Import · GoCommerce</title></svelte:head>
 
-<!-- A pasted or loaded CSV that has not been run is the most expensive thing on
-     this screen to lose: it may be a file somebody spent an afternoon on, and it
-     is held nowhere but this textarea. It stops counting as unsaved once a run
-     has reported, which is the point at which leaving is the ordinary thing to
+<!-- A pasted or loaded CSV that has not been imported is the most expensive
+     thing on this screen to lose: it may be a file somebody spent an afternoon
+     on, and it is held nowhere but this textarea. A dry run writes nothing, so
+     it stays unsaved through one; it stops counting once an import has
+     reported, which is the point at which leaving is the ordinary thing to
      do. -->
 <DirtyGuard
-    dirty={!!csv.trim() && !result}
-    message="The CSV in the import box has not been run. Leave and lose it?"
+    dirty={unsavedCsv(csv, result)}
+    message="The CSV in the import box has not been imported. Leave and lose it?"
 />
 
 {#if !mayImport}
@@ -260,11 +280,11 @@
                 {/if}
 
             <!-- Import is its own panel, not another heading in the column.
-                 Everything above it hands a file out and is over in one
-                 click; this is a form with a mode, a rehearsal switch and a
-                 result that appears underneath. Giving it an edge is what
-                 stops the result of an import reading as part of the export
-                 controls above it. -->
+                 The taxonomy above it is over in one click; this is a form
+                 with a kind, a file, two ways to run it and a result that
+                 appears underneath. Giving it an edge is what stops the
+                 result of an import reading as part of the controls above
+                 it. -->
             <section class="card import-panel">
             <h6 class="section-title">
                 <i class="ri-upload-2-line" aria-hidden="true"></i>
@@ -397,7 +417,9 @@
             <!-- Choose, then run: the file on the left, the two ways to run it
                  on the right. Dry run and Import are both always here, under
                  their own names. Until there is something to run they are
-                 greyed out, and the line under them says so. -->
+                 greyed out and the line under them says so: aria-disabled
+                 rather than disabled, so a keyboard still reaches them and a
+                 screen reader still reads the reason. -->
             <div class="import-run flex gap-10 flex-wrap m-t-base">
                 <button type="button" class="btn secondary" onclick={pickFile}>
                     <i class="ri-folder-open-line" aria-hidden="true"></i>
@@ -407,34 +429,41 @@
                     <button
                         type="button"
                         class="btn transparent secondary"
-                        onclick={() => (csv = "")}
+                        onclick={clearCsv}
                     >
                         <span class="txt">Clear</span>
                     </button>
                 {/if}
-                <div class="flex-fill"></div>
-                <button
-                    type="button"
-                    class="btn secondary expanded"
-                    class:loading={running === "dry"}
-                    disabled={!!blocker || !!running}
-                    aria-describedby={blocker ? "import-blocker" : undefined}
-                    onclick={() => runImport(true)}
-                >
-                    <i class="ri-test-tube-line" aria-hidden="true"></i>
-                    <span class="txt">Dry run</span>
-                </button>
-                <button
-                    type="button"
-                    class="btn expanded"
-                    class:loading={running === "import"}
-                    disabled={!!blocker || !!running}
-                    aria-describedby={blocker ? "import-blocker" : undefined}
-                    onclick={() => runImport(false)}
-                >
-                    <i class="ri-upload-2-line" aria-hidden="true"></i>
-                    <span class="txt">Import</span>
-                </button>
+                <div class="import-run-actions">
+                    <button
+                        type="button"
+                        class="btn secondary expanded"
+                        class:loading={running === "dry"}
+                        class:disabled={!!blocker}
+                        disabled={!!running}
+                        aria-disabled={blocker ? "true" : undefined}
+                        aria-busy={running === "dry" ? "true" : undefined}
+                        aria-describedby={blocker ? "import-blocker" : undefined}
+                        onclick={() => runImport(true)}
+                    >
+                        <i class="ri-test-tube-line" aria-hidden="true"></i>
+                        <span class="txt">Dry run</span>
+                    </button>
+                    <button
+                        type="button"
+                        class="btn expanded"
+                        class:loading={running === "import"}
+                        class:disabled={!!blocker}
+                        disabled={!!running}
+                        aria-disabled={blocker ? "true" : undefined}
+                        aria-busy={running === "import" ? "true" : undefined}
+                        aria-describedby={blocker ? "import-blocker" : undefined}
+                        onclick={() => runImport(false)}
+                    >
+                        <i class="ri-upload-2-line" aria-hidden="true"></i>
+                        <span class="txt">Import</span>
+                    </button>
+                </div>
             </div>
 
             {#if blocker}

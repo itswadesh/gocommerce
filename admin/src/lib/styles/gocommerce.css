@@ -6035,12 +6035,12 @@ kbd + kbd {
 }
 
 /*
- * Import / export: the import form as its own panel.
+ * Import: the import form as its own panel.
  *
- * Everything above it on that screen hands a file out and is over in one
- * click. This is a form with a mode, a rehearsal switch and a result that
- * appears underneath it, so it gets an edge — otherwise the result of an
- * import reads as belonging to the export controls above.
+ * The taxonomy above it on that screen is over in one click. This is a form
+ * with a kind, a file, two ways to run it and a result that appears
+ * underneath, so it gets an edge — otherwise the result of an import reads as
+ * belonging to the controls above.
  *
  * The first heading loses its top margin because the card's padding is
  * already the gap; two of them stacked is what makes a panel look
@@ -6064,14 +6064,21 @@ kbd + kbd {
     white-space: nowrap;
 }
 
-/* On a phone the run buttons take a line of their own and share it, so
-   Import is never a stub squeezed in after "Choose a file…". */
+/* Dry run and Import travel as a pair, pushed to the right of the file
+   buttons. Not with a .flex-fill spacer: PocketBase gives that
+   `flex: 1 1 auto !important`, so no rule here could make it break a line. */
+.import-run-actions {
+    display: flex;
+    gap: 10px;
+    margin-left: auto;
+}
+/* On a phone the pair takes a line of its own and shares it, so Import is
+   never a stub squeezed in after "Choose a file…". */
 @media (max-width: 600px) {
-    .import-run > .flex-fill {
-        flex-basis: 100%;
-        height: 0;
+    .import-run-actions {
+        flex: 1 1 100%;
     }
-    .import-run > .btn.expanded {
+    .import-run-actions > .btn {
         flex: 1 1 0;
     }
 }
@@ -6084,15 +6091,16 @@ kbd + kbd {
 .page-import .tab-item {
     transition:
         color var(--animationSpeed),
+        border-color var(--animationSpeed),
         background var(--animationSpeed),
         transform var(--animationSpeed) ease-out;
 }
-.page-import .btn:active:not(:disabled),
+.page-import .btn:active:not(:disabled):not(.disabled),
 .page-import .tab-item:active {
     transform: scale(0.97);
 }
 @media (prefers-reduced-motion: reduce) {
-    .page-import .btn:active:not(:disabled),
+    .page-import .btn:active:not(:disabled):not(.disabled),
     .page-import .tab-item:active {
         transform: none;
     }
