@@ -133,12 +133,14 @@ func (a *App) sampleSeeders() []SampleSeeder {
 }
 
 // The sample categories, by product type: every sample product files under
-// the one its type names.
-var sampleCategories = []struct{ slug, title, productType string }{
-	{"apparel", "Apparel", "Apparel"},
-	{"accessories", "Accessories", "Accessories"},
-	{"home", "Home", "Home"},
-	{"stationery", "Stationery", "Stationery"},
+// the one its type names. Each has a picture, one of its products'
+// photographs, kept where a storefront reads a category's picture
+// (metadata.image), so a page of category tiles is not a row of blanks.
+var sampleCategories = []struct{ slug, title, productType, picture string }{
+	{"apparel", "Apparel", "Apparel", "cotton-crew-tee-white"},
+	{"accessories", "Accessories", "Accessories", "canvas-tote-bag"},
+	{"home", "Home", "Home", "ceramic-mug"},
+	{"stationery", "Stationery", "Stationery", "a5-notebook"},
 }
 
 var sampleCollections = []struct {
@@ -276,7 +278,10 @@ func (a *App) addSampleCategories(ctx context.Context, shop *SampleShop, product
 			continue // the merchant's own; their products are not ours to file
 		}
 		if !ok {
-			cat, err := a.Categories().Create(ctx, CategoryInput{Slug: c.slug, Title: c.title, sample: true})
+			cat, err := a.Categories().Create(ctx, CategoryInput{
+				Slug: c.slug, Title: c.title, sample: true,
+				Metadata: Metadata{"image": samplePhotoPrefix + c.picture + ".webp"},
+			})
 			if err != nil {
 				return added, err
 			}

@@ -7,9 +7,12 @@ import (
 )
 
 // The sample shop's banners (D96, D99): three slides on the home page, each
-// leading to a part of the sample shop, and a grid of its categories. The
-// pictures are the sample shop's photographs, which the engine serves from
-// its own binary at /sample-media/1/ and credits in docs/admin-panel.md.
+// leading to a part of the sample shop, and a grid of its collections. Not of
+// its categories: a storefront's home page has a category section of its own,
+// which the sample categories' pictures fill, and the same tiles twice would
+// read as a mistake. The pictures are the sample shop's photographs, which the
+// engine serves from its own binary at /sample-media/1/ and credits in
+// docs/admin-panel.md.
 
 const sampleMedia = "/sample-media/1/"
 
@@ -19,15 +22,13 @@ var sampleSlides = []struct{ title, kind, slug, picture string }{
 	{"For the home", "categories", "home", "banner-home"},
 }
 
-// The tile for each sample category is a photograph of one of its products.
+// The tile for each sample collection is a photograph of one of its products.
 var sampleTiles = map[string]string{
-	"apparel":     "cotton-crew-tee-white",
-	"accessories": "canvas-tote-bag",
-	"home":        "ceramic-mug",
-	"stationery":  "a5-notebook",
+	"new-in": "hooded-sweatshirt",
+	"gifts":  "ceramic-mug",
 }
 
-const sampleGrid = "Shop by category"
+const sampleGrid = "Shop by collection"
 
 // SampleRights implements gocommerce.SampleSeeder.
 func (m *Module) SampleRights() []gocommerce.Right { return []gocommerce.Right{rightBannersWrite} }
@@ -66,13 +67,13 @@ func (m *Module) AddSamples(ctx context.Context, shop *gocommerce.SampleShop) (g
 			ImageURL: sampleMedia + s.picture + "-wide.webp", MobileImageURL: sampleMedia + s.picture + "-phone.webp",
 		})
 	}
-	for _, c := range shop.Categories {
+	for _, c := range shop.Collections {
 		picture, ok := sampleTiles[c.Slug]
 		if !ok {
 			continue
 		}
 		ins = append(ins, BannerInput{
-			Placement: PlacementGrid, GroupTitle: sampleGrid, Title: c.Title, Link: "/categories/" + c.Slug,
+			Placement: PlacementGrid, GroupTitle: sampleGrid, Title: c.Title, Link: "/collections/" + c.Slug,
 			ImageURL: sampleMedia + picture + ".webp",
 		})
 	}

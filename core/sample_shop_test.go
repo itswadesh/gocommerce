@@ -40,6 +40,13 @@ func TestASampleShopHasEverythingAStoreShows(t *testing.T) {
 		`SELECT slug FROM categories WHERE id = $1 AND sample`, tee.Category.ID).Scan(&catSlug); err != nil || catSlug != "apparel" {
 		t.Fatalf("the tee's category = %q, %v; want the sample apparel category", catSlug, err)
 	}
+	// Each sample category has a picture, which a storefront shows on its
+	// own category tiles (the connector reads metadata.image).
+	var pictured int
+	if err := app.DB().QueryRowContext(ctx,
+		`SELECT count(*) FROM categories WHERE sample AND metadata->>'image' LIKE '/sample-media/1/%.webp'`).Scan(&pictured); err != nil || pictured != 4 {
+		t.Fatalf("sample categories with a picture = %d (%v), want all 4", pictured, err)
+	}
 	var uncategorised int
 	if err := app.DB().QueryRowContext(ctx,
 		`SELECT count(*) FROM products WHERE sample AND category_id IS NULL`).Scan(&uncategorised); err != nil || uncategorised != 0 {
