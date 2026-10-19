@@ -147,12 +147,15 @@ func (m *Module) onOrderPaid(ctx context.Context, e gocommerce.Event) error {
 }
 
 func (m *Module) issue(ctx context.Context, orderID int64) error {
-	var exists bool
-	if err := m.db.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM invoices_documents WHERE order_id = $1)`, orderID).Scan(&exists); err != nil {
+	// A sample order (D96) is one nobody placed, and an invoice number is the
+	// tax office's, issued without gaps: none goes to it.
+	var exists, sample bool
+	if err := m.db.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM invoices_documents WHERE order_id = $1),
+		       EXISTS (SELECT 1 FROM orders WHERE id = $1 AND sample)`, orderID).Scan(&exists, &sample); err != nil {
 		return err
 	}
-	if exists {
+	if exists || sample {
 		return nil
 	}
 
@@ -206,7 +209,7 @@ func (m *Module) reconcile(ctx context.Context) error {
 	rows, err := m.db.QueryContext(ctx, `
 		SELECT o.id FROM orders o
 		LEFT JOIN invoices_documents i ON i.order_id = o.id
-		WHERE o.payment_status = 'paid' AND i.id IS NULL
+		WHERE o.payment_status = 'paid' AND i.id IS NULL AND NOT o.sample
 		ORDER BY o.id LIMIT 500`)
 	if err != nil {
 		return err

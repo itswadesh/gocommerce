@@ -273,7 +273,7 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 		samples = &sampleContentResult{Added: added}
 		if err != nil {
 			a.log.Error("add the sample shop", "store", st.ID, "err", err)
-			samples.Error = "The store was opened, but not all of the sample content could be added. Add the rest from Products."
+			samples.Error = "The store was opened, but not all of the sample shop could be added."
 		}
 	}
 	entry, err := a.enterStore(ctx, st.ID)

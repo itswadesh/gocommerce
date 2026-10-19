@@ -56,7 +56,22 @@ func (o *outbox) nudge() {
 
 // write appends an event to the outbox inside the caller's transaction. It is
 // the only way core state changes announce themselves.
+//
+// A sample order (D96) announces nothing, whatever is done to it: no email,
+// SMS, webhook, invoice or marketing event goes anywhere for an order nobody
+// placed. Asked here, the one door every order event passes, rather than at
+// each transition, so a transition added later cannot forget it.
 func (o *outbox) write(ctx context.Context, tx *sql.Tx, name string, aggregateType string, aggregateID int64, payload any) error {
+	if aggregateType == AggregateOrder {
+		var sample bool
+		err := tx.QueryRowContext(ctx, `SELECT sample FROM orders WHERE id = $1`, aggregateID).Scan(&sample)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("look up order %d: %w", aggregateID, err)
+		}
+		if sample {
+			return nil
+		}
+	}
 	id, err := newUUID()
 	if err != nil {
 		return err

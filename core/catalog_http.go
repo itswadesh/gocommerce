@@ -45,8 +45,11 @@ func (a *App) mountCatalogRoutes() {
 	// The sample shop (D96): counted by anybody who can see the catalogue,
 	// added and erased only by somebody who could do each part by hand.
 	a.HandleAdminFunc("GET /api/admin/sample-content", a.handleSampleShopCounts, RightCatalogRead)
-	a.HandleAdminFunc("POST /api/admin/sample-content", a.handleAddSampleShop, sampleShopRights...)
-	a.HandleAdminFunc("DELETE /api/admin/sample-content", a.handleEraseSampleShop, sampleShopRights...)
+	a.HandleAdminFunc("POST /api/admin/sample-content", a.handleAddSampleShop, coreSampleShopRights...)
+	a.HandleAdminFunc("DELETE /api/admin/sample-content", a.handleEraseSampleShop, coreSampleShopRights...)
+	// D94's names, still answered (handleSampleProductCount).
+	a.HandleAdminFunc("GET /api/admin/sample-products", a.handleSampleProductCount, RightCatalogRead)
+	a.HandleAdminFunc("DELETE /api/admin/sample-products", a.handleDeleteSampleProducts, coreSampleShopRights...)
 	// The sample products' pictures, from the binary (D96).
 	a.HandleFunc("GET "+samplePhotoPrefix+"{file}", a.handleSamplePhoto)
 }

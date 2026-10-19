@@ -3332,6 +3332,13 @@
                         "total": {
                           "type": "integer",
                           "description": "Every sample row the counts name, customers aside: zero when the store has none left."
+                        },
+                        "rights": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Every right adding or erasing the sample shop needs: the core areas' write rights and each installed module's (pages.write, faq.write, reviews.moderate, menus.write), so a client offers them only to somebody who holds them all."
                         }
                       }
                     }
@@ -3358,7 +3365,7 @@
             "adminToken": []
           }
         ],
-        "description": "Adds the sample shop (D96) to the store, or whatever of it the store does not have: eight products with photographs, four categories they are filed in, two collections, two percentage discounts that only ever apply to the sample products, twelve orders over the last month from six customers at example.com, and the installed modules' own samples (reviews, pages, questions and answers, menu links). The orders are numbered SAMPLE-1001 on, move no stock and announce nothing, so no email, SMS or webhook goes out for them. A slug, code or order number the store already has is skipped, so asking again adds only what is missing. Needs catalog.write, categories.write, collections.write, discounts.write, orders.write and media.write.",
+        "description": "Adds the sample shop (D96) to the store, or whatever of it the store does not have: eight products with photographs, four categories they are filed in, two collections, two percentage discounts that only ever apply to the sample products, twelve orders over the last month from six customers at example.com, and the installed modules' own samples (reviews, pages, questions and answers, menu links). The orders are numbered SAMPLE-1001 on, move no stock and announce nothing, then or after, so no email, SMS, webhook or invoice ever follows them. A slug, code or order number the store already has is skipped, so asking again adds only what is missing. Needs catalog.write, categories.write, collections.write, discounts.write, orders.write and media.write, and the write right of each installed module that adds samples, as GET lists them.",
         "responses": {
           "200": {
             "description": "What was added.",
@@ -3436,6 +3443,92 @@
                             "orders": 12,
                             "customers": 6
                           }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/sample-products": {
+      "get": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Count the sample products",
+        "deprecated": true,
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "D94's route, still answered: how many of the store's products are samples. GET /api/admin/sample-content counts the whole sample shop (D96). Needs catalog.read.",
+        "responses": {
+          "200": {
+            "description": "The count.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "count": {
+                          "type": "integer",
+                          "example": 8
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Erase the sample shop (old name)",
+        "deprecated": true,
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "D94's route, still answered. It erases the whole sample shop, as DELETE /api/admin/sample-content does, because a sample product cannot go without the sample orders and reviews that point at it, and reports how many products went. Needs the same rights.",
+        "responses": {
+          "200": {
+            "description": "How many sample products were erased.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "deleted": {
+                          "type": "integer",
+                          "example": 8
                         }
                       }
                     }

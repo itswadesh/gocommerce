@@ -218,8 +218,8 @@ func TestErasingTheSampleShopLeavesTheMerchantsOwn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if counts["categories"] != 1 || counts["products"] != 0 || counts["orders"] != 0 {
-		t.Fatalf("counts after the erase = %v, want only the category in use", counts)
+	if counts.total() != 0 {
+		t.Fatalf("counts after the erase = %v, want nothing: the category in use is the merchant's now", counts)
 	}
 }
 
