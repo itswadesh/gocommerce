@@ -716,7 +716,8 @@ The storefront reads one page's live banners at `GET /x/banners?page=home`,
 already split into `slides` and `grids`. The storefront connector puts them on
 the home page record svelte-commerce renders: the slides as its desktop and
 tablet slider and, with their phone pictures, its phone slider; each grid as a
-four-across section for wider screens and a two-across one for phones.
+section as many tiles across as it has, two to four, on wider screens and two
+across on phones.
 
 ## Authentication
 
