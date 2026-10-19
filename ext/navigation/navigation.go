@@ -455,13 +455,41 @@ func (m *Module) handleSetItems(w http.ResponseWriter, r *http.Request) {
 		if !exists {
 			return gocommerce.NotFoundf("menu %d does not exist", id)
 		}
+		// The sample shop's links (D96) keep their mark through the rewrite,
+		// matched by where they point: a link to a sample page or category the
+		// merchant kept goes with the samples, rather than outliving them as a
+		// link to a page that is gone.
+		var samples []sampleLink
+		rows, err := tx.QueryContext(r.Context(), `SELECT kind, target FROM navigation_items WHERE menu_id = $1 AND sample`, id)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var l sampleLink
+			if err := rows.Scan(&l.kind, &l.target); err != nil {
+				rows.Close()
+				return err
+			}
+			samples = append(samples, l)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(r.Context(), `DELETE FROM navigation_items WHERE menu_id = $1`, id); err != nil {
 			return err
 		}
 		if err := insertItems(r.Context(), tx, id, nil, in.Items); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(r.Context(), `UPDATE navigation_menus SET updated_at = now() WHERE id = $1`, id)
+		for _, l := range samples {
+			if _, err := tx.ExecContext(r.Context(), `
+				UPDATE navigation_items SET sample = true WHERE menu_id = $1 AND kind = $2 AND target = $3`,
+				id, l.kind, l.target); err != nil {
+				return err
+			}
+		}
+		_, err = tx.ExecContext(r.Context(), `UPDATE navigation_menus SET updated_at = now() WHERE id = $1`, id)
 		return err
 	})
 	if err != nil {

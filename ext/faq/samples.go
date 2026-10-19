@@ -7,7 +7,9 @@ import (
 )
 
 // The sample shop's questions and answers (D96): what a shopper asks before
-// buying, answered the way a small shop might, for the merchant to rewrite.
+// buying, for the merchant to replace with their own. The answers promise
+// nothing a store has not decided — no number of days, no time to answer —
+// since a sample left published would otherwise speak for the shop.
 
 // migrationSample marks the entries the sample shop added, by a column no
 // request sets, so erasing them never takes the shop's own.
@@ -15,16 +17,19 @@ const migrationSample = `ALTER TABLE faq_entries ADD COLUMN sample boolean NOT N
 
 var sampleEntries = []struct{ section, question, answer string }{
 	{"Orders", "How do I know my order went through?",
-		"You get an email with your order number as soon as it is placed. If it has not arrived within a few minutes, check your spam folder."},
+		"The checkout shows your order number as soon as the order is placed. Keep it for any question about the order."},
 	{"Orders", "Can I change or cancel my order?",
-		"Write to us as soon as you can. Until an order is packed we can change it or cancel it."},
+		"Write to us from the contact page as soon as you can, with your order number."},
 	{"Delivery", "How long does delivery take?",
-		"Most orders are packed within two working days. You get an email with tracking once yours is on its way."},
+		"The checkout shows each delivery option for your address, with its price, before you pay."},
 	{"Delivery", "Where do you deliver?",
 		"Anywhere the checkout offers a delivery option for your address."},
 	{"Returns", "Can I return something?",
-		"Yes. Send it back unused within 30 days and we refund you once it reaches us."},
+		"Write to us from the contact page with your order number, and we will tell you what happens next."},
 }
+
+// SampleRights implements gocommerce.SampleSeeder.
+func (m *Module) SampleRights() []gocommerce.Right { return []gocommerce.Right{rightFAQWrite} }
 
 // AddSamples implements gocommerce.SampleSeeder. A question the shop already
 // asks is skipped, each new one last in its section.

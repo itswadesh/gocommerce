@@ -7,24 +7,27 @@ import (
 )
 
 // The sample shop's pages (D96): the three a shopper looks for before buying,
-// written the way a small shop might write them, for the merchant to rewrite.
+// for the merchant to replace with their own — the erase takes them even when
+// edited. They promise nothing a store has not decided, no number of days and
+// no time to answer, since a sample left published would speak for the shop.
 
 // migrationSample marks the pages the sample shop added, by a column no
 // request sets, so erasing them never takes the shop's own.
 const migrationSample = `ALTER TABLE cms_pages ADD COLUMN sample boolean NOT NULL DEFAULT false;`
 
 var samplePages = []struct{ slug, title, excerpt, body string }{
-	{"about", "About us", "Who we are and what we make.",
+	{"about", "About us", "Who we are and what we sell.",
 		"We are a small shop selling everyday clothing, accessories and things for the home.\n\n" +
-			"We choose each product because we use it ourselves, and we keep the range small so we can stand behind every piece of it.\n\n" +
-			"Questions about an order or a product? Write to us from the contact page and we will answer within a working day."},
-	{"shipping", "Shipping and delivery", "How and when your order reaches you.",
-		"Most orders are packed within two working days. You get an email with tracking as soon as yours is on its way.\n\n" +
-			"The checkout shows every delivery option for your address, with its price, before you pay."},
+			"Questions about an order or a product? Write to us from the contact page."},
+	{"shipping", "Shipping and delivery", "How your order reaches you.",
+		"The checkout shows every delivery option for your address, with its price, before you pay.\n\n" +
+			"Questions about a delivery? Write to us from the contact page with your order number."},
 	{"returns", "Returns", "Sending something back.",
-		"You can return anything unused within 30 days of delivery.\n\n" +
-			"Write to us from the contact page with your order number, and we will tell you where to send it. We refund you once it reaches us."},
+		"If something is not right, write to us from the contact page with your order number, and we will tell you what happens next."},
 }
+
+// SampleRights implements gocommerce.SampleSeeder.
+func (m *Module) SampleRights() []gocommerce.Right { return []gocommerce.Right{rightPagesWrite} }
 
 // AddSamples implements gocommerce.SampleSeeder. The pages are published, in
 // the store's first language; a slug the store already uses is skipped, and

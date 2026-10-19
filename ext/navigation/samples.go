@@ -10,9 +10,15 @@ import (
 // so a shopper can browse by them, and the sample pages in the footer.
 
 // migrationSample marks the links the sample shop added, by a column no
-// request sets. Saving a menu rewrites its tree, so a menu the merchant has
-// saved since holds its links as their own, and the erase leaves them.
+// request sets. Saving a menu rewrites its tree; the save carries the mark
+// over to a link that still points where a sample link did (handleSetItems).
 const migrationSample = `ALTER TABLE navigation_items ADD COLUMN sample boolean NOT NULL DEFAULT false;`
+
+// sampleLink is where a sample link points, which is what a save matches.
+type sampleLink struct{ kind, target string }
+
+// SampleRights implements gocommerce.SampleSeeder.
+func (m *Module) SampleRights() []gocommerce.Right { return []gocommerce.Right{rightMenusWrite} }
 
 // LinksSamples implements gocommerce.SampleLinker: the links point at the
 // pages the other modules add, so this module is asked after them.
