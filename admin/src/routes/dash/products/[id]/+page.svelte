@@ -33,6 +33,7 @@
     } from "$lib/variantform.js";
     import { distinct } from "$lib/catalog.js";
     import { toast } from "$lib/toast.svelte.js";
+    import { myStores } from "$lib/stores.svelte.js";
     import { settings } from "$lib/settings.svelte.js";
     import RichText from "$lib/components/RichText.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
@@ -683,15 +684,22 @@
     }
 
     /**
-     * The public URL for this product — what a storefront would fetch.
+     * The public URL for this product: its page on the store's own domain, or
+     * its <slug>.<base domain>. A store with neither has no shop to point at,
+     * so it is the record a storefront would fetch from this engine.
      *
-     * This engine serves an API rather than a shop, so "preview" means the
-     * product as the outside world can actually see it. Draft and archived
-     * products 404 there on purpose, so the button says so instead of opening
-     * an error.
+     * Draft and archived products 404 there on purpose, so the button says so
+     * instead of opening an error.
      */
+    const storeDomain = $derived(myStores.current?.domain ?? "");
+    // ponytail: /products/{slug} is Svelte Commerce's route and ext/sitemaps'
+    // default product_path; read that setting if a storefront serves another.
     const publicURL = $derived(
-        product?.slug ? `${location.origin}/api/products/slug/${product.slug}` : "",
+        !product?.slug
+            ? ""
+            : storeDomain
+              ? `https://${storeDomain}/products/${product.slug}`
+              : `${location.origin}/api/products/slug/${product.slug}`,
     );
     const previewable = $derived(product?.status === "active");
 
@@ -1244,9 +1252,11 @@
         shownSizeIn = next;
     }
 
-    // The storefront chooses its own paths, so this is the store's host and the
-    // slug — the part the engine actually owns — rather than a guessed route.
-    const previewHost = $derived(typeof location === "undefined" ? "" : location.host);
+    // Where Preview goes, as a search result prints it. Without a store domain
+    // it is this host and the slug, the part the engine actually owns.
+    const previewHost = $derived(
+        storeDomain ? `${storeDomain}/products` : typeof location === "undefined" ? "" : location.host,
+    );
 
     const availableTotal = $derived(
         (product?.variants ?? [])
@@ -1299,9 +1309,8 @@
 
                     <!--
                         Shopify's header actions. Preview and Share both point at
-                        the public product, which for a headless engine is the
-                        API route a storefront would fetch — that is the product
-                        as the outside world can see it.
+                        the public product: its page on the store's domain
+                        (publicURL).
                     -->
                     <a
                         class="btn sm secondary"
@@ -2246,10 +2255,8 @@
                             </div>
 
                             <!--
-                                Prefixed the way Shopify prefixes it, with the store's
-                                host and nothing after it. The storefront chooses its
-                                own paths, so printing /products/ here would show the
-                                operator a url that may not exist.
+                                Prefixed the way Shopify prefixes it, with where the
+                                product's page is (previewHost).
                             -->
                             <div class="field m-t-sm">
                                 <label for="slug">URL handle</label>
