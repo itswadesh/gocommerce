@@ -1,0 +1,473 @@
+{
+  "paths": {
+    "/x/banners": {
+      "get": {
+        "tags": [
+          "banners"
+        ],
+        "summary": "A storefront page's banners",
+        "description": "The live banners of one page, already split the way a page shows them: `slides` for the slider across the top, and `grids`, each a heading and its tiles, in the order the shop arranged them. `page` defaults to `home`. A page with none answers empty lists. 404 while the plugin is off.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "home"
+            },
+            "description": "The page's address name."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The page's banners.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "string"
+                        },
+                        "slides": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/BannerPublic"
+                          }
+                        },
+                        "grids": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/BannerGrid"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/x/banners": {
+      "get": {
+        "tags": [
+          "banners"
+        ],
+        "summary": "Every banner, live or switched off",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "One page's banners with `page`, or every page's, in the order they read. Unpaged: a page holds a handful. Needs banners.read.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The banners.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Banner"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "banners"
+        ],
+        "summary": "Add a banner",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Added last on its page. A picture is required; a picture or a link must be a path on this site or an http(s) address, never javascript:, data: or a protocol-relative //host. `page` defaults to `home` and `placement` to `slide`. Needs banners.write.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BannerInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The banner.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Banner"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/banners/{id}": {
+      "patch": {
+        "tags": [
+          "banners"
+        ],
+        "summary": "Replace a banner",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Every field is sent, as on create; its place on the page is kept. Needs banners.write.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BannerInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The banner.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Banner"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "banners"
+        ],
+        "summary": "Remove a banner",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Needs banners.write.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/x/banners/order": {
+      "put": {
+        "tags": [
+          "banners"
+        ],
+        "summary": "Reorder a page's banners",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Every banner of the page, by id, in the order it should read. An order that misses one, or names one from another page, is refused rather than half applied. Needs banners.write.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "page": {
+                    "type": "string",
+                    "default": "home"
+                  },
+                  "ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "required": [
+                  "ids"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The page's banners in their new order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Banner"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Banner": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "string",
+            "example": "home",
+            "description": "The storefront page it shows on, by its address name."
+          },
+          "placement": {
+            "type": "string",
+            "enum": [
+              "slide",
+              "grid"
+            ],
+            "description": "A slide in the slider across the top, or a tile in a grid under `group_title`."
+          },
+          "group_title": {
+            "type": "string",
+            "description": "A grid's heading; tiles with the same one form one grid. Empty for a slide."
+          },
+          "position": {
+            "type": "integer",
+            "description": "Its place on the page, set by the order route."
+          },
+          "title": {
+            "type": "string",
+            "description": "What the banner says, and its alternative text."
+          },
+          "link": {
+            "type": "string",
+            "example": "/collections/new-in",
+            "description": "A path on the storefront or a full web address; empty goes nowhere."
+          },
+          "image_url": {
+            "type": "string",
+            "description": "The picture, wide enough for a desktop: a path on this site such as /media/… or a web address."
+          },
+          "mobile_image_url": {
+            "type": "string",
+            "description": "A narrower crop for a phone. Empty uses image_url."
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BannerInput": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string",
+            "example": "home",
+            "description": "The storefront page it shows on, by its address name."
+          },
+          "placement": {
+            "type": "string",
+            "enum": [
+              "slide",
+              "grid"
+            ],
+            "description": "A slide in the slider across the top, or a tile in a grid under `group_title`."
+          },
+          "group_title": {
+            "type": "string",
+            "description": "A grid's heading; tiles with the same one form one grid. Empty for a slide."
+          },
+          "title": {
+            "type": "string",
+            "description": "What the banner says, and its alternative text."
+          },
+          "link": {
+            "type": "string",
+            "example": "/collections/new-in",
+            "description": "A path on the storefront or a full web address; empty goes nowhere."
+          },
+          "image_url": {
+            "type": "string",
+            "description": "The picture, wide enough for a desktop: a path on this site such as /media/… or a web address."
+          },
+          "mobile_image_url": {
+            "type": "string",
+            "description": "A narrower crop for a phone. Empty uses image_url."
+          },
+          "active": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "image_url"
+        ]
+      },
+      "BannerPublic": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string",
+            "description": "What the banner says, and its alternative text."
+          },
+          "link": {
+            "type": "string",
+            "example": "/collections/new-in",
+            "description": "A path on the storefront or a full web address; empty goes nowhere."
+          },
+          "image_url": {
+            "type": "string",
+            "description": "The picture, wide enough for a desktop: a path on this site such as /media/… or a web address."
+          },
+          "mobile_image_url": {
+            "type": "string",
+            "description": "A narrower crop for a phone. Empty uses image_url."
+          }
+        }
+      },
+      "BannerGrid": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "banners": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BannerPublic"
+            }
+          }
+        }
+      }
+    }
+  }
+}

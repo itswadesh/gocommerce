@@ -66,10 +66,11 @@ func (c SampleCounts) total() int {
 // AddSampleShop fills it before it asks the modules, and a module that adds
 // something others may link to (pages) appends it.
 type SampleShop struct {
-	Products   []SampleItem
-	Categories []SampleItem
-	Pages      []SampleItem
-	Customers  []SampleCustomer
+	Products    []SampleItem
+	Categories  []SampleItem
+	Collections []SampleItem
+	Pages       []SampleItem
+	Customers   []SampleCustomer
 }
 
 // SampleItem is one sample row, by id and by the slug a link would use.
@@ -296,14 +297,19 @@ func (a *App) addSampleCategories(ctx context.Context, shop *SampleShop, product
 	return added, nil
 }
 
-func (a *App) addSampleCollections(ctx context.Context, _ *SampleShop, products map[string]*Product) (SampleCounts, error) {
+func (a *App) addSampleCollections(ctx context.Context, shop *SampleShop, products map[string]*Product) (SampleCounts, error) {
 	added := SampleCounts{}
 	for _, c := range sampleCollections {
-		_, _, ok, err := a.sampleRowID(ctx, "collections", "slug", c.slug)
+		id, sample, ok, err := a.sampleRowID(ctx, "collections", "slug", c.slug)
 		if err != nil {
 			return added, err
 		}
 		if ok {
+			// A sample one from before is still the shop's to link to; the
+			// merchant's own under the same address is not.
+			if sample {
+				shop.Collections = append(shop.Collections, SampleItem{ID: id, Slug: c.slug, Title: c.title})
+			}
 			continue
 		}
 		col, err := a.Collections().Create(ctx, CollectionInput{
@@ -321,6 +327,7 @@ func (a *App) addSampleCollections(ctx context.Context, _ *SampleShop, products 
 		if err := a.Collections().SetCollectionProducts(ctx, col.ID, ids); err != nil {
 			return added, err
 		}
+		shop.Collections = append(shop.Collections, SampleItem{ID: col.ID, Slug: c.slug, Title: c.title})
 		added["collections"]++
 	}
 	return added, nil

@@ -34,6 +34,7 @@ services:
       - -faq
       - -translations
       - -showcases
+      - -banners
       - -wishlist
       - -gateways
       - -carriers

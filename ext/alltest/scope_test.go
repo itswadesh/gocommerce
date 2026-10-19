@@ -8,6 +8,7 @@ import (
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
 	b2b "github.com/itswadesh/gocommerce/ext/b2b"
+	banners "github.com/itswadesh/gocommerce/ext/banners"
 	cartrecovery "github.com/itswadesh/gocommerce/ext/cart-recovery"
 	cms "github.com/itswadesh/gocommerce/ext/cms"
 	contact "github.com/itswadesh/gocommerce/ext/contact"
@@ -67,6 +68,7 @@ func everyModule() []gocommerce.Module {
 		contact.New(contact.Config{}),
 		faq.New(faq.Config{}),
 		showcases.New(showcases.Config{}),
+		banners.New(banners.Config{}),
 		feeds.New(feeds.Config{}),
 		delhivery.New(delhivery.Config{}),
 		easyship.New(easyship.Config{}),
