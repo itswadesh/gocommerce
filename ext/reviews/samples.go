@@ -33,6 +33,12 @@ var sampleReviews = map[string]struct {
 	"a5-notebook":         {5, "Lies flat", "The paper takes ink without bleeding through and the binding lies flat."},
 }
 
+// SampleRights implements gocommerce.SampleSeeder: the samples are published
+// reviews, which is moderating.
+func (m *Module) SampleRights() []gocommerce.Right {
+	return []gocommerce.Right{rightReviewsModerate}
+}
+
 // AddSamples implements gocommerce.SampleSeeder. A product that already has a
 // sample review is skipped.
 func (m *Module) AddSamples(ctx context.Context, shop *gocommerce.SampleShop) (gocommerce.SampleCounts, error) {
@@ -43,9 +49,12 @@ func (m *Module) AddSamples(ctx context.Context, shop *gocommerce.SampleShop) (g
 			continue
 		}
 		var author *gocommerce.SampleCustomer
+		var bought time.Time
 		for j := range shop.Customers {
-			if slices.Contains(shop.Customers[j].Bought, p.Slug) {
-				author = &shop.Customers[j]
+			k := slices.IndexFunc(shop.Customers[j].Bought,
+				func(b gocommerce.SamplePurchase) bool { return b.Slug == p.Slug })
+			if k >= 0 {
+				author, bought = &shop.Customers[j], shop.Customers[j].Bought[k].At
 				break
 			}
 		}
@@ -57,8 +66,12 @@ func (m *Module) AddSamples(ctx context.Context, shop *gocommerce.SampleShop) (g
 		if err != nil {
 			return gocommerce.SampleCounts{"reviews": added}, gocommerce.Internalf(err, "add the sample reviews")
 		}
-		// Spread over the last fortnight, after the orders they review.
-		at := time.Now().UTC().Truncate(time.Hour).Add(-time.Duration(i+1) * 36 * time.Hour)
+		// Written a day or so after the order that bought it, and never in the
+		// future: an order placed in the last day is reviewed an hour ago.
+		at := bought.Add(time.Duration(20+i%4*6) * time.Hour)
+		if latest := time.Now().UTC().Add(-time.Hour); at.After(latest) {
+			at = latest
+		}
 		res, err := m.db.ExecContext(ctx, `
 			INSERT INTO reviews (product_id, name, email, rating, title, body, status, verified, created_at, updated_at, sample)
 			SELECT $1, $2, $3, $4, $5, $6, 'approved', $7, $8, $8, true
