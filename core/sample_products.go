@@ -174,7 +174,10 @@ func (c *Catalog) AddSampleProducts(ctx context.Context) (int, error) {
 func (m *Media) attachSamplePhotos(ctx context.Context, p *Product, photos []samplePhoto) error {
 	ids := make([]int64, 0, len(photos))
 	for _, ph := range photos {
-		item, err := m.AddURL(ctx, samplePhotoPrefix+ph.file+".webp", MediaImage, ph.alt)
+		url := samplePhotoPrefix + ph.file + ".webp"
+		item, err := m.insert(ctx, &MediaItem{
+			Kind: MediaImage, URL: url, Alt: ph.alt, Filename: filenameForURL(url), sample: true,
+		})
 		if err != nil {
 			return err
 		}
@@ -251,15 +254,24 @@ func (c *Catalog) DeleteSampleProducts(ctx context.Context) (int, error) {
 		}
 		deleted++
 	}
-	// Their pictures go too, every version of them: they are samples as
-	// well, and left behind they would fill the media library with pictures of
-	// products the store no longer has.
-	pictures, err := c.app.listIDs(ctx, `SELECT id FROM media WHERE url LIKE '/sample-media/%'`, "sample pictures")
+	// Their pictures go too: left behind they would fill the media library
+	// with pictures of products the store no longer has. A picture the
+	// merchant has put on a product of their own stays, and is theirs from
+	// now on, so it neither blocks this erase nor waits for the next. A
+	// picture they linked themselves was never marked, whatever its address.
+	pictures, err := c.app.listIDs(ctx, `SELECT id FROM media WHERE sample ORDER BY id`, "sample pictures")
 	if err != nil {
 		return deleted, err
 	}
 	for _, id := range pictures {
-		if err := c.app.media.Delete(ctx, id); err != nil && !errors.Is(err, ErrNotFound) {
+		err := c.app.media.Delete(ctx, id)
+		if errors.Is(err, ErrConflict) {
+			if _, err := c.app.db.ExecContext(ctx, `UPDATE media SET sample = false WHERE id = $1`, id); err != nil {
+				return deleted, Internalf(err, "hand over a sample picture")
+			}
+			continue
+		}
+		if err != nil && !errors.Is(err, ErrNotFound) {
 			return deleted, err
 		}
 	}

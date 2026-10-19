@@ -119,7 +119,10 @@ const (
 	AuditOrderMarkPaid   = "order.mark_paid"
 	AuditOrderMarkUnpaid = "order.mark_unpaid"
 	AuditOrderMarkFailed = "order.mark_failed"
-	AuditOrderRefund     = "order.refund"
+	// Erasing a sample order with the rest of the sample shop (D96): the one
+	// way an order is ever deleted, so its own verb.
+	AuditOrderEraseSample = "order.erase_sample"
+	AuditOrderRefund      = "order.refund"
 	// Settling a refund the engine asked for and never heard back about. Its
 	// own verb rather than a second order.refund, because a person deciding
 	// what happened to money the gateway may or may not have moved is a
@@ -234,7 +237,7 @@ const (
 var AllAuditActions = []string{
 	AuditOrderCreate, AuditOrderCancel, AuditOrderEditLines, AuditOrderUpdate,
 	AuditOrderNote,
-	AuditOrderMarkPaid, AuditOrderMarkUnpaid, AuditOrderMarkFailed,
+	AuditOrderMarkPaid, AuditOrderMarkUnpaid, AuditOrderMarkFailed, AuditOrderEraseSample,
 	AuditOrderRefund, AuditOrderRefundSettle,
 	AuditOrderDeliver, AuditOrderUndeliver,
 	AuditOrderShip, AuditOrderShipmentUpdate, AuditOrderShipmentDelete,

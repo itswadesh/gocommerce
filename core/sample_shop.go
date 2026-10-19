@@ -20,14 +20,23 @@ import (
 // merchant's.
 
 // migration0070SampleShop marks the rest of the sample shop the way 0068
-// marked its products. The partial index answers the order count, asked on
-// every visit to the Products screen, without reading the order book.
+// marked its products, and the sample photographs in the media library, so
+// the erase finds them by mark rather than by an address a merchant could
+// also link to.
+//
+// The partial index answers the order count, asked on every visit to the
+// Products screen, without reading the order book. It indexes no row of an
+// existing install, where nothing is a sample yet, but building it still reads
+// the orders table once under a lock that holds writes: on an install with a
+// very large order book, build it beforehand with CREATE INDEX CONCURRENTLY
+// under the same name, and this statement finds it there.
 const migration0070SampleShop = `
 ALTER TABLE categories  ADD COLUMN sample boolean NOT NULL DEFAULT false;
 ALTER TABLE collections ADD COLUMN sample boolean NOT NULL DEFAULT false;
 ALTER TABLE discounts   ADD COLUMN sample boolean NOT NULL DEFAULT false;
 ALTER TABLE orders      ADD COLUMN sample boolean NOT NULL DEFAULT false;
-CREATE INDEX orders_sample_idx ON orders (store_id) WHERE sample;
+ALTER TABLE media       ADD COLUMN sample boolean NOT NULL DEFAULT false;
+CREATE INDEX IF NOT EXISTS orders_sample_idx ON orders (store_id) WHERE sample;
 `
 
 // SampleCounts is how many of each kind of sample a store has, or an add or
@@ -71,12 +80,19 @@ type SampleItem struct {
 }
 
 // SampleCustomer is a sample shopper: a name, an address at example.com,
-// which nobody receives mail at, and the slugs of the sample products their
-// confirmed sample orders bought.
+// which nobody receives mail at, and what their confirmed sample orders
+// bought.
 type SampleCustomer struct {
 	Name   string
 	Email  string
-	Bought []string
+	Bought []SamplePurchase
+}
+
+// SamplePurchase is a sample product a sample customer bought, by slug, and
+// when their order for it was placed.
+type SamplePurchase struct {
+	Slug string
+	At   time.Time
 }
 
 // SampleSeeder is a module with sample content of its own. AddSamples adds
@@ -88,6 +104,10 @@ type SampleSeeder interface {
 	AddSamples(ctx context.Context, shop *SampleShop) (SampleCounts, error)
 	CountSamples(ctx context.Context) (SampleCounts, error)
 	EraseSamples(ctx context.Context) (SampleCounts, error)
+	// SampleRights are the rights writing its samples by hand would need.
+	// Adding and erasing the sample shop ask for every seeder's, so nobody
+	// publishes a page or a review through it who could not by hand.
+	SampleRights() []Right
 }
 
 // SampleLinker is a SampleSeeder whose samples link to the others' — a menu
@@ -158,8 +178,9 @@ type sampleOrderLine struct {
 }
 
 // The sample orders: a month of trade, most of it paid, two awaiting payment
-// and one cancelled, so every state the order list filters by has something
-// in it. Numbered SAMPLE-1001 on, which no checkout ever takes and which says
+// and one cancelled. The two awaiting payment are confirmed, as an order
+// paid on delivery is: a pending order holds a stock reservation, which an
+// imported one never took, so marking it paid could not commit its stock. Numbered SAMPLE-1001 on, which no checkout ever takes and which says
 // what they are wherever an order number is shown.
 var sampleOrders = []struct {
 	customer, daysAgo int
@@ -175,9 +196,9 @@ var sampleOrders = []struct {
 	{0, 8, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"leather-card-holder", nil, 1}}},
 	{1, 6, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"ceramic-mug", nil, 1}, {"a5-notebook", nil, 1}}},
 	{2, 5, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"hooded-sweatshirt", []string{"M"}, 1}, {"canvas-tote-bag", nil, 1}}},
-	{3, 3, OrderPending, PaymentPending, []sampleOrderLine{{"cotton-crew-tee", []string{"S", "Black"}, 1}}},
+	{3, 3, OrderConfirmed, PaymentPending, []sampleOrderLine{{"cotton-crew-tee", []string{"S", "Black"}, 1}}},
 	{4, 2, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"linen-napkins", nil, 2}}},
-	{5, 1, OrderPending, PaymentPending, []sampleOrderLine{{"wool-beanie", []string{"Grey"}, 2}, {"ceramic-mug", nil, 1}}},
+	{5, 1, OrderConfirmed, PaymentPending, []sampleOrderLine{{"wool-beanie", []string{"Grey"}, 2}, {"ceramic-mug", nil, 1}}},
 }
 
 // AddSampleShop gives the store ctx is bound to the sample shop and reports
@@ -316,11 +337,13 @@ func (a *App) addSampleDiscounts(ctx context.Context, shop *SampleShop, _ map[st
 	}
 	scale := currencyScale(a.Currency(ctx))
 	for _, d := range sampleDiscounts {
-		_, _, ok, err := a.sampleRowID(ctx, "discounts", "code", d.code)
-		if err != nil {
-			return added, err
+		// Codes are unique whatever their case, as a shopper types them.
+		var taken bool
+		if err := a.db.QueryRowContext(ctx,
+			`SELECT EXISTS (SELECT 1 FROM discounts WHERE lower(code) = lower($1))`, d.code).Scan(&taken); err != nil {
+			return added, Internalf(err, "look up discounts")
 		}
-		if ok {
+		if taken {
 			continue
 		}
 		in := DiscountInput{
@@ -346,7 +369,7 @@ func (a *App) addSampleOrders(ctx context.Context, shop *SampleShop, products ma
 	added := SampleCounts{}
 	var file strings.Builder
 	file.WriteString("number,email,name,sku,title,variant_label,quantity,unit_price_minor,created_at,status,payment_status,payment_provider\n")
-	bought := make([][]string, len(sampleCustomers))
+	bought := make([][]SamplePurchase, len(sampleCustomers))
 	now := time.Now().UTC().Truncate(time.Hour)
 	for i, o := range sampleOrders {
 		number := fmt.Sprintf("SAMPLE-%d", 1001+i)
@@ -364,8 +387,9 @@ func (a *App) addSampleOrders(ctx context.Context, shop *SampleShop, products ma
 			fmt.Fprintf(&file, "%s,%s,%s,%s,%s,%s,%d,%d,%s,%s,%s,sample\n",
 				number, cust.email, cust.name, v.SKU, csvField(p.Title), strings.Join(v.Options, " / "),
 				l.qty, v.Price.AmountMinor, at.Format(time.RFC3339), o.status, o.payment)
-			if o.status == OrderConfirmed && !slices.Contains(bought[o.customer], l.slug) {
-				bought[o.customer] = append(bought[o.customer], l.slug)
+			if o.status == OrderConfirmed && !slices.ContainsFunc(bought[o.customer],
+				func(p SamplePurchase) bool { return p.Slug == l.slug }) {
+				bought[o.customer] = append(bought[o.customer], SamplePurchase{Slug: l.slug, At: at})
 			}
 		}
 	}
@@ -501,7 +525,15 @@ func (a *App) EraseSampleShop(ctx context.Context) (SampleCounts, error) {
 	}
 	for _, id := range ids {
 		err := a.Categories().Delete(ctx, id)
-		if errors.Is(err, ErrConflict) || errors.Is(err, ErrNotFound) {
+		if errors.Is(err, ErrConflict) {
+			// The merchant has filed their own product in it, so it is theirs
+			// from now on rather than a sample the next erase cannot take.
+			if _, err := a.db.ExecContext(ctx, `UPDATE categories SET sample = false WHERE id = $1`, id); err != nil {
+				return erased, Internalf(err, "hand over a sample category")
+			}
+			continue
+		}
+		if errors.Is(err, ErrNotFound) {
 			continue
 		}
 		if err != nil {
@@ -524,6 +556,35 @@ func (a *App) EraseSampleShop(ctx context.Context) (SampleCounts, error) {
 func (s *Orders) eraseSamples(ctx context.Context) (int, error) {
 	var n int64
 	err := InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, `SELECT id, number FROM orders WHERE sample ORDER BY id`)
+		if err != nil {
+			return err
+		}
+		type erasing struct {
+			id     int64
+			number string
+		}
+		var orders []erasing
+		for rows.Next() {
+			var o erasing
+			if err := rows.Scan(&o.id, &o.number); err != nil {
+				rows.Close()
+				return err
+			}
+			orders = append(orders, o)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for _, o := range orders {
+			if err := writeAudit(ctx, tx, auditRecord{
+				Action: AuditOrderEraseSample, Entity: AuditEntityOrder, ID: o.id, Label: o.number,
+				Summary: "Erased the sample order " + o.number,
+			}); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.ExecContext(ctx, `
 			DELETE FROM notifications WHERE order_number IN (SELECT number FROM orders WHERE sample)`); err != nil {
 			return err
@@ -553,10 +614,16 @@ func (a *App) handleSampleShopCounts(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	Respond(w, http.StatusOK, map[string]any{"counts": counts, "total": counts.total()})
+	Respond(w, http.StatusOK, map[string]any{
+		"counts": counts, "total": counts.total(), "rights": a.sampleShopRights(),
+	})
 }
 
 func (a *App) handleAddSampleShop(w http.ResponseWriter, r *http.Request) {
+	if err := a.mayWriteSampleShop(r.Context()); err != nil {
+		RespondError(w, r, err)
+		return
+	}
 	added, err := a.AddSampleShop(r.Context())
 	if err != nil {
 		RespondError(w, r, err)
@@ -566,6 +633,10 @@ func (a *App) handleAddSampleShop(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleEraseSampleShop(w http.ResponseWriter, r *http.Request) {
+	if err := a.mayWriteSampleShop(r.Context()); err != nil {
+		RespondError(w, r, err)
+		return
+	}
 	erased, err := a.EraseSampleShop(r.Context())
 	if err != nil {
 		RespondError(w, r, err)
@@ -574,10 +645,67 @@ func (a *App) handleEraseSampleShop(w http.ResponseWriter, r *http.Request) {
 	Respond(w, http.StatusOK, map[string]any{"erased": erased})
 }
 
-// sampleShopRights are what adding or erasing the sample shop needs: the
-// write right of every core area it touches, so nobody adds or erases through
-// it what they could not add or erase by hand.
-var sampleShopRights = []Right{
+// coreSampleShopRights are the write rights of every core area the sample
+// shop touches.
+var coreSampleShopRights = []Right{
 	RightCatalogWrite, RightCategoriesWrite, RightCollectionsWrite, RightDiscountsWrite,
 	RightOrdersWrite, RightMediaWrite,
+}
+
+// sampleShopRights is everything adding or erasing the sample shop needs: the
+// core areas' write rights and each installed module's, so nobody adds or
+// erases through it what they could not add or erase by hand.
+func (a *App) sampleShopRights() []Right {
+	rights := slices.Clone(coreSampleShopRights)
+	for _, seeder := range a.sampleSeeders() {
+		for _, r := range seeder.SampleRights() {
+			if !slices.Contains(rights, r) {
+				rights = append(rights, r)
+			}
+		}
+	}
+	return rights
+}
+
+// mayWriteSampleShop refuses an operator who lacks any of those rights, naming
+// it, as requireRights does for a route's own. The modules' rights are known
+// only once they have registered, so they are checked here rather than when
+// the route is mounted. A static token carries every right.
+func (a *App) mayWriteSampleShop(ctx context.Context) error {
+	su := SuperuserFrom(ctx)
+	if su == nil {
+		return nil
+	}
+	for _, right := range a.sampleShopRights() {
+		if !su.Has(right) {
+			return Forbiddenf("your role (%s) does not carry %s", su.Role, right)
+		}
+	}
+	return nil
+}
+
+// The routes D94 shipped, for a client written then: the count of sample
+// products, and an erase that takes the whole sample shop, since a product
+// cannot go without the orders and reviews that point at it.
+
+func (a *App) handleSampleProductCount(w http.ResponseWriter, r *http.Request) {
+	n, err := a.catalog.SampleProductCount(r.Context())
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, map[string]int{"count": n})
+}
+
+func (a *App) handleDeleteSampleProducts(w http.ResponseWriter, r *http.Request) {
+	if err := a.mayWriteSampleShop(r.Context()); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	erased, err := a.EraseSampleShop(r.Context())
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, map[string]int{"deleted": erased["products"]})
 }

@@ -60,6 +60,8 @@ type MediaItem struct {
 	// store uses, and its emptiness is what stops the engine deleting a file
 	// from somebody else's server.
 	storageKey string
+	// sample marks a sample shop photograph (D96); only the engine sets it.
+	sample bool
 }
 
 // MediaStore is where bytes live. One method to put, one to remove; reading is
@@ -394,11 +396,11 @@ func (m *Media) insert(ctx context.Context, in *MediaItem) (*MediaItem, error) {
 		meta = []byte(`{}`)
 	}
 	row := m.app.db.QueryRowContext(ctx, `
-		INSERT INTO media (kind, url, storage_key, filename, mime, size_bytes, width, height, alt, metadata)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		INSERT INTO media (kind, url, storage_key, filename, mime, size_bytes, width, height, alt, metadata, sample)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 		RETURNING `+mediaColumns,
 		in.Kind, in.URL, in.storageKey, in.Filename, in.MIME, in.SizeBytes,
-		in.Width, in.Height, in.Alt, meta)
+		in.Width, in.Height, in.Alt, meta, in.sample)
 	item, err := scanMedia(row)
 	if err != nil {
 		return nil, Internalf(err, "record the media")
