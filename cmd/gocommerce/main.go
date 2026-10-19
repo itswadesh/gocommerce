@@ -20,6 +20,7 @@ import (
 
 	"github.com/itswadesh/gocommerce/core"
 	"github.com/itswadesh/gocommerce/ext/b2b"
+	"github.com/itswadesh/gocommerce/ext/banners"
 	cartrecovery "github.com/itswadesh/gocommerce/ext/cart-recovery"
 	"github.com/itswadesh/gocommerce/ext/cms"
 	"github.com/itswadesh/gocommerce/ext/contact"
@@ -196,6 +197,7 @@ environment:
 		withCMS      = fs.Bool("cms", false, "install the cms module: content pages at /x/cms/pages/{slug}, edited on the Pages screen")
 		withFAQ      = fs.Bool("faq", false, "install the faq module: the shop's questions and answers at /x/faq, edited on the FAQ screen")
 		withShow     = fs.Bool("showcases", false, "install the showcases module: videos of the store showing its products, from YouTube or Facebook, beside those products at /x/showcases")
+		withBanners  = fs.Bool("banners", false, "install the banners module: pictures on the storefront's pages, slides across the top and grids of tiles under a heading, served at /x/banners")
 		withTransl   = fs.Bool("translations", false, "install the translations module: products, categories and collections in each of a store's languages, written on the Translations screen")
 		withWishlist = fs.Bool("wishlist", false, "install the wishlist module: shoppers save products, and the Wishlists screen shows what is wanted most")
 		withB2B      = fs.Bool("b2b", false, "install the b2b module: companies, buyer roles, orders on account against a credit limit, approvals and quotes (implies -identity)")
@@ -424,6 +426,9 @@ environment:
 		}
 		if *withShow {
 			modules = append(modules, showcases.New(showcases.Config{}))
+		}
+		if *withBanners {
+			modules = append(modules, banners.New(banners.Config{}))
 		}
 		if *withWishlist {
 			modules = append(modules, wishlist.New(wishlist.Config{}))

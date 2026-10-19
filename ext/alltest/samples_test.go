@@ -35,7 +35,7 @@ func TestTheSampleShopReachesEveryModuleAndErasesCleanly(t *testing.T) {
 	}
 	// Their returns page stays theirs, so two sample pages, and the footer
 	// links only those: four categories in the header and two pages below.
-	want := gocommerce.SampleCounts{"products": 8, "orders": 12, "reviews": 8, "pages": 2, "faq": 5, "menu_links": 6}
+	want := gocommerce.SampleCounts{"products": 8, "orders": 12, "reviews": 8, "pages": 2, "faq": 5, "menu_links": 6, "banners": 7}
 	for kind, n := range want {
 		if added[kind] != n {
 			t.Errorf("added %d %s, want %d (all: %v)", added[kind], kind, n, added)
@@ -58,6 +58,11 @@ func TestTheSampleShopReachesEveryModuleAndErasesCleanly(t *testing.T) {
 	rec = gctest.Request(t, app, http.MethodGet, "/x/navigation/menus/footer", nil)
 	if !strings.Contains(rec.Body.String(), `"/pages/about"`) || strings.Contains(rec.Body.String(), `"/pages/returns"`) {
 		t.Fatalf("footer menu = %s, want the sample about page and not the merchant's returns page", rec.Body)
+	}
+	rec = gctest.Request(t, app, http.MethodGet, "/x/banners?page=home", nil)
+	if body := rec.Body.String(); !strings.Contains(body, `"/collections/new-in"`) || !strings.Contains(body, `"Shop by category"`) ||
+		!strings.Contains(body, `"/sample-media/1/banner-new-in-phone.webp"`) {
+		t.Fatalf("home banners = %s, want the sample slides and the category grid", body)
 	}
 	if rec := gctest.Request(t, app, http.MethodGet, "/x/cms/pages/about", nil); rec.Code != http.StatusOK {
 		t.Fatalf("the about page = %d %s, want it published", rec.Code, rec.Body)
