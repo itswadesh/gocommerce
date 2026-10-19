@@ -2936,9 +2936,12 @@ button.media-check {
  *
  * The audit trail has four — who, what, from and to — and ran 250px off a
  * phone the same way, further once "Customer groups" joined the record types.
+ * A product has the status, Preview, Share, More actions and the pair that
+ * walks the catalog, and the pair ended up past the edge of a 360px phone.
  */
 .page-orders .page-header-primary-btns,
-.page-audit .page-header-primary-btns {
+.page-audit .page-header-primary-btns,
+.page-product .page-header-primary-btns {
     flex-wrap: wrap;
     /* Wrapping alone changes nothing while the group is a `flex-shrink: 0` item
        of the header: it keeps its max-content width and never reaches a line it
@@ -2956,7 +2959,8 @@ button.media-check {
  * becomes a tall one and drags the whole row with it.
  */
 .page-orders .page-header-primary-btns .btn,
-.page-audit .page-header-primary-btns .btn {
+.page-audit .page-header-primary-btns .btn,
+.page-product .page-header-primary-btns .btn {
     flex-grow: 0;
     /* `flex-basis: auto` has to come with it. PocketBase's pair is
        `grow: 1; basis: 0`, and below 550px the button is also
@@ -2970,7 +2974,10 @@ button.media-check {
    Sitemap's "Deactivate" — was its words squeezed into a circle, so it keeps
    its own shape. */
 @media (max-width: 550px) {
-    .page-header-primary-btns .btn:not(.circle):not(:has(> i)) {
+    .page-header-primary-btns .btn:not(.circle):not(:has(> i)),
+    /* A product's "More actions" has words and a chevron: its words spilled
+       out of the circle and over the arrows beside it. */
+    .page-product .page-header-primary-btns .btn:has(> .txt) {
         aspect-ratio: auto;
         padding: 5px 14px;
         border-radius: var(--borderRadius);
