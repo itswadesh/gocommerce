@@ -264,6 +264,16 @@ already refused the pick, so this is the belt to its braces. The eight
 gateway and eleven carrier modules are the worked examples; `-gateways`
 and `-carriers` install them all idle.
 
+Each card on those two screens carries the provider's mark, looked up by
+the code `Code()` returns in
+[`admin/src/lib/provider-icons.js`](../admin/src/lib/provider-icons.js).
+A brand that [Simple Icons](https://simpleicons.org) carries gets its mark
+copied in as path data. A method that is not a company, like cash on
+delivery, names a Remix glyph for what it does. Everything else gets a card
+or a truck for its kind and needs no entry. Renaming a code means renaming
+its key too: `npm test` in `admin/` fails on an entry keyed by a code no
+module registers, but CI does not run the panel's tests, so run it yourself.
+
 ## Where a module lives, and what it may not do
 
 A module that adds **no third-party dependency** belongs in `ext/`. Every

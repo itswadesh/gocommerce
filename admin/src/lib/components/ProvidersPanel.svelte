@@ -13,6 +13,7 @@
      */
     import { can, request } from "$lib/api.js";
     import { activateNote } from "$lib/plugin-ready.js";
+    import { providerIcon } from "$lib/provider-icons.js";
     import { toast } from "$lib/toast.svelte.js";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginSettingsDrawer from "$lib/components/PluginSettingsDrawer.svelte";
@@ -82,7 +83,7 @@
             else if (p.configured) state = { label: "Active", cls: "label-success" };
             else if (plugin?.enabled) state = { label: "Needs settings", cls: "label-warning" };
             else state = { label: "Inactive", cls: "" };
-            return { ...p, plugin, state };
+            return { ...p, plugin, state, icon: providerIcon(p.code, kind) };
         }),
     );
     const activeCount = $derived(cards.filter((c) => c.configured).length);
@@ -140,6 +141,18 @@
 
 <svelte:head><title>{words.title} · GoCommerce</title></svelte:head>
 
+<!-- The provider's name is printed beside it, so the mark is decoration to a
+     screen reader and is hidden from one. -->
+{#snippet mark(card)}
+    <span class="provider-mark" aria-hidden="true">
+        {#if card.icon.path}
+            <svg viewBox="0 0 24 24" class:wide={card.icon.wide}><path d={card.icon.path} /></svg>
+        {:else}
+            <i class={card.icon.glyph}></i>
+        {/if}
+    </span>
+{/snippet}
+
 <div class="page page-providers page-providers-{kind} shopify-skin">
     <div class="page-content tw:bg-background tw:text-foreground">
         <header class="page-header">
@@ -167,6 +180,7 @@
                          configured by nature, and green would read as "turned on". -->
                     <section class="card provider-card" class:active={card.state.label === "Active"}>
                         <div class="flex gap-10">
+                            {@render mark(card)}
                             <div class="flex-fill">
                                 <div class="provider-title">{card.plugin?.title ?? card.name}</div>
                                 <div class="txt-hint txt-sm">
@@ -228,11 +242,14 @@
                     <div class="map-fold-body provider-rows">
                         {#each idle as card (card.code)}
                             <div class="provider-row">
-                                <div class="provider-row-text">
-                                    <div class="provider-title">{card.plugin?.title ?? card.name}</div>
-                                    <p class="provider-description">
-                                        {card.plugin?.description ?? "Configured in code when the store was started, so it is switched on there."}
-                                    </p>
+                                <div class="provider-row-main">
+                                    {@render mark(card)}
+                                    <div class="provider-row-text">
+                                        <div class="provider-title">{card.plugin?.title ?? card.name}</div>
+                                        <p class="provider-description">
+                                            {card.plugin?.description ?? "Configured in code when the store was started, so it is switched on there."}
+                                        </p>
+                                    </div>
                                 </div>
                                 {#if card.plugin}
                                 <div class="provider-row-actions">
@@ -299,6 +316,47 @@
     .provider-title {
         font-weight: 600;
     }
+    /*
+     * One tile size on the cards and in the fold, so a provider looks the same
+     * wherever it is listed. The tile is neutral in every state: the card's
+     * edge and label say whether it is on, and a coloured tile would say it a
+     * second time, or say it wrongly.
+     */
+    .provider-mark {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        border-radius: var(--borderRadius);
+        border: 1px solid var(--surfaceAlt3Color);
+        background: var(--surfaceAlt1Color);
+        color: var(--txtPrimaryColor);
+        font-size: 22px;
+        line-height: 1;
+    }
+    .provider-mark svg {
+        display: block;
+        width: 20px;
+        height: 20px;
+        fill: currentColor;
+    }
+    .provider-mark svg.wide {
+        width: 32px;
+        height: 32px;
+    }
+    /*
+     * A card that arrives fades in: on the first load, and when switching a
+     * provider on or off moves it between the grid and the fold, which would
+     * otherwise be a card that is simply somewhere else. Opening the fold
+     * fades its rows in alongside the fold's own reveal. It is opacity alone,
+     * nothing travels, so it stays under reduced motion too.
+     */
+    .provider-card,
+    .provider-row {
+        animation: fadeIn var(--animationSpeed) ease-out;
+    }
     .provider-more {
         margin-top: var(--smSpacing);
     }
@@ -314,8 +372,17 @@
     .provider-row:first-child {
         border-top: 0;
     }
-    .provider-row-text {
+    /* The tile and the words wrap as one, so a narrow screen never leaves a
+       tile alone on a line above its name. */
+    .provider-row-main {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--smSpacing);
         flex: 1 1 280px;
+        min-width: 0;
+    }
+    .provider-row-text {
+        flex: 1 1 auto;
         min-width: 0;
     }
     .provider-row-actions {
