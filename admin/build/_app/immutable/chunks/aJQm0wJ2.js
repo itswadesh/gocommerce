@@ -1,0 +1,1 @@
+import{p as r}from"./BkZSwdwm.js";const t={get error(){return r.error},get params(){return r.params},get route(){return r.route},get state(){return r.state},get status(){return r.status},get url(){return r.url}},a=t;export{a as p};
