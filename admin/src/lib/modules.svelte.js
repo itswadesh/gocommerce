@@ -59,6 +59,7 @@ const PROBES = {
     contact: { path: "/api/admin/x/contact/messages?limit=1", right: "customers.read" },
     newsletter: { path: "/api/admin/x/newsletter/subscriptions?limit=1", right: "customers.read" },
     faq: { path: "/api/admin/x/faq", right: "catalog.read" },
+    banners: { path: "/api/admin/x/banners", right: "banners.read" },
     wishlist: { path: "/api/admin/x/wishlist/lists?limit=1", right: "customers.read" },
     // Three screens behind three unrelated rights, so any one of them is
     // reason to ask. The path is the companies list either way: an operator
