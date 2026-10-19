@@ -696,12 +696,14 @@ every install has them whether or not it can store uploads. They are under the
 ## Banners
 
 **Content → Banners** (`ext/banners`, D99) holds the pictures on the
-storefront's pages. Each page is shown as it reads: its **slides** across the
-top, then each **grid** of tiles under its heading. A banner is a picture, an
+storefront's home page, the one page a storefront shows banners on yet. It is
+shown as it reads: its **slides** across the top, then each **grid** of tiles
+under its heading. A banner is a picture, an
 optional narrower picture for phones, a title (also its alternative text) and a
 link, a path on the storefront such as `/collections/new-in` or a full web
 address. A picture is chosen from Files or typed in as a link; neither a
-picture nor a link may be `javascript:`, `data:` or `//host`.
+picture nor a link may be `javascript:`, `data:` or `//host`, or have
+whitespace in it.
 
 A switch on each row takes a banner off the storefront without losing it, and
 the arrows move it one place among the slides or among the tiles of its grid;
@@ -711,8 +713,9 @@ it `banners.write` (managers).
 
 The storefront reads one page's live banners at `GET /x/banners?page=home`,
 already split into `slides` and `grids`. The storefront connector puts them on
-the page record svelte-commerce renders: the slides as its desktop, tablet and
-phone sliders, the grids as its sections.
+the home page record svelte-commerce renders: the slides as its desktop and
+tablet slider and, with their phone pictures, its phone slider; each grid as a
+four-across section for wider screens and a two-across one for phones.
 
 ## Authentication
 
