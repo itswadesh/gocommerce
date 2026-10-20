@@ -49,6 +49,7 @@ import (
 	msg91 "github.com/itswadesh/gocommerce/ext/notify-msg91"
 	sendgrid "github.com/itswadesh/gocommerce/ext/notify-sendgrid"
 	adyen "github.com/itswadesh/gocommerce/ext/payments-adyen"
+	clover "github.com/itswadesh/gocommerce/ext/payments-clover"
 	helcim "github.com/itswadesh/gocommerce/ext/payments-helcim"
 	hyperswitch "github.com/itswadesh/gocommerce/ext/payments-hyperswitch"
 	lemonsqueezy "github.com/itswadesh/gocommerce/ext/payments-lemonsqueezy"
@@ -172,7 +173,7 @@ func main() {
 	modules = append(modules,
 		razorpay.New(razorpay.Config{}), adyen.New(adyen.Config{}), paddle.New(paddle.Config{}),
 		lemonsqueezy.New(lemonsqueezy.Config{}), helcim.New(helcim.Config{}), hyperswitch.New(hyperswitch.Config{}),
-		revenuecat.New(revenuecat.Config{}),
+		revenuecat.New(revenuecat.Config{}), clover.New(clover.Config{}),
 		shiprocket.New(shiprocket.Config{}), delhivery.New(delhivery.Config{}), nimbuspost.New(nimbuspost.Config{}),
 		indiapost.New(indiapost.Config{}), shippo.New(shippo.Config{}), shipstation.New(shipstation.Config{}),
 		easyship.New(easyship.Config{}), shippit.New(shippit.Config{}), usps.New(usps.Config{}),

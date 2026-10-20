@@ -1480,6 +1480,7 @@ gocommerce/                      # ONE Go module: github.com/itswadesh/gocommerc
     ├── payments-adyen/           # payment links + signed notifications
     ├── payments-hyperswitch/     # a router in front of many gateways
     ├── payments-helcim/          # HelcimPay.js, North America
+    ├── payments-clover/          # Hosted Checkout, United States and Canada
     ├── payments-revenuecat/      # Web Billing links; no refund API exists
     ├── notify-sendgrid/   notify-msg91/
     ├── fulfill-shiprocket/      # India: aggregator, waybills
