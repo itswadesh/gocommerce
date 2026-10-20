@@ -721,10 +721,11 @@ across on phones.
 
 ## Cash on delivery can be switched off
 
-**Settings → Payment methods** lists cash on delivery first, built in, with a
-Deactivate button like a gateway's (D102). Off, the storefront is not offered
+**Settings → Payment methods** shows cash on delivery among the methods in use,
+built in, with a Deactivate button like a gateway's (D102). Off, the storefront is not offered
 it (`GET /api/checkout`), a checkout that names it is refused as an unknown
-method, and the New order form leaves it out; its card says **Off** and stays
+method, and the New order form leaves it out, from the moment it is switched; its card
+says **Off** and stays
 on the screen to be switched back on. The switch is the built-in plugin
 `payments-cod`, so it needs `plugins.write` and appears on the audit trail like
 any plugin change. With no gateway set up, switching it off leaves nothing a

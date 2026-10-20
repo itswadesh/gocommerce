@@ -807,7 +807,7 @@
         "summary": "List the payment methods this store accepts",
         "responses": {
           "200": {
-            "description": "Installed payment codes, and the same list with display names.",
+            "description": "The payment codes this store takes, installed, set up and switched on for it, and the same list with display names.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4052,7 +4052,7 @@
                   "payment_method": {
                     "type": "string",
                     "default": "cod",
-                    "description": "Code of a registered payment method."
+                    "description": "Code of a payment method this store takes. Left out, it is cash on delivery; with cash on delivery switched off for the store, leaving it out is refused with a 400 asking for one."
                   },
                   "email": {
                     "type": "string",
