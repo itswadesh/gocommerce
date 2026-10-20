@@ -198,6 +198,40 @@ body {
     --cardFace: var(--surfaceAlt1Color);
 }
 
+/*
+ * --markColor is what says "this one": the chosen tab's underline, the current
+ * setup step's edge, a selected card's border, a focused search box. Those had
+ * been --primaryColor, which is right in light; but PocketBase's dark palette
+ * sets --primaryColor to #121212, darker than the page, so in dark every such
+ * mark stood about 1:1 against what it sat on and was simply gone. In dark the
+ * mark is the text colour instead.
+ */
+:root {
+    --markColor: var(--primaryColor);
+}
+[data-color-scheme="dark"] {
+    --markColor: var(--surfaceTxtColor);
+}
+
+/*
+ * --txtPrimaryColor and --txtHintColor are not PocketBase's names: its text
+ * tokens are --surfaceTxtColor and --surfaceTxtHintColor. Forty-odd rules in
+ * the panel asked for the first pair, which nothing declared, so each one fell
+ * back to inheriting: a hint read at full strength, the chosen tab looked like
+ * the others, and a colour-mix() naming one was dropped whole, taking a status
+ * colour with it. Declared here as the names they were meant to be, on every
+ * selector vars.css sets the text tokens on, so each follows its own surface.
+ */
+:root,
+.dropdown,
+.base-surface,
+[data-color-scheme="dark"],
+[data-color-scheme="dark"] .dropdown,
+html .accent-surface {
+    --txtPrimaryColor: var(--surfaceTxtColor);
+    --txtHintColor: var(--surfaceTxtHintColor);
+}
+
 /* ---------------------------------------------------------------- menus */
 
 /*
@@ -2008,7 +2042,7 @@ button.media-check {
     font-weight: 600;
     line-height: 14px;
     text-align: center;
-    color: var(--baseColor);
+    color: var(--surfaceColor);
     background: var(--txtPrimaryColor);
     border-top-left-radius: var(--borderRadius);
 }
@@ -3778,7 +3812,7 @@ button.media-check {
     text-align: center;
     color: #1f1300;
     background: #fbbf24;
-    box-shadow: 0 0 0 2px var(--baseColor);
+    box-shadow: 0 0 0 2px var(--surfaceColor);
 }
 
 /*
@@ -4386,6 +4420,12 @@ button.media-check {
     font-size: 12px;
     min-width: 0;
 }
+/* In dark the card is itself --surfaceAlt1Color (--cardFace), so a chip filled
+   with it vanished into the card and read as loose text. One step up keeps it
+   a chip. Before `.missing`, which has the same weight and its own fill. */
+[data-color-scheme="dark"] .map-fold-value {
+    background: var(--surfaceAlt2Color);
+}
 .map-fold-value.missing {
     background: var(--warningAltColor, var(--surfaceAlt1Color));
     color: var(--warningColor);
@@ -4502,7 +4542,7 @@ button.media-check {
     background: var(--surfaceAlt1Color);
 }
 .setup-step.current {
-    border-color: var(--primaryColor);
+    border-color: var(--markColor);
     background: var(--surfaceAlt1Color);
 }
 .setup-step.locked {
@@ -4522,7 +4562,7 @@ button.media-check {
     color: var(--surfaceTxtHintColor);
 }
 .setup-step.current .setup-step-mark {
-    border-color: var(--primaryColor);
+    border-color: var(--markColor);
     background: var(--primaryColor);
     color: var(--primaryTxtColor);
 }
@@ -4733,7 +4773,7 @@ button.media-check {
 }
 .store-menu-search:focus-visible,
 .select-store-search:focus-visible {
-    border-color: var(--primaryColor);
+    border-color: var(--markColor);
 }
 .store-menu-item {
     border: 0;
@@ -4955,7 +4995,7 @@ button.media-check {
         z-index: 50;
         width: 256px;
         max-width: 80vw;
-        box-shadow: var(--baseShadow);
+        box-shadow: var(--boxShadow);
         transform: translateX(-100%);
         transition: transform 200ms ease-out;
     }
@@ -9634,7 +9674,7 @@ kbd + kbd {
     transition: transform var(--animationSpeed) ease-out;
 }
 .recovery-box.is-on {
-    border-color: var(--primaryColor);
+    border-color: var(--markColor);
     background: var(--primaryColor);
     color: var(--primaryTxtColor, #fff);
 }
@@ -10120,7 +10160,7 @@ kbd + kbd {
     background: var(--surfaceAlt1Color);
 }
 .recovery-radio-card.is-on {
-    border-color: var(--primaryColor);
+    border-color: var(--markColor);
     background: color-mix(in srgb, var(--primaryColor) 6%, transparent);
 }
 .recovery-radio-card input {
@@ -10443,7 +10483,7 @@ a.recovery-automation:focus-visible .recovery-automation-go > i {
     outline-offset: 3px;
 }
 .recovery-node.is-selected .recovery-node-box {
-    border-color: var(--primaryColor);
+    border-color: var(--markColor);
     box-shadow: 0 0 0 4px color-mix(in srgb, var(--primaryColor) 15%, transparent);
 }
 .recovery-node.has-error .recovery-node-box {
@@ -10552,7 +10592,7 @@ a.recovery-automation:focus-visible .recovery-automation-go > i {
         border-color var(--animationSpeed) ease-out;
 }
 .recovery-edge-add:hover {
-    border-color: var(--primaryColor);
+    border-color: var(--markColor);
     color: var(--primaryColor);
     transform: scale(1.08);
 }

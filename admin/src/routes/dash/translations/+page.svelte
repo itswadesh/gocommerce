@@ -423,7 +423,7 @@
         color: var(--txtPrimaryColor);
     }
     .tr-tab.on {
-        border-bottom-color: var(--primaryColor);
+        border-bottom-color: var(--markColor);
         color: var(--txtPrimaryColor);
     }
     .tr-kinds {
@@ -471,7 +471,7 @@
     .tr-source {
         padding: 8px 10px;
         border-radius: var(--borderRadius);
-        background: var(--surfaceAlt1Color, var(--baseAlt1Color));
+        background: var(--surfaceAlt1Color);
         white-space: pre-wrap;
         overflow-wrap: anywhere;
         max-height: 12em;

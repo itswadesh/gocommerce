@@ -158,7 +158,7 @@
     .image-field-library {
         margin-top: 10px;
         padding: 10px;
-        border: 1px solid var(--baseAlt2Color);
+        border: 1px solid var(--surfaceAlt2Color);
         border-radius: var(--borderRadius);
     }
     .image-field-preview {

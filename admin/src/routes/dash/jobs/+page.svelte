@@ -233,7 +233,7 @@
         padding: 14px 16px;
         border: 1px solid var(--surfaceAlt2Color);
         border-radius: var(--borderRadius);
-        background: var(--baseColor);
+        background: var(--cardFace);
         color: inherit;
         text-decoration: none;
     }

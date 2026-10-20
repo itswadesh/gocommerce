@@ -579,7 +579,7 @@
         color: var(--txtPrimaryColor);
     }
     .notify-lang.on {
-        border-bottom-color: var(--primaryColor);
+        border-bottom-color: var(--markColor);
         color: var(--txtPrimaryColor);
     }
     .tpl-body {

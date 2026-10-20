@@ -357,6 +357,12 @@
         font-size: 22px;
         line-height: 1;
     }
+    /* In dark the card is itself --surfaceAlt1Color (--cardFace), so a tile
+       filled with it vanished into the card and only its edge was left. One
+       step up keeps it a tile. */
+    :global([data-color-scheme="dark"]) .provider-mark {
+        background: var(--surfaceAlt2Color);
+    }
     .provider-mark svg {
         display: block;
         width: 20px;

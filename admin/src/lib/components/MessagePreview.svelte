@@ -133,7 +133,7 @@
         padding: 16px;
         border: 1px solid var(--surfaceAlt3Color);
         border-radius: var(--borderRadius);
-        background: var(--surfaceColor, var(--baseColor));
+        background: var(--surfaceColor);
         max-height: 55vh;
         overflow: auto;
     }

@@ -180,9 +180,8 @@
         font-weight: 600;
     }
     .plugin-description {
-        /* Literals, not --xsSpacing and --txtHintColor: neither of those is
-           defined anywhere in the panel, so this had no top margin and
-           inherited the primary text colour instead of the hint. */
+        /* A literal margin, not --xsSpacing, which is defined nowhere in the
+           panel: with it this had no top margin at all. */
         margin: 6px 0 0;
         color: var(--surfaceTxtHintColor);
         font-size: var(--smFontSize);

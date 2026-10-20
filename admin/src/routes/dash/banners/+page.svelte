@@ -416,9 +416,9 @@
         list-style: none;
         margin: 0;
         padding: 0;
-        border: 1px solid var(--baseAlt2Color);
+        border: 1px solid var(--surfaceAlt2Color);
         border-radius: var(--borderRadius);
-        background: var(--baseColor);
+        background: var(--cardFace);
     }
     .bn-row {
         display: flex;
@@ -429,7 +429,7 @@
         transition: opacity 180ms ease-out;
     }
     .bn-row + .bn-row {
-        border-top: 1px solid var(--baseAlt2Color);
+        border-top: 1px solid var(--surfaceAlt2Color);
     }
     .bn-row.off {
         opacity: 0.6;
@@ -447,7 +447,7 @@
         transform: scale(1.03);
     }
     .bn-thumb:focus-visible {
-        outline: 2px solid var(--primaryColor);
+        outline: 2px solid var(--markColor);
         outline-offset: 2px;
     }
     .bn-thumb img {
