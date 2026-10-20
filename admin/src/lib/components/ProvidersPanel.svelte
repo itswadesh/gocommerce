@@ -12,6 +12,7 @@
      * telling the truth about which ones can actually be used (D59).
      */
     import { can, request } from "$lib/api.js";
+    import { loadSettings } from "$lib/settings.svelte.js";
     import { activateNote } from "$lib/plugin-ready.js";
     import { providerCard } from "$lib/provider-cards.js";
     import { rise } from "$lib/motion.js";
@@ -99,6 +100,7 @@
             toast.success(updated.enabled ? `${p.title} activated` : `${p.title} deactivated`);
             if (updated.enabled && !updated.configured) editing = updated;
             await load();
+            refreshShared();
         } catch (err) {
             toast.error(err);
         } finally {
@@ -128,6 +130,17 @@
         }
         settingUp = "";
         await load();
+        refreshShared();
+    }
+
+    /*
+     * Other screens read which methods can take an order from the panel's
+     * shared settings, loaded once a session: the New order form would go on
+     * offering cash on delivery switched off here a moment ago (D102), and
+     * hiding a gateway just set up, until the page was reloaded.
+     */
+    function refreshShared() {
+        loadSettings({ force: true });
     }
 </script>
 

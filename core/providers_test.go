@@ -64,10 +64,11 @@ func TestIdleProvidersAreListedButNotOffered(t *testing.T) {
 	if payInfo.Configured || shipInfo.Configured {
 		t.Fatalf("configured = %v/%v before setup", payInfo.Configured, shipInfo.Configured)
 	}
-	// The built-ins say the opposite.
+	// The built-ins say the opposite, cash on delivery until its store
+	// switches it off (D102).
 	for _, p := range app.Settings().PaymentMethods {
 		if p.Code == CodeCOD && !p.Configured {
-			t.Fatal("cash on delivery is always configured")
+			t.Fatal("cash on delivery is configured until it is switched off")
 		}
 	}
 
