@@ -522,7 +522,9 @@
     let placed = $state(null);
 
     /* What the store can actually take, named as the shopper would see it. */
-    const methods = $derived(settings.paymentMethods);
+    // Only what can take an order: a gateway not set up, or cash on delivery
+    // switched off (D102), would be offered here and refused by the engine.
+    const methods = $derived(settings.paymentMethods.filter((m) => m.configured));
     const paymentOptions = $derived(methods.map((m) => ({ value: m.code, label: m.name || m.code })));
 
     function blankOrder() {

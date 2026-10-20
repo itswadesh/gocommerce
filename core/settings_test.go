@@ -203,7 +203,9 @@ func TestSettingsNamesProvidersAndTheirModules(t *testing.T) {
 	}
 
 	wantPay := []ProviderInfo{
-		{Code: CodeCOD, Name: "Cash on delivery", Module: "core", Configured: true},
+		// Built in, and switched by a plugin of its own (D102), which the
+		// Payment methods screen needs named: core is no module to look up.
+		{Code: CodeCOD, Name: "Cash on delivery", Module: "core", Configured: true, Plugin: CODPluginKey},
 		// refundableProvider implements no Named, so its name is its code —
 		// and its module is the one that registered it, not core.
 		{Code: "refundable", Name: "refundable", Module: "refundable", Configured: true},

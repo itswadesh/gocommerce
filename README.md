@@ -149,7 +149,9 @@ A module that ships an admin surface also ships its panel screen: install
 navigation; leave it out and it does not.
 
 Cash on delivery and manual fulfillment are built in, because they need no
-third party — a store can sell and ship before it has integrated anything.
+third party — a store can sell and ship before it has integrated anything. A
+store that does not take cash at the door switches cash on delivery off under
+Settings › Payment methods.
 
 **Many stores from one install.** `gocommerce serve` serves every store the
 database holds — a supplier's dealers, an agency's clients — from one set of

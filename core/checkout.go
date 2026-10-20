@@ -850,6 +850,12 @@ func (s *Orders) Create(ctx context.Context, in NewOrderInput) (*CheckoutResult,
 		code = CodeCOD
 	}
 	if provider, ok := s.app.payments.provider(code); !ok || !configured(ctx, provider) {
+		// No method named meant cash on delivery. With the store's switched
+		// off (D102), "no payment method named cod" would blame a code the
+		// operator never typed.
+		if strings.TrimSpace(in.PaymentMethod) == "" {
+			return nil, Validationf("choose a payment method: cash on delivery, the default, is switched off for this store")
+		}
 		return nil, NotFoundf("no payment method named %q", code)
 	}
 

@@ -156,7 +156,7 @@ func (a *App) mountCheckoutRoutes() {
 func (a *App) handlePaymentMethods(w http.ResponseWriter, r *http.Request) {
 	Respond(w, http.StatusOK, map[string]any{
 		"payment_methods": a.payments.MethodsFor(r.Context()),
-		"methods":         a.payments.Installed(),
+		"methods":         a.payments.InstalledFor(r.Context()),
 		"currency":        a.Currency(r.Context()),
 	})
 }

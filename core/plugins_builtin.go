@@ -34,6 +34,14 @@ var builtinPlugins = []PluginDef{
 			{Key: "email", Label: "Enquiries go to", Kind: "text", Public: false, Help: "The address the storefront sends enquiries to."},
 		},
 	},
+	// Cash on delivery's switch (D102). The method itself is core's
+	// codProvider; this is only whether a store takes it, so it is on until an
+	// owner says otherwise, and every store that ran before the switch existed
+	// keeps taking it.
+	{
+		Key: CODPluginKey, Title: "Cash on delivery", Category: "payments", DefaultEnabled: true,
+		Description: "Shoppers pay in cash when the order arrives. Off, checkout offers only the gateways that are set up.",
+	},
 	{
 		Key: "guest-checkout", Title: "Guest checkout", Category: "storefront", DefaultEnabled: true,
 		Description: "Let a shopper check out without an account. Off, the storefront asks them to sign in first.",

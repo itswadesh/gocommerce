@@ -102,10 +102,11 @@ func (r *Reports) Payouts(ctx context.Context, q PayoutsQuery) (*PayoutsReport, 
 
 	// The names come from the providers this build carries. A method that
 	// took money and has since been removed from the binary keeps its code
-	// as its name, and says it is gone.
+	// as its name, and says it is gone. One that is only switched off, or
+	// not set up yet, is still carried: its sales are not a removed method's.
 	installed := map[string]string{}
-	for _, m := range r.app.payments.Installed() {
-		installed[m.Code] = m.Name
+	for _, code := range r.app.payments.installed() {
+		installed[code] = r.app.payments.name(code)
 	}
 
 	report := &PayoutsReport{From: lo, To: hi, TimeZone: tz}

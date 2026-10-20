@@ -69,7 +69,7 @@ type PaymentMethod struct {
 }
 
 // Installed lists the same methods as [Payments.Methods], with the name each
-// provider gives itself.
+// provider gives itself. InstalledFor is the one a request answers with.
 //
 // Methods() stays exactly as it is rather than changing shape: a storefront
 // written against that array, ext/mcp's store_info tool and scripts/smoke.ps1
@@ -80,17 +80,26 @@ type PaymentMethod struct {
 // that is what GET /api/admin/settings already answers for the same provider
 // (see paymentInfo). A provider whose code is an abbreviation implements
 // [Named] — that is the whole of what the port is for.
-func (p *Payments) Installed() []PaymentMethod {
-	codes := p.Methods()
+func (p *Payments) Installed() []PaymentMethod { return p.InstalledFor(context.Background()) }
+
+// InstalledFor is Installed for the store ctx is bound to: what a store takes
+// is set per store, cash on delivery included.
+func (p *Payments) InstalledFor(ctx context.Context) []PaymentMethod {
+	codes := p.MethodsFor(ctx)
 	out := make([]PaymentMethod, 0, len(codes))
 	for _, code := range codes {
-		m := PaymentMethod{Code: code, Name: code}
-		if named, ok := p.providers[code].(Named); ok && named.DisplayName() != "" {
-			m.Name = named.DisplayName()
-		}
-		out = append(out, m)
+		out = append(out, PaymentMethod{Code: code, Name: p.name(code)})
 	}
 	return out
+}
+
+// name is what a provider calls itself, or its code. It answers for every
+// provider this build carries, set up or not.
+func (p *Payments) name(code string) string {
+	if named, ok := p.providers[code].(Named); ok && named.DisplayName() != "" {
+		return named.DisplayName()
+	}
+	return code
 }
 
 // MarkPaid records that money arrived and confirms the order.
@@ -746,14 +755,36 @@ func clipText(s string, n int) string {
 // Checkout with cash on delivery confirms the order immediately — the sale is
 // happening and the stock leaves the shelf — while payment stays pending until
 // an operator marks it paid on delivery.
-type codProvider struct{}
+//
+// A store can switch it off (D102). It is then what an idle gateway is: listed
+// on Payment methods, offered to nobody, refused by name at checkout.
+type codProvider struct{ plugins *Plugins }
 
 // CodeCOD is the payment code of the built-in cash-on-delivery method.
 const CodeCOD = "cod"
 
+// CODPluginKey is the built-in plugin that switches cash on delivery on and
+// off for a store (D102).
+const CODPluginKey = "payments-cod"
+
 func (codProvider) Code() string { return CodeCOD }
 
 func (codProvider) DisplayName() string { return "Cash on delivery" }
+
+// Configured is the store's switch. An unreadable switch counts as off, the
+// way a gateway whose settings cannot be read is: offering a method the store
+// may have turned off is the worse mistake.
+func (c codProvider) Configured(ctx context.Context) bool {
+	on, err := c.plugins.Enabled(ctx, CODPluginKey)
+	return err == nil && on
+}
+
+func (codProvider) pluginKey() string { return CODPluginKey }
+
+// switchedByPlugin is a built-in provider with a plugin of its own to switch
+// it, which the provider screens need named: a module's provider is found by
+// its module, and a built-in has none.
+type switchedByPlugin interface{ pluginKey() string }
 
 func (codProvider) Initiate(ctx context.Context, o *Order, opts PayOptions) (PaymentIntent, error) {
 	return PaymentIntent{Kind: IntentNone, Provider: CodeCOD}, nil
