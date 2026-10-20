@@ -10,16 +10,16 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BRAND_MARKS, METHOD_GLYPHS, KIND_GLYPHS, providerIcon } from "../src/lib/provider-icons.js";
+import { BRAND_MARKS, CARRIER_LOGOS, METHOD_GLYPHS, KIND_GLYPHS, providerIcon } from "../src/lib/provider-icons.js";
 
 const repo = fileURLToPath(new URL("../../", import.meta.url));
 
 /** The code every provider in core/ and ext/* returns from Code(). */
-function registeredCodes() {
-    const dirs = [join(repo, "core")];
+function registeredCodes(only = () => true) {
+    const dirs = only("core") ? [join(repo, "core")] : [];
     for (const name of readdirSync(join(repo, "ext"))) {
         const dir = join(repo, "ext", name);
-        if (statSync(dir).isDirectory()) dirs.push(dir);
+        if (statSync(dir).isDirectory() && only(name)) dirs.push(dir);
     }
     const codes = new Set();
     for (const dir of dirs) {
@@ -63,12 +63,29 @@ test("each glyph is an icon the panel's font has", () => {
     for (const g of glyphs) assert.ok(css.includes(`.${g}:before`), g);
 });
 
-test("a provider gets its mark, then its method's glyph, then its kind's", () => {
+test("every carrier module has its own logo, and each logo its file", () => {
+    // The carriers are the ext/fulfill-* modules; shipping by hand is core's,
+    // and is not a company.
+    const carriers = registeredCodes((name) => name.startsWith("fulfill-"));
+    assert.ok(carriers.has("delhivery") && carriers.has("usps"), "the carriers' Go source was read");
+    assert.deepEqual([...carriers].filter((c) => !CARRIER_LOGOS.includes(c)), []);
+    assert.deepEqual(CARRIER_LOGOS.filter((c) => !carriers.has(c)), []);
+    for (const code of CARRIER_LOGOS) {
+        const file = fileURLToPath(new URL(`../static/images/providers/${code}.png`, import.meta.url));
+        const png = readFileSync(file);
+        assert.equal(png.subarray(1, 4).toString(), "PNG", code);
+        // 64 by 64: twice the size it is drawn at, and no more.
+        assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [64, 64], code);
+    }
+});
+
+test("a provider gets its logo, then its mark, then its method's glyph, then its kind's", () => {
+    assert.deepEqual(providerIcon("delhivery", "shipping"), { logo: "/images/providers/delhivery.png" });
+    assert.deepEqual(providerIcon("usps", "shipping"), { logo: "/images/providers/usps.png" });
     assert.deepEqual(providerIcon("stripe", "payments"), { path: BRAND_MARKS.stripe.path, wide: false });
-    assert.deepEqual(providerIcon("usps", "shipping"), { path: BRAND_MARKS.usps.path, wide: true });
     assert.deepEqual(providerIcon("cod", "payments"), { glyph: "ri-hand-coin-line" });
     assert.deepEqual(providerIcon("manual", "shipping"), { glyph: "ri-box-3-line" });
     assert.deepEqual(providerIcon("helcim", "payments"), { glyph: "ri-bank-card-line" });
-    assert.deepEqual(providerIcon("delhivery", "shipping"), { glyph: "ri-truck-line" });
+    assert.deepEqual(providerIcon("a-new-carrier", "shipping"), { glyph: "ri-truck-line" });
     assert.deepEqual(providerIcon("something-new", "elsewhere"), { glyph: "ri-plug-line" });
 });

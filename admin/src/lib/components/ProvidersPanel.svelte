@@ -11,6 +11,7 @@
      * Payment Methods and Shipping Providers screens, with the engine
      * telling the truth about which ones can actually be used (D59).
      */
+    import { base } from "$app/paths";
     import { can, request } from "$lib/api.js";
     import { loadSettings } from "$lib/settings.svelte.js";
     import { activateNote } from "$lib/plugin-ready.js";
@@ -149,8 +150,10 @@
 <!-- The provider's name is printed beside it, so the mark is decoration to a
      screen reader and is hidden from one. -->
 {#snippet mark(card)}
-    <span class="provider-mark" aria-hidden="true">
-        {#if card.icon.path}
+    <span class="provider-mark" class:has-logo={!!card.icon.logo} aria-hidden="true">
+        {#if card.icon.logo}
+            <img src="{base}{card.icon.logo}" alt="" width="28" height="28" loading="lazy" decoding="async" />
+        {:else if card.icon.path}
             <svg viewBox="0 0 24 24" class:wide={card.icon.wide}><path d={card.icon.path} /></svg>
         {:else}
             <i class={card.icon.glyph}></i>
@@ -368,6 +371,18 @@
         width: 20px;
         height: 20px;
         fill: currentColor;
+    }
+    /* A carrier's own icon sits on a white plate in both themes: several are
+       drawn for a white page and would vanish on a dark one (D101). */
+    .provider-mark.has-logo,
+    :global([data-color-scheme="dark"]) .provider-mark.has-logo {
+        background: #fff;
+    }
+    .provider-mark img {
+        display: block;
+        width: 28px;
+        height: 28px;
+        object-fit: contain;
     }
     .provider-mark svg.wide {
         width: 32px;

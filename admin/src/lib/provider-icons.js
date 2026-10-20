@@ -9,21 +9,29 @@
  *
  * The marks are drawn in the text colour, not in the brands' own colours.
  * Green is kept for a provider that is switched on and working (D90), and
- * Adyen's colour is green. Razorpay's navy and USPS's indigo vanish on the
- * dark theme, and Paddle's and Lemon Squeezy's yellows on the light one. In
- * the text colour every mark reads in both themes, and colour on these
- * screens still means the provider's state.
+ * Adyen's colour is green. Razorpay's navy vanishes on the dark theme, and
+ * Paddle's and Lemon Squeezy's yellows on the light one. In the text colour
+ * every mark reads in both themes, and colour on these screens still means
+ * the provider's state.
  *
- * A provider Simple Icons does not carry gets no drawn substitute, because a
- * made-up logo would be a claim about someone else's brand. It gets a Remix
- * glyph for what it is instead: a card for a gateway, a truck for a carrier.
- * The methods that are not a company at all (cash on delivery, payment on
- * account, shipping by hand) get a glyph for what they do.
+ * A carrier on Shipping providers is the exception (D101): it shows its own
+ * icon, in its own colours, the way each company publishes it on its own
+ * website, saved at 64 pixels under static/images/providers/. Simple Icons
+ * carries one carrier of eleven, and a row of trucks told an owner nothing.
+ * They sit on a white plate in both themes, because several are drawn for a
+ * white page (NimbusPost's navy, Shippo's black) and vanish on a dark one.
+ * Whether a carrier is on is still said by its card's edge and label.
+ *
+ * A provider with neither gets no drawn substitute, because a made-up logo
+ * would be a claim about someone else's brand. It gets a Remix glyph for what
+ * it is instead: a card for a gateway, a truck for a carrier. The methods
+ * that are not a company at all (cash on delivery, payment on account,
+ * shipping by hand) get a glyph for what they do.
  *
  * Every Simple Icons path is drawn on a 24 by 24 grid, scaled so its longer
- * side spans it. A mark much wider than tall (Adyen's wordmark, the USPS
- * eagle in its box) is marked `wide`, and the tile draws it across most of
- * its width rather than in the 20px the others take. At 20px Adyen's
+ * side spans it. A mark much wider than tall (Adyen's wordmark) is marked
+ * `wide`, and the tile draws it across most of its width rather than in the
+ * 20px the others take. At 20px Adyen's
  * wordmark was a smudge about 6px tall; across the tile it reads.
  */
 
@@ -48,11 +56,25 @@ export const BRAND_MARKS = {
     stripe: {
         path: "M13.976 9.15c-2.172-.806-3.356-1.426-3.356-2.409 0-.831.683-1.305 1.901-1.305 2.227 0 4.515.858 6.09 1.631l.89-5.494C18.252.975 15.697 0 12.165 0 9.667 0 7.589.654 6.104 1.872 4.56 3.147 3.757 4.992 3.757 7.218c0 4.039 2.467 5.76 6.476 7.219 2.585.92 3.445 1.574 3.445 2.583 0 .98-.84 1.545-2.354 1.545-1.875 0-4.965-.921-6.99-2.109l-.9 5.555C5.175 22.99 8.385 24 11.714 24c2.641 0 4.843-.624 6.328-1.813 1.664-1.305 2.525-3.236 2.525-5.732 0-4.128-2.524-5.851-6.594-7.305h.003z",
     },
-    usps: {
-        wide: true,
-        path: "M3.145 4.577L0 19.423h20.855L24 4.577H3.145zm-.157 3.806h9.436c.157 0 5.064 0 5.159.975H9.09l1.321 4.026c1.51-.723 5.222-2.233 7.455-2.328.944-.031 1.321.126 1.132.252-.126.063-1.038.189-1.761.377-1.258.315-1.321.315-2.642.755-1.478.503-2.705 1.069-4.53 1.919L.723 18.983l2.265-10.6zm16.483 1.698c-.535-.094-2.768.063-3.334.063-.126 0-.472.031-.472-.063 0-.063.126-.063.377-.094s1.006-.157 1.258-.283c.063-.063.22-.157.315-.252.031-.063.063-.094.157-.094h1.164c.755 0 1.195.094 1.132.723-.031.315-.472 1.132-.629 1.384-.063.094-.189.189-.157 0 .126-.503.597-1.321.189-1.384zm.88 8.902H2.076s17.363-6.794 17.552-6.92c0 0 1.541-2.076.629-2.925-.283-.283-.692-.283-2.265-.283 0 0-.063-.598-2.485-1.164-.283-.063-11.858-2.517-11.858-2.517h19.628l-2.926 13.809zm2.925-.695c0-.195-.114-.293-.358-.293h-.406v1.008h.146v-.439h.179l.276.455h.179L23 18.564c.162-.016.276-.097.276-.276zm-.455.146h-.163v-.341h.211c.114 0 .228.016.228.163 0 .162-.13.178-.276.178zm.016-.829a.868.868 0 0 0-.894.878c0 .504.406.894.894.894s.894-.39.894-.894a.878.878 0 0 0-.894-.878zm0 1.642c-.423 0-.731-.325-.731-.764 0-.423.325-.748.731-.748.406 0 .731.325.731.748 0 .439-.325.764-.731.764z",
-    },
 };
+
+/**
+ * Carriers with their own icon, by provider code: the file is
+ * static/images/providers/<code>.png, 64 pixels square.
+ */
+export const CARRIER_LOGOS = [
+    "delhivery",
+    "easyship",
+    "india-post",
+    "nimbuspost",
+    "onfleet",
+    "shippit",
+    "shippo",
+    "shiprocket",
+    "shipstation",
+    "usps",
+    "veeqo",
+];
 
 /** Methods that are not a company: a glyph for what each one does. */
 export const METHOD_GLYPHS = {
@@ -68,14 +90,16 @@ export const KIND_GLYPHS = {
 };
 
 /**
- * providerIcon is what to draw for one provider: `{ path, wide }` for a brand
- * mark on the 24-unit grid, or `{ glyph }` naming a Remix icon class.
+ * providerIcon is what to draw for one provider: `{ logo }`, the address of a
+ * carrier's own icon; `{ path, wide }` for a brand mark on the 24-unit grid;
+ * or `{ glyph }` naming a Remix icon class.
  *
  * @param {string} code the provider code from the settings
  * @param {"payments" | "shipping"} kind which screen it is listed on
- * @returns {{ path: string, wide: boolean } | { glyph: string }}
+ * @returns {{ logo: string } | { path: string, wide: boolean } | { glyph: string }}
  */
 export function providerIcon(code, kind) {
+    if (CARRIER_LOGOS.includes(code)) return { logo: `/images/providers/${code}.png` };
     const mark = BRAND_MARKS[code];
     if (mark) return { path: mark.path, wide: !!mark.wide };
     return { glyph: METHOD_GLYPHS[code] ?? KIND_GLYPHS[kind] ?? "ri-plug-line" };
