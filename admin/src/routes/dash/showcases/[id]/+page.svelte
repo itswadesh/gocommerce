@@ -30,6 +30,11 @@
     const readable = $derived(can("showcases.read"));
     const writable = $derived(can("showcases.write"));
 
+    const SHOWCASE_KINDS = [
+        { value: "video", label: "A recorded video" },
+        { value: "live", label: "A livestream" },
+    ];
+
     let show = $state(null);
     let loading = $state(true);
     let notFound = $state(false);
@@ -425,10 +430,7 @@
                             <div class="col-md-6">
                                 <div class="field">
                                     <label for="sc-kind">Kind</label>
-                                    <select id="sc-kind" disabled={!writable} bind:value={draft.kind}>
-                                        <option value="video">A recorded video</option>
-                                        <option value="live">A livestream</option>
-                                    </select>
+                                    <Select id="sc-kind" disabled={!writable} bind:value={draft.kind} options={SHOWCASE_KINDS} />
                                 </div>
                             </div>
                             {#if draft.kind === "live"}
