@@ -139,3 +139,32 @@ func TestOnlyPluginsWriteSwitchesCashOnDelivery(t *testing.T) {
 		t.Fatalf("audit rows for the switch = %d, want 1", len(rows))
 	}
 }
+
+// The switch is one store's. Off in one, every other store still takes cash
+// on delivery, and each store's checkout answers for itself, names included.
+func TestCashOnDeliveryIsSwitchedPerStore(t *testing.T) {
+	app := newStrictTestApp(t)
+	a, b := firstStore(t, app), addTestStore(t, app, "b")
+	off := false
+	if rec := do(t, app, http.MethodPatch, "/api/admin/plugins/"+CODPluginKey, withAdmin, asStore(a), jsonBody(t, PluginPatch{Enabled: &off})); rec.Code != http.StatusOK {
+		t.Fatalf("switch off in store a: %d %s", rec.Code, rec.Body)
+	}
+	offered := func(store string) (codes, named []string) {
+		rec := do(t, app, http.MethodGet, "/api/checkout", asStore(store))
+		var out struct {
+			PaymentMethods []string        `json:"payment_methods"`
+			Methods        []PaymentMethod `json:"methods"`
+		}
+		decodeData(t, rec, &out)
+		for _, m := range out.Methods {
+			named = append(named, m.Code)
+		}
+		return out.PaymentMethods, named
+	}
+	if codes, named := offered(a); slices.Contains(codes, CodeCOD) || slices.Contains(named, CodeCOD) {
+		t.Fatalf("store a switched it off and is still offered %v / %v", codes, named)
+	}
+	if codes, named := offered(b); !slices.Contains(codes, CodeCOD) || !slices.Contains(named, CodeCOD) {
+		t.Fatalf("store b never switched it and is offered %v / %v", codes, named)
+	}
+}
