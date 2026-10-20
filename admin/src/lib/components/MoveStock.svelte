@@ -25,6 +25,7 @@
     import { pluralize, stockClass } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import Drawer from "$lib/components/Drawer.svelte";
+    import Select from "$lib/components/Select.svelte";
     import VariantSearch from "$lib/components/VariantSearch.svelte";
 
     let {
@@ -294,31 +295,23 @@
             <div class="col-lg-6">
                 <div class="field required">
                     <label for="move-from">From</label>
-                    <select
+                    <Select
                         id="move-from"
                         value={source}
-                        onchange={(e) => pickSource(Number(e.currentTarget.value))}
-                    >
-                        {#each locations as l (l.id)}
-                            <option value={l.id}>{l.name}{l.active ? "" : " — closed"}</option>
-                        {/each}
-                    </select>
+                        options={locations.map((l) => ({ value: l.id, label: l.name + (l.active ? "" : " — closed") }))}
+                        onchange={pickSource}
+                    />
                 </div>
             </div>
             <div class="col-lg-6">
                 <div class="field required">
                     <label for="move-to">To</label>
-                    <select
+                    <Select
                         id="move-to"
                         value={destination}
-                        onchange={(e) => (
-                            (destination = Number(e.currentTarget.value)), (error = "")
-                        )}
-                    >
-                        {#each openShelves.filter((l) => l.id !== source) as l (l.id)}
-                            <option value={l.id}>{l.name}</option>
-                        {/each}
-                    </select>
+                        options={openShelves.filter((l) => l.id !== source).map((l) => ({ value: l.id, label: l.name }))}
+                        onchange={(id) => ((destination = id), (error = ""))}
+                    />
                 </div>
             </div>
         </div>

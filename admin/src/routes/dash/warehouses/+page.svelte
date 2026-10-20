@@ -1077,13 +1077,15 @@
                                     <div class="fields">
                                         <div class="field required">
                                             <label for="move-dest">Move to</label>
-                                            <select id="move-dest" bind:value={moveTo}>
-                                                {#each destinations as d (d.id)}
-                                                    <option value={d.id} disabled={!d.active}>
-                                                        {d.name}{d.active ? "" : " — closed"}
-                                                    </option>
-                                                {/each}
-                                            </select>
+                                            <Select
+                                                id="move-dest"
+                                                bind:value={moveTo}
+                                                options={destinations.map((d) => ({
+                                                    value: d.id,
+                                                    label: d.name + (d.active ? "" : " — closed"),
+                                                    disabled: !d.active,
+                                                }))}
+                                            />
                                         </div>
                                         <div class="delimiter"></div>
                                         <div class="field required">

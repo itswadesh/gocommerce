@@ -20,6 +20,7 @@
     import { pluralize, stockClass } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import Drawer from "$lib/components/Drawer.svelte";
+    import Select from "$lib/components/Select.svelte";
     import VariantSearch from "$lib/components/VariantSearch.svelte";
 
     let {
@@ -282,15 +283,12 @@
                 <label for="receive-where">
                     {mode === "receive" ? "Landing at" : "Counting"}
                 </label>
-                <select
+                <Select
                     id="receive-where"
                     value={destination}
-                    onchange={(e) => pickDestination(Number(e.currentTarget.value))}
-                >
-                    {#each openShelves as l (l.id)}
-                        <option value={l.id}>{l.name}</option>
-                    {/each}
-                </select>
+                    options={openShelves.map((l) => ({ value: l.id, label: l.name }))}
+                    onchange={pickDestination}
+                />
             </div>
             <div class="field-help">
                 Closed locations are not listed: stock moves out of a closed location, never

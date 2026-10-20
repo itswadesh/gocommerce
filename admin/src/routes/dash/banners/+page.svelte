@@ -16,6 +16,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import { rise, flipDuration } from "$lib/motion.js";
     import Drawer from "$lib/components/Drawer.svelte";
+    import Select from "$lib/components/Select.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
     import ImageField from "$lib/components/ImageField.svelte";
@@ -62,6 +63,11 @@
     let saving = $state(false);
     let problem = $state("");
     let attempt = $state(0);
+
+    const PLACEMENTS = [
+        { value: "slide", label: "A slide across the top of the page" },
+        { value: "grid", label: "A tile in a grid under a heading" },
+    ];
 
     function startNew(page = "home", placement = "slide", groupTitle = "") {
         form = { ...blank(), page, placement, group_title: groupTitle };
@@ -315,10 +321,7 @@
     <form id="bn-form" onsubmit={save}>
         <div class="field">
             <label for="bn-placement">Where it shows</label>
-            <select id="bn-placement" bind:value={form.placement}>
-                <option value="slide">A slide across the top of the page</option>
-                <option value="grid">A tile in a grid under a heading</option>
-            </select>
+            <Select id="bn-placement" bind:value={form.placement} options={PLACEMENTS} />
         </div>
         {#if form.placement === "grid"}
             <div class="field m-t-sm" in:rise>

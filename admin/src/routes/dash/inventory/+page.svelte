@@ -1011,13 +1011,15 @@
                              rather than hidden: the table two rows above still
                              lists them, and a silently shorter list explains
                              nothing. -->
-                        <select id="move-to" bind:value={toID}>
-                            {#each elsewhere as r (r.location_id)}
-                                <option value={r.location_id} disabled={!r.active}>
-                                    {r.location_name}{r.active ? "" : " — closed"}
-                                </option>
-                            {/each}
-                        </select>
+                        <Select
+                            id="move-to"
+                            bind:value={toID}
+                            options={elsewhere.map((r) => ({
+                                value: r.location_id,
+                                label: r.location_name + (r.active ? "" : " — closed"),
+                                disabled: !r.active,
+                            }))}
+                        />
                     </div>
                 {/if}
 

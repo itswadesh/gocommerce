@@ -29,6 +29,7 @@
     import { goto } from "$app/navigation";
 
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
+    import Select from "$lib/components/Select.svelte";
     import { countryOptions } from "$lib/countries.js";
     import { currencyOptions } from "$lib/currencies.js";
     import { languageName, languageOptions } from "$lib/languages.js";
@@ -122,6 +123,29 @@
         if (key === "country") return countryOptions(draft?.country);
         if (key === "currency") return currencyOptions(draft?.currency);
         return [];
+    }
+
+    /*
+     * A store-details select's choices. Blank is a real choice, not a prompt:
+     * it means "whatever the binary was started with". A store always sells in
+     * some currency, so that one has none.
+     */
+    function selectOptions(key) {
+        const blank =
+            key === "currency"
+                ? []
+                : [
+                      {
+                          value: "",
+                          label:
+                              key === "timezone"
+                                  ? "UTC (nothing set)"
+                                  : key === "country"
+                                    ? "Not set"
+                                    : "The binary's default",
+                      },
+                  ];
+        return [...blank, ...optionsFor(key).map((o) => ({ value: o.value ?? o, label: o.label ?? o }))];
     }
 
     $effect(() => {
@@ -314,27 +338,12 @@
                                     <div class="field" class:readonly={!editable}>
                                         <label for="sp-{f.key}">{f.label}</label>
                                         {#if f.kind === "select" && optionsFor(f.key).length}
-                                            <select
+                                            <Select
                                                 id="sp-{f.key}"
                                                 disabled={!editable || (f.key === "currency" && profile?.currency_locked)}
                                                 bind:value={draft[f.key]}
-                                            >
-                                                <!-- Blank is a real choice, not a
-                                                     prompt: it means "whatever the
-                                                     binary was started with". A
-                                                     store always sells in some
-                                                     currency, so that one has none. -->
-                                                {#if f.key !== "currency"}<option value="">
-                                                    {f.key === "timezone"
-                                                        ? "UTC (nothing set)"
-                                                        : f.key === "country"
-                                                          ? "Not set"
-                                                          : "The binary's default"}
-                                                </option>{/if}
-                                                {#each optionsFor(f.key) as option (option.value ?? option)}
-                                                    <option value={option.value ?? option}>{option.label ?? option}</option>
-                                                {/each}
-                                            </select>
+                                                options={selectOptions(f.key)}
+                                            />
                                         {:else}
                                             <input
                                                 id="sp-{f.key}"
@@ -395,18 +404,17 @@
                                         {/each}
                                     </ul>
                                     {#if editable}
-                                        <!-- A button rather than adding on change: arrowing
-                                             through a closed select fires change on every key,
-                                             which would add each language passed on the way. -->
+                                        <!-- A button rather than adding on pick, so a
+                                             language is added only on purpose. -->
                                         <div class="langs-add">
                                             <div class="field">
                                                 <label for="sp-add-language">Add a language</label>
-                                                <select id="sp-add-language" bind:value={adding}>
-                                                    <option value="">Choose one…</option>
-                                                    {#each languageOptions(draft.languages ?? []) as option (option.value)}
-                                                        <option value={option.value}>{option.label}</option>
-                                                    {/each}
-                                                </select>
+                                                <Select
+                                                    id="sp-add-language"
+                                                    bind:value={adding}
+                                                    options={languageOptions(draft.languages ?? [])}
+                                                    placeholder="Choose one…"
+                                                />
                                             </div>
                                             <button type="button" class="btn sm secondary" disabled={!adding} onclick={addLanguage}>
                                                 <span class="txt">Add</span>
