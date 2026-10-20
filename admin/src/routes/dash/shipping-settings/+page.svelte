@@ -1018,8 +1018,8 @@
         width: 20px;
         height: 20px;
         border-radius: 50%;
-        background: var(--primaryColor);
-        color: #fff;
+        background: var(--markColor);
+        color: var(--markTxtColor);
         font-size: 12px;
     }
     .preview-name {

@@ -14,7 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 function files(dir) {
@@ -27,13 +27,18 @@ function files(dir) {
 
 const src = fileURLToPath(new URL("../src", import.meta.url));
 const sources = files(src).map((f) => [f, readFileSync(f, "utf8")]);
-const vendored = (file) => /[\\/]styles[\\/]/.test(file) && !/(gocommerce|fonts-inter)\.css$/.test(file);
+// Matched below src/, so a checkout that happens to sit under a folder named
+// styles is not skipped whole.
+const vendored = (file) => {
+    const rel = relative(src, file).split(sep).join("/");
+    return rel.startsWith("lib/styles/") && !/(gocommerce|fonts-inter)\.css$/.test(rel);
+};
 
 // The text with every @media print block taken out, brace by brace.
 function withoutPrint(text) {
     let out = "";
     let i = 0;
-    for (const m of text.matchAll(/@media\s+print\s*\{/g)) {
+    for (const m of text.matchAll(/@media[^{;]*\bprint\b[^{;]*\{/g)) {
         if (m.index < i) continue;
         out += text.slice(i, m.index);
         let depth = 0;

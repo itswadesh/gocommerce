@@ -204,13 +204,37 @@ body {
  * been --primaryColor, which is right in light; but PocketBase's dark palette
  * sets --primaryColor to #121212, darker than the page, so in dark every such
  * mark stood about 1:1 against what it sat on and was simply gone. In dark the
- * mark is the text colour instead.
+ * mark is the text colour instead. A mark that is a fill (a pressed toggle, the
+ * current step's dot, a progress bar) puts --markTxtColor on it.
  */
 :root {
     --markColor: var(--primaryColor);
+    --markTxtColor: var(--primaryTxtColor);
 }
 [data-color-scheme="dark"] {
     --markColor: var(--surfaceTxtColor);
+    --markTxtColor: var(--surfaceColor);
+}
+
+/*
+ * A pressed toggle that is a filled button, in dark: the fill is the mark, and
+ * hover, focus and a press step it toward the page the way light mode steps a
+ * button toward white, with a ring for keyboard focus. Without this the chosen
+ * one was #121212 on a #1f1f1f card.
+ */
+[data-color-scheme="dark"] .btn[aria-pressed="true"]:not(.transparent) {
+    background: var(--markColor);
+    color: var(--markTxtColor);
+}
+[data-color-scheme="dark"] .btn[aria-pressed="true"]:not(.transparent):is(:hover, :focus-visible) {
+    background: color-mix(in srgb, var(--markColor), var(--surfaceColor) 12%);
+}
+[data-color-scheme="dark"] .btn[aria-pressed="true"]:not(.transparent):active {
+    background: color-mix(in srgb, var(--markColor), var(--surfaceColor) 25%);
+}
+[data-color-scheme="dark"] .btn[aria-pressed="true"]:not(.transparent):focus-visible {
+    outline: 2px solid var(--markColor);
+    outline-offset: 2px;
 }
 
 /*
@@ -227,7 +251,8 @@ body {
 .base-surface,
 [data-color-scheme="dark"],
 [data-color-scheme="dark"] .dropdown,
-html .accent-surface {
+html .accent-surface,
+.save-bar {
     --txtPrimaryColor: var(--surfaceTxtColor);
     --txtHintColor: var(--surfaceTxtHintColor);
 }
@@ -3494,7 +3519,7 @@ button.media-check {
     transition-duration: var(--activeAnimationSpeed);
 }
 .order-exempt-group:focus-visible {
-    outline: 2px solid var(--primaryColor);
+    outline: 2px solid var(--markColor);
     outline-offset: 2px;
     border-radius: 2px;
 }
@@ -4244,13 +4269,13 @@ button.media-check {
 @keyframes shortcutPress {
     40% {
         transform: scale(0.95);
-        box-shadow: 0 0 0 3px var(--primaryColor);
+        box-shadow: 0 0 0 3px var(--markColor);
     }
 }
 @media (prefers-reduced-motion: reduce) {
     .shortcut-pressed {
         animation: none;
-        outline: 2px solid var(--primaryColor);
+        outline: 2px solid var(--markColor);
         outline-offset: 2px;
     }
 }
@@ -4381,10 +4406,10 @@ button.media-check {
 }
 .map-fold > summary:hover .map-fold-title,
 .map-fold > summary:focus-visible .map-fold-title {
-    color: var(--primaryColor);
+    color: var(--markColor);
 }
 .map-fold > summary:focus-visible {
-    outline: 2px solid var(--primaryColor);
+    outline: 2px solid var(--markColor);
     outline-offset: 4px;
 }
 .map-fold-title {
@@ -4429,6 +4454,9 @@ button.media-check {
 .map-fold-value.missing {
     background: var(--warningAltColor, var(--surfaceAlt1Color));
     color: var(--warningColor);
+}
+[data-color-scheme="dark"] .map-fold-value.missing {
+    background: var(--warningAltColor, var(--surfaceAlt2Color));
 }
 .map-fold-body {
     margin-top: 12px;
@@ -4563,8 +4591,8 @@ button.media-check {
 }
 .setup-step.current .setup-step-mark {
     border-color: var(--markColor);
-    background: var(--primaryColor);
-    color: var(--primaryTxtColor);
+    background: var(--markColor);
+    color: var(--markTxtColor);
 }
 .setup-step.done .setup-step-mark {
     border-color: var(--successColor);
@@ -4717,7 +4745,7 @@ button.media-check {
     color: var(--surfaceTxtColor);
 }
 .store-current-btn:focus-visible {
-    outline: 2px solid var(--primaryColor);
+    outline: 2px solid var(--markColor);
     outline-offset: 1px;
 }
 .store-current-btn:active {
@@ -4908,7 +4936,7 @@ button.media-check {
     border-color: var(--surfaceAlt3Color);
 }
 .select-store-item:focus-visible {
-    outline: 2px solid var(--primaryColor);
+    outline: 2px solid var(--markColor);
     outline-offset: 1px;
 }
 .select-store-item:active:not([disabled]) {
@@ -4995,7 +5023,7 @@ button.media-check {
         z-index: 50;
         width: 256px;
         max-width: 80vw;
-        box-shadow: var(--boxShadow);
+        box-shadow: var(--rightBoxShadow);
         transform: translateX(-100%);
         transition: transform 200ms ease-out;
     }
@@ -6335,7 +6363,7 @@ kbd + kbd {
     opacity: 0.82;
 }
 .shopify-skin .perm-btn:focus-visible {
-    outline: 2px solid var(--primaryColor);
+    outline: 2px solid var(--markColor);
     outline-offset: 2px;
 }
 .shopify-skin .perm-empty {
@@ -7048,7 +7076,7 @@ kbd + kbd {
     border-bottom: 1px solid var(--surfaceAlt2Color);
 }
 .shopify-skin .plugin-away-home:hover {
-    color: var(--primaryColor);
+    color: var(--markColor);
 }
 .shopify-skin .plugin-away-row {
     display: grid;
@@ -9569,8 +9597,8 @@ kbd + kbd {
     outline-offset: 1px;
 }
 .recovery-seg-btn[aria-pressed="true"] {
-    background: var(--primaryColor);
-    color: var(--primaryTxtColor, #fff);
+    background: var(--markColor);
+    color: var(--markTxtColor);
 }
 
 /* A filter that adds to a set is drawn dashed, the way a "+ Status" control
@@ -9675,8 +9703,8 @@ kbd + kbd {
 }
 .recovery-box.is-on {
     border-color: var(--markColor);
-    background: var(--primaryColor);
-    color: var(--primaryTxtColor, #fff);
+    background: var(--markColor);
+    color: var(--markTxtColor);
 }
 .recovery-box.is-on > i {
     transform: scale(1);
@@ -9707,7 +9735,7 @@ kbd + kbd {
     position: absolute;
     inset: 0;
     width: 40%;
-    background: var(--primaryColor);
+    background: var(--markColor);
     animation: recoveryProgress 1s ease-in-out infinite;
 }
 @keyframes recoveryProgress {
@@ -10161,11 +10189,11 @@ kbd + kbd {
 }
 .recovery-radio-card.is-on {
     border-color: var(--markColor);
-    background: color-mix(in srgb, var(--primaryColor) 6%, transparent);
+    background: color-mix(in srgb, var(--markColor) 6%, transparent);
 }
 .recovery-radio-card input {
     margin: 0;
-    accent-color: var(--primaryColor);
+    accent-color: var(--markColor);
 }
 .recovery-label-row {
     display: flex;
@@ -10484,7 +10512,7 @@ a.recovery-automation:focus-visible .recovery-automation-go > i {
 }
 .recovery-node.is-selected .recovery-node-box {
     border-color: var(--markColor);
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--primaryColor) 15%, transparent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--markColor) 15%, transparent);
 }
 .recovery-node.has-error .recovery-node-box {
     border-color: var(--dangerColor);
@@ -10593,7 +10621,7 @@ a.recovery-automation:focus-visible .recovery-automation-go > i {
 }
 .recovery-edge-add:hover {
     border-color: var(--markColor);
-    color: var(--primaryColor);
+    color: var(--markColor);
     transform: scale(1.08);
 }
 .recovery-edge-add:active {

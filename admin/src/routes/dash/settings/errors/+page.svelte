@@ -252,12 +252,6 @@
         display: flex;
         gap: 4px;
     }
-    /* The chosen source is a filled button, and a filled button is
-       --primaryColor, which in dark is darker than the page (see --markColor). */
-    :global([data-color-scheme="dark"]) .err-sources .btn[aria-pressed="true"] {
-        background: var(--markColor);
-        color: var(--surfaceColor);
-    }
     .err-issue {
         display: flex;
         align-items: flex-start;

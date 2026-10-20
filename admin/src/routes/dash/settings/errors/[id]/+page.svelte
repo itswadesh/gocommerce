@@ -313,7 +313,7 @@
         background: var(--surfaceAlt1Color);
     }
     .err-event.on {
-        background: color-mix(in srgb, var(--primaryColor), transparent 90%);
+        background: color-mix(in srgb, var(--markColor), transparent 90%);
     }
     .err-event-when {
         font-size: 13px;
