@@ -1006,13 +1006,13 @@
             {:else}
                 {#if mode === "move"}
                     <div class="field required">
-                        <label for="move-to">Move to</label>
+                        <label for="adjust-move-to">Move to</label>
                         <!-- Closed destinations are disabled with the reason
                              rather than hidden: the table two rows above still
                              lists them, and a silently shorter list explains
                              nothing. -->
                         <Select
-                            id="move-to"
+                            id="adjust-move-to"
                             bind:value={toID}
                             options={elsewhere.map((r) => ({
                                 value: r.location_id,

@@ -130,6 +130,18 @@
     }
 
     /**
+     * Enter in the search box picks the first match. Left to the browser it
+     * submits the form the select sits in — the store's details, a stock move —
+     * with whatever was chosen before, and picks nothing.
+     */
+    function onSearchKeydown(event) {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        const first = visible.find((o) => !o.disabled);
+        if (first) pick(first);
+    }
+
+    /**
      * Closing on focusout rather than on blur: blur fires while focus is still
      * moving inside the dropdown and would shut it the moment an option was
      * reached with the keyboard.
@@ -182,7 +194,7 @@
         <div class="fields dropdown-search" hidden={options.length < searchThreshold}>
             <div class="field">
                 <!-- svelte-ignore a11y_autofocus -->
-                <input type="text" placeholder="Search…" bind:value={search} />
+                <input type="text" placeholder="Search…" bind:value={search} onkeydown={onSearchKeydown} />
             </div>
             {#if search}
                 <div class="field addon p-r-5">
