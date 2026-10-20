@@ -630,7 +630,7 @@ func (a *App) buildServices() {
 		a.mediaStore = &LocalMediaStore{Dir: a.cfg.MediaDir, Prefix: a.cfg.MediaURLPrefix}
 	}
 
-	a.RegisterPayment(codProvider{})
+	a.RegisterPayment(codProvider{plugins: a.plugins})
 	a.RegisterFulfillment(manualFulfillment{})
 	a.RegisterNotifier(ChannelEmail, logNotifier{log: a.log})
 	a.RegisterNotifier(ChannelSMS, logNotifier{log: a.log})

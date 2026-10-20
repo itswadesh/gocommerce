@@ -13,6 +13,8 @@
      */
     import { can, request } from "$lib/api.js";
     import { activateNote } from "$lib/plugin-ready.js";
+    import { providerCard } from "$lib/provider-cards.js";
+    import { rise } from "$lib/motion.js";
     import { providerIcon } from "$lib/provider-icons.js";
     import { toast } from "$lib/toast.svelte.js";
     import NoAccess from "$lib/components/NoAccess.svelte";
@@ -74,17 +76,7 @@
     }
 
     const cards = $derived(
-        providers.map((p) => {
-            const plugin = p.module === "core" ? null : plugins.find((x) => x.module === p.module);
-            let state;
-            // Green is for "on and working" alone; a built-in method is simply
-            // there, so it reads neutral.
-            if (p.module === "core") state = { label: "Built in", cls: "" };
-            else if (p.configured) state = { label: "Active", cls: "label-success" };
-            else if (plugin?.enabled) state = { label: "Needs settings", cls: "label-warning" };
-            else state = { label: "Inactive", cls: "" };
-            return { ...p, plugin, state, icon: providerIcon(p.code, kind) };
-        }),
+        providers.map((p) => ({ ...p, ...providerCard(p, plugins), icon: providerIcon(p.code, kind) })),
     );
     const activeCount = $derived(cards.filter((c) => c.configured).length);
     /*
@@ -174,6 +166,18 @@
             {#if !loading}
                 <div class="txt-hint txt-sm m-b-base">{cards.length} {words.noun === "gateway" ? "payment methods" : "providers"}, {activeCount} active</div>
             {/if}
+            <!-- Cash on delivery can be switched off (D102), and with no
+                 gateway set up that leaves a store nobody can pay. It is
+                 allowed — a key cleared elsewhere would get there anyway —
+                 and said here, where it is put right. -->
+            {#if kind === "payments" && !loading && cards.length && activeCount === 0}
+                <div class="alert warning m-b-base" role="status" in:rise>
+                    <p>
+                        <i class="ri-error-warning-line" aria-hidden="true"></i>
+                        Shoppers can't check out: no payment method is on. Activate cash on delivery, or set up a gateway.
+                    </p>
+                </div>
+            {/if}
             <div class="card-grid provider-grid">
                 {#each inUse as card (card.code)}
                     <!-- Green only when its label says Active: a built-in method is
@@ -202,10 +206,14 @@
                                 >
                                     <span class="txt">{card.plugin.enabled ? "Deactivate" : "Activate"}</span>
                                 </button>
-                                <button type="button" class="btn sm transparent secondary" onclick={() => (editing = card.plugin)}>
-                                    <i class="ri-settings-3-line" aria-hidden="true"></i>
-                                    <span class="txt">Configure</span>
-                                </button>
+                                <!-- Cash on delivery's switch has no settings, so
+                                     there is nothing to configure. -->
+                                {#if card.plugin.fields?.length}
+                                    <button type="button" class="btn sm transparent secondary" onclick={() => (editing = card.plugin)}>
+                                        <i class="ri-settings-3-line" aria-hidden="true"></i>
+                                        <span class="txt">Configure</span>
+                                    </button>
+                                {/if}
                                 {#if card.plugin.docs}
                                     <a class="btn sm transparent secondary m-l-auto" href={card.plugin.docs} target="_blank" rel="noreferrer">
                                         <span class="txt">Docs</span>

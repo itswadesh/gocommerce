@@ -20,6 +20,10 @@ type ProviderInfo struct {
 	// screen yet; such a provider is listed here and nowhere a shopper or an
 	// operator could pick it.
 	Configured bool `json:"configured"`
+	// Plugin is the key of the plugin that switches a built-in provider on
+	// and off, for the screen that lists it: a module's provider is switched
+	// by its module's plugin, and a built-in has no module to look up.
+	Plugin string `json:"plugin,omitempty"`
 }
 
 // StoreSettings is what this store is configured as.
@@ -187,6 +191,9 @@ func (a *App) paymentInfo(ctx context.Context) []ProviderInfo {
 		info := ProviderInfo{Code: code, Name: code, Module: a.paymentOwners[code], Configured: configured(ctx, a.payments.providers[code])}
 		if named, ok := a.payments.providers[code].(Named); ok && named.DisplayName() != "" {
 			info.Name = named.DisplayName()
+		}
+		if s, ok := a.payments.providers[code].(switchedByPlugin); ok {
+			info.Plugin = s.pluginKey()
 		}
 		out = append(out, info)
 	}

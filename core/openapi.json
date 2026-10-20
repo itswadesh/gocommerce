@@ -18620,7 +18620,12 @@
           },
           "configured": {
             "type": "boolean",
-            "description": "Whether the provider can be used right now. False for a module installed idle whose key has not been typed into the Plugins screen yet; such a provider is listed here and offered nowhere."
+            "description": "Whether the provider can be used right now. False for a module installed idle whose key has not been typed into the Plugins screen yet, or for cash on delivery switched off for this store; such a provider is listed here and offered nowhere."
+          },
+          "plugin": {
+            "type": "string",
+            "description": "The plugin that switches a built-in provider on and off, when it has one. Cash on delivery's is `payments-cod`. A module's provider is switched by its module's plugin and leaves this out.",
+            "example": "payments-cod"
           }
         }
       },

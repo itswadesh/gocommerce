@@ -719,6 +719,17 @@ tablet slider and, with their phone pictures, its phone slider; each grid as a
 section as many tiles across as it has, two to four, on wider screens and two
 across on phones.
 
+## Cash on delivery can be switched off
+
+**Settings → Payment methods** lists cash on delivery first, built in, with a
+Deactivate button like a gateway's (D102). Off, the storefront is not offered
+it (`GET /api/checkout`), a checkout that names it is refused as an unknown
+method, and the New order form leaves it out; its card says **Off** and stays
+on the screen to be switched back on. The switch is the built-in plugin
+`payments-cod`, so it needs `plugins.write` and appears on the audit trail like
+any plugin change. With no gateway set up, switching it off leaves nothing a
+shopper can pay with: that is allowed, and the screen says so above the cards.
+
 ## Authentication
 
 Two kinds of credential exist, because scripts and people want different

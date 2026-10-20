@@ -45,7 +45,7 @@ Everything in `ports.go`. Nothing else in the engine is abstracted.
 
 | Port | Method(s) | Registered with | Implemented by |
 |---|---|---|---|
-| `PaymentProvider` | `Code`, `Initiate` | `RegisterPayment` | built-in `cod`; `ext/payments-{stripe,razorpay,paddle,lemonsqueezy,creem,adyen,hyperswitch,helcim,revenuecat}` |
+| `PaymentProvider` | `Code`, `Initiate` | `RegisterPayment` | built-in `cod`, switched by the built-in plugin `payments-cod` (D102); `ext/payments-{stripe,razorpay,paddle,lemonsqueezy,creem,adyen,hyperswitch,helcim,revenuecat}` |
 | `WebhookProvider` | `Webhook` | *optional, detected* | every gateway above except `cod` |
 | `Refunder` | `Refund` | *optional, detected* | every gateway except `cod` and `revenuecat` — RevenueCat has no refund API for Web Billing, so it does not claim one. `creem` claims it but refunds in full only: it refuses a partial request rather than returning the whole order while the books record a fraction |
 | `ReferencedRefunder` | `RefundWithReference` | *optional, detected; a `Refunder` as well* | stripe, razorpay, paddle, lemonsqueezy, adyen, hyperswitch, helcim, creem — it returns the gateway's own refund id, which is recorded on the refund |
