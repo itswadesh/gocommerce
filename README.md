@@ -105,6 +105,7 @@ graph):
 | `payments-hyperswitch` | One integration in front of many gateways |
 | `payments-creem` | Merchant of record for digital goods; refunds in full only |
 | `payments-helcim` | HelcimPay.js in-page checkout, North America |
+| `payments-clover` | Clover Hosted Checkout, United States and Canada; partial refunds |
 | `payments-revenuecat` | Web Billing purchase links; digital goods, no refund API |
 | `notify-resend` | The store's email through Resend, and the one to reach for first: an API key is the only required setting, and until a domain is verified it sends from Resend's own onboarding address |
 | `notify-sendgrid` | The store's email through SendGrid — the key from the environment or from Notifications › Setup Email, the wording from the panel |
