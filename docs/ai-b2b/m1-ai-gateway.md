@@ -323,8 +323,13 @@ Where the design above was silent, or a detail did not survive the code:
   message with nothing in it.
 - **The fence** is a `<data label class>` block holding the value as JSON. Go's
   encoder escapes `<`, `>` and `&`, so nothing in a value can close it.
-- **Token estimate:** a request is counted at one token per three bytes plus
-  512 for what the provider adds, which over-counts English on purpose.
+- **Token estimate:** ASCII text at one token per three bytes, every other
+  character at one and a half (Chinese, Japanese and Indic scripts run at a
+  token a character or more), plus 512 for what the provider adds. A PDF
+  counts 3,000 tokens a page (its page objects are counted without parsing
+  it, at least one page) and an image 1,600, whatever its size in bytes. The
+  estimate errs large on purpose: a request over `MaxInputTokens` is refused
+  unsent.
 - **Schemas** must be closed objects with every property required, the shape
   OpenAI's strict mode accepts, using only `type`, `properties`, `required`,
   `additionalProperties: false`, `items` and `enum`, with `description` and
