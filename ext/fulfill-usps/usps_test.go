@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -310,4 +311,28 @@ func TestInstalledIdleUntilConfigured(t *testing.T) {
 		}
 	}
 
+}
+
+// A label is the buyer's name and street address in a PDF, where no mask can
+// reach, so an agent key is refused it even holding orders.read; the order it
+// belongs to stays readable, with no link to the label on it.
+func TestAnAgentCannotDownloadALabel(t *testing.T) {
+	app, _ := newApp(t, Config{}, nil)
+	product := gctest.CreateProduct(t, app, "US-AGENT", 2500, 10)
+	result := gctest.Buy(t, app, gocommerce.CodeCOD, product.DefaultVariant().ID, 1)
+	order := gctest.Ship(t, app, result.Order.ID, "usps", gocommerce.ShipRequest{})
+	agent := gctest.AgentKey(t, app, gocommerce.RightOrdersRead)
+
+	rec := gctest.SessionRequest(t, app, agent, http.MethodGet, order.Fulfillments[0].LabelURL, nil)
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "agent_key_refused") {
+		t.Errorf("an agent downloading the label = %d, want 403 agent_key_refused: %s", rec.Code, rec.Body)
+	}
+	rec = gctest.SessionRequest(t, app, agent, http.MethodGet,
+		"/api/admin/orders/"+strconv.FormatInt(result.Order.ID, 10), nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("an agent reading the order = %d: %s", rec.Code, rec.Body)
+	}
+	if strings.Contains(rec.Body.String(), "/labels/") {
+		t.Errorf("the agent's order still links to the label: %s", rec.Body)
+	}
 }
