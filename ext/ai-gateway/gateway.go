@@ -434,6 +434,9 @@ CREATE TABLE ai_executions (
     policy             jsonb NOT NULL DEFAULT '{}',
     -- Tokens times minor units per million tokens: exact, never rounded.
     cost_micro_minor   bigint NOT NULL DEFAULT 0 CHECK (cost_micro_minor >= 0),
+    -- A call that was sent and reported nothing back is charged at its
+    -- ceiling, and the figure says it is an estimate.
+    cost_estimated     boolean NOT NULL DEFAULT false,
     currency           text NOT NULL,
     created_at         timestamptz NOT NULL DEFAULT now()
 );

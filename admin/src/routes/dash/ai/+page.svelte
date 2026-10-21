@@ -457,6 +457,9 @@
                                     </td>
                                     <td class="col-field-type-number min-width" data-name="Cost">
                                         {formatMicro(run.cost_micro_minor, run.currency)}
+                                        {#if run.cost_estimated}
+                                            <span class="txt-hint txt-sm" title="A call was sent and reported nothing back, so it is charged at the most it could cost">estimated</span>
+                                        {/if}
                                     </td>
                                 </tr>
                             {/each}
@@ -508,7 +511,12 @@
                 </div>
                 <dl class="ai-facts">
                     <dt>Cost</dt>
-                    <dd>{formatMicro(shown.cost_micro_minor, shown.currency)}</dd>
+                    <dd>
+                        {formatMicro(shown.cost_micro_minor, shown.currency)}
+                        {#if shown.cost_estimated}
+                            <span class="txt-hint">estimated: a call was sent and reported nothing back, so it is charged at the most it could cost</span>
+                        {/if}
+                    </dd>
                     <dt>Tokens</dt>
                     <dd>
                         {formatTokens(shown.usage.input_tokens)} in, {formatTokens(shown.usage.output_tokens)} out,
@@ -551,7 +559,7 @@
                                         <div class="txt-hint txt-sm">
                                             {formatTokens(step.usage.input_tokens + step.usage.cache_read_tokens + step.usage.cache_write_tokens)} in,
                                             {formatTokens(step.usage.output_tokens)} out ·
-                                            {formatMicro(step.cost_micro_minor ?? 0, shown.currency)} ·
+                                            {formatMicro(step.cost_micro_minor ?? 0, shown.currency)}{step.estimated ? " (estimated)" : ""} ·
                                             {((step.latency_ms ?? 0) / 1000).toFixed(1)} s
                                         </div>
                                     {/if}
