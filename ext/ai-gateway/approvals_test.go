@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -559,6 +560,66 @@ func TestApprovingNeedsThePreviewThatWasReviewed(t *testing.T) {
 		t.Fatalf("approve without the reviewed preview = %d: %s", rec.Code, rec.Body)
 	}
 	if h.runs.Load() != 0 {
+		t.Error("it ran")
+	}
+}
+
+// probe calls the gateway's Go API from a route of its own, gated on
+// catalog.write alone, the way another module might.
+type probe struct{ m *Module }
+
+func (p probe) Name() string                       { return "ai-probe" }
+func (p probe) Migrations() []gocommerce.Migration { return nil }
+func (p probe) Register(app *gocommerce.App) error {
+	app.HandleAdminFunc("POST /api/admin/x/ai-probe/approve/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		var in struct {
+			PreviewHash string `json:"preview_hash"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		a, err := p.m.Approve(r.Context(), id, in.PreviewHash)
+		if err != nil {
+			gocommerce.RespondError(w, r, err)
+			return
+		}
+		gocommerce.Respond(w, http.StatusOK, a)
+	}, gocommerce.RightCatalogWrite)
+	return nil
+}
+
+// Approve checks ai.approve itself, not only on its own route: a module
+// calling it from a route of its own cannot approve for somebody the store
+// has not let decide proposals.
+func TestTheGoAPIChecksTheApproveRightItself(t *testing.T) {
+	runs := &atomic.Int32{}
+	var app *gocommerce.App
+	m := New(Config{})
+	if err := m.RegisterAction(retitleAction(func() *gocommerce.App { return app }, runs, gocommerce.RightCatalogWrite)); err != nil {
+		t.Fatal(err)
+	}
+	app = gctest.New(t, m, probe{m})
+	ctx := context.Background()
+	product := gctest.CreateProduct(t, app, "WIDGET-1", 1999, 5)
+	a, err := m.Propose(ctx, "test.retitle", retitle{ProductID: product.ID, Title: "x"}, "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A manager whose store took ai.approve away, and left catalog.write.
+	rights, err := app.Roles().Of(ctx, gocommerce.RoleManager)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept := slices.DeleteFunc(slices.Clone(rights), func(r gocommerce.Right) bool { return r == RightApprove })
+	if _, err := app.Roles().Set(ctx, gocommerce.RoleManager, kept, nil); err != nil {
+		t.Fatal(err)
+	}
+	manager := gctest.OperatorToken(t, app, "manager@example.com", gocommerce.RoleManager)
+	rec := gctest.SessionRequest(t, app, manager, http.MethodPost, fmt.Sprintf("/api/admin/x/ai-probe/approve/%d", a.ID),
+		map[string]string{"preview_hash": a.PreviewHash})
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "ai.approve") {
+		t.Fatalf("approving through another route without ai.approve = %d: %s", rec.Code, rec.Body)
+	}
+	if runs.Load() != 0 {
 		t.Error("it ran")
 	}
 }
