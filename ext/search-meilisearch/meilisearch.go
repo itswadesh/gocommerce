@@ -163,7 +163,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 		Docs:           "https://www.meilisearch.com/docs",
 		Fields: []gocommerce.PluginField{
 			{Key: "host", Label: "Meilisearch URL", Kind: "url", Outbound: true, Required: m.cfg.Host == "", Public: true, Help: "Its public address, such as the one Meilisearch Cloud gives. One on the server's own network is set where the server is run (MEILI_HOST)."},
-			{Key: "api_key", Label: "API key", Kind: "secret", Required: m.cfg.APIKey == "", Help: "A key that may write the index — the master key locally, an admin key in production."},
+			{Key: "api_key", Label: "API key", Kind: "secret", Required: m.cfg.APIKey == "", Help: "A key that may write the index — the master key locally, an admin key in production. A Meilisearch URL of the store's own needs a key of its own here."},
 			{Key: "search_key", Label: "Search-only key", Kind: "text", Public: true, Help: "Safe to hand to the storefront for searching Meilisearch directly."},
 			{Key: "index", Label: "Index name", Kind: "text", Default: defaultIndex, Public: true},
 		},
@@ -218,6 +218,12 @@ func (m *Module) connection(ctx context.Context) (connection, error) {
 	// A store that typed the install's own host gets nothing it would not
 	// have had by leaving the field empty.
 	c.storeHost = c.host != strings.TrimRight(m.cfg.Host, "/")
+	if c.storeHost {
+		// The install's keys open the install's Meilisearch and nobody
+		// else's. A store's own server gets only the keys the store typed;
+		// without one the connection is unconfigured and nothing is sent.
+		c.apiKey, c.searchKey = str("api_key"), str("search_key")
+	}
 	return c, nil
 }
 
