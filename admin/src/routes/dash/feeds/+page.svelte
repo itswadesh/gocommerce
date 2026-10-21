@@ -539,7 +539,7 @@
                         its page lives and what it is called when the product does not say.
                     </p>
                     <form id="feed-settings" class="feed-form" onsubmit={submit}>
-                        <PluginFields fields={plugin.fields} bind:form idPrefix="feed" />
+                        <PluginFields fields={plugin.fields} unopened={plugin.unopened} bind:form idPrefix="feed" />
                     </form>
                     {#if writable}
                         <div class="feed-form-actions">

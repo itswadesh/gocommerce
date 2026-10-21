@@ -20107,7 +20107,14 @@
           },
           "configured": {
             "type": "boolean",
-            "description": "Every required field has a value."
+            "description": "Every required field has a value that opens."
+          },
+          "unopened": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields holding a secret sealed under a key this install does not have. Each reads as the mask, and sending the mask back keeps it; the plugin's module reads it as unset until it is entered again or the original GOCOMMERCE_SECRETS_KEY is put back. An empty value clears it."
           },
           "updated_at": {
             "type": "string",

@@ -85,8 +85,14 @@ type Plugin struct {
 	Settings map[string]any `json:"settings"`
 	// Configured is whether every required field has a value — what the list
 	// shows beside an enabled plugin that cannot work yet.
-	Configured bool       `json:"configured"`
-	UpdatedAt  *time.Time `json:"updated_at,omitempty"`
+	Configured bool `json:"configured"`
+	// Unopened names the secrets that are stored but sealed under a key this
+	// install does not have. Each reads as the mask, like any stored secret,
+	// so the form shows a value is there and an untouched save keeps it; the
+	// module reads it as unset, so the plugin is not configured until it is
+	// entered again or the original key is put back.
+	Unopened  []string   `json:"unopened,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 }
 
 // PluginPatch changes a plugin's state. Settings are merged over what is
@@ -261,18 +267,16 @@ func (p *Plugins) openSettings(ctx context.Context, key string, r *pluginRow) {
 
 // sealSettings is what a row stores: every secret sealed when the install has
 // a key — a field of kind secret, and any field whose value was stored sealed
-// — and every secret that would not open kept as it was, unless this save
-// replaced it or cleared it.
-func (p *Plugins) sealSettings(ctx context.Context, def PluginDef, settings map[string]any, current pluginRow, cleared map[string]bool) (map[string]any, error) {
+// — and the secrets that would not open and this save kept, as they were.
+func (p *Plugins) sealSettings(ctx context.Context, def PluginDef, settings map[string]any, wasSealed map[string]bool, kept map[string]any) (map[string]any, error) {
 	secret := map[string]bool{}
 	for _, f := range def.Fields {
 		secret[f.Key] = f.Kind == "secret"
 	}
-	for k := range current.sealed {
+	for k := range wasSealed {
 		secret[k] = true
 	}
-	unopened := current.unopened
-	out := make(map[string]any, len(settings)+len(unopened))
+	out := make(map[string]any, len(settings)+len(kept))
 	for k, v := range settings {
 		if s, ok := v.(string); ok && secret[k] {
 			sealed, err := p.app.SealSecret(ctx, pluginSecretField(def.Key, k), s)
@@ -283,10 +287,8 @@ func (p *Plugins) sealSettings(ctx context.Context, def PluginDef, settings map[
 		}
 		out[k] = v
 	}
-	for k, v := range unopened {
-		if _, replaced := out[k]; !replaced && !cleared[k] {
-			out[k] = v
-		}
+	for k, v := range kept {
+		out[k] = v
 	}
 	return out, nil
 }
@@ -301,6 +303,20 @@ func assemble(def PluginDef, r pluginRow) *Plugin {
 	for _, f := range def.Fields {
 		v, ok := r.settings[f.Key]
 		if !ok || v == nil || v == "" {
+			// Stored, but sealed under a key this install does not have. The
+			// panel is told a value is there — the mask, as for any secret, so
+			// a form saved untouched keeps it — and which field it is; the
+			// module reads it as unset, so the plugin is not configured.
+			if _, stored := r.unopened[f.Key]; stored {
+				out.Unopened = append(out.Unopened, f.Key)
+				if f.Kind == "secret" {
+					out.Settings[f.Key] = SecretMask
+				}
+				if f.Required {
+					out.Configured = false
+				}
+				continue
+			}
 			if f.Default != nil {
 				out.Settings[f.Key] = f.Default
 			}
@@ -436,6 +452,14 @@ func (p *Plugins) Update(ctx context.Context, key string, patch PluginPatch) (*P
 		// not on every save, so a plugin that was on before this rule can
 		// still have its other settings changed.
 		wasOn := current.enabled || (!current.present && def.DefaultEnabled)
+		// The secrets that would not open and stay as they are: this save
+		// neither typed a new value nor emptied the field.
+		kept := map[string]any{}
+		for k, v := range current.unopened {
+			if _, replaced := settings[k]; !replaced && !cleared[k] {
+				kept[k] = v
+			}
+		}
 		if enabled {
 			var missing []PluginField
 			for _, f := range def.Fields {
@@ -443,6 +467,12 @@ func (p *Plugins) Update(ctx context.Context, key string, patch PluginPatch) (*P
 					continue
 				}
 				if v := settings[f.Key]; v != nil && v != "" {
+					continue
+				}
+				// A plugin already on keeps an unreadable key it was not asked
+				// to change, so an untouched save of its form still saves;
+				// switching one on still needs a key that opens.
+				if _, ok := kept[f.Key]; ok && wasOn {
 					continue
 				}
 				if _, emptied := patch.Settings[f.Key]; !wasOn || emptied {
@@ -453,7 +483,7 @@ func (p *Plugins) Update(ctx context.Context, key string, patch PluginPatch) (*P
 				return requiredSettingsError(def, missing, wasOn)
 			}
 		}
-		stored, err := p.sealSettings(ctx, def, settings, current, cleared)
+		stored, err := p.sealSettings(ctx, def, settings, current.sealed, kept)
 		if err != nil {
 			return err
 		}
@@ -469,7 +499,7 @@ func (p *Plugins) Update(ctx context.Context, key string, patch PluginPatch) (*P
 			RETURNING updated_at`, key, enabled, encoded).Scan(&at); err != nil {
 			return Internalf(err, "write plugin")
 		}
-		out = assemble(def, pluginRow{enabled: enabled, settings: settings, updatedAt: &at, present: true})
+		out = assemble(def, pluginRow{enabled: enabled, settings: settings, unopened: kept, updatedAt: &at, present: true})
 
 		summary := "Changed " + def.Title + "'s settings"
 		switch {
