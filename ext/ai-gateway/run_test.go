@@ -547,3 +547,36 @@ func TestATaskSchemaUsesOnlyWhatStrictModeAccepts(t *testing.T) {
 		t.Errorf("a schema in strict mode's own terms was refused: %v", err)
 	}
 }
+
+// The estimate decides refusal before anything is sent, so it errs large.
+// One token per three bytes is generous for English and short for scripts
+// whose every character is a token or more.
+func TestDenseScriptsAreCountedConservatively(t *testing.T) {
+	req := Request{Messages: []Message{{Role: "user", Text: strings.Repeat("\u6f22", 2000)}}}
+	if got := estimateTokens(req); got < 3000 {
+		t.Errorf("2,000 CJK characters estimated at %d tokens, want at least 3,000", got)
+	}
+	english := Request{Messages: []Message{{Role: "user", Text: strings.Repeat("word ", 1200)}}}
+	if got := estimateTokens(english); got > 2600 {
+		t.Errorf("6,000 bytes of English estimated at %d, want the old one-in-three", got)
+	}
+}
+
+// A document is counted by what a provider charges for it, a floor per page
+// or per image, not by its size in bytes: a small PDF of ten pages is ten
+// pages of tokens.
+func TestDocumentsAreCountedAtAFloorPerPage(t *testing.T) {
+	pdf := []byte("%PDF-1.7\n")
+	for i := 0; i < 10; i++ {
+		pdf = append(pdf, []byte("1 0 obj << /Type /Page /Parent 2 0 R >> endobj\n")...)
+	}
+	pdf = append(pdf, []byte("2 0 obj << /Type /Pages /Count 10 >> endobj\n")...)
+	req := Request{Documents: []Document{{Name: "po.pdf", MediaType: "application/pdf", Bytes: pdf}}}
+	if got := estimateTokens(req); got < 10*tokensPerPage {
+		t.Errorf("a ten-page PDF estimated at %d tokens, want at least %d", got, 10*tokensPerPage)
+	}
+	img := Request{Documents: []Document{{Name: "label.png", MediaType: "image/png", Bytes: []byte("\x89PNG tiny")}}}
+	if got := estimateTokens(img); got < tokensPerImage {
+		t.Errorf("an image estimated at %d tokens, want at least %d", got, tokensPerImage)
+	}
+}

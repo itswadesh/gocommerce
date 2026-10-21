@@ -9,8 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"runtime/debug"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
 )
@@ -428,23 +431,64 @@ func (m *Module) judge(ctx context.Context, t *Task, resp Response) (json.RawMes
 	return resp.JSON, &confidence, ""
 }
 
-// Tokens are estimated before sending at one per three bytes, which over-
-// counts English (about four characters a token) on purpose: the estimate
-// decides refusal against MaxInputTokens, and erring large refuses early
-// rather than sending a request that would cost more than the reservation.
-// requestOverhead is what a provider adds around the request: the forced
-// tool's own instructions, roles, formatting.
+// Tokens are estimated before sending, and the estimate decides refusal
+// against MaxInputTokens, so it errs large: refusing early beats sending a
+// request that costs more than its reservation. ASCII text counts one token
+// per three bytes, which over-counts English (about four characters a
+// token); every other character counts one and a half, because Chinese,
+// Japanese and Indic scripts run at a token a character or more, which one
+// per three bytes would have under-counted. requestOverhead is what a
+// provider adds around the request: the forced tool's own instructions,
+// roles, formatting.
 const requestOverhead = 512
 
+// What a provider charges for a document, at the most: a PDF page is sent
+// as its text and an image of the page, and an image is resized to about a
+// megapixel. Floors, not averages: the estimate refuses early rather than
+// reserve less than the call costs.
+const (
+	tokensPerPage  = 3000
+	tokensPerImage = 1600
+)
+
 func estimateTokens(req Request) int {
-	n := len(req.System) + len(req.Schema)
+	var ascii, wide int
+	count := func(s string) {
+		for _, r := range s {
+			if r < utf8.RuneSelf {
+				ascii++
+			} else {
+				wide++
+			}
+		}
+	}
+	count(req.System)
+	count(string(req.Schema))
 	for _, msg := range req.Messages {
-		n += len(msg.Text)
+		count(msg.Text)
 	}
+	n := ascii/3 + (wide*3+1)/2 + requestOverhead
 	for _, d := range req.Documents {
-		n += len(d.Bytes)
+		switch {
+		case d.MediaType == "application/pdf":
+			n += max(1, pdfPages(d.Bytes)) * tokensPerPage
+		case strings.HasPrefix(d.MediaType, "image/"):
+			n += tokensPerImage
+		default:
+			n += len(d.Bytes) / 3
+		}
 	}
-	return n/3 + requestOverhead
+	return n
+}
+
+// pdfPageRE finds a page object, not the page tree (/Pages).
+var pdfPageRE = regexp.MustCompile(`/Type\s*/Page\b`)
+
+// pdfPages counts a PDF's page objects without parsing it. A compressed
+// object stream hides them, and then the count is low; the per-page floor
+// and the one-page minimum are what keep that from mattering much.
+func pdfPages(b []byte) int {
+	return len(pdfPageRE.FindAllIndex(b, -1))
 }
 
 func truncate(s string, n int) string {
