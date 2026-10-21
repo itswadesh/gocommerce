@@ -47,6 +47,7 @@ const OUTCOMES = {
     provider_error: ["Provider failed", "label-danger"],
     budget_exhausted: ["Over the cap", "label-warning"],
     no_price: ["No price set", "label-warning"],
+    task_error: ["Task failed", "label-danger"],
 };
 
 export const OUTCOME_OPTIONS = [
@@ -78,6 +79,7 @@ const STEP_NAMES = {
     cache: "Earlier answers",
     small: "Small model",
     strong: "Strong model",
+    task: "The task's own code",
 };
 export const stepName = (s) => STEP_NAMES[s] ?? s;
 
