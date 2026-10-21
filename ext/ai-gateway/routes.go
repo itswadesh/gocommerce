@@ -286,7 +286,7 @@ func (m *Module) handleCheck(w http.ResponseWriter, r *http.Request) {
 	case st.apiKey == "":
 		out.Message = "No API key is set. Add one under Settings › Plugins › AI gateway."
 	case !strings.HasPrefix(st.apiKey, shape.prefix):
-		out.Message = fmt.Sprintf("That is not a %s API key: they begin %s. Copy the key again from %s.",
+		out.Message = fmt.Sprintf("That is not an %s API key: they begin %s. Copy the key again from %s.",
 			providerTitle(st.provider), shape.prefix, shape.where)
 	}
 	if out.Message != "" {
