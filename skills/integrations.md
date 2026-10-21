@@ -317,6 +317,18 @@ delete. It also shows a module authenticating its *own* callers: a shopper
 session is the module's middleware, not the engine's admin one, so a shopper
 token opens no admin route and an admin token reads no address book.
 
+## Calling a model: through the gateway, never directly
+
+A module that wants a model's answer does not call a provider. It registers
+a task with `ext/ai-gateway` — a name, instructions, the JSON Schema of the
+answer, a ladder of models, a `Build` that tags each piece of store content
+with its class, and a `Check` in its own Go types — and either enqueues it in
+the transaction that caused it (`Enqueue`) or, from a worker of its own that
+holds no transaction, runs it now (`Run`). The gateway reserves against the
+store's monthly cap, leaves out the data the owner has not let go, records
+every call with its tokens and cost, and retries only what is worth retrying.
+[The design](../docs/ai-b2b/m1-ai-gateway.md) has the whole contract.
+
 ## MCP: the same state machine, a different door
 
 `ext/mcp` mounts `POST /api/admin/x/mcp` through `HandleAdmin`, so the store's

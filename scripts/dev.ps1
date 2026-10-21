@@ -27,6 +27,7 @@ param(
     [switch]$Reset,
     [switch]$Identity,
     [switch]$ImportAmazon,
+    [switch]$AiGateway,
     [switch]$All
 )
 
@@ -126,11 +127,12 @@ if ($All) {
     $serveArgs += @(
         '-identity', '-webhooks', '-menus', '-reviews', '-contact', '-newsletter',
         '-resend', '-sendgrid', '-twilio', '-msg91', '-invoices', '-cms', '-faq', '-translations', '-showcases', '-banners', '-wishlist',
-        '-gateways', '-carriers', '-feeds', '-sitemaps', '-b2b', '-recovery'
+        '-gateways', '-carriers', '-feeds', '-sitemaps', '-b2b', '-recovery', '-ai-gateway'
     )
 } else {
     if ($Identity) { $serveArgs += '-identity' }
     if ($ImportAmazon) { $serveArgs += '-import-amazon' }
+    if ($AiGateway) { $serveArgs += '-ai-gateway' }
 }
 # -import-amazon stays opt-in even under -All: it drives a real Chrome and
 # wants an LLM key, so it is the one module that does something on a machine

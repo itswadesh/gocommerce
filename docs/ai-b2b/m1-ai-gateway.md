@@ -123,6 +123,8 @@ type Task struct {
 }
 
 func (m *Module) RegisterTask(t Task) error
+// Ready is nil when the store can make calls, else ErrNotReady with the reason.
+func (m *Module) Ready(ctx context.Context) error
 // Enqueue writes the job in the caller's transaction (D106).
 func (m *Module) Enqueue(ctx context.Context, tx *sql.Tx, task string, input any, idemKey string) (int64, error)
 // Run does the work now, for background code that holds no transaction and
@@ -143,7 +145,13 @@ func (m *Module) Propose(ctx context.Context, kind string, args any, idemKey str
 ```
 
 `Request`, `Response`, `Provider` and `Embedder` are ADR 0005's. The
-`Embedder` interface is declared and unused in this step.
+`Embedder` interface is declared and unused in this step. A `Message` carries
+the task's own words in `Text` and store content in `Data`, each piece tagged
+with its class (`DataCatalogue`, `DataOrderLines`, `DataContactDetails`,
+`DataMessageBodies`); the gateway leaves out the classes the policy does not
+allow and fences the rest. `Response` gains `Refusal`, what a model said when
+it declined. A run that ends without an answer returns a `*RunError` with its
+outcome, its reason and whether it is worth trying again.
 
 ### One run
 
@@ -270,6 +278,76 @@ modules through `gocommerce.TraceID(ctx)`.
   expired proposal cannot run.
 - **Providers:** each against a recorded response served by `httptest`,
   including usage mapping and refusals.
+
+## Rulings made in building it
+
+Where the design above was silent, or a detail did not survive the code:
+
+- **Claiming.** Jobs are claimed one at a time per store, each store bound in
+  turn, as the outbox runner does (`ForEachStore`, then `FOR UPDATE SKIP
+  LOCKED` inside the store), at most ten per store per pass so one backlog
+  does not starve the rest. The two-minute lock is renewed before each call,
+  and a job's outcome is written only while the row still carries the attempt
+  the worker claimed, so a worker that lost its lock and comes back late
+  changes nothing.
+- **Settings are read on every run,** so a key or cap typed a moment ago
+  counts. A fraction typed into the panel rounds the cap down and a price up:
+  both can only make the cap stricter.
+- **The ceiling** reserved before a call prices every input token at the
+  dearest of the input, cache-read and cache-write prices, so a prompt
+  written to the cache whole cannot cost more than was reserved. The real cost
+  is charged at settlement even if it passes the reservation, because the
+  money was spent.
+- **Months and days are UTC.** One budget row per UTC calendar month; usage
+  windows are UTC days, and `by=day` returns every day of the window, empty
+  ones included.
+- **What leaves the store** is decided by class, not by trusting each task:
+  store content goes in `Message.Data` tagged with its class, the gateway
+  drops the classes the policy forbids before rendering, and records which
+  were dropped on the step. With contact details off, an email address, or a
+  phone number in international form, that slipped into another class is
+  replaced by its shape. A request carrying documents when documents are off
+  is refused rather than sent without the file it is about.
+- **The fence** is a `<data label class>` block holding the value as JSON. Go's
+  encoder escapes `<`, `>` and `&`, so nothing in a value can close it.
+- **Token estimate:** a request is counted at one token per three bytes plus
+  512 for what the provider adds, which over-counts English on purpose.
+- **Schemas** must be closed objects with every property required, the shape
+  OpenAI's strict mode accepts, using types, `properties`, `required`,
+  `additionalProperties: false`, `items`, `enum` and the length and range
+  bounds. A keyword outside that set is refused at registration rather than
+  silently not checked.
+- **A declined or cut-off answer** is an invalid one: it moves up the ladder
+  and costs what it used. A transient provider failure does not climb the
+  ladder; the job retries it.
+- **The deterministic step:** an error ends the run as `refused`; an answer
+  that fails the task's own schema falls through to the model, with the reason
+  on the step.
+- **Not ready is not a run.** A store with the gateway off, or with no key or
+  cap, gets `ErrNotReady` with the reason and no record; a job in that state
+  goes to `failed` with the reason. A database failure mid-run writes no
+  record and is retried like a provider outage.
+- **The record** carries the run's totals: tokens and cost of every call, and
+  the model that last answered or was asked. Each step carries its own call's
+  model, tokens, cost and latency. Cost is never null: a run that made no call
+  cost nothing, and a model without prices is never called.
+- **The budget route** also says whether the store can make calls, why not,
+  the provider and models and whether each is priced, because that is what
+  heads the usage screen.
+- **The check** answers 200 with `ok` and a message in every case. A key that
+  does not begin the way its provider's keys do (`sk-ant-`, `sk-`) is caught
+  before anything leaves the store; a key that works is reported with whether
+  each named model is in the provider's list.
+- **Jobs:** cancel applies to queued, running, failed and dead jobs (a running
+  job's call is not stopped; its outcome is discarded); retry applies to
+  failed, dead and cancelled ones and keeps the last error until the next run
+  replaces it. The job list does not return a job's input. OpenAI's 429
+  `insufficient_quota` is not transient: waiting does not refill an account.
+- **The cache key** is the task, its version, and the input together with the
+  policy it ran under. Expired entries are cleared on each runner pass.
+- **Redirects** from a provider are not followed.
+- **Rights' defaults:** `ai.configure` is the owner's alone until a store
+  grants it.
 
 ## Not in this step
 

@@ -131,6 +131,7 @@ Every gateway and carrier module installs idle: `-gateways` and `-carriers` put 
 | `b2b` | Companies and their buyers in roles, orders on account against a credit limit and net terms, purchase-order numbers, approval over a limit, and quotes priced for one buyer |
 | `cart-recovery` | Abandoned checkouts: records baskets left idle, sends a sequence of reminders by email with a tracked link back, and credits the order that recovers each one |
 | `import-amazon` | A product, its variations and pictures from an Amazon URL, through a real Chrome; copy rewritten by Claude |
+| `ai-gateway` | Every model call the store makes, recorded and held to a monthly cap in the store's currency, with the owner's own provider key and a switch for each kind of data that may leave the store; idle until a key, a cap and prices are set |
 | `mcp` | The store as tools for an AI agent, with an audit trail |
 | `search-meilisearch` | A Meilisearch index kept in step with the catalogue, and the storefront's search through it |
 | `klaviyo` | Orders and abandoned carts as Klaviyo events, under the metric names its flows know |

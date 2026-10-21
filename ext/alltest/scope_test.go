@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
+	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
 	b2b "github.com/itswadesh/gocommerce/ext/b2b"
 	banners "github.com/itswadesh/gocommerce/ext/banners"
 	cartrecovery "github.com/itswadesh/gocommerce/ext/cart-recovery"
@@ -62,6 +63,7 @@ func everyModule() []gocommerce.Module {
 	// b2b needs the identity module it signs buyers in through, listed first.
 	accounts := identity.New(identity.Config{})
 	return []gocommerce.Module{
+		aigateway.New(aigateway.Config{}),
 		accounts,
 		b2b.New(b2b.Config{Accounts: accounts}),
 		cartrecovery.New(cartrecovery.Config{}),
