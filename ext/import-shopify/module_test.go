@@ -205,6 +205,44 @@ func TestACatalogueArrives(t *testing.T) {
 	}
 }
 
+// A store that sells in yen on an install that defaults to dollars (D85).
+// Shopify writes "2500.00" whatever the currency, and it is the store's
+// currency that says how many of those digits are minor units: two thousand
+// five hundred yen, not two hundred and fifty thousand.
+func TestPricesArriveInTheStoresOwnCurrency(t *testing.T) {
+	products := testProducts()
+	products[0].Variants[0].Price = "2500.00"
+	products[0].Variants[1].Price, products[0].Variants[1].CompareAtPrice = "2500.00", strptr("3000.00")
+	srv := stubShop(t, products)
+	app, m := newImportApp(t, srv)
+	ctx := context.Background()
+
+	p, err := app.Profile().Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Currency = "JPY"
+	if _, err := app.Profile().Set(ctx, *p, nil); err != nil {
+		t.Fatalf("choose JPY: %v", err)
+	}
+
+	if job := run(t, app, m, srv); job.Status != StatusDone {
+		t.Fatalf("status = %q (%s), want done", job.Status, job.Message)
+	}
+	product, err := app.Products().GetProductBySlug(ctx, "merino-crew-neck")
+	if err != nil {
+		t.Fatalf("the product did not arrive: %v", err)
+	}
+	for _, v := range product.Variants {
+		if v.Price.AmountMinor != 2500 || v.Price.Currency != "JPY" {
+			t.Errorf("%s price = %+v, want 2500 JPY", v.SKU, v.Price)
+		}
+		if v.SKU == "MER-M" && (v.CompareAtPrice == nil || v.CompareAtPrice.AmountMinor != 3000) {
+			t.Errorf("compare-at = %+v, want 3000", v.CompareAtPrice)
+		}
+	}
+}
+
 // The property that makes an import re-runnable: a second pass updates the rows
 // the first one made rather than putting a second copy beside them.
 func TestRunningItTwiceUpdatesRatherThanDuplicates(t *testing.T) {
