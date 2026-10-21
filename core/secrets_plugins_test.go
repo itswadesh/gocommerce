@@ -43,8 +43,14 @@ func keyedApp(t *testing.T, dsn, current, previous string, mods ...Module) *App 
 // service.
 func storedPluginSettings(t *testing.T, app *App, key string) map[string]any {
 	t.Helper()
+	return storedPluginSettingsIn(t, context.Background(), app, key)
+}
+
+// storedPluginSettingsIn is storedPluginSettings in the store ctx is bound to.
+func storedPluginSettingsIn(t *testing.T, ctx context.Context, app *App, key string) map[string]any {
+	t.Helper()
 	var raw []byte
-	if err := app.db.QueryRowContext(context.Background(),
+	if err := app.db.QueryRowContext(ctx,
 		`SELECT settings FROM plugins WHERE key = $1`, key).Scan(&raw); err != nil {
 		t.Fatalf("read the plugin row: %v", err)
 	}

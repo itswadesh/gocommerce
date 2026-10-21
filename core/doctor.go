@@ -104,6 +104,7 @@ func (a *App) Diagnose(ctx context.Context) Report {
 	add(a.checkLedger(ctx))
 	add(a.checkDiscounts(ctx))
 	add(a.checkCustomReports(ctx))
+	add(a.checkSecrets(ctx))
 
 	rep.OK = true
 	for _, c := range rep.Checks {

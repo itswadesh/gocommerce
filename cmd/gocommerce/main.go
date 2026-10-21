@@ -88,6 +88,9 @@ commands:
   store      create a store: store create <slug> [name]; or mark one a demo
              (masked personal data): store demo <slug> on|off; then exit
   doctor     run operational diagnostics and exit (-json for agents)
+  secrets    secrets seal: seal every stored secret in every store under
+             GOCOMMERCE_SECRETS_KEY, including what the previous key sealed;
+             run it with the same module flags as serve, then exit
   spec       print the OpenAPI contract and exit
   taxonomy   import a product category tree, then exit
   attributes import the fields categories ask of a product, then exit
@@ -519,6 +522,10 @@ environment:
 		}
 		return doctorCmd(ctx, app, *jsonOut)
 
+	case "secrets":
+		defer app.Close()
+		return secretsCmd(context.Background(), app, fs.Args()[1:])
+
 	case "spec":
 		defer app.Close()
 		_, err := os.Stdout.Write(app.Spec())
@@ -704,6 +711,41 @@ func doctorCmd(ctx context.Context, app *gocommerce.App, asJSON bool) error {
 	}
 	fmt.Printf("%d check(s) need attention\n", len(rep.Failed()))
 	os.Exit(1)
+	return nil
+}
+
+// secretsCmd seals what is stored readable and moves what the previous key
+// sealed, in every store. It prints counts and the fields of anything it could
+// not open — never a value — and is safe to run again.
+func secretsCmd(ctx context.Context, app *gocommerce.App, args []string) error {
+	if len(args) != 1 || args[0] != "seal" {
+		return errors.New("usage: gocommerce secrets seal")
+	}
+	rep, err := app.SealSecrets(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("sealed under key %s, in %d store(s):\n", rep.KeyID, rep.Stores)
+	var unreadable []string
+	for _, c := range rep.Counts {
+		fmt.Printf("  %-24s %d sealed now, %d moved off the previous key, %d already sealed\n",
+			c.Label, c.Readable, c.Previous, c.Current)
+		if c.Unreadable > 0 {
+			unreadable = append(unreadable, fmt.Sprintf("%d %s (%s)", c.Unreadable, c.Label, strings.Join(c.Where, ", ")))
+		}
+	}
+	if len(unreadable) > 0 {
+		fmt.Printf("left as they are, because no key here opens them: %s\n"+
+			"  put the key that sealed them in %s and run this again, or enter them again\n",
+			strings.Join(unreadable, "; "), gocommerce.SecretsKeyPreviousEnv)
+	}
+	// A module installed when the store is served but not in this run keeps
+	// its secrets out of reach: say so, or retiring the previous key would
+	// strand them.
+	if len(rep.NotInstalled) > 0 {
+		fmt.Printf("not reached: %s keep tables here but are not installed in this run; "+
+			"run it again with the module flags the store is served with\n", strings.Join(rep.NotInstalled, ", "))
+	}
 	return nil
 }
 
