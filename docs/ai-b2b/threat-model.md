@@ -1,6 +1,6 @@
 # Threat model: AI features in GoCommerce
 
-Status: proposed, 21 October 2026, for the M0 gate. It covers the features in
+Status: accepted at the M0 gate, 21 October 2026. It covers the features in
 the [spec](spec.md) and the decisions in [ADR 0001](adr/0001-service-boundaries.md)
 to [ADR 0005](adr/0005-model-providers.md), and is revisited at each
 milestone gate.
@@ -54,8 +54,8 @@ Trust boundaries are crossed:
 | T8 | **More personal data leaves for a provider than the task needs** | Per-store data-sharing policy; contact details and message bodies off by default; fields the task does not use stripped before the request; policy recorded on each execution; personal data masked for agents unless their right and task need it | ADR 0005, 0003 | Request capture in tests shows only allowed fields (M1) |
 | T9 | **A flood of inbound messages spends the store's money** | Budget reserved atomically before each call; per-store and per-key rate limits in Postgres; deduplication before any model call; rules and small models first; work over budget goes to a person | ADR 0005 | Budget exhaustion and rate-limit tests (M1) |
 | T10 | **A guess or an injected claim becomes a remembered fact** | Memories written by a model are `unverified` until a person confirms; only confirmed memories are used as facts; every memory keeps its source, scope and expiry, and can be revoked and deleted | Spec §3.4 | Memory tests: unverified memory never cited as fact (M1) |
-| T11 | **Keys and tokens are read from the database or a backup** | Envelope encryption for provider keys, Meta tokens and webhook secrets, with the key held outside the database; masked on every read; never logged | This document | Encryption round-trip test; `doctor` check that the key is configured (M1) |
-| T12 | **The server is made to call an address of the attacker's choosing** (integration endpoints, connector URLs, documents an agent is asked to fetch) | Server-side calls to store-supplied URLs only over https to public addresses, checked after DNS resolution and on every redirect | This document | Refusal tests for private, loopback and link-local targets (M1, before any connector) |
+| T11 | **Keys and tokens are read from the database or a backup** | Envelope encryption for provider keys, Meta tokens and webhook secrets, with the key held outside the database; masked on every read; never logged | D110 | Encryption round-trip test; `doctor` check that the key is configured (M1) |
+| T12 | **The server is made to call an address of the attacker's choosing** (integration endpoints, connector URLs, documents an agent is asked to fetch) | Server-side calls to store-supplied URLs only over https to public addresses, checked after DNS resolution and on every redirect | D109 | Refusal tests for private, loopback and link-local targets (M1, before any connector) |
 | T13 | **Generated extension code is malicious or wrong** | Generated code is a pull request a developer reviews; it is built and tested in its own process; nothing is loaded at runtime (D57); rights declarations and scope tests run in CI | ADR 0001 | M6 gate |
 | T14 | **The Meta Ads connection can change campaigns** | Only read permissions requested; tokens encrypted (T11) and revocable; no write calls exist in the code | Spec §8 | Scope list asserted in tests (M5) |
 | T15 | **A model's price or SKU reaches a customer as fact** | Prices only from core pricing; every inferred line carries its source and confidence; nothing is substituted silently; a seller approves every draft and quote | Spec §5 | Order-desk tests: model price ignored, low confidence lands in exceptions (M2) |

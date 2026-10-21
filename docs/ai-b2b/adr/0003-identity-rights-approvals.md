@@ -1,6 +1,6 @@
 # ADR 0003: Agents get their own keys, and their writes wait for a person
 
-Status: proposed, 21 October 2026. Becomes a row in `PLAN.md` §5 when accepted.
+Status: accepted, 21 October 2026, as D105 in `PLAN.md` §5.
 
 ## Context
 
@@ -127,9 +127,12 @@ Today:
 - **Approve by role instead of by right.** A role is a bundle that changes;
   the right the action needs is the fact being checked.
 
-## Owner decision needed
+## Owner's decisions
+
+Both accepted as proposed on 21 October 2026:
 
 - Agent keys keep no readable copy, unlike M46's integration keys. This
   reverses M46 for agents only.
-- Which writes count as "only staff can see" is a list the owner should read;
-  it is enforced in code, one tool at a time.
+- The writes that count as "only staff can see" are drafts, notes, exception
+  items, classified messages and proposed matches. The list is enforced in
+  code, one tool at a time.

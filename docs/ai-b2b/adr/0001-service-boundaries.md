@@ -1,6 +1,6 @@
 # ADR 0001: The AI services are modules in the engine, not separate services
 
-Status: proposed, 21 October 2026. Becomes a row in `PLAN.md` §5 when accepted.
+Status: accepted, 21 October 2026, as D103 in `PLAN.md` §5.
 
 ## Context
 
@@ -58,7 +58,7 @@ in `main()` (D5, D6). Its rules shape what "separate" can mean:
 4. **The spec's `/v1/...` paths map onto rule 9's namespaces**, and the
    versioning the spec asks for is the module's: every module route is in the
    OpenAPI document (rule 11), changes to a published route are additive, and
-   a breaking change is a new path. Proposed mapping:
+   a breaking change is a new path. The mapping:
 
    | Spec path | Here |
    |---|---|
@@ -105,9 +105,9 @@ in `main()` (D5, D6). Its rules shape what "separate" can mean:
 - **`/v1` prefixes on new routes.** Would make two route conventions in one
   API, and rule 9's namespace check would refuse them.
 
-## Owner decision needed
+## Owner's decision
 
 The spec says "separate services" and "versioned domain APIs". This record
 reads the first as separate modules and the second as additive-only module
-routes under rule 9. If the spec meant separate processes or `/v1` paths, that
-overrides D5, D6, D16 and rule 9, and should be decided here.
+routes under rule 9. The owner accepted that reading on 21 October 2026, so
+D5, D6, D16 and rule 9 stand.

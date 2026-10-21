@@ -1,6 +1,6 @@
 # ADR 0002: A store is the tenant, and AI data obeys the same row policy
 
-Status: proposed, 21 October 2026. Becomes a row in `PLAN.md` §5 when accepted.
+Status: accepted, 21 October 2026, as D104 in `PLAN.md` §5.
 
 ## Context
 
@@ -99,9 +99,10 @@ bypass it.
 - **An external vector database.** A second system to keep consistent, a second
   place to delete from, and a new dependency; the spec already names pgvector.
 
-## Owner decision needed
+## Owner's decision
 
 Moving the production Postgres image to one that ships pgvector is a hosting
 change for admin.kitcommerce.store and any self-hosted install. It is not
-needed for M1's first features (gateway, read-only MCP, structured memory) and
-can wait until semantic search is built.
+needed for M1's first features (gateway, read-only MCP, structured memory).
+The owner decided on 21 October 2026 that it waits until semantic search is
+built.
