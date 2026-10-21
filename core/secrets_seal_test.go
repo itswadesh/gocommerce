@@ -2,6 +2,8 @@ package gocommerce
 
 import (
 	"context"
+	"net/url"
+	"os"
 	"strings"
 	"testing"
 )
@@ -213,5 +215,72 @@ func TestDoctorReportsHowSecretsAreStored(t *testing.T) {
 	}
 	if d := check(bare); d.Status != StatusWarn || !strings.Contains(d.Detail, "sealed") {
 		t.Errorf("sealed values and no key = %+v, want a warning", d)
+	}
+}
+
+// superuserDSN is dsn signed in as the cluster's superuser, which PostgreSQL
+// lets past every row policy — the login a misconfigured install might use.
+func superuserDSN(t *testing.T, dsn string) string {
+	t.Helper()
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := url.Parse(os.Getenv(testDSNEnv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.User = base.User
+	return u.String()
+}
+
+// Under a login that passes the row policies, a pass bound to one store sees
+// every store's rows. Each statement names its store as well, so a pass still
+// touches only its own; and the command refuses such a login outright, as
+// serving several stores does.
+func TestSecretsSealKeepsEachStoreToItsOwnRows(t *testing.T) {
+	dsn := keyedDSN(t, fakePlugin{})
+	ctx := context.Background()
+	on := true
+
+	bare := keyedApp(t, dsn, "", "", fakePlugin{})
+	first := WithStore(ctx, bare.DefaultStore())
+	second := WithStore(ctx, addTestStore(t, bare, "second"))
+	presented := map[context.Context]string{}
+	for st, key := range map[context.Context]string{first: "sk-first", second: "sk-second"} {
+		if _, err := bare.Plugins().Update(st, "fake-mail", PluginPatch{Enabled: &on, Settings: map[string]any{"api_key": key}}); err != nil {
+			t.Fatal(err)
+		}
+		_, p, err := bare.APIKeys().Create(st, APIKeyInput{Name: "K", Role: RoleStaff}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		presented[st] = p
+	}
+
+	key := newSecretsKey(t)
+	super := keyedApp(t, superuserDSN(t, dsn), key, "", fakePlugin{})
+	if _, err := super.SealSecrets(ctx); err == nil || !strings.Contains(err.Error(), "row") {
+		t.Errorf("seal under a login that passes row security = %v, want it refused saying why", err)
+	}
+	for _, st := range []context.Context{first, second} {
+		if _, err := super.surveySecrets(st, true); err != nil {
+			t.Fatalf("seal pass: %v", err)
+		}
+	}
+
+	normal := keyedApp(t, dsn, key, "", fakePlugin{})
+	for name, st := range map[string]context.Context{"first": first, "second": second} {
+		want := "sk-" + name
+		if got := normal.Plugins().String(st, "fake-mail", "api_key"); got != want {
+			t.Errorf("the %s store's plugin key reads %q, want %q", name, got, want)
+		}
+		keys, err := normal.APIKeys().List(st)
+		if err != nil || len(keys) != 1 {
+			t.Fatalf("the %s store's keys = %v, %v", name, keys, err)
+		}
+		if got, err := normal.APIKeys().Secret(st, keys[0].ID); err != nil || got != presented[st] {
+			t.Errorf("the %s store's API key copy reads back %v, want the one it issued", name, err)
+		}
 	}
 }

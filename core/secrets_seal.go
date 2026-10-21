@@ -35,8 +35,9 @@ var sqlNameRE = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)
 
 // RegisterSecretColumn names a column holding sealed secrets, from a module's
 // Register, so `gocommerce secrets seal` and the doctor reach it. The table
-// must be behind the store policy, as every module table is: the walk runs
-// once per store, and seals each value for the store it belongs to.
+// must have store_id and be behind the store policy, as every module table
+// is: the walk runs once per store, names the store in every statement, and
+// seals each value for the store it belongs to.
 func (a *App) RegisterSecretColumn(c SecretColumn) {
 	if !sqlNameRE.MatchString(c.Table) || !sqlNameRE.MatchString(c.Column) || c.Field == "" || c.Label == "" {
 		a.regErrf("module %q: secret column %q.%q: want a lowercase table and column name, a field and a label",
@@ -138,6 +139,13 @@ func (a *App) SealSecrets(ctx context.Context) (*SealReport, error) {
 	if a.secrets.current == nil {
 		return nil, fmt.Errorf("%s is not set, so there is no key to seal under; set it, restart the store with it, then run this", SecretsKeyEnv)
 	}
+	// A login that passes the row policies sees every store's rows from a
+	// pass bound to one. Each statement below names its store as well, but a
+	// command that rewrites credentials does not run on the second line of
+	// defence alone.
+	if d := a.checkRowSecurity(ctx); d.Status == StatusFail {
+		return nil, fmt.Errorf("refusing to seal: %s, and a pass for one store must not be able to reach another's rows; %s", d.Detail, d.Hint)
+	}
 	rows, err := a.db.QueryContext(ctx, `SELECT id FROM stores ORDER BY created_at, id`)
 	if err != nil {
 		return nil, err
@@ -220,13 +228,15 @@ func (a *App) surveyPluginSecrets(ctx context.Context, write bool) (SecretCount,
 	c := SecretCount{Label: "plugin settings"}
 	store := a.storeOf(ctx)
 	err := InTx(ctx, a.db, func(tx *sql.Tx) error {
-		q := `SELECT key, settings FROM plugins ORDER BY key`
+		// store_id as well as the row policy: under a login that passes the
+		// policy, the policy alone would hand this pass every store's rows.
+		q := `SELECT key, settings FROM plugins WHERE store_id = $1 ORDER BY key`
 		if write {
 			// Held until the row is rewritten, so an operator's save in the
 			// meantime is neither lost nor overwritten with an older value.
 			q += ` FOR UPDATE`
 		}
-		rows, err := tx.QueryContext(ctx, q)
+		rows, err := tx.QueryContext(ctx, q, store)
 		if err != nil {
 			return err
 		}
@@ -295,7 +305,7 @@ func (a *App) surveyPluginSecrets(ctx context.Context, write bool) (SecretCount,
 			}
 			// updated_at stays: nobody changed a setting, and the panel shows
 			// that date as when somebody did.
-			if _, err := tx.ExecContext(ctx, `UPDATE plugins SET settings = $2 WHERE key = $1`, r.key, encoded); err != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE plugins SET settings = $2 WHERE key = $1 AND store_id = $3`, r.key, encoded, store); err != nil {
 				return err
 			}
 		}
@@ -309,8 +319,8 @@ func (a *App) surveySecretColumn(ctx context.Context, col SecretColumn, write bo
 	store := a.storeOf(ctx)
 	// Identifiers were checked at registration; they come from module code,
 	// never from a request.
-	rows, err := a.db.QueryContext(ctx, fmt.Sprintf(`SELECT %[2]s, count(*) FROM %[1]s WHERE %[2]s <> '' GROUP BY 1`,
-		quoteIdent(col.Table), quoteIdent(col.Column)))
+	rows, err := a.db.QueryContext(ctx, fmt.Sprintf(`SELECT %[2]s, count(*) FROM %[1]s WHERE %[2]s <> '' AND store_id = $1 GROUP BY 1`,
+		quoteIdent(col.Table), quoteIdent(col.Column)), store)
 	if err != nil {
 		return c, err
 	}
@@ -344,8 +354,8 @@ func (a *App) surveySecretColumn(ctx context.Context, col SecretColumn, write bo
 		}
 		// Compare-and-set on the value itself: a row the module rewrote since
 		// the read keeps what the module wrote, which it sealed already.
-		if _, err := a.db.ExecContext(ctx, fmt.Sprintf(`UPDATE %[1]s SET %[2]s = $2 WHERE %[2]s = $1`,
-			quoteIdent(col.Table), quoteIdent(col.Column)), v.stored, sealed); err != nil {
+		if _, err := a.db.ExecContext(ctx, fmt.Sprintf(`UPDATE %[1]s SET %[2]s = $2 WHERE %[2]s = $1 AND store_id = $3`,
+			quoteIdent(col.Table), quoteIdent(col.Column)), v.stored, sealed, store); err != nil {
 			return c, err
 		}
 	}
