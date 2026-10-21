@@ -17,8 +17,14 @@
      *
      * The audit list underneath is an ordinary admin list and needs none of
      * that.
+     *
+     * The two halves are behind two rights, because they are two routes:
+     * the audit is agent.read and the tool list is a call to the dispatch
+     * endpoint, agent.dispatch. The screen is agent.read's, and a role without
+     * agent.dispatch is told why the card is empty rather than shown a 403.
      */
     import { api, can, request } from "$lib/api.js";
+    import { rightLabel } from "$lib/rights.js";
     import { rowKey } from "$lib/rowkey.js";
     import { listState } from "$lib/liststate.svelte.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
@@ -50,6 +56,8 @@
     let entry = $state(null);
 
     const missing = $derived(modulesKnown() && !hasModule("mcp"));
+    const readable = $derived(can("agent.read"));
+    const dispatchable = $derived(can("agent.dispatch"));
 
     /* Read from the server's own answer, never from a list of builtin names
        hardcoded here: a tool contributed by another module through
@@ -64,13 +72,19 @@
        missing route. hasModule() reads a `$state` object, so both re-run when
        the answer lands. */
     $effect(() => {
-        if (can("store.operate") && hasModule("mcp")) loadStatus();
+        if (dispatchable && hasModule("mcp")) loadStatus();
     });
 
     $effect(() => {
         list.params;
-        if (can("store.operate") && hasModule("mcp")) loadAudit();
+        if (readable && hasModule("mcp")) loadAudit();
     });
+
+    function refresh() {
+        if (!hasModule("mcp")) return;
+        if (dispatchable) loadStatus();
+        if (readable) loadAudit();
+    }
 
     async function loadStatus() {
         statusLoading = true;
@@ -129,8 +143,10 @@
 
 <svelte:head><title>Agent activity · GoCommerce</title></svelte:head>
 
-{#if !can("store.operate")}
-    <NoAccess right="store.operate" what="the agent audit" />
+<!-- A store built without ext/mcp says so even to an owner, who holds no
+     agent right there: the build is what grants a module's rights (D65). -->
+{#if !readable && !missing}
+    <NoAccess right="agent.read" what="the agent audit" />
 {:else}
     <div class="page page-agent shopify-skin">
 
@@ -147,10 +163,7 @@
                         class="btn circle transparent secondary"
                         title="Refresh"
                         aria-label="Refresh"
-                        onclick={() => {
-                            loadStatus();
-                            loadAudit();
-                        }}
+                        onclick={refresh}
                     >
                         <i class="ri-refresh-line" aria-hidden="true"></i>
                     </button>
@@ -166,7 +179,12 @@
                 <div class="wrapper m-b-base">
                     <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">The server</h2>
 
-                    {#if statusLoading && !tools.length}
+                    {#if !dispatchable}
+                        <p class="txt-hint">
+                            Listing the tools is itself a call to the agent endpoint, which needs
+                            “{rightLabel("agent.dispatch")}”, and your role does not carry it.
+                        </p>
+                    {:else if statusLoading && !tools.length}
                         <div class="block txt-center p-base"><span class="loader"></span></div>
                     {:else if reachable}
                         <p>

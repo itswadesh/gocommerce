@@ -245,6 +245,14 @@ const MODULE_RIGHTS = {
         label: "Change the recovery automation",
         scope: "Whether reminders go out, when a basket counts as abandoned, and the sequence",
     },
+    "agent.read": {
+        label: "See what the agent did",
+        scope: "Every tool call an agent made, and what it changed",
+    },
+    "agent.dispatch": {
+        label: "Let an agent act",
+        scope: "The dispatch endpoint — the whole domain-tool surface",
+    },
 };
 
 /*
