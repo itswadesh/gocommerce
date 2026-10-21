@@ -303,10 +303,13 @@ token opens no admin route and an admin token reads no address book.
 
 `ext/mcp` mounts `POST /api/admin/x/mcp` through `HandleAdmin`, so the store's
 admin credential is the agent's credential and the module writes no
-authentication of its own. Both its routes name `store.operate` — a second
-operating surface onto the store, handed to an agent, is what that right means —
-and the reply is JSON-RPC rather than the engine's `{data}` envelope, which is a
-standing exception recorded in AGENTS rule 10. `mcp.ServeStdio(app, m)` runs the same dispatcher
+authentication of its own. Its two routes are gated on rights the module
+declares itself with `app.RegisterRight` (D65): `agent.dispatch` on
+`POST /api/admin/x/mcp` and `agent.read` on `GET /api/admin/x/mcp/audit`. Both
+were `store.operate` before, and both default to no role, so only the owner
+holds them until a store grants them on the Roles screen. The reply is JSON-RPC
+rather than the engine's `{data}` envelope, which is a standing exception
+recorded in AGENTS rule 10. `mcp.ServeStdio(app, m)` runs the same dispatcher
 over stdin/stdout for a desktop agent — called from `main()` in place of
 `ListenAndServe`, because which mode a binary runs in is the application
 author's decision, not a module's.
@@ -318,6 +321,11 @@ The safety property is structural, not a policy document: **every tool in
 no direct table access. An agent therefore cannot reach a state a person could
 not, and cannot skip a rule by coming in through a different door (PLAN §40
 Rule 9).
+
+The tools are the list `builtinTools()` returns in `ext/mcp/tools.go`, plus any
+passed in through `Config.Tools`; read the list there rather than trusting a
+count written down anywhere else. `tools/list` returns the same list at runtime,
+less the mutating tools when `Config.ReadOnly` is on.
 
 A tool is a struct in `builtinTools()` — a name, a description, a JSON Schema
 built with the `object`/`str`/`integer`/`enumStr` helpers, a `Mutates` flag, and
@@ -355,16 +363,17 @@ Six things to get right:
    REST route — `Rights: []gocommerce.Right{gocommerce.RightOrdersWrite}` for
    `mark_order_paid`, `RightInventoryWrite` for `update_variant_inventory`.
    The mount cannot decide this: `requireRights` runs once before the body is
-   parsed, so one route dispatching twelve tools either locks out a read-only
+   parsed, so one route dispatching every tool either locks out a read-only
    agent or hands a catalog-only role `mark_order_paid`. `callTool` checks
    them against the operator on the context and answers a refusal as a JSON-RPC
    error (`-32600`) naming the missing right, which is also written to
    `mcp_audit` when the tool mutates. A static admin token and `ServeStdio`
    carry no operator and are exempt, exactly as they are on a core route.
 
-Other modules contribute tools explicitly — `mcp.New(mcp.Config{Tools:
-invoices.Tools()})`. There is no discovery: if you want a module's tools
-exposed, you say so in `main()`.
+Tools from outside `ext/mcp` are passed in explicitly: `Config.Tools` is a
+`[]mcp.Tool` the application builds and hands over in `main()` —
+`mcp.New(mcp.Config{Tools: storeTools})`. There is no discovery: if you want a
+module's tools exposed, you say so in `main()`.
 
 ## Common mistakes
 
