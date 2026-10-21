@@ -580,3 +580,28 @@ func TestDocumentsAreCountedAtAFloorPerPage(t *testing.T) {
 		t.Errorf("an image estimated at %d tokens, want at least %d", got, tokensPerImage)
 	}
 }
+
+// A price of nothing is no price: a model that costs nothing could never be
+// held to the cap. A cache price of nothing falls back to the input price.
+func TestAZeroPriceIsNoPrice(t *testing.T) {
+	app, m, s := newGateway(t, reply(http.StatusOK, answer(smallID, goodAnswer, smallUsage)), rewriteTask())
+	ctx := context.Background()
+	configure(t, app, ctx, map[string]any{"small_price_input": 0})
+
+	_, err := m.Run(ctx, "test.rewrite", listing{Title: "x"})
+	if re := runErr(t, err); re.Outcome != OutcomeNoPrice {
+		t.Fatalf("a zero input price = %+v, want no_price", re)
+	}
+	if s.count() != 0 {
+		t.Error("a model priced at nothing was called")
+	}
+	configure(t, app, ctx, map[string]any{"small_price_cache_write": 0})
+	res, err := m.Run(ctx, "test.rewrite", listing{Title: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 1536 written to the cache at the input price of 100, not at nothing.
+	if want := int64(412*100 + 187*500 + 1536*100); res.CostMicroMinor != want {
+		t.Errorf("cost = %d, want %d", res.CostMicroMinor, want)
+	}
+}

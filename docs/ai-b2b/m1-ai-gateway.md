@@ -378,6 +378,15 @@ Where the design above was silent, or a detail did not survive the code:
 - **Redirects** from a provider are not followed.
 - **Rights' defaults:** `ai.configure` is the owner's alone until a store
   grants it.
+- **A price of 0 is no price:** a model priced at nothing is not called,
+  because what costs nothing could not be held to the cap; a cache price of
+  0 falls back to the input price.
+- **Indexes lead with the store.** The tables name `store_id` themselves, so
+  every index (the runner's claim, the screens' lists) leads with it, as the
+  row policy reads them.
+- **A trace id from the caller is a hint, not an identity.** Two callers may
+  send the same `X-Trace-Id`, by accident or on purpose, and their records
+  then share it; nothing relies on it being unique.
 
 The approval queue:
 
@@ -388,8 +397,9 @@ The approval queue:
   store has moved on, and a person files or approves again.
 - **Expiry is read, not swept.** A pending proposal past `expires_at` reads
   as `expired` everywhere, and the `expired` filter includes it.
-- **Who may decide.** Approving and rejecting both need a person and the
-  action's own right. A person is a signed-in operator with a superusers row:
+- **Who may decide.** Approving and rejecting both need a person,
+  `ai.approve` (checked by the Go API itself as well as by its routes) and
+  the action's own right. A person is a signed-in operator with a superusers row:
   an API key resolves to one with no id, and agent keys will carry their key
   id beside that zero rather than in it, so the test stays right when they
   land. The static token cannot decide either. A proposal whose action this

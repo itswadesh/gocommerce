@@ -319,6 +319,12 @@ func (m *Module) decide(ctx context.Context, id int64, approving bool) (*gocomme
 		return nil, nil, nil, gocommerce.Forbiddenf(
 			"deciding a proposal needs a person signed in to the panel; an API key or the admin token cannot approve or reject one")
 	}
+	// Checked here as well as on the routes: another module calling the Go
+	// API from a route of its own must not decide for somebody the store has
+	// not let decide proposals.
+	if !su.Has(RightApprove) {
+		return nil, nil, nil, gocommerce.Forbiddenf("your role (%s) does not carry %s, which deciding a proposal needs", su.Role, RightApprove)
+	}
 	a, err := m.Approval(ctx, id)
 	if err != nil {
 		return nil, nil, nil, err
