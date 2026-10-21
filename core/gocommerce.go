@@ -122,6 +122,20 @@ type Config struct {
 	// RBAC without the engine knowing about identity.
 	AdminAuth func(http.Handler) http.Handler
 
+	// SecretsKey seals the credentials the engine has to read back — plugin
+	// settings of kind secret, the readable copy of an API key, webhook
+	// signing secrets — with AES-256-GCM (secrets.go, D110). It is 32 random
+	// bytes in base64, read from GOCOMMERCE_SECRETS_KEY, and it never goes in
+	// the database: that is the point of it. Empty, secrets are stored
+	// readable, as they always were. Lose it and every sealed secret has to be
+	// entered again.
+	SecretsKey string
+	// SecretsKeyPrevious still opens what the previous key sealed, so the key
+	// can be rotated: `gocommerce secrets seal` moves those values under
+	// SecretsKey, and then this can be unset. Set without SecretsKey it is a
+	// startup error.
+	SecretsKeyPrevious string
+
 	// MediaDir is a directory uploaded media is written to, and served from at
 	// MediaURLPrefix. Leaving it empty disables uploads: the media library
 	// still records files by URL, and the panel says so rather than offering a
@@ -302,6 +316,8 @@ func (c *Config) applyDefaults() error {
 type App struct {
 	cfg Config
 	db  *sql.DB
+	// secrets are Config.SecretsKey and SecretsKeyPrevious, decoded once.
+	secrets secretKeys
 	// reportsDB runs custom reports under a least-privileged login, kept apart
 	// from db so a report can never reach the engine's own database rights
 	// (D78). Nil when Config.ReportsDBURL is empty, which disables the feature.
@@ -467,6 +483,12 @@ func New(cfg Config, mods ...Module) (*App, error) {
 	if err := cfg.applyDefaults(); err != nil {
 		return nil, err
 	}
+	// Before the database: a key that does not decode is a typo in the
+	// environment, and a clear stop beats a store that cannot read its keys.
+	keys, err := newSecretKeys(cfg.SecretsKey, cfg.SecretsKeyPrevious)
+	if err != nil {
+		return nil, err
+	}
 	if err := validateModules(mods); err != nil {
 		return nil, err
 	}
@@ -495,6 +517,7 @@ func New(cfg Config, mods ...Module) (*App, error) {
 	a := &App{
 		cfg:               cfg,
 		db:                db,
+		secrets:           keys,
 		reportsDB:         reportsDB,
 		log:               cfg.Logger,
 		mux:               http.NewServeMux(),

@@ -71,6 +71,16 @@ services:
       # these set does not reset a password on every restart.
       GOCOMMERCE_ADMIN_EMAIL: ${GOCOMMERCE_ADMIN_EMAIL:-admin@example.com}
       GOCOMMERCE_ADMIN_PASSWORD: ${GOCOMMERCE_ADMIN_PASSWORD:?set GOCOMMERCE_ADMIN_PASSWORD}
+      # Seals the secrets the engine reads back — payment and provider keys,
+      # the copy of an API key, webhook signing secrets — so the database
+      # holds ciphertext. 32 random bytes in base64 (openssl rand -base64 32).
+      # Unset, they are stored readable as before. After setting it, restart
+      # and run `gocommerce secrets seal` once; keep the key somewhere other
+      # than this server, because losing it means entering every secret again.
+      GOCOMMERCE_SECRETS_KEY: ${GOCOMMERCE_SECRETS_KEY:-}
+      # Only while rotating: the old key, which still opens what it sealed
+      # until `gocommerce secrets seal` has moved everything to the new one.
+      GOCOMMERCE_SECRETS_KEY_PREVIOUS: ${GOCOMMERCE_SECRETS_KEY_PREVIOUS:-}
       # Where the panel is reached, e.g. https://shop.example.com: the base of
       # a password-reset link. Unset, a reset email carries only a code.
       GOCOMMERCE_PANEL_URL: ${GOCOMMERCE_PANEL_URL:-}
