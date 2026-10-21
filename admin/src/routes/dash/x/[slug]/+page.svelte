@@ -25,7 +25,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import { formatDate, relativeTime } from "$lib/format.js";
     import { fieldText } from "$lib/fieldtext.js";
-    import { mayDelete } from "$lib/screenform.js";
+    import { listOf, mayDelete } from "$lib/screenform.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
@@ -59,7 +59,7 @@
         api.get("/api/admin/screens")
             .then((result) => {
                 if (slug !== want) return;
-                screen = (result.data ?? []).find((s) => s.slug === want) ?? null;
+                screen = listOf(result).find((s) => s.slug === want) ?? null;
                 // Absent means the module is not installed, or the operator's
                 // role does not carry the right the screen names — the listing
                 // filters on it. Either way the honest answer is that this
@@ -80,7 +80,7 @@
         loading = true;
         try {
             const result = await api.get(screen.list.endpoint);
-            rows = result.data ?? [];
+            rows = listOf(result);
         } catch (err) {
             toast.error(err);
         } finally {

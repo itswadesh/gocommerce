@@ -13,7 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { mayDelete } from "../src/lib/screenform.js";
+import { listOf, mayDelete } from "../src/lib/screenform.js";
 
 const holding = (...rights) => (right) => rights.includes(right);
 
@@ -46,4 +46,26 @@ test("the descriptor screen asks mayDelete", () => {
     const page = readFileSync(new URL("../src/routes/dash/x/[slug]/+page.svelte", import.meta.url), "utf8");
     assert.match(page, /from "\$lib\/screenform\.js"/);
     assert.match(page, /const canDelete = \$derived\(mayDelete\(screen, can\)\)/);
+});
+
+/*
+ * GET /api/admin/screens answers {"data": [...]} with no meta, and api.get
+ * hands such a response back as the bare array. Both readers of it took
+ * `.data` off that array, so no module screen ever reached the nav and every
+ * /dash/x/ page said "Not here", to the owner as well.
+ */
+test("a list reads the same whether it came back bare or with its meta", () => {
+    const rows = [{ slug: "identity-accounts" }];
+    assert.deepEqual(listOf(rows), rows);
+    assert.deepEqual(listOf({ data: rows, meta: { total: 1 } }), rows);
+    assert.deepEqual(listOf(null), []);
+    assert.deepEqual(listOf({}), []);
+});
+
+test("both readers of the screens listing, and the rows, go through listOf", () => {
+    const page = readFileSync(new URL("../src/routes/dash/x/[slug]/+page.svelte", import.meta.url), "utf8");
+    const nav = readFileSync(new URL("../src/lib/screens.svelte.js", import.meta.url), "utf8");
+    assert.match(page, /screen = listOf\(result\)\.find/);
+    assert.match(page, /rows = listOf\(result\)/);
+    assert.match(nav, /s\.list = listOf\(result\)/);
 });
