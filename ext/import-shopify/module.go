@@ -106,7 +106,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 		Docs: "https://shopify.dev/docs/api/admin-rest/latest/resources/product",
 		Fields: []gocommerce.PluginField{
 			{
-				Key: "shop", Label: "Shop domain", Kind: "text", Required: true,
+				Key: "shop", Label: "Shop domain", Kind: "text", Outbound: true, Required: true,
 				Help: "acme.myshopify.com — the admin domain, not the storefront's own",
 			},
 			{

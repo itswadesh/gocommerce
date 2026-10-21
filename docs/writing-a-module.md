@@ -99,10 +99,10 @@ addresses, judged on the address it actually dials, redirects included
 it is set: that is how a test points you at a stub, and how a store's own
 `main()` makes its own choice.
 
-A url setting your module connects to gets `Outbound: true` on its
-`PluginField`, so an address the install would refuse to call is refused as it
-is typed. A url you only hand out — a return page, a storefront link — does
-not.
+A setting your module connects to — a URL, or a host such as a shop domain —
+gets `Outbound: true` on its `PluginField`, so an address the install would
+refuse to call is refused as it is typed. A url you only hand out — a return
+page, a storefront link — does not.
 
 ## Owning tables
 

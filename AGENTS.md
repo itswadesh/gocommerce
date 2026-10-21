@@ -232,9 +232,9 @@ and on an install that hosts stores for other people that operator is a
 stranger. So a module's default HTTP client is `app.OutboundClient(timeout)`,
 never `&http.Client{}`: unless the install sets `AllowPrivateURLs`, it
 connects only to public addresses, judged on the address it actually dials,
-redirects included (D109). A url plugin setting the server connects to is
-marked `Outbound: true`, so it is refused as it is typed rather than at the
-first sale. A `Config.Client` the store's own `main()` injects is used as
+redirects included (D109). A plugin setting the server connects to — a URL,
+or a host such as a shop domain — is marked `Outbound: true`, so it is
+refused as it is typed rather than at the first sale. A `Config.Client` the store's own `main()` injects is used as
 given, and an address the server's owner set in the environment — a local
 Meilisearch, a local model — may use an ordinary client.
 
