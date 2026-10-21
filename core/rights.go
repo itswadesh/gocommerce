@@ -538,6 +538,13 @@ func requireRights(rights ...Right) func(http.Handler) http.Handler {
 				// authentication already applied the store's overrides, so this
 				// costs nothing and cannot disagree with what the panel was told.
 				if !su.Has(right) {
+					// An agent key has a list rather than a role, and the fix
+					// is a new key rather than a change to a role.
+					if su.KeyKind == KeyKindAgent {
+						RespondError(w, r, Forbiddenf(
+							"this agent key does not carry %s; an agent key holds only the rights it was issued with", right))
+						return
+					}
 					// Which right, by name: an operator told only "forbidden"
 					// has to guess, and the person who can fix it — whoever set
 					// the role — needs to know what to grant.

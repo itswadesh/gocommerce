@@ -281,6 +281,29 @@ func OperatorToken(t *testing.T, app *gocommerce.App, email, role string) string
 	return session.Token
 }
 
+// AgentKey mints an agent key (ADR 0003) carrying rights and returns it, to
+// send as a bearer token with SessionRequest. Its issuer is an owner made for
+// the purpose, because an agent key has to be issued by a person.
+//
+// What a module proves with one is what an agent is shown: contact details
+// masked on every store (App.Masks), and a ?q= that cannot read them back.
+func AgentKey(t *testing.T, app *gocommerce.App, rights ...gocommerce.Right) string {
+	t.Helper()
+	ctx := context.Background()
+	owner, err := app.Superusers().Create(ctx, "agent-issuer-"+randomSuffix(t)+"@example.com",
+		OperatorPassword, gocommerce.RoleOwner)
+	if err != nil {
+		t.Fatalf("gctest: create an agent key's issuer: %v", err)
+	}
+	_, secret, err := app.APIKeys().Create(ctx, gocommerce.APIKeyInput{
+		Name: "gctest agent", Kind: gocommerce.KeyKindAgent, Rights: rights,
+	}, owner)
+	if err != nil {
+		t.Fatalf("gctest: mint an agent key carrying %v: %v", rights, err)
+	}
+	return secret
+}
+
 // SessionRequest is Request carrying an operator's session token.
 func SessionRequest(t *testing.T, app *gocommerce.App, token, method, target string, body any) *httptest.ResponseRecorder {
 	t.Helper()

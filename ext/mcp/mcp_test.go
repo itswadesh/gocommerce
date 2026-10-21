@@ -531,3 +531,46 @@ func TestModuleContract(t *testing.T) {
 	gctest.AssertAdminRoutesDeclareRights(t, app, "mcp")
 	gctest.AssertSpecCoversModuleRoutes(t, app, "mcp")
 }
+
+// An agent key reaches the read tools and nothing else: the mutating tools are
+// not listed for it and are refused if called — a module's tool that names no
+// right included. Agents' writes arrive with the approval queue (ADR 0003).
+func TestAnAgentKeyReachesOnlyTheReadTools(t *testing.T) {
+	poked := false
+	app := gctest.New(t, New(Config{Tools: []Tool{{
+		Name: "poke", Description: "A module's write that names no right.", Mutates: true,
+		Call: func(context.Context, json.RawMessage) (any, error) { poked = true; return "poked", nil },
+	}}}))
+	agent := gctest.AgentKey(t, app, "agent.dispatch", gocommerce.RightOrdersRead, gocommerce.RightCustomersRead)
+
+	rec := gctest.SessionRequest(t, app, agent, http.MethodPost, "/api/admin/x/mcp",
+		map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("tools/list = %d: %s", rec.Code, rec.Body)
+	}
+	var listed struct {
+		Result struct {
+			Tools []map[string]any `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, tool := range listed.Result.Tools {
+		names[tool["name"].(string)] = true
+		if hints, _ := tool["annotations"].(map[string]any); hints["readOnlyHint"] != true {
+			t.Errorf("%v is listed for an agent key and is not read-only", tool["name"])
+		}
+	}
+	if !names["list_orders"] || names["poke"] || names["cancel_order"] {
+		t.Errorf("tools listed for an agent = %v", names)
+	}
+
+	if _, rpcErr := sessionTool(t, app, agent, "poke", nil); rpcErr == nil || poked {
+		t.Fatal("an agent key ran a mutating tool that names no right")
+	}
+	if _, rpcErr := sessionTool(t, app, agent, "cancel_order", map[string]any{"order_id": 1}); rpcErr == nil {
+		t.Fatal("an agent key cancelled an order")
+	}
+}
