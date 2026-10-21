@@ -288,9 +288,10 @@ Where the design above was silent, or a detail did not survive the code:
   turn, as the outbox runner does (`ForEachStore`, then `FOR UPDATE SKIP
   LOCKED` inside the store), at most ten per store per pass so one backlog
   does not starve the rest. The two-minute lock is renewed before each call,
-  and a job's outcome is written only while the row still carries the attempt
-  the worker claimed, so a worker that lost its lock and comes back late
-  changes nothing.
+  and a job's outcome is written only while the row still carries the random
+  token its claim put there, so a worker that lost its lock, or whose job was
+  cancelled and retried under it, comes back late and changes nothing. The
+  attempt count cannot be that fence: a retry sets it back to zero.
 - **Settings are read on every run,** so a key or cap typed a moment ago
   counts. A fraction typed into the panel rounds the cap down and a price up:
   both can only make the cap stricter.

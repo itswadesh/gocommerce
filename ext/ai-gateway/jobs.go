@@ -2,7 +2,9 @@ package aigateway
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -84,22 +86,37 @@ func (m *Module) Enqueue(ctx context.Context, tx *sql.Tx, task string, input any
 	return id, err
 }
 
-// claimedJob is a job a worker holds. attempts is the fence: an outcome is
-// written only while the row still carries the attempt this worker claimed,
-// so a worker that lost its lock and comes back late changes nothing.
+// claimedJob is a job a worker holds. token is the fence: an outcome is
+// written only while the row still carries the token this claim put there,
+// so a worker that lost its lock and comes back late changes nothing. The
+// attempt count cannot be the fence, because a retry puts it back to zero
+// and the next claim makes it what it was.
 type claimedJob struct {
 	id       int64
 	task     string
 	input    json.RawMessage
 	attempts int
 	trace    string
+	token    string
+}
+
+func claimToken() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // claim takes one due job of ctx's store, or none. A running job whose lock
 // has run out belonged to a worker that died, and is due again.
 func (m *Module) claim(ctx context.Context) (*claimedJob, error) {
-	var j claimedJob
-	err := m.db.QueryRowContext(ctx, `
+	token, err := claimToken()
+	if err != nil {
+		return nil, err
+	}
+	j := claimedJob{token: token}
+	err = m.db.QueryRowContext(ctx, `
 		WITH due AS MATERIALIZED (
 			SELECT id FROM ai_jobs
 			WHERE (status = 'queued' AND next_run_at <= now())
@@ -109,12 +126,12 @@ func (m *Module) claim(ctx context.Context) (*claimedJob, error) {
 			LIMIT 1
 		)
 		UPDATE ai_jobs j
-		   SET status = 'running', attempts = j.attempts + 1,
+		   SET status = 'running', attempts = j.attempts + 1, claim_token = $2,
 		       locked_until = now() + make_interval(secs => $1)
 		  FROM due
 		 WHERE j.id = due.id
 		RETURNING j.id, j.task, j.input, j.attempts, j.trace_id`,
-		visibility.Seconds()).Scan(&j.id, &j.task, &j.input, &j.attempts, &j.trace)
+		visibility.Seconds(), token).Scan(&j.id, &j.task, &j.input, &j.attempts, &j.trace)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -129,8 +146,8 @@ func (m *Module) claim(ctx context.Context) (*claimedJob, error) {
 func (m *Module) renew(ctx context.Context, j *claimedJob) {
 	if _, err := m.db.ExecContext(ctx, `
 		UPDATE ai_jobs SET locked_until = now() + make_interval(secs => $3)
-		WHERE id = $1 AND attempts = $2 AND status = 'running'`,
-		j.id, j.attempts, visibility.Seconds()); err != nil {
+		WHERE id = $1 AND claim_token = $2 AND status = 'running'`,
+		j.id, j.token, visibility.Seconds()); err != nil {
 		m.log.Warn("ai job lock could not be renewed", "job", j.id, "error", err)
 	}
 }
@@ -200,10 +217,10 @@ func (m *Module) finishJob(ctx context.Context, tx *sql.Tx, j *claimedJob, o job
 		       result = coalesce($5, result),
 		       execution_id = coalesce($6, execution_id),
 		       next_run_at = now() + make_interval(secs => $7),
-		       locked_until = NULL,
+		       locked_until = NULL, claim_token = NULL,
 		       finished_at = CASE WHEN $8 THEN now() END
-		 WHERE id = $1 AND attempts = $2 AND status = 'running'`,
-		j.id, j.attempts, o.status, lastError, result, o.executionID, o.retryIn.Seconds(), finished)
+		 WHERE id = $1 AND claim_token = $2 AND status = 'running'`,
+		j.id, j.token, o.status, lastError, result, o.executionID, o.retryIn.Seconds(), finished)
 	return err
 }
 
@@ -382,7 +399,7 @@ func (m *Module) Jobs(ctx context.Context, status string, limit, offset int) ([]
 func (m *Module) RetryJob(ctx context.Context, id int64) (*Job, error) {
 	return m.moveJob(ctx, id, `
 		UPDATE ai_jobs SET status = 'queued', attempts = 0, next_run_at = now(),
-		       locked_until = NULL, finished_at = NULL
+		       locked_until = NULL, claim_token = NULL, finished_at = NULL
 		 WHERE id = $1 AND status IN ('failed', 'dead', 'cancelled')`,
 		"only a failed, dead or cancelled job can be retried")
 }
@@ -392,7 +409,7 @@ func (m *Module) RetryJob(ctx context.Context, id int64) (*Job, error) {
 // the call it was making is not stopped, and its record is kept.
 func (m *Module) CancelJob(ctx context.Context, id int64) (*Job, error) {
 	return m.moveJob(ctx, id, `
-		UPDATE ai_jobs SET status = 'cancelled', locked_until = NULL, finished_at = now()
+		UPDATE ai_jobs SET status = 'cancelled', locked_until = NULL, claim_token = NULL, finished_at = now()
 		 WHERE id = $1 AND status IN ('queued', 'running', 'failed', 'dead')`,
 		"a finished or cancelled job cannot be cancelled")
 }
