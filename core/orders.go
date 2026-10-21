@@ -565,6 +565,16 @@ func orderSearchClause(search string, args *[]any, masked bool) string {
 }
 
 func (s *Orders) List(ctx context.Context, q OrderQuery) ([]*Order, int, error) {
+	if q.Email != "" {
+		if err := refuseAgentContactMatch(ctx, "filter orders by email"); err != nil {
+			return nil, 0, err
+		}
+	}
+	if q.Sort.Field == "email" {
+		if err := refuseAgentContactMatch(ctx, "sort by email"); err != nil {
+			return nil, 0, err
+		}
+	}
 	where, args := []string{"1 = 1"}, []any{}
 	add := func(expr string, v any) {
 		args = append(args, v)
