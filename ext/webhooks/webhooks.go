@@ -165,6 +165,11 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	m.log = app.Log()
 	m.poll = pollInterval
+	// The signing secret is sealed under the install's key when it has one
+	// (D110); naming the column is how `gocommerce secrets seal` reaches it.
+	app.RegisterSecretColumn(gocommerce.SecretColumn{
+		Table: "webhook_endpoints", Column: "secret", Field: secretField, Label: "webhook signing secrets",
+	})
 
 	// "*" rather than a list: which events an endpoint wants is the endpoint's
 	// business and it is stored per row, so filtering here would only mean two

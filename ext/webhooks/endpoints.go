@@ -19,7 +19,7 @@ import (
 // literal, and this package has no business parsing quoted array syntax.
 const endpointColumns = `id, url, secret, to_jsonb(events), active, created_at, updated_at`
 
-func scanEndpoint(row interface{ Scan(...any) error }) (*Endpoint, error) {
+func (m *Module) scanEndpoint(ctx context.Context, row interface{ Scan(...any) error }) (*Endpoint, error) {
 	var e Endpoint
 	var events []byte
 	var secret string
@@ -29,7 +29,12 @@ func scanEndpoint(row interface{ Scan(...any) error }) (*Endpoint, error) {
 	if err := json.Unmarshal(events, &e.Events); err != nil {
 		return nil, err
 	}
-	e.SecretHint = hint(secret)
+	// The hint is the secret's tail, so the stored value is opened first: the
+	// tail of a ciphertext would change on every seal and match nothing the
+	// merchant holds. One that will not open has no hint.
+	if plain, err := m.app.OpenSecret(ctx, secretField, secret); err == nil {
+		e.SecretHint = hint(plain)
+	}
 	return &e, nil
 }
 
@@ -42,6 +47,9 @@ func arrayLiteral(values []string) string {
 	}
 	return "{" + strings.Join(quoted, ",") + "}"
 }
+
+// secretField is the label an endpoint's signing secret is sealed under.
+const secretField = "webhooks/endpoint_secret"
 
 // newSecret is 32 bytes from crypto/rand, prefixed so that a secret found
 // somewhere it should not be is recognisable as one.
@@ -83,13 +91,18 @@ func (m *Module) handleCreate(w http.ResponseWriter, r *http.Request) {
 	if in.Active != nil {
 		active = *in.Active
 	}
+	sealed, err := m.app.SealSecret(r.Context(), secretField, secret)
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
 
 	row := m.db.QueryRowContext(r.Context(), `
 		INSERT INTO webhook_endpoints (url, secret, events, active)
 		VALUES ($1, $2, $3::text[], $4)
 		RETURNING `+endpointColumns,
-		strings.TrimSpace(in.URL), secret, arrayLiteral(events), active)
-	e, err := scanEndpoint(row)
+		strings.TrimSpace(in.URL), sealed, arrayLiteral(events), active)
+	e, err := m.scanEndpoint(r.Context(), row)
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
@@ -123,7 +136,7 @@ func (m *Module) handleList(w http.ResponseWriter, r *http.Request) {
 
 	out := []*Endpoint{}
 	for rows.Next() {
-		e, err := scanEndpoint(rows)
+		e, err := m.scanEndpoint(r.Context(), rows)
 		if err != nil {
 			gocommerce.RespondError(w, r, err)
 			return
@@ -194,7 +207,7 @@ func (m *Module) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	row := m.db.QueryRowContext(r.Context(),
 		`UPDATE webhook_endpoints SET `+strings.Join(set, ", ")+`, updated_at = now()
 		 WHERE id = $1 RETURNING `+endpointColumns, args...)
-	e, err := scanEndpoint(row)
+	e, err := m.scanEndpoint(r.Context(), row)
 	if errors.Is(err, sql.ErrNoRows) {
 		gocommerce.RespondError(w, r, gocommerce.NotFoundf("no webhook endpoint %d", id))
 		return
@@ -240,10 +253,15 @@ func (m *Module) handleRotate(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
+	sealed, err := m.app.SealSecret(r.Context(), secretField, secret)
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
 	row := m.db.QueryRowContext(r.Context(),
 		`UPDATE webhook_endpoints SET secret = $2, updated_at = now()
-		 WHERE id = $1 RETURNING `+endpointColumns, id, secret)
-	e, err := scanEndpoint(row)
+		 WHERE id = $1 RETURNING `+endpointColumns, id, sealed)
+	e, err := m.scanEndpoint(r.Context(), row)
 	if errors.Is(err, sql.ErrNoRows) {
 		gocommerce.RespondError(w, r, gocommerce.NotFoundf("no webhook endpoint %d", id))
 		return
@@ -259,7 +277,7 @@ func (m *Module) handleRotate(w http.ResponseWriter, r *http.Request) {
 func (m *Module) endpoint(ctx context.Context, id int64) (*Endpoint, error) {
 	row := m.db.QueryRowContext(ctx,
 		`SELECT `+endpointColumns+` FROM webhook_endpoints WHERE id = $1`, id)
-	e, err := scanEndpoint(row)
+	e, err := m.scanEndpoint(ctx, row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, gocommerce.NotFoundf("no webhook endpoint %d", id)
 	}

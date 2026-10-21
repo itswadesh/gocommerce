@@ -78,6 +78,21 @@ func (m *Module) DeliverPass(ctx context.Context) (int, error) {
 	rows.Close()
 
 	for _, p := range batch {
+		// A secret that will not open cannot sign, and an unsigned post is one
+		// the merchant would have to trust blindly, so it fails like any other
+		// attempt and says what fixes it.
+		secret, err := m.app.OpenSecret(ctx, secretField, p.secret)
+		if err != nil {
+			store, _ := gocommerce.StoreFrom(ctx)
+			m.log.Warn("a webhook signing secret cannot be opened", "store", store, "field", secretField,
+				"delivery", p.id, "reason", err.Error())
+			if markErr := m.markFailed(ctx, p, 0, errors.New(
+				"the signing secret cannot be read: it was sealed under a secrets key this install no longer has; rotate the endpoint's secret, then retry")); markErr != nil {
+				return len(batch), markErr
+			}
+			continue
+		}
+		p.secret = secret
 		status, err := m.post(ctx, p)
 		if err == nil {
 			if markErr := m.markDelivered(ctx, p.id, status); markErr != nil {
