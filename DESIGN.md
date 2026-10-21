@@ -277,7 +277,9 @@ Sizes: `h-8` (sm) · `h-9` (default) · `h-10` (lg) · `size-9` (icon). All `rou
 
 ## 8. Icons
 
-- **Lucide React**, stroke width 2.
+- **Remix Icon**, the icon font the panel ships (`ri-*` classes,
+  `admin/static/fonts/remixicon`). The original of this file named Lucide
+  React; the GoCommerce panel has never used it.
 - Sizes: `size-4` (16px) inline/nav, `size-5` in headers.
 - Icons are `text-muted-foreground` unless in an active/primary context.
 - Every sidebar item has an icon; content headings may have one, buttons usually do not (except a trailing `→`).
