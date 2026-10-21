@@ -5,15 +5,19 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Agent keys (ADR 0003, D105): the credential an AI agent holds.
 //
 // An agent key is an API key with kind = 'agent', and it differs from the
-// integration keys beside it in three ways, each because an agent runs
+// integration keys beside it in four ways, each because an agent runs
 // unattended and a person did not read what it is about to do:
 //
 //   - it carries a list of rights, chosen from its issuer's, instead of a role.
@@ -24,6 +28,8 @@ import (
 //   - only its hash is kept. M46 keeps a readable copy of an integration key so
 //     an owner can copy it again; an agent key is shown once, because the
 //     place a forgotten agent credential gets read back from is the panel;
+//   - it is rationed per minute, in Postgres, so a loop in somebody's agent is
+//     a 429 rather than a store's worth of load, on every replica at once.
 //
 // And it reads only, in this release. An agent's writes arrive with the
 // approval queue (ADR 0003 §5), where the change runs as the person who
@@ -236,7 +242,7 @@ func (k *APIKeys) agentRights(asked []Right, by *Superuser) ([]Right, error) {
 // line behind Create, so a row edited by hand — or a right this build no
 // longer has — grants nothing. Role reads "agent", because every refusal and
 // every audit row prints the role, and "staff" would be a lie.
-func (k *APIKeys) agentCaller(id int64, name string, raw []byte) (*Superuser, bool) {
+func (k *APIKeys) agentCaller(id int64, name string, raw []byte, rate *int) (*Superuser, bool) {
 	stored, err := decodeKeyRights(raw)
 	if err != nil {
 		return nil, false
@@ -248,12 +254,17 @@ func (k *APIKeys) agentCaller(id int64, name string, raw []byte) (*Superuser, bo
 		}
 	}
 	slices.Sort(rights)
+	perMinute := agentKeyDefaultRate
+	if rate != nil {
+		perMinute = *rate
+	}
 	return &Superuser{
 		Email:   "agent key: " + name,
 		Role:    KeyKindAgent,
 		Rights:  rights,
 		KeyID:   id,
 		KeyKind: KeyKindAgent,
+		keyRate: perMinute,
 	}, true
 }
 
@@ -292,9 +303,31 @@ func (k *APIKeys) refuseAgentSecret(ctx context.Context, id int64) error {
 // ------------------------------------------------------------- per request
 
 // admitAgent is what an agent key goes through on every request after it has
-// authenticated: the routes no agent may reach. It writes the refusal itself
-// and reports whether the request may go on.
+// authenticated: its rate, then the routes no agent may reach. It writes the
+// refusal itself and reports whether the request may go on.
 func (a *App) admitAgent(w http.ResponseWriter, r *http.Request, su *Superuser) bool {
+	wait, ok, err := a.apiKeys.allowAgent(r.Context(), su.KeyID, su.keyRate)
+	if err != nil {
+		RespondError(w, r, Internalf(err, "count the agent key's requests"))
+		return false
+	}
+	if !ok {
+		seconds := int(math.Ceil(wait.Seconds()))
+		if seconds < 1 {
+			seconds = 1
+		}
+		w.Header().Set("Retry-After", strconv.Itoa(seconds))
+		RespondError(w, r, &APIError{
+			Status: http.StatusTooManyRequests,
+			Code:   "rate_limited",
+			Message: fmt.Sprintf("this agent key is allowed %d requests a minute; try again in %d seconds",
+				su.keyRate, seconds),
+			Details: map[string]any{
+				"limit": "agent_key_per_minute", "per_minute": su.keyRate, "retry_after_seconds": seconds,
+			},
+		})
+		return false
+	}
 	// The routes a demo freezes for every method are the ones that hand out a
 	// credential or read with no shape for a mask to act on (demoFrozenAny).
 	// An agent is masked on every store, so they are closed to it on every
@@ -311,6 +344,37 @@ func (a *App) admitAgent(w http.ResponseWriter, r *http.Request, su *Superuser) 
 		}
 	}
 	return true
+}
+
+// allowAgent counts one request against the key's minute and reports whether
+// it is within the key's rate, and if not how long until the minute ends.
+//
+// One statement per request, in Postgres, so the count holds across every
+// replica serving the store. The window opens at the key's first request and
+// resets the first time a request arrives a minute or more after it opened —
+// a fixed window, which lets a burst straddle two of them; a key allowed 60 a
+// minute can make 120 in two seconds across a boundary, which is a bound, and
+// a sliding log would cost a row per request to tighten it.
+func (k *APIKeys) allowAgent(ctx context.Context, keyID int64, perMinute int) (time.Duration, bool, error) {
+	var count int
+	var left float64
+	err := k.app.db.QueryRowContext(ctx, `
+		INSERT INTO api_key_rates AS r (key_id, window_start, count)
+		VALUES ($1, now(), 1)
+		ON CONFLICT (store_id, key_id) DO UPDATE SET
+		    window_start = CASE WHEN r.window_start <= now() - interval '1 minute'
+		                        THEN now() ELSE r.window_start END,
+		    count        = CASE WHEN r.window_start <= now() - interval '1 minute'
+		                        THEN 1 ELSE r.count + 1 END
+		RETURNING count, extract(epoch FROM r.window_start + interval '1 minute' - now())::float8`,
+		keyID).Scan(&count, &left)
+	if err != nil {
+		return 0, false, err
+	}
+	if count <= perMinute {
+		return 0, true, nil
+	}
+	return time.Duration(left * float64(time.Second)), false, nil
 }
 
 // -------------------------------------------------------------------- route
@@ -355,6 +419,10 @@ func (a *App) handleAgentRights(w http.ResponseWriter, r *http.Request) {
 // The CHECK is what keeps the two kinds from blurring: an agent key has every
 // one of its terms and an integration key none of them, so a NULL can never
 // mean "an agent with no rights", which Resolve would have to guess about.
+//
+// api_key_rates is one row per agent key: the minute it is counting and how
+// many requests it has seen in it (allowAgent). It is store-owned, so it goes
+// under the row policy with the next migration.
 const migration0071AgentKeys = `
 ALTER TABLE api_keys
     ADD COLUMN kind            text        NOT NULL DEFAULT 'integration'
@@ -367,4 +435,10 @@ ALTER TABLE api_keys
                       AND expires_at IS NOT NULL AND rate_per_minute IS NOT NULL
         ELSE rights IS NULL AND expires_at IS NULL AND rate_per_minute IS NULL
     END);
+
+CREATE TABLE api_key_rates (
+    key_id       bigint      PRIMARY KEY REFERENCES api_keys (id) ON DELETE CASCADE,
+    window_start timestamptz NOT NULL,
+    count        integer     NOT NULL
+);
 `
