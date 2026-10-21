@@ -1,10 +1,12 @@
 package gocommerce
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 )
@@ -218,6 +220,36 @@ func TestASecretsKeyMustBe32BytesOfBase64(t *testing.T) {
 		if c.value != "" && strings.Contains(err.Error(), c.value) {
 			t.Errorf("%s: the error echoes the value", name)
 		}
+	}
+}
+
+// An unreadable secret is logged with its store and field — never its value —
+// and once an hour rather than on every read: the storefront lists plugins on
+// every page, and a line per page view would bury everything else.
+func TestAnUnreadableSecretIsLoggedOnceWithWhereItIs(t *testing.T) {
+	ctx := WithStore(context.Background(), storeA)
+	sealed, err := sealer(t, newSecretsKey(t), "").SealSecret(ctx, "plugins/stripe/secret_key", "sk_live_x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	app := sealer(t, newSecretsKey(t), "")
+	app.log = slog.New(slog.NewTextHandler(&buf, nil))
+
+	for i := 0; i < 3; i++ {
+		if plain, ok := app.openSecretOrUnset(ctx, "plugins/stripe/secret_key", sealed); ok || plain != "" {
+			t.Fatalf("read %d = %q, %v; want unset", i, plain, ok)
+		}
+	}
+	out := buf.String()
+	if n := strings.Count(out, "level=WARN"); n != 1 {
+		t.Errorf("logged %d times, want once:\n%s", n, out)
+	}
+	if !strings.Contains(out, storeA) || !strings.Contains(out, "plugins/stripe/secret_key") {
+		t.Errorf("the line does not say where the secret is:\n%s", out)
+	}
+	if strings.Contains(out, "sk_live_x") || strings.Contains(out, sealed) {
+		t.Error("the line carries the secret")
 	}
 }
 
