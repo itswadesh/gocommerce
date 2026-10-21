@@ -302,6 +302,12 @@ func (k *APIKeys) refuseAgentSecret(ctx context.Context, id int64) error {
 
 // ------------------------------------------------------------- per request
 
+// agentCalling reports whether the caller on ctx is an agent key.
+func agentCalling(ctx context.Context) bool {
+	su := SuperuserFrom(ctx)
+	return su != nil && su.KeyKind == KeyKindAgent
+}
+
 // admitAgent is what an agent key goes through on every request after it has
 // authenticated: its rate, then the routes no agent may reach. It writes the
 // refusal itself and reports whether the request may go on.
