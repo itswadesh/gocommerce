@@ -396,6 +396,9 @@ CREATE TABLE ai_jobs (
     attempts     integer NOT NULL DEFAULT 0,
     next_run_at  timestamptz NOT NULL DEFAULT now(),
     locked_until timestamptz,
+    -- Which claim holds the job: a worker writes its outcome only while this
+    -- is still its own.
+    claim_token  text,
     last_error   text,
     trace_id     text NOT NULL DEFAULT '',
     result       jsonb,
