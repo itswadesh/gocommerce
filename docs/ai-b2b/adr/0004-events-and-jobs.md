@@ -1,6 +1,6 @@
 # ADR 0004: Model work runs as durable jobs in Postgres, triggered by the outbox
 
-Status: proposed, 21 October 2026. Becomes a row in `PLAN.md` §5 when accepted.
+Status: accepted, 21 October 2026, as D106 in `PLAN.md` §5.
 
 ## Context
 

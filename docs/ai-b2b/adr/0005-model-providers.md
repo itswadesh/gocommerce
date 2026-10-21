@@ -1,6 +1,6 @@
 # ADR 0005: One provider interface, called only through the gateway
 
-Status: proposed, 21 October 2026. Becomes a row in `PLAN.md` §5 when accepted.
+Status: accepted, 21 October 2026, as D107 in `PLAN.md` §5.
 
 ## Context
 
