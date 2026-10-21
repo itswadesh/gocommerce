@@ -28,7 +28,9 @@ type Task struct {
 	// (additionalProperties false) with every property required at every
 	// level, which is what OpenAI's strict mode accepts and what Anthropic
 	// takes as a tool's input. A property that may be absent is typed with
-	// "null" beside its type instead.
+	// "null" beside its type instead. Only type, properties, required,
+	// additionalProperties, items and enum constrain, with description and
+	// title as notes: a length or range bound is checked in Check.
 	Schema json.RawMessage
 	// MaxInputTokens refuses a request built larger than this, unsent. With
 	// MaxOutputTokens it is also the ceiling reserved against the cap.

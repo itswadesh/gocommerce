@@ -326,9 +326,11 @@ Where the design above was silent, or a detail did not survive the code:
 - **Token estimate:** a request is counted at one token per three bytes plus
   512 for what the provider adds, which over-counts English on purpose.
 - **Schemas** must be closed objects with every property required, the shape
-  OpenAI's strict mode accepts, using types, `properties`, `required`,
-  `additionalProperties: false`, `items`, `enum` and the length and range
-  bounds. A keyword outside that set is refused at registration rather than
+  OpenAI's strict mode accepts, using only `type`, `properties`, `required`,
+  `additionalProperties: false`, `items` and `enum`, with `description` and
+  `title` as notes. Length and range bounds are refused, because strict mode
+  rejects them and a store may pick OpenAI: they belong in the task's
+  `Check`. A keyword outside the set is refused at registration rather than
   silently not checked.
 - **A declined or cut-off answer** is an invalid one: it moves up the ladder
   and costs what it used. A transient provider failure does not climb the
