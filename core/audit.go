@@ -26,14 +26,22 @@ import (
 // changes.event naming the outbox event the same transaction published, so an
 // order timeline drawn from both renders each fact once.
 
-// The three kinds of caller an admin route can have. SuperuserFrom returning
-// nil used to be the whole answer and it was two answers at once: a script
-// holding a static admin token, and the engine's own background work. An
-// operator reading "cancelled by the system" needs to know which.
+// The kinds of caller an admin route can have. SuperuserFrom returning nil
+// used to be the whole answer and it was two answers at once: a script holding
+// a static admin token, and the engine's own background work. An operator
+// reading "cancelled by the system" needs to know which.
+//
+// Keys were the same problem from the other side: every API key arrived as a
+// Superuser with id 0, so the trail recorded them all as operator 0 and the
+// Who filter merged them. A key is now ActorKey and an agent key ActorAgent,
+// each with the key's own id in actor_id (ADR 0003). Rows written before that
+// keep what they say; actor_kind has no CHECK, so nothing about them changed.
 const (
 	ActorOperator = "operator"
 	ActorToken    = "token"
 	ActorSystem   = "system"
+	ActorKey      = "key"
+	ActorAgent    = "agent"
 )
 
 // The entity vocabulary: one name per record an operator can actually point at
@@ -487,9 +495,20 @@ func actorLabelFrom(ctx context.Context) string {
 // The context is the seam on purpose. No service signature grows an actor
 // parameter, which is what keeps attribution out of forty call sites and out of
 // every module that calls a core service.
+//
+// actor_id means a superuser only when the kind is operator; for a key or an
+// agent it is the key's id, which is a different sequence, so a reader joins
+// it to superusers only for operator rows.
 func auditActor(ctx context.Context) (kind string, id *int64, email, role, label string) {
 	label = actorLabelFrom(ctx)
 	if su := SuperuserFrom(ctx); su != nil {
+		if su.KeyID != 0 {
+			keyID := su.KeyID
+			if su.KeyKind == KeyKindAgent {
+				return ActorAgent, &keyID, su.Email, su.Role, label
+			}
+			return ActorKey, &keyID, su.Email, su.Role, label
+		}
 		actorID := su.ID
 		return ActorOperator, &actorID, su.Email, su.Role, label
 	}
