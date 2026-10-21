@@ -120,8 +120,9 @@ func refuseNonPublic(_, address string, _ syscall.RawConn) error {
 
 // nonPublicPrefixes are the ranges netip's own predicates leave out: shared
 // address space, the documentation and benchmarking ranges, reserved space,
-// and the IPv6 prefixes that carry an IPv4 address inside them — through
-// which a private IPv4 address could be reached by an IPv6 one.
+// identifiers that are not hosts (ORCHID, SRv6 segments), and the IPv6
+// prefixes that carry an IPv4 address inside them — through which a private
+// IPv4 address could be reached by an IPv6 one.
 var nonPublicPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("0.0.0.0/8"),
 	netip.MustParsePrefix("100.64.0.0/10"),
@@ -132,12 +133,18 @@ var nonPublicPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("203.0.113.0/24"),
 	netip.MustParsePrefix("240.0.0.0/4"),
 	netip.MustParsePrefix("::/96"),
+	netip.MustParsePrefix("::ffff:0:0:0/96"), // IPv4-translated, which Unmap leaves alone
 	netip.MustParsePrefix("64:ff9b::/96"),
 	netip.MustParsePrefix("64:ff9b:1::/48"),
 	netip.MustParsePrefix("100::/64"),
 	netip.MustParsePrefix("2001::/32"),
+	netip.MustParsePrefix("2001:2::/48"),
+	netip.MustParsePrefix("2001:10::/28"),
+	netip.MustParsePrefix("2001:20::/28"),
 	netip.MustParsePrefix("2001:db8::/32"),
 	netip.MustParsePrefix("2002::/16"),
+	netip.MustParsePrefix("3fff::/20"),
+	netip.MustParsePrefix("5f00::/16"),
 	netip.MustParsePrefix("fec0::/10"),
 }
 

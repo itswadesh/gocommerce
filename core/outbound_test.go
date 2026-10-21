@@ -327,3 +327,26 @@ func TestNumericHostSpellingsAreRefusedAsTheyAreSaved(t *testing.T) {
 		}
 	}
 }
+
+// IPv6 ranges that are not on the public internet beyond the ones above:
+// IPv4-translated addresses, the newer documentation prefix, SRv6 segment
+// identifiers, the ORCHID ranges and the benchmarking range.
+func TestTheRarerIPv6RangesAreNotPublic(t *testing.T) {
+	for _, addr := range []string{
+		"::ffff:0:7f00:1", "::ffff:0:a00:1", "::ffff:0:0:0",
+		"3fff::1", "3fff:fff:ffff::1",
+		"5f00::1", "5f00:ffff::1",
+		"2001:10::1", "2001:1f:ffff::1",
+		"2001:20::1", "2001:2f:ffff::1",
+		"2001:2::1", "2001:2:0:ffff::1",
+	} {
+		if publicAddr(netip.MustParseAddr(addr)) {
+			t.Errorf("publicAddr(%s) = true, want false", addr)
+		}
+	}
+	for _, addr := range []string{"2a00:1450:4001::1", "2001:4860::1", "2620:fe::fe", "5f01::1"} {
+		if !publicAddr(netip.MustParseAddr(addr)) {
+			t.Errorf("publicAddr(%s) = false, want true", addr)
+		}
+	}
+}
