@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/itswadesh/gocommerce/internal/testdb"
 )
 
 // The review of agent keys (PR #69): what an agent could still reach, what
@@ -237,5 +239,54 @@ func TestAnAgentDoesNotSeeTheMerchantsFreeText(t *testing.T) {
 	_ = json.Unmarshal(do(t, app, http.MethodGet, "/api/admin/orders/"+id, bearer(agent)).Body.Bytes(), &shaped)
 	if shaped.Data.Metadata == nil {
 		t.Error("an agent's order has metadata null; want an empty object, so a client reading it does not break")
+	}
+}
+
+// A Config.AdminAuth that resolves API keys itself skips bearerAuth, and with it
+// an agent key's rate and frozen routes, unless it calls AdmitAgentKey.
+func TestACustomAdminAuthHoldsAgentKeysWithAdmitAgentKey(t *testing.T) {
+	dsn := testdb.Clone(t, "core:"+moduleKey(nil), func(dsn string) error {
+		app, err := New(testConfig(dsn))
+		if err != nil {
+			return err
+		}
+		return app.Close()
+	})
+	var app *App
+	cfg := testConfig(dsn)
+	cfg.AdminAuth = func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			token, _ := bearerToken(r)
+			su, ok := app.APIKeys().Resolve(r.Context(), token)
+			if !ok {
+				RespondError(w, r, ErrUnauthorized)
+				return
+			}
+			if !app.AdmitAgentKey(w, r, su) {
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(WithSuperuser(r.Context(), su)))
+		})
+	}
+	var err error
+	if app, err = New(cfg); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = app.Close() })
+
+	owner := person(t, app, "owner@example.com", RoleOwner)
+	_, agent, err := app.APIKeys().Create(context.Background(), APIKeyInput{
+		Name: "Busy", Kind: KeyKindAgent, Rights: []Right{RightOrdersRead}, RatePerMinute: intp(2),
+	}, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := do(t, app, http.MethodGet, "/api/admin/notifications", bearer(agent))
+	wantAgentRefused(t, rec, rec.Body.String(), "agent through a custom AdminAuth reading the log")
+	if rec := do(t, app, http.MethodGet, "/api/admin/orders", bearer(agent)); rec.Code != http.StatusOK {
+		t.Fatalf("second request = %d: %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, app, http.MethodGet, "/api/admin/orders", bearer(agent)); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("third request in the minute = %d, want 429: %s", rec.Code, rec.Body)
 	}
 }
