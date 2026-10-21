@@ -210,7 +210,7 @@ environment:
 		// The store a one-shot command works on: superuser, doctor, taxonomy,
 		// attributes. Unneeded while the install has one store.
 		storeFlag  = fs.String("store", "", "the store (id or slug) superuser, doctor, taxonomy and attributes act on; default: the only store")
-		withAmazon = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or IMPORT_AMAZON_LLM_URL + IMPORT_AMAZON_LLM_MODEL for a local model rewrite the copy; IMPORT_AMAZON_HEADED=1 shows the browser)")
+		withAmazon = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or IMPORT_AMAZON_LLM_URL + IMPORT_AMAZON_LLM_MODEL for a local model rewrite the copy, or the AI gateway where -ai-gateway is installed and switched on; IMPORT_AMAZON_HEADED=1 shows the browser)")
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -308,8 +308,11 @@ environment:
 			return v
 		}
 		var modules []gocommerce.Module
+		// First, so the modules that call models can be handed it.
+		var gateway *aigateway.Module
 		if *withAI {
-			modules = append(modules, aigateway.New(aigateway.Config{}))
+			gateway = aigateway.New(aigateway.Config{})
+			modules = append(modules, gateway)
 		}
 		// b2b's buyers are identity's accounts, so -b2b brings identity with it
 		// and is handed the same instance, listed first for its tables.
@@ -448,6 +451,7 @@ environment:
 				Model:           os.Getenv("IMPORT_AMAZON_LLM_MODEL"),
 				ChromePath:      os.Getenv("CHROME_PATH"),
 				Headed:          os.Getenv("IMPORT_AMAZON_HEADED") != "",
+				Gateway:         gateway,
 			}))
 		}
 

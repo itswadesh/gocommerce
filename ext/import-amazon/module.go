@@ -41,6 +41,15 @@
 //     marketplace's currency; when that is not the store's, they are recorded
 //     but not set, and the job says so.
 //
+// # Through the AI gateway, when the store has one
+//
+// Given Config.Gateway, the module registers the rewrite as the gateway's
+// product.rewrite task. For a store that has switched the gateway on, every
+// rewrite then goes through it: counted against the store's monthly cap,
+// recorded with its tokens and cost, and sent only if the store lets its
+// catalogue leave. A store without it, or with it off, rewrites through the
+// keys above exactly as before.
+//
 // # Zero dependencies
 //
 // The WebSocket client, the DevTools client, the Messages API call and the
@@ -68,6 +77,7 @@ import (
 	"time"
 
 	"github.com/itswadesh/gocommerce/core"
+	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
 )
 
 // Config configures the module. Nothing is required: without an API key the
@@ -129,6 +139,12 @@ type Config struct {
 	HumanWait time.Duration
 	// ImageClient overrides the HTTP client pictures are fetched with.
 	ImageClient *http.Client
+	// Gateway is the store's AI gateway, when the binary has one. For a store
+	// that has switched it on, the rewrite is the gateway's product.rewrite
+	// task — counted, held to the store's cap and recorded — and the keys
+	// above are not used. A store with it off rewrites through them as
+	// before.
+	Gateway *aigateway.Module
 }
 
 // Module is the Amazon importer.
@@ -145,6 +161,11 @@ type Module struct {
 	// One import at a time: they share one browser tab, and a second Chrome
 	// per job is not a thing a store wants.
 	sem chan struct{}
+
+	// task registers the rewrite with the gateway once, however many times
+	// the module is registered: a test harness boots the same modules twice,
+	// once to migrate.
+	task sync.Once
 
 	fmu     sync.Mutex
 	fetcher pageFetcher
@@ -218,6 +239,13 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.log = app.Log()
 	m.db = app.DB()
 	m.optimizer = newOptimizer(m.cfg)
+	if m.cfg.Gateway != nil {
+		var err error
+		m.task.Do(func() { err = m.cfg.Gateway.RegisterTask(rewriteTask()) })
+		if err != nil {
+			return err
+		}
+	}
 	m.sem = make(chan struct{}, 1)
 	// Owned here rather than taken from OnStart, so a job posted the moment
 	// the routes are up has a context — and so the tests, which never call
@@ -349,9 +377,10 @@ func (m *Module) handleCreate(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "record the import"))
 		return
 	}
-	// The job runs after this answers, so it carries the store with it.
+	// The job runs after this answers, so it carries the store with it, and
+	// the trace, so the model call it makes names the request that asked.
 	store, _ := gocommerce.StoreFrom(r.Context())
-	go m.run(store, id)
+	go m.run(store, gocommerce.TraceID(r.Context()), id)
 
 	job, err := m.load(r.Context(), id)
 	if err != nil {
@@ -451,7 +480,7 @@ func (m *Module) finish(ctx context.Context, id int64, status string, productID 
 // ------------------------------------------------------------------ running
 
 // run is one import, start to finish, on its own goroutine.
-func (m *Module) run(store string, id int64) {
+func (m *Module) run(store, trace string, id int64) {
 	select {
 	case m.sem <- struct{}{}:
 	case <-m.ctx.Done():
@@ -460,6 +489,7 @@ func (m *Module) run(store string, id int64) {
 	defer func() { <-m.sem }()
 
 	bind := func(ctx context.Context) context.Context {
+		ctx = gocommerce.WithTraceID(ctx, trace)
 		if store == "" {
 			return ctx
 		}
@@ -508,14 +538,24 @@ func (m *Module) run(store string, id int64) {
 	m.progress(ctx, id, StatusRunning, "fetched",
 		fmt.Sprintf("Read %s with %d variants and %d pictures", listing.ASIN, len(listing.Variants), len(listing.Images)))
 
-	// The rewrite.
+	// The rewrite. A store with the gateway on has chosen its cap and its
+	// key, so the gateway's answer, or its refusal, is final: the
+	// environment's key is not a way round the store's own cap.
 	var rw *rewrite
 	m.progress(ctx, id, StatusRunning, "optimizing", "Rewriting the copy")
-	if m.optimizer == nil {
+	switch {
+	case m.cfg.Gateway != nil && m.cfg.Gateway.Ready(ctx) == nil:
+		if rw, err = m.rewriteThroughGateway(ctx, listing); err != nil {
+			warnings = append(warnings, "the rewrite failed, so the listing's own copy was used: "+err.Error())
+			rw = nil
+		}
+	case m.optimizer == nil:
 		warnings = append(warnings, "no model is configured for the rewrite (an Anthropic, Gemini or OpenAI key, or a local server's URL), so the listing's own copy was used")
-	} else if rw, err = m.optimizer.optimize(ctx, listing); err != nil {
-		warnings = append(warnings, "the rewrite failed, so the listing's own copy was used: "+err.Error())
-		rw = nil
+	default:
+		if rw, err = m.optimizer.optimize(ctx, listing); err != nil {
+			warnings = append(warnings, "the rewrite failed, so the listing's own copy was used: "+err.Error())
+			rw = nil
+		}
 	}
 
 	// The pictures.
