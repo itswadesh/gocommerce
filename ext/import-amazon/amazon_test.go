@@ -1233,3 +1233,33 @@ func TestAnImportRunsInItsStoreUnderServe(t *testing.T) {
 		t.Fatalf("status = %s: %s", job.Status, job.Message)
 	}
 }
+
+// The listing is opened by the server's own browser, so the host has to be one
+// of Amazon's marketplaces, not any name with "amazon." somewhere in it.
+func TestOnlyAmazonsOwnSitesAreOpened(t *testing.T) {
+	t.Parallel()
+	for _, host := range []string{
+		"www.amazon.com", "amazon.com", "smile.amazon.com", "WWW.AMAZON.COM.",
+		"www.amazon.co.uk", "www.amazon.in", "www.amazon.com.au", "www.amazon.de",
+		"www.amazon.co.jp", "www.amazon.com.mx", "www.amazon.ae", "www.amazon.com.be",
+	} {
+		if !amazonHost(host) {
+			t.Errorf("%s was refused", host)
+		}
+	}
+	for _, host := range []string{
+		"amazon.example.com", "amazon.10.0.0.5.nip.io", "www.amazon.com.example.io",
+		"evilamazon.com", "notamazon.co.uk", "amazon.internal", "amazon.local",
+		"localhost", "127.0.0.1", "", "amazon.", "amazon",
+	} {
+		if amazonHost(host) {
+			t.Errorf("%s was accepted", host)
+		}
+	}
+
+	fx := &fixtures{pages: map[string]*page{}}
+	if _, _, err := crawl(context.Background(), fx, "https://amazon.example.com/dp/B0X", 5); err == nil ||
+		!strings.Contains(err.Error(), "not an Amazon") {
+		t.Errorf("crawl of a look-alike host = %v, want it refused", err)
+	}
+}

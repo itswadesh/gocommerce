@@ -249,7 +249,7 @@ func crawl(ctx context.Context, f pageFetcher, rawURL string, maxVariants int) (
 	if err != nil || parsed.Host == "" {
 		return nil, nil, fmt.Errorf("amazon: %q is not a URL", rawURL)
 	}
-	if !strings.Contains(strings.ToLower(parsed.Host), "amazon.") {
+	if !amazonHost(parsed.Hostname()) {
 		return nil, nil, fmt.Errorf("amazon: %s is not an Amazon host", parsed.Host)
 	}
 
@@ -528,6 +528,26 @@ func cleanBrand(s string) string {
 	}
 	s = strings.TrimSuffix(strings.TrimSuffix(s, " Store"), " store")
 	return strings.TrimSpace(s)
+}
+
+// marketplaces are the domains Amazon sells on, after "amazon.".
+var marketplaces = []string{
+	"com", "ca", "com.mx", "com.br", "co.uk", "ie", "de", "fr", "it", "es", "nl",
+	"se", "pl", "com.be", "com.tr", "ae", "sa", "eg", "co.za", "in", "co.jp", "sg", "com.au", "cn",
+}
+
+// amazonHost is whether a host is one of Amazon's own sites. The listing is
+// opened by the server's own browser, which no guarded client stands in front
+// of, so "a host with amazon. in it" would let an import open any page a
+// look-alike name points at (D109).
+func amazonHost(host string) bool {
+	h := strings.TrimSuffix(strings.ToLower(host), ".")
+	for _, m := range marketplaces {
+		if h == "amazon."+m || strings.HasSuffix(h, ".amazon."+m) {
+			return true
+		}
+	}
+	return false
 }
 
 func variantURL(parent *url.URL, asin string) string {
