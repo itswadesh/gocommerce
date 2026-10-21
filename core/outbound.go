@@ -200,16 +200,41 @@ func (a *App) outboundURLProblem(raw string) string {
 // publicName is whether a host, as typed, could be a public address: an IP
 // address that is public, or a name outside the suffixes that by convention
 // never are.
+//
+// A host whose last label is a number is not a name at all. Browsers read
+// it as an IPv4 address in one of the older spellings — 2130706433,
+// 0x7f000001, 0177.0.0.1, 127.1 — and some resolvers do too, while
+// netip.ParseAddr reads none of them; so it is refused rather than judged.
 func publicName(host string) bool {
-	if ip, err := netip.ParseAddr(host); err == nil {
+	name := strings.TrimRight(strings.ToLower(host), ".")
+	if ip, err := netip.ParseAddr(name); err == nil {
 		return publicAddr(ip)
 	}
-	name := strings.TrimSuffix(strings.ToLower(host), ".")
-	if name == "localhost" {
+	if name == "" || name == "localhost" {
+		return false
+	}
+	if numericLabel(name[strings.LastIndexByte(name, '.')+1:]) {
 		return false
 	}
 	for _, suffix := range []string{".localhost", ".local", ".internal"} {
 		if strings.HasSuffix(name, suffix) {
+			return false
+		}
+	}
+	return true
+}
+
+// numericLabel is whether a label reads as a number: decimal digits, or 0x
+// and hex digits.
+func numericLabel(label string) bool {
+	digits, base := label, "0123456789"
+	if len(label) >= 2 && label[0] == '0' && label[1] == 'x' {
+		digits, base = label[2:], "0123456789abcdef"
+	} else if label == "" {
+		return false
+	}
+	for _, c := range digits {
+		if !strings.ContainsRune(base, c) {
 			return false
 		}
 	}

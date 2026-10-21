@@ -297,3 +297,33 @@ func TestAPrivateNameAndAMissingOneFailAlike(t *testing.T) {
 		t.Errorf("the server was reached %d times", hits.Load())
 	}
 }
+
+// A browser, and some resolvers, read a host whose last part is a number as
+// an IPv4 address in one of its older spellings. None of those is a name, so
+// the save-time check refuses them rather than waving them through as one;
+// a trailing dot is dropped before anything is judged.
+func TestNumericHostSpellingsAreRefusedAsTheyAreSaved(t *testing.T) {
+	guarded := &App{cfg: Config{}}
+	open := &App{cfg: Config{AllowPrivateURLs: true}}
+	for _, raw := range []string{
+		"http://2130706433/", "http://0x7f000001/", "http://0X7F000001/",
+		"http://0177.0.0.1/", "http://127.1/", "http://10.1/", "http://0x7f.0.0.1/",
+		"http://127.0.0.1./", "http://10.0.0.5./in", "http://localhost./", "http://LOCALHOST../",
+		"http://printer.local./", "http://billing.internal./",
+	} {
+		if err := guarded.ValidateOutboundURL(raw); err == nil {
+			t.Errorf("ValidateOutboundURL(%q) passed", raw)
+		}
+		if err := open.ValidateOutboundURL(raw); err != nil {
+			t.Errorf("with private addresses allowed, ValidateOutboundURL(%q) = %v", raw, err)
+		}
+	}
+	for _, raw := range []string{
+		"https://1.1.1.1./in", "https://hooks.example.com./in", "https://shop.example.com/in",
+		"https://123.example.com/in", "https://example.com0/in", "https://api.0x7f.io/in",
+	} {
+		if err := guarded.ValidateOutboundURL(raw); err != nil {
+			t.Errorf("ValidateOutboundURL(%q) = %v, want it to pass", raw, err)
+		}
+	}
+}
