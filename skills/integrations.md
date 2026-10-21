@@ -162,6 +162,18 @@ store; `DefaultEnabled` is the state before an operator touches it, so a
 module given its key by the environment is on without a click. Every
 change lands in the audit trail as `plugin.update`.
 
+A `secret` field is also sealed at rest when the install has
+`GOCOMMERCE_SECRETS_KEY` (D110): `Update` seals it under
+`plugins/<plugin>/<field>` for its store, and `Settings`, `String` and `Fill`
+open it, so a module reads plain text exactly as before and never sees the
+envelope. One that will not open — sealed under a key the install no longer
+has — reads as unset, so the plugin shows as not configured. A module that
+keeps a credential it must read back in a table of its own does the same by
+hand: `SealSecret(ctx, field, plain)` before it writes, `OpenSecret(ctx, field,
+stored)` when it reads (a value never sealed comes back as it is), and
+`RegisterSecretColumn` from `Register`, so `gocommerce secrets seal` and the
+doctor reach the column. `ext/webhooks` is the worked example.
+
 What a plugin is not: code that arrives at runtime. The Plugins screen
 lists what this binary can do; adding to it is adding a module.
 

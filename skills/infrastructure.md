@@ -238,6 +238,7 @@ The checks, in order:
 | `returns` | — | an order line with more units returned than were sold |
 | `stock ledger` | a `variant_stock` balance the movement ledger cannot account for — something wrote the table outside `app.Stock()` | — |
 | `discounts` | a target naming a product, collection or category that has been deleted (the promotion has narrowed); a target row whose kind disagrees with its rule's scope; a `free_shipping` rule carrying a scope | a scoped discount pointing at nothing — refused at the till, and the only place a customer finds out |
+| `secrets` | secrets stored readable because `GOCOMMERCE_SECRETS_KEY` is not set (with the count), or still readable after it was set — run `gocommerce secrets seal`; secrets sealed under a key the install does not have, named by field, which read as unset. Values still under `GOCOMMERCE_SECRETS_KEY_PREVIOUS` are a note on an ok | — |
 
 These deserve reading twice — a count here rots the way the doctor's own
 did. **`returns` failing should be impossible** for the
@@ -285,13 +286,19 @@ machine with no Node.js. Details in [development](development.md) and
 [`docs/admin-panel.md`](../docs/admin-panel.md).
 
 The reference binary's commands: `serve` (default), `migrate`, `superuser
-create|update|list`, `doctor` (with `-json`), `spec`, `version`, and `platform` for many stores (below).
+create|update|list`, `doctor` (with `-json`), `secrets seal`, `spec`, `version`, and `platform` for many stores (below).
+`secrets seal` seals every stored secret in every store under
+`GOCOMMERCE_SECRETS_KEY` and moves what `GOCOMMERCE_SECRETS_KEY_PREVIOUS` sealed;
+run it with the module flags the store is served with, or the modules left out
+are named and their secrets not reached ([operations](../docs/operations.md#secrets-at-rest)).
 Flags: `-db`,
 `-addr`, `-admin-token`, `-currency`, `-languages` (what a store sells in until it chooses its own, D87), `-dev`, `-demo`, `-signup` (anybody may make an account and open a store), `-allow-private-urls` (the addresses a store sets may be private ones; see below), `-v`,
 `-json`, and for `platform` `-base-domain`, `-platform-host`, `-api-host`,
 `-platform-token` and `-namespace`. `DATABASE_URL`, `GOCOMMERCE_ADMIN_TOKEN`, `GOCOMMERCE_DEMO`, `GOCOMMERCE_SIGNUP`, `GOCOMMERCE_ALLOW_PRIVATE_URLS`,
 `GOCOMMERCE_DEMO_ACCOUNT`, `GOCOMMERCE_ADMIN_EMAIL` and
 `GOCOMMERCE_ADMIN_PASSWORD` are the environment equivalents.
+`GOCOMMERCE_SECRETS_KEY` and `GOCOMMERCE_SECRETS_KEY_PREVIOUS` have no flag at
+all: a flag shows in the process list.
 `GOCOMMERCE_DEMO`, `GOCOMMERCE_SIGNUP` and `GOCOMMERCE_ALLOW_PRIVATE_URLS` are the variables here read as a word rather than as
 "non-empty": `0`, `false`, `no` and `off` mean off, because a deployment that
 wrote `GOCOMMERCE_DEMO=false` and got a panel anybody could sign into would
