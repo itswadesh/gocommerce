@@ -261,6 +261,18 @@ const MODULE_RIGHTS = {
         label: "Let an agent act",
         scope: "The dispatch endpoint — the whole domain-tool surface",
     },
+    "ai.read": {
+        label: "See AI usage",
+        scope: "Model calls and what they cost against the monthly cap, and the AI job queue",
+    },
+    "ai.configure": {
+        label: "Run the AI jobs",
+        scope: "Retrying and cancelling AI jobs, and checking the provider connection",
+    },
+    "ai.approve": {
+        label: "Decide AI proposals",
+        scope: "The approval queue: approving or rejecting what an agent proposed. Approving an action also needs that action's own right",
+    },
 };
 
 /*
@@ -340,6 +352,7 @@ export const RESOURCE_LABELS = {
     quotes: "Quotes",
     leads: "Dealer leads",
     abandonment: "Abandoned checkouts",
+    ai: "AI",
 };
 
 export const VERB_LABELS = {
@@ -359,6 +372,9 @@ export const VERB_LABELS = {
     contact: "Contact",
     suppress: "Suppress",
     automate: "Automate",
+    // ext/ai-gateway's: running the job queue, and deciding a proposal.
+    configure: "Configure",
+    approve: "Approve",
 };
 
 const titleCase = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);

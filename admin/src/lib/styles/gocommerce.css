@@ -11661,3 +11661,415 @@ html .tw\:rounded-2xl {
     font: inherit;
     cursor: pointer;
 }
+
+/* -------------------------------------------------------------------- AI */
+
+/*
+ * The AI gateway's three screens: Usage, Jobs and Approvals.
+ *
+ * Every control on them answers the finger and the pointer. A button sinks
+ * under a press and lifts a pixel under a hovering mouse, a run's name lights
+ * as it is pointed at, and the two bars that carry numbers, the cap meter and
+ * the spend chart, grow into place by transform, so a refresh moves them
+ * rather than redrawing them. With reduced motion each keeps its colour
+ * change and loses its travel.
+ */
+.page-ai .btn,
+.page-ai .ai-row-open,
+.ai-drawer-actions .btn {
+    transition:
+        color var(--animationSpeed),
+        border-color var(--animationSpeed),
+        background var(--animationSpeed),
+        transform var(--animationSpeed) ease-out;
+}
+@media (hover: hover) {
+    .page-ai .btn:hover:not(:disabled):not(.disabled):not(.circle),
+    .ai-drawer-actions .btn:hover:not(:disabled):not(.disabled) {
+        transform: translateY(-1px);
+    }
+}
+.page-ai .btn:active:not(:disabled):not(.disabled),
+.ai-drawer-actions .btn:active:not(:disabled):not(.disabled) {
+    transform: scale(0.97);
+}
+
+.page-ai .ai-filter {
+    min-width: 200px;
+}
+.ai-runs-head .ai-filter {
+    flex: 0 0 220px;
+    min-width: 0;
+}
+
+/* PocketBase gives every table in a .page-table-wrapper a 900px floor and lets
+   it scroll sideways. The two Usage tables sit side by side at half the
+   page, three short columns each, and the floor pushed Runs and Cost out of
+   sight. */
+.ai-pair .page-table-wrapper table {
+    min-width: 0;
+}
+
+/* The head of Usage: one wide tile for the cap, three narrow ones. A single
+   column on a phone, two from a tablet, four on a desktop. */
+.ai-tiles {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: var(--smSpacing);
+}
+@media (min-width: 700px) {
+    .ai-tiles {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+@media (min-width: 1200px) {
+    .ai-tiles {
+        grid-template-columns: 2fr repeat(3, minmax(0, 1fr));
+    }
+}
+.ai-tile {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--borderRadius);
+    background: var(--card);
+}
+.ai-tile-label {
+    font-size: var(--smFontSize);
+    font-weight: 600;
+    color: var(--surfaceTxtHintColor);
+}
+.ai-tile-value {
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+.ai-tile-of {
+    font-size: var(--smFontSize);
+    font-weight: normal;
+    color: var(--surfaceTxtHintColor);
+}
+.ai-tile-hint {
+    font-size: var(--smFontSize);
+    color: var(--surfaceTxtHintColor);
+}
+
+/* The cap: spent and held, each a full-width bar scaled from the left. */
+.ai-meter {
+    position: relative;
+    height: 10px;
+    overflow: hidden;
+    border-radius: var(--borderRadius);
+    background: var(--surfaceAlt2Color);
+}
+.ai-meter > span {
+    position: absolute;
+    inset: 0;
+    transform-origin: left center;
+    transition: transform 300ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.ai-meter-spent {
+    background: var(--foreground);
+}
+.ai-meter-held {
+    background: var(--warningColor);
+    opacity: 0.7;
+}
+
+.ai-models {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 4px 10px;
+    margin: 0;
+    font-size: var(--smFontSize);
+}
+.ai-models dt {
+    color: var(--surfaceTxtHintColor);
+}
+.ai-models dd {
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+/* What may leave the store: a tick for allowed, a cross for kept in, so the
+   answer never rests on colour alone. */
+.ai-policy {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.ai-policy li {
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--borderRadius);
+    font-size: var(--smFontSize);
+    color: var(--surfaceTxtHintColor);
+}
+.ai-policy li.on {
+    color: var(--surfaceTxtColor);
+    background: var(--surfaceSuccessColor);
+    border-color: transparent;
+}
+/* The tick takes the text's colour: green on the green ground vanished in
+   dark mode, and the tick is what says "allowed" without the colour. */
+.ai-policy li.on i {
+    color: currentColor;
+}
+
+/* Spend by day: one bar per day, each a full-height column scaled from the
+   bottom, so a month's figures grow in rather than snap. */
+.ai-chart {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    height: 140px;
+    flex: 0 0 auto;
+    margin: 0;
+    padding: var(--smSpacing);
+    border: 1px solid var(--border);
+    border-radius: var(--borderRadius);
+    background: var(--card);
+}
+.ai-bar {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 2px;
+    border-radius: 2px 2px 0 0;
+    background: var(--surfaceAlt1Color);
+}
+.ai-bar > span {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--foreground);
+    transform-origin: bottom center;
+    transition:
+        transform 300ms cubic-bezier(0.2, 0.7, 0.2, 1),
+        opacity var(--animationSpeed);
+    opacity: 0.75;
+}
+.ai-bar:hover > span {
+    opacity: 1;
+}
+.ai-chart-skeleton {
+    height: 140px;
+}
+.ai-axis {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    font-size: var(--smFontSize);
+    color: var(--surfaceTxtHintColor);
+}
+
+.ai-pair {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--spacing);
+}
+@media (min-width: 900px) {
+    .ai-pair {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.ai-runs-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--smSpacing);
+}
+.ai-runs-head .section-title {
+    margin-bottom: 0;
+}
+
+/* A run's name opens the run: the whole name is the button, with a ring
+   when the keyboard reaches it. */
+.ai-row-open {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    max-width: 100%;
+    padding: 2px 4px;
+    margin: -2px -4px;
+    border: 0;
+    border-radius: var(--borderRadius);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.ai-row-open:hover {
+    background: var(--surfaceAlt2Color);
+}
+.ai-row-open:focus-visible {
+    outline: 2px solid var(--accentColor);
+    outline-offset: 2px;
+}
+.ai-row-open .txt-code {
+    overflow-wrap: anywhere;
+}
+
+.ai-error,
+.ai-summary {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}
+
+/* A job that was just retried or cancelled shows which row moved. */
+.page-ai tr.ai-flash > td {
+    animation: aiFlash 900ms ease-out;
+}
+@keyframes aiFlash {
+    from {
+        background: var(--surfaceSuccessColor);
+    }
+}
+
+/* PocketBase's alert stacks its icon over its words; these sit side by side,
+   the icon at the first line. */
+.ai-check,
+.page-ai .alert,
+.ai-proposal .alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+/* The run and the proposal, in their drawers. */
+.ai-run-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: var(--smSpacing);
+}
+.ai-facts {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 6px 14px;
+    margin: 0 0 var(--smSpacing);
+    font-size: var(--smFontSize);
+}
+.ai-facts dt {
+    color: var(--surfaceTxtHintColor);
+}
+.ai-facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+.ai-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0 0 var(--smSpacing);
+    padding: 0;
+    list-style: none;
+}
+.ai-steps li {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--borderRadius);
+    overflow-wrap: anywhere;
+}
+.ai-steps li > i {
+    font-size: 18px;
+    line-height: 1.2;
+    color: var(--surfaceTxtHintColor);
+}
+.ai-steps li.ok > i {
+    color: var(--successColor);
+}
+.ai-sources {
+    margin: 0;
+    padding-left: 18px;
+}
+.ai-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0 0 var(--smSpacing);
+}
+.ai-preview > div {
+    display: grid;
+    grid-template-columns: minmax(90px, auto) minmax(0, 1fr);
+    gap: 12px;
+    padding: 6px 8px;
+    border-radius: var(--borderRadius);
+    transition: background var(--animationSpeed);
+}
+.ai-preview dt {
+    color: var(--surfaceTxtHintColor);
+}
+.ai-preview dt::first-letter {
+    text-transform: uppercase;
+}
+.ai-preview dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+.ai-preview > div.moved {
+    background: var(--surfaceWarningColor);
+}
+.ai-preview > div.moved dt {
+    color: inherit;
+}
+.ai-before {
+    margin-bottom: var(--smSpacing);
+}
+.ai-before summary {
+    cursor: pointer;
+    font-size: var(--smFontSize);
+    color: var(--surfaceTxtHintColor);
+}
+.ai-drawer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .page-ai .btn:hover:not(:disabled):not(.disabled):not(.circle),
+    .ai-drawer-actions .btn:hover:not(:disabled):not(.disabled),
+    .page-ai .btn:active:not(:disabled):not(.disabled),
+    .ai-drawer-actions .btn:active:not(:disabled):not(.disabled) {
+        transform: none;
+    }
+    .ai-meter > span,
+    .ai-bar > span {
+        transition: opacity var(--animationSpeed);
+    }
+    .page-ai tr.ai-flash > td {
+        animation-duration: 1ms;
+    }
+}
