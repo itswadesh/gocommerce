@@ -198,6 +198,11 @@ func main() {
 		// a window where no token works.
 		AdminTokens: []string{mustEnv("GOCOMMERCE_ADMIN_TOKEN")},
 
+		// Seals the gateway keys and other secrets the engine reads back, so
+		// the database holds ciphertext. From the environment, never a flag
+		// or the source; unset, they are stored readable.
+		SecretsKey: os.Getenv(gocommerce.SecretsKeyEnv),
+
 		// AdminAuth is the seam where an identity module would replace bearer
 		// tokens with sessions, OIDC or RBAC. Guest checkout keeps working
 		// either way: shoppers never authenticate.
