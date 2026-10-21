@@ -48,17 +48,23 @@
     let deleteOpen = $state(false);
 
     const missing = $derived(modulesKnown() && !hasModule("identity"));
+    const readable = $derived(can("accounts.read"));
 
     /* The same all-of the engine enforces on the route: erasing an account is
-       not a read, and there is no customers.write to gate it with. */
-    const erasable = $derived(can("customers.read") && can("store.operate"));
+       not a read, so it is the module's own accounts.erase on top of seeing
+       the account being erased. */
+    const erasable = $derived(readable && can("accounts.erase"));
 
     $effect(() => {
         list.params;
         // hasModule() reads a `$state` object, so this re-runs when the answer
         // arrives — and a store without ext/identity never makes the call.
-        if (can("customers.read") && hasModule("identity")) load();
+        if (readable && hasModule("identity")) load();
     });
+
+    function refresh() {
+        if (readable && hasModule("identity")) load();
+    }
 
     async function load() {
         loading = true;
@@ -99,8 +105,10 @@
 
 <svelte:head><title>Accounts · GoCommerce</title></svelte:head>
 
-{#if !can("customers.read")}
-    <NoAccess right="customers.read" what="accounts" />
+<!-- A store built without ext/identity says so even to an owner, who holds no
+     accounts right there: the build is what grants a module's rights (D65). -->
+{#if !readable && !missing}
+    <NoAccess right="accounts.read" what="accounts" />
 {:else}
     <div class="page page-accounts shopify-skin">
         <div class="page-content full-height tw:bg-background tw:text-foreground">
@@ -115,7 +123,7 @@
                         class="btn circle transparent secondary"
                         title="Refresh"
                         aria-label="Refresh"
-                        onclick={() => load()}
+                        onclick={refresh}
                     >
                         <i class="ri-refresh-line" aria-hidden="true"></i>
                     </button>
