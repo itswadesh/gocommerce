@@ -752,7 +752,9 @@ func (m *Module) buyerScope(ctx context.Context, buyer *identity.Customer, q Cat
 // catalogueProducts reads the listed products with each active variant's
 // price for one, as the buyer.
 func (m *Module) catalogueProducts(ctx context.Context, ids []int64, mem *Member, channelID int64, total int) ([]*CatalogueProduct, int, error) {
-	currency := m.app.Config().Currency
+	// PriceInChannel answers a bare amount, priced as a basket line is, and a
+	// basket is in the store's currency (D85).
+	currency := m.app.Currency(ctx)
 	out := make([]*CatalogueProduct, 0, len(ids))
 	for _, id := range ids {
 		p, err := m.app.Products().GetProduct(ctx, id)

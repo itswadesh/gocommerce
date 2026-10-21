@@ -67,7 +67,7 @@ const companyColumns = `c.id, c.code, c.name, c.tax_id, c.status, c.group_id,
 
 type rowScanner interface{ Scan(...any) error }
 
-func (m *Module) scanCompany(row rowScanner) (*Company, error) {
+func (m *Module) scanCompany(ctx context.Context, row rowScanner) (*Company, error) {
 	c := &Company{}
 	var group, limit, threshold, catalogue sql.NullInt64
 	var meta []byte
@@ -84,8 +84,8 @@ func (m *Module) scanCompany(row rowScanner) (*Company, error) {
 		id := catalogue.Int64
 		c.CatalogueID = &id
 	}
-	c.CreditLimit = m.moneyPtr(limit)
-	c.ApprovalThreshold = m.moneyPtr(threshold)
+	c.CreditLimit = m.moneyPtr(ctx, limit)
+	c.ApprovalThreshold = m.moneyPtr(ctx, threshold)
 	c.Metadata = gocommerce.Metadata{}
 	if len(meta) > 0 {
 		if err := json.Unmarshal(meta, &c.Metadata); err != nil {
@@ -97,7 +97,7 @@ func (m *Module) scanCompany(row rowScanner) (*Company, error) {
 
 // Company reads one company.
 func (m *Module) Company(ctx context.Context, id int64) (*Company, error) {
-	c, err := m.scanCompany(m.db.QueryRowContext(ctx,
+	c, err := m.scanCompany(ctx, m.db.QueryRowContext(ctx,
 		`SELECT `+companyColumns+` FROM b2b_companies c WHERE c.id = $1`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, gocommerce.NotFoundf("company %d does not exist", id)
@@ -141,7 +141,7 @@ func (m *Module) Companies(ctx context.Context, q CompanyQuery) ([]*Company, int
 	defer rows.Close()
 	out := []*Company{}
 	for rows.Next() {
-		c, err := m.scanCompany(rows)
+		c, err := m.scanCompany(ctx, rows)
 		if err != nil {
 			return nil, 0, err
 		}

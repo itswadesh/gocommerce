@@ -167,7 +167,7 @@ func (m *Module) CompanyStatement(ctx context.Context, companyID int64, lo, hi t
 	loc := lo.Location()
 	st := &Statement{
 		Company:  StatementCompany{ID: c.ID, Code: c.Code, Name: c.Name},
-		Currency: m.app.Config().Currency,
+		Currency: m.app.Currency(ctx),
 		TimeZone: loc.String(),
 		From:     lo.Format(civilDate),
 		To:       hi.Format(civilDate),
