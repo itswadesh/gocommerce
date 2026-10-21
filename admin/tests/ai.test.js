@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { formatMicro, summary, entries, canRetry, canCancel } from "../src/lib/ai.js";
+import { formatMicro, summary, entries, canRetry, canCancel, movedKeys } from "../src/lib/ai.js";
 
 test("a fraction of a cent keeps two significant digits", () => {
     // 326,700 micro-minor is 0.3267 of a cent.
@@ -43,4 +43,14 @@ test("a preview with from and to reads as a change", () => {
 test("retry and cancel are offered only where the engine allows them", () => {
     assert.deepEqual(["queued", "running", "done", "failed", "dead", "cancelled"].map(canRetry), [false, false, false, true, true, true]);
     assert.deepEqual(["queued", "running", "done", "failed", "dead", "cancelled"].map(canCancel), [true, true, false, true, true, false]);
+});
+
+test("the lines that moved between what was shown and what is there now", () => {
+    const shown = { product: 2, from: "Enamel mug", to: "Steel mug" };
+    const now = { product: 2, from: "Renamed meanwhile", to: "Steel mug" };
+    assert.deepEqual([...movedKeys(shown, now)], ["from"]);
+    assert.deepEqual([...movedKeys(shown, shown)], []);
+    // A line that appeared or went is a line that moved.
+    assert.deepEqual([...movedKeys({ a: 1 }, { a: 1, b: 2 })].sort(), ["b"]);
+    assert.deepEqual([...movedKeys(null, { a: 1 })], []);
 });

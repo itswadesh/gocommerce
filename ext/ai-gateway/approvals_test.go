@@ -102,6 +102,17 @@ func decodeApproval(t *testing.T, rec interface {
 	return env.Data
 }
 
+// seen is what the panel sends to approve: the hash of the preview the
+// person was shown when they opened the proposal.
+func (h *approvalHarness) seen(t *testing.T, id int64) map[string]string {
+	t.Helper()
+	got := decodeApproval(t, gctest.AdminRequest(t, h.app, http.MethodGet, fmt.Sprintf("/api/admin/x/ai-gateway/approvals/%d", id), nil))
+	if got.PreviewHash == "" {
+		t.Fatal("an opened proposal carries no preview hash")
+	}
+	return map[string]string{"preview_hash": got.PreviewHash}
+}
+
 func previewOf(t *testing.T, raw json.RawMessage) map[string]string {
 	t.Helper()
 	var m map[string]string
@@ -176,7 +187,7 @@ func TestApprovingRunsTheActionAsTheApprover(t *testing.T) {
 	a := h.propose(t, ctx, "Approved title", "retitle:1")
 	owner := gctest.OperatorToken(t, h.app, "owner@example.com", gocommerce.RoleOwner)
 
-	rec := gctest.SessionRequest(t, h.app, owner, http.MethodPost, fmt.Sprintf("/api/admin/x/ai-gateway/approvals/%d/approve", a.ID), nil)
+	rec := gctest.SessionRequest(t, h.app, owner, http.MethodPost, fmt.Sprintf("/api/admin/x/ai-gateway/approvals/%d/approve", a.ID), h.seen(t, a.ID))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("approve = %d: %s", rec.Code, rec.Body)
 	}
@@ -213,6 +224,7 @@ func TestADoubleApprovalRunsOnce(t *testing.T) {
 	h := newApprovals(t, gocommerce.RightCatalogWrite)
 	a := h.propose(t, context.Background(), "Once", "retitle:1")
 	owner := gctest.OperatorToken(t, h.app, "owner@example.com", gocommerce.RoleOwner)
+	body := h.seen(t, a.ID)
 
 	var wg sync.WaitGroup
 	codes := make([]int, 4)
@@ -221,7 +233,7 @@ func TestADoubleApprovalRunsOnce(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			codes[i] = gctest.SessionRequest(t, h.app, owner, http.MethodPost,
-				fmt.Sprintf("/api/admin/x/ai-gateway/approvals/%d/approve", a.ID), nil).Code
+				fmt.Sprintf("/api/admin/x/ai-gateway/approvals/%d/approve", a.ID), body).Code
 		}()
 	}
 	wg.Wait()
@@ -346,7 +358,7 @@ func TestAFailedActionIsRecorded(t *testing.T) {
 	defer func() { act.Execute = execute }()
 
 	owner := gctest.OperatorToken(t, h.app, "owner@example.com", gocommerce.RoleOwner)
-	got := decodeApproval(t, gctest.SessionRequest(t, h.app, owner, http.MethodPost, fmt.Sprintf("/api/admin/x/ai-gateway/approvals/%d/approve", a.ID), nil))
+	got := decodeApproval(t, gctest.SessionRequest(t, h.app, owner, http.MethodPost, fmt.Sprintf("/api/admin/x/ai-gateway/approvals/%d/approve", a.ID), h.seen(t, a.ID)))
 	if got.Status != ApprovalFailed || got.Error == "" {
 		t.Errorf("approval = %+v, want failed with the reason", got)
 	}
@@ -447,7 +459,7 @@ func (h *approvalHarness) replaceExecute(t *testing.T, execute func(ctx context.
 func (h *approvalHarness) approveAsOwner(t *testing.T, id int64) (int, Approval) {
 	t.Helper()
 	owner := gctest.OperatorToken(t, h.app, "owner@example.com", gocommerce.RoleOwner)
-	rec := gctest.SessionRequest(t, h.app, owner, http.MethodPost, fmt.Sprintf("/api/admin/x/ai-gateway/approvals/%d/approve", id), nil)
+	rec := gctest.SessionRequest(t, h.app, owner, http.MethodPost, fmt.Sprintf("/api/admin/x/ai-gateway/approvals/%d/approve", id), h.seen(t, id))
 	var env struct {
 		Data Approval `json:"data"`
 	}
@@ -488,5 +500,65 @@ func TestAnApprovedActionThatPanicsEndsFailed(t *testing.T) {
 	code, got := h.approveAsOwner(t, a.ID)
 	if code != http.StatusOK || got.Status != ApprovalFailed || !strings.Contains(got.Error, "the action fell over") {
 		t.Fatalf("approve = %d %+v, want 200 and failed with the panic named", code, got)
+	}
+}
+
+// The person approves what they were shown. If the store moved between
+// opening the proposal and pressing Approve, nothing runs: the answer is 409
+// with the preview as it is now, for them to review again.
+func TestApprovingAPreviewThatHasSinceChangedRunsNothing(t *testing.T) {
+	h := newApprovals(t, gocommerce.RightCatalogWrite)
+	ctx := context.Background()
+	a := h.propose(t, ctx, "Approved title", "retitle:1")
+	owner := gctest.OperatorToken(t, h.app, "owner@example.com", gocommerce.RoleOwner)
+	path := fmt.Sprintf("/api/admin/x/ai-gateway/approvals/%d/approve", a.ID)
+
+	shown := h.seen(t, a.ID)
+	moved := "Renamed while the drawer was open"
+	if _, err := h.app.Products().UpdateProduct(ctx, h.product.ID, gocommerce.ProductPatch{Title: &moved}); err != nil {
+		t.Fatal(err)
+	}
+	rec := gctest.SessionRequest(t, h.app, owner, http.MethodPost, path, shown)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "changed while you were looking") {
+		t.Fatalf("approve on a stale preview = %d: %s", rec.Code, rec.Body)
+	}
+	var env struct {
+		Error struct {
+			Details struct {
+				Preview     map[string]string `json:"preview"`
+				PreviewHash string            `json:"preview_hash"`
+			} `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if env.Error.Details.Preview["from"] != moved || env.Error.Details.PreviewHash == "" || env.Error.Details.PreviewHash == shown["preview_hash"] {
+		t.Errorf("409 details = %+v, want the preview as it is now and its new hash", env.Error.Details)
+	}
+	if h.runs.Load() != 0 {
+		t.Error("an approval of a stale preview ran the action")
+	}
+	if got, _ := h.m.Approval(ctx, a.ID); got.Status != ApprovalPending {
+		t.Errorf("the proposal is %s, want still pending", got.Status)
+	}
+
+	rec = gctest.SessionRequest(t, h.app, owner, http.MethodPost, path, map[string]string{"preview_hash": env.Error.Details.PreviewHash})
+	if rec.Code != http.StatusOK || decodeApproval(t, rec).Status != ApprovalExecuted {
+		t.Fatalf("approve on the reviewed preview = %d: %s", rec.Code, rec.Body)
+	}
+}
+
+// An approval that says nothing about what was reviewed is refused.
+func TestApprovingNeedsThePreviewThatWasReviewed(t *testing.T) {
+	h := newApprovals(t, gocommerce.RightCatalogWrite)
+	a := h.propose(t, context.Background(), "Unseen", "retitle:1")
+	owner := gctest.OperatorToken(t, h.app, "owner@example.com", gocommerce.RoleOwner)
+	rec := gctest.SessionRequest(t, h.app, owner, http.MethodPost, fmt.Sprintf("/api/admin/x/ai-gateway/approvals/%d/approve", a.ID), nil)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "preview_hash") {
+		t.Fatalf("approve without the reviewed preview = %d: %s", rec.Code, rec.Body)
+	}
+	if h.runs.Load() != 0 {
+		t.Error("it ran")
 	}
 }

@@ -147,6 +147,19 @@ function show(v) {
     return String(v);
 }
 
+/**
+ * The lines of a preview whose value is not what it was: the ones to mark
+ * when the store moved under a proposal. A line that appeared or went has
+ * moved; with nothing to compare against, nothing has.
+ */
+export function movedKeys(before, after) {
+    if (!before) return new Set();
+    const was = Object.fromEntries(entries(before));
+    const now = Object.fromEntries(entries(after));
+    const keys = new Set([...Object.keys(was), ...Object.keys(now)]);
+    return new Set([...keys].filter((k) => was[k] !== now[k]));
+}
+
 /** A one-line summary of a preview, for the queue's table. */
 export function summary(value) {
     if (value && typeof value === "object" && !Array.isArray(value) && "from" in value && "to" in value) {

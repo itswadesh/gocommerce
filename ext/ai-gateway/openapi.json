@@ -535,7 +535,7 @@
           "ai-gateway"
         ],
         "summary": "Approve and run a proposal",
-        "description": "Recomputes the preview and runs the action as the approver, labelled with the proposal's number in the audit trail. The caller must be a person signed in to the panel, not an API key or the static token, and hold the action's own right as well as `ai.approve`. A proposal runs once however many times it is approved; an expired one cannot run.",
+        "description": "Recomputes the preview and runs the action as the approver, labelled with the proposal's number in the audit trail. The caller must be a person signed in to the panel, not an API key or the static token, and hold the action's own right as well as `ai.approve`. The body names the preview that was reviewed: if the store has moved since, the answer is 409 with the preview as it is now in `error.details` (`preview`, `preview_hash`, `proposed_preview`) and nothing runs. A proposal runs once however many times it is approved; an expired one cannot run. An action that fails, runs out of time or panics answers 200 with the proposal `failed` and its `error`.",
         "responses": {
           "200": {
             "description": "OK.",
@@ -551,6 +551,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
@@ -569,7 +572,26 @@
           {
             "$ref": "#/components/parameters/PathID"
           }
-        ]
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "preview_hash"
+                ],
+                "properties": {
+                  "preview_hash": {
+                    "type": "string",
+                    "description": "The `preview_hash` of the proposal as it was reviewed."
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/admin/x/ai-gateway/approvals/{id}/reject": {
@@ -1082,6 +1104,10 @@
           },
           "proposed_preview": {
             "description": "The preview as it was when the proposal was filed; on a single proposal only."
+          },
+          "preview_hash": {
+            "type": "string",
+            "description": "Names `preview`; approving sends back the one reviewed."
           },
           "changed": {
             "type": "boolean",
