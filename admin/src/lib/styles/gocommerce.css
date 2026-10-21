@@ -6624,8 +6624,10 @@ kbd + kbd {
     display: grid;
     /* 400 rather than 280: at the width this card gets, 280 fits three across
        and leaves the fourth field alone on a row of its own, which reads as a
-       box that got left behind rather than as the end of a list. */
-    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+       box that got left behind rather than as the end of a list. Never wider
+       than the card, though: a bare 400px ran off a phone's card and cut the
+       field's help text mid-word. */
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr));
     gap: 0 var(--spacing);
     margin-top: 4px;
 }
@@ -7136,9 +7138,24 @@ kbd + kbd {
     font-size: var(--fontSize);
 }
 
-/* Five columns, sharing the sitemap table's row vocabulary. */
+/* Five columns, sharing the sitemap table's row vocabulary. Access and Last
+   seen each hold two short lines: what kind of key and what it may do, then
+   when it was used and — for an agent key — when it stops.
+   No auto tracks: every row is its own grid, so a track sized to one row's
+   content put the next row's columns somewhere else. Fractions of the same
+   width come out the same in every row. */
 .shopify-skin .key-row {
-    grid-template-columns: minmax(140px, 1.2fr) minmax(110px, auto) minmax(90px, auto) minmax(150px, 1fr) auto;
+    grid-template-columns: minmax(120px, 1.2fr) minmax(90px, 0.7fr) minmax(130px, 0.9fr) minmax(140px, 1fr) 150px;
+}
+/* Narrower, the prefix goes first: it identifies a key in a log line, and the
+   name already does that here. */
+@media (max-width: 1100px) {
+    .shopify-skin .key-row {
+        grid-template-columns: minmax(120px, 1.2fr) minmax(130px, 0.9fr) minmax(140px, 1fr) 150px;
+    }
+    .shopify-skin .key-row > :nth-child(2) {
+        display: none;
+    }
 }
 .shopify-skin .key-prefix {
     color: var(--surfaceTxtHintColor);
@@ -7156,16 +7173,257 @@ kbd + kbd {
     opacity: 0.6;
 }
 
-@media (max-width: 800px) {
+/* 950 rather than the sitemap table's 800: below it the sidebar still takes
+   its width, and four columns of a key ran past the card's edge. */
+@media (max-width: 950px) {
     .shopify-skin .key-row {
         grid-template-columns: 1fr auto;
         gap: 6px 10px;
+    }
+    .shopify-skin .key-row.map-head > :nth-child(n + 4) {
+        display: none;
     }
     /* The role chip and the last-seen line drop below the name rather than
        being cut: on a phone the question is which key, then whether it is
        still in use. */
     .shopify-skin .key-row > :nth-child(2) {
         display: none;
+    }
+    /* The sitemap rows this table borrows its look from drop their fourth and
+       fifth cells on a phone; a key's are when it was used and Revoke, which
+       are the two things a phone is opened here for. */
+    .shopify-skin .key-row > .key-seen,
+    .shopify-skin .key-row > .key-actions {
+        display: flex;
+    }
+}
+
+/*
+ * Who will use a key: two choices, each a whole card to press, because the
+ * choice decides everything else on the form. The chosen one is marked on its
+ * edge and its icon, as a chosen tab is.
+ */
+.shopify-skin .key-kind {
+    min-width: 0;
+    margin: var(--smSpacing) 0;
+    padding: 0;
+    border: 0;
+}
+.shopify-skin .key-kind-legend {
+    margin-bottom: 6px;
+    padding: 0;
+    font-size: var(--smFontSize);
+    font-weight: 600;
+}
+.shopify-skin .key-kind-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    gap: 8px;
+}
+.shopify-skin .key-kind-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+    background: var(--surfaceColor);
+    cursor: pointer;
+    transition:
+        border-color var(--animationSpeed) ease-out,
+        background-color var(--animationSpeed) ease-out,
+        transform var(--animationSpeed) ease-out;
+}
+.shopify-skin .key-kind-option:hover {
+    background: var(--surfaceAlt1Color);
+}
+.shopify-skin .key-kind-option:active {
+    transform: scale(0.985);
+}
+.shopify-skin .key-kind-option.is-on {
+    border-color: var(--markColor);
+    background: color-mix(in srgb, var(--markColor) 6%, var(--surfaceColor));
+}
+.shopify-skin .key-kind-option:has(input:focus-visible) {
+    outline: 2px solid var(--markColor);
+    outline-offset: 2px;
+}
+.shopify-skin .key-kind-option input {
+    flex: none;
+    margin: 3px 0 0;
+    accent-color: var(--markColor);
+}
+.shopify-skin .key-kind-icon {
+    flex: none;
+    font-size: 18px;
+    line-height: 1.2;
+    color: var(--surfaceTxtHintColor);
+    transition: color var(--animationSpeed) ease-out;
+}
+.shopify-skin .key-kind-option.is-on .key-kind-icon {
+    color: var(--markColor);
+}
+.shopify-skin .key-kind-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.shopify-skin .key-kind-title {
+    font-weight: 600;
+}
+
+/* An agent key's terms: what it can never do, said first, then the checklist
+   and the two limits. */
+.shopify-skin .agent-terms {
+    margin-top: var(--smSpacing);
+}
+.shopify-skin .agent-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: var(--smSpacing);
+    padding: 10px 12px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+    background: var(--surfaceAlt1Color);
+}
+.shopify-skin .agent-note i {
+    flex: none;
+    font-size: 16px;
+    line-height: 1.3;
+    color: var(--surfaceTxtHintColor);
+}
+.shopify-skin .agent-note p {
+    margin: 0;
+}
+.shopify-skin .agent-rights-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+    margin-bottom: 6px;
+}
+.shopify-skin .agent-rights-title {
+    margin: 0;
+    font-size: var(--baseFontSize, 14px);
+    font-weight: 600;
+}
+/* The checklist, cut into the sidebar's own sections as the Roles screen cuts
+   its grid, so "may it read Products" is a block rather than a hunt. */
+.shopify-skin .agent-rights {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+    gap: 4px 12px;
+    align-items: start;
+}
+.shopify-skin .agent-rights-section {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.shopify-skin .agent-rights-section-title {
+    margin: 8px 0 2px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--surfaceTxtHintColor);
+}
+.shopify-skin .agent-right {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+    padding: 6px 8px;
+    border: 1px solid transparent;
+    border-radius: var(--borderRadius);
+    cursor: pointer;
+    transition:
+        border-color var(--animationSpeed) ease-out,
+        background-color var(--animationSpeed) ease-out,
+        transform var(--animationSpeed) ease-out;
+}
+.shopify-skin .agent-right:hover {
+    background: var(--surfaceAlt1Color);
+}
+.shopify-skin .agent-right:active {
+    transform: scale(0.99);
+}
+.shopify-skin .agent-right.is-on {
+    border-color: color-mix(in srgb, var(--markColor) 35%, transparent);
+    background: color-mix(in srgb, var(--markColor) 6%, transparent);
+}
+.shopify-skin .agent-right:has(input:focus-visible) {
+    outline: 2px solid var(--markColor);
+    outline-offset: 1px;
+}
+.shopify-skin .agent-right input {
+    flex: none;
+    margin: 3px 0 0;
+    accent-color: var(--markColor);
+}
+.shopify-skin .agent-right-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.shopify-skin .agent-limits {
+    margin-top: var(--smSpacing);
+}
+.shopify-skin .field-help.is-error {
+    color: var(--dangerColor);
+}
+
+/* The list's two-line cells. */
+.shopify-skin .key-access,
+.shopify-skin .key-seen {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    min-width: 0;
+}
+.shopify-skin .key-kind-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.shopify-skin .key-expiry {
+    color: var(--surfaceTxtHintColor);
+}
+.shopify-skin .key-expiry.is-soon {
+    color: var(--warningColor);
+}
+.shopify-skin .key-expiry.is-expired {
+    color: var(--dangerColor);
+    font-weight: 600;
+}
+
+/* Every button on the screen sinks a little under the finger, as the Import
+   screen's do: PocketBase's press is a 70ms colour change a quick tap never
+   shows. */
+.page-api-keys .btn {
+    transition:
+        color var(--animationSpeed),
+        border-color var(--animationSpeed),
+        background var(--animationSpeed),
+        transform var(--animationSpeed) ease-out;
+}
+.page-api-keys .btn:active:not(:disabled):not(.disabled) {
+    transform: scale(0.97);
+}
+
+/* The movement goes and the feedback stays: the colour and edge changes are
+   still there, nothing travels or shrinks. */
+@media (prefers-reduced-motion: reduce) {
+    .shopify-skin .key-kind-option:active,
+    .shopify-skin .agent-right:active,
+    .page-api-keys .btn:active:not(:disabled):not(.disabled) {
+        transform: none;
     }
 }
 
