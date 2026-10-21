@@ -168,7 +168,13 @@ func recordMovement(ctx context.Context, tx *sql.Tx, variantID, locationID int64
 		return 0, nil
 	}
 
-	_, actorID, actorEmail, _, _ := auditActor(ctx)
+	actorKind, actorID, actorEmail, _, _ := auditActor(ctx)
+	// superuser_id points at a person. A key's id is another sequence, so a
+	// key is recorded by its name alone; writing its id here failed the
+	// foreign key, or named whichever operator happened to share the number.
+	if actorKind != ActorOperator {
+		actorID = nil
+	}
 
 	// One statement: the sku, the location code and the counterpart's code are
 	// snapshotted by the same SELECT that supplies the ids, so a row that still

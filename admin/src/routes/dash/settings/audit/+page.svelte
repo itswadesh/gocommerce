@@ -24,6 +24,7 @@
     import { rowKey } from "$lib/rowkey.js";
     import { listState } from "$lib/liststate.svelte.js";
     import { formatDate, relativeTime } from "$lib/format.js";
+    import { keyActorName } from "$lib/actors.js";
     import { toast } from "$lib/toast.svelte.js";
     import Drawer from "$lib/components/Drawer.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
@@ -155,8 +156,11 @@
      */
     async function loadActors() {
         try {
+            // A bare array: the route sends no meta block, and request() hands
+            // back `data` itself when there is none. Reading `.data` off it
+            // left the picker with "Anybody" and nobody else.
             const result = await api.get("/api/admin/audit/actors");
-            actors = result.data ?? [];
+            actors = Array.isArray(result) ? result : [];
         } catch {
             // A picker that cannot be built is one filter missing, not a broken
             // screen — the feed itself is unaffected, and its own failure is
@@ -166,14 +170,16 @@
     }
 
     /*
-     * One control, two parameters. An operator is `actor_id`; a token and the
+     * One control, two parameters. Somebody with a row behind them is a kind
+     * and an id together — an operator, an API key, an agent key — because the
+     * ids are separate sequences and operator 4 is not key 4. A token and the
      * engine's own background work are `actor_kind` with no id, because there
      * is no row to point at. The composite value keeps that a detail of this
      * picker rather than something the URL or the API has to know about.
      */
     const actorValue = $derived(
         list.params.actor_id
-            ? `id:${list.params.actor_id}`
+            ? `id:${list.params.actor_kind || "operator"}:${list.params.actor_id}`
             : list.params.actor_kind
               ? `kind:${list.params.actor_kind}`
               : "",
@@ -181,17 +187,15 @@
 
     function chooseActor(value) {
         if (!value) return list.set({ actor_id: "", actor_kind: "" });
-        const colon = value.indexOf(":");
-        const tag = value.slice(0, colon);
-        const rest = value.slice(colon + 1);
-        if (tag === "id") return list.set({ actor_id: rest, actor_kind: "" });
-        return list.set({ actor_kind: rest, actor_id: "" });
+        const [tag, kind, id] = value.split(":");
+        if (tag === "id") return list.set({ actor_kind: kind, actor_id: id });
+        return list.set({ actor_kind: kind, actor_id: "" });
     }
 
     const actorOptions = $derived([
         { value: "", label: "Anybody" },
         ...actors.map((a) => ({
-            value: a.id ? `id:${a.id}` : `kind:${a.kind}`,
+            value: a.id ? `id:${a.kind}:${a.id}` : `kind:${a.kind}`,
             // The count is on the option because it is what makes the list
             // worth reading: it says who is actually active in this store.
             label: `${actorName(a)} · ${a.acts} ${a.acts === 1 ? "act" : "acts"}`,
@@ -201,6 +205,8 @@
     /** Who, in the words the trail actually has. Matches OrderTimeline, which
      *  reads the same rows through the order's merged history. */
     function actorName(a) {
+        const key = keyActorName(a);
+        if (key) return key;
         if (a.email) return a.email;
         if (a.label) return a.label;
         if (a.kind === "token") return "An admin token";
@@ -394,7 +400,15 @@
                                     </div>
                                 </td>
                                 <td class="col-field-type-select" data-name="Who">
-                                    {#if row.actor_email}
+                                    {#if row.actor_kind === "key" || row.actor_kind === "agent"}
+                                        <!-- A key is named, never mistaken for
+                                             a person: the chip says which kind
+                                             and the name says which one. -->
+                                        <span class="txt-ellipsis">{keyActorName(row)}</span>
+                                        {#if row.actor_kind === "key" && row.actor_role}
+                                            <span class="label sm">{row.actor_role}</span>
+                                        {/if}
+                                    {:else if row.actor_email}
                                         <span class="txt-ellipsis">{row.actor_email}</span>
                                         {#if row.actor_role}
                                             <span class="label sm">{row.actor_role}</span>
@@ -500,7 +514,7 @@
                                 kind: entry.actor_kind,
                             })}
                         </span>
-                        {#if entry.actor_role}
+                        {#if entry.actor_role && entry.actor_kind !== "agent"}
                             <span class="label sm">{entry.actor_role}</span>
                         {/if}
                     </div>

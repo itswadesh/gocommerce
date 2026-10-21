@@ -15,6 +15,7 @@
     import { api, can, query } from "$lib/api.js";
     import { toast } from "$lib/toast.svelte.js";
     import { formatDate, formatMoney } from "$lib/format.js";
+    import { keyActorName } from "$lib/actors.js";
     import { companyStatusLabel } from "$lib/b2b.js";
 
     let { companyId, version = 0 } = $props();
@@ -117,6 +118,8 @@
     }
 
     function who(entry) {
+        const key = keyActorName(entry);
+        if (key) return key;
         if (entry.actor_kind === "token") return "An admin token";
         if (entry.actor_kind === "system") return "The store";
         if (entry.actor_kind === "buyer") return `${entry.actor_email || "A buyer"} (the company's admin)`;

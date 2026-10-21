@@ -105,6 +105,7 @@
     import { base } from "$app/paths";
     import { api, can, query } from "$lib/api.js";
     import { formatDate, relativeTime } from "$lib/format.js";
+    import { keyActorName } from "$lib/actors.js";
     import { rowKey } from "$lib/rowkey.js";
     import { toast } from "$lib/toast.svelte.js";
     import AuditChanges from "$lib/components/AuditChanges.svelte";
@@ -176,6 +177,8 @@
     /** Who did it, in the words the trail actually has — OrderTimeline and the
      *  store-wide feed say the same three things the same way. */
     function who(entry) {
+        const key = keyActorName(entry);
+        if (key) return key;
         if (entry.actor_email) return entry.actor_email;
         if (entry.actor_label) return entry.actor_label;
         if (entry.actor_kind === "token") return "an admin token";

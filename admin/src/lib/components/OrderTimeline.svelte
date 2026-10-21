@@ -61,6 +61,7 @@
      * pressable and does nothing is worse than a plain one.
      */
     import { formatDate, relativeTime, summarizeEdit } from "$lib/format.js";
+    import { keyActorName } from "$lib/actors.js";
 
     let { entries = [], loading = false, currency = "USD" } = $props();
 
@@ -102,6 +103,8 @@
 
     /** Who did it, in the words the trail actually has. */
     function who(entry) {
+        const key = keyActorName(entry);
+        if (key) return key;
         if (entry.actor_email) return entry.actor_email;
         if (entry.actor_label) return entry.actor_label;
         if (entry.actor_kind === "token") return "an admin token";
