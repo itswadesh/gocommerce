@@ -1,6 +1,7 @@
 package wishlist
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -217,4 +218,34 @@ func TestRoutesDeclareRightsAndAreDocumented(t *testing.T) {
 	app := gctest.New(t, New(Config{}))
 	gctest.AssertAdminRoutesDeclareRights(t, app, "wishlist")
 	gctest.AssertSpecCoversModuleRoutes(t, app, "wishlist")
+}
+
+// An agent key reads wish lists with the address masked, and ?q=, which
+// searches nothing but the address, matches nothing for it.
+func TestAnAgentReadsListsMaskedAndCannotSearchTheAddress(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	product := gctest.CreateProduct(t, app, "WL-AGENT", 500, 3)
+	list := start(t, app, "keeper.smith@example.com")
+	save(t, app, list.Token, ItemInput{ProductID: product.ID})
+	agent := gctest.AgentKey(t, app, rightWishlistsRead)
+
+	found := func(q string) int {
+		t.Helper()
+		rec := gctest.SessionRequest(t, app, agent, http.MethodGet, "/api/admin/x/wishlist/lists"+q, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("agent lists %q = %d: %s", q, rec.Code, rec.Body)
+		}
+		if strings.Contains(rec.Body.String(), "keeper.smith@") {
+			t.Errorf("the agent read the address in full: %s", rec.Body)
+		}
+		var out []json.RawMessage
+		gctest.DecodeData(t, rec, &out)
+		return len(out)
+	}
+	if n := found(""); n != 1 {
+		t.Fatalf("the agent sees %d lists, want 1", n)
+	}
+	if n := found("?q=keeper"); n != 0 {
+		t.Errorf("an agent searching by address found %d, want 0", n)
+	}
 }

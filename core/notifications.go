@@ -135,9 +135,15 @@ func (s *Notifications) List(ctx context.Context, q NotificationQuery) ([]*Notif
 	if q.Event != "" {
 		add("event = $%d", q.Event)
 	}
-	if s := strings.TrimSpace(q.Search); s != "" {
-		args = append(args, "%"+strings.ToLower(s)+"%", s)
-		where = append(where, fmt.Sprintf("(lower(recipient) LIKE $%d OR order_number = $%d)", len(args)-1, len(args)))
+	if q := strings.TrimSpace(q.Search); q != "" {
+		// Where the recipient is masked (App.Masks) only the order number
+		// matches: a contains-match on the address would read it back.
+		if s.app.masks(ctx) {
+			add("order_number = $%d", q)
+		} else {
+			args = append(args, "%"+strings.ToLower(q)+"%", q)
+			where = append(where, fmt.Sprintf("(lower(recipient) LIKE $%d OR order_number = $%d)", len(args)-1, len(args)))
+		}
 	}
 	clause := strings.Join(where, " AND ")
 

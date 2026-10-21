@@ -543,19 +543,20 @@ var orderSorts = SortSpec{
 // address is remembered from the middle. LIKE metacharacters are not escaped,
 // following every other search in the engine — which is precisely why ?email=
 // stays exact equality, since `_` is a wildcard and is common in real addresses.
-// On a demo the email column drops out of the search, and it has to. A
-// contains-match against a hidden value is an oracle: ?q=a, ?q=ab, ?q=abc reads
-// a masked address back one character at a time, which is a slower way of
-// publishing exactly what the mask was for. The number and the name still
-// match, so the box still works — and the name was never masked anyway.
-func orderSearchClause(search string, args *[]any, demo bool) string {
+// Where the email is masked (App.Masks: a demo, or an agent) it drops out of
+// the search, and it has to. A contains-match against a hidden value is an
+// oracle: ?q=a, ?q=ab, ?q=abc reads a masked address back one character at a
+// time, which is a slower way of publishing exactly what the mask was for. The
+// number and the name still match, so the box still works — and the name was
+// never masked anyway.
+func orderSearchClause(search string, args *[]any, masked bool) string {
 	needle := strings.ToLower(strings.TrimSpace(search))
 	if needle == "" {
 		return ""
 	}
 	*args = append(*args, needle+"%", "%"+needle+"%")
 	prefix, contains := len(*args)-1, len(*args)
-	if demo {
+	if masked {
 		return fmt.Sprintf("(lower(o.number) LIKE $%d"+
 			" OR lower(coalesce(o.name, '')) LIKE $%d)", prefix, contains)
 	}
@@ -584,6 +585,11 @@ func (s *Orders) List(ctx context.Context, q OrderQuery) ([]*Order, int, error) 
 		// Gated on Demo, and it has to be: without the check, a bullet in
 		// ?email= turned this into a LIKE on every store, so an exact filter
 		// nobody asked to widen would quietly match more rows than it named.
+		//
+		// Demo and not Masks. A pattern built from bullets the caller typed is
+		// a prefix search ("j•" is 'j%'), which costs nothing where the data is
+		// already fake and would read real addresses back to an agent on a
+		// live store. An agent's ?email= is the exact match everybody else's is.
 		pattern := ""
 		if s.app.demo(ctx) {
 			pattern = maskedEmailPattern(q.Email)
@@ -594,7 +600,7 @@ func (s *Orders) List(ctx context.Context, q OrderQuery) ([]*Order, int, error) 
 			add("lower(o.email) = $%d", strings.ToLower(q.Email))
 		}
 	}
-	if clause := orderSearchClause(q.Search, &args, s.app.demo(ctx)); clause != "" {
+	if clause := orderSearchClause(q.Search, &args, s.app.masks(ctx)); clause != "" {
 		where = append(where, clause)
 	}
 	if q.From != nil {

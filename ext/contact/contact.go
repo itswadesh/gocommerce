@@ -255,9 +255,15 @@ func (m *Module) handleList(w http.ResponseWriter, r *http.Request) {
 	if s := strings.TrimSpace(q.Get("q")); s != "" {
 		// A fragment for the people and the subject, the exact value for an
 		// order number: "42" must not sweep in every order with a 42 in it.
+		// Not the address where it is masked (a demo store, or an agent
+		// key): a contains-match would read it back a character at a time.
 		args = append(args, "%"+strings.ToLower(s)+"%", s)
-		where = append(where, fmt.Sprintf("(lower(name) LIKE $%d OR email LIKE $%d OR lower(subject) LIKE $%d OR order_number = $%d)",
-			len(args)-1, len(args)-1, len(args)-1, len(args)))
+		email := fmt.Sprintf(" OR email LIKE $%d", len(args)-1)
+		if m.app.Masks(r.Context()) {
+			email = ""
+		}
+		where = append(where, fmt.Sprintf("(lower(name) LIKE $%d%s OR lower(subject) LIKE $%d OR order_number = $%d)",
+			len(args)-1, email, len(args)-1, len(args)))
 	}
 	clause := strings.Join(where, " AND ")
 	var total int

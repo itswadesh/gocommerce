@@ -1082,7 +1082,7 @@ func (m *Module) listOrders(w http.ResponseWriter, r *http.Request, companyID in
 	}
 	orders, total, err := m.CompanyOrders(r.Context(), CompanyOrderQuery{CompanyID: companyID,
 		OnAccountOnly: onAccountOnly, OverdueOnly: r.URL.Query().Get("overdue") == "true",
-		Search: r.URL.Query().Get("q"), Demo: m.app.Demo(r.Context()), Limit: limit, Offset: offset})
+		Search: r.URL.Query().Get("q"), Masked: m.app.Masks(r.Context()), Limit: limit, Offset: offset})
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
@@ -1323,7 +1323,7 @@ func (m *Module) handleAdminLeads(w http.ResponseWriter, r *http.Request) {
 	}
 	v := r.URL.Query()
 	q := LeadQuery{CompanyID: company, Unrouted: v.Get("unrouted") == "true", Status: v.Get("status"),
-		RoutedBy: v.Get("routed_by"), Search: v.Get("q"), Demo: m.app.Demo(r.Context()), Limit: limit, Offset: offset}
+		RoutedBy: v.Get("routed_by"), Search: v.Get("q"), Masked: m.app.Masks(r.Context()), Limit: limit, Offset: offset}
 	// Each pair asks for two sets of leads that cannot overlap. An empty page
 	// would be a true answer to a question nobody meant to ask, so it is
 	// refused instead, naming the pair.
