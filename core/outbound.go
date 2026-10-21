@@ -39,9 +39,19 @@ var ErrNotPublic = errors.New("not a public address")
 // carries nothing else: the address the name resolved to is something only
 // the inside of the network knows, and the operator reading this typed the
 // name, not the address.
+//
+// For a name it reads the same whether the name resolved somewhere private
+// or did not resolve at all. Two different messages would let anyone who can
+// set an address and read the error find out which names exist inside the
+// network.
 type notPublicError struct{ host string }
 
-func (e *notPublicError) Error() string { return e.host + " is not a public address" }
+func (e *notPublicError) Error() string {
+	if _, err := netip.ParseAddr(e.host); err == nil {
+		return e.host + " is not a public address"
+	}
+	return e.host + " does not resolve to a public address"
+}
 func (e *notPublicError) Unwrap() error { return ErrNotPublic }
 
 // OutboundClient returns a client for calling an address a store operator or
@@ -75,9 +85,11 @@ var publicTransport = sync.OnceValue(func() *http.Transport {
 		Proxy: nil,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			conn, err := dialer.DialContext(ctx, network, addr)
-			if errors.Is(err, ErrNotPublic) {
-				// The dialer's own error names the resolved address; this one
-				// names only what was asked for.
+			var dnsErr *net.DNSError
+			if errors.Is(err, ErrNotPublic) || errors.As(err, &dnsErr) {
+				// The dialer's own error names the resolved address, or the
+				// resolver it asked; this one names only what was asked for,
+				// and a failed lookup reads as a refusal (notPublicError).
 				host, _, splitErr := net.SplitHostPort(addr)
 				if splitErr != nil {
 					host = addr

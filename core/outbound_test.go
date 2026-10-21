@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -143,7 +144,7 @@ func TestARefusalNamesTheHostAndNotWhatItResolvedTo(t *testing.T) {
 		t.Errorf("err = %v, want it to match ErrNotPublic", err)
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "localhost is not a public address") {
+	if !strings.Contains(msg, "localhost does not resolve to a public address") {
 		t.Errorf("err = %q, want it to name localhost", msg)
 	}
 	for _, leaked := range []string{"127.0.0.1", "::1", "[::1]"} {
@@ -257,5 +258,42 @@ func TestDoctorWarnsWhenPrivateURLsAreAllowed(t *testing.T) {
 	both := (&App{cfg: Config{AllowPrivateURLs: true, Signup: true}}).checkOutbound()
 	if both.Status != StatusWarn || !strings.Contains(both.Detail, "sign-up") {
 		t.Errorf("switch on with sign-up: %+v, want the warning to say sign-up is on too", both)
+	}
+}
+
+// A name that resolves inside the network and a name that does not resolve at
+// all fail the same way, so an operator cannot tell the two apart through a
+// delivery log or a provider's error.
+func TestAPrivateNameAndAMissingOneFailAlike(t *testing.T) {
+	srv, hits := localServer(t)
+	port := srv.URL[strings.LastIndex(srv.URL, ":")+1:]
+	client := (&App{cfg: Config{}}).OutboundClient(10 * time.Second)
+
+	reason := func(host string) string {
+		t.Helper()
+		resp, err := client.Get("http://" + host + ":" + port + "/")
+		if err == nil {
+			resp.Body.Close()
+			t.Fatalf("%s was reached", host)
+		}
+		if !errors.Is(err, ErrNotPublic) {
+			t.Errorf("%s: err = %v, want it to match ErrNotPublic", host, err)
+		}
+		var ue *url.Error
+		if !errors.As(err, &ue) {
+			t.Fatalf("%s: err = %T, want a *url.Error", host, err)
+		}
+		return strings.ReplaceAll(ue.Err.Error(), host, "HOST")
+	}
+	private := reason("localhost")
+	missing := reason("gocommerce-outbound-test.invalid")
+	if private != missing {
+		t.Errorf("a private name fails with %q and a missing one with %q; they must read the same", private, missing)
+	}
+	if !strings.Contains(private, "does not resolve to a public address") {
+		t.Errorf("reason = %q, want it to say the name does not resolve to a public address", private)
+	}
+	if hits.Load() != 0 {
+		t.Errorf("the server was reached %d times", hits.Load())
 	}
 }
