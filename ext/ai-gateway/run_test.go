@@ -438,7 +438,7 @@ func TestDocumentsStayUnlessThePolicyLetsThemGo(t *testing.T) {
 	configure(t, app, ctx, nil)
 
 	_, err := m.Run(ctx, "test.rewrite", listing{Title: "x"})
-	if re := runErr(t, err); re.Outcome != OutcomeRefused || !strings.Contains(re.Reason, "documents") {
+	if re := runErr(t, err); re.Outcome != OutcomePolicyBlocked || !strings.Contains(re.Reason, "documents") {
 		t.Fatalf("error = %+v", re)
 	}
 	if s.count() != 0 {

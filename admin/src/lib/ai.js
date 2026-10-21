@@ -48,6 +48,7 @@ const OUTCOMES = {
     budget_exhausted: ["Over the cap", "label-warning"],
     no_price: ["No price set", "label-warning"],
     task_error: ["Task failed", "label-danger"],
+    policy_blocked: ["Kept in by policy", "label-warning"],
 };
 
 export const OUTCOME_OPTIONS = [
@@ -69,6 +70,7 @@ const STEP_OUTCOMES = {
     provider_error: "Provider failed",
     budget_exhausted: "Over the cap",
     no_price: "No price set",
+    policy_blocked: "Kept in by policy",
     error: "Failed",
 };
 export const stepOutcomeLabel = (o) => STEP_OUTCOMES[o] ?? o;

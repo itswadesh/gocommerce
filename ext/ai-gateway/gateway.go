@@ -427,7 +427,7 @@ CREATE TABLE ai_executions (
     latency_ms         bigint NOT NULL DEFAULT 0,
     outcome            text NOT NULL CHECK (outcome IN ('ok', 'deterministic', 'cached', 'invalid_output',
                                                          'refused', 'provider_error', 'budget_exhausted', 'no_price',
-                                                         'task_error')),
+                                                         'task_error', 'policy_blocked')),
     review_status      text NOT NULL DEFAULT 'none' CHECK (review_status IN ('none', 'pending', 'approved', 'rejected')),
     confidence         smallint CHECK (confidence BETWEEN 0 AND 100),
     source_refs        jsonb NOT NULL DEFAULT '[]',
