@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Secrets at rest (D110).
@@ -203,12 +204,22 @@ func (a *App) OpenSecret(ctx context.Context, field, stored string) (string, err
 
 // openSecretOrUnset is how the engine's own readers open: a value that will
 // not open reads as unset and is logged with where it is, never what it is.
+//
+// Once an hour per store and field, because the readers are hot: the
+// storefront lists plugins on every page, and a line per page view would bury
+// the log while saying nothing the first line did not. The doctor counts them
+// all, every time.
 func (a *App) openSecretOrUnset(ctx context.Context, field, stored string) (string, bool) {
 	plain, err := a.OpenSecret(ctx, field, stored)
-	if err != nil {
-		a.log.Warn("a stored secret cannot be opened and reads as unset",
-			"store", a.storeOf(ctx), "field", field, "reason", err.Error())
-		return "", false
+	if err == nil {
+		return plain, true
 	}
-	return plain, true
+	store := a.storeOf(ctx)
+	where := store + "\x00" + field
+	if last, ok := a.secretWarnings.Load(where); !ok || time.Since(last.(time.Time)) >= time.Hour {
+		a.secretWarnings.Store(where, time.Now())
+		a.log.Warn("a stored secret cannot be opened and reads as unset",
+			"store", store, "field", field, "reason", err.Error())
+	}
+	return "", false
 }

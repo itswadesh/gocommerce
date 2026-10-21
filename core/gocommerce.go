@@ -29,6 +29,7 @@ import (
 	"net/url"
 	"os/signal"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -332,6 +333,9 @@ type App struct {
 	// secretColumns are the columns outside plugins holding one sealed secret
 	// a row, core's and the modules', for `secrets seal` and the doctor.
 	secretColumns []SecretColumn
+	// secretWarnings is when each unreadable secret was last logged, by store
+	// and field, so a hot reader logs it once an hour (secrets.go).
+	secretWarnings sync.Map
 	// reportsDB runs custom reports under a least-privileged login, kept apart
 	// from db so a report can never reach the engine's own database rights
 	// (D78). Nil when Config.ReportsDBURL is empty, which disables the feature.
