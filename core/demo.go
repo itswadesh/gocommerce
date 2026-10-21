@@ -538,7 +538,7 @@ func (a *App) maskAuditEntries(ctx context.Context, es []*AuditEntry) {
 		return
 	}
 	for _, e := range es {
-		e.ActorEmail = maskEmail(e.ActorEmail)
+		e.ActorEmail = maskActorEmail(e.ActorKind, e.ActorEmail)
 		maskAuditChanges(&e.Changes)
 	}
 }
@@ -548,7 +548,7 @@ func (a *App) maskAuditActors(ctx context.Context, as []AuditActor) {
 		return
 	}
 	for i := range as {
-		as[i].Email = maskEmail(as[i].Email)
+		as[i].Email = maskActorEmail(as[i].Kind, as[i].Email)
 	}
 }
 
@@ -574,10 +574,20 @@ func (a *App) maskTimeline(ctx context.Context, es []OrderTimelineEntry) {
 		return
 	}
 	for i := range es {
-		es[i].ActorEmail = maskEmail(es[i].ActorEmail)
+		es[i].ActorEmail = maskActorEmail(es[i].ActorKind, es[i].ActorEmail)
 		maskAny(es[i].Before)
 		maskAny(es[i].After)
 	}
+}
+
+// maskActorEmail masks who acted unless it was a key or an agent, whose
+// "email" is the name somebody gave the key — not personal data, and the only
+// way to tell "Key · Till" from "Agent · Order desk" on a masked screen.
+func maskActorEmail(kind, email string) string {
+	if kind == ActorKey || kind == ActorAgent {
+		return email
+	}
+	return maskEmail(email)
 }
 
 // maskAuditChanges covers the trail's before-and-after. Correcting a customer
