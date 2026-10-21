@@ -21,7 +21,8 @@ Full reasoning is in AGENTS.md; these are the ones worth having in front of you:
 4. **Migrations are append-only.** A shipped migration is frozen; corrections
    are new migrations.
 5. **Do not hand-edit `admin/src/lib/styles/*.css`.** They are PocketBase's
-   files, verbatim. Only `gocommerce.css` and `fonts-inter.css` are ours.
+   files, verbatim. Only `gocommerce.css`, `fonts-inter.css` and `design.css`
+   are ours.
 
 ## Environment on this machine
 
