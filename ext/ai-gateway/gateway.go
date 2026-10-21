@@ -115,14 +115,15 @@ type Module struct {
 	log    *slog.Logger
 	client *http.Client
 
-	mu    sync.RWMutex
-	tasks map[string]*Task
+	mu      sync.RWMutex
+	tasks   map[string]*Task
+	actions map[string]*Action
 }
 
 // New constructs the module. Register tasks with RegisterTask before the
 // engine starts serving.
 func New(cfg Config) *Module {
-	return &Module{cfg: cfg, tasks: map[string]*Task{}}
+	return &Module{cfg: cfg, tasks: map[string]*Task{}, actions: map[string]*Action{}}
 }
 
 // Name implements gocommerce.Module.
@@ -152,6 +153,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.registerRights(app)
 	m.registerPlugin(app)
 	m.mountRoutes(app)
+	m.mountApprovalRoutes(app)
 	app.OnStart(m.start)
 	return nil
 }
@@ -216,6 +218,12 @@ func (m *Module) registerRights(app *gocommerce.App) {
 		Label:   "Run the AI jobs",
 		Scope:   "Retrying and cancelling AI jobs, and checking the provider connection",
 		Default: []string(nil),
+	})
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   RightApprove,
+		Label:   "Decide AI proposals",
+		Scope:   "The approval queue: approving or rejecting what an agent proposed. Approving an action also needs that action's own right",
+		Default: []string{gocommerce.RoleManager},
 	})
 }
 
@@ -365,8 +373,8 @@ func (m *Module) Ready(ctx context.Context) error {
 
 // Migrations implements gocommerce.Module.
 //
-// Four tables, all the store's (D104), put behind the row policy by the
-// second migration. The tables carry ai_ rather than the module's own
+// Five tables, all the store's (D104), each put behind the row policy by the
+// migration after the one that creates it. The tables carry ai_ rather than the module's own
 // prefix: the gateway's are the AI records every later AI module reads, and
 // the approval queue beside them is approval_, as ADR 0003 names it.
 func (m *Module) Migrations() []gocommerce.Migration {
@@ -452,5 +460,33 @@ CREATE TABLE ai_cache (
 CREATE INDEX ai_cache_expires ON ai_cache (expires_at);`,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "ai_jobs", "ai_executions", "ai_budgets", "ai_cache"),
+		{
+			ID: "0003_approvals",
+			SQL: `
+-- What an agent proposed and a person decides (D105). decided_by is a
+-- superuser id, kept with the email it had, because the people table is the
+-- install's rather than the store's.
+CREATE TABLE approval_requests (
+    id                  bigserial PRIMARY KEY,
+    kind                text NOT NULL,
+    args                jsonb NOT NULL,
+    preview             jsonb NOT NULL,
+    idem_key            text NOT NULL UNIQUE,
+    requested_by_key_id bigint,
+    requested_by_label  text NOT NULL DEFAULT '',
+    trace_id            text NOT NULL DEFAULT '',
+    status              text NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending', 'approved', 'executed', 'failed', 'rejected', 'expired')),
+    expires_at          timestamptz NOT NULL,
+    decided_by          bigint,
+    decided_by_email    text NOT NULL DEFAULT '',
+    decided_at          timestamptz,
+    result              jsonb,
+    error               text,
+    created_at          timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX approval_requests_status ON approval_requests (status, id DESC);`,
+		},
+		gocommerce.ScopeMigration("0004_approvals_scope", "approval_requests"),
 	}
 }

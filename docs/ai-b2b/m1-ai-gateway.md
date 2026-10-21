@@ -100,9 +100,10 @@ asking the same question never share an answer.
 **`approval_requests`**: the store side's one approval object (D105).
 `store_id`, `id`, `kind`, `args jsonb`, `preview jsonb`, `idem_key` (unique
 per store), `requested_by_key_id` (nullable; the agent key once step 2 has
-landed), `requested_by_label`, `trace_id`, `status` (`pending`, `executed`,
-`failed`, `rejected`, `expired`), `expires_at` (7 days), `decided_by`,
-`decided_at`, `result jsonb`, `error`, `created_at`.
+landed), `requested_by_label`, `trace_id`, `status` (`pending`, `approved`,
+`executed`, `failed`, `rejected`, `expired`), `expires_at` (7 days),
+`decided_by`, `decided_by_email`, `decided_at`, `result jsonb`, `error`,
+`created_at`.
 
 ## The Go API other modules use
 
@@ -348,6 +349,36 @@ Where the design above was silent, or a detail did not survive the code:
 - **Redirects** from a provider are not followed.
 - **Rights' defaults:** `ai.configure` is the owner's alone until a store
   grants it.
+
+The approval queue:
+
+- **`approved` is a state,** as ADR 0003 lists it: the moment between the
+  decision and the action's end. The one conditional `UPDATE` moves a
+  proposal from `pending` to `approved`; the action's end moves it to
+  `executed` or `failed`. A failed action is not put back to `pending`: the
+  store has moved on, and a person files or approves again.
+- **Expiry is read, not swept.** A pending proposal past `expires_at` reads
+  as `expired` everywhere, and the `expired` filter includes it.
+- **Who may decide.** Approving and rejecting both need a person and the
+  action's own right. A person is a signed-in operator with a superusers row:
+  an API key resolves to one with no id, and agent keys will carry their key
+  id beside that zero rather than in it, so the test stays right when they
+  land. The static token cannot decide either. A proposal whose action this
+  build does not have cannot be approved, and can be rejected with
+  `ai.approve` alone, so it can be cleared.
+- **Previews.** `Propose` computes the preview when filing and refuses to
+  file one whose preview fails. Opening a pending proposal returns the
+  preview recomputed now beside the one filed, with `changed` when they
+  differ; approving recomputes it again, stores that as what was approved,
+  and runs against the store as it is.
+- **Running.** Once claimed, the action runs to its end whatever happens to
+  the request, bounded at 30 seconds, as the approver and labelled
+  `approval #<id>`. An action that fails answers 200 with the proposal
+  `failed` and the reason: the decision was made, the act did not succeed.
+- **Who asked** is the caller's name as every trail prints it (`api key:
+  <name>` for a key) or "the engine"; `requested_by_key_id` stays empty until
+  agent keys exist. The decider's email is kept beside their id, because the
+  people table is the install's, not the store's.
 
 ## Not in this step
 
