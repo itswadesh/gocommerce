@@ -69,3 +69,14 @@ test("both readers of the screens listing, and the rows, go through listOf", () 
     assert.match(page, /rows = listOf\(result\)/);
     assert.match(nav, /s\.list = listOf\(result\)/);
 });
+
+/*
+ * PocketBase hides `.col-meta` on a phone because its rows open by a click on
+ * the row. A descriptor screen's rows do not, so its Edit and Delete live only
+ * in that cell, and without `.row-actions` (gocommerce.css) a phone had no way
+ * to either.
+ */
+test("a module screen keeps its row buttons on a phone", () => {
+    const page = readFileSync(new URL("../src/routes/dash/x/[slug]/+page.svelte", import.meta.url), "utf8");
+    assert.match(page, /<td class="col-meta[^"]*\brow-actions\b/);
+});
