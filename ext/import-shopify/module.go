@@ -317,7 +317,7 @@ func (m *Module) run(ctx context.Context, id int64, client *Client) {
 		}
 	}
 
-	currency := m.app.Config().Currency
+	currency := m.app.Currency(ctx)
 	exponent := currencyExponent(currency)
 
 	err := client.EachProduct(ctx, func(p Product) error {
