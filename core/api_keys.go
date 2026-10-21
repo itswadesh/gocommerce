@@ -27,10 +27,12 @@ import (
 // carry. Authorization has one implementation and the key is just another way
 // to arrive at it.
 //
-// The secret is never stored. What is stored is the prefix in plain text —
-// unique and indexed, so a presented key resolves in one lookup and the panel
-// can say which key is which — and a SHA-256 of the whole key beside it, which
-// is what decides whether the rest was right. SHA-256 rather than bcrypt on
+// What authenticates is the prefix in plain text — unique and indexed, so a
+// presented key resolves in one lookup and the panel can say which key is
+// which — and a SHA-256 of the whole key beside it, which is what decides
+// whether the rest was right. The copy M46 keeps for the owner to read again
+// is sealed when the install has a secrets key (D110), and plays no part in
+// authentication. SHA-256 rather than bcrypt on
 // purpose: this is machine-generated randomness rather than a password
 // somebody chose, so there is no dictionary to slow an attacker down, and the
 // check runs on every request.
@@ -118,6 +120,12 @@ func (k *APIKeys) Create(ctx context.Context, in APIKeyInput, by *Superuser) (*A
 		return nil, "", Internalf(err, "generate a key")
 	}
 	presented := apiKeyScheme + prefix + "_" + secret
+	// The copy the owner can read again is sealed when the install has a key
+	// (D110); the hash beside it is what authenticates and stays as it was.
+	copyStored, err := k.app.SealSecret(ctx, apiKeySecretField, presented)
+	if err != nil {
+		return nil, "", err
+	}
 
 	var createdBy *int64
 	if by != nil {
@@ -136,7 +144,7 @@ func (k *APIKeys) Create(ctx context.Context, in APIKeyInput, by *Superuser) (*A
 			INSERT INTO api_key_index (prefix, store_id) SELECT prefix, store_id FROM k
 		)
 		SELECT id, name, prefix, role, created_at, created_by FROM k`,
-		name, prefix, hashAPIKey(presented), presented, role, createdBy,
+		name, prefix, hashAPIKey(presented), copyStored, role, createdBy,
 	).Scan(&out.ID, &out.Name, &out.Prefix, &out.Role, &out.CreatedAt, &out.CreatedBy)
 	if err != nil {
 		return nil, "", Internalf(err, "save the key")
@@ -223,9 +231,17 @@ func (k *APIKeys) Secret(ctx context.Context, id int64) (string, error) {
 	if secret == "" {
 		return "", Conflictf("this key was issued before the engine kept a copy, so it cannot be shown again; revoke it and make another")
 	}
+	plain, ok := k.app.openSecretOrUnset(ctx, apiKeySecretField, secret)
+	if !ok {
+		return "", Conflictf("this key's copy was sealed under a secrets key this install no longer has, so it cannot be shown again; " +
+			"the key still works — revoke it and make another to have one you can copy")
+	}
 	k.app.log.Info("api key secret read", "id", id, "name", name)
-	return secret, nil
+	return plain, nil
 }
+
+// apiKeySecretField is the label the copy is sealed under.
+const apiKeySecretField = "api_keys/secret"
 
 // Resolve authenticates a presented key.
 //

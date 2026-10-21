@@ -165,6 +165,16 @@ environment:
                     email and any password. There is no flag for this: it names
                     an account that has to exist. Leave it unset and a demo
                     still asks for real credentials
+  GOCOMMERCE_SECRETS_KEY
+                    32 random bytes in base64 (openssl rand -base64 32) that
+                    seal the secrets the engine reads back: plugin keys, the
+                    copy of an API key, webhook signing secrets. Never a flag,
+                    never in the database. Unset, they are stored readable.
+                    Lose it and every sealed secret has to be entered again
+  GOCOMMERCE_SECRETS_KEY_PREVIOUS
+                    the key before GOCOMMERCE_SECRETS_KEY, while rotating: it
+                    still opens what it sealed until "secrets seal" has moved
+                    everything under the new key
 `)
 	}
 
@@ -289,7 +299,11 @@ environment:
 		// Env only, for the same reason: which storefronts call this engine
 		// is a fact about the deployment.
 		CORSOrigins: corsOrigins(os.Getenv("GOCOMMERCE_CORS_ORIGINS")),
-		Logger:      log,
+		// Env only, and deliberately never a flag: a flag is readable by
+		// anyone who can list the processes on the machine.
+		SecretsKey:         os.Getenv(gocommerce.SecretsKeyEnv),
+		SecretsKeyPrevious: os.Getenv(gocommerce.SecretsKeyPreviousEnv),
+		Logger:             log,
 	}
 	if *mediaDir == "" {
 		*mediaDir = os.Getenv("GOCOMMERCE_MEDIA_DIR")
