@@ -410,7 +410,10 @@ things, each because nobody reads what an agent is about to do:
 - **A list of rights instead of a role.** Chosen from the issuer's own, so it is
   issued by a person signed in to the panel: a static token is nobody and
   another key has no rights of its own to share. Every right must be one the
-  build has and the issuer holds.
+  build has and the issuer holds — and goes on holding: on every request the
+  list is cut to the issuer's current rights in the store, read in the same
+  query that finds the key. Demote the issuer and the key loses what they
+  lost; remove them from the store or delete them and the key is refused.
 - **Reads only, in this release.** A right must end in `.read`, or be
   `agent.dispatch`, reviewed as read-like: `ext/mcp` refuses an agent key every
   tool marked as mutating. An agent's writes arrive with the approval queue,
@@ -435,9 +438,23 @@ exactly as a demo store masks it, on every store: core and modules ask
 `App.Masks(ctx)` (a demo, or an agent) rather than `App.Demo(ctx)`, which now
 means only "this is a public demo", and a `?q=` drops the contact columns where
 they are masked, so a search cannot read an address back one character at a
-time. No right unmasks an agent yet. And the routes a demo closes for every
-method — a credential, or a read with no shape for a mask, such as running a
-saved custom report — are closed to an agent on every store.
+time. No right unmasks an agent yet. An agent is not given the merchant's free
+text either: an order's, a line's and a cart's `metadata`, the shop's note,
+and a parcel's label link. It may not filter, sort or preview by a customer's
+email (`?email=`, `sort=email`, a discount preview for an address, MCP
+`list_orders` by email): an exact match would confirm a guess, so the answer
+is 403 `agent_key_refused` saying so.
+
+And some routes are closed to an agent on every store, whatever it holds
+(`agentFrozen` in core/agent_keys.go): the ones a demo closes for every method
+— a credential, or a read with no shape for a mask, such as running a saved
+custom report — plus the notification log, which is the full text of what the
+store sent, and documents that print an address in full (USPS labels,
+invoices).
+
+`bearerAuth` applies the rate and the closed routes after `APIKeys.Resolve`. A
+`Config.AdminAuth` that resolves keys itself must call `App.AdmitAgentKey` for
+them, or an agent key there is neither rationed nor kept out.
 
 ### Who acted
 
