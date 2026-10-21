@@ -393,6 +393,24 @@ The Amazon importer:
 - **The listing is catalogue data,** so a store that has switched catalogue
   sharing off gets no rewrite, said in so many words.
 
+The panel:
+
+- **The AI section's own link is Usage.** Someone who may decide proposals but
+  not read usage is sent on to Approvals, since the section shows for either
+  right.
+- **Check connection is on the Usage screen,** for `ai.configure`, beside a
+  Settings button that opens the plugin's own form: the Plugins screen now
+  opens a plugin's settings from `?open=<key>`, and lists the `ai` category
+  as "AI". The settings themselves stay on the plugin's card.
+- **Costs** are formatted from the micro-minor figures with two significant
+  digits under one major unit ($0.014, $0.0022), so a column of runs has one
+  precision and a fraction of a cent is not printed as $0.00.
+- **Jobs opens on every job,** with the status filter to narrow it: opening
+  on "Needs a person" would hide "Gave up", and both need a person.
+- **Approve runs from the review drawer,** which is the review; Reject asks
+  for confirmation. Approve is not offered to a role without the action's
+  right, or for a proposal whose preview could not be recomputed.
+
 ## Not in this step
 
 - Custom provider hosts (after D109's guard has merged).

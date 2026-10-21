@@ -244,6 +244,26 @@ export const NAV = [
         accent: "cyan",
         keywords: "background imports outbox events queue",
     },
+    // The AI gateway's three screens: what the models cost against the
+    // month's cap, the work queued for them, and what an agent asked to do
+    // that waits for a person. Shown to whoever may read usage or decide a
+    // proposal; the section's own link is Usage, and Usage sends somebody who
+    // may only decide on to Approvals. The settings stay on the plugin's
+    // card under Plugins, like every plugin's.
+    {
+        href: "/dash/ai",
+        label: "AI",
+        icon: "ri-sparkling-2-line",
+        right: "ai.read",
+        module: "ai-gateway",
+        accent: "emerald",
+        keywords: "ai models llm usage cost spend budget cap tokens claude openai",
+        children: [
+            { href: "/dash/ai", label: "Usage", exact: true, right: "ai.read", module: "ai-gateway", keywords: "spend cost tokens budget cap models runs" },
+            { href: "/dash/ai/jobs", label: "Jobs", right: "ai.read", module: "ai-gateway", keywords: "ai queue retry cancel failed dead" },
+            { href: "/dash/ai/approvals", label: "Approvals", right: "ai.approve", module: "ai-gateway", keywords: "ai proposals agent review approve reject" },
+        ],
+    },
     // What this binary can do that is switched on from the panel: storefront
     // extras, widgets, search, marketing. Shopify's "Apps", under the name
     // this store uses. plugins.read to see them and plugins.write to change
