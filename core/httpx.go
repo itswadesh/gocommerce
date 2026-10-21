@@ -450,8 +450,8 @@ func (a *App) bearerAuth(next http.Handler) http.Handler {
 			// what it is: apiKeyPrefixOf declines anything not shaped like one,
 			// so this costs a string compare for every other credential.
 			//
-			// An agent key is kept off a few routes here, where it is known
-			// to be one; an integration key goes straight on.
+			// An agent key is rationed and kept off a few routes here, where
+			// it is known to be one; an integration key costs no extra write.
 			if key.KeyKind == KeyKindAgent && !a.admitAgent(w, r, key) {
 				return
 			}

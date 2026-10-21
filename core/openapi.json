@@ -12634,6 +12634,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       },
@@ -12809,6 +12812,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -12847,6 +12853,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -12904,6 +12913,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -13456,6 +13468,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -15065,7 +15080,7 @@
       "adminToken": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Either a static token from Config.AdminTokens — the right credential for a script, since it has no session and no expiry — or a superuser session token from /api/admin/auth-with-password, which is the right credential for a person. Both arrive the same way and satisfy the same middleware."
+        "description": "Either a static token from Config.AdminTokens — the right credential for a script, since it has no session and no expiry — or a superuser session token from /api/admin/auth-with-password, which is the right credential for a person. Both arrive the same way and satisfy the same middleware. An API key (gck_...) is the third: an integration key acts in a role; an agent key acts with the list of rights it was issued, sees personal data masked as a demo store shows it, and is limited to its requests a minute. Over that limit any admin route answers 429 (the RateLimited response) with a Retry-After header."
       }
     },
     "parameters": {
@@ -15310,6 +15325,25 @@
       },
       "Forbidden": {
         "description": "Authenticated, and the role does not carry the right this route needs. Distinct from 401: the credential is good, the answer is still no.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "An agent key has made its requests for this minute. Retry-After says how many seconds until the minute ends; the error's code is rate_limited and its details name the limit.",
+        "headers": {
+          "Retry-After": {
+            "description": "Seconds until the key's minute ends.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
         "content": {
           "application/json": {
             "schema": {
