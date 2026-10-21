@@ -118,12 +118,16 @@ type Module struct {
 	mu      sync.RWMutex
 	tasks   map[string]*Task
 	actions map[string]*Action
+
+	// executeTimeout bounds an approved action; a field so a test can
+	// shorten it.
+	executeTimeout time.Duration
 }
 
 // New constructs the module. Register tasks with RegisterTask before the
 // engine starts serving.
 func New(cfg Config) *Module {
-	return &Module{cfg: cfg, tasks: map[string]*Task{}, actions: map[string]*Action{}}
+	return &Module{cfg: cfg, tasks: map[string]*Task{}, actions: map[string]*Action{}, executeTimeout: executeTimeout}
 }
 
 // Name implements gocommerce.Module.
