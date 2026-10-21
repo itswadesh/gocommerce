@@ -13,6 +13,11 @@
      * a button that can only refuse: approving needs the action's own right as
      * well as ai.approve, and a proposal whose action this build does not have
      * can only be rejected.
+     *
+     * Approve sends the hash of the preview on screen. If the store moved
+     * while the drawer was open, the engine runs nothing and answers 409 with
+     * the preview as it is now; the drawer shows that one, marks what moved
+     * from what was on screen, and waits for the person to look again.
      */
     import { api, query } from "$lib/api.js";
     import { can } from "$lib/session.svelte.js";
@@ -22,7 +27,7 @@
     import { formatDate, relativeTime } from "$lib/format.js";
     import { rightLabel } from "$lib/rights.js";
     import { rise } from "$lib/motion.js";
-    import { APPROVAL_OPTIONS, approvalLabel, approvalClass, entries, summary } from "$lib/ai.js";
+    import { APPROVAL_OPTIONS, approvalLabel, approvalClass, entries, movedKeys, summary } from "$lib/ai.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
@@ -49,6 +54,10 @@
     let deciding = $state("");
     let outcome = $state(null);
     let rejectOpen = $state(false);
+    // What was on screen when Approve met a store that had moved, and what
+    // the engine said about it.
+    let shownBefore = $state(null);
+    let movedNotice = $state("");
 
     $effect(() => {
         list.params;
@@ -74,6 +83,8 @@
     async function review(a) {
         current = a;
         outcome = null;
+        shownBefore = null;
+        movedNotice = "";
         open = true;
         reviewing = true;
         try {
@@ -88,7 +99,10 @@
     async function decide(verb) {
         deciding = verb;
         try {
-            const updated = await api.post(`${API}/${current.id}/${verb}`);
+            const body = verb === "approve" ? { preview_hash: current.preview_hash } : undefined;
+            const updated = await api.post(`${API}/${current.id}/${verb}`, body);
+            shownBefore = null;
+            movedNotice = "";
             current = updated;
             outcome = updated;
             approvals = approvals.map((a) => (a.id === updated.id ? updated : a));
@@ -96,18 +110,32 @@
             else if (updated.status === "failed") toast.warning(`Proposal #${updated.id} was approved, and the action failed`);
             else if (updated.status === "rejected") toast.success(`Proposal #${updated.id} rejected`);
         } catch (err) {
-            toast.error(err);
+            if (err?.status === 409 && err.details?.preview_hash) {
+                shownBefore = current.preview;
+                movedNotice = err.message;
+                current = {
+                    ...current,
+                    preview: err.details.preview,
+                    preview_hash: err.details.preview_hash,
+                    changed: true,
+                };
+            } else {
+                toast.error(err);
+            }
         } finally {
             deciding = "";
         }
     }
 
-    /* The fields whose value moved since the proposal was filed. */
-    const moved = $derived.by(() => {
-        if (!current?.changed || !current.proposed_preview) return new Set();
-        const before = Object.fromEntries(entries(current.proposed_preview));
-        return new Set(entries(current.preview).filter(([k, v]) => before[k] !== v).map(([k]) => k));
-    });
+    /* The fields whose value moved: since what was on screen, when Approve
+       met a store that had moved, else since the proposal was filed. */
+    const moved = $derived(
+        shownBefore
+            ? movedKeys(shownBefore, current?.preview)
+            : current?.changed
+              ? movedKeys(current.proposed_preview, current?.preview)
+              : new Set(),
+    );
     const mayApprove = $derived(current && current.right && can(current.right));
     const open_ = $derived(current?.status === "pending");
 </script>
@@ -287,7 +315,12 @@
                 </dl>
 
                 <div aria-live="polite">
-                    {#if current.stale}
+                    {#if movedNotice}
+                        <div class="alert warning m-b-sm ai-moved-notice" transition:rise>
+                            <i class="ri-refresh-line" aria-hidden="true"></i>
+                            <div><strong>{movedNotice}</strong> Nothing ran. The marked lines are what changed since you opened it.</div>
+                        </div>
+                    {:else if current.stale}
                         <div class="alert warning m-b-sm" transition:rise>
                             <i class="ri-error-warning-line" aria-hidden="true"></i>
                             <div>{current.stale}</div>
