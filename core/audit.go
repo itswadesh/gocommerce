@@ -535,6 +535,12 @@ func (s *Audits) List(ctx context.Context, q AuditQuery) ([]*AuditEntry, int, er
 	}
 	if q.ActorID != nil {
 		add("actor_id = $%d", *q.ActorID)
+		// An id on its own means a person, as it did before keys had ids of
+		// their own: operator 5 and key 5 are different actors, and a link
+		// written before M71 named only the id.
+		if q.ActorKind == "" {
+			add("actor_kind = $%d", ActorOperator)
+		}
 	}
 	if q.ActorKind != "" {
 		add("actor_kind = $%d", q.ActorKind)
