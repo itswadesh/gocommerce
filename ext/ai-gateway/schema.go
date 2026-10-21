@@ -8,14 +8,15 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"unicode/utf8"
 )
 
 // The JSON Schema a task's answer is held to, in the part of the standard
 // both providers enforce and this file checks again: types, closed objects,
-// required properties, arrays, enums and the length and range bounds. Rule 1
-// rules out a schema library, and a full validator would enforce keywords no
-// provider honours; a keyword outside this set is refused when the task is
+// required properties, arrays and enums. That is OpenAI's strict mode's own
+// set, less what it added late: a schema is sent to whichever provider the
+// store picks, so a length or range bound would make a task fail every
+// OpenAI call. Bounds belong in the task's Check. Rule 1 rules out a schema
+// library; a keyword outside this set is refused when the task is
 // registered rather than silently not checked.
 
 type schemaNode struct {
@@ -24,16 +25,10 @@ type schemaNode struct {
 	required   []string
 	items      *schemaNode
 	enum       []any
-	minLength  *int
-	maxLength  *int
-	minItems   *int
-	maxItems   *int
-	minimum    *float64
-	maximum    *float64
 }
 
 // Annotations are allowed and ignored: they describe, they do not constrain.
-var annotations = map[string]bool{"description": true, "title": true, "$schema": true, "examples": true}
+var annotations = map[string]bool{"description": true, "title": true}
 
 func parseSchema(raw json.RawMessage) (*schemaNode, error) {
 	if len(bytes.TrimSpace(raw)) == 0 {
@@ -52,8 +47,7 @@ func parseNode(v map[string]any, at string) (*schemaNode, error) {
 	n := &schemaNode{}
 	for key := range v {
 		switch key {
-		case "type", "properties", "required", "additionalProperties", "items", "enum",
-			"minLength", "maxLength", "minItems", "maxItems", "minimum", "maximum":
+		case "type", "properties", "required", "additionalProperties", "items", "enum":
 		default:
 			if !annotations[key] {
 				return nil, fmt.Errorf("%s: %q is not enforced by this gateway; leave it out or check it in the task's Check", at, key)
@@ -124,29 +118,6 @@ func parseNode(v map[string]any, at string) (*schemaNode, error) {
 	if e, ok := v["enum"].([]any); ok {
 		n.enum = e
 	}
-	ints := map[string]**int{"minLength": &n.minLength, "maxLength": &n.maxLength, "minItems": &n.minItems, "maxItems": &n.maxItems}
-	for key, dst := range ints {
-		if raw, ok := v[key]; ok {
-			num, ok := raw.(json.Number)
-			i, err := num.Int64()
-			if !ok || err != nil || i < 0 {
-				return nil, fmt.Errorf("%s: %s must be a whole number", at, key)
-			}
-			x := int(i)
-			*dst = &x
-		}
-	}
-	floats := map[string]**float64{"minimum": &n.minimum, "maximum": &n.maximum}
-	for key, dst := range floats {
-		if raw, ok := v[key]; ok {
-			num, ok := raw.(json.Number)
-			f, err := num.Float64()
-			if !ok || err != nil {
-				return nil, fmt.Errorf("%s: %s must be a number", at, key)
-			}
-			*dst = &f
-		}
-	}
 	return n, nil
 }
 
@@ -195,32 +166,10 @@ func (n *schemaNode) check(v any, at string) error {
 			}
 		}
 	case []any:
-		if n.minItems != nil && len(x) < *n.minItems {
-			return fmt.Errorf("%s has %d items, want at least %d", at, len(x), *n.minItems)
-		}
-		if n.maxItems != nil && len(x) > *n.maxItems {
-			return fmt.Errorf("%s has %d items, want at most %d", at, len(x), *n.maxItems)
-		}
 		for i, item := range x {
 			if err := n.items.check(item, fmt.Sprintf("%s[%d]", at, i)); err != nil {
 				return err
 			}
-		}
-	case string:
-		length := utf8.RuneCountInString(x)
-		if n.minLength != nil && length < *n.minLength {
-			return fmt.Errorf("%s is %d characters, want at least %d", at, length, *n.minLength)
-		}
-		if n.maxLength != nil && length > *n.maxLength {
-			return fmt.Errorf("%s is %d characters, want at most %d", at, length, *n.maxLength)
-		}
-	case json.Number:
-		f, _ := x.Float64()
-		if n.minimum != nil && f < *n.minimum {
-			return fmt.Errorf("%s is %s, below %v", at, x, *n.minimum)
-		}
-		if n.maximum != nil && f > *n.maximum {
-			return fmt.Errorf("%s is %s, above %v", at, x, *n.maximum)
 		}
 	}
 	return nil
