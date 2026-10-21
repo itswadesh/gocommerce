@@ -389,9 +389,10 @@ exposed, you say so in `main()`.
 - **Calling out with `&http.Client{}`.** A store can set where most
   modules connect, so the default client is `app.OutboundClient(timeout)`,
   which reaches only public addresses unless the install allows otherwise
-  (AGENTS.md rule 16). Mark a url setting the server connects to
-  `Outbound: true` on its `PluginField`, so a private one is refused as it is
-  typed; a return page or storefront link is not one.
+  (AGENTS.md rule 16). Mark a setting the server connects to — a URL, or a
+  host such as a shop domain — `Outbound: true` on its `PluginField`, so a
+  private one is refused as it is typed; a return page or storefront link is
+  not one.
 - **Forgetting the webhook is a raw-body route.** The engine applies no
   body-consuming middleware there precisely so you can verify the signature
   against the exact bytes — and then deduplicate on the gateway's event id.

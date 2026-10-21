@@ -263,6 +263,7 @@ func (fakeProvider) Register(app *App) error {
 		Fields: []PluginField{
 			{Key: "api_key", Label: "API key", Kind: "secret"},
 			{Key: "base_url", Label: "API base URL", Kind: "url", Outbound: true},
+			{Key: "account", Label: "Account domain", Kind: "text", Outbound: true},
 		},
 	})
 	return nil
@@ -307,5 +308,24 @@ func TestAnOutboundSettingMustBePublic(t *testing.T) {
 	}
 	if _, err := app.Plugins().Update(ctx, "fake-provider", PluginPatch{Settings: map[string]any{"base_url": "http://127.0.0.1:9001"}}); err == nil {
 		t.Error("a changed private address was saved with the switch off")
+	}
+}
+
+// A setting that holds a host rather than a URL — a shop domain, say — is
+// read as a host, with or without a scheme, and held to the same rule.
+func TestAnOutboundHostSettingMustBePublic(t *testing.T) {
+	app := newTestApp(t, fakeProvider{})
+	ctx := context.Background()
+
+	for _, bad := range []string{"127.0.0.1", "localhost:8080", "10.0.0.5/admin", "http://127.0.0.1:9", "billing.internal", "2130706433"} {
+		_, err := app.Plugins().Update(ctx, "fake-provider", PluginPatch{Settings: map[string]any{"account": bad}})
+		if err == nil || !strings.Contains(err.Error(), "Account domain") || !strings.Contains(err.Error(), "public") {
+			t.Errorf("account %q: %v, want a refusal naming the setting", bad, err)
+		}
+	}
+	for _, good := range []string{"acme", "acme.example.com", "https://acme.example.com/admin", "acme.example.com/admin/products"} {
+		if _, err := app.Plugins().Update(ctx, "fake-provider", PluginPatch{Settings: map[string]any{"account": good}}); err != nil {
+			t.Errorf("account %q was refused: %v", good, err)
+		}
 	}
 }
