@@ -3961,7 +3961,8 @@
             "in": "query",
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "Refused for an agent key (403 agent_key_refused): the address is masked for it, and an exact match would confirm a guess."
           },
           {
             "$ref": "#/components/parameters/From"
@@ -15080,7 +15081,7 @@
       "adminToken": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Either a static token from Config.AdminTokens — the right credential for a script, since it has no session and no expiry — or a superuser session token from /api/admin/auth-with-password, which is the right credential for a person. Both arrive the same way and satisfy the same middleware. An API key (gck_...) is the third: an integration key acts in a role; an agent key acts with the list of rights it was issued, sees personal data masked as a demo store shows it, and is limited to its requests a minute. Over that limit any admin route answers 429 (the RateLimited response) with a Retry-After header."
+        "description": "Either a static token from Config.AdminTokens — the right credential for a script, since it has no session and no expiry — or a superuser session token from /api/admin/auth-with-password, which is the right credential for a person. Both arrive the same way and satisfy the same middleware. An API key (gck_...) is the third: an integration key acts in a role; an agent key acts with the list of rights it was issued, sees personal data masked as a demo store shows it, and is limited to its requests a minute. Over that limit any admin route answers 429 (the RateLimited response) with a Retry-After header. An agent key is also refused, with 403 agent_key_refused: the notification log, label and invoice documents, saved custom reports, and any filter, sort or preview by a customer's email address."
       }
     },
     "parameters": {
