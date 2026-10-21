@@ -1607,7 +1607,7 @@ func (m *Module) Screens() []gocommerce.Screen {
 		Title: "Shopper accounts",
 		Icon:  "ri-account-circle-line",
 		Group: "Customers",
-		Right: gocommerce.RightCustomersRead,
+		Right: rightAccountsRead,
 		Help: "People who signed up rather than checking out as guests. " +
 			"Guest checkout never stops working, so this is a subset of the customers list, not a replacement for it.",
 		List: gocommerce.ScreenList{
@@ -1623,8 +1623,10 @@ func (m *Module) Screens() []gocommerce.Screen {
 		},
 		Form: &gocommerce.ScreenForm{
 			// No create and no update: see the note above. Delete alone, so an
-			// erasure request can be honoured from the panel.
-			Delete: "/api/admin/x/identity/customers/{id}",
+			// erasure request can be honoured from the panel, and only by a
+			// role the route would let erase.
+			Delete:      "/api/admin/x/identity/customers/{id}",
+			DeleteRight: rightAccountsErase,
 			DeleteWarning: "The account, its saved addresses and its sign-in go for good. " +
 				"Orders already placed keep their own snapshot of the address they shipped to, so history stays readable.",
 		},

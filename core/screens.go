@@ -105,6 +105,11 @@ type ScreenForm struct {
 	Update string `json:"update,omitempty"`
 	// Delete is a DELETE endpoint with {id}.
 	Delete string `json:"delete,omitempty"`
+	// DeleteRight is the right deleting needs on top of the screen's own, for
+	// a delete the route gates beyond reading — an erasure, say. The panel
+	// offers the button only to a role carrying both. Empty means the screen's
+	// right is enough.
+	DeleteRight Right `json:"delete_right,omitempty"`
 	// IDKey is the field holding the row's id. Defaults to "id".
 	IDKey  string        `json:"id_key,omitempty"`
 	Fields []ScreenField `json:"fields,omitempty"`
