@@ -387,6 +387,9 @@ func (a *App) corsMW(next http.Handler) http.Handler {
 		h := w.Header()
 		h.Add("Vary", "Origin")
 		h.Set("Access-Control-Allow-Origin", origin)
+		// A browser hides every response header it is not told it may read,
+		// and the trace id is the one a storefront wants to quote back.
+		h.Set("Access-Control-Expose-Headers", TraceHeader)
 		if r.Method != http.MethodOptions || r.Header.Get("Access-Control-Request-Method") == "" {
 			next.ServeHTTP(w, r)
 			return
@@ -401,17 +404,36 @@ func (a *App) corsMW(next http.Handler) http.Handler {
 	})
 }
 
+// logMW gives each request its trace id and writes its log line.
+//
+// The trace is decided here because this is the outermost place that sees
+// the request whole: the header is set before any handler can write, and the
+// request's own logger carries the id, so a failure logged deep inside names
+// it too. The store is read back from the record recoverMW opened and storeMW
+// filled, since this runs outside storeMW and only learns the store once the
+// handler has returned.
 func (a *App) logMW(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		trace := r.Header.Get(TraceHeader)
+		if !ValidTraceID(trace) {
+			trace = newTraceID()
+		}
+		w.Header().Set(TraceHeader, trace)
+		r = r.WithContext(context.WithValue(r.Context(), ctxKeyTraceID, trace))
 		sw := &statusWriter{ResponseWriter: w}
-		next.ServeHTTP(sw, withLogger(r, a.log))
+		next.ServeHTTP(sw, withLogger(r, a.log.With("trace_id", trace)))
 		if sw.status == 0 {
 			sw.status = http.StatusOK
 		}
+		var store string
+		if re := requestErrorsFrom(r.Context()); re != nil {
+			store = re.store
+		}
 		a.log.Info("request",
 			"method", r.Method, "path", r.URL.Path, "status", sw.status,
-			"bytes", sw.bytes, "duration", time.Since(start))
+			"bytes", sw.bytes, "duration", time.Since(start),
+			"store", store, "trace_id", trace)
 	})
 }
 
