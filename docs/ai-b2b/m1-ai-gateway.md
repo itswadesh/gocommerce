@@ -82,7 +82,7 @@ with its outcome and, where it escalated, why), `provider`, `model`,
 `model_version` (what the provider reported), `input_tokens`,
 `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `latency_ms`,
 `outcome` (`ok`, `deterministic`, `cached`, `invalid_output`, `refused`,
-`provider_error`, `budget_exhausted`, `no_price`), `review_status` (`none`,
+`provider_error`, `budget_exhausted`, `no_price`, `task_error`), `review_status` (`none`,
 `pending`, `approved`, `rejected`), `confidence` (0–100, nullable),
 `source_refs jsonb`, `policy jsonb`, `cost_micro_minor bigint`, `currency`,
 `created_at`.
@@ -324,6 +324,13 @@ Where the design above was silent, or a detail did not survive the code:
 - **The deterministic step:** an error ends the run as `refused`; an answer
   that fails the task's own schema falls through to the model, with the reason
   on the step.
+- **A panic is a failure, never a crash.** A task whose Build, Check or
+  deterministic step panics ends its run as `task_error` with the panic as the
+  reason; its job goes to `failed` and is not tried again. A transport that
+  panics ends the run as a `provider_error` that is not retried, charged at
+  the ceiling because whether the request left is not known. Each call
+  settles its reservation on every way out, the job runner recovers around
+  each job and each pass, and `Run` hands a panic back as an error.
 - **Not ready is not a run.** A store with the gateway off, or with no key or
   cap, gets `ErrNotReady` with the reason and no record; a job in that state
   goes to `failed` with the reason. A database failure mid-run writes no

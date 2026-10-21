@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"time"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
@@ -23,6 +24,9 @@ const (
 	OutcomeProviderError   = "provider_error"
 	OutcomeBudgetExhausted = "budget_exhausted"
 	OutcomeNoPrice         = "no_price"
+	// OutcomeTaskError is a task whose own code panicked: its Build, Check
+	// or deterministic step. It is never tried again.
+	OutcomeTaskError = "task_error"
 )
 
 // Result is what a run produced.
@@ -111,7 +115,7 @@ func (m *Module) execute(ctx context.Context, t *Task, input json.RawMessage, jo
 	if job != nil {
 		rec.JobID = &job.id
 	}
-	res, runErr, err := m.ladder(ctx, t, input, st, rec, job)
+	res, runErr, err := m.guardedLadder(ctx, t, input, st, rec, job)
 	if err != nil {
 		return Result{}, err
 	}
@@ -150,6 +154,61 @@ func (m *Module) execute(ctx context.Context, t *Task, input json.RawMessage, jo
 		return res, runErr
 	}
 	return res, nil
+}
+
+// guardedLadder is the ladder with the task's own code fenced off. A Build,
+// Check or deterministic step that panics ends the run as task_error, with
+// the panic as its reason and whatever it had already spent on the record:
+// the work cannot be done as written, and trying it again would only pay
+// for the same call to end the same way.
+func (m *Module) guardedLadder(ctx context.Context, t *Task, input json.RawMessage, st *settings, rec *Execution, job *claimedJob) (res Result, runErr *RunError, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			m.log.Error("ai task panicked", "task", t.Name, "panic", p, "stack", string(debug.Stack()))
+			reason := fmt.Sprintf("the task's own code failed: %v", p)
+			rec.Steps = append(rec.Steps, Step{Step: "task", Outcome: "error", Reason: reason})
+			res, runErr, err = Result{Outcome: OutcomeTaskError}, &RunError{Outcome: OutcomeTaskError, Reason: reason}, nil
+		}
+	}()
+	return m.ladder(ctx, t, input, st, rec, job)
+}
+
+// callResult is one call to a provider and what it was charged.
+type callResult struct {
+	resp    Response
+	err     error
+	cost    int64
+	latency time.Duration
+}
+
+// call makes one call against the reservation the caller holds and settles
+// it on every way out, on a context of its own: a run cancelled mid-call has
+// still spent what it spent, and the reservation must not stay held for the
+// rest of the month. A transport that panics is caught here, where the
+// reservation is, and charged at the ceiling: whether the request left is
+// not known, and the cap errs towards spending less.
+func (m *Module) call(ctx context.Context, t *Task, job *claimedJob, provider Provider, req Request, month time.Time, ceiling int64, p prices) (cr callResult) {
+	cr.cost = ceiling
+	defer func() {
+		if r := recover(); r != nil {
+			m.log.Error("ai provider call panicked", "task", t.Name, "panic", r, "stack", string(debug.Stack()))
+			cr.err = &ProviderError{Provider: provider.Name(), Message: fmt.Sprintf("the call panicked: %v", r), panicked: true}
+			cr.cost = ceiling
+		}
+		if err := m.settle(context.WithoutCancel(ctx), month, ceiling, cr.cost); err != nil {
+			m.log.Error("ai budget could not be settled", "task", t.Name, "error", err)
+		}
+	}()
+	if job != nil {
+		m.renew(ctx, job)
+	}
+	callCtx, cancel := context.WithTimeout(ctx, m.cfg.CallTimeout)
+	defer cancel()
+	started := time.Now()
+	cr.resp, cr.err = provider.Generate(callCtx, req)
+	cr.latency = time.Since(started)
+	cr.cost = p.cost(cr.resp.Usage)
+	return cr
 }
 
 // ladder tries each step in turn and fills the record as it goes.
@@ -259,29 +318,16 @@ func (m *Module) ladder(ctx context.Context, t *Task, input json.RawMessage, st 
 			return fail(OutcomeBudgetExhausted, step.Reason, false)
 		}
 
-		if job != nil {
-			m.renew(ctx, job)
-		}
 		req := built.req
 		req.Model = model
-		callCtx, cancel := context.WithTimeout(ctx, m.cfg.CallTimeout)
-		started := time.Now()
-		resp, callErr := provider.Generate(callCtx, req)
-		cancel()
-		step.LatencyMS = time.Since(started).Milliseconds()
+		cr := m.call(ctx, t, job, provider, req, month, ceiling, p)
+		resp, callErr := cr.resp, cr.err
+		step.LatencyMS = cr.latency.Milliseconds()
 		rec.LatencyMS += step.LatencyMS
-
-		cost := p.cost(resp.Usage)
-		// Settled on a context of its own: a run cancelled mid-call has still
-		// spent what the provider reports, and the reservation must not be
-		// left held for the rest of the month.
-		if err := m.settle(context.WithoutCancel(ctx), month, ceiling, cost); err != nil {
-			m.log.Error("ai budget could not be settled", "task", t.Name, "error", err)
-		}
 		rec.Provider, rec.Model = provider.Name(), model
 		rec.Usage = rec.Usage.add(resp.Usage)
-		rec.CostMicroMinor += cost
-		step.CostMicroMinor = cost
+		rec.CostMicroMinor += cr.cost
+		step.CostMicroMinor = cr.cost
 		if resp.Usage != (Usage{}) {
 			u := resp.Usage
 			step.Usage = &u
@@ -297,6 +343,11 @@ func (m *Module) ladder(ctx context.Context, t *Task, input json.RawMessage, st 
 				transient = pe.Transient
 			}
 			step.Reason = callErr.Error()
+			if pe != nil && pe.panicked {
+				step.Outcome = "provider_error"
+				rec.Steps = append(rec.Steps, step)
+				return fail(OutcomeProviderError, step.Reason, false)
+			}
 			if transient {
 				step.Outcome = "provider_error"
 				rec.Steps = append(rec.Steps, step)

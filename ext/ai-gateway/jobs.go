@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -206,8 +207,17 @@ func (m *Module) finishJob(ctx context.Context, tx *sql.Tx, j *claimedJob, o job
 	return err
 }
 
-// process runs one claimed job and settles it.
+// process runs one claimed job and settles it. A panic anywhere in it is the
+// job's failure and not the process's: left to unwind it would kill the
+// store, and the job, still running, would be claimed again after its window
+// and panic again, a crash loop paying for a call each time round.
 func (m *Module) process(ctx context.Context, j *claimedJob) {
+	defer func() {
+		if p := recover(); p != nil {
+			m.log.Error("ai job panicked", "job", j.id, "panic", p, "stack", string(debug.Stack()))
+			m.settleWithoutRecord(ctx, j, jobOutcome{status: JobFailed, lastError: fmt.Sprintf("the job's run failed: %v", p)})
+		}
+	}()
 	ctx = gocommerce.WithTraceID(ctx, j.trace)
 	t := m.task(j.task)
 	if t == nil {
@@ -292,10 +302,21 @@ func (m *Module) loop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if _, err := m.RunJobs(ctx); err != nil && !errors.Is(err, context.Canceled) {
-				m.log.Error("ai job pass failed", "error", err)
-			}
+			m.pass(ctx)
 		}
+	}
+}
+
+// pass is one tick's work. A panic outside any one job (the claim, the cache
+// sweep) costs the tick, not the runner.
+func (m *Module) pass(ctx context.Context) {
+	defer func() {
+		if p := recover(); p != nil {
+			m.log.Error("ai job pass panicked", "panic", p, "stack", string(debug.Stack()))
+		}
+	}()
+	if _, err := m.RunJobs(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		m.log.Error("ai job pass failed", "error", err)
 	}
 }
 
