@@ -255,10 +255,12 @@ its field, so it does not open under another key, in another store or in
 another field. One that no key here opens reads as unset: its plugin shows as
 not configured, an API key's copy cannot be shown again (the key still
 authenticates), and a webhook delivery fails with a message to rotate the
-secret rather than going out unsigned. The value is kept as stored until a new
-one is typed in, so putting the right key back — as
-`GOCOMMERCE_SECRETS_KEY_PREVIOUS`, then `secrets seal` — recovers it. Doctor
-names each field; the log names it once an hour.
+secret rather than going out unsigned. The value is kept as stored until a
+save names its field, with a new value or an empty one, so putting the right
+key back — as `GOCOMMERCE_SECRETS_KEY_PREVIOUS`, then `secrets seal` — recovers
+it. The panel's settings form sends the field empty, because it reads as unset,
+so saving that plugin's settings clears it: put the key back first if it should
+be recovered. Doctor names each field; the log names it once an hour.
 
 A key that does not decode to 32 bytes, or `GOCOMMERCE_SECRETS_KEY_PREVIOUS`
 set without `GOCOMMERCE_SECRETS_KEY`, stops the engine at startup with the
