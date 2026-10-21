@@ -79,6 +79,7 @@ func coreMigrations() []Migration {
 		{ID: "0068_product_sample", SQL: migration0068ProductSample},
 		{ID: "0069_password_reset_codes", SQL: migration0069PasswordResetCodes},
 		{ID: "0070_sample_shop", SQL: migration0070SampleShop},
+		{ID: "0071_agent_keys", SQL: migration0071AgentKeys},
 	}
 }
 

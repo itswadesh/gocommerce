@@ -65,6 +65,14 @@ type APIKey struct {
 	LastUsed  *time.Time `json:"last_used_at,omitempty"`
 	RevokedAt *time.Time `json:"revoked_at,omitempty"`
 	RevokedBy *int64     `json:"revoked_by,omitempty"`
+
+	// Kind is "integration" or "agent" (agent_keys.go). Rights, ExpiresAt and
+	// RatePerMinute are an agent key's terms and absent on every other key;
+	// an agent key's Role is empty, because the list is what it may do.
+	Kind          string     `json:"kind"`
+	Rights        []Right    `json:"rights,omitempty"`
+	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
+	RatePerMinute *int       `json:"rate_per_minute,omitempty"`
 }
 
 // Active is whether this key would authenticate.
@@ -74,6 +82,14 @@ func (k *APIKey) Active() bool { return k != nil && k.RevokedAt == nil }
 type APIKeyInput struct {
 	Name string `json:"name"`
 	Role string `json:"role"`
+
+	// Kind is "integration" (the default) or "agent". The rest are an agent
+	// key's terms: the rights it carries instead of a role, the days until it
+	// expires (90 when absent) and its requests a minute (60 when absent).
+	Kind          string  `json:"kind,omitempty"`
+	Rights        []Right `json:"rights,omitempty"`
+	ExpiresInDays *int    `json:"expires_in_days,omitempty"`
+	RatePerMinute *int    `json:"rate_per_minute,omitempty"`
 }
 
 // APIKeys is the service.
@@ -89,6 +105,16 @@ func (a *App) APIKeys() *APIKeys { return a.apiKeys }
 // that loses one revokes it and mints another, which is the only honest thing
 // a system that does not keep the secret can offer.
 func (k *APIKeys) Create(ctx context.Context, in APIKeyInput, by *Superuser) (*APIKey, string, error) {
+	switch in.Kind {
+	case KeyKindAgent:
+		return k.createAgent(ctx, in, by)
+	case "", KeyKindIntegration:
+		if err := refuseAgentTerms(in); err != nil {
+			return nil, "", err
+		}
+	default:
+		return nil, "", Validationf("%q is not a kind of key; a key is for an integration or an agent", in.Kind)
+	}
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
 		return nil, "", Validationf("a key needs a name, so the list says what each one is for")
@@ -141,6 +167,7 @@ func (k *APIKeys) Create(ctx context.Context, in APIKeyInput, by *Superuser) (*A
 	if err != nil {
 		return nil, "", Internalf(err, "save the key")
 	}
+	out.Kind = KeyKindIntegration
 	k.app.log.Info("api key created", "id", out.ID, "prefix", out.Prefix, "role", out.Role)
 	return &out, presented, nil
 }
@@ -153,7 +180,8 @@ func (k *APIKeys) Create(ctx context.Context, in APIKeyInput, by *Superuser) (*A
 func (k *APIKeys) List(ctx context.Context) ([]APIKey, error) {
 	rows, err := k.app.db.QueryContext(ctx, `
 		SELECT id, name, prefix, role, created_at, created_by,
-		       last_used_at, revoked_at, revoked_by
+		       last_used_at, revoked_at, revoked_by,
+		       kind, to_jsonb(rights), expires_at, rate_per_minute
 		FROM api_keys
 		ORDER BY revoked_at IS NOT NULL, id DESC`)
 	if err != nil {
@@ -164,9 +192,14 @@ func (k *APIKeys) List(ctx context.Context) ([]APIKey, error) {
 	out := []APIKey{}
 	for rows.Next() {
 		var a APIKey
+		var rights []byte
 		if err := rows.Scan(&a.ID, &a.Name, &a.Prefix, &a.Role, &a.CreatedAt, &a.CreatedBy,
-			&a.LastUsed, &a.RevokedAt, &a.RevokedBy); err != nil {
+			&a.LastUsed, &a.RevokedAt, &a.RevokedBy,
+			&a.Kind, &rights, &a.ExpiresAt, &a.RatePerMinute); err != nil {
 			return nil, Internalf(err, "read a key")
+		}
+		if a.Rights, err = decodeKeyRights(rights); err != nil {
+			return nil, Internalf(err, "read a key's rights")
 		}
 		out = append(out, a)
 	}
@@ -211,6 +244,9 @@ func (k *APIKeys) Revoke(ctx context.Context, id int64, by *Superuser) error {
 // A key issued before M46 has nothing stored and says so, rather than
 // returning an empty string the screen would render as a blank box.
 func (k *APIKeys) Secret(ctx context.Context, id int64) (string, error) {
+	if err := k.refuseAgentSecret(ctx, id); err != nil {
+		return "", err
+	}
 	var secret, name string
 	err := k.app.db.QueryRowContext(ctx,
 		`SELECT secret, name FROM api_keys WHERE id = $1`, id).Scan(&secret, &name)
@@ -247,20 +283,33 @@ func (k *APIKeys) Resolve(ctx context.Context, presented string) (*Superuser, bo
 		hash     string
 		revoked  *time.Time
 		lastUsed *time.Time
+		kind     string
+		listed   []byte
+		expired  bool
 	)
+	// expired is the database's answer, from the same clock that set
+	// expires_at, so a replica whose clock drifts cannot extend a key.
 	err := k.app.db.QueryRowContext(ctx, `
-		SELECT id, name, role, token_hash, revoked_at, last_used_at
+		SELECT id, name, role, token_hash, revoked_at, last_used_at,
+		       kind, to_jsonb(rights), coalesce(expires_at <= now(), false)
 		FROM api_keys WHERE prefix = $1`, prefix,
-	).Scan(&id, &name, &role, &hash, &revoked, &lastUsed)
+	).Scan(&id, &name, &role, &hash, &revoked, &lastUsed, &kind, &listed, &expired)
 	if err != nil {
 		return nil, false
 	}
-	if revoked != nil {
+	if revoked != nil || expired {
 		return nil, false
 	}
 	// Constant time, so a near-miss cannot be walked towards a hit by timing.
 	if subtle.ConstantTimeCompare([]byte(hash), []byte(hashAPIKey(presented))) != 1 {
 		return nil, false
+	}
+	if kind == KeyKindAgent {
+		su, ok := k.agentCaller(id, name, listed)
+		if ok {
+			k.touch(ctx, id, lastUsed)
+		}
+		return su, ok
 	}
 
 	// Rights as this store cut them, not the role's shipped defaults — the
@@ -278,6 +327,10 @@ func (k *APIKeys) Resolve(ctx context.Context, presented string) (*Superuser, bo
 		Email:  "api key: " + name,
 		Role:   role,
 		Rights: rights,
+		// Who it is, for the audit trail (auditActor): the row names the
+		// key rather than an operator 0 every key used to share.
+		KeyID:   id,
+		KeyKind: KeyKindIntegration,
 	}, true
 }
 
@@ -350,6 +403,8 @@ func isRole(role string) bool {
 func (a *App) mountAPIKeyRoutes() {
 	a.HandleAdminFunc("GET /api/admin/api-keys", a.handleListAPIKeys, RightAPIKeysRead)
 	a.HandleAdminFunc("POST /api/admin/api-keys", a.handleCreateAPIKey, RightAPIKeysWrite)
+	// What the caller may give an agent key: the panel's checklist.
+	a.HandleAdminFunc("GET /api/admin/api-keys/agent-rights", a.handleAgentRights, RightAPIKeysWrite)
 	a.HandleAdminFunc("DELETE /api/admin/api-keys/{id}", a.handleRevokeAPIKey, RightAPIKeysWrite)
 	// apikeys.write, not apikeys.read: seeing the credential is a different act
 	// from knowing the key exists.

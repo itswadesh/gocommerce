@@ -76,6 +76,13 @@ type Superuser struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
+	// KeyID and KeyKind are set when the caller is an API key rather than a
+	// person (ID is then 0): the key's id, and "integration" or "agent". They
+	// are how the audit trail names the key that acted and how masking knows
+	// an agent is asking, without a second kind of caller on the context.
+	KeyID   int64  `json:"key_id,omitempty"`
+	KeyKind string `json:"key_kind,omitempty"`
+
 	passwordHash string
 }
 
