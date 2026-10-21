@@ -4,7 +4,7 @@
       "get": {
         "tags": ["admin:invoices"],
         "summary": "The invoices issued, newest first",
-        "description": "Requires orders.read. There are no filters and no search: the query is the whole table, newest id first. An invoice is found from its order, not by its number. The seller name, address and tax ID printed on the document come from the invoices module's configuration in the store's own main() and have no API.",
+        "description": "Requires invoices.read, a right this module declares; by default the same built-in roles carry it as carry orders.read. There are no filters and no search: the query is the whole table, newest id first. An invoice is found from its order, not by its number. The seller name, address and tax ID printed on the document come from the invoices module's configuration in the store's own main() and have no API.",
         "security": [{"adminToken": []}],
         "parameters": [
           {"$ref": "#/components/parameters/Limit"},
@@ -29,7 +29,7 @@
       "get": {
         "tags": ["admin:invoices"],
         "summary": "The invoice for an order",
-        "description": "Requires orders.read — the document embeds the buyer's name, email and address, so whoever may read the order may read it and whoever may not, may not. Returns a complete, self-contained printable HTML document by default, and JSON when the Accept header contains application/json. The JSON branch returns money as {amount_minor, currency}, like every other response.",
+        "description": "Requires invoices.read, a right this module declares; by default the same built-in roles carry it as carry orders.read. The document embeds the buyer's name, email and address, so it is personal data exactly as the order is. Returns a complete, self-contained printable HTML document by default, and JSON when the Accept header contains application/json. The JSON branch returns money as {amount_minor, currency}, like every other response.",
         "security": [{"adminToken": []}],
         "parameters": [
           {"name": "orderId", "in": "path", "required": true, "schema": {"type": "integer", "format": "int64", "minimum": 1}, "description": "The ORDER's id, not the invoice's. The list row carries both."}

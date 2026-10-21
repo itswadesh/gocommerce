@@ -15,8 +15,8 @@ Deeper procedural guides live in [`skills/`](skills/). Start here.
 
 GoCommerce is a commerce **engine**, not an application: a store is its own Go
 program that composes the engine with the modules it needs in `main()`. Read
-`PLAN.md` §5 for the decision table (D1–D25); it is the authority, and this
-file is its operational summary.
+`PLAN.md` §5 for the numbered decisions (D1, D2, …); it is the authority, and
+this file is its operational summary.
 
 ```
 core/                the engine — still `package gocommerce`
