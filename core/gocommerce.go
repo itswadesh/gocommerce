@@ -129,7 +129,8 @@ type Config struct {
 	// bytes in base64, read from GOCOMMERCE_SECRETS_KEY, and it never goes in
 	// the database: that is the point of it. Empty, secrets are stored
 	// readable, as they always were. Lose it and every sealed secret has to be
-	// entered again.
+	// entered again. New keeps it in the sealer and blanks it here, so
+	// App.Config() never hands it to a module.
 	SecretsKey string
 	// SecretsKeyPrevious still opens what the previous key sealed, so the key
 	// can be rotated: `gocommerce secrets seal` moves those values under
@@ -496,6 +497,9 @@ func New(cfg Config, mods ...Module) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	// From here the sealer holds them. Config() is handed to every module,
+	// and nothing outside the sealer has a use for the key material.
+	cfg.SecretsKey, cfg.SecretsKeyPrevious = "", ""
 	if err := validateModules(mods); err != nil {
 		return nil, err
 	}
