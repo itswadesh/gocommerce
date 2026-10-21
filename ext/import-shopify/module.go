@@ -175,7 +175,15 @@ func (m *Module) settings(ctx context.Context) (*Client, error) {
 		s, _ := values[key].(string)
 		return strings.TrimSpace(s)
 	}
-	return NewClient(str("shop"), str("access_token"))
+	client, err := NewClient(str("shop"), str("access_token"))
+	if err != nil {
+		return nil, err
+	}
+	// The shop is whatever the operator typed, and the next page is wherever
+	// that shop's Link header says, so neither is trusted with the server's
+	// own network.
+	client.HTTP = m.app.OutboundClient(client.HTTP.Timeout)
+	return client, nil
 }
 
 func (m *Module) handleCheck(w http.ResponseWriter, r *http.Request) {

@@ -110,13 +110,7 @@ func (m *Module) post(ctx context.Context, p pending) (int, error) {
 	req.Header.Set("X-GoCommerce-Event", p.eventName)
 	req.Header.Set("X-GoCommerce-Signature", sign(p.secret, ts, p.payload))
 
-	client := &http.Client{
-		Timeout: m.cfg.Timeout,
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return errors.New("endpoint redirected; a webhook URL must be final")
-		},
-	}
-	resp, err := client.Do(req)
+	resp, err := m.client.Do(req)
 	if err != nil {
 		return 0, err
 	}

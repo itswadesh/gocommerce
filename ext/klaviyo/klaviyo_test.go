@@ -54,7 +54,7 @@ func (f *fakeKlaviyo) metrics() []string {
 func TestOrdersBecomeKlaviyoEvents(t *testing.T) {
 	fake := &fakeKlaviyo{}
 	server := gctest.StubHTTP(t, fake.handler)
-	app := gctest.New(t, New(Config{BaseURL: server.URL}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{BaseURL: server.URL}))
 	ctx := context.Background()
 
 	product := gctest.CreateProduct(t, app, "KL-TEE", 2500, 10)
@@ -108,7 +108,7 @@ func TestOrdersBecomeKlaviyoEvents(t *testing.T) {
 }
 
 func TestKlaviyoRoutesAreDocumentedAndGated(t *testing.T) {
-	app := gctest.New(t, New(Config{}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{}))
 	gctest.AssertAdminRoutesDeclareRights(t, app, "klaviyo")
 	gctest.AssertSpecCoversModuleRoutes(t, app, "klaviyo")
 }

@@ -163,13 +163,13 @@ func (m *Module) Register(app *gocommerce.App) error {
 			{Key: "key_secret", Label: "Key secret", Kind: "secret", Required: !inCode},
 			{Key: "webhook_secret", Label: "Webhook secret", Kind: "secret", Required: !inCode},
 			{Key: "hosted", Label: "Use the hosted checkout page", Kind: "bool", Help: "A redirect instead of the in-page widget."},
-			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production."},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Outbound: true, Help: "Empty for production."},
 		},
 	})
 	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
-		m.client = &http.Client{Timeout: 20 * time.Second}
+		m.client = app.OutboundClient(20 * time.Second)
 	}
 	m.log = app.Log()
 	m.db = app.DB()

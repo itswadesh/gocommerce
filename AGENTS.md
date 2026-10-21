@@ -224,6 +224,20 @@ context runs unbound and sees nothing — and background work runs through
 `app.ForEachStore`. An `ON CONFLICT` target names `store_id` first, as the
 rewritten keys do.
 
+### 16. An address a store chose is called through `app.OutboundClient`
+
+A store operator types addresses the server then connects to — a webhook
+endpoint, a provider's API base URL, a search host, a shop to import from —
+and on an install that hosts stores for other people that operator is a
+stranger. So a module's default HTTP client is `app.OutboundClient(timeout)`,
+never `&http.Client{}`: unless the install sets `AllowPrivateURLs`, it
+connects only to public addresses, judged on the address it actually dials,
+redirects included (D109). A url plugin setting the server connects to is
+marked `Outbound: true`, so it is refused as it is typed rather than at the
+first sale. A `Config.Client` the store's own `main()` injects is used as
+given, and an address the server's owner set in the environment — a local
+Meilisearch, a local model — may use an ordinary client.
+
 ---
 
 ## Before you finish

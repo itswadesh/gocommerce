@@ -79,13 +79,7 @@ type Module struct {
 }
 
 // New constructs the module.
-func New(cfg Config) *Module {
-	client := cfg.Client
-	if client == nil {
-		client = &http.Client{Timeout: 8 * time.Second}
-	}
-	return &Module{cfg: cfg, client: client}
-}
+func New(cfg Config) *Module { return &Module{cfg: cfg} }
 
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "klaviyo" }
@@ -97,6 +91,10 @@ func (m *Module) Migrations() []gocommerce.Migration { return nil }
 func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	m.log = app.Log().With("module", "klaviyo")
+	m.client = m.cfg.Client
+	if m.client == nil {
+		m.client = app.OutboundClient(8 * time.Second)
+	}
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "Klaviyo", Category: "marketing",
 		Description:    "Email and SMS marketing: every order and abandoned cart becomes a Klaviyo event on the shopper's profile, under the metric names Klaviyo's flows already know. The public key powers onsite tracking and signup forms.",

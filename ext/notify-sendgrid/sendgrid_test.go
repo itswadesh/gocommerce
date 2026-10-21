@@ -65,7 +65,7 @@ func (s *stub) all() []captured {
 func TestUnconfiguredWaitsForThePanel(t *testing.T) {
 	s := &stub{}
 	server := gctest.StubHTTP(t, s.handler)
-	app := gctest.New(t, New(Config{BaseURL: server.URL}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{BaseURL: server.URL}))
 	ctx := context.Background()
 
 	email := channel(app, gocommerce.ChannelEmail)
@@ -129,7 +129,7 @@ func channel(app *gocommerce.App, name string) gocommerce.NotifierChannelInfo {
 func TestPanelWordingWins(t *testing.T) {
 	s := &stub{}
 	server := gctest.StubHTTP(t, s.handler)
-	app := gctest.New(t, New(Config{
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{
 		APIKey: "SG.test", From: "orders@example.com", BaseURL: server.URL,
 		Subjects: map[string]string{gocommerce.EventOrderCreated: "Code says {{.order_number}}"},
 	}))
@@ -171,7 +171,7 @@ func TestSendsOrderEmails(t *testing.T) {
 	s := &stub{}
 	server := gctest.StubHTTP(t, s.handler)
 
-	app := gctest.New(t, New(Config{
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{
 		APIKey: "SG.test", From: "orders@example.com", FromName: "Example",
 		BaseURL: server.URL,
 	}))
@@ -221,7 +221,7 @@ func TestCustomTemplates(t *testing.T) {
 	s := &stub{}
 	server := gctest.StubHTTP(t, s.handler)
 
-	app := gctest.New(t, New(Config{
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{
 		APIKey: "SG.test", From: "orders@example.com", BaseURL: server.URL,
 		Subjects: map[string]string{
 			gocommerce.EventOrderCreated: "Merci pour votre commande {{.order_number}}",
@@ -252,7 +252,7 @@ func TestRejectedMessageDoesNotRetryForever(t *testing.T) {
 	s := &stub{status: http.StatusBadRequest}
 	server := gctest.StubHTTP(t, s.handler)
 
-	app := gctest.New(t, New(Config{
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{
 		APIKey: "SG.test", From: "orders@example.com", BaseURL: server.URL,
 	}))
 

@@ -66,6 +66,12 @@ type PluginField struct {
 	Required bool `json:"required,omitempty"`
 	// Default is what an unset field reads as.
 	Default any `json:"default,omitempty"`
+	// Outbound marks a url setting the server itself connects to — a
+	// provider's API base URL — as opposed to one it only hands out, like a
+	// storefront link. A new value is checked with App.ValidateOutboundURL as
+	// it is saved, so an address the install would refuse to call is refused
+	// while the operator is typing it (D109).
+	Outbound bool `json:"-"`
 }
 
 // Plugin is a descriptor with its state.
@@ -320,6 +326,14 @@ func (p *Plugins) Update(ctx context.Context, key string, patch PluginPatch) (*P
 			if clean == nil || clean == "" {
 				delete(settings, k)
 				continue
+			}
+			// Only a changed value is judged: a form that saves every field
+			// must not be refused over an address it did not touch. One the
+			// switch let in earlier is refused where it is used instead.
+			if s, ok := clean.(string); ok && f.Outbound && clean != current.settings[k] {
+				if problem := p.app.outboundURLProblem(s); problem != "" {
+					return Validationf("Enter %s as an address on the public internet: %s.", f.Label, problem)
+				}
 			}
 			settings[k] = clean
 		}

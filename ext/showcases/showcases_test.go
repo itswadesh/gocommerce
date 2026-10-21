@@ -371,7 +371,7 @@ func TestTheLinkCheckAsksYouTube(t *testing.T) {
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(`{"title":"Diwali gold, live"}`))
 	})
-	app := gctest.New(t, New(Config{YouTubeOEmbedURL: stub.URL}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{YouTubeOEmbedURL: stub.URL}))
 	check := func() Check {
 		t.Helper()
 		rec := gctest.AdminRequest(t, app, http.MethodPost, "/api/admin/x/showcases/check", map[string]any{"url": ytLink})

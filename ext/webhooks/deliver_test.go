@@ -59,7 +59,7 @@ func TestADeliveryIsPostedAndMarkedDelivered(t *testing.T) {
 	})
 
 	mod := New(Config{})
-	app := gctest.New(t, mod)
+	app := localApp(t, mod)
 	e := create(t, app, map[string]any{"url": srv.URL, "events": []string{"order.*"}})
 
 	gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
@@ -91,7 +91,7 @@ func TestTheRequestIsSignedWithTheEndpointSecret(t *testing.T) {
 	})
 
 	mod := New(Config{})
-	app := gctest.New(t, mod)
+	app := localApp(t, mod)
 	e := create(t, app, map[string]any{"url": srv.URL, "events": []string{"order.*"}})
 
 	gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
@@ -131,7 +131,7 @@ func TestAFailedDeliveryBacksOffAndStaysPending(t *testing.T) {
 	})
 
 	mod := New(Config{})
-	app := gctest.New(t, mod)
+	app := localApp(t, mod)
 	create(t, app, map[string]any{"url": srv.URL, "events": []string{"order.*"}})
 
 	gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
@@ -166,7 +166,7 @@ func TestDeliveryGivesUpVisiblyAndCanBeRetriedByHand(t *testing.T) {
 	})
 
 	mod := New(Config{})
-	app := gctest.New(t, mod)
+	app := localApp(t, mod)
 	create(t, app, map[string]any{"url": srv.URL, "events": []string{"order.*"}})
 
 	gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
@@ -211,7 +211,7 @@ func TestADeliveredRowIsNotSentTwice(t *testing.T) {
 	})
 
 	mod := New(Config{})
-	app := gctest.New(t, mod)
+	app := localApp(t, mod)
 	create(t, app, map[string]any{"url": srv.URL, "events": []string{"order.*"}})
 
 	gctest.PlaceOrder(t, app, gocommerce.CodeCOD)

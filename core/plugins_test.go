@@ -250,3 +250,62 @@ func TestSettingErrorsSayWhatToEnter(t *testing.T) {
 		}
 	}
 }
+
+// fakeProvider is a module whose plugin has an address the server itself
+// connects to, the shape of every gateway's and carrier's API base URL.
+type fakeProvider struct{}
+
+func (fakeProvider) Name() string            { return "fake-provider" }
+func (fakeProvider) Migrations() []Migration { return nil }
+func (fakeProvider) Register(app *App) error {
+	app.RegisterPlugin(PluginDef{
+		Key: "fake-provider", Title: "Fake Provider", Category: "payments",
+		Fields: []PluginField{
+			{Key: "api_key", Label: "API key", Kind: "secret"},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Outbound: true},
+		},
+	})
+	return nil
+}
+
+// An address the server will connect to is refused when it is typed if the
+// install would refuse to call it, rather than on the first sale that needs
+// it. An address the store only hands out is not the server's to judge.
+func TestAnOutboundSettingMustBePublic(t *testing.T) {
+	app := newTestApp(t, fakeProvider{})
+	ctx := context.Background()
+
+	for _, bad := range []string{
+		"http://127.0.0.1:9000", "http://localhost:9000", "https://10.0.0.5/v1",
+		"http://169.254.169.254", "https://[::1]/", "http://metadata.google.internal",
+	} {
+		_, err := app.Plugins().Update(ctx, "fake-provider", PluginPatch{Settings: map[string]any{"base_url": bad}})
+		if err == nil {
+			t.Errorf("base_url %q was saved", bad)
+			continue
+		}
+		if msg := err.Error(); !strings.Contains(msg, "API base URL") || !strings.Contains(msg, "public") {
+			t.Errorf("base_url %q: %q, want it to name the setting and ask for a public address", bad, msg)
+		}
+	}
+	if _, err := app.Plugins().Update(ctx, "fake-provider", PluginPatch{Settings: map[string]any{"base_url": "https://api.example.com/v1"}}); err != nil {
+		t.Errorf("a public base_url was refused: %v", err)
+	}
+	if _, err := app.Plugins().Update(ctx, "hello-bar", PluginPatch{Settings: map[string]any{"link": "http://localhost:5173/sale"}}); err != nil {
+		t.Errorf("a link the storefront shows was judged as somewhere the server calls: %v", err)
+	}
+
+	// Allowed, the same address saves; and a later save that leaves it as it
+	// was is not refused for it once the switch is off again.
+	app.cfg.AllowPrivateURLs = true
+	if _, err := app.Plugins().Update(ctx, "fake-provider", PluginPatch{Settings: map[string]any{"base_url": "http://127.0.0.1:9000"}}); err != nil {
+		t.Fatalf("with private addresses allowed: %v", err)
+	}
+	app.cfg.AllowPrivateURLs = false
+	if _, err := app.Plugins().Update(ctx, "fake-provider", PluginPatch{Settings: map[string]any{"base_url": "http://127.0.0.1:9000", "api_key": "k-1"}}); err != nil {
+		t.Errorf("re-saving the stored address with another change: %v", err)
+	}
+	if _, err := app.Plugins().Update(ctx, "fake-provider", PluginPatch{Settings: map[string]any{"base_url": "http://127.0.0.1:9001"}}); err == nil {
+		t.Error("a changed private address was saved with the switch off")
+	}
+}

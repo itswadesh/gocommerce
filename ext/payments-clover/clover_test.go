@@ -169,7 +169,7 @@ func newApp(t *testing.T, change ...func(*Config)) (*gocommerce.App, *cloverStub
 	for _, c := range change {
 		c(&cfg)
 	}
-	return gctest.New(t, New(cfg)), stub
+	return gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(cfg)), stub
 }
 
 // The module's reason to exist, end to end: a Hosted Checkout session for the
@@ -467,7 +467,7 @@ func TestRefundNeedsAPayment(t *testing.T) {
 // registers, so the panel lists it, but it is not offered at checkout until
 // its fields are typed into the plugin.
 func TestInstalledIdleUntilConfigured(t *testing.T) {
-	app := gctest.New(t, New(Config{}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{}))
 	ctx := context.Background()
 
 	listed := false

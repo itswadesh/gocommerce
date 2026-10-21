@@ -167,13 +167,13 @@ func (m *Module) Register(app *gocommerce.App) error {
 			{Key: "auto_assign", Label: "Auto-assign a driver", Kind: "bool", Help: "Assigning somebody's next two hours is a decision; off by default."},
 			{Key: "team_id", Label: "Team ID", Kind: "text", Help: "Scopes auto-assignment to one team."},
 			{Key: "service_time_minutes", Label: "Service time (minutes)", Kind: "number", Help: "How long the driver is expected at the door; empty leaves Onfleet's default."},
-			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production."},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Outbound: true, Help: "Empty for production."},
 		},
 	})
 	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
-		m.client = &http.Client{Timeout: 30 * time.Second}
+		m.client = app.OutboundClient(30 * time.Second)
 	}
 	m.log = app.Log()
 

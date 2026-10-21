@@ -129,7 +129,7 @@ func TestTheCatalogueIsSyncedAndSearched(t *testing.T) {
 	fake := newFake()
 	server := gctest.StubHTTP(t, fake.handler)
 	m := New(Config{Poll: -1})
-	app := gctest.New(t, m)
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, m)
 	ctx := context.Background()
 
 	widget := gctest.CreateProduct(t, app, "MS-WIDGET", 1999, 5)

@@ -93,7 +93,7 @@ func configure(t *testing.T, app *gocommerce.App, settings map[string]any) {
 func TestConfiguredFromThePanel(t *testing.T) {
 	s := &stub{}
 	server := gctest.StubHTTP(t, s.handler)
-	app := gctest.New(t, New(Config{BaseURL: server.URL}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{BaseURL: server.URL}))
 	ctx := context.Background()
 
 	if channel(app, gocommerce.ChannelSMS).Delivers {
@@ -148,7 +148,7 @@ func TestConfiguredFromThePanel(t *testing.T) {
 func TestAMessagingServiceReplacesTheFromNumber(t *testing.T) {
 	s := &stub{}
 	server := gctest.StubHTTP(t, s.handler)
-	app := gctest.New(t, New(Config{BaseURL: server.URL}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{BaseURL: server.URL}))
 	configure(t, app, map[string]any{
 		"account_sid": "AC123", "auth_token": "secret",
 		"from": "+15550000000", "messaging_service_sid": "MG999",
@@ -180,7 +180,7 @@ func TestARefusedNumberSettlesRatherThanRetrying(t *testing.T) {
 		body:   `{"code":21211,"message":"The 'To' number is not a valid phone number."}`,
 	}
 	server := gctest.StubHTTP(t, s.handler)
-	app := gctest.New(t, New(Config{BaseURL: server.URL}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{BaseURL: server.URL}))
 	configure(t, app, map[string]any{
 		"account_sid": "AC123", "auth_token": "secret", "from": "+15550000000",
 	})
@@ -201,7 +201,7 @@ func TestARefusedNumberSettlesRatherThanRetrying(t *testing.T) {
 func TestAnOutageIsRetried(t *testing.T) {
 	s := &stub{status: http.StatusServiceUnavailable, body: `{"message":"service unavailable"}`}
 	server := gctest.StubHTTP(t, s.handler)
-	app := gctest.New(t, New(Config{BaseURL: server.URL}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{BaseURL: server.URL}))
 	configure(t, app, map[string]any{
 		"account_sid": "AC123", "auth_token": "secret", "from": "+15550000000",
 	})
@@ -219,7 +219,7 @@ func TestAnOutageIsRetried(t *testing.T) {
 func TestPanelWordingWins(t *testing.T) {
 	s := &stub{}
 	server := gctest.StubHTTP(t, s.handler)
-	app := gctest.New(t, New(Config{BaseURL: server.URL}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{BaseURL: server.URL}))
 	ctx := context.Background()
 	configure(t, app, map[string]any{
 		"account_sid": "AC123", "auth_token": "secret", "from": "+15550000000",
@@ -258,7 +258,7 @@ func TestTheRequestIsFormEncoded(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"sid":"SM1","status":"queued"}`))
 	})
-	app := gctest.New(t, New(Config{BaseURL: server.URL}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{BaseURL: server.URL}))
 	configure(t, app, map[string]any{
 		"account_sid": "AC123", "auth_token": "secret", "from": "+15550000000",
 	})

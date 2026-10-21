@@ -207,14 +207,14 @@ func (m *Module) Register(app *gocommerce.App) error {
 			{Key: "api_key", Label: "API key", Kind: "secret", Required: !inCode, Help: "An API credential's key, sent as X-API-Key."},
 			{Key: "merchant_account", Label: "Merchant account", Kind: "text", Required: !inCode},
 			{Key: "hmac_key", Label: "Webhook HMAC key", Kind: "secret", Required: !inCode, Help: "Hex, as generated for the webhook in the Customer Area."},
-			{Key: "base_url", Label: "Checkout API base URL", Kind: "url", Required: !inCode, Help: "Including the version segment: https://checkout-test.adyen.com/v71 for test, your own prefixed host for live."},
+			{Key: "base_url", Label: "Checkout API base URL", Kind: "url", Outbound: true, Required: !inCode, Help: "Including the version segment: https://checkout-test.adyen.com/v71 for test, your own prefixed host for live."},
 			{Key: "return_url", Label: "Return URL", Kind: "url", Help: "Where the shopper lands after paying, when the checkout did not say."},
 		},
 	})
 	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
-		m.client = &http.Client{Timeout: 20 * time.Second}
+		m.client = app.OutboundClient(20 * time.Second)
 	}
 	m.log = app.Log()
 	m.db = app.DB()

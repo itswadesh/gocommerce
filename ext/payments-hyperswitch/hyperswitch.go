@@ -208,13 +208,13 @@ func (m *Module) Register(app *gocommerce.App) error {
 			{Key: "profile_id", Label: "Profile ID", Kind: "text", Help: "Only needed when the merchant has more than one business profile."},
 			{Key: "return_url", Label: "Return URL", Kind: "url", Help: "Where the shopper lands after paying; required for a payment link unless the checkout sends one."},
 			{Key: "session_expiry_seconds", Label: "Link expiry (seconds)", Kind: "number", Help: "Empty leaves Hyperswitch's default."},
-			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "The sandbox, or a self-hosted router."},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Outbound: true, Help: "The sandbox, or a self-hosted router."},
 		},
 	})
 	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
-		m.client = &http.Client{Timeout: 20 * time.Second}
+		m.client = app.OutboundClient(20 * time.Second)
 	}
 	m.log = app.Log()
 	m.db = app.DB()
