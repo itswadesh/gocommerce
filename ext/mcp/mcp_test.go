@@ -585,3 +585,20 @@ func TestAnAgentKeyReachesOnlyTheReadTools(t *testing.T) {
 		t.Errorf("the agent read an address in full: %s", encoded)
 	}
 }
+
+// list_orders by email is an exact match on an address the agent is shown
+// masked, so it would confirm a guess: refused, with the reason.
+func TestAnAgentCannotListOrdersByEmail(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
+	agent := gctest.AgentKey(t, app, "agent.dispatch", gocommerce.RightOrdersRead)
+
+	result, rpcErr := sessionTool(t, app, agent, "list_orders", map[string]any{"email": "gctest@example.com"})
+	if rpcErr != nil {
+		t.Fatalf("list_orders: %s", rpcErr.Message)
+	}
+	encoded, _ := json.Marshal(result)
+	if isError, _ := result["isError"].(bool); !isError || !strings.Contains(string(encoded), "agent key cannot filter orders by email") {
+		t.Errorf("an agent listing orders by email = %s, want a refusal saying why", encoded)
+	}
+}

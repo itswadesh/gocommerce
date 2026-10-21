@@ -122,6 +122,11 @@ func customerSearchClause(search string, args *[]any, masked bool) string {
 // orders typed with different capitals are one person; two people sharing an
 // address are not.
 func (s *Orders) Customers(ctx context.Context, q CustomerQuery) ([]*Customer, int, error) {
+	if q.Sort.Field == "email" {
+		if err := refuseAgentContactMatch(ctx, "sort by email"); err != nil {
+			return nil, 0, err
+		}
+	}
 	where, args := []string{"o.email <> ''"}, []any{}
 	if clause := customerSearchClause(q.Search, &args, s.app.masks(ctx)); clause != "" {
 		where = append(where, clause)

@@ -110,6 +110,46 @@ func TestAnAgentKeyLosesWhatItsIssuerLoses(t *testing.T) {
 	}
 }
 
+// An exact match on an address confirms a guess — firstname.lastname@gmail.com
+// either has orders or it does not — so an agent may not filter, sort or
+// preview by a customer's email, and is told why.
+func TestAnAgentCannotLookACustomerUpByEmail(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	owner := person(t, app, "owner@example.com", RoleOwner)
+	_, agent := newAgentKey(t, app, owner, "Order desk",
+		RightOrdersRead, RightCustomersRead, RightDiscountsRead)
+	_, staff, err := app.APIKeys().Create(ctx, APIKeyInput{Name: "Staff script", Role: RoleStaff}, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paidOrder(t, app, "AGENT-EMAIL", 1500, 3)
+
+	for _, path := range []string{
+		"/api/admin/orders?email=shopper@example.com",
+		"/api/admin/orders?sort=email",
+		"/api/admin/customers?sort=email",
+	} {
+		rec := do(t, app, http.MethodGet, path, bearer(agent))
+		wantAgentRefused(t, rec, rec.Body.String(), "agent GET "+path)
+		if !strings.Contains(rec.Body.String(), "email") {
+			t.Errorf("%s: the refusal does not say it is the email: %s", path, rec.Body)
+		}
+		if rec := do(t, app, http.MethodGet, path, bearer(staff)); rec.Code != http.StatusOK {
+			t.Errorf("an integration key GET %s = %d: %s", path, rec.Code, rec.Body)
+		}
+	}
+	rec := doBody(t, app, http.MethodPost, "/api/admin/discounts/1/preview",
+		`{"subtotal_minor":1000,"email":"shopper@example.com"}`, bearer(agent))
+	wantAgentRefused(t, rec, rec.Body.String(), "agent previewing a discount for an address")
+
+	// The service says it too, for a caller that is not a route (ext/mcp).
+	agentCtx := WithSuperuser(ctx, &Superuser{KeyID: 9, KeyKind: KeyKindAgent, Rights: []Right{RightOrdersRead}})
+	if _, _, err := app.Order().List(agentCtx, OrderQuery{Email: "shopper@example.com"}); err == nil {
+		t.Error("Orders.List filtered by email for an agent")
+	}
+}
+
 // The merchant's free-form fields — an order's and a line's metadata, the
 // shop's note on an order, a cart's metadata, a parcel's label link — are not
 // fields the mask can read, so an agent is given none of them.

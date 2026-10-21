@@ -369,6 +369,23 @@ func agentCalling(ctx context.Context) bool {
 	return su != nil && su.KeyKind == KeyKindAgent
 }
 
+// refuseAgentContactMatch is the answer to an agent asking for a customer by
+// their email address or phone number. Both are masked for an agent, and an
+// exact match would confirm a guess — firstname.lastname@gmail.com either has
+// orders or it does not — which is the address handed over one guess at a
+// time. Searching by name and order number is unaffected.
+func refuseAgentContactMatch(ctx context.Context, what string) error {
+	if !agentCalling(ctx) {
+		return nil
+	}
+	return &APIError{
+		Status: http.StatusForbidden,
+		Code:   "agent_key_refused",
+		Message: "an agent key cannot " + what + ": customers' email addresses and phone numbers are " +
+			"masked for it, and an exact match would confirm a guess",
+	}
+}
+
 // admitAgent is what an agent key goes through on every request after it has
 // authenticated: its rate, then the routes no agent may reach. It writes the
 // refusal itself and reports whether the request may go on.
