@@ -380,6 +380,19 @@ The approval queue:
   agent keys exist. The decider's email is kept beside their id, because the
   people table is the install's, not the store's.
 
+The Amazon importer:
+
+- **The gateway's answer is final for a store that switched it on.** When the
+  gateway refuses a rewrite (a cap that cannot cover it, catalogue sharing
+  off, an answer that failed its checks), the import keeps the listing's own
+  copy with the reason as a warning, and does not fall back to the
+  environment's key: that key is not a way round the store's own cap.
+- **`Run`, not `Enqueue`.** An import is already a worker of its own holding
+  no transaction, so the rewrite runs now and the job waits for it. The
+  import carries its request's trace into the run.
+- **The listing is catalogue data,** so a store that has switched catalogue
+  sharing off gets no rewrite, said in so many words.
+
 ## Not in this step
 
 - Custom provider hosts (after D109's guard has merged).

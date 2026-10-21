@@ -67,13 +67,14 @@ import (
 func main() {
 	log.SetFlags(0)
 
+	// Every model call the store makes goes through the gateway: counted,
+	// held to a monthly cap, recorded, and limited to the data the owner lets
+	// leave. It installs idle; the key, the cap and the prices are typed into
+	// Settings › Plugins › AI gateway, and nothing is called until they are.
+	gateway := aigateway.New(aigateway.Config{})
+
 	modules := []gocommerce.Module{
-		// Every model call the store makes goes through the gateway: counted,
-		// held to a monthly cap, recorded, and limited to the data the owner
-		// lets leave. It installs idle; the key, the cap and the prices are
-		// typed into Settings › Plugins › AI gateway, and nothing is called
-		// until they are.
-		aigateway.New(aigateway.Config{}),
+		gateway,
 
 		// Numbered invoices whenever an order is paid. It subscribes to
 		// order.paid and owns its own tables; the engine knows nothing about
@@ -125,8 +126,9 @@ func main() {
 		// machine. Nothing is started until an operator asks for an import,
 		// so a server without Chrome boots all the same and the first job says
 		// what is missing. The copy is rewritten by whichever model is
-		// configured — an Anthropic, Gemini or OpenAI key, or a local server —
-		// and used as scraped when none is; with IMPORT_AMAZON_HEADED set the
+		// configured — the gateway above once the store switches it on, else
+		// an Anthropic, Gemini or OpenAI key, or a local server — and used as
+		// scraped when none is; with IMPORT_AMAZON_HEADED set the
 		// browser is visible, which is what gets a person past Amazon's robot
 		// check once.
 		amazon.New(amazon.Config{
@@ -136,6 +138,7 @@ func main() {
 			LLMBaseURL:      os.Getenv("IMPORT_AMAZON_LLM_URL"),
 			Model:           os.Getenv("IMPORT_AMAZON_LLM_MODEL"),
 			Headed:          os.Getenv("IMPORT_AMAZON_HEADED") != "",
+			Gateway:         gateway,
 		}),
 		// A whole Shopify catalogue over its Admin API. No configuration here:
 		// the shop domain and the access token are plugin settings, so a
