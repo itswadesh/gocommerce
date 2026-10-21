@@ -12,6 +12,48 @@ import (
 // The review of agent keys (PR #69): what an agent could still reach, what
 // outlived its issuer, and what a filter could confirm.
 
+// wantAgentRefused asserts the 403 an agent key gets where it can never go.
+func wantAgentRefused(t *testing.T, rec interface {
+	Result() *http.Response
+}, body, what string) {
+	t.Helper()
+	if code := rec.Result().StatusCode; code != http.StatusForbidden || !strings.Contains(body, "agent_key_refused") {
+		t.Errorf("%s = %d, want 403 agent_key_refused: %s", what, code, body)
+	}
+}
+
+// The notification log is the full text of what the store sent, filled in,
+// and an agent reached it with orders.read alone. So it is closed to an agent
+// whatever it holds. The templates, which are wording, stay readable.
+func TestAnAgentCannotReadTheNotificationLog(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	owner := person(t, app, "owner@example.com", RoleOwner)
+	_, agent := newAgentKey(t, app, owner, "Order desk", RightOrdersRead, RightNotificationsRead)
+	_, staff, err := app.APIKeys().Create(ctx, APIKeyInput{Name: "Staff script", Role: RoleStaff}, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{
+		"/api/admin/notifications",
+		"/api/admin/notifications/1",
+		"/api/admin/notifications/1/preview",
+	} {
+		rec := do(t, app, http.MethodGet, path, bearer(agent))
+		wantAgentRefused(t, rec, rec.Body.String(), "agent GET "+path)
+	}
+	rec := doBody(t, app, http.MethodPost, "/api/admin/notifications/1/resend", `{}`, bearer(agent))
+	wantAgentRefused(t, rec, rec.Body.String(), "agent resend")
+
+	if rec := do(t, app, http.MethodGet, "/api/admin/notifications/templates", bearer(agent)); rec.Code != http.StatusOK {
+		t.Errorf("agent reading the templates = %d, want 200: %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, app, http.MethodGet, "/api/admin/notifications", bearer(staff)); rec.Code != http.StatusOK {
+		t.Errorf("an integration key reading the log = %d, want 200: %s", rec.Code, rec.Body)
+	}
+}
+
 // The merchant's free-form fields — an order's and a line's metadata, the
 // shop's note on an order, a cart's metadata, a parcel's label link — are not
 // fields the mask can read, so an agent is given none of them.

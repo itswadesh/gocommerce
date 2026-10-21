@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -350,4 +351,26 @@ func TestModuleContract(t *testing.T) {
 	app := gctest.New(t, testModule())
 	gctest.AssertAdminRoutesDeclareRights(t, app, "invoices")
 	gctest.AssertSpecCoversModuleRoutes(t, app, "invoices")
+}
+
+// An invoice is the buyer's name and street address in a document, so an
+// agent key holding invoices.read may list invoices but not open one.
+func TestAnAgentCannotOpenAnInvoice(t *testing.T) {
+	app := gctest.New(t, testModule())
+	ctx := context.Background()
+	result := gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
+	if _, err := app.Pay().MarkPaid(ctx, result.Order.ID, "cash"); err != nil {
+		t.Fatal(err)
+	}
+	gctest.DrainOutbox(t, app)
+	agent := gctest.AgentKey(t, app, rightInvoicesRead)
+
+	rec := gctest.SessionRequest(t, app, agent, http.MethodGet,
+		"/api/admin/x/invoices/"+strconv.FormatInt(result.Order.ID, 10), nil)
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "agent_key_refused") {
+		t.Errorf("an agent opening an invoice = %d, want 403 agent_key_refused: %s", rec.Code, rec.Body)
+	}
+	if rec := gctest.SessionRequest(t, app, agent, http.MethodGet, "/api/admin/x/invoices", nil); rec.Code != http.StatusOK {
+		t.Errorf("an agent listing invoices = %d, want 200: %s", rec.Code, rec.Body)
+	}
 }
