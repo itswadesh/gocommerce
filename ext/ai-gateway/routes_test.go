@@ -347,3 +347,32 @@ func do(t *testing.T, app *gocommerce.App, method, target, store string) *testRe
 	app.Handler().ServeHTTP(rec, req)
 	return &testResponse{code: rec.Code, body: rec.Body.Bytes()}
 }
+
+// The queries every screen and the runner make are within one store, so the
+// indexes behind them lead with the store, as the row policy reads them.
+func TestTheAIIndexesLeadWithTheStore(t *testing.T) {
+	app, _, _ := newGateway(t, reply(http.StatusOK, "{}"))
+	rows, err := app.DB().QueryContext(context.Background(), `
+		SELECT indexname, indexdef FROM pg_indexes
+		WHERE schemaname = current_schema()
+		  AND (tablename LIKE 'ai\_%' OR tablename = 'approval_requests')
+		  AND indexname NOT LIKE '%\_pkey' AND indexname NOT LIKE '%\_store\_id\_key'`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	seen := 0
+	for rows.Next() {
+		var name, def string
+		if err := rows.Scan(&name, &def); err != nil {
+			t.Fatal(err)
+		}
+		seen++
+		if !strings.Contains(def, "(store_id,") {
+			t.Errorf("%s does not lead with the store: %s", name, def)
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no AI indexes found")
+	}
+}

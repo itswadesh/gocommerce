@@ -181,14 +181,14 @@ func (m *Module) registerPlugin(app *gocommerce.App) {
 				Help: "Asked when the small model's answer fails its checks."},
 			{Key: "monthly_cap", Label: "Monthly cap", Kind: "number", Required: true,
 				Help: "The most this store spends on models in a calendar month, in minor units of its currency: 5000 is 50.00 in a two-decimal currency. Work that would pass it waits for a person."},
-			price("small_price_input", "Small model: input price", "Minor units per million input tokens, from your provider's price list: $1.00 per million is 100. A model with no input or output price is never called."),
+			price("small_price_input", "Small model: input price", "Minor units per million input tokens, from your provider's price list: $1.00 per million is 100. A model with no input or output price, or a price of 0, is never called: what costs nothing could not be held to the cap."),
 			price("small_price_output", "Small model: output price", "Minor units per million output tokens."),
-			price("small_price_cache_read", "Small model: cache read price", "Minor units per million tokens read from the provider's cache. Empty means the input price."),
-			price("small_price_cache_write", "Small model: cache write price", "Minor units per million tokens written to the provider's cache. Empty means the input price."),
+			price("small_price_cache_read", "Small model: cache read price", "Minor units per million tokens read from the provider's cache. Empty or 0 means the input price."),
+			price("small_price_cache_write", "Small model: cache write price", "Minor units per million tokens written to the provider's cache. Empty or 0 means the input price."),
 			price("strong_price_input", "Strong model: input price", "Minor units per million input tokens."),
 			price("strong_price_output", "Strong model: output price", "Minor units per million output tokens."),
-			price("strong_price_cache_read", "Strong model: cache read price", "Empty means the input price."),
-			price("strong_price_cache_write", "Strong model: cache write price", "Empty means the input price."),
+			price("strong_price_cache_read", "Strong model: cache read price", "Empty or 0 means the input price."),
+			price("strong_price_cache_write", "Strong model: cache write price", "Empty or 0 means the input price."),
 			{Key: "share_catalogue", Label: "Share the catalogue", Kind: "bool", Default: true,
 				Help: "Product titles, descriptions, attributes and prices may be sent to the provider."},
 			{Key: "share_order_lines", Label: "Share order lines", Kind: "bool", Default: true,
@@ -338,16 +338,23 @@ func (m *Module) settings(ctx context.Context) (*settings, error) {
 	if c, ok := number(raw["monthly_cap"], math.Floor); ok {
 		s.capMinor = &c
 	}
+	// A price of nothing is no price: a model that costs nothing could never
+	// be held to the cap, so one priced at 0 is not called, and a cache price
+	// of 0 falls back to the input price as an empty one does.
+	price := func(key string) (int64, bool) {
+		v, ok := number(raw[key], math.Ceil)
+		return v, ok && v > 0
+	}
 	for _, tier := range []Tier{TierSmall, TierStrong} {
 		p := prices{}
-		in, hasIn := number(raw[string(tier)+"_price_input"], math.Ceil)
-		out, hasOut := number(raw[string(tier)+"_price_output"], math.Ceil)
+		in, hasIn := price(string(tier) + "_price_input")
+		out, hasOut := price(string(tier) + "_price_output")
 		p.input, p.output, p.complete = in, out, hasIn && hasOut
 		p.cacheRead, p.cacheWrite = in, in
-		if v, ok := number(raw[string(tier)+"_price_cache_read"], math.Ceil); ok {
+		if v, ok := price(string(tier) + "_price_cache_read"); ok {
 			p.cacheRead = v
 		}
-		if v, ok := number(raw[string(tier)+"_price_cache_write"], math.Ceil); ok {
+		if v, ok := price(string(tier) + "_price_cache_write"); ok {
 			p.cacheWrite = v
 		}
 		s.prices[tier] = p
@@ -378,7 +385,10 @@ func (m *Module) Ready(ctx context.Context) error {
 // Migrations implements gocommerce.Module.
 //
 // Five tables, all the store's (D104), each put behind the row policy by the
-// migration after the one that creates it. The tables carry ai_ rather than the module's own
+// migration after the one that creates it. They name store_id themselves,
+// rather than leaving ScopeTables to add it, so that every index can lead
+// with it: every query here is within one store, and the row policy reads
+// the store first. The tables carry ai_ rather than the module's own
 // prefix: the gateway's are the AI records every later AI module reads, and
 // the approval queue beside them is approval_, as ADR 0003 names it.
 func (m *Module) Migrations() []gocommerce.Migration {
@@ -387,10 +397,11 @@ func (m *Module) Migrations() []gocommerce.Migration {
 		SQL: `
 CREATE TABLE ai_jobs (
     id           bigserial PRIMARY KEY,
+    store_id     text NOT NULL,
     task         text NOT NULL,
     input        jsonb NOT NULL,
     -- NULL is no key, and never matches another.
-    idem_key     text UNIQUE,
+    idem_key     text,
     status       text NOT NULL DEFAULT 'queued'
                  CHECK (status IN ('queued', 'running', 'done', 'failed', 'dead', 'cancelled')),
     attempts     integer NOT NULL DEFAULT 0,
@@ -404,14 +415,16 @@ CREATE TABLE ai_jobs (
     result       jsonb,
     execution_id bigint,
     created_at   timestamptz NOT NULL DEFAULT now(),
-    finished_at  timestamptz
+    finished_at  timestamptz,
+    UNIQUE (store_id, idem_key)
 );
 -- The runner's claim: what is waiting, oldest due first.
-CREATE INDEX ai_jobs_due ON ai_jobs (next_run_at) WHERE status IN ('queued', 'running');
-CREATE INDEX ai_jobs_status ON ai_jobs (status, id DESC);
+CREATE INDEX ai_jobs_due ON ai_jobs (store_id, next_run_at) WHERE status IN ('queued', 'running');
+CREATE INDEX ai_jobs_status ON ai_jobs (store_id, status, id DESC);
 
 CREATE TABLE ai_executions (
     id                 bigserial PRIMARY KEY,
+    store_id           text NOT NULL,
     task               text NOT NULL,
     task_version       integer NOT NULL,
     job_id             bigint REFERENCES ai_jobs (id) ON DELETE SET NULL,
@@ -440,8 +453,8 @@ CREATE TABLE ai_executions (
     currency           text NOT NULL,
     created_at         timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX ai_executions_created ON ai_executions (created_at);
-CREATE INDEX ai_executions_job ON ai_executions (job_id);
+CREATE INDEX ai_executions_created ON ai_executions (store_id, created_at);
+CREATE INDEX ai_executions_job ON ai_executions (store_id, job_id);
 
 ALTER TABLE ai_jobs ADD CONSTRAINT ai_jobs_execution_fkey
     FOREIGN KEY (execution_id) REFERENCES ai_executions (id) ON DELETE SET NULL;
@@ -449,16 +462,19 @@ ALTER TABLE ai_jobs ADD CONSTRAINT ai_jobs_execution_fkey
 -- One row per store and month: the cap as last read, what is held for calls
 -- in flight, and what was spent.
 CREATE TABLE ai_budgets (
-    month          date PRIMARY KEY,
+    store_id       text NOT NULL,
+    month          date NOT NULL,
     cap_minor      bigint NOT NULL CHECK (cap_minor >= 0),
     reserved_micro bigint NOT NULL DEFAULT 0 CHECK (reserved_micro >= 0),
     spent_micro    bigint NOT NULL DEFAULT 0 CHECK (spent_micro >= 0),
-    updated_at     timestamptz NOT NULL DEFAULT now()
+    updated_at     timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (store_id, month)
 );
 
--- Answers a task allows to be reused. The key leads with the store once
--- scoped, so two stores asking the same question never share an answer.
+-- Answers a task allows to be reused. The key leads with the store, so two
+-- stores asking the same question never share an answer.
 CREATE TABLE ai_cache (
+    store_id     text NOT NULL,
     task         text NOT NULL,
     task_version integer NOT NULL,
     input_hash   text NOT NULL,
@@ -466,9 +482,9 @@ CREATE TABLE ai_cache (
     execution_id bigint REFERENCES ai_executions (id) ON DELETE SET NULL,
     expires_at   timestamptz NOT NULL,
     created_at   timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (task, task_version, input_hash)
+    PRIMARY KEY (store_id, task, task_version, input_hash)
 );
-CREATE INDEX ai_cache_expires ON ai_cache (expires_at);`,
+CREATE INDEX ai_cache_expires ON ai_cache (store_id, expires_at);`,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "ai_jobs", "ai_executions", "ai_budgets", "ai_cache"),
 		{
@@ -479,10 +495,11 @@ CREATE INDEX ai_cache_expires ON ai_cache (expires_at);`,
 -- install's rather than the store's.
 CREATE TABLE approval_requests (
     id                  bigserial PRIMARY KEY,
+    store_id            text NOT NULL,
     kind                text NOT NULL,
     args                jsonb NOT NULL,
     preview             jsonb NOT NULL,
-    idem_key            text NOT NULL UNIQUE,
+    idem_key            text NOT NULL,
     requested_by_key_id bigint,
     requested_by_label  text NOT NULL DEFAULT '',
     trace_id            text NOT NULL DEFAULT '',
@@ -494,9 +511,10 @@ CREATE TABLE approval_requests (
     decided_at          timestamptz,
     result              jsonb,
     error               text,
-    created_at          timestamptz NOT NULL DEFAULT now()
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (store_id, idem_key)
 );
-CREATE INDEX approval_requests_status ON approval_requests (status, id DESC);`,
+CREATE INDEX approval_requests_status ON approval_requests (store_id, status, id DESC);`,
 		},
 		gocommerce.ScopeMigration("0004_approvals_scope", "approval_requests"),
 	}

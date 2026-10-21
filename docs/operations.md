@@ -341,7 +341,9 @@ in the `X-Trace-Id` response header and printed on its `request` log line
 beside the `store` it was for. A caller may send its own in the same header —
 8 to 64 letters, digits, `-` or `_`; anything else is replaced — so a
 storefront's support ticket can quote the id the shopper's browser saw. Any
-failure the request logs carries the same `trace_id`. Modules read it with
+failure the request logs carries the same `trace_id`. A caller's id is a
+correlation hint, not an identity: two callers may send the same one, and
+their records then share it. Modules read it with
 `gocommerce.TraceID(ctx)` and keep it on what they record: the AI gateway's
 jobs and runs carry it in `ai_jobs.trace_id` and `ai_executions.trace_id`.
 
