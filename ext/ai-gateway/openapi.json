@@ -174,7 +174,8 @@
                 "refused",
                 "provider_error",
                 "budget_exhausted",
-                "no_price"
+                "no_price",
+                "task_error"
               ]
             }
           },
@@ -896,7 +897,8 @@
               "refused",
               "provider_error",
               "budget_exhausted",
-              "no_price"
+              "no_price",
+              "task_error"
             ]
           },
           "review_status": {

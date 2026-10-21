@@ -118,6 +118,10 @@ type ProviderError struct {
 	Kind      string
 	Message   string
 	Transient bool
+
+	// panicked is a call whose transport panicked: never retried, and
+	// charged at the ceiling.
+	panicked bool
 }
 
 func (e *ProviderError) Error() string {
