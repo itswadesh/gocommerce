@@ -114,19 +114,27 @@ forget it.
 
 Naming the rights is the **authorisation**, and that one is not automatic: the
 argument is variadic, so a route that names none is served to any authenticated
-operator whatever their role. Every module admin route names at least one right
-from `core/rights.go`, and a module never invents a right — the catalogue is
-core's, so a role's stored rights stay decodable in a binary built without that
-module. `gctest.AssertAdminRoutesDeclareRights` is how a module's own suite
-proves it; `gocommerce doctor`'s `admin rights` check finds it in a binary
-where nobody wrote that test.
+operator whatever their role. Every module admin route names at least one
+right: one of core's, from `core/rights.go`, or one the module declares itself
+with `app.RegisterRight` from `Register` (D65, `core/rights_registry.go`). A
+right is declared in exactly one place, by the code that owns the routes it
+gates — reusing a core right's name or another module's is a registration
+error — and nothing invents one at the point of use. A declaration's `Default`
+roles must not widen anybody's access: a right lifted off an existing one names
+exactly the roles that held the old one. A role's stored grants are checked
+against the rights this build has, so a grant of a right from a module the
+binary was built without is ignored on read and refused on write.
+`gctest.AssertAdminRoutesDeclareRights` is how a module's own suite proves its
+routes name a right; `gocommerce doctor`'s `admin rights` check finds a route
+that names none in a binary where nobody wrote that test.
 
-One route cannot always say it all. `POST /api/admin/x/mcp` dispatches twelve
-tools spanning `catalog.read` to `orders.fulfill`, and `requireRights` runs
-once before the body is parsed — so each tool carries its own `Rights` and
-`callTool` checks them against the operator on the context. A nil superuser
-there is the static admin token or `ServeStdio`, exempt exactly as it is on
-every core route.
+One route cannot always say it all. `POST /api/admin/x/mcp` dispatches every
+tool in `ext/mcp/tools.go` (`builtinTools`), plus any passed in through
+`mcp.Config.Tools`, and they need rights from `catalog.read` to
+`orders.refund`. `requireRights` runs once before the body is parsed — so each
+tool carries its own `Rights` and `callTool` checks them against the operator
+on the context. A nil superuser there is the static admin token or
+`ServeStdio`, exempt exactly as it is on every core route.
 
 ### 10. Every response is JSON, including the ones you did not write
 

@@ -65,21 +65,26 @@ produces it, and is never repurposed.
 |---|---|---|
 | `order.created` | An order was created at checkout | Inventory is reserved, or committed for cash on delivery. Payload carries `cart_id`, the row id of the basket it was checked out from — on this event alone |
 | `order.paid` | Money arrived | Also confirms a pending order, so it becomes shippable |
+| `order.unpaid` | A payment recorded in error was taken back | `payment_status` goes back to `pending`; the order's `status` and its stock do not move. Refused once anything has been refunded. Clearing a recorded payment *failure* is silent, because the failure was never announced |
 | `order.shipped` | A parcel was booked | Fires once per parcel. Payload carries `tracking` and a `shipment` block naming what went in this one and what is still owed; `status` is `partial` while the order still owes units |
 | `order.unshipped` | A shipment recorded in error was removed | Payload carries the same `shipment` block, describing the parcel that came back; `status` is what is left — `partial` or `confirmed` |
 | `order.delivered` | The customer received it | |
+| `order.undelivered` | A delivery recorded in error was taken back | The order, and the fulfillments marked delivered with it, go back to `shipped`. Nothing moved when the delivery was recorded, so nothing moves back |
 | `order.refunded` | Money went back through the provider | Fires once per refund, so two partial refunds are two events. Payload carries a `refund` block and `reason`; `payment_status` says whether this one finished the job — `paid` while the store still holds part of it, `refunded` once the parts add up to the total |
 | `order.returned` | Goods came back off a shipped, partly shipped or delivered order | Stock is returned only for the lines marked to restock, and only to the shelf they were picked from unless another was named. The order's `status` and `payment_status` are unchanged — the delivery still happened — and the payload carries a `return` block. No money moves: a refund is its own operation and its own event |
 | `order.unreturned` | A return recorded in error was withdrawn | The units it put back have come off the shelf again. The row survives as `withdrawn`, so the quantity it held becomes returnable once more |
-| `cart.abandoned` | A cart past its TTL still held something | The only `cart.*` name, and the only one on aggregate type `cart`. Payload is a `CartEvent`, not an `OrderEvent`, and it carries the cart **token**, which is a credential. The first sweep after M28 drains whatever backlog the store is already carrying, 500 a pass |
 | `order.cancelled` | The order was voided | Stock has been returned; payload carries `reason`. The unpaid sweeper's population widened in M23 to orders whose payment was recorded as failed, so this now delivers for declined-gateway orders that previously sat stranded and silent |
+| `order.edited` | The order itself changed | Two sources. A line edit changes what the order is for and moves the stock that implies; its payload carries a `change` block. A correction to the order's details — name, email, phone, address, payment provider or reference, or metadata — carries none. A save that changed nothing but the operator's own note announces nothing |
+| `cart.abandoned` | A cart past its TTL still held something | The only `cart.*` name, and the only one on aggregate type `cart`. Payload is a `CartEvent`, not an `OrderEvent`, and it carries the cart **token**, which is a credential. The first sweep after M28 drains whatever backlog the store is already carrying, 500 a pass |
+| `product.created` | A product was created | Aggregate type `product`. Payload is the catalogue payload below, not the product |
+| `product.updated` | A product's own fields were edited | Includes a change of `status`: archiving is an update, not a delete, because the row and its page still exist. Carries `previous_slug` when the handle was renamed. Editing a variant, a price, an option or media does not emit it |
+| `product.deleted` | A product was deleted | `status` is `deleted`, and `slug` is the address that just stopped existing |
+| `collection.updated` | A collection was edited, or the list of what it holds was replaced | Aggregate type `collection`. Creating or deleting a collection announces nothing, and neither does changing a product's collections from the product's side |
 
 There is deliberately no `order.confirmed`. Confirmation always coincides with
 either `order.created` (cash on delivery) or `order.paid` (everything else), so
 a separate event would carry no information and would be one more name frozen
 forever.
-
-There is no `product.*` family either, until something consumes it.
 
 The cart family has exactly one name for the same reason. There is no
 `cart.created`: `POST /api/carts` is unauthenticated and high-volume, and an
@@ -104,11 +109,18 @@ the module keeps its own record of baskets idle for minutes, and hears
 `order.created` for the `cart_id` that credits an order to the basket it chased
 (D82).
 
+The catalogue names — `product.created`, `product.updated`, `product.deleted`
+and `collection.updated` — exist because something watches the shop's own
+pages: `ext/indexnow` tells search engines which ones changed, and a cache or a
+static site rebuild would listen for the same thing. Before them such a module
+had to poll. Their payload is an address rather than a record; see
+[the catalogue payload](#the-catalogue-payload).
+
 **Stock movements are not events.** Every change to a stock balance is recorded
 in `stock_movements` (M26) — append-only, written inside the same transaction as
 the balance it explains, and read back through
 `GET /api/admin/variants/{id}/movements`. There is no `stock.*` name and no
-second aggregate type, for the reason this page gives for `order.confirmed`: the
+`variant` aggregate type, for the reason this page gives for `order.confirmed`: the
 taxonomy is a public contract, nothing consumes a stock event, and `order.*`
 already tells a consumer that an order took stock. Volume decides the rest — a
 twenty-line order would put forty rows through the at-least-once dispatcher for
@@ -196,6 +208,15 @@ a flag, because it also says how much is left. It repeats neither `tracking`
 nor `extra.provider`: a payload that states one fact twice is how the two come
 to disagree.
 
+`change` is present only on an `order.edited` that came from a line edit. It is
+what the amendment did, which the order no longer says because the order says
+what is agreed now: `lines_added` and `lines_removed` name SKUs,
+`lines_changed` entries read `"TEE-001: 2 to 3"`, `total_before` and
+`total_after` are `{amount_minor, currency}`, and `balance_minor` is what the
+edit moved the total by — positive is owed by the customer, negative is owed to
+them. The balance is reported, not settled: taking a payment or making a refund
+is its own operation.
+
 `return` is present only on `order.returned` and `order.unreturned`, and it is
 the only part of the payload that says a return happened: `status` and
 `payment_status` are unchanged by one, because the sale and the delivery both
@@ -256,6 +277,23 @@ schedule against "sat five days, then was given up on" rather than against the
 moment the sweeper happened to run. A cart with no address still emits: the
 event is also the store's abandonment analytics, and a consumer that only wants
 recoverable baskets filters on `email` in its own handler.
+
+### The catalogue payload
+
+`product.*` events are on aggregate type `product` and `collection.updated` on
+`collection`, each with the row id as the aggregate id. They carry an address,
+not a copy of the record — a consumer that needs more reads it, rather than
+trusting a second, staler catalogue in the outbox:
+
+```json
+{"id": 7, "slug": "linen-field-jumper-2026", "title": "Linen field jumper",
+ "status": "active", "previous_slug": "linen-field-jumper"}
+```
+
+`status` is `draft`, `active` or `archived`, and `deleted` on `product.deleted`.
+`previous_slug` appears only on a `product.updated` that renamed the handle,
+because the old URL is now a 404 somebody may need to retire.
+`collection.updated` carries `id`, `slug` and `title` alone.
 
 ### Changing a payload
 

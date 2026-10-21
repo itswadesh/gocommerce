@@ -8,11 +8,13 @@ description: Use when adding a right, gating a route, changing what a role may d
 ## The model
 
 One enumerated list of rights, roles drawn from it, and one place that decides —
-[`rights.go`](../core/rights.go). **Nothing outside that file may invent a
-right.** The roles are the store's: the engine seeds `owner`, `manager`, `staff`
-and `vendor` into a `roles` table, and a store makes, renames and deletes its own
-([`roles.go`](../core/roles.go), D80). What each role *carries* is the store's to
-change; the list of rights is not.
+[`rights.go`](../core/rights.go). **Core's rights are declared in that file and
+nowhere else; a module declares its own with `app.RegisterRight`** (D65, see
+[Rights a module brings](#rights-a-module-brings)), and nothing invents one at
+the point of use. The roles are the store's: the engine seeds `owner`,
+`manager`, `staff` and `vendor` into a `roles` table, and a store makes, renames
+and deletes its own ([`roles.go`](../core/roles.go), D80). What each role
+*carries* is the store's to change; the list of rights is not.
 
 ```
 catalog.read      products, variants, categories, collections, media
@@ -54,11 +56,12 @@ sold, a plugin's settings hold a gateway's live API key, and a template is
 the wording of every message the store sends. Each had been filed under the
 nearest right that would take it, and the sentence had quietly become false.
 
-The cost was not tidiness. `store.operate` also carries the outbox, the audit
-feed and `ext/mcp`'s dispatch endpoint, so letting somebody edit a shipping
-rate meant handing them all of that — and in practice nobody below owner was
-given any of it. **The defaults did not move**: all eight came off a right
-only owner held, so owner holds them and no other role gained anything. A
+The cost was not tidiness. `store.operate` also carries the outbox and the
+audit feed, and then carried `ext/mcp`'s dispatch endpoint too, so letting
+somebody edit a shipping rate meant handing them all of that — and in practice
+nobody below owner was given any of it. **The defaults did not move**: all
+eight came off a right only owner held, so owner holds them and no other role
+gained anything. A
 store that wants a manager setting delivery prices can now grant
 `shipping.write` without also handing over a page of buyers' addresses.
 
@@ -67,8 +70,12 @@ out what it reaches: the health report (`GET /api/admin/diagnostics`) and the
 three maintenance passes that act on it (`POST /api/admin/maintenance/sweep-carts`,
 `/sweep-unpaid`, `/drain-outbox`), the store-wide audit feed, the outbox and its
 dead letters (`GET /api/admin/events`, and the retries that go with it),
-`ext/mcp`'s dispatch endpoint, the `last_error` on an order's timeline, and —
-paired with `customers.read` — deleting an account in `ext/identity`.
+the `last_error` on an order's timeline, and the MCP `store_health` tool. Two
+surfaces it used to reach are now behind rights their modules declare (D65):
+`ext/mcp`'s dispatch endpoint and its audit trail (`agent.dispatch`,
+`agent.read`), and erasing a shopper account in `ext/identity`
+(`accounts.erase`, paired with `accounts.read`). `agent.dispatch`, `agent.read`
+and `accounts.erase` default to owner alone, as `store.operate` does.
 
 One of those is a personal-data surface and is the reason the right is
 owner-only by default rather than merely tidy: an outbox payload is the event
@@ -102,13 +109,15 @@ otherwise.
 That still holds with `store.operate`, and it was a decision rather than an
 oversight. Manager is the role that runs the shop, so the operator who would be
 told to press "release the stock nobody is paying for" is a manager — but the
-right those buttons live behind also reads every colleague's actions by name,
-hands an agent the whole domain-tool surface, and completes the pair that erases
-a customer's account. A default reaches every store that has never opened the
-matrix, so granting it to manager would widen those four surfaces on upgrade for
-stores that asked for none of them. Owner carries it because owner carries
-everything; a store that wants a manager on call grants it in the matrix, which
-is what configurable sets are for.
+right those buttons live behind also reads every colleague's actions by name
+and every buyer's details in the outbox. A default reaches every store that has
+never opened the matrix, so granting it to manager would widen those surfaces
+on upgrade for stores that asked for none of them. The agent's tool surface and
+account erasure were on this list too, and the rights they moved to
+(`agent.dispatch`, `accounts.erase`) kept the same owner-only default for the
+same reason. Owner carries it because owner carries everything; a store that
+wants a manager on call grants it in the matrix, which is what configurable
+sets are for.
 
 The table above is the **default**. `roleRights` being a map rather than a set
 of conditionals is what let M19 make the sets configurable by changing one
@@ -294,6 +303,9 @@ gives it the price (D66). A rate that names a customer group needs nothing beyon
 
 ## Adding a right
 
+This is a core right. A module's is one `RegisterRight` call, described in
+[Rights a module brings](#rights-a-module-brings).
+
 Three edits and no migration — `role_rights` has no foreign key to the rights,
 because the rights live in Go. Declare the constant in `rights.go`, **append** it
 to `AllRights` (that slice is the order the Roles screen draws its grid in,
@@ -457,9 +469,11 @@ teaches them not to.
 
 ## Common mistakes
 
-- **Adding a right anywhere but `rights.go`.** `TestRouteRightsExist` catches a
-  route asking for one that no role can hold, which would otherwise be a route
-  nobody can reach and nobody finds out about until somebody tries.
+- **Adding a right in the wrong place.** A core right belongs in `rights.go`,
+  a module's in that module's own `RegisterRight` call, and nowhere else.
+  `TestRouteRightsExist` catches a core route asking for one that no role can
+  hold, which would otherwise be a route nobody can reach and nobody finds out
+  about until somebody tries.
 - **Gating a self-service route.** If it acts on the caller and nobody else, the
   session already identifies them; a right would only decide *which* people may
   administer *themselves*, which is not a real question.

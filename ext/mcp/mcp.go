@@ -44,9 +44,10 @@ type Config struct {
 	// ReadOnly withholds every mutating tool. Worth switching on while you
 	// are still deciding how much you trust the agent on the other end.
 	ReadOnly bool
-	// Tools contributed by other modules, wired explicitly in main():
+	// Tools from outside this package, added to builtinTools. The application
+	// builds the slice and wires it explicitly in main():
 	//
-	//	mcp.New(mcp.Config{Tools: invoices.Tools()})
+	//	mcp.New(mcp.Config{Tools: storeTools})
 	//
 	// There is no discovery: if you want a module's tools exposed, you say so.
 	Tools []Tool
@@ -138,18 +139,19 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// credential — this module writes no authentication of its own.
 	//
 	// A second operating surface onto the store, handed to an agent: that is
-	// what store.operate names. It narrows nothing for an agent, since a static
-	// admin token carries every right by design, but a session-authenticated
-	// operator reaching this from a browser is now checked, which is the case
-	// that should be.
+	// what agent.dispatch names — a right this module declares in
+	// registerRights below, where store.operate used to stand. It narrows
+	// nothing for an agent, since a static admin token carries every right by
+	// design, but a session-authenticated operator reaching this from a
+	// browser is now checked, which is the case that should be.
 	//
 	// The mount-time right is not the whole check, and is not meant to be. One
-	// route dispatches every tool, from catalog.read to orders.fulfill, and
+	// route dispatches every tool, from catalog.read to orders.refund, and
 	// requireRights runs once before the body is parsed — so each tool names
 	// the rights it needs and callTool checks them against the operator on the
-	// context. Without that second half store.operate would be no weaker than
-	// orders.write ∪ orders.fulfill ∪ inventory.write ∪ orders.read for
-	// everybody who holds it, which is why D24 gives it to the owner alone.
+	// context. Without that second half agent.dispatch would be no weaker than
+	// the union of every tool's rights for everybody who holds it, which is why
+	// it defaults to no role but owner, as store.operate did.
 	app.HandleAdminFunc("POST /api/admin/x/mcp", m.handleHTTP, rightAgentDispatch)
 	app.HandleAdminFunc("GET /api/admin/x/mcp/audit", m.handleAudit, rightAgentRead)
 	return nil

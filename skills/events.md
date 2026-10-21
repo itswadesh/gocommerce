@@ -37,7 +37,7 @@ type Event struct {
     Name          string          `json:"name"`
     Version       int             `json:"v"`
     At            time.Time       `json:"at"`
-    AggregateType string          `json:"aggregate_type"` // "order"
+    AggregateType string          `json:"aggregate_type"` // "order", "cart", "product" or "collection"
     AggregateID   int64           `json:"aggregate_id"`
     Data          json.RawMessage `json:"data"`
 }
@@ -59,7 +59,11 @@ dropped a module's key emits `order.edited` like any other edit.
 
 ## The names
 
-All of them live in `events.go`, all `AggregateOrder`. The transitions:
+All of them live in `events.go`, and [`docs/events.md`](../docs/events.md#the-taxonomy)
+lists every one. The `order.*` names are on `AggregateOrder`; `cart.abandoned`
+is on `AggregateCart` (see [carts](carts.md)), `product.*` on
+`AggregateProduct`, and `collection.updated` on `AggregateCollection`. The order
+transitions:
 
 | Constant | Name | Emitted by |
 |---|---|---|
@@ -71,6 +75,20 @@ All of them live in `events.go`, all `AggregateOrder`. The transitions:
 | `EventOrderReturned` | `order.returned` | `Orders.Return` — goods came back off a shipped, partly shipped or delivered order. It moves no money, so it is not a refund and does not pretend to be one |
 | `EventOrderUnreturned` | `order.unreturned` | `Orders.WithdrawReturn`, when a return recorded in error is taken back and its units come off the shelf again |
 | `EventOrderCancelled` | `order.cancelled` | `Orders.Cancel`, including the unpaid sweeper — whose population widened in M23 to orders whose payment was recorded as failed, so notifiers now deliver for declined-gateway orders that previously sat stranded and silent |
+| `EventOrderEdited` | `order.edited` | `Orders.EditLines`, with a `change` block in the payload; `Orders.Update`, without one, unless the save touched nothing but the operator's note |
+| `EventOrderUnpaid` | `order.unpaid` | `Payments.MarkUnpaid`, when a payment recorded in error is taken back |
+| `EventOrderUndelivered` | `order.undelivered` | `Orders.MarkUndelivered`, when a delivery recorded in error is taken back |
+| `EventOrderUnshipped` | `order.unshipped` | `Fulfillments.Delete`, when a shipment recorded in error is removed |
+
+The other families:
+
+| Constant | Name | Emitted by |
+|---|---|---|
+| `EventCartAbandoned` | `cart.abandoned` | `Carts.Abandon`, from the cart sweeper |
+| `EventProductCreated` | `product.created` | `Catalog.CreateProduct` |
+| `EventProductUpdated` | `product.updated` | `Catalog.UpdateProduct` — the product's own fields, status included. Variant, price, option and media edits do not emit it |
+| `EventProductDeleted` | `product.deleted` | `Catalog.DeleteProduct` |
+| `EventCollectionUpdated` | `collection.updated` | `Collections.Update` and `Collections.SetCollectionProducts`. Creating or deleting a collection emits nothing |
 
 Two transitions deliberately emit **nothing**: `Orders.Confirm` (the story is
 already told by `order.created` or `order.paid`) and `Payments.MarkFailed` (the
@@ -91,7 +109,7 @@ because nothing changed.
 in `stock_movements` (M26) — append-only, written inside the same transaction as
 the balance it explains, and read back through
 `GET /api/admin/variants/{id}/movements`. There is no `stock.*` name and no
-second aggregate type, for the reason this page gives for `order.confirmed`: the
+`variant` aggregate type, for the reason this page gives for `order.confirmed`: the
 taxonomy is a public contract, nothing consumes a stock event, and `order.*`
 already tells a consumer that an order took stock. Volume decides the rest — a
 twenty-line order would put forty rows through the at-least-once dispatcher for
