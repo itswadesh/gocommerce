@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"time"
@@ -353,12 +354,18 @@ func (m *Module) Approve(ctx context.Context, id int64) (*Approval, error) {
 
 	// Once claimed, the action runs to its end even if the request goes: a
 	// half-run approval is worse than a slow one.
-	run, cancel := context.WithTimeout(context.WithoutCancel(ctx), executeTimeout)
+	run, cancel := context.WithTimeout(context.WithoutCancel(ctx), m.executeTimeout)
 	defer cancel()
 	run = gocommerce.WithActorLabel(run, fmt.Sprintf("approval #%d", id))
-	result, execErr := act.Execute(run, a.Args)
+	result, execErr := m.runAction(run, act, a.Args)
+
+	// The outcome is written on a context of its own. The action's may be
+	// spent, by its deadline or by the request going, and a write on it
+	// would fail and leave the proposal "approved" for ever.
+	write, done := context.WithTimeout(context.WithoutCancel(ctx), outcomeTimeout)
+	defer done()
 	if execErr != nil {
-		_, err = m.db.ExecContext(run, `
+		_, err = m.db.ExecContext(write, `
 			UPDATE approval_requests SET status = 'failed', error = $2
 			 WHERE id = $1 AND status = 'approved'`, id, truncate(execErr.Error(), 1000))
 	} else {
@@ -366,14 +373,29 @@ func (m *Module) Approve(ctx context.Context, id int64) (*Approval, error) {
 		if result != nil {
 			stored = []byte(result)
 		}
-		_, err = m.db.ExecContext(run, `
+		_, err = m.db.ExecContext(write, `
 			UPDATE approval_requests SET status = 'executed', result = $2
 			 WHERE id = $1 AND status = 'approved'`, id, stored)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return m.Approval(ctx, id)
+	return m.Approval(write, id)
+}
+
+// outcomeTimeout bounds writing a decided proposal's outcome.
+const outcomeTimeout = 10 * time.Second
+
+// runAction runs an approved action. A panic is the action's failure, with the
+// panic as its reason, not the request's: the proposal must still end.
+func (m *Module) runAction(ctx context.Context, act *Action, args json.RawMessage) (out json.RawMessage, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			m.log.Error("ai action panicked", "action", act.Kind, "panic", p, "stack", string(debug.Stack()))
+			out, err = nil, fmt.Errorf("the action failed: %v", p)
+		}
+	}()
+	return act.Execute(ctx, args)
 }
 
 // Reject closes a pending proposal without running it.

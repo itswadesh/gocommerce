@@ -380,8 +380,10 @@ The approval queue:
   and runs against the store as it is.
 - **Running.** Once claimed, the action runs to its end whatever happens to
   the request, bounded at 30 seconds, as the approver and labelled
-  `approval #<id>`. An action that fails answers 200 with the proposal
-  `failed` and the reason: the decision was made, the act did not succeed.
+  `approval #<id>`. An action that fails, runs out its time or panics
+  answers 200 with the proposal `failed` and the reason: the decision was
+  made, the act did not succeed. The outcome is written on a context of its
+  own, so a spent deadline cannot leave a proposal `approved` for ever.
 - **Who asked** is the caller's name as every trail prints it (`api key:
   <name>` for a key) or "the engine"; `requested_by_key_id` stays empty until
   agent keys exist. The decider's email is kept beside their id, because the

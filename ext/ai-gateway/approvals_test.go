@@ -435,3 +435,58 @@ func TestActionsAreRegisteredOnlyWhenTheyCanBeKept(t *testing.T) {
 		}
 	}
 }
+
+// replaceExecute swaps the demonstration action's Execute for the test.
+func (h *approvalHarness) replaceExecute(t *testing.T, execute func(ctx context.Context, args json.RawMessage) (json.RawMessage, error)) {
+	t.Helper()
+	h.m.mu.Lock()
+	defer h.m.mu.Unlock()
+	h.m.actions["test.retitle"].Execute = execute
+}
+
+func (h *approvalHarness) approveAsOwner(t *testing.T, id int64) (int, Approval) {
+	t.Helper()
+	owner := gctest.OperatorToken(t, h.app, "owner@example.com", gocommerce.RoleOwner)
+	rec := gctest.SessionRequest(t, h.app, owner, http.MethodPost, fmt.Sprintf("/api/admin/x/ai-gateway/approvals/%d/approve", id), nil)
+	var env struct {
+		Data Approval `json:"data"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &env)
+	return rec.Code, env.Data
+}
+
+// An approved action that runs out its time ends failed with the reason. The
+// outcome is written on a context of its own: the one the action exhausted
+// cannot write anything, and the proposal used to stay "approved" for ever.
+func TestAnApprovedActionThatRunsOutOfTimeEndsFailed(t *testing.T) {
+	h := newApprovals(t, gocommerce.RightCatalogWrite)
+	h.m.executeTimeout = 200 * time.Millisecond
+	h.replaceExecute(t, func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	a := h.propose(t, context.Background(), "Slow", "retitle:1")
+
+	code, got := h.approveAsOwner(t, a.ID)
+	if code != http.StatusOK || got.Status != ApprovalFailed || !strings.Contains(got.Error, "deadline") {
+		t.Fatalf("approve = %d %+v, want 200 and failed with the deadline named", code, got)
+	}
+	if now, _ := h.m.Approval(context.Background(), a.ID); now.Status != ApprovalFailed {
+		t.Errorf("the proposal is %s", now.Status)
+	}
+}
+
+// An approved action that panics ends failed with the panic as its reason,
+// and the store keeps serving.
+func TestAnApprovedActionThatPanicsEndsFailed(t *testing.T) {
+	h := newApprovals(t, gocommerce.RightCatalogWrite)
+	h.replaceExecute(t, func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+		panic("the action fell over")
+	})
+	a := h.propose(t, context.Background(), "Boom", "retitle:1")
+
+	code, got := h.approveAsOwner(t, a.ID)
+	if code != http.StatusOK || got.Status != ApprovalFailed || !strings.Contains(got.Error, "the action fell over") {
+		t.Fatalf("approve = %d %+v, want 200 and failed with the panic named", code, got)
+	}
+}
