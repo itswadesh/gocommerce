@@ -329,6 +329,9 @@ type App struct {
 	db  *sql.DB
 	// secrets are Config.SecretsKey and SecretsKeyPrevious, decoded once.
 	secrets secretKeys
+	// secretColumns are the columns outside plugins holding one sealed secret
+	// a row, core's and the modules', for `secrets seal` and the doctor.
+	secretColumns []SecretColumn
 	// reportsDB runs custom reports under a least-privileged login, kept apart
 	// from db so a report can never reach the engine's own database rights
 	// (D78). Nil when Config.ReportsDBURL is empty, which disables the feature.
@@ -636,6 +639,9 @@ func (a *App) buildServices() {
 	a.plugins = newPlugins(a)
 	a.profile = &StoreProfiles{app: a}
 	a.apiKeys = &APIKeys{app: a}
+	a.secretColumns = append(a.secretColumns, SecretColumn{
+		Table: "api_keys", Column: "secret", Field: apiKeySecretField, Label: "API keys",
+	})
 	a.customReports = &CustomReports{app: a}
 	a.notifications = &Notifications{app: a}
 	a.notifyTemplates = newNotifyTemplates(a)
