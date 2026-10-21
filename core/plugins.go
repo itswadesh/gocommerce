@@ -650,6 +650,28 @@ func (p *Plugins) Settings(ctx context.Context, key string) (map[string]any, err
 	return out, nil
 }
 
+// Unopened names the plugin's settings that are stored sealed and will not
+// open — sealed under a key the install no longer has. Settings, String and
+// Fill read them as unset, which is right for a required key (the plugin is
+// not configured) and wrong for an optional one that switches a check on: a
+// module with such a field asks here, and refuses rather than run with the
+// check quietly off.
+func (p *Plugins) Unopened(ctx context.Context, key string) ([]string, error) {
+	if _, ok := p.def(key); !ok {
+		return nil, NotFoundf("no plugin is called %q", key)
+	}
+	r, err := p.row(ctx, p.app.db, key)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(r.unopened))
+	for k := range r.unopened {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
 // Fill copies a plugin's stored settings onto a module's Config, field by
 // field, wherever the operator typed a value: a struct field tagged
 // `plugin:"api_key"` takes the setting called api_key. Config's own value
