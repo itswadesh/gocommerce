@@ -17,6 +17,7 @@
      * operator here in the first place.
      */
     import { base } from "$app/paths";
+    import { page } from "$app/state";
     import { can, request } from "$lib/api.js";
     import { activateNote } from "$lib/plugin-ready.js";
     import { toast } from "$lib/toast.svelte.js";
@@ -48,6 +49,11 @@
         loading = true;
         try {
             plugins = await request("GET", "/api/admin/plugins");
+            // ?open=<key> opens that plugin's settings, so a screen that
+            // depends on a plugin can link straight to its form.
+            const wanted = page.url.searchParams.get("open");
+            const target = wanted && plugins.find((p) => p.key === wanted && !homeOf(p));
+            if (target && writable) open(target);
         } catch (err) {
             toast.error(err);
         } finally {
@@ -66,8 +72,9 @@
         shipping: "Shipping providers",
         operations: "Operations",
         integration: "Integrations",
+        ai: "AI",
     };
-    const CATEGORY_ORDER = ["storefront", "marketing", "search", "notifications", "payments", "shipping", "integration", "analytics", "chat", "operations"];
+    const CATEGORY_ORDER = ["storefront", "marketing", "search", "notifications", "payments", "shipping", "integration", "ai", "analytics", "chat", "operations"];
 
     const shown = $derived.by(() => {
         const needle = search.trim().toLowerCase();
