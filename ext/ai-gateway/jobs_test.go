@@ -321,3 +321,41 @@ func TestAnAbandonedClaimIsTakenAgain(t *testing.T) {
 		t.Errorf("a stale worker overwrote the outcome: %+v", j)
 	}
 }
+
+// A job cancelled and retried while a worker still held it: the retry puts
+// the attempt count back where it was, so it cannot be what tells the two
+// claims apart. The first worker's late answer must not land on the second.
+func TestALateWorkerCannotWriteOverARetriedClaim(t *testing.T) {
+	app, m, _ := newGateway(t, reply(http.StatusOK, answer(smallID, goodAnswer, smallUsage)), rewriteTask())
+	ctx := context.Background()
+	configure(t, app, ctx, nil)
+	id := enqueue(t, app, m, ctx, listing{Title: "x"}, "k1")
+
+	stale, err := m.claim(ctx)
+	if err != nil || stale == nil {
+		t.Fatalf("first claim = %+v, %v", stale, err)
+	}
+	if _, err := m.CancelJob(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.RetryJob(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := m.claim(ctx)
+	if err != nil || fresh == nil || fresh.attempts != stale.attempts {
+		t.Fatalf("second claim = %+v, %v; want the same attempt number as the first", fresh, err)
+	}
+
+	if err := m.finishJob(ctx, nil, stale, jobOutcome{status: JobFailed, lastError: "the stale worker"}); err != nil {
+		t.Fatal(err)
+	}
+	if j := mustJob(t, m, ctx, id); j.Status != JobRunning || j.LastError == "the stale worker" {
+		t.Fatalf("job = %+v: the stale worker wrote over the new claim", j)
+	}
+	if err := m.finishJob(ctx, nil, fresh, jobOutcome{status: JobDone}); err != nil {
+		t.Fatal(err)
+	}
+	if j := mustJob(t, m, ctx, id); j.Status != JobDone {
+		t.Errorf("the live worker's answer did not land: %+v", j)
+	}
+}
