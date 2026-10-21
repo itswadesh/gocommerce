@@ -20,7 +20,9 @@ package webhooks
 
 import (
 	"database/sql"
+	"errors"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -94,11 +96,12 @@ const (
 
 // Module is the webhook sender.
 type Module struct {
-	cfg  Config
-	db   *sql.DB
-	app  *gocommerce.App
-	log  *slog.Logger
-	poll time.Duration
+	cfg    Config
+	db     *sql.DB
+	app    *gocommerce.App
+	log    *slog.Logger
+	client *http.Client
+	poll   time.Duration
 }
 
 // New constructs the module.
@@ -165,6 +168,14 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	m.log = app.Log()
 	m.poll = pollInterval
+	// An endpoint is an address a store typed, so the posting goes through
+	// the client that will only reach a public one unless the install says
+	// otherwise. One client for the module, so connections to a merchant are
+	// reused between deliveries.
+	m.client = app.OutboundClient(m.cfg.Timeout)
+	m.client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return errors.New("endpoint redirected; a webhook URL must be final")
+	}
 
 	// "*" rather than a list: which events an endpoint wants is the endpoint's
 	// business and it is stored per row, so filtering here would only mean two
@@ -191,20 +202,35 @@ func (m *Module) Register(app *gocommerce.App) error {
 	return nil
 }
 
-// validURL refuses what cannot be posted to. Scheme and host only: whether the
-// far end answers is the delivery log's question, not this one's.
-func validURL(raw string) error {
+// validURL refuses what cannot or may not be posted to, as the address is
+// typed. Whether the far end answers is the delivery log's question, not this
+// one's.
+//
+// A new address has to be https: the payload is a shopper's order, and plain
+// http carries it across the internet in the clear. It has to be public too,
+// unless the install allows private addresses (D109) — and there, a receiver
+// on the operator's own machine over plain http is exactly what they want.
+// The worker connects through app.OutboundClient, which makes the same
+// judgement on the address it actually reaches; this is the earlier, kinder
+// one.
+func (m *Module) validURL(raw string) error {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
 		return gocommerce.Validationf("url is not a URL")
 	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return gocommerce.Validationf("url must be http or https")
+	allowPrivate := m.app.Config().AllowPrivateURLs
+	switch {
+	case u.Scheme == "https":
+	case u.Scheme == "http" && allowPrivate:
+	case u.Scheme == "http":
+		return gocommerce.Validationf("url must start with https://, so the events it receives are encrypted on the way")
+	default:
+		return gocommerce.Validationf("url must start with https://")
 	}
 	if u.Host == "" {
 		return gocommerce.Validationf("url must include a host")
 	}
-	return nil
+	return m.app.ValidateOutboundURL(raw)
 }
 
 func cleanEvents(in []string) ([]string, error) {

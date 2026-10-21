@@ -65,7 +65,7 @@ func (m *Module) handleCreate(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	if err := validURL(in.URL); err != nil {
+	if err := m.validURL(in.URL); err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
@@ -166,11 +166,23 @@ func (m *Module) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	set := []string{}
 	args := []any{id}
 	if in.URL != "" {
-		if err := validURL(in.URL); err != nil {
+		// Only a changed address is judged. An endpoint saved before new ones
+		// had to be https and public keeps its address through an edit of
+		// something else, rather than an integration nobody touched stopping
+		// because a client sent the whole endpoint back.
+		current, err := m.endpoint(r.Context(), id)
+		if err != nil {
 			gocommerce.RespondError(w, r, err)
 			return
 		}
-		args = append(args, strings.TrimSpace(in.URL))
+		target := strings.TrimSpace(in.URL)
+		if target != current.URL {
+			if err := m.validURL(target); err != nil {
+				gocommerce.RespondError(w, r, err)
+				return
+			}
+		}
+		args = append(args, target)
 		set = append(set, "url = $"+strconv.Itoa(len(args)))
 	}
 	if in.Events != nil {

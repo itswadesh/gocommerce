@@ -14,7 +14,7 @@ import (
 // would send nothing and the text would be lost.
 func TestMSG91ServesIndianNumbersAndIndianStores(t *testing.T) {
 	m := New(Config{AuthKey: "k", Templates: map[string]string{gocommerce.EventOrderShipped: "tpl-shipped"}})
-	app := gctest.New(t, m)
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, m)
 	ctx := context.Background()
 	shipped := func(to string) gocommerce.Notification {
 		return gocommerce.Notification{Event: gocommerce.EventOrderShipped, Channel: gocommerce.ChannelSMS, To: to}

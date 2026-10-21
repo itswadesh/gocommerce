@@ -105,7 +105,7 @@ func stubHyperswitch(t *testing.T) *httptest.Server {
 func newApp(t *testing.T) *gocommerce.App {
 	t.Helper()
 	server := stubHyperswitch(t)
-	return gctest.New(t, New(Config{
+	return gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{
 		APIKey:          "hs_test",
 		ResponseHashKey: testHashKey,
 		ReturnURL:       "https://shop.example.test/thanks",
@@ -246,7 +246,7 @@ func TestRefund(t *testing.T) {
 // first real checkout; this says so before the network call.
 func TestInitiateNeedsAReturnURL(t *testing.T) {
 	server := stubHyperswitch(t)
-	app := gctest.New(t, New(Config{
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{
 		APIKey:          "hs_test",
 		ResponseHashKey: testHashKey,
 		BaseURL:         server.URL,
@@ -285,7 +285,7 @@ func postWebhook(t *testing.T, app *gocommerce.App, body, signature string) *htt
 // registers — the panel lists it — but the settings say it is not set up and
 // nothing can be sent through it, until its fields are typed into the plugin.
 func TestInstalledIdleUntilConfigured(t *testing.T) {
-	app := gctest.New(t, New(Config{}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{}))
 	ctx := context.Background()
 
 	var info *gocommerce.ProviderInfo

@@ -78,6 +78,11 @@ services:
       # It stays shut until the install has email of its own (RESEND_API_KEY
       # or SENDGRID_API_KEY below), so whoever signs up can reset a password.
       GOCOMMERCE_SIGNUP: ${GOCOMMERCE_SIGNUP:-}
+      # GOCOMMERCE_ALLOW_PRIVATE_URLS is deliberately not passed through. It
+      # lets the addresses a store sets — webhook endpoints, provider base
+      # URLs — reach this server's own network, which is wrong wherever people
+      # who do not run the server can open a store. A single business's own
+      # install that wants it adds the line here.
       # Where every store has an address without adding a domain:
       # <slug>.<base domain>, e.g. shops.example.com. The panel shows it, and
       # a domain under it cannot be added as a store's own.

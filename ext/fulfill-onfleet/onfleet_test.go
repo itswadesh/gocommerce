@@ -78,7 +78,7 @@ func newApp(t *testing.T, cfg Config, shape func(*stub)) (*gocommerce.App, *stub
 
 	cfg.APIKey = "onfleet_test"
 	cfg.BaseURL = server.URL + "/api/v2"
-	return gctest.New(t, New(cfg)), st
+	return gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(cfg)), st
 }
 
 // Onfleet authenticates with the key as a Basic username and an empty
@@ -228,7 +228,7 @@ func TestOnfleetIsAKnownCarrier(t *testing.T) {
 // registers — the panel lists it — but the settings say it is not set up and
 // nothing can be sent through it, until its fields are typed into the plugin.
 func TestInstalledIdleUntilConfigured(t *testing.T) {
-	app := gctest.New(t, New(Config{}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{}))
 	ctx := context.Background()
 
 	var info *gocommerce.ProviderInfo

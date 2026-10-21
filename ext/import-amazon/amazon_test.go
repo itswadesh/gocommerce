@@ -531,6 +531,9 @@ func newHarnessWith(t *testing.T, cfg Config, withLLM bool, appCfg gocommerce.Co
 	mod.newFetcher = func(context.Context) (pageFetcher, error) { return fx, nil }
 
 	appCfg.Currency, appCfg.MediaDir = "USD", t.TempDir()
+	// The picture stub is on loopback, which the image client refuses unless
+	// the install allows private addresses.
+	appCfg.AllowPrivateURLs = true
 	app := gctest.NewWithConfig(t, appCfg, mod)
 	return &harness{app: app, fx: fx, images: images, llm: llm}
 }

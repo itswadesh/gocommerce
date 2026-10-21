@@ -160,13 +160,13 @@ func (m *Module) Register(app *gocommerce.App) error {
 			{Key: "password", Label: "API user password", Kind: "secret", Required: !inCode},
 			{Key: "pickup_location", Label: "Pickup location", Kind: "text", Required: !inCode, Help: "The pickup address nickname registered in Shiprocket."},
 			{Key: "default_weight_kg", Label: "Default weight (kg)", Kind: "number", Help: "Per unit, for a variant with no weight recorded.", Default: 0.5},
-			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production."},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Outbound: true, Help: "Empty for production."},
 		},
 	})
 	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
-		m.client = &http.Client{Timeout: 30 * time.Second}
+		m.client = app.OutboundClient(30 * time.Second)
 	}
 	m.log = app.Log()
 

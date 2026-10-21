@@ -77,6 +77,7 @@ app.RegisterCheckoutGuard(guard)        // refuse a checkout before the order ex
 app.Handle(pattern, h)                  // public route, under /x/<name>/
 app.HandleAdmin(pattern, h)             // admin route, authentication included
 app.OnStart(fn)  app.OnStop(fn)         // long-running work
+app.OutboundClient(timeout)             // the HTTP client for calling out
 app.DB()  app.Log()  app.Config()       // your own tables, a scoped logger
 
 app.Products()  app.Cart()  app.Order()
@@ -85,6 +86,23 @@ app.Pay()       app.Ship()  app.Stock() // the domain services
 
 Choosing `HandleAdmin` *is* the authentication. You never write an auth check,
 and you cannot forget one.
+
+## Calling another server
+
+Build your default HTTP client with `app.OutboundClient(timeout)`, not
+`&http.Client{}`. A store operator can usually choose where your module
+connects — an API base URL on the Plugins screen, a shop to import from — and
+on an install that hosts stores for other people that operator is a stranger.
+Unless the install sets `AllowPrivateURLs`, the client connects only to public
+addresses, judged on the address it actually dials, redirects included
+(D109). Keep a `Client *http.Client` in your `Config` and use it as given when
+it is set: that is how a test points you at a stub, and how a store's own
+`main()` makes its own choice.
+
+A url setting your module connects to gets `Outbound: true` on its
+`PluginField`, so an address the install would refuse to call is refused as it
+is typed. A url you only hand out — a return page, a storefront link — does
+not.
 
 ## Owning tables
 
@@ -253,7 +271,10 @@ different packages cannot tread on each other.
 ```go
 func TestMyModule(t *testing.T) {
     stub := gctest.StubHTTP(t, fakeVendorHandler)      // never call the real vendor
-    app := gctest.New(t, mymodule.New(mymodule.Config{BaseURL: stub.URL}))
+    // The stub listens on loopback, which app.OutboundClient refuses unless
+    // the install allows private addresses.
+    app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true},
+        mymodule.New(mymodule.Config{BaseURL: stub.URL}))
 
     result := gctest.PlaceOrder(t, app, "acme")
     gctest.DrainOutbox(t, app)

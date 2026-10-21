@@ -65,7 +65,7 @@ func newApp(t *testing.T, cfg Config) (*gocommerce.App, *recorder) {
 
 	cfg.Email, cfg.Password, cfg.PickupLocation = "a@example.test", "secret", "Primary"
 	cfg.BaseURL = server.URL
-	return gctest.New(t, New(cfg)), rec
+	return gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(cfg)), rec
 }
 
 // measuredProduct creates a product whose single variant has a real weight and
@@ -201,7 +201,7 @@ func TestOperatorMetaWins(t *testing.T) {
 // registers — the panel lists it — but the settings say it is not set up and
 // nothing can be sent through it, until its fields are typed into the plugin.
 func TestInstalledIdleUntilConfigured(t *testing.T) {
-	app := gctest.New(t, New(Config{}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{}))
 	ctx := context.Background()
 
 	var info *gocommerce.ProviderInfo

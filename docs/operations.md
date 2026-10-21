@@ -27,6 +27,7 @@ Only `DBURL` and one admin token are required.
 | `AdminTokens` | — | At least one, unless `Dev`. Several allow rotation. |
 | `AdminAuth` | bearer tokens | Replace to add sessions, OIDC or RBAC. |
 | `CORSOrigins` | none | Browser origins allowed to call the API directly (`GOCOMMERCE_CORS_ORIGINS`, comma-separated, `*` for any). Unset, a storefront on another origin has to proxy. Credentials are never allowed. |
+| `AllowPrivateURLs` | `false` | Lets the addresses a store sets — webhook endpoints, provider API base URLs — be private ones (`GOCOMMERCE_ALLOW_PRIVATE_URLS`). Only where every store operator runs the server; see [Addresses a store sets](#addresses-a-store-sets). |
 | `CartTTL` | 720h | How long an untouched cart survives. |
 | `CartRetention` | 720h | How long an abandoned cart is kept before deletion, measured from `abandoned_at`. |
 | `OrderTTL` | 24h | How long an unpaid order holds its stock. |
@@ -145,6 +146,35 @@ Sign-up, password-reset links and the stores' own addresses are listed too:
 
 Notifications › Setup Email has a **Send test email** button: it sends one
 message now and shows the provider's answer, such as an unverified sender.
+
+### Addresses a store sets
+
+Some addresses a store operator types are ones the server then connects to: a
+webhook endpoint, a payment or carrier module's API base URL, a store's own
+Meilisearch host, IndexNow's storefront URL, a Shopify shop to import from.
+The server calls those only when they are public — not loopback, a private
+range, link-local or another address that is not on the public internet — and
+it checks the address it actually connects to, after DNS and on every
+redirect. A new webhook endpoint must also be `https`. An address that breaks
+the rule is refused when it is saved, and a request to one that got in before
+this rule fails like any other unreachable endpoint, with the reason in the
+delivery log or the provider's error.
+
+An install where everyone who sets those addresses also runs the server — one
+business's own store, or a development machine — can lift the rule:
+
+| Variable | What it does |
+|---|---|
+| `GOCOMMERCE_ALLOW_PRIVATE_URLS` | `1` lets the addresses a store sets be private or loopback ones, and new webhook endpoints be plain `http`. Same as `-allow-private-urls`. `gocommerce doctor` warns while it is on. |
+
+It is not in the compose file on purpose. That file is the shape an install
+hosting stores for other people runs, and there the switch must stay off; a
+single-business install that wants it adds the line itself.
+
+While the rule is on, those requests do not go through `HTTP_PROXY` or
+`HTTPS_PROXY`: through a proxy the server cannot see where a request really
+goes. The install's own addresses — `MEILI_HOST`, `IMPORT_AMAZON_LLM_URL` —
+are set by whoever runs the server and are not held to it.
 
 ### Running several instances
 
@@ -347,5 +377,10 @@ rather than leaving a console window open.
 - Webhook secrets are mandatory in every payment module. A webhook endpoint
   without signature verification is an endpoint that lets anyone mark orders
   paid.
+- The addresses a store sets — outgoing webhook endpoints, provider API base
+  URLs and the rest — are called only when they are public, unless
+  `GOCOMMERCE_ALLOW_PRIVATE_URLS` is on (see [Addresses a store
+  sets](#addresses-a-store-sets)). Leave it off on any install where people
+  you do not run the server with can open a store.
 - Set `Dev: false` in production. It exists to let the engine boot without an
   admin token, which is exactly what you do not want.

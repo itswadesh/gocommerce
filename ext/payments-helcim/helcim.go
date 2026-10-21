@@ -205,7 +205,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 			{Key: "api_token", Label: "API token", Kind: "secret", Required: !inCode, Help: "Sent as the api-token header."},
 			{Key: "verifier_token", Label: "Webhook verifier token", Kind: "secret", Required: !inCode, Help: "Base64, as Helcim shows it."},
 			{Key: "server_ip", Label: "Server IP for refunds", Kind: "text", Help: "Helcim wants an ipAddress on every payment call; a refund has no shopper, so this is the machine's.", Default: "127.0.0.1"},
-			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production."},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Outbound: true, Help: "Empty for production."},
 		},
 	})
 	m.finish(&m.cfg)
@@ -214,7 +214,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	}
 	m.client = m.cfg.Client
 	if m.client == nil {
-		m.client = &http.Client{Timeout: 20 * time.Second}
+		m.client = app.OutboundClient(20 * time.Second)
 	}
 	m.log = app.Log()
 	m.db = app.DB()

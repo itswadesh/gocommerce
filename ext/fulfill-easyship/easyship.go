@@ -230,13 +230,13 @@ func (m *Module) Register(app *gocommerce.App) error {
 			{Key: "incoterms", Label: "Incoterms", Kind: "select", Help: "Who pays duty on a cross-border parcel.", Options: []string{"DDU", "DDP"}},
 			{Key: "imperial", Label: "Account uses pounds and inches", Kind: "bool", Help: "Get it wrong and every parcel is declared at about 2.2 times the wrong weight."},
 			{Key: "default_weight_grams", Label: "Default weight (grams)", Kind: "number", Help: "Per unit, for a variant with no weight recorded.", Default: 500},
-			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production."},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Outbound: true, Help: "Empty for production."},
 		},
 	})
 	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
-		m.client = &http.Client{Timeout: 45 * time.Second}
+		m.client = app.OutboundClient(45 * time.Second)
 	}
 	m.log = app.Log()
 

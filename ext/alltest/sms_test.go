@@ -56,7 +56,7 @@ func TestIndianNumbersGoToMSG91AndTheRestToTwilio(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = io.WriteString(w, `{"sid":"SM1","status":"queued"}`)
 	})
-	app := gctest.New(t,
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true},
 		twilio.New(twilio.Config{AccountSID: "AC1", AuthToken: "t", From: "+15550000000", BaseURL: twilioServer.URL}),
 		msg91.New(msg91.Config{AuthKey: "k", BaseURL: msgServer.URL,
 			Templates: map[string]string{gocommerce.EventOrderShipped: "tpl-shipped"}}),

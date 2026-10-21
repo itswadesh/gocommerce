@@ -116,7 +116,12 @@ $env:DATABASE_URL = "postgres://${EngineUser}:dev@${PgHost}:$PgPort/${Database}?
 # no Menus, Reviews, FAQ, Wishlists, Pages or Invoices screen and no email
 # or SMS provider to activate — so a screen looks broken when it is simply
 # not built in, and the next half hour goes on finding that out.
-$serveArgs = @('-addr', "127.0.0.1:$Port", '-admin-token', $Token)
+#
+# -allow-private-urls because the person typing a webhook endpoint or a
+# provider's base URL into a dev store is the person running it, and the
+# receiver they want to try it against is usually on this machine. A hosted
+# install leaves it off; `doctor` says so when it is on.
+$serveArgs = @('-addr', "127.0.0.1:$Port", '-admin-token', $Token, '-allow-private-urls')
 if ($All) {
     $serveArgs += @(
         '-identity', '-webhooks', '-menus', '-reviews', '-contact', '-newsletter',

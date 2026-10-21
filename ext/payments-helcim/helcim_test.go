@@ -136,7 +136,7 @@ func newApp(t *testing.T) (*gocommerce.App, *helcimStub) {
 			http.NotFound(w, r)
 		}
 	})
-	app := gctest.New(t, New(Config{
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{
 		APIToken:      "helcim_test",
 		VerifierToken: testVerifier,
 		BaseURL:       server.URL + "/v2",
@@ -364,7 +364,7 @@ func postWebhook(t *testing.T, app *gocommerce.App, id, body string) *httptest.R
 // registers — the panel lists it — but the settings say it is not set up and
 // nothing can be sent through it, until its fields are typed into the plugin.
 func TestInstalledIdleUntilConfigured(t *testing.T) {
-	app := gctest.New(t, New(Config{}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{}))
 	ctx := context.Background()
 
 	var info *gocommerce.ProviderInfo

@@ -112,10 +112,16 @@ func (m *Module) stateFor(ctx context.Context) *syncState {
 
 // Module is the sync worker and the routes.
 type Module struct {
-	cfg    Config
-	app    *gocommerce.App
-	log    *slog.Logger
-	client *http.Client
+	cfg Config
+	app *gocommerce.App
+	log *slog.Logger
+	// client calls the host the install was given (Config.Host), which is
+	// usually on the server's own network and was put there by whoever runs
+	// it. storeClient calls a host a store typed on the Plugins screen, and
+	// reaches only a public address unless the install allows otherwise
+	// (D109). A Config.Client is both.
+	client      *http.Client
+	storeClient *http.Client
 
 	mu sync.Mutex
 	// states is each store's sync, by store id (D83): one store's last sync
@@ -145,6 +151,10 @@ func (m *Module) Migrations() []gocommerce.Migration { return nil }
 func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	m.log = app.Log().With("module", "meilisearch")
+	m.storeClient = m.cfg.Client
+	if m.storeClient == nil {
+		m.storeClient = app.OutboundClient(30 * time.Second)
+	}
 
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "Meilisearch", Category: "search",
@@ -152,7 +162,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 		DefaultEnabled: m.cfg.Host != "" && m.cfg.APIKey != "",
 		Docs:           "https://www.meilisearch.com/docs",
 		Fields: []gocommerce.PluginField{
-			{Key: "host", Label: "Meilisearch URL", Kind: "url", Required: m.cfg.Host == "", Public: true, Help: "http://127.0.0.1:7700, or the cloud address."},
+			{Key: "host", Label: "Meilisearch URL", Kind: "url", Outbound: true, Required: m.cfg.Host == "", Public: true, Help: "Its public address, such as the one Meilisearch Cloud gives. One on the server's own network is set where the server is run (MEILI_HOST)."},
 			{Key: "api_key", Label: "API key", Kind: "secret", Required: m.cfg.APIKey == "", Help: "A key that may write the index — the master key locally, an admin key in production."},
 			{Key: "search_key", Label: "Search-only key", Kind: "text", Public: true, Help: "Safe to hand to the storefront for searching Meilisearch directly."},
 			{Key: "index", Label: "Index name", Kind: "text", Default: defaultIndex, Public: true},
@@ -175,6 +185,9 @@ func (m *Module) Register(app *gocommerce.App) error {
 type connection struct {
 	host, apiKey, searchKey, index string
 	enabled                        bool
+	// storeHost is whether host is one the store typed rather than the
+	// install's own, which decides the client that calls it.
+	storeHost bool
 }
 
 func (c connection) configured() bool { return c.host != "" && c.apiKey != "" }
@@ -202,6 +215,9 @@ func (m *Module) connection(ctx context.Context) (connection, error) {
 		// its own store's documents (D83).
 		index: first(str("index"), m.cfg.Index, defaultIndex),
 	}
+	// A store that typed the install's own host gets nothing it would not
+	// have had by leaving the field empty.
+	c.storeHost = c.host != strings.TrimRight(m.cfg.Host, "/")
 	return c, nil
 }
 
@@ -531,7 +547,11 @@ func (m *Module) call(ctx context.Context, conn connection, key, method, path st
 	if key != "" {
 		req.Header.Set("Authorization", "Bearer "+key)
 	}
-	resp, err := m.client.Do(req)
+	client := m.client
+	if conn.storeHost {
+		client = m.storeClient
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, 0, fmt.Errorf("meilisearch: %w", err)
 	}

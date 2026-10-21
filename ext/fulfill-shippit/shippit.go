@@ -190,13 +190,13 @@ func (m *Module) Register(app *gocommerce.App) error {
 			{Key: "courier_type", Label: "Service band", Kind: "select", Required: !inCode, Help: "The default; a shipment can override it.", Options: []string{"standard", "express", "priority", "plain_label"}},
 			{Key: "authority_to_leave", Label: "Authority to leave", Kind: "bool", Help: "Whether a courier may leave a parcel at the door; the shopper's call, really."},
 			{Key: "default_weight_grams", Label: "Default weight (grams)", Kind: "number", Help: "Per unit, for a variant with no weight recorded.", Default: 500},
-			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production; https://app.staging.shippit.com/api/3 for staging."},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Outbound: true, Help: "Empty for production; https://app.staging.shippit.com/api/3 for staging."},
 		},
 	})
 	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
-		m.client = &http.Client{Timeout: 30 * time.Second}
+		m.client = app.OutboundClient(30 * time.Second)
 	}
 	m.log = app.Log()
 

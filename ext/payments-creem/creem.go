@@ -232,13 +232,13 @@ func (m *Module) Register(app *gocommerce.App) error {
 			{Key: "webhook_secret", Label: "Webhook signing secret", Kind: "secret", Required: !inCode},
 			{Key: "product_id", Label: "Placeholder product ID", Kind: "text", Required: !inCode, Help: "A one-time product every checkout is created against; its price is overridden per order."},
 			{Key: "success_url", Label: "Where to send the shopper afterwards", Kind: "url", Help: "Empty shows Creem's own confirmation."},
-			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production; https://test-api.creem.io for the sandbox."},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Outbound: true, Help: "Empty for production; https://test-api.creem.io for the sandbox."},
 		},
 	})
 	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
-		m.client = &http.Client{Timeout: 20 * time.Second}
+		m.client = app.OutboundClient(20 * time.Second)
 	}
 	m.log = app.Log()
 	m.db = app.DB()

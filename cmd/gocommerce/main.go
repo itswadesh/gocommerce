@@ -153,6 +153,10 @@ environment:
                     answers at <slug>.<base domain>
   GOCOMMERCE_SIGNUP same as -signup. Off when unset, empty, "0", "false", "no"
                     or "off"; any other value is on
+  GOCOMMERCE_ALLOW_PRIVATE_URLS
+                    same as -allow-private-urls, read the same way. Only for an
+                    install where every store operator is trusted with the
+                    server itself: one business's own store, or development
   GOCOMMERCE_DEMO   same as -demo. Off when unset, empty, "0", "false", "no"
                     or "off"; any other value is on
   GOCOMMERCE_DEMO_ACCOUNT
@@ -174,6 +178,7 @@ environment:
 		dev          = fs.Bool("dev", false, "development mode: permits booting with no admin token")
 		demo         = fs.Bool("demo", false, "public demo: mask every email address and phone number on admin responses and freeze operators, keys and roles; with $GOCOMMERCE_DEMO_ACCOUNT set, any email and password sign in as that account (default $GOCOMMERCE_DEMO)")
 		signup       = fs.Bool("signup", false, "anybody may make an account on the sign-in screen and open a store with it, for an install that hosts stores for other people (default $GOCOMMERCE_SIGNUP)")
+		allowPrivate = fs.Bool("allow-private-urls", false, "let the addresses a store sets — webhook endpoints, provider API base URLs, a search host — be private or loopback ones, and new webhook endpoints plain http; never on an install that hosts stores for other people (default $GOCOMMERCE_ALLOW_PRIVATE_URLS)")
 		verbose      = fs.Bool("v", false, "verbose (debug) logging")
 		jsonOut      = fs.Bool("json", false, "machine-readable output (doctor)")
 		mediaDir     = fs.String("media-dir", "", "directory for uploaded media (default $GOCOMMERCE_MEDIA_DIR; empty disables uploads)")
@@ -277,6 +282,10 @@ environment:
 		// Whether strangers may make an account and open a store: a choice
 		// about who this install is for, so a flag as well as the environment.
 		Signup: *signup || envTrue("GOCOMMERCE_SIGNUP"),
+		// Whether the addresses a store sets may reach the server's own
+		// network: the same kind of choice about who this install is for, read
+		// as a word for the same reason as the demo switch.
+		AllowPrivateURLs: *allowPrivate || envTrue("GOCOMMERCE_ALLOW_PRIVATE_URLS"),
 		// Env only, for the same reason: which storefronts call this engine
 		// is a fact about the deployment.
 		CORSOrigins: corsOrigins(os.Getenv("GOCOMMERCE_CORS_ORIGINS")),

@@ -109,9 +109,6 @@ func New(cfg ...Config) *Module {
 	if m.cfg.Window <= 0 {
 		m.cfg.Window = DefaultWindow
 	}
-	if m.cfg.HTTP == nil {
-		m.cfg.HTTP = &http.Client{Timeout: 15 * time.Second}
-	}
 	return m
 }
 
@@ -128,6 +125,10 @@ func (m *Module) Migrations() []gocommerce.Migration { return nil }
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
+	// The key file is fetched from the storefront URL a store typed.
+	if m.cfg.HTTP == nil {
+		m.cfg.HTTP = app.OutboundClient(15 * time.Second)
+	}
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "IndexNow", Category: "marketing",
 		Description: "Tell Bing, Yandex, Seznam and Naver the moment a page changes, instead of " +
@@ -136,7 +137,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 		Docs: "https://www.indexnow.org/documentation",
 		Fields: []gocommerce.PluginField{
 			{
-				Key: "storefront_url", Label: "Storefront URL", Kind: "url", Required: true,
+				Key: "storefront_url", Label: "Storefront URL", Kind: "url", Outbound: true, Required: true,
 				Help: "Where the pages actually are. The key file is served from this engine, " +
 					"so it has to be the same host.",
 			},

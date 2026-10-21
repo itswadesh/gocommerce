@@ -108,7 +108,7 @@ func newApp(t *testing.T, cfg Config, shape func(*stub)) (*gocommerce.App, *stub
 	if cfg.SellerName == "" {
 		cfg.SellerName = "Acme Retail"
 	}
-	return gctest.New(t, New(cfg)), st
+	return gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(cfg)), st
 }
 
 // The module's reason to exist, including the shape Delhivery actually takes:
@@ -270,7 +270,7 @@ func TestRemarks(t *testing.T) {
 // registers — the panel lists it — but the settings say it is not set up and
 // nothing can be sent through it, until its fields are typed into the plugin.
 func TestInstalledIdleUntilConfigured(t *testing.T) {
-	app := gctest.New(t, New(Config{}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{}))
 	ctx := context.Background()
 
 	var info *gocommerce.ProviderInfo

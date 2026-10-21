@@ -210,9 +210,13 @@ func (m *Module) Register(app *gocommerce.App) error {
 	if m.cfg.HumanWait <= 0 {
 		m.cfg.HumanWait = 3 * time.Minute
 	}
+	// Picture addresses come out of the page that was fetched, so the
+	// client that downloads them reaches only public addresses unless the
+	// install allows otherwise. The model and the browser are the install's
+	// own and may be local; their clients are left as they are.
 	m.imgClient = m.cfg.ImageClient
 	if m.imgClient == nil {
-		m.imgClient = &http.Client{Timeout: 60 * time.Second}
+		m.imgClient = app.OutboundClient(60 * time.Second)
 	}
 	m.app = app
 	m.log = app.Log()

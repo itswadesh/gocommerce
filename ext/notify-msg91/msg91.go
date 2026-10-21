@@ -99,7 +99,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	}
 	m.client = m.cfg.Client
 	if m.client == nil {
-		m.client = &http.Client{Timeout: 15 * time.Second}
+		m.client = app.OutboundClient(15 * time.Second)
 	}
 	m.log = app.Log()
 

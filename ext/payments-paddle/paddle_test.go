@@ -128,7 +128,7 @@ func newApp(t *testing.T) (*gocommerce.App, *Module) {
 		WebhookSecret: testSecret,
 		BaseURL:       server.URL,
 	})
-	return gctest.New(t, mod), mod
+	return gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, mod), mod
 }
 
 // TestCheckoutAndWebhook is the module's reason to exist, end to end: a hosted
@@ -307,7 +307,7 @@ func postWebhook(t *testing.T, app *gocommerce.App, body, signature string) *htt
 // registers — the panel lists it — but the settings say it is not set up and
 // nothing can be sent through it, until its fields are typed into the plugin.
 func TestInstalledIdleUntilConfigured(t *testing.T) {
-	app := gctest.New(t, New(Config{}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{}))
 	ctx := context.Background()
 
 	var info *gocommerce.ProviderInfo

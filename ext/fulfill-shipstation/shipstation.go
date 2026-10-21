@@ -208,13 +208,13 @@ func (m *Module) Register(app *gocommerce.App) error {
 			{Key: "from_country_code", Label: "From: country (ISO 2)", Kind: "text", Required: !inCode},
 			{Key: "from_phone", Label: "From: phone", Kind: "text"},
 			{Key: "default_weight_grams", Label: "Default weight (grams)", Kind: "number", Help: "Per unit, for a variant with no weight recorded.", Default: 500},
-			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production."},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Outbound: true, Help: "Empty for production."},
 		},
 	})
 	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
-		m.client = &http.Client{Timeout: 30 * time.Second}
+		m.client = app.OutboundClient(30 * time.Second)
 	}
 	m.log = app.Log()
 

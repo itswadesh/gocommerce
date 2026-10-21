@@ -125,13 +125,15 @@ type Config struct {
     SecretKey     string // required
     WebhookSecret string // required: without it, anyone could mark orders paid
     BaseURL       string // overridable, for tests
+    Client        *http.Client // overridable; used as given
 }
 
 type Module struct {
-    cfg Config
-    db  *sql.DB
-    pay *gocommerce.Payments
-    log *slog.Logger
+    cfg    Config
+    client *http.Client
+    db     *sql.DB
+    pay    *gocommerce.Payments
+    log    *slog.Logger
 }
 
 func New(cfg Config) *Module   { return &Module{cfg: cfg} }
@@ -159,6 +161,12 @@ func (m *Module) Register(app *gocommerce.App) error {
         return errors.New("acme: WebhookSecret is required — without it, anyone could mark orders paid")
     }
     m.log, m.db, m.pay = app.Log(), app.DB(), app.Pay()
+    // A store can set the base URL, so the client reaches only public
+    // addresses unless the install allows otherwise (AGENTS.md rule 16).
+    m.client = m.cfg.Client
+    if m.client == nil {
+        m.client = app.OutboundClient(20 * time.Second)
+    }
     app.RegisterPayment(m) // serves /api/checkout/acme and /api/checkout/acme/webhook
     return nil
 }

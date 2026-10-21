@@ -147,6 +147,17 @@ type Config struct {
 	// hosts stores for other people; a shop run for one business leaves it off
 	// and adds its staff by invitation.
 	Signup bool
+	// AllowPrivateURLs lets the addresses a store sets — webhook endpoints, a
+	// provider's API base URL, a search host — be loopback, private or
+	// link-local, and lets a new webhook endpoint be plain http. Off, the
+	// default, the server connects to those addresses only when they are
+	// public (outbound.go, D109).
+	//
+	// It is for an install where whoever types those addresses already runs
+	// the server: one business's own store, or a developer's machine. An
+	// install that hosts stores for other people leaves it off, and
+	// `gocommerce doctor` warns while it is on.
+	AllowPrivateURLs bool
 	// CORSOrigins are the browser origins allowed to call the API directly —
 	// "https://shop.example.com", or "*" for any. Empty, the default, sends no
 	// CORS headers, and a storefront on another origin has to proxy.

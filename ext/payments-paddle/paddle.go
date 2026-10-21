@@ -208,13 +208,13 @@ func (m *Module) Register(app *gocommerce.App) error {
 			{Key: "api_key", Label: "API key", Kind: "secret", Required: !inCode, Help: "Needs transaction.write and adjustment.write."},
 			{Key: "webhook_secret", Label: "Notification signing secret", Kind: "secret", Required: !inCode},
 			{Key: "sandbox", Label: "Sandbox", Kind: "bool", Help: "Points at sandbox-api.paddle.com; Paddle issues separate keys for the two."},
-			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Overrides both hosts; for tests."},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Outbound: true, Help: "Overrides both hosts; for tests."},
 		},
 	})
 	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
-		m.client = &http.Client{Timeout: 20 * time.Second}
+		m.client = app.OutboundClient(20 * time.Second)
 	}
 	m.log = app.Log()
 	m.db = app.DB()

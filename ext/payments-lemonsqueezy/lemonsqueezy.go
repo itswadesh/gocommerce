@@ -198,13 +198,13 @@ func (m *Module) Register(app *gocommerce.App) error {
 			{Key: "webhook_secret", Label: "Webhook signing secret", Kind: "secret", Required: !inCode},
 			{Key: "store_id", Label: "Store ID", Kind: "text", Required: !inCode},
 			{Key: "variant_id", Label: "Placeholder variant ID", Kind: "text", Required: !inCode, Help: "The catalogue item every checkout is created against."},
-			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production."},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Outbound: true, Help: "Empty for production."},
 		},
 	})
 	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
-		m.client = &http.Client{Timeout: 20 * time.Second}
+		m.client = app.OutboundClient(20 * time.Second)
 	}
 	m.log = app.Log()
 	m.db = app.DB()

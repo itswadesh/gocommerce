@@ -78,7 +78,7 @@ func channel(app *gocommerce.App, name string) gocommerce.NotifierChannelInfo {
 func TestAKeyAloneIsEnoughToSend(t *testing.T) {
 	s := &stub{}
 	server := gctest.StubHTTP(t, s.handler)
-	app := gctest.New(t, New(Config{APIKey: "re_test", BaseURL: server.URL}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{APIKey: "re_test", BaseURL: server.URL}))
 
 	if !channel(app, gocommerce.ChannelEmail).Delivers {
 		t.Fatal("a key alone should be enough for email to deliver")
@@ -103,7 +103,7 @@ func TestAKeyAloneIsEnoughToSend(t *testing.T) {
 func TestAVerifiedSenderReplacesTheDefault(t *testing.T) {
 	s := &stub{}
 	server := gctest.StubHTTP(t, s.handler)
-	app := gctest.New(t, New(Config{APIKey: "re_test", BaseURL: server.URL}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{APIKey: "re_test", BaseURL: server.URL}))
 	ctx := context.Background()
 
 	if _, err := app.Plugins().Update(ctx, PluginKey, gocommerce.PluginPatch{
@@ -138,7 +138,7 @@ func TestAVerifiedSenderReplacesTheDefault(t *testing.T) {
 func TestWithoutAKeyNothingSendsAndTheMessageIsStillRecorded(t *testing.T) {
 	s := &stub{}
 	server := gctest.StubHTTP(t, s.handler)
-	app := gctest.New(t, New(Config{BaseURL: server.URL}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{BaseURL: server.URL}))
 	ctx := context.Background()
 
 	email := channel(app, gocommerce.ChannelEmail)
@@ -180,7 +180,7 @@ func TestWithoutAKeyNothingSendsAndTheMessageIsStillRecorded(t *testing.T) {
 func TestARejectedMessageSettlesRatherThanRetrying(t *testing.T) {
 	s := &stub{status: http.StatusUnprocessableEntity, body: `{"message":"Invalid to field","name":"validation_error"}`}
 	server := gctest.StubHTTP(t, s.handler)
-	app := gctest.New(t, New(Config{APIKey: "re_test", BaseURL: server.URL}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{APIKey: "re_test", BaseURL: server.URL}))
 
 	gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
 	gctest.DrainOutbox(t, app)
@@ -203,7 +203,7 @@ func TestARejectedMessageSettlesRatherThanRetrying(t *testing.T) {
 func TestPanelWordingWins(t *testing.T) {
 	s := &stub{}
 	server := gctest.StubHTTP(t, s.handler)
-	app := gctest.New(t, New(Config{
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{
 		APIKey: "re_test", BaseURL: server.URL,
 		Subjects: map[string]string{gocommerce.EventOrderCreated: "Code says {{.order_number}}"},
 	}))
@@ -230,7 +230,7 @@ func TestPanelWordingWins(t *testing.T) {
 func TestACustomerIsWrittenToInTheirLanguage(t *testing.T) {
 	s := &stub{}
 	server := gctest.StubHTTP(t, s.handler)
-	app := gctest.New(t, New(Config{
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{
 		APIKey: "re_test", BaseURL: server.URL,
 		Subjects: map[string]string{gocommerce.EventOrderShipped: "Code says {{.order_number}}"},
 	}))

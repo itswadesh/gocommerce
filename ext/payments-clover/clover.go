@@ -228,13 +228,13 @@ func (m *Module) Register(app *gocommerce.App) error {
 			{Key: "currency", Label: "Account currency", Kind: "select", Options: []string{"USD", "CAD"}, Default: "USD", Help: "Clover charges in the account's own currency; orders in any other are refused."},
 			{Key: "return_url", Label: "Return URL", Kind: "url", Help: "Where the shopper lands after paying, if the storefront sends none. https only."},
 			{Key: "sandbox", Label: "Sandbox", Kind: "bool", Help: "Points at apisandbox.dev.clover.com, with a test merchant's token and secret."},
-			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production."},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Outbound: true, Help: "Empty for production."},
 		},
 	})
 	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
-		m.client = &http.Client{Timeout: 20 * time.Second}
+		m.client = app.OutboundClient(20 * time.Second)
 	}
 	m.log = app.Log()
 	m.db = app.DB()

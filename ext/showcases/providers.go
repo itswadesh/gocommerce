@@ -215,5 +215,5 @@ func (m *Module) client() *http.Client {
 	if m.cfg.HTTPClient != nil {
 		return m.cfg.HTTPClient
 	}
-	return http.DefaultClient
+	return m.outbound
 }

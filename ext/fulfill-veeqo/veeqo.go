@@ -179,13 +179,13 @@ func (m *Module) Register(app *gocommerce.App) error {
 			{Key: "carrier_id", Label: "Carrier ID", Kind: "number", Help: "Veeqo's numeric id for the carrier; 3 is Other.", Default: 3},
 			{Key: "notify_customer", Label: "Let Veeqo email the customer", Kind: "bool", Help: "The engine already writes on order.shipped; two emails about one parcel reads as disorganised."},
 			{Key: "update_remote_order", Label: "Push the shipment to the sales channel", Kind: "bool", Help: "This store is that channel; off by default."},
-			{Key: "base_url", Label: "API base URL", Kind: "url", Help: "Empty for production."},
+			{Key: "base_url", Label: "API base URL", Kind: "url", Outbound: true, Help: "Empty for production."},
 		},
 	})
 	m.finish(&m.cfg)
 	m.client = m.cfg.Client
 	if m.client == nil {
-		m.client = &http.Client{Timeout: 30 * time.Second}
+		m.client = app.OutboundClient(30 * time.Second)
 	}
 	m.log = app.Log()
 

@@ -143,7 +143,7 @@ func stubCreem(t *testing.T) *httptest.Server {
 func newApp(t *testing.T) *gocommerce.App {
 	t.Helper()
 	server := stubCreem(t)
-	return gctest.New(t, New(Config{
+	return gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{
 		APIKey:        "creem_test",
 		WebhookSecret: testSecret,
 		ProductID:     "prod_placeholder",
@@ -408,7 +408,7 @@ func postWebhook(t *testing.T, app *gocommerce.App, body, signature string) *htt
 // the settings say it is not set up and nothing can be sent through it, until
 // its fields are typed into the plugin.
 func TestInstalledIdleUntilConfigured(t *testing.T) {
-	app := gctest.New(t, New(Config{}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{}))
 	ctx := context.Background()
 
 	var info *gocommerce.ProviderInfo

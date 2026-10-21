@@ -56,6 +56,11 @@ type Module struct {
 	app    *gocommerce.App
 	db     *sql.DB
 	events *throttle
+	// outbound asks YouTube about a pasted video. The host is YouTube's own,
+	// but the module still goes through the install's guarded client: one
+	// rule for every module that calls out is simpler to keep than a
+	// judgement per host.
+	outbound *http.Client
 }
 
 // New builds the module. Register it with gocommerce.New.
@@ -150,6 +155,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	m.db = app.DB()
 	m.events = newThrottle(m.cfg.EventsPerMinute)
+	m.outbound = app.OutboundClient(5 * time.Second)
 
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "Video showcases", Category: "storefront", DefaultEnabled: true,

@@ -50,7 +50,7 @@ func (s *stub) all() []flow {
 func TestConfiguredFromThePanel(t *testing.T) {
 	s := &stub{}
 	server := gctest.StubHTTP(t, s.handler)
-	app := gctest.New(t, New(Config{BaseURL: server.URL}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{BaseURL: server.URL}))
 	ctx := context.Background()
 	// A store in India, whose numbers are MSG91's even written without the
 	// code (TestMSG91ServesIndianNumbersAndIndianStores).

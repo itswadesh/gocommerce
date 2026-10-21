@@ -115,7 +115,9 @@ nobody has to re-derive the same harness.
 ```go
 func TestMyProvider(t *testing.T) {
     stub := gctest.StubHTTP(t, fakeVendorHandler)     // never call the real vendor
-    app := gctest.New(t, mymodule.New(mymodule.Config{BaseURL: stub.URL}))
+    // The stub is on loopback, which app.OutboundClient refuses by default.
+    app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true},
+        mymodule.New(mymodule.Config{BaseURL: stub.URL}))
 
     result := gctest.PlaceOrder(t, app, "acme")       // product → cart → checkout
     gctest.DrainOutbox(t, app)
@@ -133,6 +135,11 @@ func TestMyProvider(t *testing.T) {
   `DecodeData` unwraps `{"data": …}` and fails loudly on an error envelope.
 - `CreateProduct` and `PlaceOrder` are the fixtures; `RecordingNotifier`,
   `RecordingEvents` and `StubHTTP` are the doubles.
+- A `StubHTTP` server is on `127.0.0.1`, and a module's default client is
+  `app.OutboundClient`, which refuses private addresses (D109). A test that
+  points a module at a stub boots with `Config{AllowPrivateURLs: true}`, as
+  above, or injects the module's `Client`. A test of the refusal itself leaves
+  the switch off.
 
 **The one thing that catches everyone: the outbox dispatcher is not running.**
 It starts from an `OnStart` hook, and only `ListenAndServe` runs those — a

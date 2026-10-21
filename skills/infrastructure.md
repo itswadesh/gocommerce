@@ -225,6 +225,7 @@ The checks, in order:
 | `database` | every pooled connection checked out — look for long transactions | cannot reach PostgreSQL |
 | `migrations` | — | something is unapplied; run `gocommerce migrate` |
 | `admin access` | no superusers but tokens configured (the panel needs one), or `Dev` is on | no superusers **and** no admin tokens — nobody can administer the store |
+| `outbound addresses` | `AllowPrivateURLs` is on, so a store operator can make the server call addresses on its own network — right only where every operator runs the server (D109) | — |
 | `outbox` | oldest unpublished > 30s, or any dead-lettered rows — the hint names **Settings → Platform → Events**, where the rows are read and retried | oldest unpublished > 5m, or the table is unreadable |
 | `stock reservations` | unpaid or failed orders past their reservation window still holding units | — |
 | `carts` | more than 1000 expired-but-open carts — the sweeper is not running | — |
@@ -286,15 +287,30 @@ machine with no Node.js. Details in [development](development.md) and
 The reference binary's commands: `serve` (default), `migrate`, `superuser
 create|update|list`, `doctor` (with `-json`), `spec`, `version`, and `platform` for many stores (below).
 Flags: `-db`,
-`-addr`, `-admin-token`, `-currency`, `-languages` (what a store sells in until it chooses its own, D87), `-dev`, `-demo`, `-signup` (anybody may make an account and open a store), `-v`,
+`-addr`, `-admin-token`, `-currency`, `-languages` (what a store sells in until it chooses its own, D87), `-dev`, `-demo`, `-signup` (anybody may make an account and open a store), `-allow-private-urls` (the addresses a store sets may be private ones; see below), `-v`,
 `-json`, and for `platform` `-base-domain`, `-platform-host`, `-api-host`,
-`-platform-token` and `-namespace`. `DATABASE_URL`, `GOCOMMERCE_ADMIN_TOKEN`, `GOCOMMERCE_DEMO`, `GOCOMMERCE_SIGNUP`,
+`-platform-token` and `-namespace`. `DATABASE_URL`, `GOCOMMERCE_ADMIN_TOKEN`, `GOCOMMERCE_DEMO`, `GOCOMMERCE_SIGNUP`, `GOCOMMERCE_ALLOW_PRIVATE_URLS`,
 `GOCOMMERCE_DEMO_ACCOUNT`, `GOCOMMERCE_ADMIN_EMAIL` and
 `GOCOMMERCE_ADMIN_PASSWORD` are the environment equivalents.
-`GOCOMMERCE_DEMO` and `GOCOMMERCE_SIGNUP` are the variables here read as a word rather than as
+`GOCOMMERCE_DEMO`, `GOCOMMERCE_SIGNUP` and `GOCOMMERCE_ALLOW_PRIVATE_URLS` are the variables here read as a word rather than as
 "non-empty": `0`, `false`, `no` and `off` mean off, because a deployment that
 wrote `GOCOMMERCE_DEMO=false` and got a panel anybody could sign into would
 have been right to expect better.
+
+**The addresses a store sets are called only when they are public** (D109).
+Webhook endpoints, a gateway's or carrier's API base URL, a store's own
+Meilisearch host, IndexNow's storefront URL, a Shopify shop and the pictures an
+import downloads all go through `app.OutboundClient`, which refuses loopback,
+private, link-local and the other non-public ranges on the address it actually
+dials — after DNS, on every redirect. A new webhook endpoint must also be
+https. Saving one of those addresses runs `app.ValidateOutboundURL` first, so
+the operator hears about it while typing. `-allow-private-urls` lifts all of it
+for an install where whoever sets those addresses runs the server — one
+business's own store, a development machine — and the `outbound addresses`
+check warns while it is on. The guarded client ignores `HTTP_PROXY` and
+`HTTPS_PROXY`: through a proxy it could not see where a request really goes.
+The install's own addresses (`MEILI_HOST`, `IMPORT_AMAZON_LLM_URL`, the
+browser import-amazon drives) are the server owner's and use ordinary clients.
 
 ## Running a public demo
 

@@ -90,6 +90,7 @@ func (a *App) Diagnose(ctx context.Context) Report {
 	add(a.checkMigrations(ctx))
 	add(a.checkRowSecurity(ctx))
 	add(a.checkAdminAccess(ctx))
+	add(a.checkOutbound())
 	add(a.checkOutbox(ctx))
 	add(a.checkReservations(ctx))
 	add(a.checkCarts(ctx))

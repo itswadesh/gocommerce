@@ -115,7 +115,7 @@ func stubAdyen(t *testing.T) *httptest.Server {
 func newApp(t *testing.T) *gocommerce.App {
 	t.Helper()
 	server := stubAdyen(t)
-	return gctest.New(t, New(Config{
+	return gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{
 		APIKey:          "adyen_test",
 		MerchantAccount: testMerchant,
 		HMACKey:         testHMACKey,
@@ -351,7 +351,7 @@ func postItems(t *testing.T, app *gocommerce.App, items ...notificationItem) *ht
 // registers — the panel lists it — but the settings say it is not set up and
 // nothing can be sent through it, until its fields are typed into the plugin.
 func TestInstalledIdleUntilConfigured(t *testing.T) {
-	app := gctest.New(t, New(Config{}))
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{}))
 	ctx := context.Background()
 
 	var info *gocommerce.ProviderInfo
