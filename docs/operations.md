@@ -26,6 +26,7 @@ Only `DBURL` and one admin token are required.
 | `DefaultLanguage` / `Languages` | `en` / `["en"]` | What a store sells in until it chooses its own languages on Store settings (D87). Each request is negotiated against its store's list. |
 | `AdminTokens` | — | At least one, unless `Dev`. Several allow rotation. |
 | `AdminAuth` | bearer tokens | Replace to add sessions, OIDC or RBAC. |
+| `SecretsKey` / `SecretsKeyPrevious` | none | `GOCOMMERCE_SECRETS_KEY` / `GOCOMMERCE_SECRETS_KEY_PREVIOUS`, environment only. Seals the secrets the engine reads back; unset, they are stored readable. See [Secrets at rest](#secrets-at-rest). |
 | `CORSOrigins` | none | Browser origins allowed to call the API directly (`GOCOMMERCE_CORS_ORIGINS`, comma-separated, `*` for any). Unset, a storefront on another origin has to proxy. Credentials are never allowed. |
 | `CartTTL` | 720h | How long an untouched cart survives. |
 | `CartRetention` | 720h | How long an abandoned cart is kept before deletion, measured from `abandoned_at`. |
@@ -142,6 +143,7 @@ Sign-up, password-reset links and the stores' own addresses are listed too:
 | `GOCOMMERCE_PANEL_URL` | Where the panel is reached, e.g. `https://shop.example.com`. A password-reset email links there; without it the email carries only a code. |
 | `GOCOMMERCE_SIGNUP` | `1` lets anybody make an account on the sign-in screen and open a store. It stays shut until the install has email of its own: `RESEND_API_KEY` or `SENDGRID_API_KEY` here, not a store's own email settings. |
 | `GOCOMMERCE_BASE_DOMAIN` | Gives every store an address at `<slug>.<base domain>` without adding a domain, e.g. `shops.example.com`. The panel shows it, and a domain under it cannot be added as a store's own. Point a wildcard DNS record at whatever serves the storefront. |
+| `GOCOMMERCE_SECRETS_KEY`, `GOCOMMERCE_SECRETS_KEY_PREVIOUS` | Seal the payment and provider keys, API key copies and webhook signing secrets the database holds. Empty by default, which stores them readable as before. See [Secrets at rest](#secrets-at-rest) before setting it. |
 
 Notifications › Setup Email has a **Send test email** button: it sends one
 message now and shows the provider's answer, such as an unverified sender.
@@ -151,6 +153,88 @@ message now and shows the provider's answer, such as an unverified sender.
 Nothing has to change. The outbox dispatcher claims rows with `FOR UPDATE SKIP
 LOCKED`, so each process takes work no other process holds. The sweepers are
 idempotent. There is no leader election to configure because there is no leader.
+The one setting every instance must share is `GOCOMMERCE_SECRETS_KEY`, below.
+
+## Secrets at rest
+
+A few credentials have to be read back in full rather than checked against a
+hash, so they cannot be hashed. With `GOCOMMERCE_SECRETS_KEY` set they are
+sealed with AES-256-GCM before they reach the database, and a backup, a dump or
+a replica holds ciphertext. Without it they are stored readable, as they always
+were, and `gocommerce doctor` warns with the count.
+
+| What | Where it is stored | Sealed as |
+|---|---|---|
+| Plugin settings of kind `secret`: payment gateway, carrier, email, SMS, search and marketing keys, and the Shopify import token | `plugins.settings` | `plugins/<plugin>/<field>` |
+| The copy of an API key the owner can read again (M46) | `api_keys.secret` | `api_keys/secret` |
+| Webhook signing secrets | `webhook_endpoints.secret` | `webhooks/endpoint_secret` |
+
+Passwords, sessions, reset codes and API keys themselves are not on the list:
+they are stored as hashes, because the engine only ever compares them. Order
+and cart tokens are not either: the engine finds a row by its token, which a
+value sealed with a random nonce cannot be searched for.
+
+**Turning it on.**
+
+1. Make a key, 32 random bytes in base64:
+
+   ```sh
+   openssl rand -base64 32
+   ```
+
+   or in PowerShell:
+
+   ```powershell
+   $b = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)
+   ```
+
+2. Keep a copy away from the server and away from its database backups, in a
+   password manager the owner controls. A key kept beside the database protects
+   nothing, and **a lost key cannot be recovered: every sealed secret has to be
+   entered again** — gateway and provider keys typed in on their screens, API
+   keys revoked and made again, webhook secrets rotated.
+3. Set `GOCOMMERCE_SECRETS_KEY` in the engine's environment (a PaaS's
+   environment tab; `docker-compose.yml` already passes it through) and restart.
+   Every instance needs the same key. From now on, what is entered is sealed.
+4. Seal what was stored before, with the module flags the store is served with:
+
+   ```sh
+   gocommerce -webhooks -gateways -carriers secrets seal
+   ```
+
+   It walks every store, suspended ones too, prints counts per kind and never a
+   value, and is safe to run again. Doctor's `secrets` check then reads
+   `N secret(s) sealed under key <id>`. If it says a module is not installed in
+   this run, run it again with that module's flag.
+
+Seal after the restart, not before: a process still running without the key
+cannot open what the command seals, and its plugins read as not configured until
+it restarts.
+
+**Rotating.** Set the new key as `GOCOMMERCE_SECRETS_KEY` and the old one as
+`GOCOMMERCE_SECRETS_KEY_PREVIOUS`, restart, and run `gocommerce secrets seal`: it
+moves everything the old key sealed under the new one. Then unset
+`GOCOMMERCE_SECRETS_KEY_PREVIOUS` and restart again. Until then, doctor notes
+what is still under the previous key. Rotating changes the key, not the secrets:
+if a gateway key may have leaked along with the old key, rotate it at the
+gateway too.
+
+**When a key goes missing.** A sealed value names the key that sealed it (the
+first eight hex characters of the key's SHA-256) and is bound to its store and
+its field, so it does not open under another key, in another store or in
+another field. One that no key here opens reads as unset: its plugin shows as
+not configured, an API key's copy cannot be shown again (the key still
+authenticates), and a webhook delivery fails with a message to rotate the
+secret rather than going out unsigned. The value is kept as stored until a new
+one is typed in, so putting the right key back — as
+`GOCOMMERCE_SECRETS_KEY_PREVIOUS`, then `secrets seal` — recovers it. Doctor
+names each field; the log names it once an hour.
+
+A key that does not decode to 32 bytes, or `GOCOMMERCE_SECRETS_KEY_PREVIOUS`
+set without `GOCOMMERCE_SECRETS_KEY`, stops the engine at startup with the
+variable named and its value never printed. The key is read from the
+environment only, never from a flag, because a flag is visible to anyone who can
+list the machine's processes.
 
 ## Health checks
 
@@ -347,5 +431,8 @@ rather than leaving a console window open.
 - Webhook secrets are mandatory in every payment module. A webhook endpoint
   without signature verification is an endpoint that lets anyone mark orders
   paid.
+- Set `GOCOMMERCE_SECRETS_KEY`, so the payment keys and other credentials the
+  database holds are sealed rather than readable by whoever holds a backup
+  ([Secrets at rest](#secrets-at-rest)).
 - Set `Dev: false` in production. It exists to let the engine boot without an
   admin token, which is exactly what you do not want.

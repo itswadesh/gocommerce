@@ -388,6 +388,13 @@ DELETE /api/admin/api-keys/{id} apikeys.write   revokes, keeping the row
   `apikeys.write` rather than `apikeys.read` — knowing a key exists is smaller
   than being able to use it — and every read is logged. Keys issued before M46
   have nothing stored and answer 409 saying so.
+- **The copy is sealed when the install has a key** (D110). With
+  `GOCOMMERCE_SECRETS_KEY` set, `Create` seals it under `api_keys/secret` for
+  its store, and `Secret` opens it; like the plugin credentials above it, it is
+  then ciphertext to anyone holding the database. Without a key it is stored
+  as issued, as before, and `gocommerce secrets seal` seals it later. A copy
+  sealed under a key the install no longer has answers 409 saying so — the key
+  itself still authenticates, because the hash beside it is untouched.
 - **Only owner may mint.** `apikeys.write` is deliberately not manager's: a role
   that can mint a key can mint one carrying more rights than itself, so granting
   it to manager would quietly be granting manager everything.
