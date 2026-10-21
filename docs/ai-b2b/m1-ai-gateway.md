@@ -84,7 +84,7 @@ with its outcome and, where it escalated, why), `provider`, `model`,
 `outcome` (`ok`, `deterministic`, `cached`, `invalid_output`, `refused`,
 `provider_error`, `budget_exhausted`, `no_price`, `task_error`, `policy_blocked`), `review_status` (`none`,
 `pending`, `approved`, `rejected`), `confidence` (0–100, nullable),
-`source_refs jsonb`, `policy jsonb`, `cost_micro_minor bigint`, `currency`,
+`source_refs jsonb`, `policy jsonb`, `cost_micro_minor bigint`, `cost_estimated`, `currency`,
 `created_at`.
 
 **`ai_budgets`**: one row per store and month.
@@ -300,6 +300,14 @@ Where the design above was silent, or a detail did not survive the code:
   written to the cache whole cannot cost more than was reserved. The real cost
   is charged at settlement even if it passes the reservation, because the
   money was spent.
+- **A call that left and reported nothing** (it timed out after the request
+  was written, or answered 200 with a body that could not be read) is charged
+  at its ceiling, and the record's `cost_estimated` and the step's
+  `estimated` say so: the provider may bill it, and with twelve retries a
+  charge of nothing would let a slow provider spend past the cap. A call
+  refused at the door, before the request was written, costs nothing, and so
+  does an error status, which providers do not bill. An unreadable 200 is a
+  `provider_error` that is not retried.
 - **Months and days are UTC.** One budget row per UTC calendar month; usage
   windows are UTC days, and `by=day` returns every day of the window, empty
   ones included.

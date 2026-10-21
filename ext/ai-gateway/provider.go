@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"strings"
+	"sync/atomic"
 )
 
 // Provider is one model API (ADR 0005). It turns a Request into an answer
@@ -122,6 +124,9 @@ type ProviderError struct {
 	Kind      string
 	Message   string
 	Transient bool
+	// Sent is a request that left in full before the failure: the provider
+	// may have done the work, and may bill it, whatever came back.
+	Sent bool
 
 	// panicked is a call whose transport panicked: never retried, and
 	// charged at the ceiling.
@@ -196,6 +201,17 @@ func (c httpCall) do(ctx context.Context, method, url string, body any, out any)
 	for k, v := range c.headers {
 		req.Header.Set(k, v)
 	}
+	// Whether the request was written decides what a failure costs: one
+	// refused at the door cost nothing, one that timed out after leaving
+	// may be billed in full.
+	var sent atomic.Bool
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), &httptrace.ClientTrace{
+		WroteRequest: func(info httptrace.WroteRequestInfo) {
+			if info.Err == nil {
+				sent.Store(true)
+			}
+		},
+	}))
 	resp, err := c.client.Do(req)
 	if err != nil {
 		// Nothing came back: a timeout, a reset, a refused connection. The
@@ -207,12 +223,12 @@ func (c httpCall) do(ctx context.Context, method, url string, body any, out any)
 		case errors.Is(err, context.Canceled):
 			msg = "the call was cancelled"
 		}
-		return &ProviderError{Provider: c.provider, Message: msg, Transient: true}
+		return &ProviderError{Provider: c.provider, Message: msg, Transient: true, Sent: sent.Load()}
 	}
 	defer resp.Body.Close()
 	payload, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
-		return &ProviderError{Provider: c.provider, Status: resp.StatusCode, Message: "the answer could not be read", Transient: true}
+		return &ProviderError{Provider: c.provider, Status: resp.StatusCode, Message: "the answer could not be read", Transient: true, Sent: true}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		kind, message := c.errorOf(resp.StatusCode, payload)
@@ -225,7 +241,7 @@ func (c httpCall) do(ctx context.Context, method, url string, body any, out any)
 		}
 	}
 	if err := json.Unmarshal(payload, out); err != nil {
-		return &ProviderError{Provider: c.provider, Status: resp.StatusCode, Message: "the answer was not the JSON expected"}
+		return &ProviderError{Provider: c.provider, Status: resp.StatusCode, Message: "the answer was not the JSON expected", Sent: true}
 	}
 	return nil
 }
