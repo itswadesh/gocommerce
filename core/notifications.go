@@ -31,7 +31,9 @@ const (
 	NotificationFailed = "failed"
 )
 
-// NotificationRecord is one message as the store remembers sending it.
+// NotificationRecord is one message as the store remembers sending it. Its
+// Data is what the message was filled with, credentials hidden: a reset link
+// or an invitation reads "(hidden)" (notification_credentials.go).
 type NotificationRecord struct {
 	ID    int64  `json:"id"`
 	Event string `json:"event"`
@@ -190,16 +192,15 @@ func (s *Notifications) Get(ctx context.Context, id int64) (*NotificationRecord,
 // fixed, and the one that only reached the log may have an email module
 // behind it today. The new attempt is its own row, pointing at this one.
 func (s *Notifications) Resend(ctx context.Context, id int64) (*NotificationRecord, error) {
-	rec, err := s.Get(ctx, id)
+	note, err := s.stored(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	note := Notification{Event: rec.Event, Channel: rec.Channel, To: rec.To, Language: rec.Language, Data: rec.Data}
-	sendErr := s.app.notifier.sendFrom(ctx, note, &rec.ID)
+	sendErr := s.app.notifier.sendFrom(ctx, note, &id)
 	// The row the funnel just wrote is the answer, whichever way it went.
 	var latest NotificationRecord
 	row := s.app.db.QueryRowContext(ctx,
-		`SELECT `+notificationColumns+` FROM notifications WHERE resend_of = $1 ORDER BY id DESC LIMIT 1`, rec.ID)
+		`SELECT `+notificationColumns+` FROM notifications WHERE resend_of = $1 ORDER BY id DESC LIMIT 1`, id)
 	if err := scanNotificationRow(row, &latest); err != nil {
 		if sendErr != nil {
 			return nil, Internalf(sendErr, "resend")
@@ -208,6 +209,27 @@ func (s *Notifications) Resend(ctx context.Context, id int64) (*NotificationReco
 	}
 	latest.Title = s.app.notifyTemplates.title(latest.Channel, latest.Event)
 	return &latest, nil
+}
+
+// stored is the message as it went out, credentials and all — the one read of
+// the log nobody is shown. Resend hands it to the delivery backends, addressed
+// to whoever it was addressed to before; every other read hides them
+// (hideNotificationCredentials).
+func (s *Notifications) stored(ctx context.Context, id int64) (Notification, error) {
+	var note Notification
+	var raw []byte
+	err := s.app.db.QueryRowContext(ctx,
+		`SELECT event, channel, recipient, language, data FROM notifications WHERE id = $1`, id).
+		Scan(&note.Event, &note.Channel, &note.To, &note.Language, &raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return note, NotFoundf("notification %d does not exist", id)
+	}
+	if err != nil {
+		return note, Internalf(err, "read notification")
+	}
+	note.Data = map[string]string{}
+	_ = json.Unmarshal(raw, &note.Data)
+	return note, nil
 }
 
 type notificationScanner interface {
@@ -234,6 +256,8 @@ func scanNotificationRow(sc notificationScanner, rec *NotificationRecord) error 
 	}
 	rec.Data = map[string]string{}
 	_ = json.Unmarshal(raw, &rec.Data)
+	// Here, where every read of the log passes, so no reader can forget it.
+	hideNotificationCredentials(rec)
 	if resendOf.Valid {
 		rec.ResendOf = &resendOf.Int64
 	}

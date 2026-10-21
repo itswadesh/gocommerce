@@ -29,6 +29,7 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -370,6 +371,69 @@ func AssertSpecCoversModuleRoutes(t *testing.T, app *gocommerce.App, module stri
 	for _, p := range documented {
 		if mine(p) && !served[p] {
 			t.Errorf("gctest: the contract documents %s, which module %q does not serve", p, module)
+		}
+	}
+}
+
+// AssertNotificationLogHides fails when the notification log shows any of
+// secrets for event — in the list, in a row, or in its preview — to staff, to
+// an owner, or to the static admin token.
+//
+// The log is open to anybody who may read orders, so a module whose message
+// carries a credential — a reset link, an invitation, a basket's token — proves
+// with this that the log shows the message and not the key. The engine hides a
+// value by its name (a key ending in _token, _code, _url or _link) and by what
+// it holds; a module that names its credential otherwise finds out here.
+//
+// It fails, too, when the log holds no such message, so a test that sent
+// nothing cannot pass by looking at nothing.
+func AssertNotificationLogHides(t *testing.T, app *gocommerce.App, event string, secrets ...string) {
+	t.Helper()
+	suffix := randomSuffix(t)
+	readers := []struct{ who, token string }{
+		{"staff", OperatorToken(t, app, "log-staff-"+suffix+"@example.com", gocommerce.RoleStaff)},
+		{"an owner", OperatorToken(t, app, "log-owner-"+suffix+"@example.com", gocommerce.RoleOwner)},
+		{"the admin token", AdminToken},
+	}
+	shows := func(where string, values ...string) {
+		t.Helper()
+		for _, v := range values {
+			for _, s := range secrets {
+				if s != "" && strings.Contains(v, s) {
+					t.Errorf("gctest: %s shows %q", where, v)
+				}
+			}
+		}
+	}
+	for _, r := range readers {
+		list := request(t, app, http.MethodGet, "/api/admin/notifications?event="+url.QueryEscape(event), nil, r.token)
+		if list.Code != http.StatusOK {
+			t.Fatalf("gctest: %s listing %s = %d: %s", r.who, event, list.Code, list.Body)
+		}
+		var rows []gocommerce.NotificationRecord
+		DecodeData(t, list, &rows)
+		if len(rows) == 0 {
+			t.Fatalf("gctest: the log holds no %s; there is nothing to check", event)
+		}
+		for _, row := range rows {
+			id := strconv.FormatInt(row.ID, 10)
+			one := request(t, app, http.MethodGet, "/api/admin/notifications/"+id, nil, r.token)
+			var got gocommerce.NotificationRecord
+			DecodeData(t, one, &got)
+			for _, rec := range []gocommerce.NotificationRecord{row, got} {
+				shows(r.who+" reading "+event, rec.Error)
+				for _, v := range rec.Data {
+					shows(r.who+" reading "+event, v)
+				}
+			}
+			// A message nobody registered wording for has nothing to preview.
+			if row.Title == "" {
+				continue
+			}
+			pv := request(t, app, http.MethodGet, "/api/admin/notifications/"+id+"/preview", nil, r.token)
+			var preview gocommerce.NotificationPreview
+			DecodeData(t, pv, &preview)
+			shows(r.who+" previewing "+event, preview.Subject, preview.Body)
 		}
 	}
 }

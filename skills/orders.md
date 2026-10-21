@@ -319,6 +319,19 @@ reached the log may have a module behind it today — and the new attempt is
 its own row, pointing at the first. The panel's Notifications screen, in the
 main nav beside Carts, is this list with a Resend button.
 
+The log is open to anybody with `orders.read`, and some messages carry a key
+to somebody's account — an operator's reset link and code, an invitation, a
+shopper's reset or confirmation link, a basket's token. Every read of the log
+(the list, one row, the preview, the row a resend answers with) shows those
+values as `(hidden)`, for every caller, owner included. Which values: any key
+holding `token`, `password` or `secret`, any key that is `code`, `url` or
+`link` or ends in `_code`, `_url` or `_link` (`postal_code` excepted), any
+other value's copy of one, and any `?token=`-style parameter in a link. The
+row itself keeps them, because a resend delivers the stored data again to the
+same recipient — so the hiding happens on the way out, in
+`scanNotificationRow`, and `Notifications.stored` is the one read that skips
+it and is never shown to anybody.
+
 ## How to correct an order
 
 ```go

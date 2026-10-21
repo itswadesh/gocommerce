@@ -233,6 +233,12 @@ notifier either has a template for that event name or ignores it. An event
 with no template is not an error: a store may install modules yours has never
 heard of.
 
+Name a credential in `Data` for what it is: a link `*_url` or `*_link`, a
+token `*_token`, a one-time code `*_code`. The store's notification log is
+open to anybody who may read orders, and it shows a value named that way as
+`(hidden)` — the email still carries the real one. `gctest.AssertNotificationLogHides`
+proves it for your message.
+
 ## Contributing to the API contract
 
 Implement `OpenAPI() []byte` and your paths are merged into the document served

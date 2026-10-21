@@ -9093,7 +9093,7 @@
             "adminToken": []
           }
         ],
-        "description": "Every notification the store sent — or tried to, or only logged — newest first. Filter by channel, status, event, or search by recipient or order number. Needs orders.read: a notification is an order's communication.",
+        "description": "Every notification the store sent — or tried to, or only logged — newest first. Filter by channel, status, event, or search by recipient or order number. A credential a message carried — a reset or confirmation link, an invitation, a one-time code — reads `(hidden)`, for every caller. Needs orders.read: a notification is an order's communication.",
         "parameters": [
           {
             "name": "channel",
@@ -9226,7 +9226,7 @@
             "adminToken": []
           }
         ],
-        "description": "The message's wording filled with the data it carried, in the language it went out in. The log keeps a message's data, not its words, so this is today's wording: `edited_since` is true when the wording was changed after the message went out, and the message itself may have read differently. Personal details are masked on a demo store, as in the log. Needs orders.read.",
+        "description": "The message's wording filled with the data it carried, in the language it went out in. The log keeps a message's data, not its words, so this is today's wording: `edited_since` is true when the wording was changed after the message went out, and the message itself may have read differently. A credential the message carried reads `(hidden)`, as in the log, and personal details are masked on a demo store. Needs orders.read.",
         "parameters": [
           {
             "name": "id",
@@ -9308,7 +9308,7 @@
             "adminToken": []
           }
         ],
-        "description": "Delivers the recorded message again through whatever backends the store has now — the one that failed last week may be fixed, and one that only reached the log may have an email module behind it today. The new attempt is its own row, pointing at this one, and is what comes back. Needs orders.write.",
+        "description": "Delivers the recorded message again through whatever backends the store has now — the one that failed last week may be fixed, and one that only reached the log may have an email module behind it today. The new attempt is its own row, pointing at this one, and is what comes back. It carries the links the first one did, to the same recipient; the row that comes back hides them, as the log does. Needs orders.write.",
         "parameters": [
           {
             "$ref": "#/components/parameters/PathID"
@@ -20192,7 +20192,7 @@
             "additionalProperties": {
               "type": "string"
             },
-            "description": "The template variables, kept so the message can be sent again as it was."
+            "description": "The template variables, kept so the message can be sent again as it was. A credential among them — a reset or confirmation link, an invitation, a one-time code, a basket's token — reads `(hidden)` here for every caller, owner included; the message itself carried the real one, and a resend carries it again."
           },
           "resend_of": {
             "type": "integer",
