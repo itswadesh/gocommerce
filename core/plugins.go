@@ -191,8 +191,14 @@ func (p *Plugins) def(key string) (PluginDef, bool) {
 
 // pluginRow is the stored state, or its absence.
 type pluginRow struct {
-	enabled   bool
-	settings  map[string]any
+	enabled bool
+	// settings has every secret opened, and one that would not open left out.
+	settings map[string]any
+	// unopened are the secrets that would not open, exactly as stored. They
+	// read as unset, and they are written back as they were until a new value
+	// replaces them: a save that only did not type the key again must not
+	// destroy what putting the right key back would still open.
+	unopened  map[string]any
 	updatedAt *time.Time
 	present   bool
 }
@@ -214,7 +220,60 @@ func (p *Plugins) row(ctx context.Context, q rowQuerier, key string) (pluginRow,
 	if err := json.Unmarshal(raw, &r.settings); err != nil {
 		return r, Internalf(err, "decode plugin settings")
 	}
+	p.openSettings(ctx, key, &r)
 	return r, nil
+}
+
+// pluginSecretField is the label a plugin's secret is sealed under.
+func pluginSecretField(plugin, field string) string { return "plugins/" + plugin + "/" + field }
+
+// openSettings opens every sealed value in a row. It goes by the envelope
+// rather than by the field's kind, so a row is read the same whether or not
+// this binary has the plugin's module installed.
+func (p *Plugins) openSettings(ctx context.Context, key string, r *pluginRow) {
+	for k, v := range r.settings {
+		s, ok := v.(string)
+		if !ok || !isSealed(s) {
+			continue
+		}
+		plain, ok := p.app.openSecretOrUnset(ctx, pluginSecretField(key, k), s)
+		if !ok {
+			if r.unopened == nil {
+				r.unopened = map[string]any{}
+			}
+			r.unopened[k] = s
+			delete(r.settings, k)
+			continue
+		}
+		r.settings[k] = plain
+	}
+}
+
+// sealSettings is what a row stores: every secret sealed when the install has
+// a key, and every secret that would not open kept as it was unless this save
+// replaced it.
+func (p *Plugins) sealSettings(ctx context.Context, def PluginDef, settings, unopened map[string]any) (map[string]any, error) {
+	secret := map[string]bool{}
+	for _, f := range def.Fields {
+		secret[f.Key] = f.Kind == "secret"
+	}
+	out := make(map[string]any, len(settings)+len(unopened))
+	for k, v := range settings {
+		if s, ok := v.(string); ok && secret[k] {
+			sealed, err := p.app.SealSecret(ctx, pluginSecretField(def.Key, k), s)
+			if err != nil {
+				return nil, err
+			}
+			v = sealed
+		}
+		out[k] = v
+	}
+	for k, v := range unopened {
+		if _, replaced := out[k]; !replaced {
+			out[k] = v
+		}
+	}
+	return out, nil
 }
 
 // assemble joins a descriptor with its row, masking secrets.
@@ -262,6 +321,7 @@ func (p *Plugins) List(ctx context.Context) ([]*Plugin, error) {
 		}
 		r.present, r.updatedAt = true, &at
 		_ = json.Unmarshal(raw, &r.settings)
+		p.openSettings(ctx, key, &r)
 		stored[key] = r
 	}
 	if err := rows.Err(); err != nil {
@@ -374,7 +434,11 @@ func (p *Plugins) Update(ctx context.Context, key string, patch PluginPatch) (*P
 				return requiredSettingsError(def, missing, wasOn)
 			}
 		}
-		encoded, err := json.Marshal(settings)
+		stored, err := p.sealSettings(ctx, def, settings, current.unopened)
+		if err != nil {
+			return err
+		}
+		encoded, err := json.Marshal(stored)
 		if err != nil {
 			return Internalf(err, "encode plugin settings")
 		}
