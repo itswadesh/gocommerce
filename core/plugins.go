@@ -190,7 +190,12 @@ type pluginRow struct {
 	// read as unset, and they are written back as they were until a new value
 	// replaces them: a save that only did not type the key again must not
 	// destroy what putting the right key back would still open.
-	unopened  map[string]any
+	unopened map[string]any
+	// sealed are the fields that were stored sealed and opened. They are
+	// sealed again on write whatever the descriptor now says: a release that
+	// drops a secret field, or makes it text, must not have the next save
+	// write the credential out in the clear.
+	sealed    map[string]bool
 	updatedAt *time.Time
 	present   bool
 }
@@ -237,18 +242,27 @@ func (p *Plugins) openSettings(ctx context.Context, key string, r *pluginRow) {
 			delete(r.settings, k)
 			continue
 		}
+		if r.sealed == nil {
+			r.sealed = map[string]bool{}
+		}
+		r.sealed[k] = true
 		r.settings[k] = plain
 	}
 }
 
 // sealSettings is what a row stores: every secret sealed when the install has
-// a key, and every secret that would not open kept as it was unless this save
+// a key — a field of kind secret, and any field whose value was stored sealed
+// — and every secret that would not open kept as it was unless this save
 // replaced it.
-func (p *Plugins) sealSettings(ctx context.Context, def PluginDef, settings, unopened map[string]any) (map[string]any, error) {
+func (p *Plugins) sealSettings(ctx context.Context, def PluginDef, settings map[string]any, current pluginRow) (map[string]any, error) {
 	secret := map[string]bool{}
 	for _, f := range def.Fields {
 		secret[f.Key] = f.Kind == "secret"
 	}
+	for k := range current.sealed {
+		secret[k] = true
+	}
+	unopened := current.unopened
 	out := make(map[string]any, len(settings)+len(unopened))
 	for k, v := range settings {
 		if s, ok := v.(string); ok && secret[k] {
@@ -412,7 +426,7 @@ func (p *Plugins) Update(ctx context.Context, key string, patch PluginPatch) (*P
 				return requiredSettingsError(def, missing, wasOn)
 			}
 		}
-		stored, err := p.sealSettings(ctx, def, settings, current.unopened)
+		stored, err := p.sealSettings(ctx, def, settings, current)
 		if err != nil {
 			return err
 		}
