@@ -1263,3 +1263,62 @@ func TestOnlyAmazonsOwnSitesAreOpened(t *testing.T) {
 		t.Errorf("crawl of a look-alike host = %v, want it refused", err)
 	}
 }
+
+// The browser runs whatever it is handed, so the host alone is not enough: a
+// javascript: URL can name Amazon as its host and then navigate anywhere. Only
+// a web address on an Amazon marketplace passes, rebuilt from its parts so
+// nothing but the scheme, host, path and query reaches the browser.
+func TestAListingURLIsOnlyAnAmazonWebPage(t *testing.T) {
+	t.Parallel()
+	refused := []string{
+		"javascript://www.amazon.com/%0Alocation='http://127.0.0.1:9/'",
+		"JAVASCRIPT://www.amazon.com/%0Aalert(1)",
+		"data:text/html,<script>location='http://127.0.0.1:9/'</script>",
+		"file://www.amazon.com/etc/passwd",
+		"ftp://www.amazon.com/dp/B0X",
+		"https://user:pass@www.amazon.com/dp/B0X",
+		"https://www.amazon.com.example.io/dp/B0X",
+		"https:www.amazon.com/dp/B0X",
+		"//www.amazon.com/dp/B0X",
+		"",
+	}
+	for _, raw := range refused {
+		if got, err := listingURL(raw); err == nil {
+			t.Errorf("listingURL(%q) = %q, want it refused", raw, got)
+		}
+	}
+	cleaned := map[string]string{
+		"https://www.amazon.com/dp/B0X":                       "https://www.amazon.com/dp/B0X",
+		"  HTTPS://WWW.AMAZON.COM/dp/B0X?th=1#reviews  ":      "https://www.amazon.com/dp/B0X?th=1",
+		"http://www.amazon.in/dp/B0INDIA001":                  "https://www.amazon.in/dp/B0INDIA001",
+		"https://www.amazon.co.uk:8443/Some-Thing/dp/B0X?a=b": "https://www.amazon.co.uk/Some-Thing/dp/B0X?a=b",
+	}
+	for raw, want := range cleaned {
+		if got, err := listingURL(raw); err != nil || got != want {
+			t.Errorf("listingURL(%q) = %q, %v; want %q", raw, got, err, want)
+		}
+	}
+
+	fx := &fixtures{pages: map[string]*page{}}
+	if _, _, err := crawl(context.Background(), fx, refused[0], 5); err == nil {
+		t.Error("crawl took a javascript: URL")
+	}
+	if seen := fx.visited(); len(seen) != 0 {
+		t.Errorf("the browser was sent to %v", seen)
+	}
+}
+
+// The same rule at the door, so the operator hears it when they paste.
+func TestAJobRefusesAURLThatIsNotAnAmazonWebPage(t *testing.T) {
+	h := newHarness(t, Config{}, false)
+	for _, raw := range []string{
+		"javascript://www.amazon.com/%0Alocation='http://127.0.0.1:9/'",
+		"file://www.amazon.com/etc/passwd",
+		"https://amazon.example.com/dp/B0X",
+	} {
+		rec := gctest.AdminRequest(t, h.app, http.MethodPost, "/api/admin/x/import-amazon/jobs", map[string]any{"url": raw})
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("POST %q = %d, want 400", raw, rec.Code)
+		}
+	}
+}

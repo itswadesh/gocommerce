@@ -245,15 +245,13 @@ func (f *chromeFetcher) close() error { return f.b.close() }
 // import into ten minutes of browsing; the ones past the cap are still created,
 // carrying the parent's price and pictures and marked Fetched=false.
 func crawl(ctx context.Context, f pageFetcher, rawURL string, maxVariants int) (*Listing, []string, error) {
-	parsed, err := url.Parse(strings.TrimSpace(rawURL))
-	if err != nil || parsed.Host == "" {
-		return nil, nil, fmt.Errorf("amazon: %q is not a URL", rawURL)
+	pageURL, err := listingURL(rawURL)
+	if err != nil {
+		return nil, nil, err
 	}
-	if !amazonHost(parsed.Hostname()) {
-		return nil, nil, fmt.Errorf("amazon: %s is not an Amazon host", parsed.Host)
-	}
+	parsed, _ := url.Parse(pageURL)
 
-	parent, err := f.fetch(ctx, parsed.String())
+	parent, err := f.fetch(ctx, pageURL)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -534,6 +532,33 @@ func cleanBrand(s string) string {
 var marketplaces = []string{
 	"com", "ca", "com.mx", "com.br", "co.uk", "ie", "de", "fr", "it", "es", "nl",
 	"se", "pl", "com.be", "com.tr", "ae", "sa", "eg", "co.za", "in", "co.jp", "sg", "com.au", "cn",
+}
+
+// listingURL is the address the browser is sent to, or why there is none.
+//
+// The browser opens whatever it is handed and no guarded client stands in
+// front of it (D109), so the URL is held to an Amazon web page and rebuilt
+// from its parts: https, a marketplace host without a port or a user, the
+// path and the query. A scheme the browser would act on rather than fetch —
+// javascript:, data:, file: — never reaches it, whatever host it names. Plain
+// http is taken and upgraded, since every marketplace serves https.
+func listingURL(raw string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Opaque != "" || u.Hostname() == "" {
+		return "", fmt.Errorf("amazon: %q is not a web address", raw)
+	}
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return "", fmt.Errorf("amazon: %q is not a web address; paste the product page's https:// link", raw)
+	}
+	if u.User != nil {
+		return "", fmt.Errorf("amazon: %q carries a user name; paste the product page's link as it is", raw)
+	}
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	if !amazonHost(host) {
+		return "", fmt.Errorf("amazon: %s is not an Amazon host", host)
+	}
+	clean := url.URL{Scheme: "https", Host: host, Path: u.Path, RawPath: u.RawPath, RawQuery: u.RawQuery}
+	return clean.String(), nil
 }
 
 // amazonHost is whether a host is one of Amazon's own sites. The listing is
