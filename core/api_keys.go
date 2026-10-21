@@ -302,14 +302,25 @@ func (k *APIKeys) Resolve(ctx context.Context, presented string) (*Superuser, bo
 		listed   []byte
 		expired  bool
 		rate     *int
+		issuer   *string
+		grants   []byte
 	)
 	// expired is the database's answer, from the same clock that set
 	// expires_at, so a replica whose clock drifts cannot extend a key.
+	//
+	// For an agent key the same statement reads its issuer's role in this
+	// store and that role's stored grants (agentCaller), so cutting the key to
+	// what its issuer holds now costs no second round trip.
 	err := k.app.db.QueryRowContext(ctx, `
-		SELECT id, name, role, token_hash, revoked_at, last_used_at,
-		       kind, to_jsonb(rights), coalesce(expires_at <= now(), false), rate_per_minute
-		FROM api_keys WHERE prefix = $1`, prefix,
-	).Scan(&id, &name, &role, &hash, &revoked, &lastUsed, &kind, &listed, &expired, &rate)
+		SELECT k.id, k.name, k.role, k.token_hash, k.revoked_at, k.last_used_at,
+		       k.kind, to_jsonb(k.rights), coalesce(k.expires_at <= now(), false), k.rate_per_minute,
+		       m.role,
+		       (SELECT to_jsonb(array_agg(rr.right_name)) FROM role_rights rr WHERE rr.role = m.role)
+		FROM api_keys k
+		LEFT JOIN store_members m
+		       ON k.kind = 'agent' AND m.store_id = k.store_id AND m.superuser_id = k.created_by
+		WHERE k.prefix = $1`, prefix,
+	).Scan(&id, &name, &role, &hash, &revoked, &lastUsed, &kind, &listed, &expired, &rate, &issuer, &grants)
 	if err != nil {
 		return nil, false
 	}
@@ -321,7 +332,7 @@ func (k *APIKeys) Resolve(ctx context.Context, presented string) (*Superuser, bo
 		return nil, false
 	}
 	if kind == KeyKindAgent {
-		su, ok := k.agentCaller(id, name, listed, rate)
+		su, ok := k.agentCaller(id, name, listed, rate, issuer, grants)
 		if ok {
 			k.touch(ctx, id, lastUsed)
 		}

@@ -177,20 +177,27 @@ func (r *RoleRights) All(ctx context.Context) (map[string][]Right, error) {
 	}
 	out := make(map[string][]Right, len(keys))
 	for _, role := range keys {
-		if !ValidRole(role) {
-			out[role] = withFloor(stored[role])
-			continue
-		}
-		if set, ok := stored[role]; ok && RoleConfigurable(role) {
-			out[role] = set
-			continue
-		}
-		// The build's defaults, not core's: a module brings rights of its own,
-		// and resolving a role without them refuses that module's screens to
-		// everybody the module meant to give them to.
-		out[role] = r.app.defaultRightsOf(role)
+		set, ok := stored[role]
+		out[role] = r.resolve(role, set, ok)
 	}
 	return out, nil
+}
+
+// resolve is what one role carries given its stored grants, and whether it has
+// any: the rule All applies to every role, kept in one place so that an agent
+// key, which reads its issuer's grants in its own query, resolves a role
+// exactly as an operator's session does.
+func (r *RoleRights) resolve(role string, stored []Right, hasStored bool) []Right {
+	if !ValidRole(role) {
+		return withFloor(stored)
+	}
+	if hasStored && RoleConfigurable(role) {
+		return stored
+	}
+	// The build's defaults, not core's: a module brings rights of its own,
+	// and resolving a role without them refuses that module's screens to
+	// everybody the module meant to give them to.
+	return r.app.defaultRightsOf(role)
 }
 
 // Set replaces what a role may do.

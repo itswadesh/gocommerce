@@ -242,14 +242,29 @@ func (k *APIKeys) agentRights(asked []Right, by *Superuser) ([]Right, error) {
 // line behind Create, so a row edited by hand — or a right this build no
 // longer has — grants nothing. Role reads "agent", because every refusal and
 // every audit row prints the role, and "staff" would be a lie.
-func (k *APIKeys) agentCaller(id int64, name string, raw []byte, rate *int) (*Superuser, bool) {
+//
+// And cut to what its issuer holds in this store today. The key is a share of
+// a person's rights, so it cannot outlast them: demote the issuer and the key
+// loses what they lost; remove them from the store, or delete them (created_by
+// goes null), and the key is refused. issuerRole and issuerGrants come from
+// Resolve's one query, so this costs no round trip of its own.
+func (k *APIKeys) agentCaller(id int64, name string, raw []byte, rate *int,
+	issuerRole *string, issuerGrants []byte) (*Superuser, bool) {
+	if issuerRole == nil {
+		return nil, false
+	}
 	stored, err := decodeKeyRights(raw)
 	if err != nil {
 		return nil, false
 	}
+	granted, err := decodeKeyRights(issuerGrants)
+	if err != nil {
+		return nil, false
+	}
+	issuer := k.app.roles.resolve(*issuerRole, k.app.inBuild(granted), issuerGrants != nil && string(issuerGrants) != "null")
 	rights := []Right{}
 	for _, r := range stored {
-		if AgentMayHold(r) && k.app.hasRight(r) && !slices.Contains(rights, r) {
+		if AgentMayHold(r) && k.app.hasRight(r) && slices.Contains(issuer, r) && !slices.Contains(rights, r) {
 			rights = append(rights, r)
 		}
 	}
