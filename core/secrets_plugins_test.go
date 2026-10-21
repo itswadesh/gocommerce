@@ -148,10 +148,12 @@ func TestWithoutAKeyAPluginSecretIsStoredAsBefore(t *testing.T) {
 	}
 }
 
-// A value sealed under a key the install no longer has reads as unset, so the
-// plugin says it is not configured. It is kept as it is until a save names
-// the field — a new value, or an empty one to clear it — so putting the right
-// key back still opens it.
+// A value sealed under a key the install no longer has reads as unset to the
+// module that owns it, so the plugin is not configured. To the panel it reads
+// as the mask, with the field named as one this install cannot read: a value
+// is stored, and the form must not look empty — an untouched save sends the
+// mask back and keeps it, so a redeploy that briefly lost the key costs
+// nothing once the key returns. Only an explicit empty value clears it.
 func TestAPluginSecretUnderAnUnknownKeyReadsAsUnset(t *testing.T) {
 	dsn := keyedDSN(t, fakePlugin{})
 	oldKey := newSecretsKey(t)
@@ -173,38 +175,50 @@ func TestAPluginSecretUnderAnUnknownKeyReadsAsUnset(t *testing.T) {
 	if p.Configured {
 		t.Error("a plugin whose key cannot be opened says it is configured")
 	}
-	if _, masked := p.Settings["api_key"]; masked {
-		t.Errorf("an unreadable key reads as %v, want it absent like any unset field", p.Settings["api_key"])
+	if p.Settings["api_key"] != SecretMask || len(p.Unopened) != 1 || p.Unopened[0] != "api_key" {
+		t.Errorf("admin read = settings %v unopened %v, want the mask and api_key named", p.Settings, p.Unopened)
 	}
 	if s := lost.Plugins().String(ctx, "fake-mail", "api_key"); s != "" {
 		t.Errorf("the module read %q, want unset", s)
 	}
+	if settings, _ := lost.Plugins().Settings(ctx, "fake-mail"); settings["api_key"] != nil {
+		t.Errorf("the module's settings carry %v, want the key unset", settings["api_key"])
+	}
 	for _, pl := range mustList(t, lost) {
-		if pl.Key == "fake-mail" && pl.Configured {
-			t.Error("the list says the plugin is configured")
+		if pl.Key == "fake-mail" && (pl.Configured || pl.Settings["api_key"] != SecretMask || len(pl.Unopened) != 1) {
+			t.Errorf("list = %+v, want masked, named as unopened, not configured", pl)
 		}
 	}
-
-	// A save that does not name the key, or sends the mask, leaves the sealed
-	// one where it was.
-	off := false
-	if _, err := lost.Plugins().Update(ctx, "fake-mail", PluginPatch{Enabled: &off, Settings: map[string]any{"public_key": "pk-2"}}); err != nil {
-		t.Fatalf("save another setting: %v", err)
+	// A plugin whose keys all open names nothing.
+	if p, _ := first.Plugins().Get(ctx, "fake-mail"); len(p.Unopened) != 0 {
+		t.Errorf("with its key the plugin names %v as unopened", p.Unopened)
 	}
-	if _, err := lost.Plugins().Update(ctx, "fake-mail", PluginPatch{Settings: map[string]any{"api_key": SecretMask}}); err != nil {
-		t.Fatalf("save the mask: %v", err)
+
+	// The form saved untouched, while the plugin is on: every field comes
+	// back, the key as the mask. It saves, and keeps the stored value.
+	if _, err := lost.Plugins().Update(ctx, "fake-mail", PluginPatch{Settings: map[string]any{
+		"api_key": SecretMask, "public_key": "pk-2", "list_id": "",
+	}}); err != nil {
+		t.Fatalf("save the form untouched: %v", err)
 	}
 	if got := storedPluginSettings(t, lost, "fake-mail")["api_key"]; got != sealed {
-		t.Errorf("the unreadable key was replaced by %v", got)
+		t.Errorf("an untouched save replaced the unreadable key with %v", got)
 	}
 	back := keyedApp(t, dsn, oldKey, "", fakePlugin{})
 	if s := back.Plugins().String(ctx, "fake-mail", "api_key"); s != "sk-secret-1234" {
 		t.Errorf("with the right key back the module reads %q", s)
 	}
+	if p, _ := back.Plugins().Get(ctx, "fake-mail"); !p.Configured || len(p.Unopened) != 0 {
+		t.Errorf("with the right key back = %+v, want configured and nothing unopened", p)
+	}
 
-	// An empty value clears it, opened or not: emptying a field is how a
-	// store says it wants that credential gone.
-	if _, err := lost.Plugins().Update(ctx, "fake-mail", PluginPatch{Settings: map[string]any{"api_key": ""}}); err != nil {
+	// An explicit empty value is a clear. On a plugin that is on, a required
+	// one is refused as for any secret; switched off, it goes.
+	if _, err := lost.Plugins().Update(ctx, "fake-mail", PluginPatch{Settings: map[string]any{"api_key": ""}}); err == nil {
+		t.Error("emptying the required key of a plugin that is on was accepted")
+	}
+	off := false
+	if _, err := lost.Plugins().Update(ctx, "fake-mail", PluginPatch{Enabled: &off, Settings: map[string]any{"api_key": ""}}); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
 	if got, ok := storedPluginSettings(t, lost, "fake-mail")["api_key"]; ok {

@@ -58,7 +58,7 @@
     {#if plugin}
         <div class="field-help m-b-base">{plugin.description}</div>
         <form id="plugin-settings-form" onsubmit={(e) => (e.preventDefault(), saving || save())}>
-            <PluginFields fields={plugin.fields} bind:form />
+            <PluginFields fields={plugin.fields} unopened={plugin.unopened} bind:form />
         </form>
         {#if (plugin.fields ?? []).some((f) => f.public && f.kind !== "secret")}
             <div class="field-help m-t-base">

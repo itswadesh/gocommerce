@@ -167,7 +167,9 @@ A `secret` field is also sealed at rest when the install has
 `plugins/<plugin>/<field>` for its store, and `Settings`, `String` and `Fill`
 open it, so a module reads plain text exactly as before and never sees the
 envelope. One that will not open — sealed under a key the install no longer
-has — reads as unset, so the plugin shows as not configured. That is right for
+has — reads as unset, so the plugin shows as not configured; the panel reads it
+as the mask and names it in the plugin's `unopened` list, so an untouched save
+keeps it and only an empty value clears it. That is right for
 a required key and wrong for an optional one that switches a check on, such as
 a webhook signing secret: such a module asks
 `app.Plugins().Unopened(ctx, key)` and refuses while its field is listed there,

@@ -17,8 +17,8 @@
      */
     import Select from "$lib/components/Select.svelte";
 
-    /** @type {{ fields?: any[], form: Record<string, any>, idPrefix?: string }} */
-    let { fields = [], form = $bindable({}), idPrefix = "pf" } = $props();
+    /** @type {{ fields?: any[], form: Record<string, any>, idPrefix?: string, unopened?: string[] }} */
+    let { fields = [], form = $bindable({}), idPrefix = "pf", unopened = [] } = $props();
 
     /* What the API sends back in place of a stored secret. Typing over it
        replaces the secret; leaving it alone keeps it. */
@@ -48,6 +48,7 @@
                     type="password"
                     autocomplete="off"
                     placeholder={form[f.key] === SECRET_MASK ? "Kept as it is; type to replace" : ""}
+                    aria-describedby={unopened?.includes(f.key) ? `${idPrefix}-${f.key}-unopened` : undefined}
                     bind:value={form[f.key]}
                 />
             {:else if f.kind === "number"}
@@ -58,6 +59,16 @@
         {/if}
         {#if f.help}
             <div class="field-help">{f.help}</div>
+        {/if}
+        <!-- A value is stored but sealed under a secrets key this install does
+             not have. It shows as the mask, so saving the form untouched keeps
+             it; the plugin cannot use it, which is why it is not configured. -->
+        {#if unopened?.includes(f.key)}
+            <div class="field-help" id="{idPrefix}-{f.key}-unopened">
+                <i class="ri-error-warning-line txt-warning" aria-hidden="true"></i>
+                A value is stored, but this install cannot read it: it was encrypted with a different
+                secrets key. Enter it again, or put the original key back.
+            </div>
         {/if}
     </div>
 {/each}
