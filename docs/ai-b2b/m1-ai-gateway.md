@@ -284,10 +284,13 @@ modules through `gocommerce.TraceID(ctx)`.
 
 Where the design above was silent, or a detail did not survive the code:
 
-- **Claiming.** Jobs are claimed one at a time per store, each store bound in
-  turn, as the outbox runner does (`ForEachStore`, then `FOR UPDATE SKIP
-  LOCKED` inside the store), at most ten per store per pass so one backlog
-  does not starve the rest. The two-minute lock is renewed before each call,
+- **Claiming.** Jobs are claimed one at a time, each bound to its store, with
+  `FOR UPDATE SKIP LOCKED` inside the store as the outbox does. Stores take
+  turns, a job each per round, up to ten rounds a pass, so one store's
+  backlog does not keep another's job waiting. A claim hides its job for the
+  call's deadline plus a minute (two minutes at the default 60-second
+  deadline), so raising `CallTimeout` cannot hand a live job to another
+  instance; the lock is renewed before each call,
   and a job's outcome is written only while the row still carries the random
   token its claim put there, so a worker that lost its lock, or whose job was
   cancelled and retried under it, comes back late and changes nothing. The
