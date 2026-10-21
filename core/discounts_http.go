@@ -190,6 +190,14 @@ func (a *App) handlePreviewDiscount(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, derr)
 		return
 	}
+	// once_per_email answers whether this address has used the code, which is
+	// a lookup by address.
+	if in.Email != "" {
+		if err := refuseAgentContactMatch(r.Context(), "preview a discount for an email address"); err != nil {
+			RespondError(w, r, err)
+			return
+		}
+	}
 	if in.SubtotalMinor < 0 {
 		RespondError(w, r, Validationf("subtotal_minor must not be negative"))
 		return
