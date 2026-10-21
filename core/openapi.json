@@ -19961,6 +19961,10 @@
               "delete": {
                 "type": "string"
               },
+              "delete_right": {
+                "type": "string",
+                "description": "The right deleting needs on top of the screen's own. Absent means the screen's right is enough."
+              },
               "id_key": {
                 "type": "string",
                 "default": "id"

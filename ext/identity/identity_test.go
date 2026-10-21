@@ -571,6 +571,62 @@ func TestAccountListIsRefusedWithoutCustomersRead(t *testing.T) {
 	}
 }
 
+// The Shopper accounts screen is offered on the rights its routes are behind,
+// not on customers.read: a role that may read accounts is offered it, a role
+// that may not is not, and its delete names accounts.erase so the panel offers
+// that button only to whoever the route would let erase.
+func TestTheAccountsScreenAsksForTheAccountsRights(t *testing.T) {
+	app, _ := newApp(t)
+	ctx := context.Background()
+	// Two roles cut to the difference. catalog.read is the floor every role
+	// keeps, and the screen listing itself is behind it.
+	if _, err := app.Roles().Set(ctx, gocommerce.RoleStaff,
+		[]gocommerce.Right{gocommerce.RightCatalogRead, rightAccountsRead}, nil); err != nil {
+		t.Fatalf("cut staff to accounts.read: %v", err)
+	}
+	if _, err := app.Roles().Set(ctx, gocommerce.RoleManager,
+		[]gocommerce.Right{gocommerce.RightCatalogRead, gocommerce.RightCustomersRead}, nil); err != nil {
+		t.Fatalf("cut manager to customers.read: %v", err)
+	}
+	type screen struct {
+		Slug  string `json:"slug"`
+		Right string `json:"right"`
+		Form  *struct {
+			Delete      string `json:"delete"`
+			DeleteRight string `json:"delete_right"`
+		} `json:"form"`
+	}
+	offered := func(token string) *screen {
+		t.Helper()
+		rec := gctest.SessionRequest(t, app, token, http.MethodGet, "/api/admin/screens", nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("screens = %d: %s", rec.Code, rec.Body)
+		}
+		var list []screen
+		gctest.DecodeData(t, rec, &list)
+		for i := range list {
+			if list[i].Slug == "identity-accounts" {
+				return &list[i]
+			}
+		}
+		return nil
+	}
+
+	reader := offered(gctest.OperatorToken(t, app, "reader@example.com", gocommerce.RoleStaff))
+	if reader == nil {
+		t.Fatal("a role holding accounts.read is not offered the Shopper accounts screen")
+	}
+	if reader.Right != string(rightAccountsRead) {
+		t.Errorf("the screen is gated on %q, want accounts.read", reader.Right)
+	}
+	if reader.Form == nil || reader.Form.Delete == "" || reader.Form.DeleteRight != string(rightAccountsErase) {
+		t.Errorf("the screen's delete = %+v, want it to name accounts.erase", reader.Form)
+	}
+	if offered(gctest.OperatorToken(t, app, "support@example.com", gocommerce.RoleManager)) != nil {
+		t.Error("a role with customers.read but not accounts.read is offered the Shopper accounts screen")
+	}
+}
+
 func TestModuleContract(t *testing.T) {
 	app, _ := newApp(t)
 	gctest.AssertAdminRoutesDeclareRights(t, app, "identity")

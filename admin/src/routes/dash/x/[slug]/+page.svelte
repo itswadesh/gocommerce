@@ -25,6 +25,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import { formatDate, relativeTime } from "$lib/format.js";
     import { fieldText } from "$lib/fieldtext.js";
+    import { mayDelete } from "$lib/screenform.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
@@ -165,7 +166,9 @@
 
     const canCreate = $derived(!!screen?.form?.create);
     const canEdit = $derived(!!screen?.form?.update);
-    const canDelete = $derived(!!screen?.form?.delete);
+    /* A delete can need a right beyond the screen's own — Shopper accounts'
+       needs accounts.erase — and the route refuses without it. */
+    const canDelete = $derived(mayDelete(screen, can));
     const hasActions = $derived(canEdit || canDelete);
 </script>
 
