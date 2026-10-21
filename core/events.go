@@ -59,8 +59,11 @@ const (
 	// that wants to ping a search engine, warm a cache or rebuild a static
 	// site when a product changes had to poll.
 	//
-	// Updated covers every edit that changes what a shopper sees, including
-	// going from draft to active. Taking a product off sale is an update and
+	// Updated is emitted by Catalog.UpdateProduct alone, for any edit to the
+	// product's own fields — its title, slug, description, status, type,
+	// vendor, tags, category, SEO fields or metadata — including going from
+	// draft to active. Variant, price, option and media edits do not emit it,
+	// although a shopper sees them. Taking a product off sale is an update and
 	// not a delete: the row is still there, the page should say it is gone, and
 	// a consumer that treats the two the same will tell a search engine to drop
 	// a URL it should instead recrawl.

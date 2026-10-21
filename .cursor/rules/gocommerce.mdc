@@ -6,8 +6,9 @@ alwaysApply: true
 # GoCommerce
 
 A commerce **engine**, not an application: a store is its own Go program that
-composes the engine with modules in `main()`. `PLAN.md` §5 holds the decision
-table (D1–D25) and is the authority; `AGENTS.md` is its operational summary.
+composes the engine with modules in `main()`. `PLAN.md` §5 holds the numbered
+decisions (D1, D2, …) and is the authority; `AGENTS.md` is its operational
+summary.
 Procedural guides are in `skills/`.
 
 ## Non-negotiable

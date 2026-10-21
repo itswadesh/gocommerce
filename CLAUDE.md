@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 The architectural guardrails for this repository live in
-**[AGENTS.md](AGENTS.md)** — read it first, and treat its fourteen rules as
+**[AGENTS.md](AGENTS.md)** — read it first, and treat its numbered rules as
 binding. This file adds only what is specific to working here with Claude Code.
 
 Procedural guides are in [`skills/`](skills/README.md). Load the one that
@@ -129,8 +129,9 @@ description what ran.
 
 ## Working style
 
-- Read `PLAN.md` §5 before proposing anything structural. The decisions have
-  numbers (D1–D31) and reasons; disagree with the reason, not the conclusion.
+- Read `PLAN.md` §5 before proposing anything structural. Each decision there
+  has a number (D1, D2, …) and a reason; disagree with the reason, not the
+  conclusion.
 - Comments explain **why**. The code already says what.
 - Match the surrounding prose voice in docs — plain, specific, no filler.
 - When something is genuinely ambiguous, say so and state the assumption you

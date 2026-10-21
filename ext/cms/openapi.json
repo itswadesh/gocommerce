@@ -45,7 +45,7 @@
       "get": {
         "tags": ["admin:cms"],
         "summary": "Every page, drafts included",
-        "description": "Requires catalog.read. Newest first.",
+        "description": "Requires pages.read, a right this module declares. Newest first.",
         "security": [{"adminToken": []}],
         "parameters": [
           {"name": "language", "in": "query", "required": false, "schema": {"type": "string"}, "description": "An unknown language is an empty page, not an error — there is no endpoint that lists the store's configured languages."},
@@ -70,7 +70,7 @@
       "post": {
         "tags": ["admin:cms"],
         "summary": "Create a page",
-        "description": "Requires catalog.write. Language is fixed at creation: the same slug in another language is a different page, and there is no route that moves one.",
+        "description": "Requires pages.write, a right this module declares. Language is fixed at creation: the same slug in another language is a different page, and there is no route that moves one.",
         "security": [{"adminToken": []}],
         "requestBody": {
           "required": true,
@@ -93,7 +93,7 @@
       "get": {
         "tags": ["admin:cms"],
         "summary": "One page by its id",
-        "description": "Requires catalog.read.",
+        "description": "Requires pages.read, a right this module declares.",
         "security": [{"adminToken": []}],
         "responses": {
           "200": {"description": "The page.", "content": {"application/json": {"schema": {
@@ -109,7 +109,7 @@
       "patch": {
         "tags": ["admin:cms"],
         "summary": "Update a page",
-        "description": "Requires catalog.write. Setting the status to published stamps the publication date once and never moves it again.",
+        "description": "Requires pages.write, a right this module declares. Setting the status to published stamps the publication date once and never moves it again.",
         "security": [{"adminToken": []}],
         "requestBody": {
           "required": true,
@@ -130,7 +130,7 @@
       "delete": {
         "tags": ["admin:cms"],
         "summary": "Delete a page",
-        "description": "Requires catalog.write.",
+        "description": "Requires pages.write, a right this module declares.",
         "security": [{"adminToken": []}],
         "responses": {
           "204": {"description": "Deleted."},
