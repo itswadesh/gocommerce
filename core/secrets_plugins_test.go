@@ -216,3 +216,48 @@ func mustList(t *testing.T, app *App) []*Plugin {
 	}
 	return list
 }
+
+// fakePluginLater is fake-mail as a later release might describe it: the key
+// field dropped, or still there as plain text.
+type fakePluginLater struct{ keyAsText bool }
+
+func (fakePluginLater) Name() string            { return "fake-mail" }
+func (fakePluginLater) Migrations() []Migration { return nil }
+func (m fakePluginLater) Register(app *App) error {
+	fields := []PluginField{{Key: "public_key", Label: "Public key", Kind: "text", Public: true}}
+	if m.keyAsText {
+		fields = append(fields, PluginField{Key: "api_key", Label: "API key", Kind: "text"})
+	}
+	app.RegisterPlugin(PluginDef{Key: "fake-mail", Title: "Fake Mail", Category: "marketing", Fields: fields})
+	return nil
+}
+
+// A value that arrived sealed leaves sealed, whatever the descriptor says
+// about its field now: a release that drops or renames a secret field must
+// not have the next save write the credential out in the clear.
+func TestASealedValueStaysSealedWhenItsFieldIsNoLongerASecret(t *testing.T) {
+	dsn := keyedDSN(t, fakePlugin{})
+	key := newSecretsKey(t)
+	ctx := context.Background()
+	on := true
+	if _, err := keyedApp(t, dsn, key, "", fakePlugin{}).Plugins().Update(ctx, "fake-mail", PluginPatch{
+		Enabled: &on, Settings: map[string]any{"api_key": "sk-secret-1234", "public_key": "pk-1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, mod := range map[string]fakePluginLater{"dropped": {}, "now text": {keyAsText: true}} {
+		app := keyedApp(t, dsn, key, "", mod)
+		if _, err := app.Plugins().Update(ctx, "fake-mail", PluginPatch{Settings: map[string]any{"public_key": "pk-" + name}}); err != nil {
+			t.Fatalf("%s: save: %v", name, err)
+		}
+		stored, _ := storedPluginSettings(t, app, "fake-mail")["api_key"].(string)
+		if !strings.HasPrefix(stored, "sealed:v1:") {
+			t.Errorf("%s: after a save the key is stored as %q, want it still sealed", name, stored)
+		}
+	}
+	// And it still opens for the descriptor that has it as a secret.
+	if s := keyedApp(t, dsn, key, "", fakePlugin{}).Plugins().String(ctx, "fake-mail", "api_key"); s != "sk-secret-1234" {
+		t.Errorf("the key reads %q after the saves", s)
+	}
+}
