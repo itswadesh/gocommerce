@@ -27,6 +27,9 @@ const (
 	// OutcomeTaskError is a task whose own code panicked: its Build, Check
 	// or deterministic step. It is never tried again.
 	OutcomeTaskError = "task_error"
+	// OutcomePolicyBlocked is a request the store's data-sharing policy
+	// stopped: a class the task needs is kept in, or nothing was left to send.
+	OutcomePolicyBlocked = "policy_blocked"
 )
 
 // Result is what a run produced.
@@ -284,7 +287,13 @@ func (m *Module) ladder(ctx context.Context, t *Task, input json.RawMessage, st 
 				rec.SourceRefs = refs
 			}
 			r, err := render(req, t, st.policy)
-			if err != nil {
+			var pe *policyError
+			switch {
+			case errors.As(err, &pe):
+				step.Outcome, step.Reason = "policy_blocked", err.Error()
+				rec.Steps = append(rec.Steps, step)
+				return fail(OutcomePolicyBlocked, err.Error(), false)
+			case err != nil:
 				step.Outcome, step.Reason = "refused", err.Error()
 				rec.Steps = append(rec.Steps, step)
 				return fail(OutcomeRefused, err.Error(), false)

@@ -70,9 +70,6 @@ func rewriteTask() aigateway.Task {
 		MaxOutputTokens: 2048,
 		Ladder:          []aigateway.Tier{aigateway.TierSmall, aigateway.TierStrong},
 		Build: func(ctx context.Context, input json.RawMessage, p aigateway.Policy) (aigateway.Request, []aigateway.SourceRef, error) {
-			if !p.Catalogue {
-				return aigateway.Request{}, nil, errors.New("this store does not let catalogue text leave it, and a rewrite is nothing but catalogue text")
-			}
 			var in rewriteInput
 			if err := json.Unmarshal(input, &in); err != nil {
 				return aigateway.Request{}, nil, err
@@ -84,7 +81,10 @@ func rewriteTask() aigateway.Task {
 			return aigateway.Request{Messages: []aigateway.Message{{
 				Role: "user",
 				Text: "Rewrite this listing for the store's catalogue.",
-				Data: []aigateway.Data{{Class: aigateway.DataCatalogue, Label: "listing", Value: in.Listing}},
+				// A rewrite is nothing but catalogue text: with the catalogue
+				// kept in, the gateway stops rather than send the bare
+				// instruction.
+				Data: []aigateway.Data{{Class: aigateway.DataCatalogue, Label: "listing", Value: in.Listing, Required: true}},
 			}}}, refs, nil
 		},
 		Check: func(ctx context.Context, out json.RawMessage) (int, error) {

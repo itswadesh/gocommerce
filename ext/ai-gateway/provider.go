@@ -63,6 +63,10 @@ type Data struct {
 	// Value is encoded as JSON inside the fence. Go's encoder escapes <, >
 	// and &, so nothing in a value can close the fence early.
 	Value any
+	// Required is data the task cannot do without. When the policy keeps its
+	// class in, the run stops as policy_blocked instead of sending a request
+	// that would be answered without it.
+	Required bool
 }
 
 // Document is a file sent to the provider whole.

@@ -15,7 +15,10 @@ import (
 type Task struct {
 	// Name is "area.verb", e.g. "product.rewrite".
 	Name string
-	// System is the task's instructions, the same for every store.
+	// System is the task's instructions, the same for every store. It holds
+	// no store data, ever: it is sent before anything the policy checks and
+	// cached by the provider across stores. Store content goes in a
+	// message's Data.
 	System string
 	// Version is bumped whenever System, Schema or Build change, so a cached
 	// answer from the old version is never served and a record says which
@@ -46,7 +49,10 @@ type Task struct {
 	// Build turns the input into a request under the store's policy: the
 	// Messages, with store content in Data tagged by class, and any
 	// Documents. The gateway fills the model, instructions, schema and token
-	// limit, and leaves out whatever the policy does not allow.
+	// limit, and leaves out whatever the policy does not allow: a class that
+	// is off, and contact details caught by their shape in other classes and
+	// in a message's own Text. Data the task cannot do without is marked
+	// Required, and a run whose required class is kept in stops.
 	Build func(ctx context.Context, input json.RawMessage, p Policy) (Request, []SourceRef, error)
 	// Check reads the answer once it has passed the schema, in the task's
 	// own Go types, and says how confident it is, 0 to 100. An error sends

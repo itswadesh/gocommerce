@@ -78,9 +78,22 @@ type rendered struct {
 	dropped []string
 }
 
+// policyError is a request the policy stopped, as against one that was
+// malformed: the run ends policy_blocked and says which class.
+type policyError struct{ reason string }
+
+func (e *policyError) Error() string { return e.reason }
+
+// scrub replaces contact details caught by their shape.
+func scrub(text string) string {
+	text = emailRE.ReplaceAllString(text, "[email removed]")
+	return phoneRE.ReplaceAllString(text, "[phone removed]")
+}
+
 // render applies the policy and fences the data. It refuses a request with
 // documents the policy does not let leave, rather than sending the words
-// without the file they are about.
+// without the file they are about; and for the same reason one whose
+// required data, or whose every word, the policy took out.
 func render(req Request, task *Task, p Policy) (rendered, error) {
 	out := rendered{req: Request{
 		Model:     req.Model,
@@ -90,20 +103,30 @@ func render(req Request, task *Task, p Policy) (rendered, error) {
 	}}
 	if len(req.Documents) > 0 {
 		if !p.Documents {
-			return out, fmt.Errorf("the request carries %d document(s), and this store does not let documents leave it", len(req.Documents))
+			return out, &policyError{fmt.Sprintf("the request carries %d document(s), and this store does not let documents leave it", len(req.Documents))}
 		}
 		out.req.Documents = req.Documents
 	}
 	dropped := map[DataClass]bool{}
-	for _, m := range req.Messages {
+	for i, m := range req.Messages {
 		var b strings.Builder
-		b.WriteString(m.Text)
+		// The task's own words are held to the policy too: an address
+		// written into Text is not a way round the switch.
+		if p.ContactDetails {
+			b.WriteString(m.Text)
+		} else {
+			b.WriteString(scrub(m.Text))
+		}
+		droppedHere := false
 		for _, d := range m.Data {
 			if !labelRE.MatchString(d.Label) {
 				return out, fmt.Errorf("data label %q: use lowercase letters, digits, - and _", d.Label)
 			}
 			if !p.Allows(d.Class) {
-				dropped[d.Class] = true
+				if d.Required {
+					return out, &policyError{fmt.Sprintf("this store keeps %s in, and the task cannot be done without its %q", d.Class, d.Label)}
+				}
+				dropped[d.Class], droppedHere = true, true
 				continue
 			}
 			value, err := json.Marshal(d.Value)
@@ -112,13 +135,18 @@ func render(req Request, task *Task, p Policy) (rendered, error) {
 			}
 			text := string(value)
 			if !p.ContactDetails && d.Class != DataContactDetails {
-				text = emailRE.ReplaceAllString(text, "[email removed]")
-				text = phoneRE.ReplaceAllString(text, "[phone removed]")
+				text = scrub(text)
 			}
 			if b.Len() > 0 {
 				b.WriteString("\n\n")
 			}
 			fmt.Fprintf(&b, "<data label=%q class=%q>\n%s\n</data>", d.Label, d.Class, text)
+		}
+		if strings.TrimSpace(b.String()) == "" {
+			if droppedHere {
+				return out, &policyError{fmt.Sprintf("message %d is empty once the store's policy has taken out what it keeps in", i+1)}
+			}
+			return out, fmt.Errorf("message %d is empty", i+1)
 		}
 		out.req.Messages = append(out.req.Messages, Message{Role: m.Role, Text: b.String()})
 	}
