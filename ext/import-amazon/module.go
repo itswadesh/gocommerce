@@ -59,7 +59,6 @@ import (
 	"html"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -315,9 +314,9 @@ func (m *Module) handleCreate(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	u, err := url.Parse(strings.TrimSpace(in.URL))
-	if err != nil || u.Host == "" || !strings.Contains(strings.ToLower(u.Host), "amazon.") {
-		gocommerce.RespondError(w, r, gocommerce.Validationf("url must be an Amazon product page"))
+	listing, err := listingURL(in.URL)
+	if err != nil {
+		gocommerce.RespondError(w, r, gocommerce.Validationf("url must be an Amazon product page's https:// link"))
 		return
 	}
 	opts := importOptions{Images: defaultImages, MaxVariants: m.cfg.MaxVariants, Status: "draft", PriceMinor: in.PriceMinor}
@@ -349,7 +348,7 @@ func (m *Module) handleCreate(w http.ResponseWriter, r *http.Request) {
 	if err := m.db.QueryRowContext(r.Context(), `
 		INSERT INTO import_amazon_jobs (url, status, step, options)
 		VALUES ($1, $2, 'queued', $3) RETURNING id`,
-		u.String(), StatusQueued, encoded).Scan(&id); err != nil {
+		listing, StatusQueued, encoded).Scan(&id); err != nil {
 		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "record the import"))
 		return
 	}
