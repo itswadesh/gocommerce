@@ -222,15 +222,16 @@ gateway too.
 **When a key goes missing.** A sealed value names the key that sealed it (the
 first eight hex characters of the key's SHA-256) and is bound to its store and
 its field, so it does not open under another key, in another store or in
-another field. One that no key here opens reads as unset: its plugin shows as
-not configured, an API key's copy cannot be shown again (the key still
-authenticates), and a webhook delivery fails with a message to rotate the
-secret rather than going out unsigned. The value is kept as stored until a
-save names its field, with a new value or an empty one, so putting the right
-key back — as `GOCOMMERCE_SECRETS_KEY_PREVIOUS`, then `secrets seal` — recovers
-it. The panel's settings form sends the field empty, because it reads as unset,
-so saving that plugin's settings clears it: put the key back first if it should
-be recovered. Doctor names each field; the log names it once an hour.
+another field. One that no key here opens reads as unset to the code that uses
+it: its plugin shows as not configured, an API key's copy cannot be shown again
+(the key still authenticates), and a webhook delivery fails with a message to
+rotate the secret rather than going out unsigned. The panel still shows a
+plugin secret like that as stored, with a note beside the field that this
+install cannot read it, so saving the plugin's settings for another reason
+keeps it. It is kept until a new value is typed in or the field is emptied, so
+putting the right key back — as `GOCOMMERCE_SECRETS_KEY_PREVIOUS`, then
+`secrets seal` — recovers it, even after a redeploy that briefly ran without
+the key. Doctor names each field; the log names it once an hour.
 
 A key that does not decode to 32 bytes, or `GOCOMMERCE_SECRETS_KEY_PREVIOUS`
 set without `GOCOMMERCE_SECRETS_KEY`, stops the engine at startup with the

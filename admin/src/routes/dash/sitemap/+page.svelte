@@ -556,7 +556,7 @@
                         exist.
                     </p>
                     <form id="map-settings" class="feed-form" onsubmit={submit}>
-                        <PluginFields fields={plugin.fields} bind:form idPrefix="map" />
+                        <PluginFields fields={plugin.fields} unopened={plugin.unopened} bind:form idPrefix="map" />
                     </form>
                     {#if writable}
                         <div class="feed-form-actions">
