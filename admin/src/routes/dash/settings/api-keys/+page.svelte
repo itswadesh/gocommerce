@@ -131,12 +131,22 @@
 
     const daysOk = $derived(Number.isInteger(days) && days >= 1 && days <= 365);
     const rateOk = $derived(Number.isInteger(rate) && rate >= 1 && rate <= 600);
-    const ready = $derived(
-        !!name.trim() && (kind === "integration" || (chosen.length > 0 && daysOk && rateOk)),
-    );
+
+    /* Why Create cannot run yet, in words (D98): a greyed button with no
+       reason is a screen that looks broken. Empty when it can. */
+    const blocker = $derived.by(() => {
+        if (!name.trim()) return "Give the key a name";
+        if (kind !== "agent") return "";
+        if (grantableState !== "ready") return "Loading what you can give an agent";
+        if (!grantable.length) return "You hold no right an agent key may carry";
+        if (!chosen.length) return "Tick at least one right for the agent";
+        if (!daysOk) return "Choose an expiry between 1 and 365 days";
+        if (!rateOk) return "Choose between 1 and 600 requests a minute";
+        return "";
+    });
 
     async function create() {
-        if (creating || !ready) return;
+        if (creating || blocker) return;
         creating = true;
         const body =
             kind === "agent"
@@ -152,10 +162,10 @@
             minted = await request("POST", "/api/admin/api-keys", { body });
             name = "";
             chosen = [];
+            // No toast: the card below the header is the message, scrolled
+            // into view with Copy focused. A toast as well put two notices
+            // over the form saying what the card already says.
             await reveal();
-            toast.success(
-                kind === "agent" ? "Agent key created — copy it now, it is shown once" : "Key created — copy it now",
-            );
             await load();
         } catch (err) {
             toast.error(err);
@@ -379,8 +389,7 @@
                             <div class="agent-note">
                                 <i class="ri-shield-keyhole-line" aria-hidden="true"></i>
                                 <p class="txt-sm">
-                                    Agent keys read only for now: an agent's changes will wait for a
-                                    person to approve them. An agent sees customers' email addresses
+                                    Agent keys can only read. An agent sees customers' email addresses
                                     and phone numbers masked, and never reaches keys, the team, roles,
                                     plugins, store settings, exports or webhooks.
                                 </p>
@@ -480,12 +489,18 @@
                             type="button"
                             class="btn sm"
                             class:loading={creating}
-                            disabled={creating || !ready}
+                            class:disabled={!!blocker}
+                            disabled={creating}
+                            aria-disabled={blocker ? "true" : undefined}
+                            aria-describedby={blocker ? "key-create-why" : undefined}
                             onclick={create}
                         >
                             <span class="txt">{kind === "agent" ? "Create agent key" : "Create key"}</span>
                         </button>
                     </div>
+                    {#if blocker}
+                        <p id="key-create-why" class="field-help m-t-sm" in:rise>{blocker}</p>
+                    {/if}
                 </section>
             {/if}
 
@@ -535,7 +550,7 @@
                                 <div class="txt-code key-prefix">{k.prefix}…</div>
                                 <div class="key-access">
                                     {#if k.kind === "agent"}
-                                        <span class="label label-info key-kind-chip">
+                                        <span class="label key-kind-chip">
                                             <i class="ri-robot-2-line" aria-hidden="true"></i>
                                             Agent
                                         </span>
