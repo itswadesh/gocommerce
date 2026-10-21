@@ -30,12 +30,11 @@ import (
 // What authenticates is the prefix in plain text — unique and indexed, so a
 // presented key resolves in one lookup and the panel can say which key is
 // which — and a SHA-256 of the whole key beside it, which is what decides
-// whether the rest was right. The copy M46 keeps for the owner to read again
-// is sealed when the install has a secrets key (D110), and plays no part in
-// authentication. SHA-256 rather than bcrypt on
-// purpose: this is machine-generated randomness rather than a password
-// somebody chose, so there is no dictionary to slow an attacker down, and the
-// check runs on every request.
+// whether the rest was right. SHA-256 rather than bcrypt on purpose: this is
+// machine-generated randomness rather than a password somebody chose, so there
+// is no dictionary to slow an attacker down, and the check runs on every
+// request. The copy M46 keeps for the owner to read again plays no part in
+// authentication, and is sealed when the install has a secrets key (D110).
 //
 // Minting is owner-only, and that is not timidity. A role that can mint a key
 // can mint one carrying more rights than itself, so granting apikeys.write to
