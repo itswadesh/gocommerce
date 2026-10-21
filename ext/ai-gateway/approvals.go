@@ -3,7 +3,9 @@ package aigateway
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -104,7 +106,9 @@ type Approval struct {
 	// ProposedPreview is the preview as filed, beside Preview recomputed
 	// now; read on a single proposal only. Changed says they differ.
 	ProposedPreview json.RawMessage `json:"proposed_preview,omitempty"`
-	Changed         bool            `json:"changed,omitempty"`
+	// PreviewHash names Preview; approving sends back the one reviewed.
+	PreviewHash string `json:"preview_hash,omitempty"`
+	Changed     bool   `json:"changed,omitempty"`
 	// Stale says why the preview could not be recomputed.
 	Stale string `json:"stale,omitempty"`
 	// Right is what approving needs beside ai.approve; empty when this build
@@ -139,6 +143,7 @@ func (m *Module) scanApproval(row interface{ Scan(...any) error }) (*Approval, e
 		return nil, err
 	}
 	a.Args, a.Preview = args, preview
+	a.PreviewHash = previewHash(preview)
 	if len(result) > 0 {
 		a.Result = result
 	}
@@ -263,7 +268,20 @@ func (m *Module) recompute(ctx context.Context, a *Approval) {
 		return
 	}
 	a.Preview = fresh
+	a.PreviewHash = previewHash(fresh)
 	a.Changed = !sameJSON(a.ProposedPreview, fresh)
+}
+
+// previewHash names a preview by its content, with keys in a fixed order, so
+// two previews that say the same thing have the same name.
+func previewHash(preview json.RawMessage) string {
+	var v any
+	canonical := []byte(preview)
+	if json.Unmarshal(preview, &v) == nil {
+		canonical, _ = json.Marshal(v)
+	}
+	sum := sha256.Sum256(canonical)
+	return hex.EncodeToString(sum[:])
 }
 
 func sameJSON(a, b json.RawMessage) bool {
@@ -322,17 +340,29 @@ func (m *Module) decide(ctx context.Context, id int64, approving bool) (*gocomme
 	return su, a, act, nil
 }
 
-// Approve runs a pending proposal as the person on ctx.
-func (m *Module) Approve(ctx context.Context, id int64) (*Approval, error) {
+// Approve runs a pending proposal as the person on ctx. seen is the hash of
+// the preview they reviewed (Approval.PreviewHash, from opening it).
+func (m *Module) Approve(ctx context.Context, id int64, seen string) (*Approval, error) {
 	su, a, act, err := m.decide(ctx, id, true)
 	if err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(seen) == "" {
+		return nil, gocommerce.Validationf("preview_hash is required: send the preview_hash of the proposal as you reviewed it, so what runs is what you saw")
+	}
 	// Recomputed once more: the person approves the store as it is, and the
-	// action runs against it, never against the snapshot.
+	// action runs against it, never against the snapshot. If it moved since
+	// they looked, they review it again; nothing runs on a preview nobody saw.
 	preview, err := act.Preview(ctx, a.Args)
 	if err != nil {
 		return nil, gocommerce.Conflictf("the preview could not be recomputed, so proposal %d was not run: %v", id, err)
+	}
+	if now := previewHash(preview); now != seen {
+		return nil, gocommerce.Conflictf("The store changed while you were looking; review it again.").WithDetails(map[string]any{
+			"preview":          preview,
+			"preview_hash":     now,
+			"proposed_preview": a.Preview,
+		})
 	}
 	// One conditional UPDATE is the whole of "runs once": of two approvals,
 	// one moves the row from pending and the other finds it moved.
@@ -470,7 +500,21 @@ func (m *Module) handleApproval(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) handleApprove(w http.ResponseWriter, r *http.Request) {
-	m.approvalAction(w, r, m.Approve)
+	var in struct {
+		PreviewHash string `json:"preview_hash"`
+	}
+	// The body is optional to decode, not to send: Approve refuses an
+	// approval that names no reviewed preview, after the checks on who is
+	// asking, so a caller who may not decide is told that first.
+	if r.ContentLength != 0 {
+		if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
+			gocommerce.RespondError(w, r, err)
+			return
+		}
+	}
+	m.approvalAction(w, r, func(ctx context.Context, id int64) (*Approval, error) {
+		return m.Approve(ctx, id, in.PreviewHash)
+	})
 }
 
 func (m *Module) handleReject(w http.ResponseWriter, r *http.Request) {

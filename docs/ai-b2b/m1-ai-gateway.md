@@ -390,8 +390,11 @@ The approval queue:
 - **Previews.** `Propose` computes the preview when filing and refuses to
   file one whose preview fails. Opening a pending proposal returns the
   preview recomputed now beside the one filed, with `changed` when they
-  differ; approving recomputes it again, stores that as what was approved,
-  and runs against the store as it is.
+  differ, and a `preview_hash` naming it. Approving sends that hash back and
+  recomputes the preview once more: if the store moved since the person
+  looked, the answer is 409 with the preview as it is now and nothing runs,
+  so an action never runs on a preview nobody saw. An approval naming no
+  reviewed preview is refused (400).
 - **Running.** Once claimed, the action runs to its end whatever happens to
   the request, bounded at 30 seconds, as the approver and labelled
   `approval #<id>`. An action that fails, runs out its time or panics
@@ -431,7 +434,9 @@ The panel:
 - **Jobs opens on every job,** with the status filter to narrow it: opening
   on "Needs a person" would hide "Gave up", and both need a person.
 - **Approve runs from the review drawer,** which is the review; Reject asks
-  for confirmation. Approve is not offered to a role without the action's
+  for confirmation. Approve sends the hash of the preview on screen; on a
+  409 the drawer shows the preview as it is now, marks the lines that moved
+  from what was on screen, and waits. Approve is not offered to a role without the action's
   right, or for a proposal whose preview could not be recomputed.
 
 ## Not in this step
