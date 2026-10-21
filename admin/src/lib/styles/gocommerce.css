@@ -11711,11 +11711,13 @@ html .tw\:rounded-2xl {
 }
 
 /* The head of Usage: one wide tile for the cap, three narrow ones. A single
-   column on a phone, two from a tablet, four on a desktop. */
+   column on a phone, two from a tablet, four on a desktop. Tiles in a row
+   stretch to one height, as the panel's stat tiles do, so the row reads as
+   one band rather than four cards of different lengths. */
 .ai-tiles {
     display: grid;
     grid-template-columns: 1fr;
-    align-items: start;
+    align-items: stretch;
     gap: var(--smSpacing);
 }
 @media (min-width: 700px) {
@@ -11723,9 +11725,10 @@ html .tw\:rounded-2xl {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
+/* The policy tile gets the room for its chips to sit two to a line. */
 @media (min-width: 1200px) {
     .ai-tiles {
-        grid-template-columns: 2fr repeat(3, minmax(0, 1fr));
+        grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.9fr) minmax(0, 1.1fr) minmax(0, 1.4fr);
     }
 }
 .ai-tile {
@@ -11807,7 +11810,7 @@ html .tw\:rounded-2xl {
 .ai-policy {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 4px;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -11817,7 +11820,7 @@ html .tw\:rounded-2xl {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 3px 8px;
+    padding: 2px 7px;
     border: 1px solid var(--border);
     border-radius: var(--borderRadius);
     font-size: var(--smFontSize);
