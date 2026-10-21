@@ -82,7 +82,7 @@ with its outcome and, where it escalated, why), `provider`, `model`,
 `model_version` (what the provider reported), `input_tokens`,
 `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `latency_ms`,
 `outcome` (`ok`, `deterministic`, `cached`, `invalid_output`, `refused`,
-`provider_error`, `budget_exhausted`, `no_price`, `task_error`), `review_status` (`none`,
+`provider_error`, `budget_exhausted`, `no_price`, `task_error`, `policy_blocked`), `review_status` (`none`,
 `pending`, `approved`, `rejected`), `confidence` (0–100, nullable),
 `source_refs jsonb`, `policy jsonb`, `cost_micro_minor bigint`, `currency`,
 `created_at`.
@@ -307,9 +307,12 @@ Where the design above was silent, or a detail did not survive the code:
   store content goes in `Message.Data` tagged with its class, the gateway
   drops the classes the policy forbids before rendering, and records which
   were dropped on the step. With contact details off, an email address, or a
-  phone number in international form, that slipped into another class is
-  replaced by its shape. A request carrying documents when documents are off
-  is refused rather than sent without the file it is about.
+  phone number in international form, that slipped into another class or
+  into a message's own `Text` is replaced by its shape. `System` holds no
+  store data at all. The run stops as `policy_blocked`, unsent, when a
+  request carries documents while documents are off, when data the task
+  marked `Required` is in a class that is off, or when the policy leaves a
+  message with nothing in it.
 - **The fence** is a `<data label class>` block holding the value as JSON. Go's
   encoder escapes `<`, `>` and `&`, so nothing in a value can close it.
 - **Token estimate:** a request is counted at one token per three bytes plus
