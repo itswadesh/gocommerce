@@ -28,6 +28,8 @@ const (
 	// here rather than in movements.go so that every context key the engine has
 	// is declared in one block; withStockSource is the only writer.
 	ctxKeyStockSource
+	// The request's trace id (trace.go): set by logMW, read by TraceID.
+	ctxKeyTraceID
 )
 
 // WithLanguage returns a context carrying the resolved request language.
