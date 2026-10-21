@@ -289,6 +289,30 @@ func (k *APIKeys) refuseAgentSecret(ctx context.Context, id int64) error {
 	return nil
 }
 
+// ------------------------------------------------------------- per request
+
+// admitAgent is what an agent key goes through on every request after it has
+// authenticated: the routes no agent may reach. It writes the refusal itself
+// and reports whether the request may go on.
+func (a *App) admitAgent(w http.ResponseWriter, r *http.Request, su *Superuser) bool {
+	// The routes a demo freezes for every method are the ones that hand out a
+	// credential or read with no shape for a mask to act on (demoFrozenAny).
+	// An agent is masked on every store, so they are closed to it on every
+	// store; the demo's other freezes — who can sign in — stay a demo's.
+	for _, p := range demoFrozenAny {
+		if demoPathMatch(p, r.URL.Path) {
+			RespondError(w, r, &APIError{
+				Status: http.StatusForbidden,
+				Code:   "agent_key_refused",
+				Message: "an agent key cannot reach this route: it hands out a credential, " +
+					"or reads around the mask an agent is shown",
+			})
+			return false
+		}
+	}
+	return true
+}
+
 // -------------------------------------------------------------------- route
 
 // handleAgentRights is the checklist the panel draws: every right the caller

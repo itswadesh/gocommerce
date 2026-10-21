@@ -732,10 +732,11 @@ type CompanyOrderQuery struct {
 	OnAccountOnly bool
 	OverdueOnly   bool
 	// Search matches part of the order number or the PO number, in any case —
-	// and of the email it was placed with, except on a demo store, where that
-	// is masked and a contains-match would read it back a character at a time.
+	// and of the email it was placed with, except where that is masked (a
+	// demo store, or an agent key: App.Masks) and a contains-match would read
+	// it back a character at a time.
 	Search        string
-	Demo          bool
+	Masked        bool
 	Limit, Offset int
 }
 
@@ -807,7 +808,7 @@ func (m *Module) CompanyOrders(ctx context.Context, q CompanyOrderQuery) ([]*Com
 		args = append(args, "%"+s+"%")
 		n := "$" + strconv.Itoa(len(args))
 		match := "lower(bo.order_number) LIKE " + n + " OR lower(bo.po_number) LIKE " + n
-		if !q.Demo {
+		if !q.Masked {
 			match += " OR lower(o.email) LIKE " + n
 		}
 		where = append(where, "("+match+")")

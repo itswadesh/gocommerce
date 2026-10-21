@@ -99,17 +99,18 @@ var customerSorts = SortSpec{
 // is what lets "Petra" find a shopper who has since been recorded under a
 // different spelling.
 //
-// On a demo the email column drops out, for the reason orderSearchClause gives:
-// a contains-match against a masked value reads it back a character at a time,
-// which publishes the address the mask hid.
-func customerSearchClause(search string, args *[]any, demo bool) string {
+// Where the email is masked (App.Masks: a demo, or an agent) the column drops
+// out, for the reason orderSearchClause gives: a contains-match against a
+// masked value reads it back a character at a time, which publishes the
+// address the mask hid.
+func customerSearchClause(search string, args *[]any, masked bool) string {
 	needle := strings.ToLower(strings.TrimSpace(search))
 	if needle == "" {
 		return ""
 	}
 	*args = append(*args, "%"+needle+"%")
 	n := len(*args)
-	if demo {
+	if masked {
 		return fmt.Sprintf("(lower(coalesce(o.name, '')) LIKE $%d)", n)
 	}
 	return fmt.Sprintf("(lower(o.email) LIKE $%d OR lower(coalesce(o.name, '')) LIKE $%d)", n, n)
@@ -122,7 +123,7 @@ func customerSearchClause(search string, args *[]any, demo bool) string {
 // address are not.
 func (s *Orders) Customers(ctx context.Context, q CustomerQuery) ([]*Customer, int, error) {
 	where, args := []string{"o.email <> ''"}, []any{}
-	if clause := customerSearchClause(q.Search, &args, s.app.demo(ctx)); clause != "" {
+	if clause := customerSearchClause(q.Search, &args, s.app.masks(ctx)); clause != "" {
 		where = append(where, clause)
 	}
 	clause := strings.Join(where, " AND ")

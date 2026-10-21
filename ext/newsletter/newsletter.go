@@ -236,7 +236,14 @@ func (m *Module) list(ctx context.Context, search, status string, limit, offset 
 	}
 	if s := strings.TrimSpace(search); s != "" {
 		args = append(args, "%"+strings.ToLower(s)+"%")
-		where = append(where, fmt.Sprintf("(email LIKE $%d OR lower(name) LIKE $%d)", len(args), len(args)))
+		// Where the address is masked (a demo store, or an agent key) only
+		// the name matches: a contains-match on a masked column reads it back
+		// one character at a time.
+		if m.app.Masks(ctx) {
+			where = append(where, fmt.Sprintf("lower(name) LIKE $%d", len(args)))
+		} else {
+			where = append(where, fmt.Sprintf("(email LIKE $%d OR lower(name) LIKE $%d)", len(args), len(args)))
+		}
 	}
 	clause := strings.Join(where, " AND ")
 	var total int

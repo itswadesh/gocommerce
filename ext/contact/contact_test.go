@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
@@ -78,4 +79,39 @@ func TestContactRoutesAreDocumentedAndGated(t *testing.T) {
 	app := gctest.New(t, New(Config{}))
 	gctest.AssertAdminRoutesDeclareRights(t, app, "contact")
 	gctest.AssertSpecCoversModuleRoutes(t, app, "contact")
+}
+
+// An agent key reads the inbox with addresses masked, and ?q= cannot read an
+// address back; the order number and the name still find a message.
+func TestAnAgentReadsMessagesMaskedAndCannotSearchTheAddress(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	if rec := gctest.Request(t, app, http.MethodPost, "/x/contact/messages", MessageInput{
+		Name: "Ann", Email: "ann.smith@example.com", Subject: "Parcel", Body: "Where is it?", OrderNumber: "GC-000042",
+	}); rec.Code != http.StatusCreated {
+		t.Fatalf("submit = %d: %s", rec.Code, rec.Body)
+	}
+	agent := gctest.AgentKey(t, app, rightContactRead)
+
+	found := func(q string) int {
+		t.Helper()
+		rec := gctest.SessionRequest(t, app, agent, http.MethodGet, "/api/admin/x/contact/messages?q="+q, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("agent search %q = %d: %s", q, rec.Code, rec.Body)
+		}
+		if strings.Contains(rec.Body.String(), "ann.smith@") {
+			t.Errorf("the agent read the address in full: %s", rec.Body)
+		}
+		var out []Message
+		gctest.DecodeData(t, rec, &out)
+		return len(out)
+	}
+	if n := found("ann.smith"); n != 0 {
+		t.Errorf("an agent searching by address found %d, want 0", n)
+	}
+	if n := found("GC-000042"); n != 1 {
+		t.Errorf("an agent searching by order number found %d, want 1", n)
+	}
+	if n := found("ann"); n != 1 {
+		t.Errorf("an agent searching by name found %d, want 1", n)
+	}
 }

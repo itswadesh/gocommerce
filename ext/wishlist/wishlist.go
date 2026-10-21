@@ -521,8 +521,15 @@ func (m *Module) handleLists(w http.ResponseWriter, r *http.Request) {
 	}
 	where, args := "1 = 1", []any{}
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
-		args = append(args, "%"+strings.ToLower(q)+"%")
-		where = fmt.Sprintf("lower(w.email) LIKE $%d", len(args))
+		// The address is all ?q= searches here. Where it is masked (a demo
+		// store, or an agent key) the search matches nothing, rather than
+		// reading the address back one character at a time.
+		if m.app.Masks(r.Context()) {
+			where = "false"
+		} else {
+			args = append(args, "%"+strings.ToLower(q)+"%")
+			where = fmt.Sprintf("lower(w.email) LIKE $%d", len(args))
+		}
 	}
 	if r.URL.Query().Get("with_email") == "1" {
 		where += " AND w.email <> ''"

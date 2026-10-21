@@ -739,7 +739,14 @@ func (m *Module) List(ctx context.Context, q CustomerQuery) ([]*Customer, int, e
 	where, args := []string{"1 = 1"}, []any{}
 	if needle := strings.ToLower(strings.TrimSpace(q.Search)); needle != "" {
 		args = append(args, "%"+needle+"%")
-		where = append(where, fmt.Sprintf("(email LIKE $%d OR lower(name) LIKE $%d)", len(args), len(args)))
+		// Where the address is masked (a demo store, or an agent key) only
+		// the name matches: a contains-match on a masked column reads it
+		// back one character at a time.
+		if m.app.Masks(ctx) {
+			where = append(where, fmt.Sprintf("lower(name) LIKE $%d", len(args)))
+		} else {
+			where = append(where, fmt.Sprintf("(email LIKE $%d OR lower(name) LIKE $%d)", len(args), len(args)))
+		}
 	}
 	clause := strings.Join(where, " AND ")
 
