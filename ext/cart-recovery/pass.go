@@ -399,16 +399,19 @@ func (m *Module) resume(ctx context.Context, set *settingsRow, id int64) (bool, 
 		return false, err
 	}
 	defer tx.Rollback()
+	// The currency moves with the subtotal: a store that changed its currency
+	// before its first order relabelled the basket (D85), and an amount the
+	// shopper now sees in rupees is not one in dollars.
 	res, err := tx.ExecContext(ctx, `
 		UPDATE cart_recovery_abandonments
 		SET kind = $2, email = $3, item_count = $4, subtotal_minor = $5, lines = $6,
-		    discount_code = $7, last_active_at = $8, updated_at = now(),
+		    discount_code = $7, last_active_at = $8, updated_at = now(), currency = $10,
 		    next_step_at = CASE WHEN $9::int > 0 THEN $8 + make_interval(mins => $9::int) ELSE next_step_at END,
 		    hold_reason  = CASE WHEN $9::int > 0 THEN NULL ELSE hold_reason END,
 		    status       = CASE WHEN $9::int > 0 AND status = 'abandoned' THEN 'scheduled' ELSE status END
 		WHERE id = $1 AND last_active_at < $8 AND status NOT IN ('recovered', 'expired')`,
 		id, kind, nullString(contact), d.ItemCount, d.Subtotal.AmountMinor, lines,
-		nullString(d.DiscountCode), d.UpdatedAt, nextWait)
+		nullString(d.DiscountCode), d.UpdatedAt, nextWait, d.Currency)
 	if err != nil {
 		return false, err
 	}
