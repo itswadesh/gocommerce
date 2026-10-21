@@ -248,7 +248,7 @@ func (m *Module) call(ctx context.Context, req rpcRequest) (any, error) {
 		return map[string]any{}, nil
 
 	case "tools/list":
-		return map[string]any{"tools": m.describeTools()}, nil
+		return map[string]any{"tools": m.describeTools(ctx)}, nil
 
 	case "tools/call":
 		var params struct {
@@ -265,10 +265,16 @@ func (m *Module) call(ctx context.Context, req rpcRequest) (any, error) {
 	}
 }
 
-func (m *Module) describeTools() []map[string]any {
+func (m *Module) describeTools(ctx context.Context) []map[string]any {
 	out := make([]map[string]any, 0, len(m.order))
+	agent := agentCaller(ctx)
 	for _, name := range m.order {
 		t := m.tools[name]
+		// An agent key is refused every mutating tool (callTool), so it is
+		// not offered one: a list it cannot use is a list it will try.
+		if agent && t.Mutates {
+			continue
+		}
 		schema := t.InputSchema
 		if schema == nil {
 			schema = map[string]any{"type": "object", "properties": map[string]any{}}
@@ -308,6 +314,18 @@ func (m *Module) callTool(ctx context.Context, name string, args json.RawMessage
 		return nil, &rpcError{codeMethodNotFound, "unknown tool " + name}
 	}
 
+	// An agent key only reads until its writes go through the approval queue
+	// (ADR 0003). It cannot hold a write right, so the rights below refuse
+	// every built-in write already; this is for a tool a module contributed
+	// that changes the store and names no right, which they would wave
+	// through. Audited, as any refused write is.
+	if tool.Mutates && agentCaller(ctx) {
+		refused := fmt.Errorf("%s changes the store, and an agent key only reads until "+
+			"an agent's changes go through an approval queue", name)
+		m.audit(ctx, name, args, refused)
+		return nil, &rpcError{codeInvalidRequest, refused.Error()}
+	}
+
 	// A nil superuser is the static admin token or ServeStdio — the credential
 	// requireRights already exempts on every core route, because it is the
 	// bootstrap credential and has no role whose rights could be read.
@@ -345,6 +363,12 @@ func (m *Module) callTool(ctx context.Context, name string, args json.RawMessage
 	return map[string]any{
 		"content": []map[string]any{{"type": "text", "text": string(encoded)}},
 	}, nil
+}
+
+// agentCaller reports whether the request came with an agent key.
+func agentCaller(ctx context.Context) bool {
+	su := gocommerce.SuperuserFrom(ctx)
+	return su != nil && su.KeyKind == gocommerce.KeyKindAgent
 }
 
 func (m *Module) audit(ctx context.Context, tool string, args json.RawMessage, callErr error) {

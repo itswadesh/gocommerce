@@ -12538,7 +12538,7 @@
           "admin:settings"
         ],
         "summary": "The API keys this store has issued",
-        "description": "Revoked keys are listed too, after the active ones: the question asked after an incident is what had access and when it stopped, and a deleted row answers neither. Nothing here can be turned back into a credential — the secret is returned once, when the key is made, and is not stored.",
+        "description": "Revoked keys are listed too, after the active ones: the question asked after an incident is what had access and when it stopped, and a deleted row answers neither. Nothing here can be turned back into a credential. Each key says its kind; an agent key also lists its rights, its expiry and its rate.",
         "security": [
           {
             "adminToken": []
@@ -12570,7 +12570,7 @@
                           },
                           "role": {
                             "type": "string",
-                            "description": "The role the key acts as. Its rights are this store’s, resolved the same way an operator’s are."
+                            "description": "The role an integration key acts as; its rights are this store's, resolved the same way an operator's are. Empty for an agent key, which carries a list of rights instead."
                           },
                           "created_at": {
                             "type": "string",
@@ -12594,6 +12594,32 @@
                           "revoked_by": {
                             "type": "integer",
                             "nullable": true
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "integration",
+                              "agent"
+                            ],
+                            "description": "Who uses the key. An agent key carries rights instead of a role, expires, is rate limited, is read-only in this release, sees personal data masked, and is shown once."
+                          },
+                          "rights": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "An agent key's rights, sorted. Absent on an integration key."
+                          },
+                          "expires_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "When an agent key stops working. Absent on an integration key, which does not expire."
+                          },
+                          "rate_per_minute": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 600,
+                            "description": "An agent key's requests a minute; over it every admin route answers 429. Absent on an integration key, which is not rate limited."
                           }
                         }
                       }
@@ -12615,8 +12641,8 @@
         "tags": [
           "admin:settings"
         ],
-        "summary": "Mint an API key",
-        "description": "Requires apikeys.write, which only owner carries by default: a role that can mint a key can mint one carrying more rights than itself. The secret comes back here and can be read again later through /api/admin/api-keys/{id}/secret, which is gated the same way.",
+        "summary": "Mint an API key or an agent key",
+        "description": "Requires apikeys.write, which only owner carries by default: a role that can mint a key can mint one carrying more rights than itself.\n\nAn integration key (the default) carries a role. Its secret comes back here and can be read again later through /api/admin/api-keys/{id}/secret, which is gated the same way.\n\nAn agent key (kind \"agent\") carries a list of rights instead, and is refused with a validation error naming the right unless: it is issued by a person signed in to the panel (not a static token or another key); every right is one this store has, is held by the issuer, is a read (writes wait for the approval queue), and is not one an agent may never hold (API keys, the team, roles, plugins, store settings, the outbox and maintenance, exports and imports, custom SQL reports, the error page, webhooks, the abandoned-checkout screens). It expires in 1 to 365 days (90 by default) and is allowed 1 to 600 requests a minute (60 by default). Only its hash is kept: the secret is shown here once and never again.",
         "security": [
           {
             "adminToken": []
@@ -12629,8 +12655,7 @@
               "schema": {
                 "type": "object",
                 "required": [
-                  "name",
-                  "role"
+                  "name"
                 ],
                 "properties": {
                   "name": {
@@ -12644,7 +12669,37 @@
                       "manager",
                       "staff"
                     ],
-                    "description": "What the key may do, held to exactly like a person."
+                    "description": "What an integration key may do, held to exactly like a person. Required for an integration key; leave it out for an agent key."
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "integration",
+                      "agent"
+                    ],
+                    "default": "integration",
+                    "description": "Who will use the key."
+                  },
+                  "rights": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "An agent key's rights: reads the issuer holds. Refused on an integration key."
+                  },
+                  "expires_in_days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 365,
+                    "default": 90,
+                    "description": "Days until an agent key stops working. Refused on an integration key."
+                  },
+                  "rate_per_minute": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 600,
+                    "default": 60,
+                    "description": "An agent key's requests a minute. Refused on an integration key."
                   }
                 }
               }
@@ -12653,7 +12708,7 @@
         },
         "responses": {
           "201": {
-            "description": "The key, with its secret — shown once.",
+            "description": "The key, with its secret.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12677,7 +12732,7 @@
                             },
                             "role": {
                               "type": "string",
-                              "description": "The role the key acts as. Its rights are this store’s, resolved the same way an operator’s are."
+                              "description": "The role an integration key acts as; its rights are this store's, resolved the same way an operator's are. Empty for an agent key, which carries a list of rights instead."
                             },
                             "created_at": {
                               "type": "string",
@@ -12701,6 +12756,32 @@
                             "revoked_by": {
                               "type": "integer",
                               "nullable": true
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "integration",
+                                "agent"
+                              ],
+                              "description": "Who uses the key. An agent key carries rights instead of a role, expires, is rate limited, is read-only in this release, sees personal data masked, and is shown once."
+                            },
+                            "rights": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "An agent key's rights, sorted. Absent on an integration key."
+                            },
+                            "expires_at": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "When an agent key stops working. Absent on an integration key, which does not expire."
+                            },
+                            "rate_per_minute": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 600,
+                              "description": "An agent key's requests a minute; over it every admin route answers 429. Absent on an integration key, which is not rate limited."
                             }
                           }
                         },
@@ -12709,7 +12790,7 @@
                           "properties": {
                             "secret": {
                               "type": "string",
-                              "description": "The credential. Never returned again."
+                              "description": "The credential. An agent key's is never returned again; an integration key's can be read back through /api/admin/api-keys/{id}/secret."
                             }
                           }
                         }
@@ -12766,6 +12847,63 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/api-keys/agent-rights": {
+      "get": {
+        "tags": [
+          "admin:settings"
+        ],
+        "summary": "The rights you may give an agent key",
+        "description": "Every right the caller holds that an agent key may carry in this release, in the engine's order: the checklist the panel draws. A module's rights carry the module's own label and scope, since the panel has no table for them. A caller that is not a person (a static token, a key) gets an empty list, because it cannot issue an agent key. Requires apikeys.write.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The rights, possibly none.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "right": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string",
+                            "description": "A module right's imperative gloss."
+                          },
+                          "scope": {
+                            "type": "string",
+                            "description": "What a module right covers."
+                          },
+                          "module": {
+                            "type": "string",
+                            "description": "The module that declared it; absent for the engine's own."
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -13270,7 +13408,7 @@
           "admin:settings"
         ],
         "summary": "Read a key back",
-        "description": "Requires apikeys.write rather than apikeys.read: knowing a key exists is a smaller thing than being able to use it, so seeing the credential is a separate and narrower act than opening the list. Every read is logged. A key issued before the engine kept a copy answers 409 saying so, rather than returning a blank.",
+        "description": "Requires apikeys.write rather than apikeys.read: knowing a key exists is a smaller thing than being able to use it, so seeing the credential is a separate and narrower act than opening the list. Every read is logged. A key issued before the engine kept a copy answers 409 saying so, rather than returning a blank, and so does an agent key, which is shown once and never stored.",
         "security": [
           {
             "adminToken": []
