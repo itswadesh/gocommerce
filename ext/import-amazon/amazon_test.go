@@ -917,6 +917,42 @@ func TestPricesInAnotherCurrencyAreNotSet(t *testing.T) {
 	}
 }
 
+// A store that sells in rupees on an install that defaults to dollars (D85):
+// an amazon.in listing is already in the store's currency, so its prices
+// cross as they are, and nothing is said about dollars.
+func TestPricesInTheStoresOwnCurrencyAreSet(t *testing.T) {
+	h := newHarness(t, Config{}, false)
+	ctx := context.Background()
+	p, err := h.app.Profile().Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Currency = "INR"
+	if _, err := h.app.Profile().Set(ctx, *p, nil); err != nil {
+		t.Fatalf("choose INR: %v", err)
+	}
+	pic := h.images.URL + "/x.jpg"
+	h.fx.pages["https://www.amazon.in/dp/B0INDIA002"] = &page{
+		ASIN: "B0INDIA002", Title: "Widget", Price: "₹1,299.00", Available: true, Images: []string{pic},
+	}
+
+	job := h.wait(t, h.start(t, map[string]any{"url": "https://www.amazon.in/dp/B0INDIA002", "status": "active"}).ID)
+	if job.Status != StatusDone {
+		t.Fatalf("status = %s: %s", job.Status, job.Message)
+	}
+	if containsPrefix(job.Warnings, "prices are in") {
+		t.Errorf("warnings = %v, want none about the currency — the store sells in rupees", job.Warnings)
+	}
+	product, _ := h.app.Products().GetProduct(ctx, *job.ProductID)
+	price := product.DefaultVariant().Price
+	if price.AmountMinor != 129900 || price.Currency != "INR" {
+		t.Errorf("price = %+v, want the listing's 129900 INR", price)
+	}
+	if product.Status != "active" {
+		t.Errorf("status = %q, want active — it has its price", product.Status)
+	}
+}
+
 // The same listing twice: the second slug carries the ASIN rather than failing.
 func TestImportingTwiceDoesNotCollideOnTheSlug(t *testing.T) {
 	h := newHarness(t, Config{}, false)
