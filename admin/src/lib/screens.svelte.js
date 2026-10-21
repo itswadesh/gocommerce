@@ -13,6 +13,7 @@
  * should lose the entry without a reload.
  */
 import { api } from "$lib/api.js";
+import { listOf } from "$lib/screenform.js";
 
 const s = $state({ list: [], loaded: false });
 // Bumped by forgetScreens: a listing asked for before it is the old store's.
@@ -24,7 +25,7 @@ export function loadScreens() {
     api.get("/api/admin/screens")
         .then((result) => {
             if (mine !== generation) return;
-            s.list = result.data ?? [];
+            s.list = listOf(result);
             s.loaded = true;
         })
         // A panel that cannot list module screens is a panel with the built-in
