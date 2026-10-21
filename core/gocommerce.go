@@ -120,7 +120,10 @@ type Config struct {
 	AdminTokens []string
 	// AdminAuth replaces the built-in bearer-token middleware wholesale. This
 	// is the seam a future identity module uses to add sessions, JWT/OIDC or
-	// RBAC without the engine knowing about identity.
+	// RBAC without the engine knowing about identity. One that accepts API
+	// keys (APIKeys.Resolve) must also call App.AdmitAgentKey for them, or an
+	// agent key is neither rate limited nor kept off the routes agents cannot
+	// reach.
 	AdminAuth func(http.Handler) http.Handler
 
 	// SecretsKey seals the credentials the engine has to read back — plugin

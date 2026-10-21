@@ -452,7 +452,7 @@ func (a *App) bearerAuth(next http.Handler) http.Handler {
 			//
 			// An agent key is rationed and kept off a few routes here, where
 			// it is known to be one; an integration key costs no extra write.
-			if key.KeyKind == KeyKindAgent && !a.admitAgent(w, r, key) {
+			if !a.AdmitAgentKey(w, r, key) {
 				return
 			}
 			next.ServeHTTP(w, withSuperuser(r, key))

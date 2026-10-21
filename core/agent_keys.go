@@ -386,6 +386,21 @@ func refuseAgentContactMatch(ctx context.Context, what string) error {
 	}
 }
 
+// AdmitAgentKey holds an agent key to what bearerAuth holds it to after it has
+// authenticated: its rate a minute, and the routes no agent may reach. It
+// writes the refusal itself and reports whether the request may go on, and it
+// lets anything else through.
+//
+// A Config.AdminAuth that resolves API keys itself (APIKeys.Resolve) must call
+// it for every request a key authenticates, or an agent key there is neither
+// rationed nor kept off those routes.
+func (a *App) AdmitAgentKey(w http.ResponseWriter, r *http.Request, su *Superuser) bool {
+	if su == nil || su.KeyKind != KeyKindAgent {
+		return true
+	}
+	return a.admitAgent(w, r, su)
+}
+
 // admitAgent is what an agent key goes through on every request after it has
 // authenticated: its rate, then the routes no agent may reach. It writes the
 // refusal itself and reports whether the request may go on.
