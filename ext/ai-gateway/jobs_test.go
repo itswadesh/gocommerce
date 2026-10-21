@@ -359,3 +359,64 @@ func TestALateWorkerCannotWriteOverARetriedClaim(t *testing.T) {
 		t.Errorf("the live worker's answer did not land: %+v", j)
 	}
 }
+
+// A claim is hidden from other workers for longer than the call it makes
+// can take, so raising the call's deadline cannot hand a live job to a
+// second instance halfway through it.
+func TestAClaimIsHeldLongerThanItsCall(t *testing.T) {
+	s := newStandIn(t, reply(http.StatusOK, answer(smallID, goodAnswer, smallUsage)))
+	m := New(Config{Client: s.client(), CallTimeout: 5 * time.Minute, PollInterval: time.Hour})
+	if err := m.RegisterTask(rewriteTask()); err != nil {
+		t.Fatal(err)
+	}
+	app := gctest.New(t, m)
+	ctx := context.Background()
+	id := enqueue(t, app, m, ctx, listing{Title: "x"}, "k1")
+
+	if j, err := m.claim(ctx); err != nil || j == nil {
+		t.Fatalf("claim = %+v, %v", j, err)
+	}
+	var held float64
+	if err := app.DB().QueryRowContext(ctx, `SELECT extract(epoch FROM locked_until - now()) FROM ai_jobs WHERE id = $1`, id).Scan(&held); err != nil {
+		t.Fatal(err)
+	}
+	if held <= (5 * time.Minute).Seconds() {
+		t.Errorf("the claim is held %.0fs, want longer than the 300s call", held)
+	}
+}
+
+// One store's backlog does not hold the others back: the runner takes a job
+// from each store in turn.
+func TestTheRunnerTakesTurnsBetweenStores(t *testing.T) {
+	app, m, _ := newGateway(t, reply(http.StatusOK, answer(smallID, goodAnswer, smallUsage)), rewriteTask())
+	second, err := app.Stores().Create(context.Background(), "Second", "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := context.Background()
+	b := gocommerce.WithStore(context.Background(), second.ID)
+	configure(t, app, a, nil)
+	configure(t, app, b, nil)
+	var aJobs []int64
+	for i := 0; i < 12; i++ {
+		aJobs = append(aJobs, enqueue(t, app, m, a, listing{Title: fmt.Sprint("a", i)}, fmt.Sprint("a", i)))
+	}
+	bJob := enqueue(t, app, m, b, listing{Title: "b"}, "b0")
+
+	if _, err := m.RunJobs(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// Runs number across stores in the order they were written.
+	bRun := mustJob(t, m, b, bJob).ExecutionID
+	aSecond := mustJob(t, m, a, aJobs[1]).ExecutionID
+	if bRun == nil || aSecond == nil || *bRun > *aSecond {
+		t.Errorf("store B's one job ran as #%v, after store A's second at #%v: B waited for A's backlog", deref(bRun), deref(aSecond))
+	}
+}
+
+func deref(p *int64) int64 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
