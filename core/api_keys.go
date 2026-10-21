@@ -265,6 +265,10 @@ func (k *APIKeys) Secret(ctx context.Context, id int64) (string, error) {
 
 // Resolve authenticates a presented key.
 //
+// It does not hold an agent key to its rate or keep it off the routes no agent
+// may reach; bearerAuth does that next, with App.AdmitAgentKey. A
+// Config.AdminAuth that calls Resolve itself has to call AdmitAgentKey too.
+//
 // It returns a Superuser rather than a key, because everything downstream —
 // requireRights, the audit trail, the panel's own `can()` — is written against
 // one kind of actor, and a second kind would be a second authorization path to
