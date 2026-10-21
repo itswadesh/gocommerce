@@ -81,12 +81,12 @@ const (
 const (
 	maxAttempts = 12
 	maxBackoff  = 15 * time.Minute
-	// visibility is how long a claimed job is hidden from other workers. A
-	// job's two calls each have callTimeout, and the lock is renewed before
-	// each, so a live worker never loses its job to another.
-	visibility = 2 * time.Minute
-	// jobsPerPass bounds one store's share of a pass, so one store with a
-	// backlog does not starve the rest.
+	// visibilityMargin is how much longer than one call a claim is hidden
+	// from other workers. The lock is renewed before each call, so a live
+	// worker never loses its job to another however long CallTimeout is.
+	visibilityMargin = time.Minute
+	// jobsPerPass bounds one store's share of a pass. Stores take turns, a
+	// job each, so one store's backlog does not hold the others back.
 	jobsPerPass = 10
 
 	defaultCallTimeout  = 60 * time.Second

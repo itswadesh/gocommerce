@@ -131,7 +131,7 @@ func (m *Module) claim(ctx context.Context) (*claimedJob, error) {
 		  FROM due
 		 WHERE j.id = due.id
 		RETURNING j.id, j.task, j.input, j.attempts, j.trace_id`,
-		visibility.Seconds(), token).Scan(&j.id, &j.task, &j.input, &j.attempts, &j.trace)
+		m.visibility().Seconds(), token).Scan(&j.id, &j.task, &j.input, &j.attempts, &j.trace)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -141,13 +141,16 @@ func (m *Module) claim(ctx context.Context) (*claimedJob, error) {
 	return &j, nil
 }
 
+// visibility is how long a claim hides its job: one call and a margin.
+func (m *Module) visibility() time.Duration { return m.cfg.CallTimeout + visibilityMargin }
+
 // renew extends a claim before a call, so a job's second rung does not run
 // past the window the first one started.
 func (m *Module) renew(ctx context.Context, j *claimedJob) {
 	if _, err := m.db.ExecContext(ctx, `
 		UPDATE ai_jobs SET locked_until = now() + make_interval(secs => $3)
 		WHERE id = $1 AND claim_token = $2 AND status = 'running'`,
-		j.id, j.token, visibility.Seconds()); err != nil {
+		j.id, j.token, m.visibility().Seconds()); err != nil {
 		m.log.Warn("ai job lock could not be renewed", "job", j.id, "error", err)
 	}
 }
@@ -268,39 +271,62 @@ func (m *Module) settleWithoutRecord(ctx context.Context, j *claimedJob, o jobOu
 }
 
 // RunJobs runs what is due. A context bound to a store runs that store's
-// jobs; one bound to none runs every store's, each bound in turn (D83). It
-// is exported for the reason DrainOutbox is: a test, or an operator in a
+// jobs; one bound to none runs every store's, each bound to its own (D83).
+// It is exported for the reason DrainOutbox is: a test, or an operator in a
 // hurry, can run a pass instead of waiting out the ticker.
+//
+// Stores take turns, a job each per round, up to jobsPerPass rounds: one
+// store with a backlog of a hundred does not keep another's one job waiting
+// behind them.
 func (m *Module) RunJobs(ctx context.Context) (int, error) {
+	var stores []context.Context
 	if _, bound := gocommerce.StoreFrom(ctx); bound {
-		return m.runStore(ctx)
-	}
-	total := 0
-	err := m.app.ForEachStore(ctx, func(ctx context.Context) error {
-		n, err := m.runStore(ctx)
-		total += n
-		return err
-	})
-	return total, err
-}
-
-func (m *Module) runStore(ctx context.Context) (int, error) {
-	n := 0
-	for n < jobsPerPass {
-		if ctx.Err() != nil {
-			return n, ctx.Err()
-		}
-		j, err := m.claim(ctx)
+		stores = []context.Context{ctx}
+	} else {
+		active, err := m.app.Stores().Active(ctx)
 		if err != nil {
-			return n, err
+			return 0, err
 		}
-		if j == nil {
+		for _, s := range active {
+			stores = append(stores, gocommerce.WithStore(ctx, s.ID))
+		}
+	}
+	var errs []error
+	done := make([]bool, len(stores))
+	total := 0
+	for round := 0; round < jobsPerPass; round++ {
+		ran := false
+		for i, sctx := range stores {
+			if done[i] {
+				continue
+			}
+			if ctx.Err() != nil {
+				return total, ctx.Err()
+			}
+			j, err := m.claim(sctx)
+			if err != nil {
+				errs = append(errs, err)
+				done[i] = true
+				continue
+			}
+			if j == nil {
+				done[i] = true
+				continue
+			}
+			m.process(sctx, j)
+			total++
+			ran = true
+		}
+		if !ran {
 			break
 		}
-		m.process(ctx, j)
-		n++
 	}
-	return n, m.forget(ctx)
+	for _, sctx := range stores {
+		if err := m.forget(sctx); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return total, errors.Join(errs...)
 }
 
 // start spawns the runner and returns: OnStart runs before the listener
