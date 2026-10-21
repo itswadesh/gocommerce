@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -51,6 +52,61 @@ func TestAnAgentCannotReadTheNotificationLog(t *testing.T) {
 	}
 	if rec := do(t, app, http.MethodGet, "/api/admin/notifications", bearer(staff)); rec.Code != http.StatusOK {
 		t.Errorf("an integration key reading the log = %d, want 200: %s", rec.Code, rec.Body)
+	}
+}
+
+// An agent key holds what its issuer still holds: its list, cut to the
+// issuer's current rights in this store on every request. An issuer who has
+// left the store, or whose account is gone, takes the key with them.
+func TestAnAgentKeyLosesWhatItsIssuerLoses(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	demoted := person(t, app, "demoted@example.com", RoleOwner)
+	removed := person(t, app, "removed@example.com", RoleOwner)
+	deleted := person(t, app, "deleted@example.com", RoleOwner)
+	person(t, app, "stays@example.com", RoleOwner)
+
+	_, first := newAgentKey(t, app, demoted, "Desk", RightOrdersRead, RightVendorsRead)
+	_, second := newAgentKey(t, app, removed, "Desk two", RightOrdersRead)
+	_, third := newAgentKey(t, app, deleted, "Desk three", RightOrdersRead)
+
+	who, ok := app.APIKeys().Resolve(ctx, first)
+	if !ok || !slices.Equal(who.Rights, []Right{RightOrdersRead, RightVendorsRead}) {
+		t.Fatalf("before = %v, %v", who, ok)
+	}
+
+	// Demoted to manager, who does not carry vendors.read.
+	if _, err := app.Superusers().SetRole(ctx, demoted.ID, RoleManager); err != nil {
+		t.Fatal(err)
+	}
+	who, ok = app.APIKeys().Resolve(ctx, first)
+	if !ok || !slices.Equal(who.Rights, []Right{RightOrdersRead}) {
+		t.Errorf("after the issuer is demoted = %v (%v), want orders.read alone", who.Rights, ok)
+	}
+	// The store re-cuts manager without orders.read: the key keeps nothing.
+	if _, err := app.Roles().Set(ctx, RoleManager, []Right{RightCatalogRead, RightCustomersRead}, nil); err != nil {
+		t.Fatal(err)
+	}
+	who, ok = app.APIKeys().Resolve(ctx, first)
+	if !ok || len(who.Rights) != 0 {
+		t.Errorf("after manager loses orders.read = %v (%v), want no rights", who.Rights, ok)
+	}
+
+	// Removed from the store, the account still alive elsewhere.
+	if _, err := app.DB().ExecContext(ctx,
+		`DELETE FROM store_members WHERE superuser_id = $1`, removed.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := app.APIKeys().Resolve(ctx, second); ok {
+		t.Error("a key whose issuer left the store still authenticates")
+	}
+
+	// The account deleted: created_by becomes null.
+	if err := app.Superusers().Delete(ctx, deleted.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := app.APIKeys().Resolve(ctx, third); ok {
+		t.Error("a key whose issuer was deleted still authenticates")
 	}
 }
 

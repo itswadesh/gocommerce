@@ -165,6 +165,19 @@ func (a *App) defaultRightsOf(role string) []Right {
 	return out
 }
 
+// inBuild keeps the rights this build has, in their order — a stored grant of a
+// module this binary was not built with is dropped, as overrides drops it.
+func (a *App) inBuild(rights []Right) []Right {
+	out := []Right{}
+	for _, r := range rights {
+		if a.hasRight(r) {
+			out = append(out, r)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 // hasRight reports whether this build has the right at all, which is what the
 // roles service validates a stored set against. A right from a module this
 // binary was not built with is refused rather than stored: the row would gate
