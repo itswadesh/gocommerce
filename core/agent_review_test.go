@@ -150,6 +150,35 @@ func TestAnAgentCannotLookACustomerUpByEmail(t *testing.T) {
 	}
 }
 
+// actor_id on its own means a person, as it always did: a key's id is another
+// sequence, so operator 5 and key 5 are different actors.
+func TestAnActorIDAloneMeansAnOperator(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	for _, kind := range []string{ActorOperator, ActorKey, ActorAgent} {
+		if _, err := app.DB().ExecContext(ctx, `
+			INSERT INTO admin_audit (actor_kind, actor_id, action, entity_type, entity_id, summary, changes)
+			VALUES ($1, 5, 'product.update', 'product', '1', $1, '{}')`, kind); err != nil {
+			t.Fatal(err)
+		}
+	}
+	id := int64(5)
+	rows, _, err := app.Audit().List(ctx, AuditQuery{ActorID: &id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].ActorKind != ActorOperator {
+		t.Errorf("actor_id=5 alone = %d rows, want operator 5's one", len(rows))
+	}
+	rows, _, err = app.Audit().List(ctx, AuditQuery{ActorID: &id, ActorKind: ActorKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].ActorKind != ActorKey {
+		t.Errorf("actor_id=5 with kind key = %+v, want key 5's one", rows)
+	}
+}
+
 // The merchant's free-form fields — an order's and a line's metadata, the
 // shop's note on an order, a cart's metadata, a parcel's label link — are not
 // fields the mask can read, so an agent is given none of them.
