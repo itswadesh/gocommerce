@@ -3,6 +3,8 @@ package gocommerce
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -259,5 +261,23 @@ func TestASealedValueStaysSealedWhenItsFieldIsNoLongerASecret(t *testing.T) {
 	// And it still opens for the descriptor that has it as a secret.
 	if s := keyedApp(t, dsn, key, "", fakePlugin{}).Plugins().String(ctx, "fake-mail", "api_key"); s != "sk-secret-1234" {
 		t.Errorf("the key reads %q after the saves", s)
+	}
+}
+
+// No real credential starts with "sealed:", and a value that does would read
+// as one the engine sealed — then fail to open and vanish. So it is refused
+// at the door, in any text field, with or without a key.
+func TestASettingThatLooksSealedIsRefused(t *testing.T) {
+	app := newTestApp(t, fakePlugin{})
+	ctx := context.Background()
+	on := true
+	for field, v := range map[string]string{"api_key": "sealed:v1:hunter2-TOPSECRET", "public_key": "sealed:pk"} {
+		_, err := app.Plugins().Update(ctx, "fake-mail", PluginPatch{Enabled: &on, Settings: map[string]any{"api_key": "sk-1", field: v}})
+		if !errors.Is(err, ErrValidation) || !strings.Contains(err.Error(), "sealed:") {
+			t.Errorf("%s = %q: %v, want a validation error naming the prefix", field, v, err)
+		}
+		if strings.Contains(fmt.Sprint(err), "hunter2") {
+			t.Errorf("%s: the error repeats the value", field)
+		}
 	}
 }

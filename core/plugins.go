@@ -593,7 +593,16 @@ func coercePluginValue(f PluginField, v any) (any, error) {
 		if !ok {
 			return nil, Validationf("Enter %s as text.", f.Label)
 		}
-		return strings.TrimSpace(s), nil
+		s = strings.TrimSpace(s)
+		// Every setting is read through the same door, and a value with this
+		// prefix would be taken for one the engine sealed, fail to open and
+		// read as unset. No real key starts this way, so it is a paste of
+		// the wrong thing; the value itself is not repeated back.
+		if isSealed(s) {
+			return nil, Validationf("%s cannot start with %q, which marks a value the engine encrypted. Paste the value itself.",
+				f.Label, sealedPrefix)
+		}
+		return s, nil
 	}
 }
 
