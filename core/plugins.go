@@ -187,9 +187,10 @@ type pluginRow struct {
 	// settings has every secret opened, and one that would not open left out.
 	settings map[string]any
 	// unopened are the secrets that would not open, exactly as stored. They
-	// read as unset, and they are written back as they were until a new value
-	// replaces them: a save that only did not type the key again must not
-	// destroy what putting the right key back would still open.
+	// read as unset, and they are written back as they were until a save
+	// names the field — a new value, or an empty one to clear it: a save that
+	// left the field out, or sent the mask, must not destroy what putting the
+	// right key back would still open.
 	unopened map[string]any
 	// sealed are the fields that were stored sealed and opened. They are
 	// sealed again on write whatever the descriptor now says: a release that
@@ -252,9 +253,9 @@ func (p *Plugins) openSettings(ctx context.Context, key string, r *pluginRow) {
 
 // sealSettings is what a row stores: every secret sealed when the install has
 // a key — a field of kind secret, and any field whose value was stored sealed
-// — and every secret that would not open kept as it was unless this save
-// replaced it.
-func (p *Plugins) sealSettings(ctx context.Context, def PluginDef, settings map[string]any, current pluginRow) (map[string]any, error) {
+// — and every secret that would not open kept as it was, unless this save
+// replaced it or cleared it.
+func (p *Plugins) sealSettings(ctx context.Context, def PluginDef, settings map[string]any, current pluginRow, cleared map[string]bool) (map[string]any, error) {
 	secret := map[string]bool{}
 	for _, f := range def.Fields {
 		secret[f.Key] = f.Kind == "secret"
@@ -275,7 +276,7 @@ func (p *Plugins) sealSettings(ctx context.Context, def PluginDef, settings map[
 		out[k] = v
 	}
 	for k, v := range unopened {
-		if _, replaced := out[k]; !replaced {
+		if _, replaced := out[k]; !replaced && !cleared[k] {
 			out[k] = v
 		}
 	}
@@ -377,6 +378,9 @@ func (p *Plugins) Update(ctx context.Context, key string, patch PluginPatch) (*P
 			return err
 		}
 		settings := map[string]any{}
+		// cleared are the fields this patch empties on purpose, which clears
+		// them even when what is stored would not open.
+		cleared := map[string]bool{}
 		for k, v := range current.settings {
 			settings[k] = v
 		}
@@ -393,6 +397,7 @@ func (p *Plugins) Update(ctx context.Context, key string, patch PluginPatch) (*P
 			}
 			if clean == nil || clean == "" {
 				delete(settings, k)
+				cleared[k] = true
 				continue
 			}
 			settings[k] = clean
@@ -426,7 +431,7 @@ func (p *Plugins) Update(ctx context.Context, key string, patch PluginPatch) (*P
 				return requiredSettingsError(def, missing, wasOn)
 			}
 		}
-		stored, err := p.sealSettings(ctx, def, settings, current)
+		stored, err := p.sealSettings(ctx, def, settings, current, cleared)
 		if err != nil {
 			return err
 		}

@@ -149,8 +149,9 @@ func TestWithoutAKeyAPluginSecretIsStoredAsBefore(t *testing.T) {
 }
 
 // A value sealed under a key the install no longer has reads as unset, so the
-// plugin says it is not configured. It is kept as it is until somebody types
-// a new one, so putting the right key back still opens it.
+// plugin says it is not configured. It is kept as it is until a save names
+// the field — a new value, or an empty one to clear it — so putting the right
+// key back still opens it.
 func TestAPluginSecretUnderAnUnknownKeyReadsAsUnset(t *testing.T) {
 	dsn := keyedDSN(t, fakePlugin{})
 	oldKey := newSecretsKey(t)
@@ -184,14 +185,14 @@ func TestAPluginSecretUnderAnUnknownKeyReadsAsUnset(t *testing.T) {
 		}
 	}
 
-	// A save that does not type a new key leaves the sealed one where it was —
-	// the panel's form sends an empty field for it, and so does this.
-	if _, err := lost.Plugins().Update(ctx, "fake-mail", PluginPatch{Settings: map[string]any{"public_key": "pk-2"}}); err != nil {
+	// A save that does not name the key, or sends the mask, leaves the sealed
+	// one where it was.
+	off := false
+	if _, err := lost.Plugins().Update(ctx, "fake-mail", PluginPatch{Enabled: &off, Settings: map[string]any{"public_key": "pk-2"}}); err != nil {
 		t.Fatalf("save another setting: %v", err)
 	}
-	off := false
-	if _, err := lost.Plugins().Update(ctx, "fake-mail", PluginPatch{Enabled: &off, Settings: map[string]any{"api_key": ""}}); err != nil {
-		t.Fatalf("switch off: %v", err)
+	if _, err := lost.Plugins().Update(ctx, "fake-mail", PluginPatch{Settings: map[string]any{"api_key": SecretMask}}); err != nil {
+		t.Fatalf("save the mask: %v", err)
 	}
 	if got := storedPluginSettings(t, lost, "fake-mail")["api_key"]; got != sealed {
 		t.Errorf("the unreadable key was replaced by %v", got)
@@ -201,7 +202,19 @@ func TestAPluginSecretUnderAnUnknownKeyReadsAsUnset(t *testing.T) {
 		t.Errorf("with the right key back the module reads %q", s)
 	}
 
-	// Typing a new one replaces it, sealed under the key the install has.
+	// An empty value clears it, opened or not: emptying a field is how a
+	// store says it wants that credential gone.
+	if _, err := lost.Plugins().Update(ctx, "fake-mail", PluginPatch{Settings: map[string]any{"api_key": ""}}); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if got, ok := storedPluginSettings(t, lost, "fake-mail")["api_key"]; ok {
+		t.Errorf("after an empty value the key is stored as %v, want it gone", got)
+	}
+	if s := back.Plugins().String(ctx, "fake-mail", "api_key"); s != "" {
+		t.Errorf("after clearing, even the right key reads %q", s)
+	}
+
+	// Typing a new one sets it, sealed under the key the install has.
 	if _, err := lost.Plugins().Update(ctx, "fake-mail", PluginPatch{Settings: map[string]any{"api_key": "sk-new"}}); err != nil {
 		t.Fatal(err)
 	}
