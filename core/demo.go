@@ -215,7 +215,7 @@ func (a *App) Masks(ctx context.Context) bool { return a.masks(ctx) }
 // masks asks the agent question first because it costs nothing: the caller is
 // already on the context, while demo may read the stores table.
 func (a *App) masks(ctx context.Context) bool {
-	if su := SuperuserFrom(ctx); su != nil && su.KeyKind == KeyKindAgent {
+	if agentCalling(ctx) {
 		return true
 	}
 	return a.demo(ctx)
@@ -424,6 +424,22 @@ func (a *App) MaskOrder(ctx context.Context, o *Order) {
 	o.Email = maskEmail(o.Email)
 	o.Phone = maskPhone(o.Phone)
 	o.Address.Phone = maskPhone(o.Address.Phone)
+	if agentCalling(ctx) {
+		// The merchant's free text — the order's and each line's metadata,
+		// which hold the shop's note and whatever a theme or an import put
+		// there — has no fields the mask can read, and a note saying "call
+		// Jane on …" is the number the mask hid. A parcel's label link is a
+		// document with the address on it, at the carrier. A demo keeps all
+		// of them: there the data is fake and the screen is the point.
+		o.Metadata = Metadata{}
+		for i := range o.Lines {
+			o.Lines[i].Metadata = Metadata{}
+		}
+		for i := range o.Fulfillments {
+			o.Fulfillments[i].Metadata = Metadata{}
+			o.Fulfillments[i].LabelURL = ""
+		}
+	}
 }
 
 func (a *App) maskOrders(ctx context.Context, os []*Order) {
@@ -452,6 +468,9 @@ func (a *App) maskCartSummary(ctx context.Context, c *CartSummary) {
 	}
 	c.Email = maskEmail(c.Email)
 	c.VerifiedEmail = maskEmail(c.VerifiedEmail)
+	if agentCalling(ctx) {
+		c.Metadata = Metadata{} // free text, as on an order
+	}
 }
 
 func (a *App) maskCartSummaries(ctx context.Context, cs []*CartSummary) {
@@ -477,6 +496,12 @@ func (a *App) maskNotification(ctx context.Context, n *NotificationRecord) {
 		n.To = maskPhone(n.To)
 	} else {
 		n.To = maskEmail(n.To)
+	}
+	if agentCalling(ctx) {
+		// A backend's own words about a failure, which can quote the message.
+		// An agent cannot reach the log at all (agentFrozen); this is for any
+		// screen that serves a notification some other way.
+		n.Error = ""
 	}
 	// Data is the template's variables, and templates are written by whoever
 	// runs the store — so the safe reading is that any key named like a contact
@@ -563,9 +588,14 @@ func (a *App) maskAuditEntries(ctx context.Context, es []*AuditEntry) {
 	if !a.masks(ctx) {
 		return
 	}
+	agent := agentCalling(ctx)
 	for _, e := range es {
 		e.ActorEmail = maskActorEmail(e.ActorKind, e.ActorEmail)
 		maskAuditChanges(&e.Changes)
+		if agent {
+			dropFreeText(e.Changes.Before)
+			dropFreeText(e.Changes.After)
+		}
 	}
 }
 
@@ -599,10 +629,33 @@ func (a *App) maskTimeline(ctx context.Context, es []OrderTimelineEntry) {
 	if !a.masks(ctx) {
 		return
 	}
+	agent := agentCalling(ctx)
 	for i := range es {
 		es[i].ActorEmail = maskActorEmail(es[i].ActorKind, es[i].ActorEmail)
 		maskAny(es[i].Before)
 		maskAny(es[i].After)
+		if agent {
+			dropFreeText(es[i].Before)
+			dropFreeText(es[i].After)
+		}
+	}
+}
+
+// dropFreeText removes the merchant's free-form fields from a recorded change
+// for an agent, at any depth: metadata and the shop's note, which MaskOrder
+// drops from the order itself and the history would otherwise hand back.
+func dropFreeText(v any) {
+	switch t := v.(type) {
+	case map[string]any:
+		delete(t, "metadata")
+		delete(t, OrderNoteKey)
+		for _, inner := range t {
+			dropFreeText(inner)
+		}
+	case []any:
+		for _, inner := range t {
+			dropFreeText(inner)
+		}
 	}
 }
 
