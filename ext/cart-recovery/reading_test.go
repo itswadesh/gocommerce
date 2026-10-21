@@ -199,3 +199,70 @@ func TestTheReportSaysWhetherClicksAreCounted(t *testing.T) {
 		}
 	}
 }
+
+// A store that sells in its own currency (D85) has its figures labelled in it,
+// not in the install's: the same 2500 is twenty-five dollars or twenty-five
+// rupees, and only the code says which.
+func TestTheFiguresAreInTheStoresCurrency(t *testing.T) {
+	h := newHarness(t, Config{StorefrontURL: "https://shop.example.com"}, testAppConfig())
+	ctx := context.Background()
+	// Chosen before anything is priced or ordered: the first order fixes it.
+	p, err := h.app.Profile().Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const store = "INR"
+	if p.Currency == store {
+		t.Fatalf("the install already sells in %s; the test needs a store that differs", store)
+	}
+	p.Currency = store
+	if _, err := h.app.Profile().Set(ctx, *p, nil); err != nil {
+		t.Fatalf("choose %s: %v", store, err)
+	}
+
+	h.buyAs("CUR-1", "ravi@example.com", "Ravi Das", "+919999900001")
+	_, cartID, _ := h.basket("CUR-2", "ravi@example.com", 1)
+	h.idle(cartID, 45)
+	h.pass()
+
+	var s Summary
+	gctest.DecodeData(t, gctest.AdminRequest(t, h.app, http.MethodGet, "/api/admin/x/cart-recovery/summary", nil), &s)
+	for name, m := range map[string]gocommerce.Money{
+		"summary potential": s.Potential, "summary recovered revenue": s.RecoveredRevenue,
+		"summary recovered after a message": s.RecoveredAfterMessageRevenue,
+	} {
+		if m.Currency != store {
+			t.Errorf("%s is in %q, want the store's %s", name, m.Currency, store)
+		}
+	}
+
+	var an Analytics
+	gctest.DecodeData(t, gctest.AdminRequest(t, h.app, http.MethodGet, "/api/admin/x/cart-recovery/analytics", nil), &an)
+	if len(an.Trend) == 0 || len(an.Breakdown) == 0 {
+		t.Fatalf("analytics = %+v, want a trend and a breakdown", an)
+	}
+	if got := an.Summary.Potential.Currency; got != store {
+		t.Errorf("analytics summary is in %q, want %s", got, store)
+	}
+	for _, p := range an.Trend {
+		if p.Potential.Currency != store || p.RecoveredRevenue.Currency != store {
+			t.Errorf("trend %s is in %q/%q, want %s", p.Period, p.Potential.Currency, p.RecoveredRevenue.Currency, store)
+		}
+	}
+	for _, b := range an.Breakdown {
+		if b.RecoveredRevenue.Currency != store {
+			t.Errorf("breakdown %s is in %q, want %s", b.Key, b.RecoveredRevenue.Currency, store)
+		}
+	}
+
+	d := h.detail(h.record(cartID).ID)
+	if d.Subtotal.Currency != store {
+		t.Errorf("the record is in %q, want %s — the basket was priced after the store chose", d.Subtotal.Currency, store)
+	}
+	if d.Customer == nil || d.Customer.Orders != 1 {
+		t.Fatalf("customer = %+v, want Ravi with his one order", d.Customer)
+	}
+	if got := d.Customer.LifetimeValue.Currency; got != store {
+		t.Errorf("the customer's lifetime value is in %q, want %s", got, store)
+	}
+}

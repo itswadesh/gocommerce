@@ -465,7 +465,10 @@ func scanSummary(row scanner, currency string) (*Summary, error) {
 	return s, nil
 }
 
-func (m *Module) currency() string { return m.app.Config().Currency }
+// currency labels the figures summed across a store's records and orders.
+// The store's own (D85), not the install's: a record keeps the code it was
+// made in, and a sum of them is in what the store sells in.
+func (m *Module) currency(ctx context.Context) string { return m.app.Currency(ctx) }
 
 func (m *Module) handleSummary(w http.ResponseWriter, r *http.Request) {
 	f, err := parseFilter(r)
@@ -474,7 +477,7 @@ func (m *Module) handleSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s, err := scanSummary(m.app.DB().QueryRowContext(r.Context(),
-		`SELECT `+summaryColumns+` FROM cart_recovery_abandonments a`+f.sql(), f.args...), m.currency())
+		`SELECT `+summaryColumns+` FROM cart_recovery_abandonments a`+f.sql(), f.args...), m.currency(r.Context()))
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
@@ -547,7 +550,7 @@ func (m *Module) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, gocommerce.Validationf("tz must be an IANA time zone such as Asia/Kolkata"))
 		return
 	}
-	cur := m.currency()
+	cur := m.currency(ctx)
 
 	s, err := scanSummary(m.app.DB().QueryRowContext(ctx,
 		`SELECT `+summaryColumns+` FROM cart_recovery_abandonments a`+f.sql(), f.args...), cur)
@@ -916,7 +919,7 @@ func (m *Module) customer(ctx context.Context, email string) (*Customer, error) 
 		Scan(&c.Orders, &ltv, &last); err != nil {
 		return nil, err
 	}
-	c.LifetimeValue = gocommerce.Money{AmountMinor: ltv, Currency: m.currency()}
+	c.LifetimeValue = gocommerce.Money{AmountMinor: ltv, Currency: m.currency(ctx)}
 	c.LastOrderAt = timePtr(last)
 	if c.Orders > 0 {
 		if err := m.app.DB().QueryRowContext(ctx, `
