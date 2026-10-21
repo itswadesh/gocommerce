@@ -73,6 +73,14 @@ type Suppression struct {
 	By     string    `json:"by,omitempty"`
 }
 
+// recoveredCurrency is the currency of the order a basket became. A record
+// keeps the currency its basket was left in (D85), and a store may change its
+// own until its first order, so a basket left in one can be bought in the
+// other: the order's total is in the order's currency, not the record's. Read
+// from the order rather than stored, so no record needs rewriting; the
+// record's own stands in for an order that is no longer there.
+const recoveredCurrency = `coalesce((SELECT o.currency FROM orders o WHERE o.id = a.recovered_order_id), a.currency)`
+
 const abandonmentColumns = `a.id, a.cart_id, a.kind, a.status, coalesce(a.hold_reason, ''),
 	coalesce(a.email, ''), a.item_count, a.subtotal_minor, a.currency, coalesce(a.discount_code, ''),
 	a.cart_created_at, a.last_active_at, a.abandoned_at, a.history, a.steps_sent, a.messages_sent,
@@ -80,13 +88,13 @@ const abandonmentColumns = `a.id, a.cart_id, a.kind, a.status, coalesce(a.hold_r
 	a.recovered_at, a.recovered_order_id, coalesce(a.recovered_order_number, ''),
 	a.recovered_total_minor, a.recovered_after_message,
 	a.suppressed_at, coalesce(a.suppression_reason, ''), coalesce(a.suppression_note, ''),
-	coalesce(a.suppressed_by, ''), a.expired_at`
+	coalesce(a.suppressed_by, ''), a.expired_at, ` + recoveredCurrency
 
 type scanner interface{ Scan(dest ...any) error }
 
 func scanAbandonment(row scanner) (*Abandonment, error) {
 	a := &Abandonment{}
-	var currency string
+	var currency, orderCurrency string
 	var subtotal int64
 	var nextStep, lastSent, firstClick, recoveredAt, suppressedAt, expiredAt sql.NullTime
 	var orderID, orderTotal sql.NullInt64
@@ -97,7 +105,7 @@ func scanAbandonment(row scanner) (*Abandonment, error) {
 		&a.CartCreated, &a.LastActiveAt, &a.AbandonedAt, &a.History, &a.StepsSent, &a.MessagesSent,
 		&nextStep, &lastSent, &a.Clicks, &firstClick,
 		&recoveredAt, &orderID, &orderNumber, &orderTotal, &after,
-		&suppressedAt, &reason, &note, &by, &expiredAt); err != nil {
+		&suppressedAt, &reason, &note, &by, &expiredAt, &orderCurrency); err != nil {
 		return nil, err
 	}
 	a.Subtotal = gocommerce.Money{AmountMinor: subtotal, Currency: currency}
@@ -108,7 +116,7 @@ func scanAbandonment(row scanner) (*Abandonment, error) {
 	a.ExpiredAt = timePtr(expiredAt)
 	if orderID.Valid {
 		a.RecoveredOrder = &RecoveredOrder{ID: orderID.Int64, Number: orderNumber,
-			Total: gocommerce.Money{AmountMinor: orderTotal.Int64, Currency: currency}}
+			Total: gocommerce.Money{AmountMinor: orderTotal.Int64, Currency: orderCurrency}}
 	}
 	if after.Valid {
 		v := after.Bool
@@ -438,16 +446,32 @@ type Summary struct {
 	RecoveryRateBP int `json:"recovery_rate_bp"`
 }
 
-const summaryColumns = `count(*),
-	coalesce(sum(a.subtotal_minor), 0),
+// summaryColumns counts every record but adds up only money in the store's
+// currency, whose placeholder is cur. A record keeps the currency its basket
+// was left in and an order the one it was placed in (D85), and a store may
+// change its own until its first order, so one store's records can be in two
+// currencies; 2500 of one and 2500 of the other are not 5000 of either. What
+// was left in the old currency still counts as a basket, not as money.
+func summaryColumns(cur string) string {
+	return `count(*),
+	coalesce(sum(a.subtotal_minor) FILTER (WHERE a.currency = ` + cur + `), 0),
 	count(*) FILTER (WHERE a.email IS NOT NULL),
 	coalesce(sum(a.messages_sent), 0),
 	count(*) FILTER (WHERE a.messages_sent > 0),
 	count(*) FILTER (WHERE a.clicks > 0),
 	count(*) FILTER (WHERE a.status = 'recovered'),
-	coalesce(sum(a.recovered_total_minor) FILTER (WHERE a.status = 'recovered'), 0),
+	coalesce(sum(a.recovered_total_minor) FILTER (WHERE a.status = 'recovered' AND ` + recoveredCurrency + ` = ` + cur + `), 0),
 	count(*) FILTER (WHERE a.status = 'recovered' AND a.recovered_after_message),
-	coalesce(sum(a.recovered_total_minor) FILTER (WHERE a.status = 'recovered' AND a.recovered_after_message), 0)`
+	coalesce(sum(a.recovered_total_minor) FILTER (WHERE a.status = 'recovered' AND a.recovered_after_message AND ` + recoveredCurrency + ` = ` + cur + `), 0)`
+}
+
+// summaryQuery is the summary under f, with the store's currency as the last
+// argument.
+func summaryQuery(f *filter, cur string) (string, []any) {
+	args := append(slices.Clone(f.args), cur)
+	return `SELECT ` + summaryColumns("$"+strconv.Itoa(len(args))) +
+		` FROM cart_recovery_abandonments a` + f.sql(), args
+}
 
 func scanSummary(row scanner, currency string) (*Summary, error) {
 	s := &Summary{}
@@ -465,9 +489,9 @@ func scanSummary(row scanner, currency string) (*Summary, error) {
 	return s, nil
 }
 
-// currency labels the figures summed across a store's records and orders.
-// The store's own (D85), not the install's: a record keeps the code it was
-// made in, and a sum of them is in what the store sells in.
+// currency labels the figures summed across a store's records and orders:
+// the store's own (D85), not the install's. Only records and orders in it are
+// summed (summaryColumns), so the label is true of every figure it is on.
 func (m *Module) currency(ctx context.Context) string { return m.app.Currency(ctx) }
 
 func (m *Module) handleSummary(w http.ResponseWriter, r *http.Request) {
@@ -476,8 +500,9 @@ func (m *Module) handleSummary(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	s, err := scanSummary(m.app.DB().QueryRowContext(r.Context(),
-		`SELECT `+summaryColumns+` FROM cart_recovery_abandonments a`+f.sql(), f.args...), m.currency(r.Context()))
+	cur := m.currency(r.Context())
+	q, args := summaryQuery(f, cur)
+	s, err := scanSummary(m.app.DB().QueryRowContext(r.Context(), q, args...), cur)
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
@@ -552,8 +577,8 @@ func (m *Module) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 	cur := m.currency(ctx)
 
-	s, err := scanSummary(m.app.DB().QueryRowContext(ctx,
-		`SELECT `+summaryColumns+` FROM cart_recovery_abandonments a`+f.sql(), f.args...), cur)
+	q, qargs := summaryQuery(f, cur)
+	s, err := scanSummary(m.app.DB().QueryRowContext(ctx, q, qargs...), cur)
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
@@ -569,15 +594,17 @@ func (m *Module) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 
 	// The bucket is truncated in the store's zone and printed as a date, so a
 	// basket left at 23:30 in Kolkata is counted on that Kolkata day.
-	args := append(slices.Clone(f.args), groupBy, tz)
-	g, z := len(args)-1, len(args)
+	// The money in each period is summed as the summary sums it: only what
+	// is in the store's currency.
+	args := append(slices.Clone(f.args), groupBy, tz, cur)
+	g, z, c := len(args)-2, len(args)-1, len(args)
 	rows, err := m.app.DB().QueryContext(ctx, fmt.Sprintf(`
 		SELECT to_char(date_trunc($%d, a.abandoned_at AT TIME ZONE $%d), 'YYYY-MM-DD') AS period,
-		       count(*), coalesce(sum(a.subtotal_minor), 0),
+		       count(*), coalesce(sum(a.subtotal_minor) FILTER (WHERE a.currency = $%d), 0),
 		       count(*) FILTER (WHERE a.status = 'recovered'),
-		       coalesce(sum(a.recovered_total_minor) FILTER (WHERE a.status = 'recovered'), 0)
+		       coalesce(sum(a.recovered_total_minor) FILTER (WHERE a.status = 'recovered' AND `+recoveredCurrency+` = $%d), 0)
 		FROM cart_recovery_abandonments a`+f.sql()+`
-		GROUP BY 1 ORDER BY 1`, g, z), args...)
+		GROUP BY 1 ORDER BY 1`, g, z, c, c), args...)
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
@@ -600,11 +627,12 @@ func (m *Module) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	krows, err := m.app.DB().QueryContext(ctx, `
+	kargs := append(slices.Clone(f.args), cur)
+	krows, err := m.app.DB().QueryContext(ctx, fmt.Sprintf(`
 		SELECT a.kind, count(*), count(*) FILTER (WHERE a.status = 'recovered'),
-		       coalesce(sum(a.recovered_total_minor) FILTER (WHERE a.status = 'recovered'), 0)
+		       coalesce(sum(a.recovered_total_minor) FILTER (WHERE a.status = 'recovered' AND `+recoveredCurrency+` = $%d), 0)
 		FROM cart_recovery_abandonments a`+f.sql()+`
-		GROUP BY a.kind ORDER BY a.kind`, f.args...)
+		GROUP BY a.kind ORDER BY a.kind`, len(kargs)), kargs...)
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
