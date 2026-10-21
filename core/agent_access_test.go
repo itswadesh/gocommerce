@@ -10,7 +10,7 @@ import (
 )
 
 // What an agent key does once it is in: who the audit trail says acted, what
-// it is shown, and where it may not go.
+// it is shown, how often it may ask, and where it may not go.
 
 // --------------------------------------------------------------- the audit seam
 
@@ -221,6 +221,77 @@ func TestMasksIsADemoOrAnAgent(t *testing.T) {
 	}
 	if !app.Masks(withStoreDemo(ctx, true)) {
 		t.Error("a demo store does not mask")
+	}
+}
+
+// ---------------------------------------------------------------- rationing
+
+// An agent key gets its rate a minute and a 429 after it, with Retry-After,
+// and the next minute it works again. The count lives in Postgres, so every
+// replica sees one.
+func TestAnAgentKeyIsRateLimited(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	owner := person(t, app, "owner@example.com", RoleOwner)
+	key, secret, err := app.APIKeys().Create(ctx, APIKeyInput{
+		Name: "Busy", Kind: KeyKindAgent, Rights: []Right{RightCatalogRead}, RatePerMinute: intp(3),
+	}, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 1; i <= 3; i++ {
+		if rec := do(t, app, http.MethodGet, "/api/admin/products", bearer(secret)); rec.Code != http.StatusOK {
+			t.Fatalf("request %d = %d: %s", i, rec.Code, rec.Body)
+		}
+	}
+	rec := do(t, app, http.MethodGet, "/api/admin/products", bearer(secret))
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("request 4 = %d, want 429: %s", rec.Code, rec.Body)
+	}
+	retry, err := strconv.Atoi(rec.Header().Get("Retry-After"))
+	if err != nil || retry < 1 || retry > 60 {
+		t.Errorf("Retry-After = %q, want the seconds left in the minute", rec.Header().Get("Retry-After"))
+	}
+	var refusal struct {
+		Error APIError `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &refusal); err != nil {
+		t.Fatal(err)
+	}
+	if refusal.Error.Code != "rate_limited" || !strings.Contains(refusal.Error.Message, "3 requests a minute") {
+		t.Errorf("refusal = %+v, want it to say which limit", refusal.Error)
+	}
+
+	// The minute passes.
+	if _, err := app.DB().ExecContext(ctx,
+		`UPDATE api_key_rates SET window_start = window_start - interval '61 seconds' WHERE key_id = $1`, key.ID); err != nil {
+		t.Fatal(err)
+	}
+	if rec := do(t, app, http.MethodGet, "/api/admin/products", bearer(secret)); rec.Code != http.StatusOK {
+		t.Fatalf("the next minute = %d, want it working again: %s", rec.Code, rec.Body)
+	}
+}
+
+// Integration keys are not rationed and cost no write per request.
+func TestAnIntegrationKeyIsNotRateLimited(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	_, secret, err := app.APIKeys().Create(ctx, APIKeyInput{Name: "Busy script", Role: RoleStaff}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 70; i++ {
+		if rec := do(t, app, http.MethodGet, "/api/admin/products", bearer(secret)); rec.Code != http.StatusOK {
+			t.Fatalf("request %d = %d: %s", i, rec.Code, rec.Body)
+		}
+	}
+	var rows int
+	if err := app.DB().QueryRowContext(ctx, `SELECT count(*) FROM api_key_rates`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Errorf("an integration key wrote %d rate rows", rows)
 	}
 }
 

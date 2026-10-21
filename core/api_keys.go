@@ -301,14 +301,15 @@ func (k *APIKeys) Resolve(ctx context.Context, presented string) (*Superuser, bo
 		kind     string
 		listed   []byte
 		expired  bool
+		rate     *int
 	)
 	// expired is the database's answer, from the same clock that set
 	// expires_at, so a replica whose clock drifts cannot extend a key.
 	err := k.app.db.QueryRowContext(ctx, `
 		SELECT id, name, role, token_hash, revoked_at, last_used_at,
-		       kind, to_jsonb(rights), coalesce(expires_at <= now(), false)
+		       kind, to_jsonb(rights), coalesce(expires_at <= now(), false), rate_per_minute
 		FROM api_keys WHERE prefix = $1`, prefix,
-	).Scan(&id, &name, &role, &hash, &revoked, &lastUsed, &kind, &listed, &expired)
+	).Scan(&id, &name, &role, &hash, &revoked, &lastUsed, &kind, &listed, &expired, &rate)
 	if err != nil {
 		return nil, false
 	}
@@ -320,7 +321,7 @@ func (k *APIKeys) Resolve(ctx context.Context, presented string) (*Superuser, bo
 		return nil, false
 	}
 	if kind == KeyKindAgent {
-		su, ok := k.agentCaller(id, name, listed)
+		su, ok := k.agentCaller(id, name, listed, rate)
 		if ok {
 			k.touch(ctx, id, lastUsed)
 		}

@@ -84,6 +84,8 @@ type Superuser struct {
 	KeyKind string `json:"key_kind,omitempty"`
 
 	passwordHash string
+	// keyRate is an agent key's requests a minute, read by bearerAuth.
+	keyRate int
 }
 
 // Superusers is the operator-identity service.
