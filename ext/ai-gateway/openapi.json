@@ -1,0 +1,862 @@
+{
+  "paths": {
+    "/api/admin/x/ai-gateway/usage": {
+      "get": {
+        "tags": [
+          "ai-gateway"
+        ],
+        "summary": "Model spend, added up",
+        "description": "The store's AI runs inside a window of UTC days, added up by day, task or model. By day, every day of the window is present, empty ones included; by task or model, the costliest come first. Costs are millionths of a minor unit of `currency`: a run's cost is its tokens times the prices set, with nothing rounded. Needs `ai.read`.",
+        "responses": {
+          "200": {
+            "description": "The window, its rows and their total.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AIUsageReport"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "First day, YYYY-MM-DD. Defaults to the first of this month.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Last day, inclusive. Defaults to today. At most a year after from.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "by",
+            "in": "query",
+            "required": false,
+            "description": "How to add up.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "day",
+                "task",
+                "model"
+              ],
+              "default": "day"
+            }
+          }
+        ]
+      }
+    },
+    "/api/admin/x/ai-gateway/budget": {
+      "get": {
+        "tags": [
+          "ai-gateway"
+        ],
+        "summary": "This month against the cap",
+        "description": "The cap as set, what is spent and what is held for calls in flight this calendar month (UTC), and whether the store can make calls at all, with the reason when it cannot. Needs `ai.read`.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AIBudget"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/ai-gateway/executions": {
+      "get": {
+        "tags": [
+          "ai-gateway"
+        ],
+        "summary": "Runs",
+        "description": "Every run of a task, newest first: what answered, the tokens, the cost and the outcome. Needs `ai.read`.",
+        "responses": {
+          "200": {
+            "description": "A page of runs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AIExecution"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "name": "task",
+            "in": "query",
+            "required": false,
+            "description": "Only this task.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "outcome",
+            "in": "query",
+            "required": false,
+            "description": "Only runs that ended this way.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ok",
+                "deterministic",
+                "cached",
+                "invalid_output",
+                "refused",
+                "provider_error",
+                "budget_exhausted",
+                "no_price"
+              ]
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "query",
+            "required": false,
+            "description": "Only the runs of this job.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ]
+      }
+    },
+    "/api/admin/x/ai-gateway/executions/{id}": {
+      "get": {
+        "tags": [
+          "ai-gateway"
+        ],
+        "summary": "One run",
+        "description": "A run with every step it tried and why it moved on. Needs `ai.read`.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AIExecution"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ]
+      }
+    },
+    "/api/admin/x/ai-gateway/jobs": {
+      "get": {
+        "tags": [
+          "ai-gateway"
+        ],
+        "summary": "The AI job queue",
+        "description": "Queued model work, newest first. A job is retried only for a transient failure (a timeout, a rate limit, a provider's own outage), up to 12 attempts; anything else is `failed` with its reason, for a person. Needs `ai.read`.",
+        "responses": {
+          "200": {
+            "description": "A page of jobs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AIJob"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Only jobs in this state.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "queued",
+                "running",
+                "done",
+                "failed",
+                "dead",
+                "cancelled"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "/api/admin/x/ai-gateway/jobs/{id}/retry": {
+      "post": {
+        "tags": [
+          "ai-gateway"
+        ],
+        "summary": "Retry a job",
+        "description": "Puts a failed, dead or cancelled job back in the queue with a fresh set of attempts. Its last error stays until the next run replaces it. Needs `ai.configure`.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AIJob"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ]
+      }
+    },
+    "/api/admin/x/ai-gateway/jobs/{id}/cancel": {
+      "post": {
+        "tags": [
+          "ai-gateway"
+        ],
+        "summary": "Cancel a job",
+        "description": "Takes a job out of the queue for good. A call already in flight is not stopped, and its record is kept. Needs `ai.configure`.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AIJob"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ]
+      }
+    },
+    "/api/admin/x/ai-gateway/check": {
+      "post": {
+        "tags": [
+          "ai-gateway"
+        ],
+        "summary": "Check the provider connection",
+        "description": "Asks the provider which models the store's key reaches, which spends no tokens. Always 200: `ok` false with `message` is the finding when the key is missing, of the wrong shape (caught before anything leaves the store) or refused. Needs `ai.configure`.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AICheck"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AIUsageRow": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "The day, task or model."
+          },
+          "runs": {
+            "type": "integer"
+          },
+          "cost_micro_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cache_read_tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cache_write_tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "escalations": {
+            "type": "integer",
+            "description": "Runs that asked the strong model after the small one."
+          },
+          "failures": {
+            "type": "integer",
+            "description": "Runs that ended without an answer."
+          }
+        }
+      },
+      "AIUsageReport": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "by": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AIUsageRow"
+            }
+          },
+          "total": {
+            "$ref": "#/components/schemas/AIUsageRow"
+          }
+        }
+      },
+      "AIBudget": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "string",
+            "format": "date"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "cap_minor": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Minor units; null when no cap is set."
+          },
+          "spent_micro_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reserved_micro_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "openai"
+            ]
+          },
+          "small_model": {
+            "type": "string"
+          },
+          "strong_model": {
+            "type": "string"
+          },
+          "small_priced": {
+            "type": "boolean"
+          },
+          "strong_priced": {
+            "type": "boolean"
+          },
+          "policy": {
+            "type": "object",
+            "description": "Which classes of data could leave the store.",
+            "properties": {
+              "catalogue": {
+                "type": "boolean"
+              },
+              "order_lines": {
+                "type": "boolean"
+              },
+              "contact_details": {
+                "type": "boolean"
+              },
+              "message_bodies": {
+                "type": "boolean"
+              },
+              "documents": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "AIStep": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "string",
+            "enum": [
+              "deterministic",
+              "cache",
+              "small",
+              "strong"
+            ]
+          },
+          "outcome": {
+            "type": "string",
+            "description": "hit or miss; for a model ok, invalid, low_confidence, refused, provider_error, budget_exhausted or no_price."
+          },
+          "reason": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "model_version": {
+            "type": "string"
+          },
+          "usage": {
+            "type": "object",
+            "properties": {
+              "input_tokens": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "output_tokens": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "cache_read_tokens": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "cache_write_tokens": {
+                "type": "integer",
+                "format": "int64"
+              }
+            }
+          },
+          "cost_micro_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "confidence": {
+            "type": "integer"
+          },
+          "dropped": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Classes of data the policy kept out of the request."
+          }
+        }
+      },
+      "AIExecution": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "task": {
+            "type": "string"
+          },
+          "task_version": {
+            "type": "integer"
+          },
+          "job_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "trace_id": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AIStep"
+            }
+          },
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "model_version": {
+            "type": "string"
+          },
+          "usage": {
+            "type": "object",
+            "properties": {
+              "input_tokens": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "output_tokens": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "cache_read_tokens": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "cache_write_tokens": {
+                "type": "integer",
+                "format": "int64"
+              }
+            }
+          },
+          "latency_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "deterministic",
+              "cached",
+              "invalid_output",
+              "refused",
+              "provider_error",
+              "budget_exhausted",
+              "no_price"
+            ]
+          },
+          "review_status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "pending",
+              "approved",
+              "rejected"
+            ]
+          },
+          "confidence": {
+            "type": "integer",
+            "nullable": true
+          },
+          "source_refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "policy": {
+            "type": "object",
+            "description": "Which classes of data could leave the store.",
+            "properties": {
+              "catalogue": {
+                "type": "boolean"
+              },
+              "order_lines": {
+                "type": "boolean"
+              },
+              "contact_details": {
+                "type": "boolean"
+              },
+              "message_bodies": {
+                "type": "boolean"
+              },
+              "documents": {
+                "type": "boolean"
+              }
+            }
+          },
+          "cost_micro_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AIJob": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "task": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed",
+              "dead",
+              "cancelled"
+            ]
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "max_attempts": {
+            "type": "integer"
+          },
+          "next_run_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "trace_id": {
+            "type": "string"
+          },
+          "result": {
+            "description": "The answer, once done."
+          },
+          "execution_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "AICheck": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "small": {
+            "type": "object",
+            "properties": {
+              "model": {
+                "type": "string"
+              },
+              "listed": {
+                "type": "boolean"
+              }
+            }
+          },
+          "strong": {
+            "type": "object",
+            "properties": {
+              "model": {
+                "type": "string"
+              },
+              "listed": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

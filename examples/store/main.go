@@ -22,6 +22,7 @@ import (
 
 	"github.com/itswadesh/gocommerce/core"
 
+	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
 	"github.com/itswadesh/gocommerce/ext/cms"
 	"github.com/itswadesh/gocommerce/ext/contact"
 	"github.com/itswadesh/gocommerce/ext/faq"
@@ -67,6 +68,13 @@ func main() {
 	log.SetFlags(0)
 
 	modules := []gocommerce.Module{
+		// Every model call the store makes goes through the gateway: counted,
+		// held to a monthly cap, recorded, and limited to the data the owner
+		// lets leave. It installs idle; the key, the cap and the prices are
+		// typed into Settings › Plugins › AI gateway, and nothing is called
+		// until they are.
+		aigateway.New(aigateway.Config{}),
+
 		// Numbered invoices whenever an order is paid. It subscribes to
 		// order.paid and owns its own tables; the engine knows nothing about
 		// invoicing.

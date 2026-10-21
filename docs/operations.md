@@ -225,7 +225,15 @@ beside the `store` it was for. A caller may send its own in the same header —
 8 to 64 letters, digits, `-` or `_`; anything else is replaced — so a
 storefront's support ticket can quote the id the shopper's browser saw. Any
 failure the request logs carries the same `trace_id`. Modules read it with
-`gocommerce.TraceID(ctx)` and keep it on what they record.
+`gocommerce.TraceID(ctx)` and keep it on what they record: the AI gateway's
+jobs and runs carry it in `ai_jobs.trace_id` and `ai_executions.trace_id`.
+
+**AI work waiting on a person.** With `-ai-gateway`, model work that cannot
+finish on its own stops in `ai_jobs` as `failed` (refused, an answer that
+failed its checks, an exhausted cap, a missing price) or `dead` (twelve
+transient failures in a row), each with its `last_error`. The panel lists
+them under **AI › Jobs**, with retry and cancel; the cap and what is spent
+against it are under **AI › Usage**.
 
 **A stock ledger that cannot explain the shelf.** `gocommerce doctor`'s
 `stock ledger` check sums `stock_movements` per (variant, location) and

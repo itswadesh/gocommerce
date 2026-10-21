@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/itswadesh/gocommerce/core"
+	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
 	"github.com/itswadesh/gocommerce/ext/b2b"
 	"github.com/itswadesh/gocommerce/ext/banners"
 	cartrecovery "github.com/itswadesh/gocommerce/ext/cart-recovery"
@@ -202,6 +203,7 @@ environment:
 		withTransl   = fs.Bool("translations", false, "install the translations module: products, categories and collections in each of a store's languages, written on the Translations screen")
 		withWishlist = fs.Bool("wishlist", false, "install the wishlist module: shoppers save products, and the Wishlists screen shows what is wanted most")
 		withB2B      = fs.Bool("b2b", false, "install the b2b module: companies, buyer roles, orders on account against a credit limit, approvals and quotes (implies -identity)")
+		withAI       = fs.Bool("ai-gateway", false, "install the AI gateway module: every model call recorded, held to a monthly cap and limited to the data the owner lets leave; switched on with a key, a cap and prices under Settings › Plugins")
 		// A store is found by host as well as by header and cookie: a request
 		// to <slug>.<base-domain> is that store's (D83).
 		baseDomain = fs.String("base-domain", "", "every store also answers at <slug>.<base-domain> (default $GOCOMMERCE_BASE_DOMAIN)")
@@ -306,6 +308,9 @@ environment:
 			return v
 		}
 		var modules []gocommerce.Module
+		if *withAI {
+			modules = append(modules, aigateway.New(aigateway.Config{}))
+		}
 		// b2b's buyers are identity's accounts, so -b2b brings identity with it
 		// and is handed the same instance, listed first for its tables.
 		if *withIdentity || *withB2B {
