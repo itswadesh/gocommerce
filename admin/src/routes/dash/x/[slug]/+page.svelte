@@ -237,7 +237,9 @@
                                     </td>
                                 {/each}
                                 {#if hasActions}
-                                    <td class="col-meta min-width">
+                                    <!-- row-actions: a row here opens only by its buttons,
+                                         and PocketBase hides .col-meta on a phone. -->
+                                    <td class="col-meta min-width row-actions">
                                         {#if canEdit}
                                             <button type="button" class="btn sm secondary transparent"
                                                     onclick={() => openRow(row)}>
