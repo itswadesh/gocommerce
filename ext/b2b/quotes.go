@@ -205,7 +205,7 @@ func (m *Module) RequestQuote(ctx context.Context, buyer *identity.Customer, req
 		if err := tx.QueryRowContext(ctx, `
 			INSERT INTO b2b_quotes (company_id, requested_by, requested_by_email, currency, note)
 			VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-			company.ID, buyer.ID, strings.ToLower(buyer.Email), m.app.Config().Currency,
+			company.ID, buyer.ID, strings.ToLower(buyer.Email), m.app.Currency(ctx),
 			strings.TrimSpace(req.Note)).Scan(&id); err != nil {
 			return err
 		}

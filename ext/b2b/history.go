@@ -199,6 +199,9 @@ func (m *Module) History(ctx context.Context, companyID int64, limit, offset int
 		return nil, 0, err
 	}
 	defer rows.Close()
+	// The history keeps no currency of its own: a limit was set in what the
+	// store sells in, which is the store's (D85) and not the install's.
+	currency := m.app.Currency(ctx)
 	out := []*HistoryEntry{}
 	for rows.Next() {
 		e := &HistoryEntry{}
@@ -213,7 +216,7 @@ func (m *Module) History(ctx context.Context, companyID int64, limit, offset int
 			e.ActorID = &actorID.Int64
 		}
 		if moneyFields[e.Field] {
-			e.Currency = m.app.Config().Currency
+			e.Currency = currency
 		}
 		out = append(out, e)
 	}

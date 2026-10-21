@@ -828,14 +828,17 @@ type Lead struct {
 // second column could only disagree with it.
 func quoteNumber(id int64) string { return fmt.Sprintf("Q-%06d", id) }
 
-func (m *Module) money(amount int64) gocommerce.Money {
-	return gocommerce.Money{AmountMinor: amount, Currency: m.app.Config().Currency}
+// money labels an amount the module stores without a currency — a credit
+// limit, what is owed — with the store's (D85), which is what it was set and
+// owed in. The install's is only the default for a store that never chose.
+func (m *Module) money(ctx context.Context, amount int64) gocommerce.Money {
+	return gocommerce.Money{AmountMinor: amount, Currency: m.app.Currency(ctx)}
 }
 
-func (m *Module) moneyPtr(v sql.NullInt64) *gocommerce.Money {
+func (m *Module) moneyPtr(ctx context.Context, v sql.NullInt64) *gocommerce.Money {
 	if !v.Valid {
 		return nil
 	}
-	mo := m.money(v.Int64)
+	mo := m.money(ctx, v.Int64)
 	return &mo
 }

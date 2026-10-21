@@ -219,7 +219,7 @@ func (m *Module) Credit(ctx context.Context, companyID int64) (*Credit, error) {
 		return nil, err
 	}
 	out := &Credit{
-		Limit: c.CreditLimit, Outstanding: m.money(owed), Overdue: m.money(overdue),
+		Limit: c.CreditLimit, Outstanding: m.money(ctx, owed), Overdue: m.money(ctx, overdue),
 		OverdueOrders: overdueOrders, NetDays: c.NetDays,
 	}
 	if c.CreditLimit != nil {
@@ -227,7 +227,7 @@ func (m *Module) Credit(ctx context.Context, companyID int64) (*Credit, error) {
 		if avail < 0 {
 			avail = 0
 		}
-		a := m.money(avail)
+		a := m.money(ctx, avail)
 		out.Available = &a
 	}
 	return out, nil
