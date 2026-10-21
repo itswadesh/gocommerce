@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -511,5 +512,38 @@ func TestATaskIsRegisteredOnlyWhenItCanBeKept(t *testing.T) {
 		if err := m.RegisterTask(task); err == nil {
 			t.Errorf("%s: registered", name)
 		}
+	}
+}
+
+// A task's schema is sent to whichever provider the store picks, so it may
+// use only what OpenAI's strict mode takes: a task with a length or range
+// bound would fail every OpenAI call. Bounds belong in the task's Check.
+func TestATaskSchemaUsesOnlyWhatStrictModeAccepts(t *testing.T) {
+	m := New(Config{})
+	field := func(extra string) json.RawMessage {
+		return json.RawMessage(`{"type":"object","properties":{"a":{"type":"string"` + extra + `},"n":{"type":"integer"},"l":{"type":"array","items":{"type":"string"}}},"required":["a","n","l"],"additionalProperties":false}`)
+	}
+	for i, keyword := range []string{
+		`,"minLength":1`, `,"maxLength":80`, `,"pattern":"^x"`, `,"format":"email"`,
+		`,"minimum":0`, `,"maximum":9`, `,"examples":["x"]`, `,"$schema":"x"`,
+	} {
+		task := rewriteTask()
+		task.Name = fmt.Sprintf("test.keyword-%d", i)
+		task.Schema = field(keyword)
+		if err := m.RegisterTask(task); err == nil {
+			t.Errorf("a schema with %s registered", keyword)
+		}
+	}
+	task := rewriteTask()
+	task.Name = "test.arrays"
+	task.Schema = json.RawMessage(`{"type":"object","properties":{"l":{"type":"array","items":{"type":"string"},"maxItems":3}},"required":["l"],"additionalProperties":false}`)
+	if err := m.RegisterTask(task); err == nil {
+		t.Error("a schema with maxItems registered")
+	}
+	task = rewriteTask()
+	task.Name = "test.allowed"
+	task.Schema = json.RawMessage(`{"type":"object","description":"x","title":"x","properties":{"a":{"type":["string","null"],"enum":["x","y",null],"description":"x"}},"required":["a"],"additionalProperties":false}`)
+	if err := m.RegisterTask(task); err != nil {
+		t.Errorf("a schema in strict mode's own terms was refused: %v", err)
 	}
 }
