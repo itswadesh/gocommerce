@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -187,6 +188,41 @@ func TestAgentReadsCustomersAndSales(t *testing.T) {
 	}
 	if !strings.Contains(text, "currency") {
 		t.Errorf("a sales report should name the currency it is counting in: %s", text)
+	}
+}
+
+// A store that sells in its own currency (D85) has its sales labelled in that
+// one. The install's is only the default a store starts from, so a report that
+// named it would tell an agent a rupee store's takings were dollars.
+func TestSalesReportIsInTheStoresCurrency(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	ctx := context.Background()
+	p, err := app.Profile().Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app.Config().Currency == "INR" {
+		t.Fatal("the install already sells in INR, so this test could not tell the two apart")
+	}
+	p.Currency = "INR"
+	if _, err := app.Profile().Set(ctx, *p, nil); err != nil {
+		t.Fatalf("choose INR: %v", err)
+	}
+	gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
+
+	text, isErr := callTool(t, app, "sales_report", map[string]any{"group_by": "day"})
+	if isErr {
+		t.Fatalf("sales_report should succeed: %s", text)
+	}
+	var report struct {
+		Currency string `json:"currency"`
+	}
+	if err := json.Unmarshal([]byte(text), &report); err != nil {
+		t.Fatalf("sales_report should return JSON: %v (%s)", err, text)
+	}
+	if report.Currency != "INR" {
+		t.Errorf("sales_report currency = %q, want the store's INR (the install's is %q)",
+			report.Currency, app.Config().Currency)
 	}
 }
 

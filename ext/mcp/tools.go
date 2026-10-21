@@ -585,9 +585,10 @@ func (m *Module) builtinTools() []Tool {
 				}
 				// The currency is stated rather than assumed: a bare number of
 				// minor units is unreadable without knowing whether it has two
-				// decimal places, three, or none.
+				// decimal places, three, or none. The store's, not the install's,
+				// which is only the default a store starts from (D85).
 				return map[string]any{
-					"currency": m.app.Config().Currency,
+					"currency": m.app.Currency(ctx),
 					"group_by": groupBy,
 					"report":   report,
 				}, nil
