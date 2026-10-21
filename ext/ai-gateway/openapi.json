@@ -811,6 +811,10 @@
             "type": "integer",
             "format": "int64"
           },
+          "estimated": {
+            "type": "boolean",
+            "description": "Charged at its ceiling: sent, and no usage came back."
+          },
           "latency_ms": {
             "type": "integer",
             "format": "int64"
@@ -954,6 +958,10 @@
           "cost_micro_minor": {
             "type": "integer",
             "format": "int64"
+          },
+          "cost_estimated": {
+            "type": "boolean",
+            "description": "The cost includes a call charged at its ceiling, because it was sent and no usage came back."
           },
           "currency": {
             "type": "string"

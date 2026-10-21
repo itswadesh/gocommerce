@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"runtime/debug"
 	"time"
 
@@ -70,8 +71,10 @@ type Step struct {
 	ModelVersion   string `json:"model_version,omitempty"`
 	Usage          *Usage `json:"usage,omitempty"`
 	CostMicroMinor int64  `json:"cost_micro_minor,omitempty"`
-	LatencyMS      int64  `json:"latency_ms,omitempty"`
-	Confidence     *int   `json:"confidence,omitempty"`
+	// Estimated is a call charged at its ceiling: sent, and no usage back.
+	Estimated  bool  `json:"estimated,omitempty"`
+	LatencyMS  int64 `json:"latency_ms,omitempty"`
+	Confidence *int  `json:"confidence,omitempty"`
 	// Dropped names the classes of data the policy kept out of the request.
 	Dropped []string `json:"dropped,omitempty"`
 }
@@ -178,10 +181,11 @@ func (m *Module) guardedLadder(ctx context.Context, t *Task, input json.RawMessa
 
 // callResult is one call to a provider and what it was charged.
 type callResult struct {
-	resp    Response
-	err     error
-	cost    int64
-	latency time.Duration
+	resp      Response
+	err       error
+	cost      int64
+	estimated bool
+	latency   time.Duration
 }
 
 // call makes one call against the reservation the caller holds and settles
@@ -191,12 +195,12 @@ type callResult struct {
 // reservation is, and charged at the ceiling: whether the request left is
 // not known, and the cap errs towards spending less.
 func (m *Module) call(ctx context.Context, t *Task, job *claimedJob, provider Provider, req Request, month time.Time, ceiling int64, p prices) (cr callResult) {
-	cr.cost = ceiling
+	cr.cost, cr.estimated = ceiling, true
 	defer func() {
 		if r := recover(); r != nil {
 			m.log.Error("ai provider call panicked", "task", t.Name, "panic", r, "stack", string(debug.Stack()))
 			cr.err = &ProviderError{Provider: provider.Name(), Message: fmt.Sprintf("the call panicked: %v", r), panicked: true}
-			cr.cost = ceiling
+			cr.cost, cr.estimated = ceiling, true
 		}
 		if err := m.settle(context.WithoutCancel(ctx), month, ceiling, cr.cost); err != nil {
 			m.log.Error("ai budget could not be settled", "task", t.Name, "error", err)
@@ -210,7 +214,14 @@ func (m *Module) call(ctx context.Context, t *Task, job *claimedJob, provider Pr
 	started := time.Now()
 	cr.resp, cr.err = provider.Generate(callCtx, req)
 	cr.latency = time.Since(started)
-	cr.cost = p.cost(cr.resp.Usage)
+	cr.cost, cr.estimated = p.cost(cr.resp.Usage), false
+	// A request that left and brought no usage back, timed out or
+	// unreadable, may still be billed in full: charged at the ceiling, so a
+	// slow provider retried twelve times cannot spend past the cap.
+	var pe *ProviderError
+	if errors.As(cr.err, &pe) && pe.Sent && cr.resp.Usage == (Usage{}) {
+		cr.cost, cr.estimated = ceiling, true
+	}
 	return cr
 }
 
@@ -337,6 +348,8 @@ func (m *Module) ladder(ctx context.Context, t *Task, input json.RawMessage, st 
 		rec.Usage = rec.Usage.add(resp.Usage)
 		rec.CostMicroMinor += cr.cost
 		step.CostMicroMinor = cr.cost
+		step.Estimated = cr.estimated
+		rec.CostEstimated = rec.CostEstimated || cr.estimated
 		if resp.Usage != (Usage{}) {
 			u := resp.Usage
 			step.Usage = &u
@@ -352,7 +365,9 @@ func (m *Module) ladder(ctx context.Context, t *Task, input json.RawMessage, st 
 				transient = pe.Transient
 			}
 			step.Reason = callErr.Error()
-			if pe != nil && pe.panicked {
+			// A transport that panicked, or a 200 that could not be read:
+			// the provider's side failed, and asking again would pay again.
+			if pe != nil && (pe.panicked || pe.Status == http.StatusOK) {
 				step.Outcome = "provider_error"
 				rec.Steps = append(rec.Steps, step)
 				return fail(OutcomeProviderError, step.Reason, false)

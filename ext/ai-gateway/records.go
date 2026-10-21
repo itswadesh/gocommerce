@@ -33,9 +33,12 @@ type Execution struct {
 	Policy       Policy      `json:"policy"`
 	// CostMicroMinor is the run's cost in millionths of a minor unit of
 	// Currency: every call it made, at the prices set when it ran.
-	CostMicroMinor int64     `json:"cost_micro_minor"`
-	Currency       string    `json:"currency"`
-	CreatedAt      time.Time `json:"created_at"`
+	CostMicroMinor int64 `json:"cost_micro_minor"`
+	// CostEstimated is a cost that includes a call charged at its ceiling,
+	// because it was sent and no usage came back.
+	CostEstimated bool      `json:"cost_estimated"`
+	Currency      string    `json:"currency"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 func (m *Module) writeExecution(ctx context.Context, tx *sql.Tx, e *Execution) (int64, error) {
@@ -55,18 +58,18 @@ func (m *Module) writeExecution(ctx context.Context, tx *sql.Tx, e *Execution) (
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO ai_executions (task, task_version, job_id, trace_id, steps, provider, model, model_version,
 		                           input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, latency_ms,
-		                           outcome, review_status, confidence, source_refs, policy, cost_micro_minor, currency)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+		                           outcome, review_status, confidence, source_refs, policy, cost_micro_minor, cost_estimated, currency)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 		RETURNING id`,
 		e.Task, e.TaskVersion, e.JobID, e.TraceID, steps, e.Provider, e.Model, e.ModelVersion,
 		e.Usage.InputTokens, e.Usage.OutputTokens, e.Usage.CacheReadTokens, e.Usage.CacheWriteTokens, e.LatencyMS,
-		e.Outcome, e.ReviewStatus, e.Confidence, refs, policy, e.CostMicroMinor, e.Currency).Scan(&id)
+		e.Outcome, e.ReviewStatus, e.Confidence, refs, policy, e.CostMicroMinor, e.CostEstimated, e.Currency).Scan(&id)
 	return id, err
 }
 
 const executionColumns = `id, task, task_version, job_id, trace_id, steps, provider, model, model_version,
 	input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, latency_ms, outcome, review_status,
-	confidence, source_refs, policy, cost_micro_minor, currency, created_at`
+	confidence, source_refs, policy, cost_micro_minor, cost_estimated, currency, created_at`
 
 func scanExecution(row interface{ Scan(...any) error }) (*Execution, error) {
 	var e Execution
@@ -75,7 +78,7 @@ func scanExecution(row interface{ Scan(...any) error }) (*Execution, error) {
 	if err := row.Scan(&e.ID, &e.Task, &e.TaskVersion, &e.JobID, &e.TraceID, &steps, &e.Provider, &e.Model,
 		&e.ModelVersion, &e.Usage.InputTokens, &e.Usage.OutputTokens, &e.Usage.CacheReadTokens,
 		&e.Usage.CacheWriteTokens, &e.LatencyMS, &e.Outcome, &e.ReviewStatus, &confidence, &refs, &policy,
-		&e.CostMicroMinor, &e.Currency, &e.CreatedAt); err != nil {
+		&e.CostMicroMinor, &e.CostEstimated, &e.Currency, &e.CreatedAt); err != nil {
 		return nil, err
 	}
 	if confidence.Valid {

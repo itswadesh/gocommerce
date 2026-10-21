@@ -7,6 +7,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	gocommerce "github.com/itswadesh/gocommerce/core"
+	"github.com/itswadesh/gocommerce/gctest"
 )
 
 // Fifty reservations racing for a cap that holds ten: exactly ten win, and
@@ -103,4 +106,83 @@ func runErrOutcome(err error) string {
 		return re.Outcome
 	}
 	return ""
+}
+
+// newQuickGateway is newGateway with a short call deadline, for the calls
+// that are meant to run out of it.
+func newQuickGateway(t *testing.T, s *standIn, deadline time.Duration) (*gocommerce.App, *Module) {
+	t.Helper()
+	m := New(Config{Client: s.client(), CallTimeout: deadline, PollInterval: time.Hour})
+	if err := m.RegisterTask(rewriteTask()); err != nil {
+		t.Fatal(err)
+	}
+	return gctest.New(t, m), m
+}
+
+// The small model's ceiling: 4000 tokens in at 125, 1000 out at 500.
+const smallCeiling = 4000*125 + 1000*500
+
+// A call that was sent and then timed out may still be billed, and nothing
+// came back to say what for: it is charged at its ceiling and the record
+// says the figure is an estimate. With twelve retries, anything less would
+// let a slow provider spend past the cap.
+func TestACallThatTimesOutIsChargedAtItsCeiling(t *testing.T) {
+	s := newStandIn(t, func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(3 * time.Second):
+		}
+	})
+	app, m := newQuickGateway(t, s, 300*time.Millisecond)
+	ctx := context.Background()
+	configure(t, app, ctx, nil)
+
+	res, err := m.Run(ctx, "test.rewrite", listing{Title: "x"})
+	if re := runErr(t, err); re.Outcome != OutcomeProviderError || !re.Transient {
+		t.Fatalf("error = %+v", re)
+	}
+	e := mustExecution(t, m, ctx, res.ExecutionID)
+	if e.CostMicroMinor != smallCeiling || !e.CostEstimated || !e.Steps[0].Estimated {
+		t.Errorf("record cost %d estimated %v (step %v), want the ceiling %d, estimated", e.CostMicroMinor, e.CostEstimated, e.Steps[0].Estimated, smallCeiling)
+	}
+	if b := mustBudget(t, m, ctx); b.SpentMicroMinor != smallCeiling || b.ReservedMicroMinor != 0 {
+		t.Errorf("budget = %+v", b)
+	}
+}
+
+// A 200 whose body cannot be read was answered, and billed, all the same.
+func TestAnAnswerThatCannotBeReadIsChargedAtItsCeiling(t *testing.T) {
+	s := newStandIn(t, reply(http.StatusOK, `{"id": "msg_cut`))
+	app, m := newQuickGateway(t, s, 2*time.Second)
+	ctx := context.Background()
+	configure(t, app, ctx, nil)
+
+	res, err := m.Run(ctx, "test.rewrite", listing{Title: "x"})
+	if re := runErr(t, err); re.Outcome != OutcomeProviderError {
+		t.Fatalf("error = %+v", re)
+	}
+	if e := mustExecution(t, m, ctx, res.ExecutionID); e.CostMicroMinor != smallCeiling || !e.CostEstimated {
+		t.Errorf("record cost %d estimated %v", e.CostMicroMinor, e.CostEstimated)
+	}
+}
+
+// A call that never left (the connection was refused) cost nothing, and is
+// charged nothing.
+func TestACallThatNeverLeftCostsNothing(t *testing.T) {
+	s := newStandIn(t, reply(http.StatusOK, "{}"))
+	s.srv.Close()
+	app, m := newQuickGateway(t, s, 2*time.Second)
+	ctx := context.Background()
+	configure(t, app, ctx, nil)
+
+	res, err := m.Run(ctx, "test.rewrite", listing{Title: "x"})
+	if re := runErr(t, err); re.Outcome != OutcomeProviderError || !re.Transient {
+		t.Fatalf("error = %+v", re)
+	}
+	if e := mustExecution(t, m, ctx, res.ExecutionID); e.CostMicroMinor != 0 || e.CostEstimated {
+		t.Errorf("record cost %d estimated %v, want nothing", e.CostMicroMinor, e.CostEstimated)
+	}
+	if b := mustBudget(t, m, ctx); b.SpentMicroMinor != 0 || b.ReservedMicroMinor != 0 {
+		t.Errorf("budget = %+v", b)
+	}
 }
