@@ -21,14 +21,15 @@ func TestTheRoutesAreDocumentedAndGated(t *testing.T) {
 	gctest.AssertSpecCoversModuleRoutes(t, app, "ai-gateway")
 }
 
-// Owner holds every right; a manager reads usage but does not run the
-// queue; staff and vendors see none of it until a store grants it.
+// Owner holds every right; a manager reads usage and decides proposals but
+// does not run the queue; staff and vendors see none of it until a store
+// grants it.
 func TestTheRightsAndWhoHoldsThem(t *testing.T) {
 	app, _, _ := newGateway(t, reply(http.StatusOK, "{}"))
 	ctx := context.Background()
 	for role, want := range map[string][]gocommerce.Right{
-		gocommerce.RoleOwner:   {RightRead, RightConfigure},
-		gocommerce.RoleManager: {RightRead},
+		gocommerce.RoleOwner:   {RightRead, RightConfigure, RightApprove},
+		gocommerce.RoleManager: {RightRead, RightApprove},
 		gocommerce.RoleStaff:   {},
 		gocommerce.RoleVendor:  {},
 	} {
@@ -36,7 +37,7 @@ func TestTheRightsAndWhoHoldsThem(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, r := range []gocommerce.Right{RightRead, RightConfigure} {
+		for _, r := range []gocommerce.Right{RightRead, RightConfigure, RightApprove} {
 			if slices.Contains(got, r) != slices.Contains(want, r) {
 				t.Errorf("%s carries %s = %v", role, r, slices.Contains(got, r))
 			}
