@@ -34,7 +34,7 @@ import { ensureSettings, settings } from "$lib/settings.svelte.js";
  * right that poke needs — or a list of rights, any one of which will do.
  *
  * The right is here so a probe that is certain to be refused is not made at
- * all: an operator without store.operate cannot reach any mcp screen, so
+ * all: an operator without agent.read cannot reach any mcp screen, so
  * asking whether mcp is installed costs a guaranteed 403 on every page load
  * and answers a question nothing will ask. What such an operator sees if they
  * type the URL is the rights explanation, which is the true answer — every
@@ -49,7 +49,7 @@ const PROBES = {
     cms: { path: "/api/admin/x/cms/pages?limit=1", right: "catalog.read" },
     identity: { path: "/api/admin/x/identity/customers?limit=1", right: "customers.read" },
     invoices: { path: "/api/admin/x/invoices?limit=1", right: "orders.read" },
-    mcp: { path: "/api/admin/x/mcp/audit?limit=1", right: "store.operate" },
+    mcp: { path: "/api/admin/x/mcp/audit?limit=1", right: "agent.read" },
     webhooks: { path: "/api/admin/x/webhooks/endpoints?limit=1", right: "store.operate" },
     // Not a screen: a drawer on the products page. Probed all the same, so the
     // "Import from Amazon" button only appears in a binary that can answer it.
