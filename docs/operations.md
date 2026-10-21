@@ -336,6 +336,14 @@ can be retried on its own.
 `GET /health/ready` covers the database. Beyond that, watch what you would for
 any Go service: latency, error rate, connection-pool saturation.
 
+**One request, every record it left.** Each request gets a trace id, returned
+in the `X-Trace-Id` response header and printed on its `request` log line
+beside the `store` it was for. A caller may send its own in the same header —
+8 to 64 letters, digits, `-` or `_`; anything else is replaced — so a
+storefront's support ticket can quote the id the shopper's browser saw. Any
+failure the request logs carries the same `trace_id`. Modules read it with
+`gocommerce.TraceID(ctx)` and keep it on what they record.
+
 **A stock ledger that cannot explain the shelf.** `gocommerce doctor`'s
 `stock ledger` check sums `stock_movements` per (variant, location) and
 compares it with `variant_stock`. Inside the engine the two cannot drift — the
