@@ -290,6 +290,10 @@ all, so the card shows none. And an entry with no actor is one the trail did not
 record: everything that happened before migration 0020 ran, and the engine's own
 sweeps.
 
+`actor_kind` says which kind of caller acted: a person, an integration key, an
+agent key, a static token or the engine (the table is in
+[team.md](team.md#who-acted)).
+
 ## How to see what the shopper was told
 
 Every message the store sends — the confirmation email, the shipping SMS —

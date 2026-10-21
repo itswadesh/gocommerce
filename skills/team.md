@@ -373,14 +373,17 @@ a cron job on the same machine.
 rights *this store* cut for that role, and is refused by name where the role
 does not reach — the same path a person goes through, because a second
 authorization path is a second thing to keep in step. `APIKeys.Resolve` returns
-a `Superuser` with no ID and an email reading `api key: <name>`, so a trail
-says what acted without inventing somebody who did.
+a `Superuser` with no ID, an email reading `api key: <name>`, and `KeyID` and
+`KeyKind` saying which key it is, so a trail says what acted without inventing
+somebody who did.
 
 ```
-POST   /api/admin/api-keys      apikeys.write   mints one, returns the secret ONCE
+POST   /api/admin/api-keys      apikeys.write   mints one, returns the secret
 GET    /api/admin/api-keys      apikeys.read    every key, revoked ones last
+GET    /api/admin/api-keys/agent-rights
+                                apikeys.write   what the caller may give an agent key
 GET    /api/admin/api-keys/{id}/secret
-                                apikeys.write   the key itself, logged
+                                apikeys.write   the key itself, logged (409 for an agent key)
 DELETE /api/admin/api-keys/{id} apikeys.write   revokes, keeping the row
 ```
 
@@ -416,6 +419,61 @@ DELETE /api/admin/api-keys/{id} apikeys.write   revokes, keeping the row
 - **`last_used_at` is written at most once a minute**, off the request path.
   It exists to answer "can this be revoked", which a minute's resolution
   answers; a write per request would make authentication cost one.
+
+### Agent keys
+
+An **agent key** (M71, ADR 0003) is an API key with `kind = 'agent'`, for an AI
+agent that runs unattended. Everything above about keys holds, except four
+things, each because nobody reads what an agent is about to do:
+
+- **A list of rights instead of a role.** Chosen from the issuer's own, so it is
+  issued by a person signed in to the panel: a static token is nobody and
+  another key has no rights of its own to share. Every right must be one the
+  build has and the issuer holds.
+- **Reads only, in this release.** A right must end in `.read`, or be
+  `agent.dispatch`, reviewed as read-like: `ext/mcp` refuses an agent key every
+  tool marked as mutating. An agent's writes arrive with the approval queue,
+  where the change runs as the person who approved it.
+- **Never the refused set.** `AgentKeyRefusedRights` (core/agent_keys.go) lists
+  the rights an agent key may never hold, each with its reason: keys, the team
+  (`team.read` too — the roster is the staff), roles, plugins, store settings,
+  `store.operate`, exports and imports, `reports.write`, `errors.read`, webhooks,
+  and the abandoned-checkout screens, which do not mask yet. It is checked when
+  the key is made and again on every request, so a right written into the row
+  by hand grants nothing.
+- **It expires and is rationed.** 1 to 365 days (90 by default), and 1 to 600
+  requests a minute (60 by default). The count is one row per key in
+  `api_key_rates`, updated in one statement per request so it holds across
+  replicas; over it, any admin route answers 429 with `Retry-After`. An expired
+  key is refused exactly as a revoked one is. Integration keys are not rationed.
+- **Only its hash is kept.** M46's readable copy is for integration keys; an
+  agent key is shown once, and `…/{id}/secret` answers 409 for one.
+
+Two things follow wherever an agent key arrives. Personal data is **masked**
+exactly as a demo store masks it, on every store: core and modules ask
+`App.Masks(ctx)` (a demo, or an agent) rather than `App.Demo(ctx)`, which now
+means only "this is a public demo", and a `?q=` drops the contact columns where
+they are masked, so a search cannot read an address back one character at a
+time. No right unmasks an agent yet. And the routes a demo closes for every
+method — a credential, or a read with no shape for a mask, such as running a
+saved custom report — are closed to an agent on every store.
+
+### Who acted
+
+`admin_audit.actor_kind` says what kind of caller made each change:
+
+| Kind | Who | `actor_id` | `actor_email` |
+|---|---|---|---|
+| `operator` | a person in the panel | their superuser id | their address |
+| `key` | an integration key | the key's id | `api key: <name>` |
+| `agent` | an agent key | the key's id | `agent key: <name>`, with the run in `actor_label` |
+| `token` | a static admin token | none | none |
+| `system` | the engine's own work | none | none |
+
+`auditActor` (core/audit.go) is the one place this is decided. Rows written
+before M71 recorded every key as `operator` with id 0, and keep saying so. A key's
+id is not a superuser's, so `actor_id` joins `superusers` only on `operator` rows,
+and the stock ledger records a key by its name alone.
 
 ## The two lockouts
 
