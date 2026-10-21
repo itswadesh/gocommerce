@@ -656,7 +656,7 @@ func (m *Module) importImages(ctx context.Context, l *Listing, o imageOptions) (
 // points each variant at its own.
 func (m *Module) createProduct(ctx context.Context, l *Listing, rw *rewrite, opts importOptions, media imported) (*gocommerce.Product, []string, error) {
 	var warnings []string
-	storeCurrency := strings.ToUpper(m.app.Config().Currency)
+	storeCurrency := strings.ToUpper(m.app.Currency(ctx))
 	status := opts.Status
 
 	// Prices only cross when they are already in the store's currency; a
