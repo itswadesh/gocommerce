@@ -38,8 +38,8 @@ Procedural guides are in `skills/`.
     `core/httpx.go` — including router 404s and 405s.
 11. **Every served route appears in `core/openapi.json`.** A test enforces it.
 12. **`admin/src/lib/styles/*.css` are PocketBase's files, verbatim.** Do not
-    hand-edit them. Only `gocommerce.css` and `fonts-inter.css` are ours. Use
-    PocketBase's class vocabulary: `.label` not `.badge`, plain `.btn` is the
+    hand-edit them. Only `gocommerce.css`, `fonts-inter.css` and `design.css`
+    are ours. Use PocketBase's class vocabulary: `.label` not `.badge`, plain `.btn` is the
     primary action, `.page-table-wrapper` not `.table-wrapper`, no `.panel`.
 13. **Tests need a real PostgreSQL** (`GOCOMMERCE_TEST_DB`, one schema per
     test). No mock — correctness lives in `FOR UPDATE SKIP LOCKED`, advisory
