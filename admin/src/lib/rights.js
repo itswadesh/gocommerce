@@ -245,6 +245,14 @@ const MODULE_RIGHTS = {
         label: "Change the recovery automation",
         scope: "Whether reminders go out, when a basket counts as abandoned, and the sequence",
     },
+    "accounts.read": {
+        label: "See shopper accounts",
+        scope: "Who has signed up — names, emails, addresses",
+    },
+    "accounts.erase": {
+        label: "Erase a shopper account",
+        scope: "The account, its sessions, its address book and its order links",
+    },
     "agent.read": {
         label: "See what the agent did",
         scope: "Every tool call an agent made, and what it changed",

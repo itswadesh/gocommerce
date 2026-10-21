@@ -47,7 +47,7 @@ import { ensureSettings, settings } from "$lib/settings.svelte.js";
  */
 const PROBES = {
     cms: { path: "/api/admin/x/cms/pages?limit=1", right: "catalog.read" },
-    identity: { path: "/api/admin/x/identity/customers?limit=1", right: "customers.read" },
+    identity: { path: "/api/admin/x/identity/customers?limit=1", right: "accounts.read" },
     invoices: { path: "/api/admin/x/invoices?limit=1", right: "orders.read" },
     mcp: { path: "/api/admin/x/mcp/audit?limit=1", right: "agent.read" },
     webhooks: { path: "/api/admin/x/webhooks/endpoints?limit=1", right: "store.operate" },
