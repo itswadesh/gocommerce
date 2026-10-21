@@ -534,13 +534,15 @@ func TestModuleContract(t *testing.T) {
 
 // An agent key reaches the read tools and nothing else: the mutating tools are
 // not listed for it and are refused if called — a module's tool that names no
-// right included. Agents' writes arrive with the approval queue (ADR 0003).
+// right included — and what the read tools return is masked as for a demo.
+// Agents' writes arrive with the approval queue (ADR 0003).
 func TestAnAgentKeyReachesOnlyTheReadTools(t *testing.T) {
 	poked := false
 	app := gctest.New(t, New(Config{Tools: []Tool{{
 		Name: "poke", Description: "A module's write that names no right.", Mutates: true,
 		Call: func(context.Context, json.RawMessage) (any, error) { poked = true; return "poked", nil },
 	}}}))
+	gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
 	agent := gctest.AgentKey(t, app, "agent.dispatch", gocommerce.RightOrdersRead, gocommerce.RightCustomersRead)
 
 	rec := gctest.SessionRequest(t, app, agent, http.MethodPost, "/api/admin/x/mcp",
@@ -572,5 +574,14 @@ func TestAnAgentKeyReachesOnlyTheReadTools(t *testing.T) {
 	}
 	if _, rpcErr := sessionTool(t, app, agent, "cancel_order", map[string]any{"order_id": 1}); rpcErr == nil {
 		t.Fatal("an agent key cancelled an order")
+	}
+
+	result, rpcErr := sessionTool(t, app, agent, "list_orders", nil)
+	if rpcErr != nil {
+		t.Fatalf("list_orders as an agent: %s", rpcErr.Message)
+	}
+	encoded, _ := json.Marshal(result)
+	if strings.Contains(string(encoded), "gctest@example.com") {
+		t.Errorf("the agent read an address in full: %s", encoded)
 	}
 }

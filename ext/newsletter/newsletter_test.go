@@ -97,3 +97,34 @@ func TestNewsletterRoutesAreDocumentedAndGated(t *testing.T) {
 	gctest.AssertAdminRoutesDeclareRights(t, app, "newsletter")
 	gctest.AssertSpecCoversModuleRoutes(t, app, "newsletter")
 }
+
+// An agent key reads the list with addresses masked, and ?q= cannot read an
+// address back; the name still finds a subscriber.
+func TestAnAgentReadsSubscribersMaskedAndCannotSearchTheAddress(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	if rec := gctest.Request(t, app, http.MethodPost, "/x/newsletter/subscribe",
+		SubscribeInput{Email: "ann.smith@example.com", Name: "Ann"}); rec.Code != http.StatusCreated {
+		t.Fatalf("subscribe = %d: %s", rec.Code, rec.Body)
+	}
+	agent := gctest.AgentKey(t, app, rightNewsletterRead)
+
+	found := func(q string) int {
+		t.Helper()
+		rec := gctest.SessionRequest(t, app, agent, http.MethodGet, "/api/admin/x/newsletter/subscriptions?q="+q, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("agent search %q = %d: %s", q, rec.Code, rec.Body)
+		}
+		if strings.Contains(rec.Body.String(), "ann.smith@") {
+			t.Errorf("the agent read the address in full: %s", rec.Body)
+		}
+		var out []Subscription
+		gctest.DecodeData(t, rec, &out)
+		return len(out)
+	}
+	if n := found("ann.smith"); n != 0 {
+		t.Errorf("an agent searching by address found %d, want 0", n)
+	}
+	if n := found("ann"); n != 1 {
+		t.Errorf("an agent searching by name found %d, want 1", n)
+	}
+}

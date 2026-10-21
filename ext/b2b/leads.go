@@ -264,10 +264,11 @@ type LeadQuery struct {
 	// territory, handed over by the store, or nobody's.
 	RoutedBy string
 	// Search matches part of the name, message or postcode, in any case —
-	// and the email and phone too, except on a demo store, where they are
-	// masked and a contains-match would read them back a character at a time.
+	// and the email and phone too, except where they are masked (a demo
+	// store, or an agent key: App.Masks) and a contains-match would read them
+	// back a character at a time.
 	Search        string
-	Demo          bool
+	Masked        bool
 	Limit, Offset int
 }
 
@@ -478,7 +479,7 @@ func (m *Module) Leads(ctx context.Context, q LeadQuery) ([]*Lead, int, error) {
 		args = append(args, "%"+s+"%")
 		n := "$" + strconv.Itoa(len(args))
 		cols := []string{"l.name", "l.message", "l.postal_code"}
-		if !q.Demo {
+		if !q.Masked {
 			cols = append(cols, "l.email", "l.phone")
 		}
 		match := make([]string, len(cols))

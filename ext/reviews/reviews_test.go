@@ -2,6 +2,7 @@ package reviews
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -105,4 +106,37 @@ func TestReviewRoutesAreDocumentedAndGated(t *testing.T) {
 	app := gctest.New(t, New(Config{}))
 	gctest.AssertAdminRoutesDeclareRights(t, app, "reviews")
 	gctest.AssertSpecCoversModuleRoutes(t, app, "reviews")
+}
+
+// An agent key reads reviews with the reviewer's address masked, and ?q=
+// cannot read it back; the words of the review still find it.
+func TestAnAgentReadsReviewsMaskedAndCannotSearchTheAddress(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	product := gctest.CreateProduct(t, app, "RV-AGENT", 900, 10)
+	if rec := gctest.Request(t, app, http.MethodPost, "/x/reviews", ReviewInput{
+		ProductID: product.ID, Name: "Ann", Email: "ann.smith@example.com", Rating: 4, Body: "Keeps the tea hot.",
+	}); rec.Code != http.StatusCreated {
+		t.Fatalf("review = %d: %s", rec.Code, rec.Body)
+	}
+	agent := gctest.AgentKey(t, app, rightReviewsRead)
+
+	found := func(q string) int {
+		t.Helper()
+		rec := gctest.SessionRequest(t, app, agent, http.MethodGet, "/api/admin/x/reviews?q="+q, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("agent search %q = %d: %s", q, rec.Code, rec.Body)
+		}
+		if strings.Contains(rec.Body.String(), "ann.smith@") {
+			t.Errorf("the agent read the address in full: %s", rec.Body)
+		}
+		var out []json.RawMessage
+		gctest.DecodeData(t, rec, &out)
+		return len(out)
+	}
+	if n := found("ann.smith"); n != 0 {
+		t.Errorf("an agent searching by address found %d, want 0", n)
+	}
+	if n := found("tea"); n != 1 {
+		t.Errorf("an agent searching the words found %d, want 1", n)
+	}
 }

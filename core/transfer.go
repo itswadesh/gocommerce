@@ -263,7 +263,7 @@ func (t *Transfer) ExportOrders(ctx context.Context, out io.Writer, q OrderQuery
 	// The same predicate the listing uses, from the same function: an export
 	// taken from a filtered screen must be the rows on that screen. The
 	// statement below aliases orders as `o`, which is what lets it transfer.
-	if clause := orderSearchClause(q.Search, &args, t.app.demo(ctx)); clause != "" {
+	if clause := orderSearchClause(q.Search, &args, t.app.masks(ctx)); clause != "" {
 		where = append(where, clause)
 	}
 	if q.From != nil {
@@ -356,7 +356,7 @@ func (t *Transfer) ExportCustomers(ctx context.Context, out io.Writer, q Custome
 	}
 
 	where, args := []string{"o.email <> ''"}, []any{}
-	if clause := customerSearchClause(q.Search, &args, t.app.demo(ctx)); clause != "" {
+	if clause := customerSearchClause(q.Search, &args, t.app.masks(ctx)); clause != "" {
 		where = append(where, clause)
 	}
 	// Validationf, returned bare: wrapping it in Internalf would serve a bad

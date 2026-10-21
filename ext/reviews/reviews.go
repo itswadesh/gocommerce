@@ -388,7 +388,15 @@ func (m *Module) handleList(w http.ResponseWriter, r *http.Request) {
 	}
 	if s := strings.TrimSpace(q.Get("q")); s != "" {
 		args = append(args, "%"+strings.ToLower(s)+"%")
-		where = append(where, fmt.Sprintf("(lower(r.name) LIKE $%d OR r.email LIKE $%d OR lower(r.body) LIKE $%d OR lower(r.title) LIKE $%d)", len(args), len(args), len(args), len(args)))
+		// Not the reviewer's address where it is masked (a demo store, or an
+		// agent key): a contains-match would read it back a character at a
+		// time.
+		n := len(args)
+		if m.app.Masks(r.Context()) {
+			where = append(where, fmt.Sprintf("(lower(r.name) LIKE $%d OR lower(r.body) LIKE $%d OR lower(r.title) LIKE $%d)", n, n, n))
+		} else {
+			where = append(where, fmt.Sprintf("(lower(r.name) LIKE $%d OR r.email LIKE $%d OR lower(r.body) LIKE $%d OR lower(r.title) LIKE $%d)", n, n, n, n))
+		}
 	}
 	rows, total, err := m.query(r.Context(), strings.Join(where, " AND "), args, limit, offset)
 	if err != nil {

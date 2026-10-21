@@ -955,3 +955,30 @@ func TestOtherModulesConfirmOnlyTheAccountsOwnAddress(t *testing.T) {
 		t.Errorf("CustomerByID of nobody = %v, want not found", err)
 	}
 }
+
+// An agent key reads accounts with the address masked, and ?q= cannot read
+// the address back a character at a time; the name still finds the account.
+func TestAnAgentReadsAccountsMaskedAndCannotSearchTheAddress(t *testing.T) {
+	app, _ := newApp(t)
+	register(t, app, "ada@example.com")
+	agent := gctest.AgentKey(t, app, rightAccountsRead)
+
+	rec := gctest.SessionRequest(t, app, agent, http.MethodGet, "/api/admin/x/identity/customers", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("agent list = %d: %s", rec.Code, rec.Body)
+	}
+	if body := rec.Body.String(); strings.Contains(body, "ada@example.com") || strings.Contains(body, "+441234") {
+		t.Errorf("the agent read contact details in full: %s", body)
+	}
+	var list []Customer
+	rec = gctest.SessionRequest(t, app, agent, http.MethodGet, "/api/admin/x/identity/customers?q=ada%40", nil)
+	gctest.DecodeData(t, rec, &list)
+	if len(list) != 0 {
+		t.Errorf("an agent searching by address found %d accounts, want 0", len(list))
+	}
+	rec = gctest.SessionRequest(t, app, agent, http.MethodGet, "/api/admin/x/identity/customers?q=lovelace", nil)
+	gctest.DecodeData(t, rec, &list)
+	if len(list) != 1 {
+		t.Errorf("an agent searching by name found %d accounts, want 1", len(list))
+	}
+}

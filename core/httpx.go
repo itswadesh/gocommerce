@@ -449,6 +449,12 @@ func (a *App) bearerAuth(next http.Handler) http.Handler {
 			// Before the static token and before a session, because a key says
 			// what it is: apiKeyPrefixOf declines anything not shaped like one,
 			// so this costs a string compare for every other credential.
+			//
+			// An agent key is kept off a few routes here, where it is known
+			// to be one; an integration key goes straight on.
+			if key.KeyKind == KeyKindAgent && !a.admitAgent(w, r, key) {
+				return
+			}
 			next.ServeHTTP(w, withSuperuser(r, key))
 			return
 		}
