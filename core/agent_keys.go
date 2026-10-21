@@ -302,6 +302,52 @@ func (k *APIKeys) refuseAgentSecret(ctx context.Context, id int64) error {
 
 // ------------------------------------------------------------- per request
 
+// agentFrozen are the routes an agent key can never reach, on any store and
+// for every method, whatever rights it holds. In a pattern '*' is exactly one
+// path segment and '#' one segment of digits.
+//
+// It starts from demoFrozenAny: the routes a demo closes outright because they
+// hand out a credential or read with no shape for a mask to act on. An agent is
+// masked on every store, so those are closed to it on every store; the demo's
+// other freezes — who can sign in — stay a demo's.
+var agentFrozen = append(slices.Clone(demoFrozenAny),
+	// The notification log is the full text of what the store sent, filled
+	// in, which no mask can read field by field. orders.read reaches it, so it
+	// is closed here by path rather than by right. The templates under
+	// /notifications/templates are wording and stay readable.
+	"/api/admin/notifications",
+	"/api/admin/notifications/#",
+	"/api/admin/notifications/#/preview",
+	"/api/admin/notifications/#/resend",
+	// Documents printed for a sale or a parcel carry the buyer's name and
+	// street address in full, and a mask cannot reach inside a PDF. They are
+	// gated on a read right (orders.read, invoices.read), so the right does
+	// not keep an agent out; this does.
+	"/api/admin/x/fulfill-usps/labels/*",
+	"/api/admin/x/invoices/*",
+)
+
+func agentPathMatch(pattern, path string) bool {
+	p, q := strings.Split(pattern, "/"), strings.Split(path, "/")
+	if len(p) != len(q) {
+		return false
+	}
+	for i := range p {
+		switch p[i] {
+		case "*":
+		case "#":
+			if q[i] == "" || strings.Trim(q[i], "0123456789") != "" {
+				return false
+			}
+		default:
+			if p[i] != q[i] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // agentCalling reports whether the caller on ctx is an agent key.
 func agentCalling(ctx context.Context) bool {
 	su := SuperuserFrom(ctx)
@@ -334,17 +380,13 @@ func (a *App) admitAgent(w http.ResponseWriter, r *http.Request, su *Superuser) 
 		})
 		return false
 	}
-	// The routes a demo freezes for every method are the ones that hand out a
-	// credential or read with no shape for a mask to act on (demoFrozenAny).
-	// An agent is masked on every store, so they are closed to it on every
-	// store; the demo's other freezes — who can sign in — stay a demo's.
-	for _, p := range demoFrozenAny {
-		if demoPathMatch(p, r.URL.Path) {
+	for _, p := range agentFrozen {
+		if agentPathMatch(p, r.URL.Path) {
 			RespondError(w, r, &APIError{
 				Status: http.StatusForbidden,
 				Code:   "agent_key_refused",
-				Message: "an agent key cannot reach this route: it hands out a credential, " +
-					"or reads around the mask an agent is shown",
+				Message: "an agent key cannot reach this route: it hands out a credential or a " +
+					"document, or reads around the mask an agent is shown",
 			})
 			return false
 		}

@@ -186,17 +186,21 @@ func TestAnAgentSeesContactDetailsMasked(t *testing.T) {
 		t.Errorf("an agent searching by name matched %d, want 1", n)
 	}
 
-	// The notification log masks the recipient and will not search it.
+	// The notification log is closed to an agent outright (agentFrozen). Where
+	// the recipient is masked — a demo store — it is not searched either.
 	if _, err := app.DB().ExecContext(ctx, `
 		INSERT INTO notifications (event, channel, recipient, order_number, status)
 		VALUES ('order.placed', 'email', 'jane.doe@gmail.com', $1, 'logged')`, result.Order.Number); err != nil {
 		t.Fatal(err)
 	}
-	if n := total("/api/admin/notifications?q=jane.doe", agentKey); n != 0 {
-		t.Errorf("an agent searching the notification log by address matched %d, want 0", n)
+	if rec := do(t, app, http.MethodGet, "/api/admin/notifications?q=jane.doe", bearer(agentKey)); rec.Code != http.StatusForbidden {
+		t.Errorf("an agent searching the notification log = %d, want 403: %s", rec.Code, rec.Body)
 	}
 	if n := total("/api/admin/notifications?q=jane.doe", staffKey); n != 1 {
 		t.Errorf("an integration key searching the notification log matched %d, want 1", n)
+	}
+	if _, n, err := app.Notifications().List(withStoreDemo(ctx, true), NotificationQuery{Search: "jane.doe"}); err != nil || n != 0 {
+		t.Errorf("a demo store searching the log by address matched %d (%v), want 0", n, err)
 	}
 }
 
