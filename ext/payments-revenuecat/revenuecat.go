@@ -71,6 +71,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -304,6 +305,16 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		m.log.Warn("rejected a RevenueCat webhook", "error", "Authorization did not match")
 		http.Error(w, "invalid authorization", http.StatusBadRequest)
 		return
+	}
+	// No signing secret means no check — unless one was entered and cannot
+	// be opened now, which would turn the check off without anyone choosing
+	// to. Refused until it is entered again; RevenueCat retries a 503.
+	if m.conf(ctx).SigningSecret == "" {
+		if unopened, _ := m.app.Plugins().Unopened(ctx, PluginKey); slices.Contains(unopened, "signing_secret") {
+			m.log.Warn("refused a RevenueCat webhook", "error", "the webhook signing secret cannot be opened; enter it again")
+			http.Error(w, "webhook signing secret cannot be read", http.StatusServiceUnavailable)
+			return
+		}
 	}
 	if m.conf(ctx).SigningSecret != "" {
 		if err := verifySignature(body,

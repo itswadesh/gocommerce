@@ -294,3 +294,26 @@ func TestASettingThatLooksSealedIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// A module whose secret is optional — a signing secret that adds a check —
+// must be able to tell "never set" from "set but will not open", or a lost
+// key quietly turns its check off.
+func TestPluginsSayWhichSecretsWillNotOpen(t *testing.T) {
+	dsn := keyedDSN(t, fakePlugin{})
+	ctx := context.Background()
+	on := true
+	first := keyedApp(t, dsn, newSecretsKey(t), "", fakePlugin{})
+	if _, err := first.Plugins().Update(ctx, "fake-mail", PluginPatch{Enabled: &on, Settings: map[string]any{"api_key": "sk-1"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := first.Plugins().Unopened(ctx, "fake-mail"); err != nil || len(got) != 0 {
+		t.Errorf("with its key = %v, %v; want nothing unopened", got, err)
+	}
+	lost := keyedApp(t, dsn, newSecretsKey(t), "", fakePlugin{})
+	if got, err := lost.Plugins().Unopened(ctx, "fake-mail"); err != nil || len(got) != 1 || got[0] != "api_key" {
+		t.Errorf("under another key = %v, %v; want api_key", got, err)
+	}
+	if _, err := lost.Plugins().Unopened(ctx, "no-such-plugin"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("an unknown plugin = %v, want not found", err)
+	}
+}

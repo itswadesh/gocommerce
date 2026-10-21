@@ -167,7 +167,11 @@ A `secret` field is also sealed at rest when the install has
 `plugins/<plugin>/<field>` for its store, and `Settings`, `String` and `Fill`
 open it, so a module reads plain text exactly as before and never sees the
 envelope. One that will not open — sealed under a key the install no longer
-has — reads as unset, so the plugin shows as not configured. A module that
+has — reads as unset, so the plugin shows as not configured. That is right for
+a required key and wrong for an optional one that switches a check on, such as
+a webhook signing secret: such a module asks
+`app.Plugins().Unopened(ctx, key)` and refuses while its field is listed there,
+as `ext/payments-revenuecat` does, rather than run with the check off. A module that
 keeps a credential it must read back in a table of its own does the same by
 hand: `SealSecret(ctx, field, plain)` before it writes, `OpenSecret(ctx, field,
 stored)` when it reads (a value never sealed comes back as it is), and
