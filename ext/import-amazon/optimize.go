@@ -81,15 +81,10 @@ Rules:
 
 Answer with a single JSON object with exactly these keys: title, description, product_type, vendor, tags, seo_title, seo_description. No prose before or after it, no code fence.`
 
-// optimize asks the model for the rewrite.
-func (o *optimizer) optimize(ctx context.Context, l *Listing) (*rewrite, error) {
-	if o == nil {
-		return nil, errors.New("no model is configured for the rewrite")
-	}
-
-	// A trimmed view: the model needs the copy and the facts, not the image
-	// URLs or the per-variant prices.
-	input := map[string]any{
+// trimmed is the listing as a model sees it: the copy and the facts, not
+// the image URLs or the per-variant prices.
+func trimmed(l *Listing) map[string]any {
+	return map[string]any{
 		"title":       l.Title,
 		"brand":       l.Brand,
 		"bullets":     l.Bullets,
@@ -98,7 +93,14 @@ func (o *optimizer) optimize(ctx context.Context, l *Listing) (*rewrite, error) 
 		"breadcrumbs": l.Breadcrumbs,
 		"options":     l.Options,
 	}
-	listing, err := json.Marshal(input)
+}
+
+// optimize asks the model for the rewrite.
+func (o *optimizer) optimize(ctx context.Context, l *Listing) (*rewrite, error) {
+	if o == nil {
+		return nil, errors.New("no model is configured for the rewrite")
+	}
+	listing, err := json.Marshal(trimmed(l))
 	if err != nil {
 		return nil, err
 	}

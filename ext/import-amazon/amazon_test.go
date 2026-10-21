@@ -491,6 +491,13 @@ func newHarness(t *testing.T, cfg Config, withLLM bool) *harness {
 // newHarnessWith is newHarness with engine settings of the test's own.
 func newHarnessWith(t *testing.T, cfg Config, withLLM bool, appCfg gocommerce.Config) *harness {
 	t.Helper()
+	return buildHarness(t, cfg, withLLM, appCfg)
+}
+
+// buildHarness is the harness with other modules installed before this one,
+// such as the AI gateway the rewrite goes through.
+func buildHarness(t *testing.T, cfg Config, withLLM bool, appCfg gocommerce.Config, before ...gocommerce.Module) *harness {
+	t.Helper()
 	img := jpegBytes(t)
 	images := gctest.StubHTTP(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/missing.jpg") {
@@ -534,7 +541,7 @@ func newHarnessWith(t *testing.T, cfg Config, withLLM bool, appCfg gocommerce.Co
 	// The picture stub is on loopback, which the image client refuses unless
 	// the install allows private addresses.
 	appCfg.AllowPrivateURLs = true
-	app := gctest.NewWithConfig(t, appCfg, mod)
+	app := gctest.NewWithConfig(t, appCfg, append(before, mod)...)
 	return &harness{app: app, fx: fx, images: images, llm: llm}
 }
 
