@@ -76,3 +76,16 @@ func TestAnAPIKeysCopyUnderAnUnknownKeyCannotBeShown(t *testing.T) {
 		t.Error("the key stopped authenticating because its copy cannot be opened")
 	}
 }
+
+// The keys are parsed once and kept only by the sealer. Config is handed to
+// every module, and nothing outside the sealer needs the key material.
+func TestTheSecretsKeysAreNotHandedOutWithTheConfig(t *testing.T) {
+	app := keyedApp(t, keyedDSN(t), newSecretsKey(t), newSecretsKey(t))
+	if cfg := app.Config(); cfg.SecretsKey != "" || cfg.SecretsKeyPrevious != "" {
+		t.Error("Config() carries the secrets keys")
+	}
+	sealed, err := app.SealSecret(context.Background(), apiKeySecretField, "gck_x")
+	if err != nil || !strings.HasPrefix(sealed, "sealed:v1:") {
+		t.Errorf("after the keys left the config, sealing = %v, want it still sealing", err)
+	}
+}
