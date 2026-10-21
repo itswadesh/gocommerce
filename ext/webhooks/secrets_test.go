@@ -52,7 +52,7 @@ func TestASealedSigningSecretStillSigns(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	mod := New(Config{})
-	app := gctest.NewWithConfig(t, gocommerce.Config{SecretsKey: secretsKey(t)}, mod)
+	app := gctest.NewWithConfig(t, gocommerce.Config{SecretsKey: secretsKey(t), AllowPrivateURLs: true}, mod)
 
 	e := create(t, app, map[string]any{"url": srv.URL, "events": []string{"order.*"}})
 	if !strings.HasPrefix(e.Secret, "whsec_") {
@@ -117,13 +117,13 @@ func TestASigningSecretUnderAnUnknownKeyIsNotSentUnsigned(t *testing.T) {
 		cap.record(r)
 		w.WriteHeader(http.StatusOK)
 	})
-	first := gctest.NewWithConfig(t, gocommerce.Config{SecretsKey: secretsKey(t)}, New(Config{}))
+	first := gctest.NewWithConfig(t, gocommerce.Config{SecretsKey: secretsKey(t), AllowPrivateURLs: true}, New(Config{}))
 	e := create(t, first, map[string]any{"url": srv.URL, "events": []string{"order.*"}})
 	gctest.PlaceOrder(t, first, gocommerce.CodeCOD)
 	gctest.DrainOutbox(t, first)
 
 	mod := New(Config{})
-	lost := gctest.NewWithConfig(t, gocommerce.Config{DBURL: first.Config().DBURL, SecretsKey: secretsKey(t)}, mod)
+	lost := gctest.NewWithConfig(t, gocommerce.Config{DBURL: first.Config().DBURL, SecretsKey: secretsKey(t), AllowPrivateURLs: true}, mod)
 	deliverOnce(t, mod)
 	if cap.calls() != 0 {
 		t.Fatalf("the endpoint was called %d time(s) without a secret to sign with", cap.calls())
@@ -150,7 +150,7 @@ func TestSecretsSealReachesSigningSecrets(t *testing.T) {
 	bare := newApp(t)
 	e := create(t, bare, map[string]any{"url": "https://merchant.example.com/hooks", "events": []string{"order.*"}})
 
-	keyed := gctest.NewWithConfig(t, gocommerce.Config{DBURL: bare.Config().DBURL, SecretsKey: secretsKey(t)}, New(Config{}))
+	keyed := gctest.NewWithConfig(t, gocommerce.Config{DBURL: bare.Config().DBURL, SecretsKey: secretsKey(t), AllowPrivateURLs: true}, New(Config{}))
 	rep, err := keyed.SealSecrets(context.Background())
 	if err != nil {
 		t.Fatal(err)
