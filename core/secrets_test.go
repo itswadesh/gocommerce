@@ -253,6 +253,46 @@ func TestAnUnreadableSecretIsLoggedOnceWithWhereItIs(t *testing.T) {
 	}
 }
 
+// A value that only looks sealed — somebody typed or pasted it — must never
+// reach the log: the part after the version is the secret, not a key id. A
+// key id is named only when it is one, 8 hex characters.
+func TestAMalformedEnvelopeNeverReachesTheLog(t *testing.T) {
+	ctx := WithStore(context.Background(), storeA)
+	for name, app := range map[string]*App{"no key": sealer(t, "", ""), "a key": sealer(t, newSecretsKey(t), "")} {
+		var buf bytes.Buffer
+		app.log = slog.New(slog.NewTextHandler(&buf, nil))
+		for _, v := range []string{"sealed:v1:hunter2-TOPSECRET", "sealed:v1:hunter2:TOPSECRET", "sealed:v1:abc:hunter2-TOPSECRET"} {
+			_, err := app.OpenSecret(ctx, "plugins/stripe/secret_key", v)
+			if !errors.Is(err, ErrSecretUnreadable) {
+				t.Errorf("%s: open %q = %v, want ErrSecretUnreadable", name, v, err)
+			}
+			if err != nil && (strings.Contains(err.Error(), "hunter2") || strings.Contains(err.Error(), "TOPSECRET")) {
+				t.Errorf("%s: the error carries the value: %v", name, err)
+			}
+			app.openSecretOrUnset(ctx, "plugins/stripe/secret_key", v)
+		}
+		if strings.Contains(buf.String(), "hunter2") || strings.Contains(buf.String(), "TOPSECRET") {
+			t.Errorf("%s: the log carries the value:\n%s", name, buf.String())
+		}
+	}
+	// A real key id is still named, so the operator knows which key to find.
+	_, err := sealer(t, newSecretsKey(t), "").OpenSecret(ctx, "f", "sealed:v1:0a1b2c3d:AAAA")
+	if err == nil || !strings.Contains(err.Error(), "0a1b2c3d") {
+		t.Errorf("an unknown but well-formed key id = %v, want it named", err)
+	}
+}
+
+// Nothing is sealed twice: a value that already carries the envelope is
+// refused, so it can never be stored readable and then misread as sealed.
+func TestAValueThatLooksSealedIsNotSealed(t *testing.T) {
+	ctx := WithStore(context.Background(), storeA)
+	for name, app := range map[string]*App{"no key": sealer(t, "", ""), "a key": sealer(t, newSecretsKey(t), "")} {
+		if got, err := app.SealSecret(ctx, "f", "sealed:v1:hunter2"); err == nil {
+			t.Errorf("%s: sealing a value that looks sealed = %q, want it refused", name, got)
+		}
+	}
+}
+
 // New refuses a bad key before it opens the database, so a typo in the
 // environment is a clear stop rather than a store that cannot read its keys.
 func TestNewRefusesABadSecretsKey(t *testing.T) {

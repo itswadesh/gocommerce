@@ -151,7 +151,13 @@ func (k secretKeys) open(store, field, stored string) (string, *sealKey, error) 
 	if !ok {
 		return "", nil, fmt.Errorf("%w: it is sealed in a format this version does not know", ErrSecretUnreadable)
 	}
-	id, body, _ := strings.Cut(rest, ":")
+	// Only a well-formed id is ever repeated in an error, because errors are
+	// logged: a value that merely starts with the prefix is somebody's typing,
+	// and what follows it may be the secret itself.
+	id, body, ok := strings.Cut(rest, ":")
+	if !ok || !isKeyID(id) {
+		return "", nil, fmt.Errorf("%w: it is malformed", ErrSecretUnreadable)
+	}
 	key := k.byID(id)
 	if key == nil {
 		return "", nil, fmt.Errorf("%w: it was sealed under key %s, which this install does not have", ErrSecretUnreadable, id)
@@ -170,6 +176,19 @@ func (k secretKeys) open(store, field, stored string) (string, *sealKey, error) 
 
 func isSealed(s string) bool { return strings.HasPrefix(s, sealedPrefix) }
 
+// isKeyID is whether s has the shape of a key id: 8 lowercase hex characters.
+func isKeyID(s string) bool {
+	if len(s) != 8 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // SealSecret seals plain for the store ctx is bound to and the field named —
 // a stable label such as "plugins/stripe/secret_key" — or returns it as it is
 // when the install has no key. An empty value stays empty: it means unset.
@@ -179,6 +198,12 @@ func isSealed(s string) bool { return strings.HasPrefix(s, sealedPrefix) }
 // column with RegisterSecretColumn so `gocommerce secrets seal` and the doctor
 // can reach it.
 func (a *App) SealSecret(ctx context.Context, field, plain string) (string, error) {
+	// Refused with a key or without: stored readable it would be read back as
+	// a sealed value that does not open, and sealed it would open to
+	// something that looks sealed again.
+	if isSealed(plain) {
+		return "", Validationf("a secret cannot start with %q: the engine uses that to mark a value it encrypted", sealedPrefix)
+	}
 	if plain == "" || a.secrets.current == nil {
 		return plain, nil
 	}
