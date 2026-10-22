@@ -196,7 +196,8 @@ any open status ──operator──► suppressed                  └─cart r
 - **Attribution** comes from `order.created`, whose `cart_id` names the basket.
   `recovered_after_message` separates the orders a message preceded from the
   shoppers who came back on their own; the funnel counts only the first.
-- **The link** a message carries is `PanelURL/x/cart-recovery/r/<link_token>`,
+- **The link** a message carries is `PanelURL/x/cart-recovery/r/<link_token>?store=<store id>`
+  (the panel's address names no store, so the link names its own),
   which counts the click and redirects to `<storefront>/cart/<token>`. Without
   `Config.PanelURL` it goes straight to the storefront and clicks go uncounted.
   On an install with several brands, `PanelURL` is the panel URL of the
