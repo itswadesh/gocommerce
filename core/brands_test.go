@@ -583,10 +583,11 @@ func TestTheDoctorListsTheBrands(t *testing.T) {
 		}
 	}
 
-	// A store whose brand the install no longer has.
+	// A store whose brand the install no longer has: most likely a renamed
+	// panel host, which moved the store without a word, so it fails.
 	inBrand(t, app, app.DefaultStore(), "admin.delta.test")
 	d = findCheck(t, app.Diagnose(context.Background()), "brands")
-	if d.Status != StatusWarn || !strings.Contains(d.Detail, "(admin.delta.test)") || !strings.Contains(d.Hint, "gocommerce store brand") {
+	if d.Status != StatusFail || !strings.Contains(d.Detail, "admin.delta.test (1)") || !strings.Contains(d.Hint, "gocommerce brands rename-host") {
 		t.Fatalf("a store of a brand that is gone: %+v", d)
 	}
 
