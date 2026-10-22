@@ -140,12 +140,16 @@ func (a *App) handleAuthWithPassword(w http.ResponseWriter, r *http.Request) {
 	// Signed in with no store named: a person who works in exactly one store
 	// is answered with their standing there, as every later request of theirs
 	// will be (storeMW's sole-membership rule).
+	// Both count only the brand the request came through (D111): a store of
+	// another brand is answered as one the person is not on.
 	if _, bound := StoreFrom(r.Context()); !bound {
-		if ms, err := a.stores.MembershipsOf(r.Context(), su.ID); err == nil && len(ms) == 1 {
+		if ms := a.membershipsInBrand(r.Context(), su.ID); len(ms) == 1 {
 			if here, err := a.superusers.Get(WithStore(r.Context(), ms[0].StoreID), su.ID); err == nil {
 				su = here
 			}
 		}
+	} else if foreignStore(r.Context()) {
+		su.Role, su.VendorID, su.Rights = "", nil, []Right{}
 	}
 	Respond(w, http.StatusOK, authResponse{
 		Token:     sess.Token,
