@@ -89,10 +89,19 @@ func (a *App) handleCreateInvitation(w http.ResponseWriter, r *http.Request) {
 	Respond(w, http.StatusCreated, inv)
 }
 
-// acceptURL is where the invitee goes. It is built from the request rather than
-// from configuration, so a store reached through a proxy, a tunnel or a bare IP
-// produces a link that actually resolves from where the operator is standing.
+// acceptURL is where the invitee goes. With brands configured it is the
+// invitation's store's brand's panel (D111): the invitee must arrive where
+// that store is listed, whichever admin domain sent it. Without them it is
+// built from the request rather than from configuration, so a store reached
+// through a proxy, a tunnel or a bare IP produces a link that actually
+// resolves from where the operator is standing.
 func (a *App) acceptURL(r *http.Request, token string) string {
+	// The store rides on the link, so the accept page talks to the store
+	// that sent it however many stores this install serves (D83).
+	path := "/admin/auth/accept-invite/" + token + "?store=" + url.QueryEscape(a.storeOf(r.Context()))
+	if len(a.cfg.Brands) > 0 {
+		return a.storeMailBrand(r.Context()).PanelURL + path
+	}
 	scheme := "https"
 	if r.TLS == nil && !strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
 		scheme = "http"
@@ -101,9 +110,7 @@ func (a *App) acceptURL(r *http.Request, token string) string {
 	if fwd := r.Header.Get("X-Forwarded-Host"); fwd != "" {
 		host = fwd
 	}
-	// The store rides on the link, so the accept page talks to the store
-	// that sent it however many stores this install serves (D83).
-	return scheme + "://" + host + "/admin/auth/accept-invite/" + token + "?store=" + url.QueryEscape(a.storeOf(r.Context()))
+	return scheme + "://" + host + path
 }
 
 func (a *App) handleRevokeInvitation(w http.ResponseWriter, r *http.Request) {

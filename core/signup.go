@@ -127,11 +127,12 @@ func (s *Superusers) SignUp(ctx context.Context, email, password, clientIP strin
 	}
 
 	// No membership row: whatever store the request reached by its host, the
-	// person is staff of none until they open their own.
+	// person is staff of none until they open their own. They are recorded as
+	// arriving through the brand they signed up on (D111).
 	row := s.db.QueryRowContext(ctx, `
-		INSERT INTO superusers (email, password_hash) VALUES ($1, $2)
+		INSERT INTO superusers (email, password_hash, brand_host) VALUES ($1, $2, $3)
 		ON CONFLICT (email) DO NOTHING
-		RETURNING `+superuserColumns, email, hash)
+		RETURNING `+superuserColumns, email, hash, s.app.arrivalBrandHost(ctx))
 	su, err := scanSuperuser(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, emailTaken(email)

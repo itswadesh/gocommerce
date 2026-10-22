@@ -551,8 +551,8 @@ We will be in touch about anything owed to you.`,
 	{
 		Channel: ChannelEmail, Event: EventSuperuserInvitation, Title: "Team invitation",
 		Description: "To somebody invited to join the store's team. The link works for two days.",
-		Variables:   []string{"invite_url", "store_name", "role", "invited_by", "expires_in_hours"},
-		Subject:     "Join {{if .store_name}}{{.store_name}}{{else}}the team{{end}} on GoCommerce",
+		Variables:   []string{"invite_url", "store_name", "role", "invited_by", "expires_in_hours", "brand_name"},
+		Subject:     "Join {{if .store_name}}{{.store_name}}{{else}}the team{{end}}{{with .brand_name}} on {{.}}{{end}}",
 		Body: `{{if .invited_by}}{{.invited_by}} has invited you{{else}}You have been invited{{end}} to join {{if .store_name}}{{.store_name}}{{else}}the team{{end}} as {{.role}}.
 
 Accept within {{.expires_in_hours}} hours:
@@ -564,8 +564,8 @@ If you were not expecting this, you can ignore it; nothing happens unless the li
 	{
 		Channel: ChannelEmail, Event: EventSuperuserPasswordReset, Title: "Operator password reset",
 		Description: "To a member of the team who asked to reset their panel password.",
-		Variables:   []string{"operator_email", "reset_url", "reset_code", "reset_token", "expires_in_minutes"},
-		Subject:     "Reset your GoCommerce password",
+		Variables:   []string{"operator_email", "reset_url", "reset_code", "reset_token", "expires_in_minutes", "brand_name"},
+		Subject:     "Reset your {{with .brand_name}}{{.}} {{end}}password",
 		// The absence of reset_url is meaningful: without a panel URL the
 		// engine cannot build a link, and the code is the whole message.
 		Body: `Somebody asked to reset the password for {{.operator_email}}. If that was you,

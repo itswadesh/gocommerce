@@ -238,6 +238,16 @@ gocommerce store brand <slug> <panel host>    # e.g. gocommerce store brand myst
 which moves its address to the new brand's base domain and is recorded in the
 store's audit trail.
 
+**Emails to staff carry the brand.** A store's emails to its team — an
+invitation, a reset sent from Settings › Team — name the store's brand and link
+to its panel. A password reset asked for on a brand's admin domain is in that
+brand, and its link goes back there; one asked for at an address that is no
+brand's gets the first brand's, never a link to that address. With no request
+behind it, an email goes out in the brand the person signed up or accepted an
+invitation through, else the first. The default wording says the brand's name
+(`brand_name`) where it said GoCommerce. Emails to shoppers are the store's
+own and do not change.
+
 `GOCOMMERCE_PANEL_URL` and `GOCOMMERCE_BASE_DOMAIN` may stay set beside
 `GOCOMMERCE_BRANDS` only if they name one of the brands (the base domain may be
 an alias); the engine refuses to start otherwise, rather than leave the stores
