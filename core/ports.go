@@ -344,21 +344,31 @@ func (a *App) RegisterNotifyTemplate(t NotifyTemplate) {
 // delivery that did not happen: `send` over a channel nobody registered finds
 // no backends and returns nil, which reads as success.
 func (a *App) Notify(ctx context.Context, n Notification) error {
-	switch n.Channel {
-	case ChannelEmail, ChannelSMS:
-	default:
-		return Validationf("unknown notification channel %q (want %q or %q)",
-			n.Channel, ChannelEmail, ChannelSMS)
-	}
-	if strings.TrimSpace(n.To) == "" {
-		return Validationf("a notification needs a recipient")
-	}
-	if n.Language == "" {
-		n.Language = a.mainLanguage(ctx)
+	n, err := a.addressed(ctx, n)
+	if err != nil {
+		return err
 	}
 	// A refusal is on the notification's record; it is not a reason for the
 	// caller — usually an outbox handler — to try again.
 	return worthRetrying(a.notifier.send(ctx, n))
+}
+
+// addressed is what Notify and NotifyNow both refuse, and the language both
+// fill in.
+func (a *App) addressed(ctx context.Context, n Notification) (Notification, error) {
+	switch n.Channel {
+	case ChannelEmail, ChannelSMS:
+	default:
+		return n, Validationf("unknown notification channel %q (want %q or %q)",
+			n.Channel, ChannelEmail, ChannelSMS)
+	}
+	if strings.TrimSpace(n.To) == "" {
+		return n, Validationf("a notification needs a recipient")
+	}
+	if n.Language == "" {
+		n.Language = a.mainLanguage(ctx)
+	}
+	return n, nil
 }
 
 // RegisterTranslator installs the catalog translator. Only one may exist:

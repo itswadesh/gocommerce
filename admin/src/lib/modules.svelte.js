@@ -56,7 +56,10 @@ const PROBES = {
     "import-amazon": { path: "/api/admin/x/import-amazon/jobs", right: "catalog.write" },
     navigation: { path: "/api/admin/x/navigation/menus", right: "catalog.read" },
     reviews: { path: "/api/admin/x/reviews?limit=1", right: "catalog.read" },
-    contact: { path: "/api/admin/x/contact/messages?limit=1", right: "customers.read" },
+    // The module's own right, or the one it was lifted off (D65): in a binary
+    // without the module nobody holds contact.read, and the screen should then
+    // say the module is missing rather than that the role lacks a right.
+    contact: { path: "/api/admin/x/contact/messages?limit=1", right: ["contact.read", "customers.read"] },
     newsletter: { path: "/api/admin/x/newsletter/subscriptions?limit=1", right: "customers.read" },
     faq: { path: "/api/admin/x/faq", right: "catalog.read" },
     banners: { path: "/api/admin/x/banners", right: "banners.read" },

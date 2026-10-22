@@ -224,6 +224,28 @@ say the channel does not deliver, and the moment the key is typed in the
 next message goes out. `ext/notify-sendgrid` and `ext/notify-msg91` are the
 worked examples.
 
+### Sending while somebody waits: `NotifyNow`
+
+`app.Notify` is shaped for an outbox handler, and two of its answers mean
+"delivered" only to one: a refusal (a bad address, an unverified sending
+domain) is dropped from its error, because a retry would be refused again,
+and a store with no provider that delivers "sends" to the log and returns
+nil. An operator who pressed Send and is about to tell a customer "we've
+replied" needs the other answer, so a module sending on a person's behalf
+calls `app.NotifyNow` instead. It refuses with 409 when nothing on the
+channel delivers, and answers 422 with the provider's own words when it
+refused (`provider_refused`) or could not be reached
+(`provider_unreachable`) — 4xx because a 5xx's message never leaves the
+server. Every attempt is recorded, so it is on the Notifications screen
+either way.
+
+Send first, then record, with no transaction open across the send (rule 5).
+`ext/contact`'s reply is the worked example:
+`POST /api/admin/x/contact/messages/{id}/reply` calls `NotifyNow`, and only
+once the provider has taken the message does it insert the reply and mark
+the message replied, in one `InTx`. A reply that did not go leaves nothing
+behind, and the operator keeps the text to send again.
+
 ## Providers install idle: the panel sets them up
 
 A payment gateway or a carrier module registers whatever Config it was
