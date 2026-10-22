@@ -1661,7 +1661,7 @@
                         },
                         "reset_link": {
                           "type": "boolean",
-                          "description": "A reset email carries a link (Config.PanelURL is set); false, it carries a code to paste at /admin/auth/reset-password."
+                          "description": "A reset email carries a link: the panel URL of the brand this address belongs to is set (Config.PanelURL without brands). False, it carries a code to paste at /admin/auth/reset-password."
                         }
                       }
                     }
@@ -1821,7 +1821,7 @@
           "admin:auth"
         ],
         "summary": "Ask for a password reset code and link",
-        "description": "Public, because a reset cannot require the credential it replaces. The email carries a 6-digit code, and a link as well when `GOCOMMERCE_PANEL_URL` is set. The answer is 202 whatever address goes in — identical in body and in status for an address that belongs to an operator and one that does not — so the route cannot be used to discover who has an account. `delivery` is `none` when the store has no email backend beyond the built-in logger; nothing will arrive, and no token is written at all. Repeated requests are throttled, on a budget separate from the login one. Because a code can be guessed, an operator who already holds 5 unexpired resets, or was sent 10 in the last day, is sent nothing more, with the same 202.",
+        "description": "Public, because a reset cannot require the credential it replaces. The email carries a 6-digit code, and a link as well when `GOCOMMERCE_PANEL_URL` is set; with several brands, a link to the panel of the brand whose admin domain the request came to, or the first brand for any other host — never a link built from the request. The answer is 202 whatever address goes in — identical in body and in status for an address that belongs to an operator and one that does not — so the route cannot be used to discover who has an account. `delivery` is `none` when the store has no email backend beyond the built-in logger; nothing will arrive, and no token is written at all. Repeated requests are throttled, on a budget separate from the login one. Because a code can be guessed, an operator who already holds 5 unexpired resets, or was sent 10 in the last day, is sent nothing more, with the same 202.",
         "requestBody": {
           "required": true,
           "content": {
@@ -15825,7 +15825,7 @@
           },
           "link": {
             "type": "boolean",
-            "description": "The email carries a link to the panel's reset screen beside its 6-digit code (Config.PanelURL is set). False, it carries the code alone, typed at /admin/auth/reset-password. Configuration again, the same for every caller."
+            "description": "The email carries a link to the panel's reset screen beside its 6-digit code: the panel URL of the brand the request came through is set (Config.PanelURL without brands). False, it carries the code alone, typed at /admin/auth/reset-password. Configuration again, the same for every caller."
           }
         }
       },

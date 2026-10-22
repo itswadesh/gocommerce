@@ -345,6 +345,16 @@ Invite them. `POST /api/admin/invitations` returns a `token` and an `accept_url`
 **once** — only the SHA-256 is stored, exactly as with a session — and the
 invitee sets their own password at `/admin/auth/accept-invite/<token>`, which signs them in.
 
+On an install with several brands (D111) the link is the panel URL of the
+store's brand, whichever admin domain sent it, and the email names that brand
+(`brand_name`). Somebody new who accepts is recorded as arriving through the
+store's brand (`superusers.brand_host`), as somebody who signs up is through
+the brand they signed up on. A reset asked for at a brand's admin domain goes
+out in that brand; one sent from Settings › Team in the store's; one with no
+request behind it in the person's recorded brand, else the first. The link is
+only ever a configured brand's panel URL. Without brands, the invitation link
+is still built from the request, as it always was.
+
 The alternative, which this engine did until M18 and still supports for the cases
 invitations cannot serve, is an owner choosing somebody else's password and then
 telling it to them. That password is known to two people from the moment it

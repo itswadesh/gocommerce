@@ -849,7 +849,10 @@ either, the form says the same as always and nothing is sent. When
 `GOCOMMERCE_PANEL_URL` says where the panel is reached, the email also carries
 a link to `/admin/auth/reset-password/<token>`. It is never built from the
 request's own host, which would let anybody mail a real operator a link to a
-host they chose. The link cannot be guessed, so wrong codes never use it up.
+host they chose. On an install with several brands (D111) the link is the
+panel URL of the brand whose admin domain the reset was asked from, and the
+email is in that brand's name; a host that is no brand's gets the first
+brand's. The link cannot be guessed, so wrong codes never use it up.
 Spending either the link or the code kills both, ends every session the person
 had, and signs them in.
 

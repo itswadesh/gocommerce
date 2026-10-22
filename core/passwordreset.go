@@ -125,9 +125,10 @@ func tooManyResetAttempts(retryAfter time.Duration) *APIError {
 type ResetRequest struct {
 	Accepted bool   `json:"accepted"`
 	Delivery string `json:"delivery"`
-	// Link says the email carries a link beside its code: whether
-	// Config.PanelURL is set. Like Delivery it is configuration, the same for
-	// every caller, so the panel can say what to look for.
+	// Link says the email carries a link beside its code: whether the panel
+	// URL of the brand the request came through is set (Config.PanelURL
+	// without brands). Like Delivery it is configuration, the same for every
+	// caller at one address, so the panel can say what to look for.
 	Link bool `json:"link"`
 }
 
@@ -175,8 +176,8 @@ func isResetCode(code string) bool {
 }
 
 // accepted is the one answer a reset request gets, whoever asked.
-func (s *Superusers) accepted(delivery string) ResetRequest {
-	return ResetRequest{Accepted: true, Delivery: delivery, Link: s.app.cfg.PanelURL != ""}
+func (s *Superusers) accepted(delivery string, b Brand) ResetRequest {
+	return ResetRequest{Accepted: true, Delivery: delivery, Link: b.PanelURL != ""}
 }
 
 // ResetTarget is everything a lookup will say about a link: when it dies.
@@ -218,7 +219,7 @@ func (s *Superusers) RequestReset(ctx context.Context, email, clientIP string) (
 	// nothing. The branch is on configuration, which is the same for every
 	// caller, so it enumerates nothing.
 	if !s.app.notifier.delivers(ctx, ChannelEmail) {
-		return s.accepted(DeliveryNone), nil
+		return s.accepted(DeliveryNone, s.app.Brand(ctx)), nil
 	}
 
 	var id int64
@@ -226,7 +227,7 @@ func (s *Superusers) RequestReset(ctx context.Context, email, clientIP string) (
 		`SELECT id FROM superusers WHERE email = $1`, email).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		// Nothing written, nothing sent, same answer.
-		return s.accepted(DeliveryEmail), nil
+		return s.accepted(DeliveryEmail, s.app.Brand(ctx)), nil
 	}
 	if err != nil {
 		return ResetRequest{}, Internalf(err, "look up superuser")
@@ -234,13 +235,13 @@ func (s *Superusers) RequestReset(ctx context.Context, email, clientIP string) (
 
 	token, code, err := s.issueReset(ctx, id, true)
 	if errors.Is(err, errResetCapped) {
-		return s.accepted(DeliveryEmail), nil
+		return s.accepted(DeliveryEmail, s.app.Brand(ctx)), nil
 	}
 	if err != nil {
 		return ResetRequest{}, err
 	}
-	s.deliverReset(ctx, id, email, token, code)
-	return s.accepted(DeliveryEmail), nil
+	s.deliverReset(ctx, id, email, token, code, s.app.personMailBrand(ctx, id))
+	return s.accepted(DeliveryEmail, s.app.Brand(ctx)), nil
 }
 
 // RequestResetFor mails a link and code to an operator the caller named by id:
@@ -266,16 +267,19 @@ func (s *Superusers) RequestResetFor(ctx context.Context, id int64) (ResetReques
 		return ResetRequest{}, Internalf(err, "look up superuser")
 	}
 
+	// The teammate is mailed as the store's: its brand names the email and
+	// its panel is where the link leads (D111).
+	brand := s.app.storeMailBrand(ctx)
 	if !s.app.notifier.delivers(ctx, ChannelEmail) {
-		return s.accepted(DeliveryNone), nil
+		return s.accepted(DeliveryNone, brand), nil
 	}
 
 	token, code, err := s.issueReset(ctx, id, false)
 	if err != nil {
 		return ResetRequest{}, err
 	}
-	s.deliverReset(ctx, id, email, token, code)
-	return s.accepted(DeliveryEmail), nil
+	s.deliverReset(ctx, id, email, token, code, brand)
+	return s.accepted(DeliveryEmail, brand), nil
 }
 
 // LookupReset says whether a link is still alive, so the reset screen can show
@@ -526,24 +530,28 @@ func resetCodeHash(superuserID int64, code string) string {
 	return hashToken(fmt.Sprintf("%d:%s", superuserID, code))
 }
 
-// resetURL is where the link points, built from configuration and never from
-// the request.
+// resetURL is where the link points: the panel URL of a configured brand, and
+// never anything from the request.
 //
-// acceptURL derives its host from r.Host and X-Forwarded-Host, which is safe
-// there only because its one caller is an authenticated owner who reads the URL
-// out of the response himself. A reset inverts every one of those properties —
-// unauthenticated, triggered by whoever wants the reset, delivered to a third
-// party — so a derived link would let `X-Forwarded-Host: evil.example` mail a
-// real operator a genuine email that hands their live token to a host the
-// attacker chose. This function takes no *http.Request precisely so that there
-// is nothing for a later refactor to reach for.
+// acceptURL on an install without brands derives its host from r.Host and
+// X-Forwarded-Host, which is safe there only because its one caller is an
+// authenticated owner who reads the URL out of the response himself. A reset
+// inverts every one of those properties — unauthenticated, triggered by
+// whoever wants the reset, delivered to a third party — so a derived link
+// would let `X-Forwarded-Host: evil.example` mail a real operator a genuine
+// email that hands their live token to a host the attacker chose. The request
+// may choose which brand (BrandFrom matches its host against the brands'
+// panel hosts), never what the link says. This function takes a Brand and no
+// *http.Request precisely so that there is nothing for a later refactor to
+// reach for.
 //
-// With PanelURL unset it returns "", and the email carries only the code.
-func (s *Superusers) resetURL(token string) string {
-	if s.app.cfg.PanelURL == "" {
+// With the brand's PanelURL unset it returns "", and the email carries only
+// the code.
+func resetURL(b Brand, token string) string {
+	if b.PanelURL == "" {
 		return ""
 	}
-	return s.app.cfg.PanelURL + "/admin/auth/reset-password/" + token
+	return b.PanelURL + "/admin/auth/reset-password/" + token
 }
 
 // deliverReset sends the email off the request goroutine.
@@ -556,7 +564,7 @@ func (s *Superusers) resetURL(token string) string {
 //
 // A failure is logged and never returned. The row is written and the operator
 // can ask again; what must not happen is a 500 that says the address exists.
-func (s *Superusers) deliverReset(reqCtx context.Context, id int64, email, token, code string) {
+func (s *Superusers) deliverReset(reqCtx context.Context, id int64, email, token, code string, brand Brand) {
 	sendCtx := s.identityMailScope(reqCtx, id)
 	data := map[string]string{
 		// Deliberately not customer_email or customer_name: the recipient is an
@@ -568,9 +576,11 @@ func (s *Superusers) deliverReset(reqCtx context.Context, id int64, email, token
 		"reset_token":        token,
 		"reset_code":         code,
 		"expires_in_minutes": strconv.Itoa(int(passwordResetTTL / time.Minute)),
+		// What the email calls the product, and whose panel the link opens.
+		"brand_name": brand.Name,
 	}
 	// The absence of reset_url is meaningful, and a template branches on it.
-	if link := s.resetURL(token); link != "" {
+	if link := resetURL(brand, token); link != "" {
 		data["reset_url"] = link
 	}
 

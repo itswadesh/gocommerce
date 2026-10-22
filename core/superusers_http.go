@@ -71,7 +71,7 @@ func (a *App) handleAuthState(w http.ResponseWriter, r *http.Request) {
 		"signup": a.signupOpen(r.Context()),
 		// Whether a reset email carries a link beside its code, so the
 		// forgot-password screen can say what to look for before it is asked.
-		"reset_link": a.cfg.PanelURL != "",
+		"reset_link": a.Brand(r.Context()).PanelURL != "",
 	})
 }
 
