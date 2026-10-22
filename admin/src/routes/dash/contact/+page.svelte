@@ -2,11 +2,12 @@
     /**
      * Contact: the messages shoppers sent through the storefront's form.
      *
-     * An inbox with three states — new, replied, archived — and a drawer
-     * that shows the message whole, the order it mentions, a place for
-     * notes, and a mailto that opens the operator's own mail client with
-     * the subject filled in. Replying happens there; this records that it
-     * did.
+     * Three states — new, replied, archived. The drawer shows the message
+     * whole, the order it mentions, the thread of replies, and a reply box: the reply goes to the shopper from
+     * the store's own email provider, and only once the provider has taken it
+     * does it join the thread and mark the message replied. A reply that did
+     * not go says why beside the button and keeps its text. The mailto stays
+     * for an operator who would rather answer from their own mail.
      */
     import { base } from "$app/paths";
     import { api, can, query, request } from "$lib/api.js";
@@ -15,6 +16,9 @@
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { formatDate, relativeTime } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
+    import { rise } from "$lib/motion.js";
+    import { rightLabel } from "$lib/rights.js";
+    import { mailtoHref, replySubject, sentByLabel } from "$lib/contact.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
@@ -24,9 +28,13 @@
     import Select from "$lib/components/Select.svelte";
 
     const PER_PAGE = 25;
-    const readable = $derived(can("customers.read"));
-    const operates = $derived(can("store.operate"));
-    const missing = $derived(modulesKnown() && !hasModule("contact"));
+    const readable = $derived(can("contact.read"));
+    const operates = $derived(can("contact.write"));
+    const mayReply = $derived(can("contact.reply"));
+    /* Trusted only where the store could have been asked: the probe is made
+       for an operator holding contact.read or customers.read (modules.svelte.js),
+       and for anybody else the rights answer is the true one. */
+    const missing = $derived(modulesKnown() && !hasModule("contact") && (readable || can("customers.read")));
 
     const list = listState({ q: "", status: "new", page: 1, limit: PER_PAGE });
     const perPage = $derived(list.params.limit);
@@ -39,6 +47,18 @@
     let notes = $state("");
     let saving = $state(false);
     let removing = $state(null);
+    /** The thread is read with the message when the drawer opens. */
+    let threadLoading = $state(false);
+
+    let subject = $state("");
+    let reply = $state("");
+    let replying = $state(false);
+    /** Held for a beat after it lands, so the button can say it worked. */
+    let sent = $state(false);
+    /** The engine's own sentence for a reply that did not go. */
+    let refusal = $state("");
+
+    const filtered = $derived(!!list.params.q || list.params.status !== "new");
 
     $effect(() => {
         list.params;
@@ -71,17 +91,36 @@
         list.set({ q: draft.trim() });
     }
 
-    function show(row) {
+    async function show(row) {
         open = row;
         notes = row.notes ?? "";
+        subject = replySubject(row);
+        reply = "";
+        refusal = "";
+        sent = false;
+        threadLoading = true;
+        try {
+            const full = await api.get(`/api/admin/x/contact/messages/${row.id}`);
+            // The operator may have opened another message meanwhile.
+            if (open?.id === row.id) open = full;
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            if (open?.id === row.id) threadLoading = false;
+        }
+    }
+
+    /** replace puts the engine's copy of a message back in the list and the drawer. */
+    function replace(updated) {
+        rows = rows.map((r) => (r.id === updated.id ? { ...updated, replies: undefined } : r));
+        if (open?.id === updated.id) open = updated;
     }
 
     async function setStatus(row, status) {
         saving = true;
         try {
             const updated = await request("PATCH", `/api/admin/x/contact/messages/${row.id}`, { body: { status, notes } });
-            rows = rows.map((r) => (r.id === updated.id ? updated : r));
-            if (open?.id === updated.id) open = updated;
+            replace(updated);
             toast.success(status === "replied" ? "Marked replied" : status === "archived" ? "Archived" : "Marked new");
         } catch (err) {
             toast.error(err);
@@ -95,13 +134,41 @@
         saving = true;
         try {
             const updated = await request("PATCH", `/api/admin/x/contact/messages/${open.id}`, { body: { notes } });
-            rows = rows.map((r) => (r.id === updated.id ? updated : r));
-            open = updated;
+            replace(updated);
             toast.success("Notes saved");
         } catch (err) {
             toast.error(err);
         } finally {
             saving = false;
+        }
+    }
+
+    async function sendReply(e) {
+        e.preventDefault();
+        if (!open || replying || !reply.trim()) return;
+        const id = open.id;
+        replying = true;
+        refusal = "";
+        try {
+            const updated = await request("POST", `/api/admin/x/contact/messages/${id}/reply`, {
+                body: { subject: subject.trim(), body: reply },
+            });
+            replace(updated);
+            if (open?.id === id) {
+                reply = "";
+                subject = replySubject(updated);
+                sent = true;
+                setTimeout(() => (sent = false), 2000);
+            }
+            toast.success(`Reply sent to ${updated.email}`);
+        } catch (err) {
+            // 409: no email provider. 422: the provider refused it or could not
+            // be reached. 403: a demo, or a role re-cut since the page loaded.
+            // The words are the engine's and belong beside the button pressed.
+            if (err.status === 403 || err.status === 409 || err.status === 422) refusal = err.message;
+            else toast.error(err);
+        } finally {
+            replying = false;
         }
     }
 
@@ -126,9 +193,9 @@
     }
     const STATUS = { new: "New", replied: "Replied", archived: "Archived" };
 
-    function mailto(row) {
-        const subject = encodeURIComponent("Re: " + (row.subject || "your message"));
-        return `mailto:${row.email}?subject=${subject}`;
+    function drawerTitle(msg) {
+        if (!msg) return "Message";
+        return msg.subject || "Message from " + msg.name;
     }
 </script>
 
@@ -144,7 +211,13 @@
             {#if readable && !missing}
                 <form class="fields searchbar" onsubmit={submitSearch}>
                     <div class="field">
-                        <input type="text" class="p-l-20" placeholder="Search by name, email, subject or order number" bind:value={draft} />
+                        <input
+                            type="text"
+                            class="p-l-20"
+                            placeholder="Search by name, email, subject or order number"
+                            aria-label="Search messages"
+                            bind:value={draft}
+                        />
                     </div>
                     {#if draft || list.params.q}
                         <div class="field addon p-r-5">
@@ -155,7 +228,7 @@
                         </div>
                     {/if}
                 </form>
-                <div class="page-header-primary-btns">
+                <div class="page-header-primary-btns contact-filters">
                     <div class="field">
                         <Select
                             id="contact-status"
@@ -165,7 +238,7 @@
                                 { value: "new", label: "New" },
                                 { value: "replied", label: "Replied" },
                                 { value: "archived", label: "Archived" },
-                                { value: "any", label: "Everything" },
+                                { value: "any", label: "Every status" },
                             ]}
                             onchange={(v) => list.set({ status: v })}
                         />
@@ -174,8 +247,8 @@
             {/if}
         </header>
 
-        {#if !readable}
-            <NoAccess right="customers.read" what="the contact inbox" />
+        {#if !readable && !missing}
+            <NoAccess right="contact.read" what="the contact inbox" />
         {:else if missing}
             <ModuleMissing module="contact" what="The contact inbox is served by ext/contact, and this binary does not have it." />
         {:else}
@@ -184,7 +257,7 @@
                     <thead class="sticky">
                         <tr>
                             <th class="col-field-name-id">From</th>
-                            <th class="col-field-type-text">Subject</th>
+                            <th class="col-field-type-text">About</th>
                             <th class="col-field-type-select min-width">Order</th>
                             <th class="col-field-type-select min-width">Status</th>
                             <th class="col-field-type-date min-width">Received</th>
@@ -200,9 +273,9 @@
                                         <span class="txt-hint txt-sm row-handle">{row.email}</span>
                                     </div>
                                 </td>
-                                <td class="col-field-type-text" data-name="Subject" title={row.body}>
+                                <td class="col-field-type-text" data-name="About" title={row.body}>
                                     <div class="row-name">
-                                        <span class="txt-ellipsis">{row.subject || "(no subject)"}</span>
+                                        <span class="txt-ellipsis contact-lead">{row.subject || "(no subject)"}</span>
                                         <span class="txt-hint txt-sm txt-ellipsis">{row.body}</span>
                                     </div>
                                 </td>
@@ -225,15 +298,15 @@
                         {:else if !rows.length}
                             <tr class="empty-row">
                                 <td colspan="6">
-                                    {#if list.params.q || list.params.status !== "new"}
+                                    {#if filtered}
                                         <EmptyState
                                             icon="ri-filter-off-line"
                                             title="No messages match these filters"
                                             text="Try another status or search, or clear them to go back to new messages."
                                             onclear={() => {
-                                                    draft = "";
-                                                    list.clear();
-                                                }}
+                                                draft = "";
+                                                list.clear();
+                                            }}
                                         />
                                     {:else}
                                         <EmptyState
@@ -256,13 +329,13 @@
     </div>
 </div>
 
-<Drawer open={!!open} size="md" title={open ? open.subject || "Message from " + open.name : "Message"} onclose={() => (open = null)}>
+<Drawer open={!!open} size="md" title={drawerTitle(open)} onclose={() => (open = null)}>
     {#if open}
         <div class="flex gap-10 m-b-sm">
-            <div class="flex-fill">
+            <div class="flex-fill contact-from">
                 <div class="txt-bold">{open.name}</div>
                 <div class="txt-hint txt-sm">
-                    <a href="mailto:{open.email}">{open.email}</a>{#if open.phone} · {open.phone}{/if}
+                    <a href="mailto:{open.email}">{open.email}</a>{#if open.phone}{" · " + open.phone}{/if}
                     · {formatDate(open.created_at)}
                 </div>
                 {#if open.order_number}
@@ -271,7 +344,70 @@
             </div>
             <span class="label {statusClass(open.status)}">{STATUS[open.status]}</span>
         </div>
+
+
         <div class="contact-body">{open.body}</div>
+
+        <section class="contact-thread" aria-label="Replies" aria-busy={threadLoading}>
+            {#if open.replies?.length}
+                <h6 class="contact-section-title">Replies</h6>
+                <ol class="contact-replies">
+                    {#each open.replies as r (r.id)}
+                        <li class="contact-reply" in:rise>
+                            <div class="txt-hint txt-sm">
+                                <span class="txt-bold">{sentByLabel(r.sent_by)}</span>
+                                · <span title={formatDate(r.created_at)}>{relativeTime(r.created_at)}</span>
+                            </div>
+                            <div class="txt-sm contact-reply-subject">{r.subject}</div>
+                            <div class="contact-reply-body">{r.body}</div>
+                        </li>
+                    {/each}
+                </ol>
+            {:else if threadLoading}
+                <span class="skeleton-loader"></span>
+            {/if}
+        </section>
+
+        {#if mayReply}
+            <form class="contact-composer" onsubmit={sendReply}>
+                <h6 class="contact-section-title">Reply to {open.name}</h6>
+                {#if refusal}
+                    <div class="alert warning contact-refusal" role="alert" transition:rise>
+                        <p>{refusal}</p>
+                        <p>Nothing was sent, and your reply is still here.</p>
+                    </div>
+                {/if}
+                <div class="field">
+                    <label for="contact-reply-subject">Subject</label>
+                    <input id="contact-reply-subject" type="text" maxlength="200" bind:value={subject} />
+                </div>
+                <div class="field m-t-sm">
+                    <label for="contact-reply-body">Message</label>
+                    <textarea id="contact-reply-body" rows="5" maxlength="5000" bind:value={reply} placeholder="Write your reply"></textarea>
+                </div>
+                <p class="txt-hint txt-sm m-t-5">Sent by email from the store's address; their answer comes back to it.</p>
+                <div class="contact-composer-actions">
+                    <button type="submit" class="btn contact-send" class:loading={replying} disabled={replying || sent || !reply.trim()}>
+                        <i class={sent ? "ri-check-line" : "ri-send-plane-line"} aria-hidden="true"></i>
+                        <span class="txt">{sent ? "Sent" : replying ? "Sending…" : "Send reply"}</span>
+                    </button>
+                    <a class="btn transparent secondary" href={mailtoHref(open)}>
+                        <i class="ri-mail-open-line" aria-hidden="true"></i>
+                        <span class="txt">Open in my mail app</span>
+                    </a>
+                    <span class="tw:sr-only" aria-live="polite">{sent ? "Reply sent" : ""}</span>
+                </div>
+            </form>
+        {:else}
+            <div class="contact-composer">
+                <p class="txt-hint txt-sm">Your role does not carry “{rightLabel("contact.reply")}”, so replies are sent from your own mail.</p>
+                <a class="btn secondary m-t-5" href={mailtoHref(open)}>
+                    <i class="ri-mail-send-line" aria-hidden="true"></i>
+                    <span class="txt">Reply by email</span>
+                </a>
+            </div>
+        {/if}
+
         <div class="field m-t-base">
             <label for="contact-notes">Notes</label>
             <textarea id="contact-notes" rows="3" bind:value={notes} disabled={!operates} placeholder="What was done, for the next person who opens this"></textarea>
@@ -283,24 +419,20 @@
         {/if}
     {/if}
     {#snippet footer()}
-        {#if open}
-            {#if operates}
-                <button type="button" class="btn transparent danger m-r-auto" onclick={() => (removing = open)}>
-                    <span class="txt">Delete</span>
-                </button>
-                {#if open.status !== "archived"}
-                    <button type="button" class="btn secondary" disabled={saving} onclick={() => setStatus(open, "archived")}><span class="txt">Archive</span></button>
-                {/if}
-                {#if open.status !== "replied"}
-                    <button type="button" class="btn secondary" disabled={saving} onclick={() => setStatus(open, "replied")}><span class="txt">Mark replied</span></button>
-                {:else}
-                    <button type="button" class="btn secondary" disabled={saving} onclick={() => setStatus(open, "new")}><span class="txt">Mark new</span></button>
-                {/if}
+        {#if open && operates}
+            <button type="button" class="btn transparent danger m-r-auto contact-foot" onclick={() => (removing = open)}>
+                <span class="txt">Delete</span>
+            </button>
+            {#if open.status !== "archived"}
+                <button type="button" class="btn secondary contact-foot" disabled={saving} onclick={() => setStatus(open, "archived")}><span class="txt">Archive</span></button>
             {/if}
-            <a class="btn" href={mailto(open)}>
-                <i class="ri-mail-send-line" aria-hidden="true"></i>
-                <span class="txt">Reply by email</span>
-            </a>
+            {#if open.status !== "replied"}
+                <button type="button" class="btn secondary contact-foot" disabled={saving} onclick={() => setStatus(open, "replied")}><span class="txt">Mark replied</span></button>
+            {:else}
+                <button type="button" class="btn secondary contact-foot" disabled={saving} onclick={() => setStatus(open, "new")}><span class="txt">Mark new</span></button>
+            {/if}
+        {:else if open}
+            <button type="button" class="btn transparent m-l-auto" onclick={() => (open = null)}><span class="txt">Close</span></button>
         {/if}
     {/snippet}
 </Drawer>
@@ -308,7 +440,7 @@
 <Confirm
     open={!!removing}
     title="Delete this message?"
-    message="Gone for good. Archive it instead to keep the record."
+    message="Gone for good, with its replies. Archive it instead to keep the record."
     confirmLabel="Delete"
     danger
     onconfirm={remove}
@@ -316,11 +448,114 @@
 />
 
 <style>
-    .contact-body {
+    .contact-filters {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    /* The subject leads and the message's first line takes
+       what is left, rather than both being cut to the same few letters. */
+    @media (min-width: 601px) {
+        .row-name > .contact-lead {
+            flex-shrink: 0;
+            max-width: 65%;
+        }
+    }
+    /* Three buttons share the drawer's foot; on the narrowest phones they
+       need the room PocketBase's padding takes. */
+    @media (max-width: 420px) {
+        .contact-foot {
+            padding-left: 14px;
+            padding-right: 14px;
+        }
+    }
+    .contact-from {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+    .contact-body,
+    .contact-reply-body {
         white-space: pre-wrap;
+        overflow-wrap: anywhere;
         line-height: 1.5;
+    }
+    .contact-body {
         padding: var(--smSpacing);
         border-radius: var(--borderRadius);
         background: var(--surfaceAlt2Color, rgba(0, 0, 0, 0.04));
+    }
+    .contact-section-title {
+        margin: var(--smSpacing) 0 8px;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--surfaceTxtHintColor);
+    }
+    .contact-replies {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    .contact-reply {
+        padding: 10px var(--smSpacing);
+        border-left: 3px solid var(--successColor);
+        border-radius: var(--borderRadius);
+        background: var(--surfaceAlt1Color, rgba(0, 0, 0, 0.02));
+    }
+    .contact-reply-subject {
+        margin: 2px 0 4px;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+    }
+    .contact-composer {
+        margin-top: var(--smSpacing);
+        padding-top: var(--smSpacing);
+        border-top: 1px solid var(--surfaceAlt3Color);
+    }
+    .contact-composer .alert {
+        margin-bottom: 12px;
+    }
+    .contact-composer-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-top: var(--smSpacing);
+    }
+    .contact-send {
+        min-width: 9.5rem;
+    }
+    .contact-composer-actions .btn,
+    .contact-foot {
+        transition:
+            color 150ms ease-out,
+            background-color 150ms ease-out,
+            transform 150ms ease-out;
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+        .contact-composer-actions .btn:active:not(:disabled),
+        .contact-foot:active:not(:disabled) {
+            transform: scale(0.97);
+        }
+        /* A refusal shakes once where the operator is looking: the answer is
+           "no", said beside the button that asked. */
+        .contact-refusal {
+            animation: contactShake 280ms ease-out;
+        }
+    }
+    @keyframes contactShake {
+        20% {
+            transform: translateX(-4px);
+        }
+        45% {
+            transform: translateX(3px);
+        }
+        70% {
+            transform: translateX(-2px);
+        }
     }
 </style>

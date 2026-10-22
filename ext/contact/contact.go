@@ -2,9 +2,15 @@
 //
 // A shopper writes; the store keeps the message, tells the operator by
 // email if the Plugins screen says where, and shows it in an inbox with
-// three states — new, replied, archived — and a place for notes. Replying
-// itself happens in the operator's own mail: the inbox is the record of
-// what came in and what was done about it, not a mail client.
+// three states — new, replied, archived — and a place for notes.
+//
+// An operator holding contact.reply answers from the panel. The reply goes to
+// the shopper by email through the store's own provider (App.NotifyNow), from
+// the provider's sender with its reply-to, so the answer comes back to the
+// shop; once the provider has taken it, the reply is kept on the message as a
+// thread — who sent it, when, what it said — and the message is marked
+// replied, in one transaction. A reply that did not go is not recorded: the
+// operator is told why and keeps the text. A public demo sends no replies.
 package contact
 
 import (
@@ -53,6 +59,9 @@ type Message struct {
 	Notes       string    `json:"notes,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	// Replies is the thread, oldest first. Only a single message carries it:
+	// the list is for finding one.
+	Replies []Reply `json:"replies,omitempty"`
 }
 
 // MessageInput is what the storefront posts.
@@ -73,7 +82,7 @@ type MessagePatch struct {
 	Notes  *string `json:"notes"`
 }
 
-// Module is the routes and the table.
+// Module is the routes and the tables.
 type Module struct {
 	cfg Config
 	app *gocommerce.App
@@ -108,6 +117,24 @@ CREATE INDEX contact_messages_status_idx ON contact_messages (status, id DESC);
 `,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "contact_messages"),
+		{
+			ID: "0003_replies",
+			SQL: `
+-- What the store wrote back, one row per email the provider took.
+CREATE TABLE contact_replies (
+    id         bigserial   PRIMARY KEY,
+    store_id   text        NOT NULL,
+    message_id bigint      NOT NULL,
+    subject    text        NOT NULL,
+    body       text        NOT NULL,
+    sent_by    text        NOT NULL DEFAULT '',
+    created_at timestamptz NOT NULL DEFAULT now(),
+    FOREIGN KEY (store_id, message_id) REFERENCES contact_messages (store_id, id) ON DELETE CASCADE
+);
+CREATE INDEX contact_replies_message_idx ON contact_replies (store_id, message_id, id);
+`,
+		},
+		gocommerce.ScopeMigration("0004_replies_store_scope", "contact_replies"),
 	}
 }
 
@@ -116,9 +143,9 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.registerRights(app)
 	m.app = app
 	m.db = app.DB()
-	// The announcement's wording, editable from the panel like every other
-	// message. Without a template the email backend has nothing to say and
-	// the announcement would be a row in the log and nothing more.
+	// The wording of what this module sends, editable from the panel like
+	// every other message. Without a template the email backend has nothing
+	// to say and the announcement would be a row in the log and nothing more.
 	app.RegisterNotifyTemplate(gocommerce.NotifyTemplate{
 		Channel: gocommerce.ChannelEmail, Event: "contact.message", Title: "Contact form message",
 		Description: "To the store's own address when someone writes through the contact form.",
@@ -128,7 +155,21 @@ func (m *Module) Register(app *gocommerce.App) error {
 
 {{.body}}
 
-Reply to {{.from_email}}, then mark it replied on the Contact screen.`,
+Reply from the Contact screen, or to {{.from_email}} and mark it replied there.`,
+	})
+	app.RegisterNotifyTemplate(gocommerce.NotifyTemplate{
+		Channel: gocommerce.ChannelEmail, Event: "contact.reply", Title: "Reply to a contact message",
+		Description: "To a shopper, when somebody answers their message from the Contact screen.",
+		Variables:   []string{"name", "subject", "reply", "original", "original_subject", "store_name"},
+		Subject:     "{{.subject}}",
+		Body: `{{.reply}}
+{{if .store_name}}
+{{.store_name}}
+{{end}}
+---
+You wrote:
+
+{{.original}}`,
 	})
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "Contact form", Category: "storefront", DefaultEnabled: true,
@@ -141,12 +182,13 @@ Reply to {{.from_email}}, then mark it replied on the Contact screen.`,
 	})
 	app.HandleFunc("POST /x/contact/messages", m.handleSubmit)
 
-	// An inbox is customer correspondence: the customers' right to read,
-	// store.operate to act on.
+	// An inbox is customer correspondence, with rights of its own (D65):
+	// reading it, writing from the store's address, and clearing it.
 	app.HandleAdminFunc("GET /api/admin/x/contact/messages", m.handleList, rightContactRead)
 	app.HandleAdminFunc("GET /api/admin/x/contact/messages/{id}", m.handleGet, rightContactRead)
 	app.HandleAdminFunc("PATCH /api/admin/x/contact/messages/{id}", m.handleUpdate, rightContactWrite)
 	app.HandleAdminFunc("DELETE /api/admin/x/contact/messages/{id}", m.handleDelete, rightContactWrite)
+	app.HandleAdminFunc("POST /api/admin/x/contact/messages/{id}/reply", m.handleReply, rightContactReply)
 	return nil
 }
 
@@ -174,6 +216,18 @@ func (m *Module) byID(ctx context.Context, id int64) (*Message, error) {
 		return nil, gocommerce.NotFoundf("message %d does not exist", id)
 	}
 	return msg, err
+}
+
+// withThread is one message and its replies, for the drawer.
+func (m *Module) withThread(ctx context.Context, id int64) (*Message, error) {
+	msg, err := m.byID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if msg.Replies, err = m.replies(ctx, id); err != nil {
+		return nil, err
+	}
+	return msg, nil
 }
 
 // ----------------------------------------------------------------- public
@@ -289,6 +343,10 @@ func (m *Module) handleList(w http.ResponseWriter, r *http.Request) {
 		m.mask(r.Context(), msg)
 		out = append(out, msg)
 	}
+	if err := rows.Err(); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
 	gocommerce.RespondList(w, out, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})
 }
 
@@ -306,7 +364,7 @@ func (m *Module) handleGet(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	msg, err := m.byID(r.Context(), id)
+	msg, err := m.withThread(r.Context(), id)
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
@@ -350,7 +408,7 @@ func (m *Module) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, gocommerce.NotFoundf("message %d does not exist", id))
 		return
 	}
-	msg, err := m.byID(r.Context(), id)
+	msg, err := m.withThread(r.Context(), id)
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
@@ -379,13 +437,20 @@ func (m *Module) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 // The rights this module's own screens are gated on.
 //
-// They were core's until now — customers.read and store.operate —
+// Read and write were core's until D65 — customers.read and store.operate —
 // which meant the permission could not be given without the thing it was
 // borrowed from, and the screens had no row of their own on the Roles grid.
-// Default names the roles that held the old right, so nobody's access moves.
+// Their Default names the roles that held the old right, so nobody's access
+// moved.
+//
+// Reply is new rather than lifted: writing to a customer from the store's
+// own address is more than reading the inbox and less than clearing it, so it
+// is a manager's by default (an owner holds every right). Staff read; a store
+// that wants them answering grants it on the Roles screen.
 const (
 	rightContactRead  gocommerce.Right = "contact.read"  // was customers.read
 	rightContactWrite gocommerce.Right = "contact.write" // was store.operate
+	rightContactReply gocommerce.Right = "contact.reply"
 )
 
 func (m *Module) registerRights(app *gocommerce.App) {
@@ -401,15 +466,25 @@ func (m *Module) registerRights(app *gocommerce.App) {
 		Scope:   "Marking messages handled, and deleting them",
 		Default: []string(nil),
 	})
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightContactReply,
+		Label:   "Reply to contact messages",
+		Scope:   "Answering a message by email from the store's address",
+		Default: []string{gocommerce.RoleManager},
+	})
 }
 
-// mask hides how to reach whoever wrote in. A demo store's inbox is readable by
-// anybody who signs in, and a contact message is somebody's address and their
-// number sitting beside whatever they wanted to say.
+// mask hides how to reach whoever wrote in, and who on the team answered. A
+// demo store's inbox is readable by anybody who signs in, and a contact
+// message is somebody's address and their number sitting beside whatever they
+// wanted to say.
 func (m *Module) mask(ctx context.Context, msg *Message) {
 	if msg == nil {
 		return
 	}
 	msg.Email = m.app.MaskEmail(ctx, msg.Email)
 	msg.Phone = m.app.MaskPhone(ctx, msg.Phone)
+	for i := range msg.Replies {
+		msg.Replies[i].SentBy = m.app.MaskEmail(ctx, msg.Replies[i].SentBy)
+	}
 }
