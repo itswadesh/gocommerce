@@ -16,6 +16,7 @@
      */
     import { base } from "$app/paths";
     import { auth } from "$lib/api.js";
+    import { applyBrand, brand, titled } from "$lib/brand.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
     import { rise } from "$lib/motion.js";
     import { sentence } from "$lib/format.js";
@@ -46,6 +47,7 @@
     $effect(() => {
         auth.state()
             .then((s) => {
+                applyBrand(s);
                 installed = !!s.installed;
                 canReset = !!s.password_reset;
                 canSignUp = !!s.signup;
@@ -89,7 +91,7 @@
             const record = installed
                 ? await auth.login(identity, password)
                 : await auth.install(identity, password);
-            if (!installed) toast.success("Welcome to GoCommerce");
+            if (!installed) toast.success(brand.name ? `Welcome to ${brand.name}` : "Welcome");
             onauthenticated?.(record);
         } catch (err) {
             attempt += 1;
@@ -99,6 +101,8 @@
         }
     }
 </script>
+
+<svelte:head><title>{titled(installed === false ? "Create the first account" : "Sign in")}</title></svelte:head>
 
 <AuthShell>
     <header class="auth-head">

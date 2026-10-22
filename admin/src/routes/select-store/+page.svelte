@@ -18,6 +18,7 @@
     import { COUNTRIES } from "$lib/countries.js";
     import Select from "$lib/components/Select.svelte";
     import AuthShell from "$lib/components/AuthShell.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const next = $derived(safeNext(page.url.searchParams.get("next")));
     // Arrived from signing up: this form is the second of its two steps.
@@ -150,7 +151,7 @@
 </script>
 
 <svelte:head>
-    <title>Choose a store · GoCommerce</title>
+    <title>{titled("Choose a store")}</title>
 </svelte:head>
 
 <AuthShell>

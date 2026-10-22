@@ -22,6 +22,7 @@
     import Drawer from "$lib/components/Drawer.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /* The routes take groups.read and groups.write; this screen used to ask
        for the discount rights the groups were filed under before they had
@@ -110,7 +111,7 @@
     }
 </script>
 
-<svelte:head><title>Customer groups · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Customer groups")}</title></svelte:head>
 
 <div class="page page-customer-groups shopify-skin">
     <div class="page-content full-height tw:bg-background tw:text-foreground">

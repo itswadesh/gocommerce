@@ -16,6 +16,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const allowed = $derived(can("store.operate"));
     const hasAmazon = $derived(hasModule("import-amazon"));
@@ -75,7 +76,7 @@
     }
 </script>
 
-<svelte:head><title>Jobs · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Jobs")}</title></svelte:head>
 
 <div class="page page-jobs shopify-skin">
     <div class="page-content tw:bg-background tw:text-foreground">

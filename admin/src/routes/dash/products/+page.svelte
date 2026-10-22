@@ -49,6 +49,7 @@
     import ProductFilters from "$lib/components/ProductFilters.svelte";
     import Select from "$lib/components/Select.svelte";
     import SortHeader from "$lib/components/SortHeader.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /* The starting page size, not the only one: it is a listState key below, so
        an operator can change it and the choice rides in the URL with the rest of
@@ -980,7 +981,7 @@
     const statusLabel = { active: "success", draft: "info", archived: "" };
 </script>
 
-<svelte:head><title>Products · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Products")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="catalog.read" what="the product list" />

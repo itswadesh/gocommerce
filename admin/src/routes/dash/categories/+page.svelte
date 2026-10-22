@@ -34,6 +34,7 @@
     import RecordHistory from "$lib/components/RecordHistory.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /* A page of matches rather than the default fifty: this is the screen the
        tree belongs to, not a dropdown, so it can afford to show more of an
@@ -781,7 +782,7 @@
     }
 </script>
 
-<svelte:head><title>Categories · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Categories")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="catalog.read" what="categories" />

@@ -31,6 +31,7 @@
     import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Select from "$lib/components/Select.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const slug = $derived(page.params.slug);
 
@@ -172,7 +173,7 @@
     const hasActions = $derived(canEdit || canDelete);
 </script>
 
-<svelte:head><title>{screen?.title ?? "Screen"} · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled(screen?.title ?? "Screen")}</title></svelte:head>
 
 <div class="page-content tw:bg-background tw:text-foreground">
     {#if missing}

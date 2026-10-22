@@ -1662,6 +1662,20 @@
                         "reset_link": {
                           "type": "boolean",
                           "description": "A reset email carries a link: the panel URL of the brand this address belongs to is set (Config.PanelURL without brands). False, it carries a code to paste at /admin/auth/reset-password."
+                        },
+                        "brand": {
+                          "type": "object",
+                          "description": "The brand this address belongs to (D111): the brand whose admin domain the request came to, else the install's first brand. Without GOCOMMERCE_BRANDS the install's one brand, GoCommerce.",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "description": "What the panel calls itself here."
+                            },
+                            "logo_url": {
+                              "type": "string",
+                              "description": "A picture to show in the mark's place; empty keeps the mark."
+                            }
+                          }
                         }
                       }
                     }

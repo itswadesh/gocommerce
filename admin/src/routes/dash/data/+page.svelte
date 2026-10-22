@@ -15,6 +15,7 @@
     import CategoryPicker from "$lib/components/CategoryPicker.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Select from "$lib/components/Select.svelte";
+    import { brand, titled } from "$lib/brand.svelte.js";
 
     const mayExport = $derived(can("data.export"));
 
@@ -25,10 +26,12 @@
      * store unchanged.
      */
     let exportFormat = $state("gocommerce");
-    const formats = [
-        { value: "gocommerce", label: "GoCommerce CSV" },
+    const formats = $derived([
+        // Named for the panel it is read in: the layout is the same under every
+        // brand (D111), and the value stays the engine's own.
+        { value: "gocommerce", label: `${brand.name || "Store"} CSV` },
         { value: "shopify", label: "Shopify CSV" },
-    ];
+    ]);
 
     // The export filters, and the two vocabularies they need. The category
     // control is a CategoryPicker rather than a Select on purpose: the taxonomy
@@ -164,7 +167,7 @@
     }
 </script>
 
-<svelte:head><title>Export · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Export")}</title></svelte:head>
 
 {#if !mayExport}
     <!-- The settings rail already hides the link; this is the direct URL. -->

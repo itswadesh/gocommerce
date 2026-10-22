@@ -45,6 +45,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const PER_PAGE = 50;
     const list = listState({ q: "", status: "", company_id: "", unrouted: false, routed_by: "", page: 1, limit: PER_PAGE });
@@ -274,7 +275,7 @@
     const who = (l) => l.name || l.email || l.phone || `Enquiry ${l.id}`;
 </script>
 
-<svelte:head><title>Leads · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Leads")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="leads.read" what="dealer leads" />

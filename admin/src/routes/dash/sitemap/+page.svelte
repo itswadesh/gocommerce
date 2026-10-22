@@ -30,6 +30,7 @@
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginFields from "$lib/components/PluginFields.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const PLUGIN = "sitemap";
     const INDEX = "/x/sitemaps/sitemap.xml";
@@ -311,7 +312,7 @@
     const engine = $derived(ENGINES.find((e) => e.key === tab) ?? ENGINES[0]);
 </script>
 
-<svelte:head><title>Sitemap · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Sitemap")}</title></svelte:head>
 
 <div class="page page-sitemap shopify-skin">
     <div class="page-content">

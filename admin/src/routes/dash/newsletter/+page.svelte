@@ -19,6 +19,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const PER_PAGE = 25;
     const readable = $derived(can("customers.read"));
@@ -120,7 +121,7 @@
     }
 </script>
 
-<svelte:head><title>Newsletter · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Newsletter")}</title></svelte:head>
 
 <div class="page page-newsletter shopify-skin">
     <div class="page-content full-height tw:bg-background tw:text-foreground">

@@ -22,6 +22,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     let loading = $state(true);
     let matrix = $state(null);
@@ -157,7 +158,7 @@
     }
 </script>
 
-<svelte:head><title>Roles · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Roles")}</title></svelte:head>
 
 {#if !allowed}
     <NoAccess right="roles.write" what="the roles" />

@@ -23,6 +23,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Select from "$lib/components/Select.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const readable = $derived(can("discounts.read"));
     const writable = $derived(can("discounts.write"));
@@ -191,7 +192,7 @@
     ]);
 </script>
 
-<svelte:head><title>Price lists · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Price lists")}</title></svelte:head>
 
 <div class="page-content tw:bg-background tw:text-foreground">
     <nav class="breadcrumbs">

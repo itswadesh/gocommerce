@@ -24,6 +24,7 @@
     import { copyText } from "$lib/clipboard.js";
     import { droppedNote, sectionFor, switchTarget } from "$lib/store-switch.js";
     import { health } from "$lib/health.svelte.js";
+    import { brand, loadBrand } from "$lib/brand.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
     import { NAV, visibleNav as allowedNav } from "$lib/nav.js";
     import { safeNext } from "$lib/paths.js";
@@ -244,6 +245,14 @@
 
     $effect(() => {
         ready = true;
+    });
+
+    /*
+     * Which brand this address is (D111), asked once whether or not anybody
+     * is signed in: the sign-in screen wears it too.
+     */
+    $effect(() => {
+        loadBrand();
     });
 
     /*
@@ -615,10 +624,10 @@
 </script>
 
 <svelte:head>
-    <title>GoCommerce</title>
+    <title>{brand.name || "Admin"}</title>
 </svelte:head>
 
-{#snippet brand()}
+{#snippet brandRow()}
     <!--
         A glyph and a word, rather than a picture of both.
 
@@ -634,16 +643,23 @@
         is, it takes the theme's colour like any other text, and it sits at the
         size the stylesheet already had a class for. The mark is remixicon, the
         icon set every other glyph in this panel comes from.
+
+        The word is the brand of the address the panel is opened on (D111),
+        and a brand with a logo of its own shows it in the mark's place.
     -->
-    <a href="{base}/dash" class="app-brand" aria-label="GoCommerce">
-        <!-- kitcommerce.store's mark, drawn as the site draws it: from parts,
-             in currentColor, so it takes the theme like the text beside it. -->
-        <svg class="app-brand-mark" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
-            <rect x="4" y="4" width="3.6" height="16" rx="1" />
-            <path d="M9.6 12 15.4 4h4.4l-5.8 8z" />
-            <path d="M9.6 12h4.4l5.8 8h-4.4z" />
-        </svg>
-        <span class="app-brand-name">GoCommerce</span>
+    <a href="{base}/dash" class="app-brand" aria-label={brand.name || "Home"}>
+        {#if brand.logo_url}
+            <img class="app-brand-logo" src={brand.logo_url} alt="" height="20" />
+        {:else}
+            <!-- kitcommerce.store's mark, drawn as the site draws it: from parts,
+                 in currentColor, so it takes the theme like the text beside it. -->
+            <svg class="app-brand-mark" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+                <rect x="4" y="4" width="3.6" height="16" rx="1" />
+                <path d="M9.6 12 15.4 4h4.4l-5.8 8z" />
+                <path d="M9.6 12h4.4l5.8 8h-4.4z" />
+            </svg>
+        {/if}
+        <span class="app-brand-name">{brand.name}</span>
     </a>
 {/snippet}
 
@@ -735,7 +751,7 @@
         >
             <span class="app-avatar" aria-hidden="true">{initials}</span>
             <span class="app-account-who">
-                <span class="app-account-store txt-ellipsis" data-store-name>{myStores.current?.name ?? "GoCommerce"}</span>
+                <span class="app-account-store txt-ellipsis" data-store-name>{myStores.current?.name ?? brand.name}</span>
                 <span class="app-account-name txt-ellipsis">{record?.email || "admin token"}</span>
                 <span class="app-account-role txt-ellipsis">{roleLabel}</span>
             </span>
@@ -902,7 +918,7 @@
         {:else if ready && authenticated && myStores.state === "ok"}
             <!-- Desktop: the sidebar itself. -->
             <aside class="app-sidebar">
-                {@render brand()}
+                {@render brandRow()}
                 {@render searchTrigger()}
                 {@render setupLink()}
                 {@render navLinks()}
@@ -921,7 +937,7 @@
                 >
                     <i class={menuOpen ? "ri-close-line" : "ri-menu-line"} aria-hidden="true"></i>
                 </button>
-                {@render brand()}
+                {@render brandRow()}
                 <!-- The search is a bare circle here: the labelled trigger is in
                      the drawer with the nav, and a 390px bar has no room for a
                      word and a keycap that no phone has anyway. -->
@@ -956,7 +972,7 @@
                 ></button>
             {/if}
             <aside class="app-drawer" class:open={menuOpen} aria-hidden={!menuOpen}>
-                {@render brand()}
+                {@render brandRow()}
                 {@render searchTrigger()}
                 {@render setupLink()}
                 {@render navLinks()}

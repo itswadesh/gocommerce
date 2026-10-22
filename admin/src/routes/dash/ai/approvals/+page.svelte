@@ -35,6 +35,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const API = "/api/admin/x/ai-gateway/approvals";
     const allowed = $derived(can("ai.approve"));
@@ -140,7 +141,7 @@
     const open_ = $derived(current?.status === "pending");
 </script>
 
-<svelte:head><title>AI approvals · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("AI approvals")}</title></svelte:head>
 
 {#if !allowed}
     <NoAccess right="ai.approve" what="the AI approval queue" />

@@ -19,6 +19,7 @@
     import { sentence } from "$lib/format.js";
     import { rise } from "$lib/motion.js";
     import AuthShell from "$lib/components/AuthShell.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const token = $derived(page.params.token);
     // The store that sent the link. An install serves many stores (D83), and
@@ -91,7 +92,7 @@
     }
 </script>
 
-<svelte:head><title>Accept your invitation · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Accept your invitation")}</title></svelte:head>
 
 <AuthShell>
     {#if loading}

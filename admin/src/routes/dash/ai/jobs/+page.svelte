@@ -25,6 +25,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const API = "/api/admin/x/ai-gateway";
     const readable = $derived(can("ai.read"));
@@ -86,7 +87,7 @@
     }
 </script>
 
-<svelte:head><title>AI jobs · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("AI jobs")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="ai.read" what="the AI job queue" />

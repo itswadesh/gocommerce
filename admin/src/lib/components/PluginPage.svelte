@@ -13,6 +13,7 @@
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginSettingsDrawer from "$lib/components/PluginSettingsDrawer.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /** @type {{ pluginKey: string, module: string, title: string, crumb?: string, blurb: string, links: {label: string, path: string, hint?: string}[] }} */
     let { pluginKey, module, title, crumb = "Content", blurb, links = [] } = $props();
@@ -78,7 +79,7 @@
     }
 </script>
 
-<svelte:head><title>{title} · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled(title)}</title></svelte:head>
 
 <div class="page page-plugin-{pluginKey} shopify-skin">
     <div class="page-content tw:bg-background tw:text-foreground">

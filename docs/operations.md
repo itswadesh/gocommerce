@@ -277,6 +277,10 @@ gocommerce store brand <slug> <panel host>    # e.g. gocommerce store brand myst
 which moves its address to the new brand's base domain and is recorded in the
 store's audit trail.
 
+**The panel wears the brand.** The sign-in screens, the sidebar and every page
+title say the name of the brand whose admin domain the panel is opened on, and
+a brand's `logo_url` takes the mark's place.
+
 **Emails to staff carry the brand.** A store's emails to its team — an
 invitation, a reset sent from Settings › Team — name the store's brand and link
 to its panel. A password reset asked for on a brand's admin domain is in that

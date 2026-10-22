@@ -38,6 +38,7 @@
     import BulkBar from "$lib/components/BulkBar.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /* The starting page size, not the only one: `limit` is a listState key, so
        an operator can change it and the choice rides in the URL with the rest of
@@ -188,7 +189,7 @@
     const pageBytes = $derived(items.reduce((sum, m) => sum + (m.size_bytes || 0), 0));
 </script>
 
-<svelte:head><title>Media · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Media")}</title></svelte:head>
 
 {#if !can("catalog.read")}
     <NoAccess right="catalog.read" what="the media library" />

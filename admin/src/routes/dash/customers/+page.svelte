@@ -29,6 +29,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import SortHeader from "$lib/components/SortHeader.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /* The starting page size, not the only one: `limit` is a listState key, so
        an operator can change it and the choice rides in the URL with the rest of
@@ -175,7 +176,7 @@
     }
 </script>
 
-<svelte:head><title>Customers · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Customers")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="customers.read" what="customers" />

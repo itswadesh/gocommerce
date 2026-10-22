@@ -60,6 +60,7 @@
     import RecoverySuppressDialog from "$lib/components/RecoverySuppressDialog.svelte";
     import Select from "$lib/components/Select.svelte";
     import SortHeader from "$lib/components/SortHeader.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const PER_PAGE = 25;
     const SORT_FIELDS = ["value", "abandoned_at"];
@@ -452,7 +453,7 @@
     ];
 </script>
 
-<svelte:head><title>Abandoned checkouts · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Abandoned checkouts")}</title></svelte:head>
 
 {#if !readable && !missing}
     <NoAccess right="abandonment.read" what="abandoned checkouts" />

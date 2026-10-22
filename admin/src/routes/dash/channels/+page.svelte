@@ -16,6 +16,7 @@
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /* Seeing where the catalogue is sold, and opening or closing one of those
        places, are different jobs. */
@@ -98,7 +99,7 @@
     }
 </script>
 
-<svelte:head><title>Channels · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Channels")}</title></svelte:head>
 
 <div class="page-content tw:bg-background tw:text-foreground">
     <nav class="breadcrumbs">

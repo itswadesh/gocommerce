@@ -40,6 +40,7 @@
     import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Select from "$lib/components/Select.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const readable = $derived(can("apikeys.read"));
     const writable = $derived(can("apikeys.write"));
@@ -254,7 +255,7 @@
     }
 </script>
 
-<svelte:head><title>API keys · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("API keys")}</title></svelte:head>
 
 <div class="page page-api-keys shopify-skin">
     <div class="page-content">

@@ -24,6 +24,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const PER_PAGE = 50;
     const list = listState({ status: "", company_id: "", page: 1, limit: PER_PAGE });
@@ -97,7 +98,7 @@
     }
 </script>
 
-<svelte:head><title>Approvals · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Approvals")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="companies.read" what="approval requests" />

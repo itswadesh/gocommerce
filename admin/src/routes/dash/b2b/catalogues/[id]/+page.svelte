@@ -27,6 +27,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import SaveBar from "$lib/components/SaveBar.svelte";
     import TargetPicker from "$lib/components/TargetPicker.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const id = $derived(page.params.id);
     const creating = $derived(id === "new");
@@ -155,7 +156,7 @@
     const title = $derived(creating ? "New catalogue" : catalogue?.name || "Catalogue");
 </script>
 
-<svelte:head><title>{title} · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled(title)}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="companies.read" what="catalogues" />

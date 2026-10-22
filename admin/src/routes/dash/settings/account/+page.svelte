@@ -17,6 +17,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import DirtyGuard from "$lib/components/DirtyGuard.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     let loading = $state(true);
     let me = $state(null);
@@ -130,7 +131,7 @@
     }
 </script>
 
-<svelte:head><title>Your account · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Your account")}</title></svelte:head>
 
 <DirtyGuard
     dirty={typed}
