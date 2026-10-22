@@ -539,6 +539,10 @@ environment:
 		}
 		return doctorCmd(ctx, app, *jsonOut)
 
+	case "brands":
+		defer app.Close()
+		return brandsCmd(context.Background(), app, fs.Args()[1:])
+
 	case "secrets":
 		defer app.Close()
 		return secretsCmd(context.Background(), app, fs.Args()[1:])
@@ -662,6 +666,24 @@ func storeBrandCmd(ctx context.Context, app *gocommerce.App, name, panelHost str
 		where = "its address is now " + st.Slug + "." + to.BaseDomain
 	}
 	fmt.Printf("store %s now belongs to %s; %s\n", st.Slug, to.Name, where)
+	return nil
+}
+
+const brandsUsage = "usage: gocommerce brands rename-host <old panel host> <new panel host>"
+
+// brandsCmd is the install owner's tool for brands (D111). rename-host is what
+// to run after changing a brand's panel_url: stores and people record their
+// brand by panel host, so without it every one of them would be left under a
+// host no brand has.
+func brandsCmd(ctx context.Context, app *gocommerce.App, args []string) error {
+	if len(args) != 3 || args[0] != "rename-host" {
+		return errors.New(brandsUsage)
+	}
+	stores, people, err := app.RenameBrandHost(gocommerce.WithActorLabel(ctx, "gocommerce brands rename-host"), args[1], args[2])
+	if err != nil {
+		return err
+	}
+	fmt.Printf("moved %d store(s) and %d person(s) from %s to %s\n", stores, people, args[1], args[2])
 	return nil
 }
 
