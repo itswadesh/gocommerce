@@ -177,8 +177,8 @@ as `ext/payments-revenuecat` does, rather than run with the check off. A module 
 keeps a credential it must read back in a table of its own does the same by
 hand: `SealSecret(ctx, field, plain)` before it writes, `OpenSecret(ctx, field,
 stored)` when it reads (a value never sealed comes back as it is), and
-`RegisterSecretColumn` from `Register`, so `gocommerce secrets seal` and the
-doctor reach the column. `ext/webhooks` is the worked example.
+`RegisterSecretColumn` from `Register`, so the engine's start-up seal,
+`gocommerce secrets seal` and the doctor reach the column. `ext/webhooks` is the worked example.
 
 What a plugin is not: code that arrives at runtime. The Plugins screen
 lists what this binary can do; adding to it is adding a module.

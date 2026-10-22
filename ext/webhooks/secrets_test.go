@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
 	"github.com/itswadesh/gocommerce/gctest"
@@ -172,6 +173,30 @@ func TestSecretsSealReachesSigningSecrets(t *testing.T) {
 	}
 	plain, err := keyed.OpenSecret(context.Background(), secretField, storedSecret(t, keyed, e.ID))
 	if err != nil || plain != e.Secret {
+		t.Error("the sealed secret does not open to the one the merchant holds")
+	}
+}
+
+// Starting the engine with a key seals the signing secrets already stored,
+// because the module named its column: a hosted install never has to run
+// `gocommerce secrets seal`.
+func TestStartingWithAKeySealsSigningSecrets(t *testing.T) {
+	bare := newApp(t)
+	e := create(t, bare, map[string]any{"url": "https://merchant.example.com/hooks", "events": []string{"order.*"}})
+
+	keyed := gctest.NewWithConfig(t, gocommerce.Config{DBURL: bare.Config().DBURL, SecretsKey: secretsKey(t)}, New(Config{}))
+	if err := keyed.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// The pass runs in the background so serving is not held up.
+	deadline := time.Now().Add(20 * time.Second)
+	for !strings.HasPrefix(storedSecret(t, keyed, e.ID), "sealed:v1:") {
+		if time.Now().After(deadline) {
+			t.Fatalf("after starting with a key the signing secret is still stored readable")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if plain, err := keyed.OpenSecret(context.Background(), secretField, storedSecret(t, keyed, e.ID)); err != nil || plain != e.Secret {
 		t.Error("the sealed secret does not open to the one the merchant holds")
 	}
 }
