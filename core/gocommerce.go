@@ -277,6 +277,9 @@ type Config struct {
 	// is whatever rights the operator gave it. Without it, a demo still asks
 	// for real credentials. Ignored unless Demo is set.
 	DemoAccount string
+	// brandWarnings are what applyBrands let pass but would not use, such as a
+	// logo it cannot show; New logs them and the doctor repeats them.
+	brandWarnings []string
 	// Logger defaults to slog.Default().
 	Logger *slog.Logger
 }
@@ -536,6 +539,9 @@ type Route struct {
 func New(cfg Config, mods ...Module) (*App, error) {
 	if err := cfg.applyDefaults(); err != nil {
 		return nil, err
+	}
+	for _, w := range cfg.brandWarnings {
+		cfg.Logger.Warn("gocommerce: "+w, "fix", "the entry in "+BrandsEnv)
 	}
 	// Before the database: a key that does not decode is a typo in the
 	// environment, and a clear stop beats a store that cannot read its keys.

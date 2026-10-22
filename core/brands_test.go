@@ -93,7 +93,6 @@ func TestABadBrandStopsTheEngineFromStarting(t *testing.T) {
 		{"a bad alias", []Brand{{Name: "Alpha", PanelURL: "https://admin.alpha.test", BaseDomain: "alpha.test", AliasBaseDomains: []string{"old/alpha"}}}, nil, "not a domain name"},
 		{"aliases with no base", []Brand{{Name: "Alpha", PanelURL: "https://admin.alpha.test", AliasBaseDomains: []string{"old.alpha.test"}}}, nil, "need a base_domain"},
 		{"a bad reserved name", []Brand{{Name: "Alpha", PanelURL: "https://admin.alpha.test", Reserved: []string{"no dots."}}}, nil, "reserved name"},
-		{"a bad logo", []Brand{{Name: "Alpha", PanelURL: "https://admin.alpha.test", LogoURL: "logo.svg"}}, nil, "logo_url"},
 		{"one panel twice", []Brand{
 			{Name: "Alpha", PanelURL: "https://admin.alpha.test"},
 			{Name: "Beta", PanelURL: "https://ADMIN.alpha.test:8443"},
