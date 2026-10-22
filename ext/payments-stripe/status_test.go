@@ -70,6 +70,9 @@ func TestCheckPaymentRecordsASucceededIntent(t *testing.T) {
 	if check.Order.PaymentStatus != gocommerce.PaymentPaid || check.Order.Status != gocommerce.OrderConfirmed {
 		t.Errorf("order %s / %s, want confirmed and paid", check.Order.Status, check.Order.PaymentStatus)
 	}
+	if a := check.Gateway.Amount; a == nil || a.AmountMinor != 2500 || a.Currency != "USD" {
+		t.Errorf("amount = %+v, want the 2500 USD Stripe received, for the engine to check under the lock", a)
+	}
 	if len(stub.asked) != 1 || stub.asked[0] != "pi_test_123" {
 		t.Errorf("asked about %v, want the order's own intent", stub.asked)
 	}

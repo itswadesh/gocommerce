@@ -83,6 +83,11 @@ type PaymentState struct {
 	// Reference is the gateway's id for the payment that settled the order,
 	// recorded as its payment reference when Paid.
 	Reference string `json:"reference,omitempty"`
+	// Amount is what the gateway says it took, when it says paid. The engine
+	// checks it against the order's total under the order's lock before
+	// recording anything, so an order edited while the gateway was being
+	// asked is not settled by a payment for its old total.
+	Amount *Money `json:"amount,omitempty"`
 	// Detail is the gateway's own words — its status, and its reason when it
 	// gives one — for the operator to read. Never parsed.
 	Detail string `json:"detail,omitempty"`

@@ -18855,6 +18855,14 @@
             "description": "The gateway's id for the payment that settled the order, recorded as its payment reference.",
             "example": "5114917126974"
           },
+          "amount": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "description": "What the gateway says it took, when it says paid. Checked against the order's total under the order's lock before anything is recorded; an order edited since is refused with 409."
+          },
           "detail": {
             "type": "string",
             "description": "The gateway's own words: its status, and its reason when it gives one.",
