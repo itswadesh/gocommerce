@@ -60,8 +60,13 @@ func storePath(p string) bool {
 // signed-in person's only store; the install's only store. Naming a store
 // grants nothing — the admin routes still check that the caller is on its
 // team (bearerAuth).
+//
+// Every request, a store's or not, is first given its brand (BrandFrom): the
+// panel's files and a person's routes are no store's, and are still opened at
+// one brand's address.
 func (a *App) storeMW(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(withBrand(r.Context(), a.brandForHost(r.Host)))
 		if !storePath(r.URL.Path) || personPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
@@ -83,6 +88,9 @@ func (a *App) storeMW(next http.Handler) http.Handler {
 		}
 		noteStore(r.Context(), st.ID)
 		ctx := withStoreDemo(WithStore(r.Context(), st.ID), st.Demo)
+		if !sameBrand(a.storeBrand(st.BrandHost), a.Brand(ctx)) {
+			ctx = context.WithValue(ctx, foreignStoreKey{}, true)
+		}
 		ctx = withStoreLanguages(withStoreCurrency(ctx, a.currencyOf(st)), a.languagesOf(st))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -197,29 +205,31 @@ func (a *App) apiKeyStore(ctx context.Context, r *http.Request) (*Store, error) 
 }
 
 // onlyStoreOfSession is the store a signed-in person works in, when they
-// work in exactly one.
+// work in exactly one of the brand the request came through.
 func (a *App) onlyStoreOfSession(ctx context.Context, r *http.Request) (*Store, error) {
 	token, ok := bearerToken(r)
 	if !ok {
 		return nil, nil
 	}
 	rows, err := a.db.QueryContext(ctx, `
-		SELECT m.store_id FROM superuser_sessions s
+		SELECT m.store_id, coalesce(st.brand_host, '') FROM superuser_sessions s
 		JOIN store_members m ON m.superuser_id = s.superuser_id
 		JOIN stores st ON st.id = m.store_id
-		WHERE s.token_hash = $1 AND s.expires_at > now()
-		LIMIT 2`, hashToken(token))
+		WHERE s.token_hash = $1 AND s.expires_at > now()`, hashToken(token))
 	if err != nil {
 		return nil, Internalf(err, "find the person's stores")
 	}
+	brand := a.Brand(ctx)
 	var ids []string
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var id, host string
+		if err := rows.Scan(&id, &host); err != nil {
 			rows.Close()
 			return nil, Internalf(err, "find the person's stores")
 		}
-		ids = append(ids, id)
+		if sameBrand(a.storeBrand(host), brand) {
+			ids = append(ids, id)
+		}
 	}
 	rows.Close()
 	if len(ids) != 1 {

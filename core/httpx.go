@@ -489,8 +489,10 @@ func (a *App) bearerAuth(next http.Handler) http.Handler {
 		}
 		if su, ok := a.superusers.Resolve(r.Context(), token); ok {
 			// A real person, but not on this store's team: the store was
-			// named, the person was recognised, and the answer is no.
-			if su.Role == "" {
+			// named, the person was recognised, and the answer is no. A
+			// store of another brand gets the same answer, so one brand's
+			// panel does not reach, or confirm, another's stores (D111).
+			if su.Role == "" || foreignStore(r.Context()) {
 				RespondError(w, r, ErrNotAMember)
 				return
 			}

@@ -83,6 +83,9 @@ const (
 	// whether its members pay tax (D76). Its name, code and members are not
 	// audited, as they were not before.
 	AuditEntityCustomerGroup = "customer_group"
+	// The store itself, for the one thing about it decided above it: the
+	// brand it belongs to (D111).
+	AuditEntityStore = "store"
 )
 
 // AuditEntityTypes is the catalogue, in the panel's display order. The database
@@ -105,6 +108,7 @@ var AuditEntityTypes = []string{
 	AuditEntityMedia,
 	AuditEntityVendor,
 	AuditEntityCustomerGroup,
+	AuditEntityStore,
 }
 
 // The action vocabulary, `<record>.<verb>`, declared here and nowhere else.
@@ -217,6 +221,11 @@ const (
 	// exempt has a row saying who decided it.
 	AuditCustomerGroupTaxExemption = "customer_group.tax_exemption"
 
+	// AuditStoreSetBrand is a store moved to another brand by the install's
+	// owner (D111), which moves its address with it. Recorded in the store,
+	// where its own team can read it.
+	AuditStoreSetBrand = "store.set_brand"
+
 	AuditLocationCreate     = "location.create"
 	AuditLocationUpdate     = "location.update"
 	AuditLocationDelete     = "location.delete"
@@ -289,6 +298,8 @@ var AllAuditActions = []string{
 	AuditPluginUpdate, AuditNotificationTemplateUpdate,
 
 	AuditCustomerGroupTaxExemption,
+
+	AuditStoreSetBrand,
 }
 
 // AuditChanges is what a row says actually moved.

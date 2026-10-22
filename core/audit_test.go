@@ -1179,6 +1179,12 @@ func TestTheVocabularyIsReachable(t *testing.T) {
 		t.Fatalf("exempt group: %v", err)
 	}
 
+	// And the store moved to another brand by the install's owner (D111).
+	app.cfg.Brands = twoBrands()
+	if _, err := app.Stores().SetBrand(ctx, app.DefaultStore(), "admin.beta.test"); err != nil {
+		t.Fatalf("move the store: %v", err)
+	}
+
 	// The sample shop's erase, the one way an order is ever deleted (D96).
 	if _, err := app.AddSampleShop(ctx); err != nil {
 		t.Fatalf("add the sample shop: %v", err)

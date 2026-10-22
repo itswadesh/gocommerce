@@ -9706,7 +9706,8 @@
                 "invitation",
                 "role",
                 "taxonomy_attribute",
-                "customer_group"
+                "customer_group",
+                "store"
               ]
             }
           },
@@ -14248,7 +14249,7 @@
             "adminToken": []
           }
         ],
-        "description": "The stores the signed-in person is on the team of, oldest first, with their role in each. An API key belongs to one store and is refused.",
+        "description": "The stores the signed-in person is on the team of, oldest first, with their role in each: only the stores of the brand whose admin domain the request came through, while the install's admin token sees every store. An API key belongs to one store and is refused.",
         "responses": {
           "200": {
             "description": "The caller's stores.",
@@ -14647,7 +14648,7 @@
             "adminToken": []
           }
         ],
-        "description": "Adds the domain unverified and answers with the TXT record to create. Only the host is read from the body. A host under the install's base domain, an IP address, or one with a scheme, port or path is refused; one already attached to a store is 409. Frozen on a demo store. Needs store.write.",
+        "description": "Adds the domain unverified and answers with the TXT record to create. Only the host is read from the body. A host under any brand's base domain or alias, an IP address, or one with a scheme, port or path is refused; one already attached to a store is 409. Frozen on a demo store. Needs store.write.",
         "requestBody": {
           "required": true,
           "content": {
@@ -18675,7 +18676,8 @@
               "invitation",
               "role",
               "taxonomy_attribute",
-              "customer_group"
+              "customer_group",
+              "store"
             ]
           },
           "entity_id": {
@@ -21116,7 +21118,7 @@
           },
           "subdomain": {
             "type": "string",
-            "description": "<slug>.<base domain>, the address the store has without adding a domain of its own; empty when the install has no base domain."
+            "description": "<slug>.<base domain>, the address the store has without adding a domain of its own, under the base domain of the brand the store belongs to; empty when that brand has none."
           },
           "demo": {
             "type": "boolean",
