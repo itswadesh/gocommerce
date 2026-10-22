@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -226,13 +227,34 @@ func TestTheStoreItselfSeesEverything(t *testing.T) {
 // The shop's own margin is not a seller's business. A vendor reading the
 // catalogue to find something to offer must not come away with what it cost.
 func TestAVendorCannotReadTheShopsCost(t *testing.T) {
-	app, _, _, token, _ := twoSellers(t)
-
-	rec := do(t, app, http.MethodGet, "/api/admin/products", bearer(token))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("catalogue = %d: %s", rec.Code, rec.Body)
+	app, _, _, token, variantID := twoSellers(t)
+	// With a cost on the shelf, or there is nothing for the vendor not to see.
+	if _, err := app.Products().UpdateVariant(context.Background(), variantID,
+		VariantPatch{CostMinor: SetAmount(1900)}); err != nil {
+		t.Fatalf("record the cost: %v", err)
 	}
-	if strings.Contains(rec.Body.String(), `"cost"`) {
-		t.Errorf("a vendor can read the shop's cost price: %s", rec.Body.String()[:400])
+
+	list := do(t, app, http.MethodGet, "/api/admin/products", bearer(token))
+	if list.Code != http.StatusOK {
+		t.Fatalf("catalogue = %d: %s", list.Code, list.Body)
+	}
+	var page struct {
+		Data []struct {
+			ID int64 `json:"id"`
+		} `json:"data"`
+	}
+	decodeJSONBody(t, list.Body.Bytes(), &page)
+	if len(page.Data) == 0 {
+		t.Fatalf("the vendor's catalogue is empty, so it proves nothing: %s", list.Body)
+	}
+	one := do(t, app, http.MethodGet, "/api/admin/products/"+strconv.FormatInt(page.Data[0].ID, 10), bearer(token))
+	for _, rec := range []*httptest.ResponseRecorder{list, one} {
+		body := rec.Body.String()
+		if rec.Code != http.StatusOK || !strings.Contains(body, "SCOPE-1") {
+			t.Fatalf("catalogue read = %d without the variant: %s", rec.Code, body)
+		}
+		if strings.Contains(body, `"cost"`) {
+			t.Errorf("a vendor can read the shop's cost price: %s", body)
+		}
 	}
 }

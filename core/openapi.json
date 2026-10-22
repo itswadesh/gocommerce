@@ -16183,7 +16183,7 @@
               }
             ],
             "nullable": true,
-            "description": "What the item cost this store, for margin reporting. Absent means nobody has recorded a cost — which is not the same as a cost of zero, and the difference matters: a zero would report a 100% margin on something nobody has costed. A storefront never sees this."
+            "description": "What the item cost this store, for margin reporting. Admin routes only, and never to a vendor account: a public route — the catalogue, a collection, a category, a module's storefront route — leaves it out whether or not one is recorded. On an admin route, absent means nobody has recorded a cost — which is not the same as a cost of zero, and the difference matters: a zero would report a 100% margin on something nobody has costed."
           },
           "taxable": {
             "type": "boolean",

@@ -69,22 +69,3 @@ func requireOwnVendor(r *http.Request, id int64) error {
 	}
 	return nil
 }
-
-// stripCostFor removes the shop's own cost price from a catalogue response when
-// the caller is a seller.
-//
-// A vendor reads the catalogue to find things to offer against, which is a
-// reasonable thing to let them do and a bad thing to do naively: `cost` is what
-// the shop paid, and handing that to somebody competing on price is handing
-// them the shop's floor. The field is removed rather than zeroed, because zero
-// is a number and a reader cannot tell it from "this cost nothing".
-func stripCostFor(r *http.Request, products []*Product) {
-	if !IsVendorAccount(r.Context()) {
-		return
-	}
-	for _, p := range products {
-		for _, v := range p.Variants {
-			v.Cost = nil
-		}
-	}
-}

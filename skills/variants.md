@@ -67,6 +67,16 @@ Shipping`.
   omit the field to leave it alone. Negative is a 400 on both, not a 500 from
   the CHECK. On `VariantInput` it stays a plain pointer, because on create
   there is nothing to leave alone.
+- **`cost` reaches JSON only on an admin route, and never for a vendor
+  account.** It is what the shop paid — the floor under every price — so the
+  rule lives in the variant's encoding (`operator_view.go`), not in handlers:
+  a variant read under any other context, whether a public route, a module's
+  storefront route, a feed or a job, encodes without it, while the Go value
+  keeps it. A new public route is closed without doing anything. Code that is
+  the operator outside a request, such as MCP over stdio, says so with
+  `WithOperatorView`. `gctest.AssertPublicRoutesHideCost` walks every public
+  GET route an app serves and fails on a leak; `ext/alltest` runs it over every
+  bundled module.
 - **Stock is not patchable here.** `VariantPatch` deliberately has no stock
   field: a blind `SET stock = 7` races every concurrent sale. See
   [inventory](inventory.md).
