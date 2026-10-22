@@ -349,11 +349,15 @@ On an install with several brands (D111) the link is the panel URL of the
 store's brand, whichever admin domain sent it, and the email names that brand
 (`brand_name`). Somebody new who accepts is recorded as arriving through the
 store's brand (`superusers.brand_host`), as somebody who signs up is through
-the brand they signed up on. A reset asked for at a brand's admin domain goes
-out in that brand; one sent from Settings › Team in the store's; one with no
-request behind it in the person's recorded brand, else the first. The link is
-only ever a configured brand's panel URL. Without brands, the invitation link
-is still built from the request, as it always was.
+the brand they signed up on. A reset sent from Settings › Team goes out in the
+store's brand. A public reset goes out in the brand of the admin domain it was
+asked on only when the person belongs to it — a store of theirs is in it, or
+they arrived through it — and otherwise in their recorded brand, or their
+first store's (`personMailBrand`), so a stranger cannot pick the branding. The
+link is only ever a configured brand's panel URL. An invitation is emailed
+only with a link from configuration (the store's brand's panel URL, which
+without brands is `Config.PanelURL`); with none, the owner gets a link built
+from the request to copy, and nothing is emailed.
 
 The alternative, which this engine did until M18 and still supports for the cases
 invitations cannot serve, is an owner choosing somebody else's password and then

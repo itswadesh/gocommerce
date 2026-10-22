@@ -299,7 +299,8 @@ Flags: `-db`,
 `GOCOMMERCE_ADMIN_PASSWORD` are the environment equivalents.
 `GOCOMMERCE_PANEL_URL`, `GOCOMMERCE_BASE_DOMAIN` and `GOCOMMERCE_BRANDS` (a
 JSON array of brands, D111) are environment only; `store create|demo|brand`
-opens a store, makes it a demo, or moves it to another brand.
+opens a store, makes it a demo, or moves it to another brand, and `brands
+rename-host <old> <new>` follows a brand whose `panel_url` changed.
 `GOCOMMERCE_SECRETS_KEY` and `GOCOMMERCE_SECRETS_KEY_PREVIOUS` have no flag at
 all: a flag shows in the process list.
 `GOCOMMERCE_DEMO`, `GOCOMMERCE_SIGNUP` and `GOCOMMERCE_ALLOW_PRIVATE_URLS` are the variables here read as a word rather than as
@@ -417,19 +418,25 @@ attached domain), the signed-in person's only store, and the install's only
 store. Naming a store never grants access to it: staff must be members of it.
 
 **Several brands** (D111, `GOCOMMERCE_BRANDS`, `brands.go`): every request is
-first given a brand from its host (`BrandFrom(ctx)`, `App.Brand`), which never
-changes the store it is bound to. Each store belongs to one brand
-(`App.StoreBrand(ctx)`, the bound store's) and answers only at `<slug>.<that brand's base domain>` or
-its aliases, so `<slug>.<another brand's>` finds no store. A person sees and
+first given a brand from its host (`BrandFrom(ctx)`, `App.Brand`): a panel
+host, a host under a base domain or alias, a store's own domain (its store's
+brand), else the default brand. It never changes the store the request is
+bound to. Each store belongs to one brand (`App.StoreBrand(ctx)`, the bound
+store's) and answers only at `<slug>.<that brand's base domain>` or its
+aliases, so `<slug>.<another brand's>` finds no store. A person sees and
 enters only the stores of the brand the request came through: `myStores`
-filters the store list and picker, `onlyStoreOfSession` counts only that
-brand's, and `bearerAuth` answers a store of another brand with
+filters the store list and picker, `onlyStoreOfSession` and sign-in count only
+that brand's, and `bearerAuth` answers a store of another brand with
 `not_a_member`. The static admin token keeps install-wide reach. A store
 opened through a brand's admin domain is that brand's; `gocommerce store
 brand <slug> <panel host>` (`Stores.SetBrand`) moves one, audited as
-`store.set_brand`. Slugs are unique install-wide, and `App.reservedSlug`
-keeps D93's names, the first label of every brand's panel host and each
-brand's `reserved` list.
+`store.set_brand`, and `gocommerce brands rename-host <old> <new>`
+(`App.RenameBrandHost`) follows a changed `panel_url`; until it runs, start-up
+logs an error and `doctor` fails. Slugs are unique install-wide, and
+`App.reservedSlug` keeps D93's names, the first label of every brand's panel
+host, each brand's `reserved` list and the label of a store domain directly
+under another. `gocommerce doctor` checks a `GOCOMMERCE_BRANDS` value as
+`serve` would (`ValidateBrands`) and reports a bad one as a failed check.
 
 ## Common mistakes## Common mistakes
 
