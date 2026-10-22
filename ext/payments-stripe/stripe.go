@@ -278,6 +278,63 @@ func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Orde
 	return refund.ID, nil
 }
 
+// Status implements gocommerce.PaymentStatusReader: it reads the order's
+// PaymentIntent back from Stripe, for the order whose webhook never came.
+//
+// Succeeded counts only for this order — its id in the intent's metadata — and
+// for its total in its currency, so a reference edited onto the wrong order
+// cannot settle it.
+func (m *Module) Status(ctx context.Context, order *gocommerce.Order) (gocommerce.PaymentState, error) {
+	if !m.refresh(ctx) {
+		return gocommerce.PaymentState{}, errNotConfigured
+	}
+	ref := strings.TrimSpace(order.PaymentReference)
+	if !strings.HasPrefix(ref, "pi_") {
+		return gocommerce.PaymentState{}, fmt.Errorf("stripe: order %s has no PaymentIntent to ask about (payment reference %q)", order.Number, ref)
+	}
+	var intent struct {
+		ID                 string            `json:"id"`
+		Status             string            `json:"status"`
+		AmountReceived     int64             `json:"amount_received"`
+		Currency           string            `json:"currency"`
+		Metadata           map[string]string `json:"metadata"`
+		CancellationReason string            `json:"cancellation_reason"`
+		LastPaymentError   *struct {
+			Message string `json:"message"`
+		} `json:"last_payment_error"`
+	}
+	if err := m.get(ctx, "/v1/payment_intents/"+url.PathEscape(ref), &intent); err != nil {
+		return gocommerce.PaymentState{}, err
+	}
+	state := gocommerce.PaymentState{Detail: intent.Status}
+	switch intent.Status {
+	case "succeeded":
+		currency := strings.ToUpper(intent.Currency)
+		switch {
+		case intent.Metadata["order_id"] != strconv.FormatInt(order.ID, 10):
+			state.Detail = "succeeded, for another order"
+		case intent.AmountReceived != order.Total.AmountMinor || !strings.EqualFold(currency, order.Total.Currency):
+			state.Detail = fmt.Sprintf("succeeded for %d %s, not the order's %d %s",
+				intent.AmountReceived, currency, order.Total.AmountMinor, strings.ToUpper(order.Total.Currency))
+		default:
+			state.Paid, state.Reference = true, intent.ID
+		}
+	case "canceled":
+		state.Failed = true
+		if intent.CancellationReason != "" {
+			state.Detail += ": " + intent.CancellationReason
+		}
+	case "requires_payment_method":
+		// The status an intent returns to after a declined attempt, and the one
+		// it starts in; only the error tells the two apart.
+		if intent.LastPaymentError != nil {
+			state.Failed = true
+			state.Detail += ": " + intent.LastPaymentError.Message
+		}
+	}
+	return state, nil
+}
+
 // Webhook implements gocommerce.WebhookProvider.
 func (m *Module) Webhook() http.Handler {
 	return http.HandlerFunc(m.handleWebhook)
@@ -442,6 +499,16 @@ func verifySignature(body []byte, header, secret string, now time.Time) error {
 	return errors.New("no signature matched")
 }
 
+// get reads one object.
+func (m *Module) get(ctx context.Context, path string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.conf(ctx).BaseURL+path, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+m.conf(ctx).SecretKey)
+	return m.do(req, path, out)
+}
+
 // post sends a form-encoded request and decodes the JSON reply.
 func (m *Module) post(ctx context.Context, path string, form url.Values, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
@@ -451,7 +518,11 @@ func (m *Module) post(ctx context.Context, path string, form url.Values, out any
 	}
 	req.Header.Set("Authorization", "Bearer "+m.conf(ctx).SecretKey)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return m.do(req, path, out)
+}
 
+// do sends a request and decodes the JSON reply, or Stripe's error.
+func (m *Module) do(req *http.Request, path string, out any) error {
 	resp, err := m.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("stripe: %s: %w", path, err)

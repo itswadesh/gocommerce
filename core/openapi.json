@@ -6615,6 +6615,51 @@
         }
       }
     },
+    "/api/admin/orders/{id}/check-payment": {
+      "post": {
+        "tags": [
+          "admin:orders"
+        ],
+        "summary": "Ask the gateway what became of the payment",
+        "description": "For an order whose webhook was lost. The engine asks the order's payment method, outside any transaction, and answers with what it said. When it says paid and the order is not, the payment is recorded through the same path Mark paid and a gateway's webhook take, with the gateway's reference: the order is confirmed, its stock committed and order.paid written. Nothing the gateway did not report is set. No payment yet leaves the order as it is, and a reported failure is answered rather than recorded, because a declined attempt is not the end of an order whose shopper can still pay.\n\nOffered by the methods whose `checks_payments` is true in `GET /api/admin/settings`; any other answers 409, as does a method that is not set up and a cancelled order the gateway says was paid (that money needs a refund). A gateway that cannot be reached is a 500, with the cause in the store's log.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What the gateway said, whether it was recorded, and the order as it now stands.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PaymentCheck"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
     "/api/admin/orders/{id}/undeliver": {
       "post": {
         "tags": [
@@ -18772,6 +18817,51 @@
           }
         }
       },
+      "PaymentCheck": {
+        "type": "object",
+        "description": "The answer to asking a gateway about an order's payment.",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "description": "The payment method that was asked.",
+            "example": "cashfree"
+          },
+          "gateway": {
+            "$ref": "#/components/schemas/PaymentState"
+          },
+          "recorded": {
+            "type": "boolean",
+            "description": "Whether this check settled the order: true only when the gateway said paid and the order was not paid already."
+          },
+          "order": {
+            "$ref": "#/components/schemas/Order"
+          }
+        }
+      },
+      "PaymentState": {
+        "type": "object",
+        "description": "What a gateway says about an order's payment. Neither paid nor failed means it has nothing settled to report: not attempted yet, in progress, or abandoned.",
+        "properties": {
+          "paid": {
+            "type": "boolean",
+            "description": "The gateway took the order's amount, in the order's currency."
+          },
+          "failed": {
+            "type": "boolean",
+            "description": "The gateway's latest attempt failed. Answered, never recorded by this route."
+          },
+          "reference": {
+            "type": "string",
+            "description": "The gateway's id for the payment that settled the order, recorded as its payment reference.",
+            "example": "5114917126974"
+          },
+          "detail": {
+            "type": "string",
+            "description": "The gateway's own words: its status, and its reason when it gives one.",
+            "example": "SUCCESS"
+          }
+        }
+      },
       "ProviderInfo": {
         "type": "object",
         "description": "An installed provider, as an operator should see it.",
@@ -18799,6 +18889,10 @@
             "type": "string",
             "description": "The plugin that switches a built-in provider on and off, when it has one. Cash on delivery's is `payments-cod`. A module's provider is switched by its module's plugin and leaves this out.",
             "example": "payments-cod"
+          },
+          "checks_payments": {
+            "type": "boolean",
+            "description": "A payment method that can be asked what became of an order's payment (`POST /api/admin/orders/{id}/check-payment`). Left out when it cannot."
           }
         }
       },
