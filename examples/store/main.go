@@ -61,6 +61,7 @@ import (
 	"github.com/itswadesh/gocommerce/ext/reviews"
 	meilisearch "github.com/itswadesh/gocommerce/ext/search-meilisearch"
 	"github.com/itswadesh/gocommerce/ext/sitemaps"
+	telegramalerts "github.com/itswadesh/gocommerce/ext/telegram-alerts"
 	"github.com/itswadesh/gocommerce/ext/wishlist"
 )
 
@@ -175,6 +176,11 @@ func main() {
 			FromName: os.Getenv("SENDGRID_FROM_NAME"),
 		}),
 		msg91.New(msg91.Config{AuthKey: os.Getenv("MSG91_AUTH_KEY")}),
+
+		// The owner's own alerts, on Telegram: every new order, payment,
+		// cancellation and return. Idle until a bot token and a chat are set
+		// under Notifications › Setup Telegram.
+		telegramalerts.New(telegramalerts.Config{}),
 	)
 
 	// Every gateway and carrier, installed idle: each is a card on Payment
