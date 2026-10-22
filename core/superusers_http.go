@@ -56,6 +56,7 @@ func (a *App) handleAuthState(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	brand := a.Brand(r.Context())
 	Respond(w, http.StatusOK, map[string]any{
 		"installed": n > 0,
 		// Whether a static token would also be accepted. The panel never uses
@@ -71,7 +72,11 @@ func (a *App) handleAuthState(w http.ResponseWriter, r *http.Request) {
 		"signup": a.signupOpen(r.Context()),
 		// Whether a reset email carries a link beside its code, so the
 		// forgot-password screen can say what to look for before it is asked.
-		"reset_link": a.Brand(r.Context()).PanelURL != "",
+		"reset_link": brand.PanelURL != "",
+		// Which brand this address is (D111), so the panel names itself
+		// before anybody signs in. Only the name and the logo: the other
+		// brands, and their addresses, are no visitor's business.
+		"brand": map[string]string{"name": brand.Name, "logo_url": brand.LogoURL},
 	})
 }
 

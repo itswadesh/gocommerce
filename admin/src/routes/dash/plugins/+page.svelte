@@ -25,6 +25,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginSettingsDrawer from "$lib/components/PluginSettingsDrawer.svelte";
     import { homeOf } from "$lib/plugin-homes.js";
+    import { titled } from "$lib/brand.svelte.js";
 
     /* plugins.read lists them; plugins.write switches one on and holds its
        settings, which is where a gateway's live keys live. */
@@ -167,7 +168,7 @@
     }
 </script>
 
-<svelte:head><title>Plugins · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Plugins")}</title></svelte:head>
 
 <div class="page page-plugins shopify-skin">
     <div class="page-content tw:bg-background tw:text-foreground">

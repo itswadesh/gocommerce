@@ -24,6 +24,7 @@
     import { relativeTime, pluralize } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /* base.css has exactly these label variants; nothing here invents one. */
     const STATUS = {
@@ -94,7 +95,7 @@
     }
 </script>
 
-<svelte:head><title>Diagnostics · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Diagnostics")}</title></svelte:head>
 
 <div class="page page-diagnostics shopify-skin">
 

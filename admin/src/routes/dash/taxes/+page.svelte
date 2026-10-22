@@ -31,6 +31,7 @@
     import RecordHistory from "$lib/components/RecordHistory.svelte";
     import Select from "$lib/components/Select.svelte";
     import SortHeader from "$lib/components/SortHeader.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     let loading = $state(true);
     let rates = $state([]);
@@ -438,7 +439,7 @@
     }
 </script>
 
-<svelte:head><title>Tax · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Tax")}</title></svelte:head>
 
 {#if !mayRead}
     <NoAccess right="taxes.read" what="tax rates" />

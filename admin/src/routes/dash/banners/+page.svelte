@@ -22,6 +22,7 @@
     import ImageField from "$lib/components/ImageField.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const missing = $derived(modulesKnown() && !hasModule("banners"));
     const readable = $derived(can("banners.read"));
@@ -172,7 +173,7 @@
     }
 </script>
 
-<svelte:head><title>Banners · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Banners")}</title></svelte:head>
 
 {#snippet bannerRow(banner, kin)}
     {@const i = kin.findIndex((x) => x.id === banner.id)}

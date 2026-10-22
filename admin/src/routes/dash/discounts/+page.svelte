@@ -39,6 +39,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import { fieldText } from "$lib/fieldtext.js";
     import EmptyState from "$lib/components/EmptyState.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /* The starting page size, not the only one: `limit` is a listState key, so
        an operator can change it and the choice rides in the URL with the rest of
@@ -627,7 +628,7 @@
     }
 </script>
 
-<svelte:head><title>Discounts · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Discounts")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="discounts.read" what="discounts" />

@@ -35,6 +35,7 @@
     import { languageName, languageOptions } from "$lib/languages.js";
     import { rise, flipDuration } from "$lib/motion.js";
     import { flip } from "svelte/animate";
+    import { brand, titled } from "$lib/brand.svelte.js";
 
     /*
      * Deleting the store. Offered to its owner only, never on a demo store,
@@ -295,7 +296,7 @@
     }
 </script>
 
-<svelte:head><title>Store settings · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Store settings")}</title></svelte:head>
 
 <div class="page page-settings shopify-skin">
 
@@ -719,7 +720,7 @@
         </div>
 
         <footer class="page-footer tw:text-xs tw:text-muted-foreground">
-            <span class="txt">GoCommerce {store?.version ?? ""}</span>
+            <span class="txt">{brand.name || "Version"} {store?.version ?? ""}</span>
         </footer>
     </div>
 </div>

@@ -22,6 +22,7 @@
     import EmptyState from "$lib/components/EmptyState.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const missing = $derived(modulesKnown() && !hasModule("showcases"));
     const readable = $derived(can("showcases.read"));
@@ -123,7 +124,7 @@
     }
 </script>
 
-<svelte:head><title>Video showcases · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Video showcases")}</title></svelte:head>
 
 <div class="page page-showcases shopify-skin">
     <div class="page-content full-height tw:bg-background tw:text-foreground">

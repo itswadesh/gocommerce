@@ -20,6 +20,7 @@
     import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const PER_PAGE = 25;
     const list = listState({ status: "unresolved", source: "any", q: "", page: 1, limit: PER_PAGE });
@@ -80,7 +81,7 @@
     ];
 </script>
 
-<svelte:head><title>Errors · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Errors")}</title></svelte:head>
 
 <div class="page page-errors shopify-skin">
     <div class="page-content full-height tw:bg-background tw:text-foreground">

@@ -16,6 +16,7 @@
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const readable = $derived(can("catalog.read"));
     const writable = $derived(can("catalog.write"));
@@ -148,7 +149,7 @@
     }
 </script>
 
-<svelte:head><title>FAQ · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("FAQ")}</title></svelte:head>
 
 <div class="page page-faq shopify-skin">
     <div class="page-content tw:bg-background tw:text-foreground">

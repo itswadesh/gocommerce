@@ -51,6 +51,7 @@
     import { countryOptions } from "$lib/countries.js";
     import ShipDialog from "$lib/components/ShipDialog.svelte";
     import VariantPicker from "$lib/components/VariantPicker.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const orderId = $derived(route.params.id);
     const readable = $derived(can("orders.read"));
@@ -817,7 +818,7 @@
     }
 </script>
 
-<svelte:head><title>{order ? `Order ${order.number}` : "Order"} · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled(order ? `Order ${order.number}` : "Order")}</title></svelte:head>
 
 <!-- The same pair under every card that edits in place, so Save is always in
      the same spot regardless of which card is open. -->

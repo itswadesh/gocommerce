@@ -37,6 +37,7 @@
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import VariantSearch from "$lib/components/VariantSearch.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const id = $derived(page.params.id);
     const readable = $derived(can("quotes.read"));
@@ -255,7 +256,7 @@
     );
 </script>
 
-<svelte:head><title>{quote?.number ?? "Quote"} · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled(quote?.number ?? "Quote")}</title></svelte:head>
 
 <DirtyGuard dirty={dirty && editable} />
 

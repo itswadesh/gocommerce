@@ -19,6 +19,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Select from "$lib/components/Select.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const readable = $derived(can("catalog.read"));
     const writable = $derived(can("catalog.write"));
@@ -195,7 +196,7 @@
     }
 </script>
 
-<svelte:head><title>Menus · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Menus")}</title></svelte:head>
 
 <div class="page page-menus shopify-skin">
     <div class="page-content tw:bg-background tw:text-foreground">

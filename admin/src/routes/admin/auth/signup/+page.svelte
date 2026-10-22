@@ -20,6 +20,7 @@
     import { rise } from "$lib/motion.js";
     import { sentence } from "$lib/format.js";
     import AuthShell from "$lib/components/AuthShell.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const LOGIN = `${base}/admin/auth/login`;
 
@@ -79,7 +80,7 @@
     const passwordRefused = $derived(problemField === "password");
 </script>
 
-<svelte:head><title>Create your store · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Create your store")}</title></svelte:head>
 
 <AuthShell>
     {#if state === "loading"}

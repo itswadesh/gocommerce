@@ -20,6 +20,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const readable = $derived(can("abandonment.read"));
     /* Trusted only where the store could have been asked: the probe is made for
@@ -75,7 +76,7 @@
     const storefront = $derived(view ? view.settings.storefront_url || view.storefront_fallback || "" : "");
 </script>
 
-<svelte:head><title>Automations · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Automations")}</title></svelte:head>
 
 {#if !readable && !missing}
     <NoAccess right="abandonment.read" what="the marketing automations" />

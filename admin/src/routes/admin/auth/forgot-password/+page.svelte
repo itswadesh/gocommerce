@@ -20,6 +20,7 @@
     import { rise } from "$lib/motion.js";
     import { sentence } from "$lib/format.js";
     import AuthShell from "$lib/components/AuthShell.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const LOGIN = `${base}/admin/auth/login`;
 
@@ -70,7 +71,7 @@
     }
 </script>
 
-<svelte:head><title>Reset your password · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Reset your password")}</title></svelte:head>
 
 <AuthShell>
     {#if sent && sent.delivery !== "none"}

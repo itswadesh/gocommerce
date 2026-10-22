@@ -14,6 +14,7 @@
     import { formatDate, relativeTime } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const id = $derived(page.params.id);
     const readable = $derived(can("errors.read"));
@@ -89,7 +90,7 @@
     }
 </script>
 
-<svelte:head><title>{issue ? issue.title : "Error"} · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled(issue ? issue.title : "Error")}</title></svelte:head>
 
 <div class="page page-error shopify-skin">
     <div class="page-content full-height tw:bg-background tw:text-foreground">

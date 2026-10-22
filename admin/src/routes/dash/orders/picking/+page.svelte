@@ -44,6 +44,7 @@
     import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PrintSheet from "$lib/components/PrintSheet.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /* The cap on a filtered run. A warehouse printing more than this in one
        press has a different problem than a missing button, and the count under
@@ -209,7 +210,7 @@
     }
 </script>
 
-<svelte:head><title>Picking list · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Picking list")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="orders.read" what="orders" />

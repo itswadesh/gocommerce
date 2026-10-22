@@ -22,6 +22,7 @@
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const PER_PAGE = 50;
     const list = listState({ q: "", page: 1, limit: PER_PAGE });
@@ -73,7 +74,7 @@
     }
 </script>
 
-<svelte:head><title>Catalogues · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Catalogues")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="companies.read" what="catalogues" />

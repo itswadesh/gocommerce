@@ -17,6 +17,7 @@
      */
     import { onNavigate } from "$app/navigation";
     import { base } from "$app/paths";
+    import { brand } from "$lib/brand.svelte.js";
 
     let { children } = $props();
 
@@ -53,14 +54,19 @@
 <div class="auth-shell">
     <header class="auth-bar">
         <span class="app-brand auth-brand">
-            <!-- The shell's mark, drawn the same way: from parts, in
-                 currentColor, so it takes the theme. -->
-            <svg class="app-brand-mark" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
-                <rect x="4" y="4" width="3.6" height="16" rx="1" />
-                <path d="M9.6 12 15.4 4h4.4l-5.8 8z" />
-                <path d="M9.6 12h4.4l5.8 8h-4.4z" />
-            </svg>
-            <span class="app-brand-name">GoCommerce</span>
+            <!-- The brand of the address this is opened on (D111): its logo
+                 where it has one, else the shell's mark, drawn the same way —
+                 from parts, in currentColor, so it takes the theme. -->
+            {#if brand.logo_url}
+                <img class="app-brand-logo" src={brand.logo_url} alt="" height="20" />
+            {:else}
+                <svg class="app-brand-mark" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+                    <rect x="4" y="4" width="3.6" height="16" rx="1" />
+                    <path d="M9.6 12 15.4 4h4.4l-5.8 8z" />
+                    <path d="M9.6 12h4.4l5.8 8h-4.4z" />
+                </svg>
+            {/if}
+            <span class="app-brand-name">{brand.name}</span>
         </span>
     </header>
     <div class="auth-main">

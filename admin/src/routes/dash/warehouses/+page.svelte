@@ -22,6 +22,7 @@
     import Select from "$lib/components/Select.svelte";
     import StockHistory from "$lib/components/StockHistory.svelte";
     import { COUNTRIES } from "$lib/countries.js";
+    import { titled } from "$lib/brand.svelte.js";
 
     const STOCK_PER_PAGE = 25;
 
@@ -520,7 +521,7 @@
     const totalUnits = $derived(locations.reduce((sum, l) => sum + l.on_hand, 0));
 </script>
 
-<svelte:head><title>Locations · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Locations")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="locations.read" what="locations" />

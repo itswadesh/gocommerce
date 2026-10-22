@@ -34,6 +34,7 @@
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /* The starting page size, not the only one: `limit` is a listState key, so
        an operator can change it and the choice rides in the URL with the rest of
@@ -141,7 +142,7 @@
     }
 </script>
 
-<svelte:head><title>Agent activity · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Agent activity")}</title></svelte:head>
 
 <!-- A store built without ext/mcp says so even to an owner, who holds no
      agent right there: the build is what grants a module's rights (D65). -->

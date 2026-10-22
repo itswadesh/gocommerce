@@ -23,6 +23,7 @@
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /*
      * team.read is the sidebar's gate on this screen; team.write is what every
@@ -532,7 +533,7 @@
     }
 </script>
 
-<svelte:head><title>Team · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Team")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="team.read" what="the team" />

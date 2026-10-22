@@ -20,6 +20,7 @@
     import RichText from "$lib/components/RichText.svelte";
     import SaveBar from "$lib/components/SaveBar.svelte";
     import Select from "$lib/components/Select.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const pageId = $derived(route.params.id);
     const readable = $derived(can("catalog.read"));
@@ -155,7 +156,7 @@
     }
 </script>
 
-<svelte:head><title>{record?.title || "Page"} · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled(record?.title || "Page")}</title></svelte:head>
 
 {#if !can("catalog.read")}
     <NoAccess right="catalog.read" what="pages" />

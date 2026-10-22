@@ -34,6 +34,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /* The starting page size, not the only one: `limit` is a listState key, so
        an operator can change it and the choice rides in the URL with the rest of
@@ -161,7 +162,7 @@
     }
 </script>
 
-<svelte:head><title>Collections · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Collections")}</title></svelte:head>
 
 {#if !can("catalog.read")}
     <NoAccess right="catalog.read" what="collections" />
