@@ -267,7 +267,15 @@ func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Orde
 		ID     string `json:"id"`
 		Status string `json:"status"`
 	}
-	if err := m.post(ctx, "/v1/refunds", form, &refund); err != nil {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		m.conf(ctx).BaseURL+"/v1/refunds", strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+m.conf(ctx).SecretKey)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Idempotency-Key", refundKey(order, amountMinor))
+	if err := m.do(req, "/v1/refunds", &refund); err != nil {
 		return "", err
 	}
 	if refund.Status == "failed" {
@@ -334,6 +342,22 @@ func (m *Module) Status(ctx context.Context, order *gocommerce.Order) (gocommerc
 		}
 	}
 	return state, nil
+}
+
+// refundKey is the Idempotency-Key for a refund: the order, how many refunds
+// of it came before, and the amount. A refund whose answer was lost is
+// retried under the same key, so Stripe answers with the refund it already
+// made instead of making a second; a refund after one that went out, or one
+// Stripe answered as failed, gets a new key.
+func refundKey(order *gocommerce.Order, amountMinor int64) string {
+	before := 0
+	for _, r := range order.Refunds {
+		if r.Status == gocommerce.RefundSucceeded || r.Status == gocommerce.RefundPending ||
+			(r.Status == gocommerce.RefundFailed && strings.HasPrefix(r.Error, "stripe: refund ")) {
+			before++
+		}
+	}
+	return fmt.Sprintf("gocommerce-refund-%d-%d-%d", order.ID, before, amountMinor)
 }
 
 // Webhook implements gocommerce.WebhookProvider.
