@@ -354,6 +354,13 @@ func (a *App) assignStoreBrands(ctx context.Context) error {
 	if _, err := a.db.ExecContext(ctx, `UPDATE stores SET brand_host = $1 WHERE brand_host IS NULL`, host); err != nil {
 		return fmt.Errorf("gocommerce: give the stores their brand: %w", err)
 	}
+	// Said, not repaired: which brand those stores belong to is the owner's
+	// call, and guessing would move them a second time.
+	if stray, err := a.strayBrandHosts(ctx); err == nil && len(stray) > 0 {
+		a.log.Error("stores belong to panel hosts no brand has; they are shown under the default brand until moved",
+			"hosts", strayList(stray), "default_brand", a.defaultBrand().Name,
+			"fix", "gocommerce brands rename-host <old host> <new host>, or gocommerce store brand <slug> <panel host>")
+	}
 	return nil
 }
 
@@ -508,9 +515,10 @@ func (s *Stores) SetBrand(ctx context.Context, id, panel string) (Brand, error) 
 func (a *App) checkBrands(ctx context.Context) Diagnostic {
 	d := Diagnostic{Name: "brands", Status: StatusOK}
 	warn := func(detail, hint string) {
-		d.Status = StatusWarn
 		d.Detail += "; " + detail
-		d.Hint = hint
+		if d.Status != StatusFail {
+			d.Status, d.Hint = StatusWarn, hint
+		}
 	}
 
 	if len(a.cfg.Brands) > 0 {
@@ -524,7 +532,7 @@ func (a *App) checkBrands(ctx context.Context) Diagnostic {
 	}
 
 	counts := map[string]int{}
-	var stray []string
+	stray := map[string]int{}
 	rows, err := a.db.QueryContext(ctx, `SELECT slug, coalesce(brand_host, '') FROM stores ORDER BY slug`)
 	if err != nil {
 		d.Status, d.Detail, d.Cause = StatusWarn, "could not read the stores' brands", err.Error()
@@ -536,7 +544,7 @@ func (a *App) checkBrands(ctx context.Context) Diagnostic {
 			continue
 		}
 		if _, ok := a.brandByPanelHost(host); host != "" && !ok {
-			stray = append(stray, slug+" ("+host+")")
+			stray[host]++
 		}
 		counts[panelHost(a.storeBrand(host).PanelURL)]++
 	}
@@ -585,9 +593,11 @@ func (a *App) checkBrands(ctx context.Context) Diagnostic {
 	}
 
 	if len(stray) > 0 {
-		warn(fmt.Sprintf("%d store(s) belong to a brand this install no longer has, and are shown under %s: %s",
-			len(stray), a.defaultBrand().Name, strings.Join(stray, ", ")),
-			"move each to a brand: gocommerce store brand <slug> <panel host>")
+		d.Status = StatusFail
+		d.Detail += fmt.Sprintf("; stores belong to panel hosts no brand has, and are shown under %s until moved: %s",
+			a.defaultBrand().Name, strayList(stray))
+		d.Hint = "if a brand's panel_url changed, move its stores and people with gocommerce brands rename-host <old host> <new host>; " +
+			"to move one store, gocommerce store brand <slug> <panel host>"
 	}
 
 	var kept []string
@@ -624,4 +634,102 @@ func cloneBrands(in []Brand) []Brand {
 		out[i] = b
 	}
 	return out
+}
+
+// strayBrandHosts counts the stores whose brand is a panel host no configured
+// brand has. A panel_url renamed in GOCOMMERCE_BRANDS leaves exactly this
+// behind: the stores read as the default brand's, so they would move without
+// a word unless something says so.
+func (a *App) strayBrandHosts(ctx context.Context) (map[string]int, error) {
+	rows, err := a.db.QueryContext(ctx, `SELECT brand_host, count(*) FROM stores WHERE brand_host IS NOT NULL GROUP BY 1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var host string
+		var n int
+		if err := rows.Scan(&host, &n); err != nil {
+			return nil, err
+		}
+		if _, ok := a.brandByPanelHost(host); !ok {
+			out[host] = n
+		}
+	}
+	return out, rows.Err()
+}
+
+// strayList is strayBrandHosts as a sentence part: "host (n), host (n)".
+func strayList(stray map[string]int) string {
+	hosts := make([]string, 0, len(stray))
+	for h := range stray {
+		hosts = append(hosts, h)
+	}
+	sort.Strings(hosts)
+	for i, h := range hosts {
+		hosts[i] = fmt.Sprintf("%s (%d)", h, stray[h])
+	}
+	return strings.Join(hosts, ", ")
+}
+
+// RenameBrandHost moves every store and person recorded under a panel host no
+// brand has any more to the brand whose panel is on newHost, in one
+// transaction, with a row in each moved store's audit trail. It is what to run
+// after changing a brand's panel_url (`gocommerce brands rename-host`); moving
+// one store between two brands that both exist is Stores.SetBrand.
+func (a *App) RenameBrandHost(ctx context.Context, oldHost, newHost string) (stores, people int, err error) {
+	oldHost, newHost = hostName(strings.TrimSpace(oldHost)), hostName(strings.TrimSpace(newHost))
+	to, ok := a.brandByPanelHost(newHost)
+	if !ok || len(a.cfg.Brands) == 0 {
+		return 0, 0, Validationf("%q is no brand's panel host", newHost)
+	}
+	if b, taken := a.brandByPanelHost(oldHost); taken {
+		return 0, 0, Validationf("%s is still %s's panel; to move a store between brands, use gocommerce store brand", oldHost, b.Name)
+	}
+	type moved struct{ id, slug string }
+	var list []moved
+	rows, err := a.db.QueryContext(ctx, `SELECT id, slug FROM stores WHERE brand_host = $1 ORDER BY created_at, id`, oldHost)
+	if err != nil {
+		return 0, 0, Internalf(err, "find the stores under %s", oldHost)
+	}
+	for rows.Next() {
+		var m moved
+		if err := rows.Scan(&m.id, &m.slug); err != nil {
+			rows.Close()
+			return 0, 0, Internalf(err, "find the stores under %s", oldHost)
+		}
+		list = append(list, m)
+	}
+	rows.Close()
+
+	err = InTx(ctx, a.db, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `UPDATE stores SET brand_host = $2 WHERE brand_host = $1`, oldHost, newHost); err != nil {
+			return Internalf(err, "move the stores")
+		}
+		res, err := tx.ExecContext(ctx, `UPDATE superusers SET brand_host = $2 WHERE brand_host = $1`, oldHost, newHost)
+		if err != nil {
+			return Internalf(err, "move the people")
+		}
+		n, _ := res.RowsAffected()
+		people = int(n)
+		for _, m := range list {
+			// The audit trail is each store's own, so each row is written
+			// bound to its store.
+			bound := WithStore(ctx, m.id)
+			if err := writeAudit(bound, tx, auditRecord{
+				Action: AuditStoreSetBrand, Entity: AuditEntityStore, Key: m.id, Label: m.slug,
+				Summary: fmt.Sprintf("%s's panel moved from %s to %s", to.Name, oldHost, newHost),
+				Before:  map[string]any{"brand_host": oldHost},
+				After:   map[string]any{"brand": to.Name, "brand_host": newHost},
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	return len(list), people, nil
 }
