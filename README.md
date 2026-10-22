@@ -99,6 +99,7 @@ graph):
 |---|---|
 | `payments-stripe` | Card payments, signed webhooks, refunds |
 | `payments-razorpay` | Cards and UPI, hosted or in-page |
+| `payments-cashfree` | UPI, cards and netbanking on Cashfree's checkout, India; rupees only, partial refunds |
 | `payments-paddle` | Merchant of record: hosted checkout, adjustments as refunds |
 | `payments-lemonsqueezy` | Merchant of record for digital goods, refunds |
 | `payments-adyen` | Payment links, HMAC-signed notifications, refunds |

@@ -301,7 +301,7 @@ export const NAV = [
             { href: "/dash/settings/teams", label: "Team", right: "team.read", keywords: "operators staff invitations" },
             { href: "/dash/settings/roles", label: "Roles", right: "roles.write", keywords: "permissions rights" },
             { href: "/dash/settings/account", label: "Your account", keywords: "password profile sessions" },
-            { href: "/dash/settings/payments", label: "Payment methods", right: "plugins.read", keywords: "gateways stripe razorpay cod checkout" },
+            { href: "/dash/settings/payments", label: "Payment methods", right: "plugins.read", keywords: "gateways stripe razorpay cashfree cod checkout" },
             { href: "/dash/shipping-settings", label: "Shipping and delivery", right: "shipping.read", keywords: "zones rates methods" },
             { href: "/dash/shipping-settings/providers", label: "Shipping providers", right: "plugins.read", keywords: "carriers aggregators delhivery shiprocket" },
             { href: "/dash/taxes", label: "Taxes", right: "taxes.read", keywords: "vat gst rates" },
