@@ -59,6 +59,35 @@ type ReferencedRefunder interface {
 	RefundWithReference(ctx context.Context, order *Order, amountMinor int64) (reference string, err error)
 }
 
+// PaymentStatusReader is an optional capability: a provider that can be asked
+// what became of an order's payment. It exists for the order whose webhook was
+// lost — without it the only answers were to mark it paid on faith or to let
+// the unpaid sweeper cancel a sale the shopper paid for (D112).
+//
+// Status only reads. The engine records what it reports through
+// [Payments.MarkPaid] and nothing else, and calls it outside every
+// transaction, because it is a network round trip (rule 5). A provider says
+// Paid only when the gateway took the order's amount in the order's currency;
+// an amount that does not match is neither paid nor failed, and Detail says
+// why.
+type PaymentStatusReader interface {
+	Status(ctx context.Context, order *Order) (PaymentState, error)
+}
+
+// PaymentState is what a gateway says about an order's payment. Neither Paid
+// nor Failed means it has nothing settled to report: not attempted yet, still
+// in progress, or abandoned.
+type PaymentState struct {
+	Paid   bool `json:"paid"`
+	Failed bool `json:"failed"`
+	// Reference is the gateway's id for the payment that settled the order,
+	// recorded as its payment reference when Paid.
+	Reference string `json:"reference,omitempty"`
+	// Detail is the gateway's own words — its status, and its reason when it
+	// gives one — for the operator to read. Never parsed.
+	Detail string `json:"detail,omitempty"`
+}
+
 // Named is an optional capability on a provider: the label an operator should
 // see where the code would otherwise leak into the UI — "cod" reads as a
 // database column in a sentence, "Cash on delivery" does not. A provider that

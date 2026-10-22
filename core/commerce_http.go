@@ -222,6 +222,9 @@ func (a *App) mountOrderRoutes() {
 	a.HandleAdminFunc("POST /api/admin/orders/{id}/mark-paid", a.handleMarkPaid, RightOrdersWrite)
 	a.HandleAdminFunc("POST /api/admin/orders/{id}/mark-unpaid", a.handleMarkUnpaid, RightOrdersWrite)
 	a.HandleAdminFunc("POST /api/admin/orders/{id}/mark-payment-failed", a.handleMarkPaymentFailed, RightOrdersWrite)
+	// orders.write, the right Mark paid carries: it can end in the same
+	// MarkPaid, only with the gateway's word instead of the operator's.
+	a.HandleAdminFunc("POST /api/admin/orders/{id}/check-payment", a.handleCheckPayment, RightOrdersWrite)
 	a.HandleAdminFunc("POST /api/admin/orders/{id}/refund", a.handleRefund, RightOrdersRefund)
 	// The same right: moving a refund record on an order is what orders.refund
 	// governs. Deliberately not store.operate, which is diagnostics and
@@ -453,6 +456,23 @@ func (a *App) handleMarkPaymentFailed(w http.ResponseWriter, r *http.Request) {
 	}
 	a.MaskOrder(r.Context(), order)
 	Respond(w, http.StatusOK, order)
+}
+
+// handleCheckPayment asks the order's gateway what became of its payment. No
+// body: the gateway is the only one with anything to say.
+func (a *App) handleCheckPayment(w http.ResponseWriter, r *http.Request) {
+	id, err := pathInt64(r, "id")
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	check, err := a.payments.CheckPayment(r.Context(), id)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	a.MaskOrder(r.Context(), check.Order)
+	Respond(w, http.StatusOK, check)
 }
 
 func (a *App) handleUndeliver(w http.ResponseWriter, r *http.Request) {

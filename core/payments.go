@@ -111,6 +111,12 @@ func (p *Payments) name(code string) string {
 // Confirming here is what makes a gateway order shippable — without it, a paid
 // order would sit at "pending" forever waiting for a step nobody performs.
 func (p *Payments) MarkPaid(ctx context.Context, orderID int64, reference string) (*Order, error) {
+	return p.markPaid(ctx, orderID, reference, "")
+}
+
+// markPaid is MarkPaid with the audit row's summary chosen by the caller, so a
+// payment recorded because a gateway was asked says so in the history.
+func (p *Payments) markPaid(ctx context.Context, orderID int64, reference, summary string) (*Order, error) {
 	return p.app.orders.transition(ctx, orderID, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
 		if o.PaymentStatus == PaymentPaid {
 			return transitionResult{}, nil
@@ -158,6 +164,9 @@ func (p *Payments) MarkPaid(ctx context.Context, orderID int64, reference string
 		res := transitionResult{
 			Event: EventOrderPaid, Payload: p.app.orders.eventPayload(o),
 			Action: AuditOrderMarkPaid, Summary: "Marked order " + o.Number + " paid",
+		}
+		if summary != "" {
+			res.Summary = summary + " on order " + o.Number
 		}
 		if reference != "" {
 			res.After = map[string]any{"payment_reference": reference}
@@ -302,6 +311,62 @@ func (p *Payments) MarkFailed(ctx context.Context, orderID int64, reason string)
 			Summary: "Recorded a failed payment on order " + o.Number + ": " + reason,
 		}, nil
 	})
+}
+
+// PaymentCheck is the answer to asking a gateway about an order's payment.
+type PaymentCheck struct {
+	// Provider is the payment method that was asked.
+	Provider string `json:"provider"`
+	// Gateway is what it said, as it said it.
+	Gateway PaymentState `json:"gateway"`
+	// Recorded is whether this check settled the order: true only when the
+	// gateway said paid and the order was not paid already.
+	Recorded bool   `json:"recorded"`
+	Order    *Order `json:"order"`
+}
+
+// CheckPayment asks the order's gateway what became of its payment, and
+// records a payment the gateway reports — through MarkPaid with the gateway's
+// reference, as the lost webhook would have. It sets nothing the gateway did
+// not report: no payment yet leaves the order as it is, and a reported
+// failure is answered rather than written, because a declined attempt is not
+// the end of an order whose shopper can still pay.
+//
+// The gateway is asked outside every transaction (rule 5); MarkPaid opens its
+// own afterwards and re-reads the order under its lock, so an order settled by
+// a webhook in between is a no-op rather than a second order.paid.
+func (p *Payments) CheckPayment(ctx context.Context, orderID int64) (*PaymentCheck, error) {
+	o, err := p.app.orders.Get(ctx, orderID)
+	if err != nil {
+		return nil, err
+	}
+	provider, ok := p.provider(o.PaymentProvider)
+	if !ok {
+		return nil, Conflictf("payment method %q is not installed in this build, so it cannot be asked", o.PaymentProvider)
+	}
+	reader, ok := provider.(PaymentStatusReader)
+	if !ok {
+		return nil, Conflictf("%s cannot be asked about a payment; record it by hand with Mark paid", p.name(o.PaymentProvider))
+	}
+	if !configured(ctx, provider) {
+		return nil, Conflictf("payment method %q is not set up, so it cannot be asked — activate and configure it under Settings › Payments", o.PaymentProvider)
+	}
+
+	state, err := reader.Status(ctx, o)
+	if err != nil {
+		return nil, Internalf(err, "could not ask %s about order %s", o.PaymentProvider, o.Number)
+	}
+	check := &PaymentCheck{Provider: o.PaymentProvider, Gateway: state, Order: o}
+	if !state.Paid || o.PaymentStatus == PaymentPaid || o.PaymentStatus == PaymentRefunded {
+		return check, nil
+	}
+	settled, err := p.markPaid(ctx, orderID, strings.TrimSpace(state.Reference),
+		"Recorded the payment "+p.name(o.PaymentProvider)+" reported")
+	if err != nil {
+		return nil, err
+	}
+	check.Order, check.Recorded = settled, settled.PaymentStatus == PaymentPaid
+	return check, nil
 }
 
 // ------------------------------------------------------------------- refunds

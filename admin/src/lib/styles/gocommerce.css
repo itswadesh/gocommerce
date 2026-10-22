@@ -3706,6 +3706,40 @@ button.media-check {
     color: var(--surfaceTxtHintColor);
     word-break: break-all;
 }
+/* Check with <gateway> can name a long gateway; the label wraps rather than
+   pushing the card wider than a 360px screen. */
+.order-check-payment {
+    max-width: 100%;
+    height: auto;
+    min-height: var(--smBtnHeight);
+    white-space: normal;
+    text-align: left;
+}
+/* What the gateway said, kept on the card after the toast has gone. The box is
+   always there, empty until an answer arrives, so the answer fading in moves
+   nothing below it more than its own line. */
+.order-gateway-said:empty {
+    display: none;
+}
+.order-gateway-chip {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 2px 8px;
+    border-radius: var(--borderRadius);
+    border: 1px solid var(--secondaryAlt2Color);
+    font-size: var(--smFontSize);
+    color: var(--surfaceTxtHintColor);
+    overflow-wrap: anywhere;
+}
+.order-gateway-chip.is-paid {
+    border-color: var(--successColor);
+    color: var(--successColor);
+}
+.order-gateway-chip.is-failed {
+    border-color: var(--dangerColor);
+    color: var(--dangerColor);
+}
+
 /* The state leads the card, so it carries the weight the total does in the one
    beside it. */
 .order-paid {
