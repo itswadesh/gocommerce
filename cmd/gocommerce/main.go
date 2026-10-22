@@ -63,6 +63,7 @@ import (
 	meilisearch "github.com/itswadesh/gocommerce/ext/search-meilisearch"
 	"github.com/itswadesh/gocommerce/ext/showcases"
 	"github.com/itswadesh/gocommerce/ext/sitemaps"
+	telegramalerts "github.com/itswadesh/gocommerce/ext/telegram-alerts"
 	"github.com/itswadesh/gocommerce/ext/translations"
 	webhooks "github.com/itswadesh/gocommerce/ext/webhooks"
 	"github.com/itswadesh/gocommerce/ext/wishlist"
@@ -228,6 +229,7 @@ environment:
 		withSendgrid = fs.Bool("sendgrid", false, "install the SendGrid module: the store's emails through SendGrid (SENDGRID_API_KEY, SENDGRID_FROM, or Notifications › Setup Email)")
 		withTwilio   = fs.Bool("twilio", false, "install the Twilio module: the store's SMS through Twilio, with the wording from Notifications › Setup SMS (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM)")
 		withMsg91    = fs.Bool("msg91", false, "install the MSG91 module: the store's SMS through MSG91 (MSG91_AUTH_KEY, or Notifications › Setup SMS)")
+		withTelegram = fs.Bool("telegram", false, "install the Telegram alerts module idle: each store gives it a bot and a chat under Notifications › Setup Telegram, and its owner is told about every order there")
 		withGateways = fs.Bool("gateways", false, "install every payment gateway module idle — Stripe, Razorpay, Cashfree, Adyen, Paddle, Lemon Squeezy, Creem, Helcim, Clover, Hyperswitch, RevenueCat — each switched on and given its keys under Settings › Payment methods")
 		withCarriers = fs.Bool("carriers", false, "install every carrier module idle — Shiprocket, Delhivery, NimbusPost, India Post, Shippo, ShipStation, Easyship, Shippit, USPS, Onfleet, Veeqo — each switched on and given its keys under Settings › Shipping providers")
 		withInvoices = fs.Bool("invoices", false, "install the invoices module: a numbered invoice per paid order (INVOICES_SELLER_NAME, INVOICES_SELLER_ADDRESS, INVOICES_TAX_ID)")
@@ -438,6 +440,13 @@ environment:
 		}
 		if *withMsg91 {
 			modules = append(modules, msg91.New(msg91.Config{AuthKey: firstEnv("MSG91_AUTH_KEY", "MSG91_AUTHKEY")}))
+		}
+		// No environment fallback, unlike the providers above: a bot and a chat
+		// belong to one owner, and on an install that hosts several stores a
+		// token from the environment would send every store's orders to the
+		// same chat. Each store sets its own from the panel.
+		if *withTelegram {
+			modules = append(modules, telegramalerts.New(telegramalerts.Config{}))
 		}
 		// Gateways and carriers install idle: nothing in Config, everything on
 		// the Payment methods and Shipping providers screens. A store that

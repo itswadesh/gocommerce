@@ -77,6 +77,10 @@ const PROBES = {
     // be told the truth; the probe answers 403 for them when it is installed,
     // which still reads as present.
     "cart-recovery": { path: "/api/admin/x/cart-recovery/settings", right: ["abandonment.read", "orders.read"] },
+    // notifications.read beside the module's own right for cart-recovery's
+    // reason: in a binary without the module nobody holds alerts.read, and a
+    // typed /dash/notifications/telegram should say the module is missing.
+    "telegram-alerts": { path: "/api/admin/x/telegram-alerts/alerts", right: ["alerts.read", "notifications.read"] },
     // Plugin-only modules have no admin routes of their own; the plugin's
     // row is the proof they are installed.
     feeds: { path: "/api/admin/plugins/product-feeds", right: "store.operate" },
