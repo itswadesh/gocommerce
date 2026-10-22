@@ -243,39 +243,64 @@ behind them is the same engine. List the brands in `GOCOMMERCE_BRANDS`:
 | `base_domain` | This brand's stores answer at `<slug>.<base_domain>`, and the panel shows that address. Optional. |
 | `alias_base_domains` | Older base domains this brand's stores still answer under, so addresses given out before keep working. Nothing the engine shows or sends uses them. |
 | `reserved` | More names no store may take, beside the platform's own (`www`, `admin`, `api`, `mail` and the like) and the first label of every brand's panel host, which are always kept. A brand whose stores live on its own apex lists here every other host it uses under that apex. |
-| `logo_url` | A picture the panel shows where its mark is, `https://`. Empty keeps the mark. |
+| `logo_url` | A picture the panel shows where its mark is, `https://`. Empty keeps the mark. One that cannot be used is dropped with a warning at start and in `doctor`, and the mark is shown. |
 
 The engine refuses to start, naming the entry, when a brand has no name or no
-panel URL, a URL is not `https`, two brands share a panel host, or a base
-domain or alias is used twice. `gocommerce doctor` lists the brands, the
-store domains each answers under, and how many stores each has.
+panel URL, a panel URL is not `https`, two brands share a panel host, or a base
+domain or alias is used twice. **That stops the whole install, every brand
+with it**, so check a new value before deploying it: `gocommerce doctor` run
+with the new `GOCOMMERCE_BRANDS` (and `-dev` only where `serve` has it)
+reports what would stop the engine as a failed `brands` check rather than
+refusing to run. `gocommerce doctor` also lists the brands, the store domains
+each answers under, and how many stores each has.
 
 **Each store belongs to one brand.** It answers at `<slug>.<its brand's base
 domain>` (and its aliases), and under another brand's base domain it is
 nobody's, as an unknown store is. A store's own domains (Settings › Domains)
-are unchanged and still win. A store opened on a brand's admin domain belongs
+are unchanged and still win, and on a store's own domain the panel and its
+emails are the store's brand. A store opened on a brand's admin domain belongs
 to that brand. Store addresses stay unique across the whole install, so two
 brands cannot both have a store called `mystore`.
+
+**Which brand an address is**: a brand's panel host is that brand; a host
+under a brand's base domain or alias is that brand; a store's own domain is
+its store's brand; anything else is the **default brand** — the one whose
+`base_domain` or alias is `GOCOMMERCE_BASE_DOMAIN`, else the first in the
+list. Work no request started (a job, a command) is the default brand's too.
 
 **Accounts are the install's.** One person has one password and can sign in at
 any brand's admin domain, but sees and enters only that brand's stores there;
 someone who opened or joined stores under two brands finds each brand's on its
-own admin domain. A store of another brand is answered as one they are not on.
-The install's admin token (`GOCOMMERCE_ADMIN_TOKEN`) reaches every store.
+own admin domain. A store of another brand is answered as one they are not on,
+at sign-in too. The install's admin token (`GOCOMMERCE_ADMIN_TOKEN`) reaches
+every store.
 
 **Stores made before brands** are given one the first time the engine starts
-with `GOCOMMERCE_BRANDS`: the brand whose `base_domain` or
-`alias_base_domains` include `GOCOMMERCE_BASE_DOMAIN`, which is where those
-stores already answered, else the first brand. It is written once, so
-reordering the list later moves nothing. The install's owner moves a store to
-another brand with
+with `GOCOMMERCE_BRANDS`: the default brand, which is where those stores
+already answered. It is written once, so reordering the list later moves
+nothing. The install's owner moves a store to another brand with
 
 ```sh
 gocommerce store brand <slug> <panel host>    # e.g. gocommerce store brand mystore admin.beta.example
 ```
 
 which moves its address to the new brand's base domain and is recorded in the
-store's audit trail.
+store's audit trail. The people on its team keep the brand they arrived
+through; only the store moves.
+
+**Changing a brand's panel address** needs one more step. Stores and people
+record their brand by its panel host, so after changing a brand's `panel_url`
+run
+
+```sh
+gocommerce brands rename-host <old host> <new host>   # e.g. admin.beta.example panel.beta.example
+```
+
+which moves every store and person still recorded under the old host to the
+new one in one transaction, with a row in each store's audit trail. Until it
+is run, the engine logs an error at start naming the old host and how many
+stores it holds, `doctor` fails, and those stores are shown under the default
+brand.
 
 **The panel wears the brand.** The sign-in screens, the sidebar and every page
 title say the name of the brand whose admin domain the panel is opened on, and
@@ -284,12 +309,16 @@ a brand's `logo_url` takes the mark's place.
 **Emails to staff carry the brand.** A store's emails to its team — an
 invitation, a reset sent from Settings › Team — name the store's brand and link
 to its panel. A password reset asked for on a brand's admin domain is in that
-brand, and its link goes back there; one asked for at an address that is no
-brand's gets the first brand's, never a link to that address. With no request
-behind it, an email goes out in the brand the person signed up or accepted an
-invitation through, else the first. The default wording says the brand's name
-(`brand_name`) where it said GoCommerce. Emails to shoppers are the store's
-own and do not change.
+brand only when the person belongs to it — a store of theirs is in it, or
+they arrived through it — so a stranger cannot choose whose name a real
+person's email carries; otherwise it goes out in the brand they arrived
+through, or that of their first store. The link is only ever a configured
+brand's panel URL, never the address the request came to. With no request
+behind it, an email goes out the same way. The default wording says the
+brand's name (`brand_name`) where it said GoCommerce. Emails to shoppers are
+the store's own and do not change. An invitation is emailed only with a link
+built from configuration; on an install with no panel address at all, the
+owner is given the link to copy instead.
 
 `GOCOMMERCE_PANEL_URL` and `GOCOMMERCE_BASE_DOMAIN` may stay set beside
 `GOCOMMERCE_BRANDS` only if they name one of the brands (the base domain may be
