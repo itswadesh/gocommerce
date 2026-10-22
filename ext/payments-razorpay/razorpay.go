@@ -276,8 +276,17 @@ func (m *Module) paymentIDFor(ctx context.Context, order *gocommerce.Order) (str
 		WHERE order_id = $1 AND event = 'payment.captured'
 		ORDER BY received_at DESC LIMIT 1`, order.ID).Scan(&paymentID)
 	if errors.Is(err, sql.ErrNoRows) || !paymentID.Valid {
+		// A reference can be typed by hand, so it is read back from Razorpay
+		// and refunded only if it is this order's payment, for its amount.
 		if ref := strings.TrimSpace(order.PaymentReference); strings.HasPrefix(ref, "pay_") {
-			return ref, nil
+			p, why, err := m.boundPayment(ctx, order, ref)
+			if err != nil {
+				return "", err
+			}
+			if why != "" {
+				return "", fmt.Errorf("razorpay: payment %s cannot be refunded on order %s: %s", ref, order.Number, why)
+			}
+			return p.ID, nil
 		}
 		return "", errors.New("razorpay: no captured payment recorded for this order")
 	}
@@ -297,6 +306,7 @@ func (m *Module) paymentIDFor(ctx context.Context, order *gocommerce.Order) (str
 // razorpayPayment is one payment as Razorpay describes it.
 type razorpayPayment struct {
 	ID               string `json:"id"`
+	OrderID          string `json:"order_id"`
 	Amount           int64  `json:"amount"`
 	Currency         string `json:"currency"`
 	Status           string `json:"status"`
@@ -319,6 +329,13 @@ func (m *Module) Status(ctx context.Context, order *gocommerce.Order) (gocommerc
 	var payments []razorpayPayment
 	switch {
 	case strings.HasPrefix(ref, "order_"):
+		mine, err := m.madeFor(ctx, order, ref)
+		if err != nil {
+			return gocommerce.PaymentState{}, err
+		}
+		if !mine {
+			return gocommerce.PaymentState{Detail: "Razorpay order " + ref + " was made for another order"}, nil
+		}
 		var list struct {
 			Items []razorpayPayment `json:"items"`
 		}
@@ -327,9 +344,12 @@ func (m *Module) Status(ctx context.Context, order *gocommerce.Order) (gocommerc
 		}
 		payments = list.Items
 	case strings.HasPrefix(ref, "pay_"):
-		var one razorpayPayment
-		if err := m.get(ctx, "/v1/payments/"+url.PathEscape(ref), &one); err != nil {
+		one, why, err := m.boundPayment(ctx, order, ref)
+		if err != nil {
 			return gocommerce.PaymentState{}, err
+		}
+		if why != "" {
+			return gocommerce.PaymentState{Detail: why}, nil
 		}
 		payments = []razorpayPayment{one}
 	default:
@@ -346,7 +366,8 @@ func (m *Module) Status(ctx context.Context, order *gocommerce.Order) (gocommerc
 		}
 		currency := strings.ToUpper(p.Currency)
 		if p.Amount == order.Total.AmountMinor && strings.EqualFold(currency, order.Total.Currency) {
-			return gocommerce.PaymentState{Paid: true, Reference: p.ID, Detail: p.Status}, nil
+			return gocommerce.PaymentState{Paid: true, Reference: p.ID, Detail: p.Status,
+				Amount: &gocommerce.Money{AmountMinor: p.Amount, Currency: currency}}, nil
 		}
 		state.Detail = fmt.Sprintf("%s for %d %s, not the order's %d %s",
 			p.Status, p.Amount, currency, order.Total.AmountMinor, strings.ToUpper(order.Total.Currency))
@@ -364,6 +385,43 @@ func (m *Module) Status(ctx context.Context, order *gocommerce.Order) (gocommerc
 		}
 	}
 	return state, nil
+}
+
+// madeFor reads a Razorpay order and says whether Initiate made it for this
+// order, by the store order id it wrote into the notes.
+func (m *Module) madeFor(ctx context.Context, order *gocommerce.Order, razorpayOrderID string) (bool, error) {
+	var ro struct {
+		Notes map[string]any `json:"notes"`
+	}
+	if err := m.get(ctx, "/v1/orders/"+url.PathEscape(razorpayOrderID), &ro); err != nil {
+		return false, err
+	}
+	return fmt.Sprint(ro.Notes["order_id"]) == strconv.FormatInt(order.ID, 10), nil
+}
+
+// boundPayment reads a payment back and checks it is this order's: on a
+// Razorpay order made for it, for its total in its currency. why says what is
+// wrong when it is not.
+func (m *Module) boundPayment(ctx context.Context, order *gocommerce.Order, paymentID string) (razorpayPayment, string, error) {
+	var p razorpayPayment
+	if err := m.get(ctx, "/v1/payments/"+url.PathEscape(paymentID), &p); err != nil {
+		return p, "", err
+	}
+	if p.OrderID == "" {
+		return p, "payment " + paymentID + " is on no Razorpay order, so it is not this order's", nil
+	}
+	mine, err := m.madeFor(ctx, order, p.OrderID)
+	if err != nil {
+		return p, "", err
+	}
+	if !mine {
+		return p, "payment " + paymentID + " belongs to another order", nil
+	}
+	if p.Amount != order.Total.AmountMinor || !strings.EqualFold(p.Currency, order.Total.Currency) {
+		return p, fmt.Sprintf("payment %s is for %d %s, not the order's %d %s", paymentID,
+			p.Amount, strings.ToUpper(p.Currency), order.Total.AmountMinor, strings.ToUpper(order.Total.Currency)), nil
+	}
+	return p, "", nil
 }
 
 // Webhook implements gocommerce.WebhookProvider.

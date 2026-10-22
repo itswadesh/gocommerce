@@ -21,6 +21,8 @@ type razorpayStub struct {
 	payments string // the items of GET /v1/orders/{id}/payments
 	asked    []string
 	refunded []string
+	notes    map[string]string // Razorpay order id → the store order id in its notes
+	extra    map[string]string // payments GET /v1/payments/{id} knows beyond the list
 }
 
 func (s *razorpayStub) set(items string) {
@@ -31,7 +33,7 @@ func (s *razorpayStub) set(items string) {
 
 func newStatusApp(t *testing.T) (*gocommerce.App, *razorpayStub) {
 	t.Helper()
-	stub := &razorpayStub{payments: `[]`}
+	stub := &razorpayStub{payments: `[]`, notes: map[string]string{}, extra: map[string]string{}}
 	server := gctest.StubHTTP(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if user, pass, ok := r.BasicAuth(); !ok || user != "rzp_test_key" || pass != "rzp_test_secret" {
@@ -45,7 +47,33 @@ func newStatusApp(t *testing.T) (*gocommerce.App, *razorpayStub) {
 			body, _ := io.ReadAll(r.Body)
 			var in map[string]any
 			_ = json.Unmarshal(body, &in)
+			notes, _ := in["notes"].(map[string]any)
+			stub.notes["order_RZP1"] = fmt.Sprint(notes["order_id"])
 			fmt.Fprintf(w, `{"id":"order_RZP1","entity":"order","amount":%v,"currency":"%v","status":"created"}`, in["amount"], in["currency"])
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/orders/") && strings.Count(r.URL.Path, "/") == 3:
+			id := strings.TrimPrefix(r.URL.Path, "/v1/orders/")
+			note, ok := stub.notes[id]
+			if !ok {
+				http.Error(w, `{"error":{"code":"BAD_REQUEST_ERROR","description":"The id provided does not exist"}}`, http.StatusBadRequest)
+				return
+			}
+			fmt.Fprintf(w, `{"id":%q,"entity":"order","amount":2500,"currency":"INR","status":"paid","notes":{"order_id":%q}}`, id, note)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/payments/"):
+			id := strings.TrimPrefix(r.URL.Path, "/v1/payments/")
+			var items []map[string]any
+			_ = json.Unmarshal([]byte(stub.payments), &items)
+			for _, it := range items {
+				if it["id"] == id {
+					b, _ := json.Marshal(it)
+					w.Write(b)
+					return
+				}
+			}
+			if body, ok := stub.extra[id]; ok {
+				fmt.Fprint(w, body)
+				return
+			}
+			http.Error(w, `{"error":{"code":"BAD_REQUEST_ERROR","description":"The id provided does not exist"}}`, http.StatusBadRequest)
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/orders/") && strings.HasSuffix(r.URL.Path, "/payments"):
 			stub.asked = append(stub.asked, r.URL.Path)
 			var items []json.RawMessage
@@ -122,5 +150,72 @@ func TestRazorpayStatusReportsOnlyWhatRazorpaySaid(t *testing.T) {
 		if check.Recorded || check.Order.PaymentStatus != gocommerce.PaymentPending {
 			t.Errorf("%s: recorded %v, payment %q", tc.name, check.Recorded, check.Order.PaymentStatus)
 		}
+	}
+}
+
+// A payment reference typed onto an order by hand is not trusted to be this
+// order's: before refunding it, the module reads the payment back and checks
+// its Razorpay order was made for this order, for this amount.
+func TestRefundRefusesAPaymentOfAnotherOrder(t *testing.T) {
+	app, stub := newStatusApp(t)
+	ctx := context.Background()
+	result := gctest.PlaceOrder(t, app, "razorpay")
+	stub.mu.Lock()
+	stub.notes["order_ELSE"] = "999999"
+	stub.extra["pay_ELSE"] = `{"id":"pay_ELSE","entity":"payment","amount":2500,"currency":"INR","status":"captured","order_id":"order_ELSE"}`
+	stub.extra["pay_SMALL"] = `{"id":"pay_SMALL","entity":"payment","amount":100,"currency":"INR","status":"captured","order_id":"order_RZP1"}`
+	stub.mu.Unlock()
+	if _, err := app.Pay().MarkPaid(ctx, result.Order.ID, "pay_ELSE"); err != nil {
+		t.Fatalf("mark paid: %v", err)
+	}
+	if _, err := app.Pay().Refund(ctx, result.Order.ID, gocommerce.RefundRequest{}, nil); err == nil {
+		t.Error("refunded another order's payment")
+	}
+	ref := "pay_SMALL"
+	if _, err := app.Order().Update(ctx, result.Order.ID, gocommerce.OrderPatch{PaymentReference: &ref}); err != nil {
+		t.Fatalf("edit reference: %v", err)
+	}
+	if _, err := app.Pay().Refund(ctx, result.Order.ID, gocommerce.RefundRequest{}, nil); err == nil {
+		t.Error("refunded a payment for another amount")
+	}
+	if len(stub.refunded) != 0 {
+		t.Errorf("refunds sent: %v, want none", stub.refunded)
+	}
+}
+
+// Asked about a payment reference, Razorpay's answer counts only when that
+// payment's Razorpay order was made for this order.
+func TestStatusBindsAPaymentReferenceToTheOrder(t *testing.T) {
+	app, stub := newStatusApp(t)
+	ctx := context.Background()
+	result := gctest.PlaceOrder(t, app, "razorpay")
+	stub.mu.Lock()
+	stub.notes["order_ELSE"] = "999999"
+	stub.extra["pay_ELSE"] = `{"id":"pay_ELSE","entity":"payment","amount":2500,"currency":"INR","status":"captured","order_id":"order_ELSE"}`
+	stub.mu.Unlock()
+	ref := "pay_ELSE"
+	if _, err := app.Order().Update(ctx, result.Order.ID, gocommerce.OrderPatch{PaymentReference: &ref}); err != nil {
+		t.Fatalf("edit reference: %v", err)
+	}
+	check, err := app.Pay().CheckPayment(ctx, result.Order.ID)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if check.Gateway.Paid || check.Recorded || !strings.Contains(check.Gateway.Detail, "another order") {
+		t.Errorf("gateway = %+v, want another order's payment reported and nothing recorded", check.Gateway)
+	}
+
+	// And a Razorpay order made for some other store order is not this one's.
+	ref = "order_ELSE"
+	if _, err := app.Order().Update(ctx, result.Order.ID, gocommerce.OrderPatch{PaymentReference: &ref}); err != nil {
+		t.Fatalf("edit reference: %v", err)
+	}
+	stub.set(`[` + payment("pay_X", "captured", 2500, "INR", "") + `]`)
+	check, err = app.Pay().CheckPayment(ctx, result.Order.ID)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if check.Gateway.Paid || !strings.Contains(check.Gateway.Detail, "another order") {
+		t.Errorf("gateway = %+v, want a Razorpay order for another order refused", check.Gateway)
 	}
 }
