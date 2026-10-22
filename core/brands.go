@@ -284,8 +284,10 @@ func (a *App) underStoreDomain(host string) (domain string, owner Brand, ok bool
 
 // brandForHost is the brand a request's host belongs to: the brand whose
 // panel is on it, else the brand whose store domain it is under, else the
-// first.
-func (a *App) brandForHost(host string) Brand {
+// brand of the store whose own domain it is, else the default brand. A
+// store's own domain is looked up only after the configured hosts, so the
+// common case costs no query.
+func (a *App) brandForHost(ctx context.Context, host string) Brand {
 	h := hostName(host)
 	if b, ok := a.brandByPanelHost(h); ok {
 		return b
@@ -293,7 +295,15 @@ func (a *App) brandForHost(host string) Brand {
 	if _, b, ok := a.underStoreDomain(h); ok {
 		return b
 	}
-	return a.brands()[0]
+	if len(a.cfg.Brands) > 0 && h != "" {
+		var brandHost string
+		err := a.db.QueryRowContext(ctx, `SELECT coalesce(s.brand_host, '') FROM store_domains d
+			JOIN stores s ON s.id = d.store_id WHERE d.host = $1 AND d.verified_at IS NOT NULL`, h).Scan(&brandHost)
+		if err == nil {
+			return a.storeBrand(brandHost)
+		}
+	}
+	return a.defaultBrand()
 }
 
 // brandByPanelHost is the brand whose panel is on host.
@@ -313,13 +323,14 @@ func (a *App) storeBrand(host string) Brand {
 	if b, ok := a.brandByPanelHost(host); ok {
 		return b
 	}
-	return a.unassignedBrand()
+	return a.defaultBrand()
 }
 
-// unassignedBrand is the brand of a store that has none: the one whose base
-// domain or alias is Config.BaseDomain, which is where those stores already
-// answered before there were brands, else the first.
-func (a *App) unassignedBrand() Brand {
+// defaultBrand is the brand of a store that has none, of a host nothing else
+// names, and of work no request started: the one whose base domain or alias
+// is Config.BaseDomain, which is where stores answered before there were
+// brands, else the first.
+func (a *App) defaultBrand() Brand {
 	brands := a.brands()
 	if base, ok := baseDomainName(a.cfg.BaseDomain); ok {
 		for _, b := range brands {
@@ -339,7 +350,7 @@ func (a *App) assignStoreBrands(ctx context.Context) error {
 	if len(a.cfg.Brands) == 0 {
 		return nil
 	}
-	host := panelHost(a.unassignedBrand().PanelURL)
+	host := panelHost(a.defaultBrand().PanelURL)
 	if _, err := a.db.ExecContext(ctx, `UPDATE stores SET brand_host = $1 WHERE brand_host IS NULL`, host); err != nil {
 		return fmt.Errorf("gocommerce: give the stores their brand: %w", err)
 	}
@@ -371,13 +382,13 @@ func BrandFrom(ctx context.Context) (Brand, bool) {
 	return b, ok
 }
 
-// Brand is ctx's request's brand, or the first brand when no request started
+// Brand is ctx's request's brand, or the default brand when no request started
 // the work.
 func (a *App) Brand(ctx context.Context) Brand {
 	if b, ok := BrandFrom(ctx); ok {
 		return b
 	}
-	return a.brands()[0]
+	return a.defaultBrand()
 }
 
 // StoreBrand is the brand of the store ctx is bound to (D111): what its
@@ -575,7 +586,7 @@ func (a *App) checkBrands(ctx context.Context) Diagnostic {
 
 	if len(stray) > 0 {
 		warn(fmt.Sprintf("%d store(s) belong to a brand this install no longer has, and are shown under %s: %s",
-			len(stray), a.unassignedBrand().Name, strings.Join(stray, ", ")),
+			len(stray), a.defaultBrand().Name, strings.Join(stray, ", ")),
 			"move each to a brand: gocommerce store brand <slug> <panel host>")
 	}
 

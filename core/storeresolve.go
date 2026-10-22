@@ -66,7 +66,7 @@ func storePath(p string) bool {
 // one brand's address.
 func (a *App) storeMW(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r = r.WithContext(withBrand(r.Context(), a.brandForHost(r.Host)))
+		r = r.WithContext(withBrand(r.Context(), a.brandForHost(r.Context(), r.Host)))
 		if !storePath(r.URL.Path) || personPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return

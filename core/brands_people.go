@@ -50,5 +50,5 @@ func (a *App) personMailBrand(ctx context.Context, superuserID int64) Brand {
 			return b
 		}
 	}
-	return a.brands()[0]
+	return a.defaultBrand()
 }
