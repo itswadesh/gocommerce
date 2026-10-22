@@ -464,7 +464,7 @@ func (s *Invitations) email(ctx context.Context, inv *Invitation) (bool, string)
 		Language: s.app.mainLanguage(ctx),
 		Data: map[string]string{
 			"invite_url":       inv.AcceptURL,
-			"brand_name":       s.app.storeMailBrand(ctx).Name,
+			"brand_name":       s.app.StoreBrand(ctx).Name,
 			"store_name":       store,
 			"role":             inv.Role,
 			"invited_by":       inv.InvitedByName,

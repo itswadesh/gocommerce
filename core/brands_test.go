@@ -408,7 +408,7 @@ func TestANewStoreBelongsToTheBrandItIsOpenedFrom(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := app.StoreBrand(context.Background(), st.ID); b.Name != "Beta" || st.BrandHost != "admin.beta.test" {
+	if b := app.StoreBrand(WithStore(context.Background(), st.ID)); b.Name != "Beta" || st.BrandHost != "admin.beta.test" {
 		t.Fatalf("the new store is %q (%q), want Beta", b.Name, st.BrandHost)
 	}
 	if got, err := app.Stores().ByHost(context.Background(), "night-shop.beta.test"); err != nil || got.ID != st.ID {

@@ -35,18 +35,7 @@ func (a *App) storeBrandHost(ctx context.Context) sql.NullString {
 	if len(a.cfg.Brands) == 0 {
 		return sql.NullString{}
 	}
-	return sql.NullString{String: panelHost(a.storeMailBrand(ctx).PanelURL), Valid: true}
-}
-
-// storeMailBrand is the brand a store's email to its staff goes out in: the
-// brand of the store ctx is bound to, else the request's, else the first.
-func (a *App) storeMailBrand(ctx context.Context) Brand {
-	if id := a.storeOf(ctx); id != "" && id != installScope {
-		if b, err := a.StoreBrand(ctx, id); err == nil {
-			return b
-		}
-	}
-	return a.Brand(ctx)
+	return sql.NullString{String: panelHost(a.StoreBrand(ctx).PanelURL), Valid: true}
 }
 
 // personMailBrand is the brand a person's own email goes out in: the request's
