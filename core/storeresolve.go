@@ -230,6 +230,12 @@ func (a *App) onlyStoreOfSession(ctx context.Context, r *http.Request) (*Store, 
 		if sameBrand(a.storeBrand(host), brand) {
 			ids = append(ids, id)
 		}
+		// The brand is read in Go, not SQL (a store with no brand recorded is
+		// the default brand's), so the old LIMIT 2 is this: two in the brand
+		// already means "not their only one".
+		if len(ids) == 2 {
+			break
+		}
 	}
 	rows.Close()
 	if len(ids) != 1 {

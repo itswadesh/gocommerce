@@ -135,10 +135,15 @@ func (c *Config) applyBrands() error {
 			return fail("its panel is on %s, which is %s's already", host, other)
 		}
 		panels[host] = b.Name
+		// A logo is cosmetic: one that cannot be shown is dropped and said,
+		// rather than stopping every brand on the install over a picture.
 		if b.LogoURL != "" {
-			if b.LogoURL, err = brandURL(b.LogoURL, c.Dev); err != nil {
-				return fail("logo_url %s", err)
+			logo, err := brandURL(b.LogoURL, c.Dev)
+			if err != nil {
+				c.brandWarnings = append(c.brandWarnings,
+					fmt.Sprintf("brand %d (%s): logo_url %s, so the panel shows the mark instead", i+1, b.Name, err))
 			}
+			b.LogoURL = logo
 		}
 
 		if b.BaseDomain == "" && len(b.AliasBaseDomains) > 0 {
@@ -489,6 +494,12 @@ func (s *Stores) SetBrand(ctx context.Context, id, panel string) (Brand, error) 
 		return Brand{}, err
 	}
 	from := s.app.storeBrand(st.BrandHost)
+	// Already there: nothing moves, so the trail says nothing either. The
+	// people who joined through the store keep the brand they arrived
+	// through; a move changes where the store is, not who they are.
+	if sameBrand(from, to) && st.BrandHost != "" {
+		return to, nil
+	}
 	bound := WithStore(ctx, st.ID)
 	err = InTx(bound, s.db, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(bound, `UPDATE stores SET brand_host = $2 WHERE id = $1`,
@@ -570,6 +581,9 @@ func (a *App) checkBrands(ctx context.Context) Diagnostic {
 	}
 	d.Detail = strings.Join(lines, "; ")
 
+	for _, w := range a.cfg.brandWarnings {
+		warn(w, "fix the entry in "+BrandsEnv)
+	}
 	for _, b := range a.cfg.Brands {
 		if strings.HasPrefix(b.PanelURL, "http://") {
 			warn(fmt.Sprintf("%s's panel is plain http, so its sign-ins and links travel unencrypted", b.Name),
@@ -608,6 +622,17 @@ func (a *App) checkBrands(ctx context.Context) Diagnostic {
 		first, _, _ := strings.Cut(panelHost(b.PanelURL), ".")
 		kept = append(kept, first)
 		kept = append(kept, b.Reserved...)
+	}
+	var domains []string
+	for _, b := range a.cfg.Brands {
+		domains = append(domains, b.storeDomains()...)
+	}
+	for _, inner := range domains {
+		for _, outer := range domains {
+			if label, ok := strings.CutSuffix(inner, "."+outer); ok && !strings.Contains(label, ".") {
+				kept = append(kept, label)
+			}
+		}
 	}
 	sort.Strings(kept)
 	reserved, err := a.db.QueryContext(ctx, `SELECT slug FROM stores WHERE slug = ANY($1) ORDER BY slug`, kept)
@@ -732,4 +757,13 @@ func (a *App) RenameBrandHost(ctx context.Context, oldHost, newHost string) (sto
 		return 0, 0, err
 	}
 	return len(list), people, nil
+}
+
+// ValidateBrands checks brands as the engine would at start, with the older
+// settings beside them, without changing what it is given. One bad entry stops
+// the whole install — every brand — so `gocommerce doctor` runs this on the
+// environment's value before anything is served with it.
+func ValidateBrands(brands []Brand, panelURL, baseDomain string, dev bool) error {
+	c := Config{Brands: cloneBrands(brands), PanelURL: strings.TrimRight(panelURL, "/"), BaseDomain: baseDomain, Dev: dev}
+	return c.applyBrands()
 }
