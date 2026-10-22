@@ -112,6 +112,7 @@ graph):
 | `notify-sendgrid` | The store's email through SendGrid — the key from the environment or from Notifications › Setup Email, the wording from the panel |
 | `notify-twilio` | The store's SMS through Twilio — plain text, so the wording is the store's own under Notifications › Setup SMS and nothing has to be registered with a carrier first |
 | `notify-msg91` | The store's SMS through MSG91's DLT templates — the key and the template ids from the environment or from Notifications › Setup SMS |
+| `telegram-alerts` | The owner told on Telegram about every new order, payment, cancellation and return, through a bot of their own — free, set up and worded under Notifications › Setup Telegram, with retries when Telegram is down |
 
 Every gateway and carrier module installs idle: `-gateways` and `-carriers` put all of them in the binary with nothing in Config, and Settings › Payment methods and Settings › Shipping providers switch each one on and take its keys. A store that prefers the environment wires the module itself with a Config.
 | `fulfill-shiprocket` | Booking shipments and waybills, India |

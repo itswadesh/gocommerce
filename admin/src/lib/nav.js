@@ -196,6 +196,15 @@ export const NAV = [
         children: [
             { href: "/dash/notifications/email", label: "Setup Email", right: "notifications.read", keywords: "sendgrid provider templates" },
             { href: "/dash/notifications/sms", label: "Setup SMS", right: "notifications.read", keywords: "msg91 provider templates" },
+            // The owner's own alerts rather than the shoppers' messages, but
+            // found where somebody looks for "what the store sends".
+            {
+                href: "/dash/notifications/telegram",
+                label: "Setup Telegram",
+                right: "alerts.read",
+                module: "telegram-alerts",
+                keywords: "telegram bot alerts owner phone new order chat botfather",
+            },
         ],
     },
     // Shopify's Content: the words and pictures a storefront is made of that

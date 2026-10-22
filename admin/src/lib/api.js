@@ -478,6 +478,29 @@ export const webhooks = {
 };
 
 /**
+ * telegram is ext/telegram-alerts: the owner told on Telegram about each order.
+ *
+ * The bot token and the chat are the plugin's settings, saved through
+ * `plugin`, so they take plugins.write like every other credential; the rest
+ * is the module's own and takes alerts.read or alerts.write. `chats` and
+ * `test` call Telegram there and then, and a 422 from either carries
+ * Telegram's own reason in words the owner can act on.
+ */
+const TELEGRAM = "/api/admin/x/telegram-alerts";
+export const telegram = {
+    plugin: () => api.get("/api/admin/plugins/telegram-alerts"),
+    savePlugin: (body) => api.patch("/api/admin/plugins/telegram-alerts", body),
+    alerts: () => api.get(`${TELEGRAM}/alerts`),
+    updateAlert: (event, body) => api.patch(`${TELEGRAM}/alerts/${encodeURIComponent(event)}`, body),
+    resetAlert: (event) => api.delete(`${TELEGRAM}/alerts/${encodeURIComponent(event)}`),
+    preview: (event, template) => api.post(`${TELEGRAM}/preview`, template === undefined ? { event } : { event, template }),
+    chats: () => api.get(`${TELEGRAM}/chats`),
+    test: () => api.post(`${TELEGRAM}/test`, {}),
+    deliveries: (params) => api.get(`${TELEGRAM}/deliveries` + query(params)),
+    retry: (id) => api.post(`${TELEGRAM}/deliveries/${id}/retry`, {}),
+};
+
+/**
  * recovery is ext/cart-recovery: baskets left behind, what was sent about
  * them, and the automation that sends it.
  *

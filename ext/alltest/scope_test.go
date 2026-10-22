@@ -54,6 +54,7 @@ import (
 	meilisearch "github.com/itswadesh/gocommerce/ext/search-meilisearch"
 	showcases "github.com/itswadesh/gocommerce/ext/showcases"
 	sitemaps "github.com/itswadesh/gocommerce/ext/sitemaps"
+	telegramalerts "github.com/itswadesh/gocommerce/ext/telegram-alerts"
 	translations "github.com/itswadesh/gocommerce/ext/translations"
 	webhooks "github.com/itswadesh/gocommerce/ext/webhooks"
 	wishlist "github.com/itswadesh/gocommerce/ext/wishlist"
@@ -111,6 +112,7 @@ func everyModule() []gocommerce.Module {
 		reviews.New(reviews.Config{}),
 		meilisearch.New(meilisearch.Config{}),
 		sitemaps.New(sitemaps.Config{}),
+		telegramalerts.New(telegramalerts.Config{}),
 		translations.New(),
 		webhooks.New(webhooks.Config{}),
 		wishlist.New(wishlist.Config{}),
