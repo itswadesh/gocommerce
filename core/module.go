@@ -115,6 +115,11 @@ func (a *App) mountScoped(pattern string, h http.Handler, admin, vendorReachable
 	}
 
 	if admin {
+		// Wrapped first, so it runs last, once the authentication below has
+		// said who is asking: an admin route is the one place a variant is read
+		// for the store's own operator, and the only one where its cost reaches
+		// JSON (operator_view.go).
+		h = operatorView(h)
 		// Closed to sellers unless somebody opened it. Wrapped before rights in
 		// the chain as written, so it runs after them: a vendor reaching an
 		// endpoint they have the right for still has to be somewhere they are

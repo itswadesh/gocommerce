@@ -104,7 +104,12 @@ type Variant struct {
 	// Cost is what the item cost this store. Nil means nobody has recorded one,
 	// which is not the same as zero — a zero cost reports a 100% margin, and a
 	// margin nobody entered is worse than no margin at all.
-	Cost *Money `json:"cost,omitempty"`
+	//
+	// A Go caller always has it. JSON carries it only when the variant was read
+	// for an operator on an admin route (operator_view.go), which is what
+	// costShown records.
+	Cost      *Money `json:"cost,omitempty"`
+	costShown bool
 	// Taxable is whether tax applies to this variant. True for almost
 	// everything, and the safe default to be wrong about: tax charged in error
 	// is refundable, tax not charged is not.
@@ -1672,6 +1677,7 @@ func (c *Catalog) selectVariants(ctx context.Context, where, orderBy, page strin
 	ids := []int64{}
 	byID := map[int64]*Variant{}
 	currency := c.app.Currency(ctx) // once, not a read per variant
+	showCost := costVisible(ctx)
 	for rows.Next() {
 		v := &Variant{}
 		var meta []byte
@@ -1695,6 +1701,7 @@ func (c *Catalog) selectVariants(ctx context.Context, where, orderBy, page strin
 		if cost.Valid {
 			m := money(cost.Int64, currency)
 			v.Cost = &m
+			v.costShown = showCost
 		}
 		if weight.Valid {
 			w := int(weight.Int64)
