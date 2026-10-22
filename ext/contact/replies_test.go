@@ -58,7 +58,7 @@ func write(t *testing.T, app *gocommerce.App, in MessageInput) string {
 // and the message is marked replied. A second reply joins the thread.
 func TestAnOperatorRepliesAndTheThreadIsKept(t *testing.T) {
 	mail := &gctest.RecordingNotifier{}
-	app := gctest.New(t, mailModule{rec: mail}, New(Config{}))
+	app := gctest.New(t, mailModule{rec: mail}, New(Config{MessagesPerMinute: -1}))
 	ctx := context.Background()
 	if _, ok, err := app.NotifyTemplates().Get(ctx, gocommerce.ChannelEmail, "contact.reply"); err != nil || !ok {
 		t.Fatalf("no wording for a reply: %v %v", ok, err)
@@ -139,8 +139,8 @@ func TestAnOperatorRepliesAndTheThreadIsKept(t *testing.T) {
 func TestAReplyThatDoesNotGoIsNotRecorded(t *testing.T) {
 	ctx := context.Background()
 	for name, mods := range map[string][]gocommerce.Module{
-		"no provider": {New(Config{})},
-		"refused":     {refusingMailModule{}, New(Config{})},
+		"no provider": {New(Config{MessagesPerMinute: -1})},
+		"refused":     {refusingMailModule{}, New(Config{MessagesPerMinute: -1})},
 	} {
 		t.Run(name, func(t *testing.T) {
 			app := gctest.New(t, mods...)
@@ -174,7 +174,7 @@ func TestAReplyThatDoesNotGoIsNotRecorded(t *testing.T) {
 // and sends nothing.
 func TestADemoStoreSendsNoReplies(t *testing.T) {
 	mail := &gctest.RecordingNotifier{}
-	app := gctest.New(t, mailModule{rec: mail}, New(Config{}))
+	app := gctest.New(t, mailModule{rec: mail}, New(Config{MessagesPerMinute: -1}))
 	id := write(t, app, MessageInput{Name: "Ann", Email: "victim@example.com", Body: "Hello?"})
 	if err := app.Stores().SetDemo(context.Background(), app.DefaultStore(), true); err != nil {
 		t.Fatal(err)
@@ -192,7 +192,7 @@ func TestADemoStoreSendsNoReplies(t *testing.T) {
 // shopper's address, and the address of whoever replied.
 func TestAnAgentReadsAThreadMasked(t *testing.T) {
 	mail := &gctest.RecordingNotifier{}
-	app := gctest.New(t, mailModule{rec: mail}, New(Config{}))
+	app := gctest.New(t, mailModule{rec: mail}, New(Config{MessagesPerMinute: -1}))
 	id := write(t, app, MessageInput{Name: "Ann", Email: "ann.smith@example.com", Body: "Hello?"})
 	manager := gctest.OperatorToken(t, app, "mia.jones@example.com", gocommerce.RoleManager)
 	if rec := gctest.SessionRequest(t, app, manager, http.MethodPost, "/api/admin/x/contact/messages/"+id+"/reply", ReplyInput{Body: "Hi Ann"}); rec.Code != http.StatusCreated {

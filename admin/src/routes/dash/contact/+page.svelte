@@ -1,9 +1,11 @@
 <script>
     /**
-     * Contact: the messages shoppers sent through the storefront's form.
+     * Contact: what shoppers sent through the storefront's form, and the
+     * questions they asked about a product, in one inbox.
      *
-     * Three states — new, replied, archived. The drawer shows the message
-     * whole, the order it mentions, the thread of replies, and a reply box: the reply goes to the shopper from
+     * Three states — new, replied, archived — and a filter for the kind. The
+     * drawer shows the message whole, the order or product it is about, the
+     * thread of replies, and a reply box: the reply goes to the shopper from
      * the store's own email provider, and only once the provider has taken it
      * does it join the thread and mark the message replied. A reply that did
      * not go says why beside the button and keeps its text. The mailto stays
@@ -18,7 +20,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import { rise } from "$lib/motion.js";
     import { rightLabel } from "$lib/rights.js";
-    import { mailtoHref, replySubject, sentByLabel } from "$lib/contact.js";
+    import { KIND_OPTIONS, kindParam, mailtoHref, productFacts, replySubject, sentByLabel } from "$lib/contact.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
@@ -36,7 +38,7 @@
        and for anybody else the rights answer is the true one. */
     const missing = $derived(modulesKnown() && !hasModule("contact") && (readable || can("customers.read")));
 
-    const list = listState({ q: "", status: "new", page: 1, limit: PER_PAGE });
+    const list = listState({ q: "", status: "new", kind: "all", page: 1, limit: PER_PAGE });
     const perPage = $derived(list.params.limit);
     let draft = $state(list.params.q);
     let rows = $state([]);
@@ -58,7 +60,7 @@
     /** The engine's own sentence for a reply that did not go. */
     let refusal = $state("");
 
-    const filtered = $derived(!!list.params.q || list.params.status !== "new");
+    const filtered = $derived(!!list.params.q || list.params.status !== "new" || list.params.kind !== "all");
 
     $effect(() => {
         list.params;
@@ -73,6 +75,7 @@
                     query({
                         q: list.params.q,
                         status: list.params.status === "any" ? "" : list.params.status,
+                        kind: kindParam(list.params.kind),
                         page: list.page,
                         limit: perPage,
                     }),
@@ -195,6 +198,7 @@
 
     function drawerTitle(msg) {
         if (!msg) return "Message";
+        if (msg.kind === "enquiry" && msg.product) return "Enquiry about " + msg.product.title;
         return msg.subject || "Message from " + msg.name;
     }
 </script>
@@ -214,7 +218,7 @@
                         <input
                             type="text"
                             class="p-l-20"
-                            placeholder="Search by name, email, subject or order number"
+                            placeholder="Search by name, email, product or order"
                             aria-label="Search messages"
                             bind:value={draft}
                         />
@@ -229,6 +233,15 @@
                     {/if}
                 </form>
                 <div class="page-header-primary-btns contact-filters">
+                    <div class="field">
+                        <Select
+                            id="contact-kind"
+                            ariaLabel="Kind"
+                            value={list.params.kind}
+                            options={KIND_OPTIONS}
+                            onchange={(v) => list.set({ kind: v })}
+                        />
+                    </div>
                     <div class="field">
                         <Select
                             id="contact-status"
@@ -275,7 +288,14 @@
                                 </td>
                                 <td class="col-field-type-text" data-name="About" title={row.body}>
                                     <div class="row-name">
-                                        <span class="txt-ellipsis contact-lead">{row.subject || "(no subject)"}</span>
+                                        {#if row.kind === "enquiry" && row.product}
+                                            <span class="contact-about contact-lead">
+                                                <span class="label label-info contact-kind">Enquiry</span>
+                                                <span class="contact-about-title">{row.product.title}</span>
+                                            </span>
+                                        {:else}
+                                            <span class="txt-ellipsis contact-lead">{row.subject || "(no subject)"}</span>
+                                        {/if}
                                         <span class="txt-hint txt-sm txt-ellipsis">{row.body}</span>
                                     </div>
                                 </td>
@@ -302,7 +322,7 @@
                                         <EmptyState
                                             icon="ri-filter-off-line"
                                             title="No messages match these filters"
-                                            text="Try another status or search, or clear them to go back to new messages."
+                                            text="Try another kind, status or search, or clear them to go back to new messages."
                                             onclear={() => {
                                                 draft = "";
                                                 list.clear();
@@ -312,7 +332,7 @@
                                         <EmptyState
                                             icon="ri-mail-line"
                                             title="No new messages"
-                                            text="Messages shoppers send through the storefront's contact form land here. The form posts to /x/contact/messages."
+                                            text="Messages from the storefront's contact form and questions shoppers ask about a product land here. The form posts to /x/contact/messages, a product page's enquiry to /x/contact/enquiries."
                                         />
                                     {/if}
                                 </td>
@@ -345,6 +365,19 @@
             <span class="label {statusClass(open.status)}">{STATUS[open.status]}</span>
         </div>
 
+        {#if open.kind === "enquiry" && open.product}
+            <a class="contact-product" href="{base}/dash/products/{open.product.id}">
+                <i class="ri-price-tag-3-line" aria-hidden="true"></i>
+                <span class="contact-product-text">
+                    <span class="txt-hint txt-sm">Asked about</span>
+                    <span class="txt-bold contact-product-title">{open.product.title}</span>
+                    {#if productFacts(open.product).length}
+                        <span class="txt-hint txt-sm">{productFacts(open.product).join(" · ")}</span>
+                    {/if}
+                </span>
+                <i class="ri-arrow-right-s-line contact-product-go" aria-hidden="true"></i>
+            </a>
+        {/if}
 
         <div class="contact-body">{open.body}</div>
 
@@ -452,12 +485,35 @@
         flex-wrap: wrap;
         gap: 10px;
     }
-    /* The subject leads and the message's first line takes
+    /* An enquiry's label sits beside its product, on a phone's card too,
+       where the list otherwise stacks every span of a name on its own line. */
+    .row-name > .contact-about {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+    }
+    .contact-about-title {
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+    /* The subject or the product leads and the message's first line takes
        what is left, rather than both being cut to the same few letters. */
     @media (min-width: 601px) {
         .row-name > .contact-lead {
             flex-shrink: 0;
             max-width: 65%;
+        }
+    }
+    @media (max-width: 600px) {
+        .row-name > .contact-about {
+            align-items: flex-start;
+        }
+        .contact-about-title {
+            white-space: normal;
+            overflow-wrap: anywhere;
         }
     }
     /* Three buttons share the drawer's foot; on the narrowest phones they
@@ -467,6 +523,9 @@
             padding-left: 14px;
             padding-right: 14px;
         }
+    }
+    .contact-kind {
+        flex-shrink: 0;
     }
     .contact-from {
         min-width: 0;
@@ -482,6 +541,46 @@
         padding: var(--smSpacing);
         border-radius: var(--borderRadius);
         background: var(--surfaceAlt2Color, rgba(0, 0, 0, 0.04));
+    }
+    .contact-product {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: var(--smSpacing);
+        padding: 10px var(--smSpacing);
+        border: 1px solid var(--surfaceAlt3Color);
+        border-radius: var(--borderRadius);
+        color: inherit;
+        text-decoration: none;
+        transition:
+            border-color 150ms ease-out,
+            background-color 150ms ease-out;
+    }
+    .contact-product:hover,
+    .contact-product:focus-visible {
+        border-color: var(--surfaceAlt5Color);
+        background: var(--surfaceAlt2Color, rgba(0, 0, 0, 0.04));
+    }
+    .contact-product:focus-visible {
+        outline: 2px solid var(--ring, var(--primaryColor));
+        outline-offset: 2px;
+    }
+    .contact-product > i:first-child {
+        font-size: 1.25rem;
+        color: var(--surfaceTxtHintColor);
+    }
+    .contact-product-text {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        flex: 1;
+    }
+    .contact-product-title {
+        overflow-wrap: anywhere;
+    }
+    .contact-product-go {
+        color: var(--surfaceTxtHintColor);
+        transition: transform 150ms ease-out;
     }
     .contact-section-title {
         margin: var(--smSpacing) 0 8px;
@@ -537,6 +636,9 @@
     }
 
     @media (prefers-reduced-motion: no-preference) {
+        .contact-product:hover .contact-product-go {
+            transform: translateX(3px);
+        }
         .contact-composer-actions .btn:active:not(:disabled),
         .contact-foot:active:not(:disabled) {
             transform: scale(0.97);
