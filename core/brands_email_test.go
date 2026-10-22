@@ -43,6 +43,7 @@ func personBrandHost(t *testing.T, app *App, email string) string {
 func TestAResetAskedForOnABrandLinksBackToIt(t *testing.T) {
 	app, rec := brandedResetApp(t)
 	newSuperuser(t, app, "owner@example.com", "a good password")
+	joinTestStore(t, app, inBetaStore(t, app), "owner@example.com", RoleOwner)
 	res := do(t, app, http.MethodPost, "/api/admin/password-reset",
 		jsonBody(t, map[string]string{"identity": "owner@example.com"}), onHost("admin.beta.test"))
 	var out ResetRequest
@@ -65,6 +66,9 @@ func TestAResetAskedForOnABrandLinksBackToIt(t *testing.T) {
 func TestAResetLinkNeverGoesToAHostThatIsNoBrands(t *testing.T) {
 	app, rec := brandedResetApp(t)
 	newSuperuser(t, app, "owner@example.com", "a good password")
+	// In a store of each of the first two brands, so the request may pick
+	// either.
+	joinTestStore(t, app, inBetaStore(t, app), "owner@example.com", RoleOwner)
 	for _, tc := range []struct {
 		host, forwarded, want string
 	}{
@@ -183,6 +187,7 @@ func TestAResetOnAPanelHostThatIsAStoresDomainIsThatBrands(t *testing.T) {
 		t.Fatal(err)
 	}
 	newSuperuser(t, app, "owner@example.com", "a good password")
+	joinTestStore(t, app, held, "owner@example.com", RoleOwner)
 	do(t, app, http.MethodPost, "/api/admin/password-reset",
 		jsonBody(t, map[string]string{"identity": "owner@example.com"}), onHost("staff.gamma.test"))
 	if note := lastReset(t, app, rec); !strings.HasPrefix(note.Data["reset_url"], "https://staff.gamma.test/") || note.Data["brand_name"] != "Gamma" {
@@ -228,4 +233,41 @@ func postInvitationTo(t *testing.T, app *App, store, host, body string) (int, ma
 		decodeData(t, rec, &out)
 	}
 	return rec.Code, out
+}
+
+// A public reset is in the brand it was asked from only when the person
+// belongs there (D111 review): a store in that brand, or arriving through it.
+// Otherwise a stranger could choose which brand's name a real person's email
+// carries. The answer to the request does not change either way.
+func TestAResetGoesOutOnlyInABrandThePersonBelongsTo(t *testing.T) {
+	app, rec := brandedResetApp(t)
+	// Arrived through Beta, with no store anywhere.
+	if _, err := app.db.Exec(`INSERT INTO superusers (email, password_hash, brand_host) VALUES ('arrived@example.com', 'x', 'admin.beta.test')`); err != nil {
+		t.Fatal(err)
+	}
+	// No arrival recorded, one store, in Beta.
+	beta := addTestStore(t, app, "dark-shop")
+	inBrand(t, app, beta, "admin.beta.test")
+	if _, err := app.Superusers().Create(WithStore(context.Background(), beta), "staffed@example.com", "a long enough password", RoleStaff); err != nil {
+		t.Fatal(err)
+	}
+	for _, email := range []string{"arrived@example.com", "staffed@example.com"} {
+		res := do(t, app, http.MethodPost, "/api/admin/password-reset",
+			jsonBody(t, map[string]string{"identity": email}), onHost("admin.alpha.test"), fromIP("10.0.4."+itoa(int64(len(email)))))
+		if res.Code != http.StatusAccepted {
+			t.Fatalf("%s: %d %s", email, res.Code, res.Body)
+		}
+		if note := lastReset(t, app, rec); note.To != email || note.Data["brand_name"] != "Beta" ||
+			!strings.HasPrefix(note.Data["reset_url"], "https://admin.beta.test/") {
+			t.Errorf("%s asked on Alpha's admin: %q to %q, want Beta's", email, note.Data["brand_name"], note.Data["reset_url"])
+		}
+	}
+}
+
+// inBetaStore opens a store in Beta and returns its id.
+func inBetaStore(t *testing.T, app *App) string {
+	t.Helper()
+	id := addTestStore(t, app, "beta-own")
+	inBrand(t, app, id, "admin.beta.test")
+	return id
 }
