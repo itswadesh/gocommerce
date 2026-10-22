@@ -75,11 +75,18 @@ func (a *App) handleCreateInvitation(w http.ResponseWriter, r *http.Request) {
 	// The link is assembled here rather than in the service, because only the
 	// HTTP layer knows what this store is reached at. It is returned once and
 	// never again.
-	inv.AcceptURL = a.acceptURL(r, inv.Token)
-	if in.SendEmail == nil || *in.SendEmail {
+	link, emailable := a.acceptURL(r, inv.Token)
+	inv.AcceptURL = link
+	switch {
+	case (in.SendEmail == nil || *in.SendEmail) && !emailable:
+		no := false
+		inv.Emailed = &no
+		inv.EmailError = "This install has no panel address (GOCOMMERCE_PANEL_URL), so the link was not emailed: " +
+			"one built from this request's address could point anywhere. Copy the link and send it yourself."
+	case in.SendEmail == nil || *in.SendEmail:
 		emailed, problem := a.invitations.email(r.Context(), inv)
 		inv.Emailed, inv.EmailError = &emailed, problem
-	} else {
+	default:
 		no := false
 		inv.Emailed = &no
 	}
@@ -89,18 +96,23 @@ func (a *App) handleCreateInvitation(w http.ResponseWriter, r *http.Request) {
 	Respond(w, http.StatusCreated, inv)
 }
 
-// acceptURL is where the invitee goes. With brands configured it is the
-// invitation's store's brand's panel (D111): the invitee must arrive where
-// that store is listed, whichever admin domain sent it. Without them it is
-// built from the request rather than from configuration, so a store reached
-// through a proxy, a tunnel or a bare IP produces a link that actually
-// resolves from where the operator is standing.
-func (a *App) acceptURL(r *http.Request, token string) string {
+// acceptURL is where the invitee goes, and whether it may be emailed. From
+// configuration when there is any: the panel URL of the store's brand
+// (D111), which on an install without brands is Config.PanelURL. The invitee
+// must arrive where that store is listed, whichever admin domain sent it.
+//
+// Without a panel URL the link is built from the request, so an owner behind
+// a proxy, a tunnel or a bare IP is handed one that works from where they
+// stand. That one is for the owner's eyes only and is never emailed: Host and
+// X-Forwarded-Host are whatever a proxy or a client made them, and an email
+// carrying a live invitation to a host somebody chose is the hazard the reset
+// link was built to avoid (D95).
+func (a *App) acceptURL(r *http.Request, token string) (link string, emailable bool) {
 	// The store rides on the link, so the accept page talks to the store
 	// that sent it however many stores this install serves (D83).
 	path := "/admin/auth/accept-invite/" + token + "?store=" + url.QueryEscape(a.storeOf(r.Context()))
-	if len(a.cfg.Brands) > 0 {
-		return a.StoreBrand(r.Context()).PanelURL + path
+	if panel := a.StoreBrand(r.Context()).PanelURL; panel != "" {
+		return panel + path, true
 	}
 	scheme := "https"
 	if r.TLS == nil && !strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
@@ -110,7 +122,7 @@ func (a *App) acceptURL(r *http.Request, token string) string {
 	if fwd := r.Header.Get("X-Forwarded-Host"); fwd != "" {
 		host = fwd
 	}
-	return scheme + "://" + host + path
+	return scheme + "://" + host + path, false
 }
 
 func (a *App) handleRevokeInvitation(w http.ResponseWriter, r *http.Request) {

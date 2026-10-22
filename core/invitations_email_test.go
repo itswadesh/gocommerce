@@ -34,6 +34,7 @@ func postInvitation(t *testing.T, app *App, body string) (int, map[string]any) {
 func TestAnInvitationIsEmailedWithALinkToItsStore(t *testing.T) {
 	rec := &recordingNotifier{}
 	app := newTestApp(t, &notifyModule{rec: rec})
+	app.cfg.PanelURL = "https://admin.example.com"
 	code, inv := postInvitation(t, app, `{"email":"new@example.com","role":"staff"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("status = %d: %v", code, inv)
@@ -129,5 +130,41 @@ func TestTheInvitePageSaysNothingAboutAnExistingAccount(t *testing.T) {
 	}
 	if shapes[0] != shapes[1] {
 		t.Fatalf("an existing account's invitation reads differently: %s / %s", shapes[0], shapes[1])
+	}
+}
+
+// An emailed invitation link comes only from configuration: the panel URL, or
+// with several brands the store's brand's (D111 review). Without one, the link
+// is still shown to the owner who asked, built from the request so it works
+// from where they stand, but it is not emailed — a forwarded host header is
+// whatever a proxy or a client made it.
+func TestAnInvitationLinkIsEmailedOnlyFromConfiguration(t *testing.T) {
+	rec := &recordingNotifier{}
+	app := newTestApp(t, &notifyModule{rec: rec})
+	forged := []func(*http.Request){withAdmin, header("X-Forwarded-Host", "evil.example"), onHost("evil.example")}
+
+	res := doBody(t, app, http.MethodPost, "/api/admin/invitations", `{"email":"first@example.com","role":"staff"}`, forged...)
+	var inv map[string]any
+	decodeData(t, res, &inv)
+	if res.Code != http.StatusCreated || inv["emailed"] != false || inv["email_error"] == "" || inv["accept_url"] == "" {
+		t.Fatalf("no panel URL: %d %v; want the link shown and not emailed, with a reason", res.Code, inv)
+	}
+	if rec.count(EventSuperuserInvitation) != 0 {
+		t.Fatal("an invitation link built from the request was emailed")
+	}
+
+	app.cfg.PanelURL = "https://admin.example.com"
+	res = doBody(t, app, http.MethodPost, "/api/admin/invitations", `{"email":"second@example.com","role":"staff"}`, forged...)
+	decodeData(t, res, &inv)
+	link, _ := inv["accept_url"].(string)
+	if inv["emailed"] != true || !strings.HasPrefix(link, "https://admin.example.com/admin/auth/accept-invite/") {
+		t.Fatalf("with a panel URL: %v; want it emailed from the panel URL", inv)
+	}
+	for _, n := range rec.sent {
+		for k, v := range n.Data {
+			if strings.Contains(v, "evil.example") {
+				t.Errorf("%s carries the forged host: %q", k, v)
+			}
+		}
 	}
 }

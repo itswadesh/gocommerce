@@ -417,8 +417,8 @@ func TestDemotingSomebodyTakesEffectOnTheirOpenSession(t *testing.T) {
 func TestAnInvitationLinkOpensTheAdminAuthScreen(t *testing.T) {
 	app := newTestApp(t)
 	r := httptest.NewRequest(http.MethodPost, "http://shop.example/api/admin/invitations", nil)
-	got := app.acceptURL(r, "tok")
-	if want := "http://shop.example/admin/auth/accept-invite/tok?store=" + app.DefaultStore(); got != want {
+	got, emailable := app.acceptURL(r, "tok")
+	if want := "http://shop.example/admin/auth/accept-invite/tok?store=" + app.DefaultStore(); got != want || emailable {
 		t.Errorf("accept url = %q, want %q", got, want)
 	}
 }
