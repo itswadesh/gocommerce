@@ -127,8 +127,9 @@ type cashfreeStub struct {
 	payments map[string]string // cf order id → the JSON array GET .../payments answers
 	refunds  []map[string]any
 	refundTo []string
-	answer   string // the refund_status POST .../refunds answers with
+	answer   string // the refund_status POST .../refunds answers with; "timeout" answers 504
 	calls    atomic.Int32
+	reads    atomic.Int32 // GET .../payments
 }
 
 func (s *cashfreeStub) lastOrder() (map[string]any, http.Header) {
@@ -195,6 +196,7 @@ func newStub(t *testing.T) (*cashfreeStub, *httptest.Server) {
 			fmt.Fprintf(w, `{"cf_order_id":"2149460581","created_at":"2026-10-22T10:00:00+05:30","customer_details":{"customer_id":%q,"customer_phone":"9999999999"},"entity":"order","order_amount":%s,"order_currency":"INR","order_id":%q,"order_status":"ACTIVE","payment_session_id":"session_test_%d","order_tags":null}`,
 				in["customer_details"].(map[string]any)["customer_id"], in["order_amount"], in["order_id"], len(stub.created))
 		case r.Method == http.MethodGet && len(parts) == 3 && parts[0] == "orders" && parts[2] == "payments":
+			stub.reads.Add(1)
 			list, ok := stub.payments[parts[1]]
 			if !ok {
 				list = "[]"
@@ -203,6 +205,12 @@ func newStub(t *testing.T) (*cashfreeStub, *httptest.Server) {
 		case r.Method == http.MethodPost && len(parts) == 3 && parts[0] == "orders" && parts[2] == "refunds":
 			stub.refunds = append(stub.refunds, in)
 			stub.refundTo = append(stub.refundTo, parts[1])
+			if stub.answer == "timeout" {
+				// Cashfree took the refund and the answer never arrived.
+				w.WriteHeader(http.StatusGatewayTimeout)
+				fmt.Fprint(w, `{"message":"upstream timed out"}`)
+				return
+			}
 			fmt.Fprintf(w, `{"cf_payment_id":"5114917126974","cf_refund_id":"1553338","refund_id":%q,"order_id":%q,"entity":"refund","refund_amount":%s,"refund_currency":"INR","refund_status":%q,"refund_type":"MERCHANT_INITIATED","status_description":"In Progress"}`,
 				in["refund_id"], parts[1], in["refund_amount"], stub.answer)
 		default:
@@ -473,6 +481,9 @@ func TestCheckPaymentAsksCashfree(t *testing.T) {
 	if !check.Recorded || check.Gateway.Reference != "612" || check.Order.PaymentStatus != gocommerce.PaymentPaid {
 		t.Errorf("after a success: %+v, order payment %q; want 612 recorded", check.Gateway, check.Order.PaymentStatus)
 	}
+	if a := check.Gateway.Amount; a == nil || a.AmountMinor != 2500 || a.Currency != "INR" {
+		t.Errorf("amount = %+v, want the 2500 INR Cashfree's order was for", a)
+	}
 }
 
 // A success for an amount other than the order's is reported, not recorded.
@@ -492,7 +503,7 @@ func TestStatusChecksTheAmount(t *testing.T) {
 // The storefront's return page asks the engine to verify, naming the Cashfree
 // order it came back with; the payment Cashfree reports is recorded.
 func TestVerifyOnReturn(t *testing.T) {
-	app, stub := newApp(t)
+	app, stub, mod := newAppModule(t)
 	result := gctest.PlaceOrder(t, app, "cashfree")
 	cf := result.Payment.Reference
 
@@ -510,6 +521,7 @@ func TestVerifyOnReturn(t *testing.T) {
 	}
 
 	stub.setPayments(cf, `[`+paymentJSON("614", "SUCCESS", "25.00", "Transaction successful")+`]`)
+	mod.asked.Clear() // the quiet spell after the first ask has passed
 	rec = gctest.Request(t, app, http.MethodPost, "/x/payments-cashfree/orders/"+cf+"/verify", nil)
 	gctest.DecodeData(t, rec, &out)
 	if out.PaymentStatus != gocommerce.PaymentPaid {
@@ -551,6 +563,7 @@ func TestRefund(t *testing.T) {
 	if rec := postWebhook(t, app, success(cf, "5114917126974", "25.00")); rec.Code != http.StatusOK {
 		t.Fatalf("webhook = %d: %s", rec.Code, rec.Body)
 	}
+	stub.setPayments(cf, `[`+paymentJSON("5114917126974", "SUCCESS", "25.00", "ok")+`]`)
 
 	order, err := app.Pay().Refund(ctx, result.Order.ID, gocommerce.RefundRequest{AmountMinor: 1050, Reason: "one item"}, nil)
 	if err != nil {
@@ -587,6 +600,7 @@ func TestRefundRefusedByCashfree(t *testing.T) {
 	if rec := postWebhook(t, app, success(result.Payment.Reference, "79", "25.00")); rec.Code != http.StatusOK {
 		t.Fatalf("webhook = %d: %s", rec.Code, rec.Body)
 	}
+	stub.setPayments(result.Payment.Reference, `[`+paymentJSON("79", "SUCCESS", "25.00", "ok")+`]`)
 	stub.answerRefund("CANCELLED")
 	if _, err := app.Pay().Refund(context.Background(), result.Order.ID, gocommerce.RefundRequest{}, nil); err == nil {
 		t.Error("a cancelled refund was recorded as sent")
@@ -717,8 +731,13 @@ func failed(cfOrder, cfPayment string) string {
 
 // paymentJSON is one entry of GET /orders/{order_id}/payments.
 func paymentJSON(cfPayment, status, amount, message string) string {
+	return offerPaymentJSON(cfPayment, status, amount, amount, message)
+}
+
+// offerPaymentJSON is a payment an offer made smaller than its order.
+func offerPaymentJSON(cfPayment, status, orderAmount, paid, message string) string {
 	return fmt.Sprintf(`{"cf_payment_id":%q,"order_id":"x","entity":"payment","payment_currency":"INR","order_amount":%s,"order_currency":"INR","payment_amount":%s,"payment_status":%q,"payment_time":"2026-10-22T12:15:06+05:30","payment_message":%q,"is_captured":true,"payment_group":"upi"}`,
-		cfPayment, amount, amount, status, message)
+		cfPayment, orderAmount, paid, status, message)
 }
 
 func deliver(app *gocommerce.App, body, signature, timestamp string) *httptest.ResponseRecorder {

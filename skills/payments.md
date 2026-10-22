@@ -326,7 +326,11 @@ the optional `PaymentStatusReader` port (D112), and answers with what it said:
   declined attempt is not the end of an order the shopper can still pay.
 - `Status` says `Paid` only for the order's total in its currency, on the
   order's own gateway object. A mismatch is neither paid nor failed, and
-  `Detail` says why.
+  `Detail` says why. It reports what it took in `Amount`, and the engine
+  compares that with the order's total again under the order's lock, so an
+  order edited while the gateway was asked is refused rather than settled.
+- `recorded` is true only when this check moved the order to paid, not when
+  a webhook did so while the check was in flight.
 
 `GET /api/admin/settings` marks a method that can be asked with
 `checks_payments`, and the order screen offers "Check with <gateway>" beside
