@@ -588,7 +588,7 @@ func (m *Module) sendStep(ctx context.Context, set *settingsRow, c claimed, res 
 	}
 
 	step := a.Steps[c.stepsSent]
-	data := m.data(set.Settings, cur, contact, c.linkToken, c.stepsSent+1)
+	data := m.data(ctx, set.Settings, cur, contact, c.linkToken, c.stepsSent+1)
 	sendErr := m.app.Notify(ctx, gocommerce.Notification{
 		Event: step.Template, Channel: gocommerce.ChannelEmail, To: contact, Data: data,
 	})
@@ -642,7 +642,7 @@ func (m *Module) sendStep(ctx context.Context, set *settingsRow, c claimed, res 
 // data flattens one message for a template, in the flat strings the order
 // notifications use: the module hands a notifier values, and the store's
 // template owns the wording.
-func (m *Module) data(s Settings, cur *cartNow, to, linkToken string, step int) map[string]string {
+func (m *Module) data(ctx context.Context, s Settings, cur *cartNow, to, linkToken string, step int) map[string]string {
 	d := cur.detail
 	out := map[string]string{
 		"cart_token":     cur.token,
@@ -653,7 +653,7 @@ func (m *Module) data(s Settings, cur *cartNow, to, linkToken string, step int) 
 		"summary":        summarise(d.Lines),
 		"step":           strconv.Itoa(step),
 	}
-	if link := m.link(s, linkToken, cur.token); link != "" {
+	if link := m.link(ctx, s, linkToken, cur.token); link != "" {
 		out["recovery_url"] = link
 	}
 	// Carried because a basket abandoned with a code on it is worth more of the
@@ -668,15 +668,25 @@ func (m *Module) data(s Settings, cur *cartNow, to, linkToken string, step int) 
 // engine knows its public address, because that is the only way a click can
 // be counted; straight to the storefront basket when it does not, because an
 // uncounted click still brings the shopper back.
-func (m *Module) link(s Settings, linkToken, cartToken string) string {
+func (m *Module) link(ctx context.Context, s Settings, linkToken, cartToken string) string {
 	storefront := m.storefront(s)
 	if storefront == "" {
 		return ""
 	}
-	if panel := m.app.Config().PanelURL; panel != "" {
+	if panel := m.panelURL(ctx); panel != "" {
 		return panel + "/x/cart-recovery/r/" + linkToken
 	}
 	return storefront + "/cart/" + cartToken
+}
+
+// panelURL is the engine's public address for the store ctx is bound to: its
+// brand's panel (D111), so a shopper of one brand's store never sees another
+// brand's domain in a link. Without brands it is Config.PanelURL, as before.
+func (m *Module) panelURL(ctx context.Context) string {
+	if b := m.app.StoreBrand(ctx); b.PanelURL != "" {
+		return b.PanelURL
+	}
+	return m.app.Config().PanelURL
 }
 
 func (m *Module) release(ctx context.Context, id int64) error {

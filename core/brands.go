@@ -380,13 +380,16 @@ func (a *App) Brand(ctx context.Context) Brand {
 	return a.brands()[0]
 }
 
-// StoreBrand is the brand store id belongs to.
-func (a *App) StoreBrand(ctx context.Context, id string) (Brand, error) {
-	st, err := a.stores.Get(ctx, id)
-	if err != nil {
-		return Brand{}, err
+// StoreBrand is the brand of the store ctx is bound to (D111): what its
+// emails to staff are named, and whose panel address its links go through.
+// Bound to no store, it is the request's brand, else the first.
+func (a *App) StoreBrand(ctx context.Context) Brand {
+	if id := a.storeOf(ctx); id != "" && id != installScope {
+		if st, err := a.stores.Get(ctx, id); err == nil {
+			return a.storeBrand(st.BrandHost)
+		}
 	}
-	return a.storeBrand(st.BrandHost), nil
+	return a.Brand(ctx)
 }
 
 type foreignStoreKey struct{}
