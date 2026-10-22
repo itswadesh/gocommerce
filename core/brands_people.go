@@ -83,3 +83,20 @@ func (a *App) personMailBrand(ctx context.Context, superuserID int64) Brand {
 	}
 	return a.defaultBrand()
 }
+
+// membershipsInBrand are the person's memberships in stores of the brand the
+// request came through.
+func (a *App) membershipsInBrand(ctx context.Context, superuserID int64) []Membership {
+	ms, err := a.stores.MembershipsOf(ctx, superuserID)
+	if err != nil {
+		return nil
+	}
+	here := a.Brand(ctx)
+	out := ms[:0]
+	for _, m := range ms {
+		if sameBrand(a.StoreBrand(WithStore(ctx, m.StoreID)), here) {
+			out = append(out, m)
+		}
+	}
+	return out
+}

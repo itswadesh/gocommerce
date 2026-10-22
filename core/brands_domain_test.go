@@ -59,3 +59,41 @@ func TestAnUnknownHostIsTheDefaultBrand(t *testing.T) {
 		t.Fatalf("no request = %q, want the default brand Beta", b.Name)
 	}
 }
+
+// Signing in on one brand's admin answers with no standing in another brand's
+// store, named or not (D111 review), as storeMW and the store list already do.
+func TestSigningInOnABrandSaysNothingOfAnotherBrandsStore(t *testing.T) {
+	app := newStrictTestApp(t)
+	app.cfg.Brands = twoBrands()
+	inBrand(t, app, firstStore(t, app), "admin.alpha.test")
+	beta := addTestStore(t, app, "dark-shop")
+	inBrand(t, app, beta, "admin.beta.test")
+	if _, err := app.Superusers().Create(WithStore(context.Background(), beta), "beta@example.com", "a long enough password", RoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	role := func(opts ...func(*http.Request)) string {
+		t.Helper()
+		opts = append(opts, jsonBody(t, map[string]string{"identity": "beta@example.com", "password": "a long enough password"}))
+		rec := do(t, app, http.MethodPost, "/api/admin/auth-with-password", opts...)
+		var out struct {
+			Record struct {
+				Role   string   `json:"role"`
+				Rights []string `json:"rights"`
+			} `json:"record"`
+		}
+		decodeData(t, rec, &out)
+		if out.Record.Role == "" && len(out.Record.Rights) > 0 {
+			t.Errorf("no role, and rights %v", out.Record.Rights)
+		}
+		return out.Record.Role
+	}
+	if got := role(onHost("admin.alpha.test"), header("X-Store", beta)); got != "" {
+		t.Errorf("Beta's store named on Alpha's admin: role %q, want none", got)
+	}
+	if got := role(onHost("admin.alpha.test")); got != "" {
+		t.Errorf("no store named on Alpha's admin: role %q, want none", got)
+	}
+	if got := role(onHost("admin.beta.test")); got != RoleOwner {
+		t.Errorf("no store named on Beta's admin: role %q, want owner", got)
+	}
+}
