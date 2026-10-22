@@ -451,7 +451,7 @@ func inLanguage(lang, main string) string {
 	return " in " + lang
 }
 
-// The engine's own messages. Order events carry the keys orderNotificationData
+// The engine's own messages. Order events carry the keys OrderNotificationData
 // builds; the operator reset carries its own vocabulary on purpose (see
 // Superusers.deliverReset). Amounts are minor units, which is what the engine
 // hands every notifier — how a currency is written is the reader's business,

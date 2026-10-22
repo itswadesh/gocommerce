@@ -229,7 +229,7 @@ func (a *App) subscribeNotifications() {
 }
 
 func (a *App) notifyOrder(ctx context.Context, event string, ev *OrderEvent) error {
-	data := orderNotificationData(ev)
+	data := OrderNotificationData(ev)
 	// The language the customer ordered in, while the store still sells in
 	// it, else the store's main language (D87).
 	lang := a.profile.MessageLanguage(ctx, ev.Language)
@@ -252,10 +252,11 @@ func (a *App) notifyOrder(ctx context.Context, event string, ev *OrderEvent) err
 	return errors.Join(failures...)
 }
 
-// orderNotificationData flattens an order event into template data. It is flat
+// OrderNotificationData flattens an order event into template data. It is flat
 // strings on purpose: a notifier module owns its templates, and the engine
-// hands it values rather than opinions about wording.
-func orderNotificationData(ev *OrderEvent) map[string]string {
+// hands it values rather than opinions about wording. Exported for a module
+// that words its own messages about orders, so a key means the same thing there.
+func OrderNotificationData(ev *OrderEvent) map[string]string {
 	data := map[string]string{
 		"order_id":       strconv.FormatInt(ev.OrderID, 10),
 		"order_number":   ev.Number,
