@@ -318,6 +318,7 @@ func (m *Module) Status(ctx context.Context, order *gocommerce.Order) (gocommerc
 				intent.AmountReceived, currency, order.Total.AmountMinor, strings.ToUpper(order.Total.Currency))
 		default:
 			state.Paid, state.Reference = true, intent.ID
+			state.Amount = &gocommerce.Money{AmountMinor: intent.AmountReceived, Currency: currency}
 		}
 	case "canceled":
 		state.Failed = true

@@ -111,13 +111,21 @@ func (p *Payments) name(code string) string {
 // Confirming here is what makes a gateway order shippable — without it, a paid
 // order would sit at "pending" forever waiting for a step nobody performs.
 func (p *Payments) MarkPaid(ctx context.Context, orderID int64, reference string) (*Order, error) {
-	return p.markPaid(ctx, orderID, reference, "")
+	o, _, err := p.markPaid(ctx, orderID, reference, "", nil)
+	return o, err
 }
 
 // markPaid is MarkPaid with the audit row's summary chosen by the caller, so a
 // payment recorded because a gateway was asked says so in the history.
-func (p *Payments) markPaid(ctx context.Context, orderID int64, reference, summary string) (*Order, error) {
-	return p.app.orders.transition(ctx, orderID, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
+//
+// expect, when given, is the amount the gateway says it took. It is compared
+// with the order's total under the order's lock, because the gateway was asked
+// outside it and the order may have been edited meanwhile. changed reports
+// whether this call moved the order to paid — false when somebody else (a
+// webhook racing a check) already had.
+func (p *Payments) markPaid(ctx context.Context, orderID int64, reference, summary string, expect *Money) (_ *Order, changed bool, err error) {
+	o, err := p.app.orders.transition(ctx, orderID, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
+		changed = false // a retried transaction starts over
 		if o.PaymentStatus == PaymentPaid {
 			return transitionResult{}, nil
 		}
@@ -140,6 +148,11 @@ func (p *Payments) markPaid(ctx context.Context, orderID int64, reference, summa
 			// confirmation problem, and silently reviving the order would
 			// resurrect an inventory reservation nobody is holding.
 			return transitionResult{}, Conflictf("order %s was cancelled; this payment needs a refund, not a confirmation", o.Number)
+		}
+		if expect != nil && (expect.AmountMinor != o.Total.AmountMinor || !strings.EqualFold(expect.Currency, o.Total.Currency)) {
+			return transitionResult{}, Conflictf(
+				"the gateway took %d %s and order %s now totals %d %s; it was changed after the payment, so record it by hand once the two agree",
+				expect.AmountMinor, strings.ToUpper(expect.Currency), o.Number, o.Total.AmountMinor, o.Total.Currency)
 		}
 
 		if _, err := tx.ExecContext(ctx, `
@@ -168,11 +181,16 @@ func (p *Payments) markPaid(ctx context.Context, orderID int64, reference, summa
 		if summary != "" {
 			res.Summary = summary + " on order " + o.Number
 		}
+		changed = true
 		if reference != "" {
 			res.After = map[string]any{"payment_reference": reference}
 		}
 		return res, nil
 	})
+	if err != nil {
+		return nil, false, err
+	}
+	return o, changed, nil
 }
 
 // MarkUnpaid takes back a payment status that was recorded by mistake — a
@@ -360,12 +378,12 @@ func (p *Payments) CheckPayment(ctx context.Context, orderID int64) (*PaymentChe
 	if !state.Paid || o.PaymentStatus == PaymentPaid || o.PaymentStatus == PaymentRefunded {
 		return check, nil
 	}
-	settled, err := p.markPaid(ctx, orderID, strings.TrimSpace(state.Reference),
-		"Recorded the payment "+p.name(o.PaymentProvider)+" reported")
+	settled, changed, err := p.markPaid(ctx, orderID, strings.TrimSpace(state.Reference),
+		"Recorded the payment "+p.name(o.PaymentProvider)+" reported", state.Amount)
 	if err != nil {
 		return nil, err
 	}
-	check.Order, check.Recorded = settled, settled.PaymentStatus == PaymentPaid
+	check.Order, check.Recorded = settled, changed
 	return check, nil
 }
 

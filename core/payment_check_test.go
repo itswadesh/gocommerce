@@ -24,7 +24,8 @@ type statusProvider struct {
 	err      error
 	asked    int
 	app      *App
-	lockFree []bool // per call: could the order row be locked from outside?
+	lockFree []bool         // per call: could the order row be locked from outside?
+	during   func(o *Order) // runs while the gateway is being asked
 }
 
 func (*statusProvider) Code() string { return "checkable" }
@@ -46,6 +47,9 @@ func (p *statusProvider) Status(ctx context.Context, o *Order) (PaymentState, er
 		}) == nil
 	}
 	p.lockFree = append(p.lockFree, free)
+	if p.during != nil {
+		p.during(o)
+	}
 	return p.state, p.err
 }
 
@@ -255,5 +259,53 @@ func TestCheckPaymentIsAdvertisedAndGated(t *testing.T) {
 	}
 	if len(rights) != 1 || rights[0] != RightOrdersWrite {
 		t.Errorf("rights = %v, want orders.write", rights)
+	}
+}
+
+// A webhook that settles the order while the gateway is being asked has
+// recorded the payment; the check did not, and says so.
+func TestCheckPaymentRecordedOnlyWhenThisCheckSettled(t *testing.T) {
+	gw := &statusProvider{}
+	app := newTestApp(t, payModule{provider: gw})
+	order := checkableOrder(t, app, "CHK-6")
+	gw.during = func(o *Order) {
+		if _, err := app.Pay().MarkPaid(context.Background(), o.ID, "pay_from_webhook"); err != nil {
+			t.Errorf("webhook mark paid: %v", err)
+		}
+	}
+	gw.answer(PaymentState{Paid: true, Reference: "pay_from_webhook", Amount: &Money{AmountMinor: 2500, Currency: order.Total.Currency}}, nil)
+	check, code, body := checkPayment(t, app, order.ID)
+	if code != http.StatusOK {
+		t.Fatalf("check-payment = %d: %s", code, body)
+	}
+	if check.Recorded {
+		t.Error("recorded = true for a payment the webhook recorded while the check was in flight")
+	}
+	if check.Order.PaymentStatus != PaymentPaid {
+		t.Errorf("order payment = %q, want paid", check.Order.PaymentStatus)
+	}
+	if n := len(orderEvents(t, app, order.ID, EventOrderPaid)); n != 1 {
+		t.Errorf("order.paid events = %d, want 1", n)
+	}
+}
+
+// The gateway's word is about the amount it took. An order whose total is not
+// that amount by the time the payment is recorded — edited while the gateway
+// was asked — is refused under the order's lock, not settled.
+func TestCheckPaymentRefusesAnOrderWhoseTotalMoved(t *testing.T) {
+	gw := &statusProvider{}
+	app := newTestApp(t, payModule{provider: gw})
+	order := checkableOrder(t, app, "CHK-7")
+	gw.answer(PaymentState{Paid: true, Reference: "pay_old_total", Amount: &Money{AmountMinor: 1900, Currency: order.Total.Currency}}, nil)
+	_, code, body := checkPayment(t, app, order.ID)
+	if code != http.StatusConflict || !strings.Contains(body, "1900") {
+		t.Errorf("check-payment = %d: %s; want 409 naming the amount the gateway took", code, body)
+	}
+	got, err := app.Order().Get(context.Background(), order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PaymentStatus != PaymentPending {
+		t.Errorf("payment = %q, want still pending", got.PaymentStatus)
 	}
 }
