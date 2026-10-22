@@ -38,17 +38,48 @@ func (a *App) storeBrandHost(ctx context.Context) sql.NullString {
 	return sql.NullString{String: panelHost(a.StoreBrand(ctx).PanelURL), Valid: true}
 }
 
-// personMailBrand is the brand a person's own email goes out in: the request's
-// when one asked for it, else the brand they arrived through, else the first.
+// personMailBrand is the brand a person's own email goes out in: the request's,
+// when the person belongs to that brand — a store of theirs is in it, or they
+// arrived through it; else the brand they arrived through; else the brand of
+// their first store; else the default brand. A request may not pick a brand the
+// person has nothing to do with: anybody can ask for a reset for anybody, and
+// would otherwise choose whose name a real person's email carries.
 func (a *App) personMailBrand(ctx context.Context, superuserID int64) Brand {
-	if b, ok := BrandFrom(ctx); ok {
-		return b
-	}
-	var host sql.NullString
-	if err := a.db.QueryRowContext(ctx, `SELECT brand_host FROM superusers WHERE id = $1`, superuserID).Scan(&host); err == nil && host.Valid {
-		if b, ok := a.brandByPanelHost(host.String); ok {
-			return b
+	var arrived sql.NullString
+	_ = a.db.QueryRowContext(ctx, `SELECT brand_host FROM superusers WHERE id = $1`, superuserID).Scan(&arrived)
+	var stores []Brand
+	rows, err := a.db.QueryContext(ctx, `
+		SELECT coalesce(st.brand_host, '') FROM store_members m JOIN stores st ON st.id = m.store_id
+		WHERE m.superuser_id = $1 ORDER BY st.created_at, st.id`, superuserID)
+	if err == nil {
+		for rows.Next() {
+			var host string
+			if rows.Scan(&host) == nil {
+				stores = append(stores, a.storeBrand(host))
+			}
 		}
+		rows.Close()
+	}
+	recorded, hasRecord := Brand{}, false
+	if arrived.Valid {
+		recorded, hasRecord = a.brandByPanelHost(arrived.String)
+	}
+
+	if asked, ok := BrandFrom(ctx); ok {
+		if hasRecord && sameBrand(recorded, asked) {
+			return asked
+		}
+		for _, b := range stores {
+			if sameBrand(b, asked) {
+				return asked
+			}
+		}
+	}
+	switch {
+	case hasRecord:
+		return recorded
+	case len(stores) > 0:
+		return stores[0]
 	}
 	return a.defaultBrand()
 }
