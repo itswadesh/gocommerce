@@ -5,6 +5,28 @@ import (
 	"testing"
 )
 
+// A module that words its own messages about orders — an alert to the owner
+// rather than a note to the shopper — renders them over the same flat data the
+// engine's templates read, so {{.order_number}} means one thing everywhere.
+// Exported for that, and every key the engine's wording names has to be in it.
+func TestOrderNotificationDataCarriesEveryKeyTheTemplatesName(t *testing.T) {
+	data := OrderNotificationData(&OrderEvent{
+		OrderID: 42, Number: "GC-000042", Status: "pending", PaymentStatus: "pending",
+		Provider: "cod", Currency: "INR", TotalMinor: 129900,
+		Email: "asha@example.com", Name: "Asha Rao",
+		Lines:  []OrderEventLine{{Title: "Cotton kurta", VariantLabel: "M", Quantity: 2}},
+		Reason: "changed my mind",
+	})
+	for _, key := range append([]string{"order_id", "reason"}, orderVariables...) {
+		if _, ok := data[key]; !ok {
+			t.Errorf("no %q in the flat data", key)
+		}
+	}
+	if data["order_id"] != "42" || data["total_minor"] != "129900" || data["items_summary"] != "2 x Cotton kurta (M)" {
+		t.Errorf("data = %v", data)
+	}
+}
+
 // A module that hears its own event has, until now, no way to tell anybody
 // about it. RegisterNotifier adds a delivery backend and the set that drives it
 // is unexported, so `ext/cart-recovery` — which core/notify.go deliberately
