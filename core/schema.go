@@ -81,6 +81,7 @@ func coreMigrations() []Migration {
 		{ID: "0070_sample_shop", SQL: migration0070SampleShop},
 		{ID: "0071_agent_keys", SQL: migration0071AgentKeys},
 		ScopeMigration("0072_scope_api_key_rates", "api_key_rates"),
+		{ID: "0073_store_brand", SQL: migration0073StoreBrand},
 	}
 }
 

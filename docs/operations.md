@@ -28,6 +28,7 @@ Only `DBURL` and one admin token are required.
 | `AdminAuth` | bearer tokens | Replace to add sessions, OIDC or RBAC. |
 | `SecretsKey` / `SecretsKeyPrevious` | none | `GOCOMMERCE_SECRETS_KEY` / `GOCOMMERCE_SECRETS_KEY_PREVIOUS`, environment only. Seals the secrets the engine reads back; unset, they are stored readable. See [Secrets at rest](#secrets-at-rest). |
 | `CORSOrigins` | none | Browser origins allowed to call the API directly (`GOCOMMERCE_CORS_ORIGINS`, comma-separated, `*` for any). Unset, a storefront on another origin has to proxy. Credentials are never allowed. |
+| `Brands` | none | `GOCOMMERCE_BRANDS`, a JSON array. Several names on one install, each with its own admin domain and stores; see [Several brands](#several-brands). Unset, one brand made of `PanelURL` and `BaseDomain`. |
 | `AllowPrivateURLs` | `false` | Lets the addresses a store sets — webhook endpoints, provider API base URLs — be private ones (`GOCOMMERCE_ALLOW_PRIVATE_URLS`). Only where every store operator runs the server; see [Addresses a store sets](#addresses-a-store-sets). |
 | `CartTTL` | 720h | How long an untouched cart survives. |
 | `CartRetention` | 720h | How long an abandoned cart is kept before deletion, measured from `abandoned_at`. |
@@ -144,6 +145,7 @@ Sign-up, password-reset links and the stores' own addresses are listed too:
 | `GOCOMMERCE_PANEL_URL` | Where the panel is reached, e.g. `https://shop.example.com`. A password-reset email links there; without it the email carries only a code. |
 | `GOCOMMERCE_SIGNUP` | `1` lets anybody make an account on the sign-in screen and open a store. It stays shut until the install has email of its own: `RESEND_API_KEY` or `SENDGRID_API_KEY` here, not a store's own email settings. |
 | `GOCOMMERCE_BASE_DOMAIN` | Gives every store an address at `<slug>.<base domain>` without adding a domain, e.g. `shops.example.com`. The panel shows it, and a domain under it cannot be added as a store's own. Point a wildcard DNS record at whatever serves the storefront. |
+| `GOCOMMERCE_BRANDS` | Several brands on one install, each a name on its own admin domain with its own stores. A JSON array; see [Several brands](#several-brands). Unset, the install is one brand made of the two settings above. |
 | `GOCOMMERCE_SECRETS_KEY`, `GOCOMMERCE_SECRETS_KEY_PREVIOUS` | Seal the payment and provider keys, API key copies and webhook signing secrets the database holds. Empty by default, which stores them readable as before. See [Secrets at rest](#secrets-at-rest) before setting it. |
 
 Notifications › Setup Email has a **Send test email** button: it sends one
@@ -216,6 +218,84 @@ While the rule is on, those requests do not go through `HTTP_PROXY` or
 `HTTPS_PROXY`: through a proxy the server cannot see where a request really
 goes. The install's own addresses — `MEILI_HOST`, `IMPORT_AMAZON_LLM_URL` —
 are set by whoever runs the server and are not held to it.
+
+### Several brands
+
+One install — one database, one deployment — can answer under several names,
+each on its own admin domain (D111). The panel at `admin.alpha.example` is
+called Alpha and the one at `admin.beta.example` is called Beta; everything
+behind them is the same engine. List the brands in `GOCOMMERCE_BRANDS`:
+
+```json
+[
+  {"name": "Alpha", "panel_url": "https://admin.alpha.example", "base_domain": "alpha.example", "logo_url": ""},
+  {"name": "Beta",  "panel_url": "https://admin.beta.example",  "base_domain": "beta.example",
+   "logo_url": "https://cdn.beta.example/logo.svg"},
+  {"name": "Gamma", "panel_url": "https://admin.gamma.example", "base_domain": "gamma.example",
+   "alias_base_domains": ["shops.gamma.example"], "reserved": ["www", "status", "updates"]}
+]
+```
+
+| Field | What it does |
+|---|---|
+| `name` | What the panel and the emails to staff call the product. Required. |
+| `panel_url` | Where this brand's panel is reached: `https://` and a host, no path (plain `http` only with `-dev`). Required, and no two brands share a host. |
+| `base_domain` | This brand's stores answer at `<slug>.<base_domain>`, and the panel shows that address. Optional. |
+| `alias_base_domains` | Older base domains this brand's stores still answer under, so addresses given out before keep working. Nothing the engine shows or sends uses them. |
+| `reserved` | More names no store may take, beside the platform's own (`www`, `admin`, `api`, `mail` and the like) and the first label of every brand's panel host, which are always kept. A brand whose stores live on its own apex lists here every other host it uses under that apex. |
+| `logo_url` | A picture the panel shows where its mark is, `https://`. Empty keeps the mark. |
+
+The engine refuses to start, naming the entry, when a brand has no name or no
+panel URL, a URL is not `https`, two brands share a panel host, or a base
+domain or alias is used twice. `gocommerce doctor` lists the brands, the
+store domains each answers under, and how many stores each has.
+
+**Each store belongs to one brand.** It answers at `<slug>.<its brand's base
+domain>` (and its aliases), and under another brand's base domain it is
+nobody's, as an unknown store is. A store's own domains (Settings › Domains)
+are unchanged and still win. A store opened on a brand's admin domain belongs
+to that brand. Store addresses stay unique across the whole install, so two
+brands cannot both have a store called `mystore`.
+
+**Accounts are the install's.** One person has one password and can sign in at
+any brand's admin domain, but sees and enters only that brand's stores there;
+someone who opened or joined stores under two brands finds each brand's on its
+own admin domain. A store of another brand is answered as one they are not on.
+The install's admin token (`GOCOMMERCE_ADMIN_TOKEN`) reaches every store.
+
+**Stores made before brands** are given one the first time the engine starts
+with `GOCOMMERCE_BRANDS`: the brand whose `base_domain` or
+`alias_base_domains` include `GOCOMMERCE_BASE_DOMAIN`, which is where those
+stores already answered, else the first brand. It is written once, so
+reordering the list later moves nothing. The install's owner moves a store to
+another brand with
+
+```sh
+gocommerce store brand <slug> <panel host>    # e.g. gocommerce store brand mystore admin.beta.example
+```
+
+which moves its address to the new brand's base domain and is recorded in the
+store's audit trail.
+
+`GOCOMMERCE_PANEL_URL` and `GOCOMMERCE_BASE_DOMAIN` may stay set beside
+`GOCOMMERCE_BRANDS` only if they name one of the brands (the base domain may be
+an alias); the engine refuses to start otherwise, rather than leave the stores
+under an old base domain unreachable. Unset, they take the first brand's
+values, which is what a module reading them (cart recovery's tracked links)
+gets.
+
+**Hosting several brands** needs, for each brand:
+
+- DNS: the panel host (`admin.beta.example`) and a wildcard for its store
+  domains (`*.beta.example`, and `*.shops.gamma.example` for an alias)
+  pointing at the reverse proxy.
+- The reverse proxy: route the panel host and the wildcard hosts to the
+  engine, passing the `Host` header through unchanged (Caddy and Traefik do by
+  default) — the brand is read from it. A wildcard certificate needs the DNS
+  challenge at most certificate authorities.
+- A brand's panel host may also be one of a store's own domains. The panel
+  there still knows its brand, and a request that names no store is that
+  store's, as it was; `doctor` notes it.
 
 ### Running several instances
 

@@ -302,6 +302,9 @@ Flags: `-db`,
 `-platform-token` and `-namespace`. `DATABASE_URL`, `GOCOMMERCE_ADMIN_TOKEN`, `GOCOMMERCE_DEMO`, `GOCOMMERCE_SIGNUP`, `GOCOMMERCE_ALLOW_PRIVATE_URLS`,
 `GOCOMMERCE_DEMO_ACCOUNT`, `GOCOMMERCE_ADMIN_EMAIL` and
 `GOCOMMERCE_ADMIN_PASSWORD` are the environment equivalents.
+`GOCOMMERCE_PANEL_URL`, `GOCOMMERCE_BASE_DOMAIN` and `GOCOMMERCE_BRANDS` (a
+JSON array of brands, D111) are environment only; `store create|demo|brand`
+opens a store, makes it a demo, or moves it to another brand.
 `GOCOMMERCE_SECRETS_KEY` and `GOCOMMERCE_SECRETS_KEY_PREVIOUS` have no flag at
 all: a flag shows in the process list.
 `GOCOMMERCE_DEMO`, `GOCOMMERCE_SIGNUP` and `GOCOMMERCE_ALLOW_PRIVATE_URLS` are the variables here read as a word rather than as
@@ -417,6 +420,21 @@ fails on such a login; the Compose file creates an ordinary one.
 the `litekart_store_id` cookie, the host (`<slug>.<-base-domain>` or an
 attached domain), the signed-in person's only store, and the install's only
 store. Naming a store never grants access to it: staff must be members of it.
+
+**Several brands** (D111, `GOCOMMERCE_BRANDS`, `brands.go`): every request is
+first given a brand from its host (`BrandFrom(ctx)`, `App.Brand`), which never
+changes the store it is bound to. Each store belongs to one brand
+(`App.StoreBrand`) and answers only at `<slug>.<that brand's base domain>` or
+its aliases, so `<slug>.<another brand's>` finds no store. A person sees and
+enters only the stores of the brand the request came through: `myStores`
+filters the store list and picker, `onlyStoreOfSession` counts only that
+brand's, and `bearerAuth` answers a store of another brand with
+`not_a_member`. The static admin token keeps install-wide reach. A store
+opened through a brand's admin domain is that brand's; `gocommerce store
+brand <slug> <panel host>` (`Stores.SetBrand`) moves one, audited as
+`store.set_brand`. Slugs are unique install-wide, and `App.reservedSlug`
+keeps D93's names, the first label of every brand's panel host and each
+brand's `reserved` list.
 
 ## Common mistakes## Common mistakes
 

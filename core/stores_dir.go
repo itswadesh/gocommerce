@@ -29,6 +29,10 @@ type Store struct {
 	// Config.Languages (D87).
 	Languages []string  `json:"languages"`
 	CreatedAt time.Time `json:"created_at"`
+	// BrandHost is the panel host of the brand the store belongs to (D111),
+	// empty until the install configures brands. App.StoreBrand reads it as
+	// a brand.
+	BrandHost string `json:"-"`
 }
 
 // Membership is a person's standing in one store.
@@ -85,7 +89,7 @@ func (a *App) resolveDefaultStore(ctx context.Context) error {
 	return nil
 }
 
-const storeColumns = `id, slug, name, status, order_prefix, demo, currency, to_jsonb(languages), created_at`
+const storeColumns = `id, slug, name, status, order_prefix, demo, currency, to_jsonb(languages), created_at, coalesce(brand_host, '')`
 
 // storeSlugRE is the shape the stores table's CHECK allows.
 var storeSlugRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
@@ -93,7 +97,7 @@ var storeSlugRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 func scanStore(row interface{ Scan(...any) error }) (*Store, error) {
 	var st Store
 	var langs []byte
-	if err := row.Scan(&st.ID, &st.Slug, &st.Name, &st.Status, &st.OrderPrefix, &st.Demo, &st.Currency, &langs, &st.CreatedAt); err != nil {
+	if err := row.Scan(&st.ID, &st.Slug, &st.Name, &st.Status, &st.OrderPrefix, &st.Demo, &st.Currency, &langs, &st.CreatedAt, &st.BrandHost); err != nil {
 		return nil, err
 	}
 	st.Languages = decodeLanguages(langs)
@@ -125,21 +129,21 @@ func (s *Stores) BySlug(ctx context.Context, slug string) (*Store, error) {
 }
 
 // ByHost returns the store a host name belongs to: an attached domain first,
-// then <slug>.<Config.BaseDomain>.
+// then <slug>.<base domain>, which names a store only under the base domain
+// (or an alias) of the brand the store belongs to (D111). Under another
+// brand's it is nobody's, as an unknown slug is.
 func (s *Stores) ByHost(ctx context.Context, host string) (*Store, error) {
-	host = strings.ToLower(strings.TrimSuffix(host, "."))
-	if i := strings.LastIndexByte(host, ':'); i >= 0 && !strings.Contains(host[i:], "]") {
-		host = host[:i]
-	}
+	host = hostName(host)
 	// Only a domain whose TXT record was found routes: an added but unproven
 	// domain is somebody's claim, not yet the store's address.
 	st, err := s.one(ctx, `id = (SELECT store_id FROM store_domains WHERE host = $1 AND verified_at IS NOT NULL)`, host)
 	if err == nil || !errors.Is(err, ErrNotFound) {
 		return st, err
 	}
-	if base := strings.ToLower(s.app.cfg.BaseDomain); base != "" {
-		if slug, ok := strings.CutSuffix(host, "."+base); ok && slug != "" && !strings.Contains(slug, ".") {
-			return s.BySlug(ctx, slug)
+	if slug, under, ok := s.app.storeSlugOfHost(host); ok {
+		st, err := s.BySlug(ctx, slug)
+		if err != nil || sameBrand(s.app.storeBrand(st.BrandHost), under) {
+			return st, err
 		}
 	}
 	return nil, NotFoundf("store not found")
@@ -492,7 +496,7 @@ func (s *Stores) createOne(ctx context.Context, name, slug string, ownerID int64
 	if !storeSlugRE.MatchString(slug) {
 		return nil, Validationf("a store's slug is lowercase letters, digits and hyphens, starting with a letter or digit")
 	}
-	if reservedSlug(slug) {
+	if s.app.reservedSlug(slug) {
 		return nil, Validationf("%q is kept for the platform's own use; choose another address", slug)
 	}
 	if name == "" {
@@ -504,8 +508,9 @@ func (s *Stores) createOne(ctx context.Context, name, slug string, ownerID int64
 	}
 	bound := WithStore(ctx, id)
 	err = InTx(bound, s.db, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(bound,
-			`INSERT INTO stores (id, slug, name) VALUES ($1, $2, $3)`, id, slug, name); err != nil {
+		// A store belongs to the brand whose admin domain it is opened from.
+		if _, err := tx.ExecContext(bound, `INSERT INTO stores (id, slug, name, brand_host) VALUES ($1, $2, $3, $4)`,
+			id, slug, name, s.app.newStoreBrandHost(ctx)); err != nil {
 			if isUniqueViolation(err) {
 				return Conflictf("there is already a store called %q", slug)
 			}

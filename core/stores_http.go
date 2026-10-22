@@ -25,12 +25,12 @@ type MyStore struct {
 	// Demo says the store masks personal data (Stores.SetDemo).
 	Demo bool `json:"demo"`
 	// Domain is where the store's shop is: its primary verified domain, else
-	// its first verified one, else
-	// <slug>.<Config.BaseDomain>, else empty when neither exists.
+	// its first verified one, else its Subdomain, else empty when neither
+	// exists.
 	Domain string `json:"domain"`
-	// Subdomain is <slug>.<Config.BaseDomain>, the address a store has
-	// without adding a domain of its own; empty when the install has no
-	// base domain.
+	// Subdomain is <slug>.<base domain>, the address a store has without
+	// adding a domain of its own, under its brand's base domain (D111); empty
+	// when that brand has none.
 	Subdomain string `json:"subdomain"`
 }
 
@@ -79,19 +79,21 @@ func isAPIKeyShaped(token string) bool {
 	return ok
 }
 
-// myStores lists the stores the caller may enter. A static admin token is the
-// install's operator, so it sees every store, as owner.
+// myStores lists the stores the caller may enter: a person's, in the brand
+// the request came through (D111), or, for a static admin token, which is the
+// install's operator, every store, as owner.
 func (a *App) myStores(ctx context.Context) ([]MyStore, error) {
 	const domain = `(SELECT host FROM store_domains d WHERE d.store_id = st.id AND d.verified_at IS NOT NULL
 		ORDER BY is_primary DESC, created_at, host LIMIT 1)`
-	q := `SELECT st.id, st.slug, st.name, st.status, st.demo, m.role, ` + domain + `
+	q := `SELECT st.id, st.slug, st.name, st.status, st.demo, m.role, ` + domain + `, coalesce(st.brand_host, '')
 		FROM store_members m JOIN stores st ON st.id = m.store_id
 		WHERE m.superuser_id = $1 ORDER BY st.created_at, st.id`
 	var args []any
-	if su := SuperuserFrom(ctx); su != nil {
+	su := SuperuserFrom(ctx)
+	if su != nil {
 		args = append(args, su.ID)
 	} else {
-		q = `SELECT st.id, st.slug, st.name, st.status, st.demo, '` + RoleOwner + `', ` + domain + `
+		q = `SELECT st.id, st.slug, st.name, st.status, st.demo, '` + RoleOwner + `', ` + domain + `, coalesce(st.brand_host, '')
 			FROM stores st ORDER BY st.created_at, st.id`
 	}
 	rows, err := a.db.QueryContext(ctx, q, args...)
@@ -100,14 +102,20 @@ func (a *App) myStores(ctx context.Context) ([]MyStore, error) {
 	}
 	defer rows.Close()
 	out := []MyStore{}
+	here := a.Brand(ctx)
 	for rows.Next() {
 		var s MyStore
 		var host sql.NullString
-		if err := rows.Scan(&s.ID, &s.Slug, &s.Name, &s.Status, &s.Demo, &s.Role, &host); err != nil {
+		var brandHost string
+		if err := rows.Scan(&s.ID, &s.Slug, &s.Name, &s.Status, &s.Demo, &s.Role, &host, &brandHost); err != nil {
 			return nil, Internalf(err, "scan store")
 		}
-		if a.cfg.BaseDomain != "" {
-			s.Subdomain = s.Slug + "." + strings.ToLower(a.cfg.BaseDomain)
+		brand := a.storeBrand(brandHost)
+		if su != nil && !sameBrand(brand, here) {
+			continue
+		}
+		if brand.BaseDomain != "" {
+			s.Subdomain = s.Slug + "." + brand.BaseDomain
 		}
 		s.Domain = host.String
 		if s.Domain == "" {
@@ -399,8 +407,9 @@ func (a *App) writeStoreCookie(w http.ResponseWriter, r *http.Request, id string
 		HttpOnly: true,
 		// The operator's word, not a header: X-Forwarded-Proto is whatever
 		// the client sent unless a proxy rewrote it, and nothing here knows
-		// which. Behind a TLS-terminating proxy, PanelURL says https.
-		Secure:   r.TLS != nil || strings.HasPrefix(strings.ToLower(a.cfg.PanelURL), "https://"),
+		// which. Behind a TLS-terminating proxy, the panel URL of the brand
+		// the request came through says https.
+		Secure:   r.TLS != nil || strings.HasPrefix(strings.ToLower(a.Brand(r.Context()).PanelURL), "https://"),
 		SameSite: http.SameSiteLaxMode,
 	})
 }

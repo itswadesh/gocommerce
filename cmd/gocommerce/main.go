@@ -288,6 +288,13 @@ environment:
 	// token at all.
 	offline := command != "serve"
 
+	// Env only, like the panel URL it extends: the names and admin domains an
+	// install answers under are facts about the deployment (D111).
+	brands, err := gocommerce.ParseBrands(os.Getenv(gocommerce.BrandsEnv))
+	if err != nil {
+		return err
+	}
+
 	languages := splitList(*langs)
 	cfg := gocommerce.Config{
 		DBURL:        *dbURL,
@@ -313,6 +320,7 @@ environment:
 		// about the deployment. It is the base of a password-reset link and of a
 		// recovery email's tracked link.
 		PanelURL: os.Getenv("GOCOMMERCE_PANEL_URL"),
+		Brands:   brands,
 		// Whether strangers may make an account and open a store: a choice
 		// about who this install is for, so a flag as well as the environment.
 		Signup: *signup || envTrue("GOCOMMERCE_SIGNUP"),
@@ -614,11 +622,14 @@ environment:
 // variable must not silently reset that operator's password.
 // storeCmd opens a new store, seeded so it can stock and sell. Its first
 // operator is added with `superuser create` and -store.
-const storeUsage = "usage: gocommerce store create <slug> [name] | gocommerce store demo <slug> on|off"
+const storeUsage = "usage: gocommerce store create <slug> [name] | gocommerce store demo <slug> on|off | gocommerce store brand <slug> <panel host>"
 
 func storeCmd(ctx context.Context, app *gocommerce.App, args []string) error {
 	if len(args) == 3 && args[0] == "demo" {
 		return storeDemoCmd(ctx, app, args[1], args[2])
+	}
+	if len(args) == 3 && args[0] == "brand" {
+		return storeBrandCmd(ctx, app, args[1], args[2])
 	}
 	if len(args) < 2 || args[0] != "create" {
 		return errors.New(storeUsage)
@@ -660,6 +671,29 @@ func storeDemoCmd(ctx context.Context, app *gocommerce.App, name, state string) 
 	} else {
 		fmt.Printf("store %s is live again: its admin screens show personal data in full\n", st.Slug)
 	}
+	return nil
+}
+
+// storeBrandCmd moves a store to another brand (D111), and its address with
+// it. The install owner's act, so a command rather than a panel screen: no
+// one store's owner decides which brand it is sold under.
+func storeBrandCmd(ctx context.Context, app *gocommerce.App, name, panelHost string) error {
+	st, err := app.Stores().BySlug(ctx, name)
+	if err != nil && gocommerce.ValidStoreID(name) {
+		st, err = app.Stores().Get(ctx, name)
+	}
+	if err != nil {
+		return fmt.Errorf("no store %q", name)
+	}
+	to, err := app.Stores().SetBrand(gocommerce.WithActorLabel(ctx, "gocommerce store brand"), st.ID, panelHost)
+	if err != nil {
+		return err
+	}
+	where := "it has no address of its own under that brand"
+	if to.BaseDomain != "" {
+		where = "its address is now " + st.Slug + "." + to.BaseDomain
+	}
+	fmt.Printf("store %s now belongs to %s; %s\n", st.Slug, to.Name, where)
 	return nil
 }
 
