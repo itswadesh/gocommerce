@@ -1243,7 +1243,7 @@ func (m *Module) handleSend(w http.ResponseWriter, r *http.Request) {
 	// after the provider has answered.
 	if err := m.app.Notify(ctx, gocommerce.Notification{
 		Event: req.Template, Channel: gocommerce.ChannelEmail, To: to,
-		Data: m.data(set.Settings, cur, to, linkToken, a.StepsSent+1),
+		Data: m.data(ctx, set.Settings, cur, to, linkToken, a.StepsSent+1),
 	}); err != nil {
 		gocommerce.RespondError(w, r, &gocommerce.APIError{Status: http.StatusBadGateway,
 			Code: "send_failed", Message: "The email provider refused the message: " + err.Error()})
@@ -1331,7 +1331,7 @@ func (m *Module) handleLink(w http.ResponseWriter, r *http.Request) {
 	// one cannot be marked before it expires, so this is the earliest the link
 	// can stop working — later if the shopper comes back and revives it.
 	out := map[string]any{
-		"url":     m.link(set.Settings, linkToken, cur.token),
+		"url":     m.link(ctx, set.Settings, linkToken, cur.token),
 		"tracked": m.app.Config().PanelURL != "",
 	}
 	if !cur.gone {

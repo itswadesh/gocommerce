@@ -424,7 +424,7 @@ store. Naming a store never grants access to it: staff must be members of it.
 **Several brands** (D111, `GOCOMMERCE_BRANDS`, `brands.go`): every request is
 first given a brand from its host (`BrandFrom(ctx)`, `App.Brand`), which never
 changes the store it is bound to. Each store belongs to one brand
-(`App.StoreBrand`) and answers only at `<slug>.<that brand's base domain>` or
+(`App.StoreBrand(ctx)`, the bound store's) and answers only at `<slug>.<that brand's base domain>` or
 its aliases, so `<slug>.<another brand's>` finds no store. A person sees and
 enters only the stores of the brand the request came through: `myStores`
 filters the store list and picker, `onlyStoreOfSession` counts only that

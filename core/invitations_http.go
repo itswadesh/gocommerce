@@ -100,7 +100,7 @@ func (a *App) acceptURL(r *http.Request, token string) string {
 	// that sent it however many stores this install serves (D83).
 	path := "/admin/auth/accept-invite/" + token + "?store=" + url.QueryEscape(a.storeOf(r.Context()))
 	if len(a.cfg.Brands) > 0 {
-		return a.storeMailBrand(r.Context()).PanelURL + path
+		return a.StoreBrand(r.Context()).PanelURL + path
 	}
 	scheme := "https"
 	if r.TLS == nil && !strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
