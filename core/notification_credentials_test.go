@@ -142,6 +142,7 @@ func TestTheLogHidesAnOperatorsResetLinkAndCode(t *testing.T) {
 func TestTheLogHidesAnInvitationLink(t *testing.T) {
 	rec := &recordingNotifier{}
 	app := newTestApp(t, &notifyModule{rec: rec})
+	app.cfg.PanelURL = "https://admin.example.com"
 	code, inv := postInvitation(t, app, `{"email":"new-owner@example.com","role":"owner"}`)
 	if code != http.StatusCreated || inv["emailed"] != true {
 		t.Fatalf("invite = %d %v", code, inv)
