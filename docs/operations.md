@@ -263,28 +263,36 @@ value sealed with a random nonce cannot be searched for.
    entered again** — gateway and provider keys typed in on their screens, API
    keys revoked and made again, webhook secrets rotated.
 3. Set `GOCOMMERCE_SECRETS_KEY` in the engine's environment (a PaaS's
-   environment tab; `docker-compose.yml` already passes it through) and restart.
-   Every instance needs the same key. From now on, what is entered is sealed.
-4. Seal what was stored before, with the module flags the store is served with:
+   environment tab; `docker-compose.yml` already passes it through) and
+   redeploy. Every instance needs the same key.
+4. Check **Settings › Diagnostics**: the `secrets` check reads
+   `N secret(s) sealed under key <id>`.
 
-   ```sh
-   gocommerce -webhooks -gateways -carriers secrets seal
-   ```
+That is the whole of it. As the engine starts with a key it seals what is
+already stored, in every store, suspended ones too, in the background so the
+store serves at once. From then on, what is entered is sealed as it is saved.
+The pass is safe to repeat and safe with several instances starting together:
+each value is sealed once. Its log has a line for each store it sealed
+anything in, with counts per kind and never a value, and one line for the
+whole pass, `stored secrets checked at start-up`. Under a database login that
+passes row security it seals nothing and logs one warning saying why, as the
+command below refuses to run.
 
-   It walks every store, suspended ones too, prints counts per kind and never a
-   value, and is safe to run again. Doctor's `secrets` check then reads
-   `N secret(s) sealed under key <id>`. If it says a module is not installed in
-   this run, run it again with that module's flag.
-
-Seal after the restart, not before: a process still running without the key
-cannot open what the command seals, and its plugins read as not configured until
-it restarts.
+`gocommerce secrets seal`, run with the module flags the store is served with,
+does the same pass on demand and prints what it did. A hosted image has no
+shell to run it in, and it is not needed there; it is for an install that
+wants the counts at a terminal, or a last pass during a rotation. If it says a
+module is not installed in that run, run it again with that module's flag. Run
+it only against an engine already restarted with the key: a process still
+running without the key cannot open what it seals, and its plugins read as not
+configured until it restarts.
 
 **Rotating.** Set the new key as `GOCOMMERCE_SECRETS_KEY` and the old one as
-`GOCOMMERCE_SECRETS_KEY_PREVIOUS`, restart, and run `gocommerce secrets seal`: it
-moves everything the old key sealed under the new one. Then unset
-`GOCOMMERCE_SECRETS_KEY_PREVIOUS` and restart again. Until then, doctor notes
-what is still under the previous key. Rotating changes the key, not the secrets:
+`GOCOMMERCE_SECRETS_KEY_PREVIOUS` and redeploy: the start-up pass moves
+everything the old key sealed under the new one. Once Settings › Diagnostics no
+longer notes values under the previous key, unset
+`GOCOMMERCE_SECRETS_KEY_PREVIOUS` and redeploy again. `gocommerce secrets seal`
+can make that last pass by hand instead. Rotating changes the key, not the secrets:
 if a gateway key may have leaked along with the old key, rotate it at the
 gateway too.
 
@@ -298,9 +306,9 @@ rotate the secret rather than going out unsigned. The panel still shows a
 plugin secret like that as stored, with a note beside the field that this
 install cannot read it, so saving the plugin's settings for another reason
 keeps it. It is kept until a new value is typed in or the field is emptied, so
-putting the right key back — as `GOCOMMERCE_SECRETS_KEY_PREVIOUS`, then
-`secrets seal` — recovers it, even after a redeploy that briefly ran without
-the key. Doctor names each field; the log names it once an hour.
+putting the right key back as `GOCOMMERCE_SECRETS_KEY_PREVIOUS` and
+restarting recovers it, even after a redeploy that briefly ran without the
+key. Doctor names each field; the log names it once an hour.
 
 A key that does not decode to 32 bytes, or `GOCOMMERCE_SECRETS_KEY_PREVIOUS`
 set without `GOCOMMERCE_SECRETS_KEY`, stops the engine at startup with the

@@ -187,15 +187,17 @@ func TestDoctorReportsHowSecretsAreStored(t *testing.T) {
 	if _, _, err := bare.APIKeys().Create(ctx, APIKeyInput{Name: "K", Role: RoleStaff}, nil); err != nil {
 		t.Fatal(err)
 	}
+	// The engine seals at start-up, so the next step is a restart, not a
+	// terminal: a hosted install's image has no shell to run a command in.
 	if d := check(bare); d.Status != StatusWarn || !strings.Contains(d.Detail, "2 secret") ||
-		!strings.Contains(d.Detail+d.Hint, "GOCOMMERCE_SECRETS_KEY") {
-		t.Errorf("readable secrets, no key = %+v, want a warning with the count naming the variable", d)
+		!strings.Contains(d.Detail+d.Hint, "GOCOMMERCE_SECRETS_KEY") || !strings.Contains(d.Hint, "when it starts") {
+		t.Errorf("readable secrets, no key = %+v, want a warning with the count naming the variable and saying the engine seals at start-up", d)
 	}
 
 	oldKey := newSecretsKey(t)
 	keyed := keyedApp(t, dsn, oldKey, "", fakePlugin{})
-	if d := check(keyed); d.Status != StatusWarn || !strings.Contains(d.Hint, "secrets seal") {
-		t.Errorf("a key and readable secrets = %+v, want a warning to run secrets seal", d)
+	if d := check(keyed); d.Status != StatusWarn || !strings.Contains(d.Hint, "restart") {
+		t.Errorf("a key and readable secrets = %+v, want a warning to restart the engine", d)
 	}
 	if _, err := keyed.SealSecrets(ctx); err != nil {
 		t.Fatal(err)
@@ -205,13 +207,14 @@ func TestDoctorReportsHowSecretsAreStored(t *testing.T) {
 	}
 
 	rotating := keyedApp(t, dsn, newSecretsKey(t), oldKey, fakePlugin{})
-	if d := check(rotating); d.Status != StatusOK || !strings.Contains(d.Detail, "previous key") || !strings.Contains(d.Hint, "secrets seal") {
-		t.Errorf("values under the previous key = %+v, want a note to run secrets seal", d)
+	if d := check(rotating); d.Status != StatusOK || !strings.Contains(d.Detail, "previous key") ||
+		!strings.Contains(d.Hint, "restart") || !strings.Contains(d.Hint, "unset") {
+		t.Errorf("values under the previous key = %+v, want a note to restart, then unset the previous key", d)
 	}
 
 	lost := keyedApp(t, dsn, newSecretsKey(t), "", fakePlugin{})
-	if d := check(lost); d.Status != StatusWarn || !strings.Contains(d.Detail, "plugins/fake-mail/api_key") {
-		t.Errorf("values under an unknown key = %+v, want a warning naming where they are", d)
+	if d := check(lost); d.Status != StatusWarn || !strings.Contains(d.Detail, "plugins/fake-mail/api_key") || !strings.Contains(d.Hint, "restart") {
+		t.Errorf("values under an unknown key = %+v, want a warning naming where they are and to restart with the old key", d)
 	}
 	if d := check(bare); d.Status != StatusWarn || !strings.Contains(d.Detail, "sealed") {
 		t.Errorf("sealed values and no key = %+v, want a warning", d)

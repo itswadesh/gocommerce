@@ -177,8 +177,9 @@ environment:
                     Lose it and every sealed secret has to be entered again
   GOCOMMERCE_SECRETS_KEY_PREVIOUS
                     the key before GOCOMMERCE_SECRETS_KEY, while rotating: it
-                    still opens what it sealed until "secrets seal" has moved
-                    everything under the new key
+                    still opens what it sealed until the engine, starting with
+                    both, or "secrets seal" has moved everything under the new
+                    key
   GOCOMMERCE_DOMAIN_TARGET
                     where a store's own domain should point: this server's IP
                     address, or a host name to CNAME to. The panel's Domains
