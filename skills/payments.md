@@ -21,6 +21,9 @@ type Refunder interface {                                             // optiona
     Refund(ctx context.Context, order *Order, amountMinor int64) error
 }
 type Named interface{ DisplayName() string }                          // optional
+type PaymentStatusReader interface {                                  // optional
+    Status(ctx context.Context, order *Order) (PaymentState, error)
+}
 ```
 
 Implement `Named` when the code is an abbreviation: `razorpay` already reads as
@@ -306,6 +309,31 @@ app, err := gocommerce.New(cfg, acme.New(acme.Config{
 Two modules claiming the same code is a **startup error**, because silently
 picking one would make the winner depend on argument order. Taking over a
 built-in code (`cod`) is allowed, since core is not a competing module.
+
+## Asking the gateway
+
+A webhook can be lost. `POST /api/admin/orders/{id}/check-payment`
+(`orders.write`) asks the order's gateway what became of the payment, through
+the optional `PaymentStatusReader` port (D112), and answers with what it said:
+`{provider, gateway: {paid, failed, reference, detail}, recorded, order}`.
+
+- The gateway is asked **outside every transaction** (rule 5).
+- When it says paid and the order is not, the payment is recorded through
+  `MarkPaid` with the gateway's reference — the same settlement path as the
+  webhook, so the order is confirmed and `order.paid` written once.
+- **Nothing the gateway did not report is set.** No payment yet leaves the
+  order alone; a reported failure is answered and not written, because a
+  declined attempt is not the end of an order the shopper can still pay.
+- `Status` says `Paid` only for the order's total in its currency, on the
+  order's own gateway object. A mismatch is neither paid nor failed, and
+  `Detail` says why.
+
+`GET /api/admin/settings` marks a method that can be asked with
+`checks_payments`, and the order screen offers "Check with <gateway>" beside
+an unpaid payment only for those. Stripe reads the PaymentIntent, Razorpay the
+payments on its order, Cashfree the payments on each of its orders.
+`ext/payments-cashfree` also lets the storefront's return page have Cashfree
+asked at once: `POST /x/payments-cashfree/orders/{cf_order_id}/verify`.
 
 ## How to settle by hand
 

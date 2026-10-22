@@ -50,6 +50,7 @@ import (
 	msg91 "github.com/itswadesh/gocommerce/ext/notify-msg91"
 	sendgrid "github.com/itswadesh/gocommerce/ext/notify-sendgrid"
 	adyen "github.com/itswadesh/gocommerce/ext/payments-adyen"
+	cashfree "github.com/itswadesh/gocommerce/ext/payments-cashfree"
 	clover "github.com/itswadesh/gocommerce/ext/payments-clover"
 	helcim "github.com/itswadesh/gocommerce/ext/payments-helcim"
 	hyperswitch "github.com/itswadesh/gocommerce/ext/payments-hyperswitch"
@@ -182,7 +183,7 @@ func main() {
 	// there. Stripe keeps its environment fallback below, the way it always
 	// had one; the rest wait for the panel.
 	modules = append(modules,
-		razorpay.New(razorpay.Config{}), adyen.New(adyen.Config{}), paddle.New(paddle.Config{}),
+		razorpay.New(razorpay.Config{}), cashfree.New(cashfree.Config{}), adyen.New(adyen.Config{}), paddle.New(paddle.Config{}),
 		lemonsqueezy.New(lemonsqueezy.Config{}), helcim.New(helcim.Config{}), hyperswitch.New(hyperswitch.Config{}),
 		revenuecat.New(revenuecat.Config{}), clover.New(clover.Config{}),
 		shiprocket.New(shiprocket.Config{}), delhivery.New(delhivery.Config{}), nimbuspost.New(nimbuspost.Config{}),

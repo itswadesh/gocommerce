@@ -1,0 +1,19 @@
+{
+  "paths": {
+    "/x/payments-cashfree/orders/{cf_order_id}/verify": {
+      "post": {
+        "tags": ["checkout"],
+        "summary": "Have Cashfree asked about a payment now",
+        "description": "For the storefront's return page. Cashfree sends the shopper back to the checkout's `return_url` with `cf_order_id` added; posting it here asks Cashfree for the payments on that order at once, rather than waiting for the webhook, and records a successful one through the engine's own check. Nothing Cashfree did not report is recorded, and a failed attempt is left for the webhook. The answer is the order's number and payment status, nothing more. An order already paid is answered from the store without asking Cashfree again. 404 for a Cashfree order this store did not make, or while Cashfree is not set up.",
+        "parameters": [
+          {"name": "cf_order_id", "in": "path", "required": true, "schema": {"type": "string"}, "description": "The Cashfree order id from the checkout's `client_data.order_id`, or the `cf_order_id` Cashfree added to the return URL."}
+        ],
+        "responses": {
+          "200": {"description": "The order's payment status after asking.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"order": {"type": "string", "description": "The order number."}, "payment_status": {"type": "string", "enum": ["pending", "paid", "failed", "refunded"]}}}}}}}},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"}
+        }
+      }
+    }
+  }
+}

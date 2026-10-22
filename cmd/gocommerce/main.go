@@ -49,6 +49,7 @@ import (
 	sendgrid "github.com/itswadesh/gocommerce/ext/notify-sendgrid"
 	twilio "github.com/itswadesh/gocommerce/ext/notify-twilio"
 	adyen "github.com/itswadesh/gocommerce/ext/payments-adyen"
+	cashfree "github.com/itswadesh/gocommerce/ext/payments-cashfree"
 	clover "github.com/itswadesh/gocommerce/ext/payments-clover"
 	creem "github.com/itswadesh/gocommerce/ext/payments-creem"
 	helcim "github.com/itswadesh/gocommerce/ext/payments-helcim"
@@ -211,7 +212,7 @@ environment:
 		withSendgrid = fs.Bool("sendgrid", false, "install the SendGrid module: the store's emails through SendGrid (SENDGRID_API_KEY, SENDGRID_FROM, or Notifications › Setup Email)")
 		withTwilio   = fs.Bool("twilio", false, "install the Twilio module: the store's SMS through Twilio, with the wording from Notifications › Setup SMS (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM)")
 		withMsg91    = fs.Bool("msg91", false, "install the MSG91 module: the store's SMS through MSG91 (MSG91_AUTH_KEY, or Notifications › Setup SMS)")
-		withGateways = fs.Bool("gateways", false, "install every payment gateway module idle — Stripe, Razorpay, Adyen, Paddle, Lemon Squeezy, Creem, Helcim, Clover, Hyperswitch, RevenueCat — each switched on and given its keys under Settings › Payment methods")
+		withGateways = fs.Bool("gateways", false, "install every payment gateway module idle — Stripe, Razorpay, Cashfree, Adyen, Paddle, Lemon Squeezy, Creem, Helcim, Clover, Hyperswitch, RevenueCat — each switched on and given its keys under Settings › Payment methods")
 		withCarriers = fs.Bool("carriers", false, "install every carrier module idle — Shiprocket, Delhivery, NimbusPost, India Post, Shippo, ShipStation, Easyship, Shippit, USPS, Onfleet, Veeqo — each switched on and given its keys under Settings › Shipping providers")
 		withInvoices = fs.Bool("invoices", false, "install the invoices module: a numbered invoice per paid order (INVOICES_SELLER_NAME, INVOICES_SELLER_ADDRESS, INVOICES_TAX_ID)")
 		withCMS      = fs.Bool("cms", false, "install the cms module: content pages at /x/cms/pages/{slug}, edited on the Pages screen")
@@ -427,7 +428,7 @@ environment:
 		// prefers the environment wires the module itself in its own main().
 		if *withGateways {
 			modules = append(modules,
-				stripe.New(stripe.Config{}), razorpay.New(razorpay.Config{}), adyen.New(adyen.Config{}),
+				stripe.New(stripe.Config{}), razorpay.New(razorpay.Config{}), cashfree.New(cashfree.Config{}), adyen.New(adyen.Config{}),
 				paddle.New(paddle.Config{}), lemonsqueezy.New(lemonsqueezy.Config{}), creem.New(creem.Config{}),
 				helcim.New(helcim.Config{}), clover.New(clover.Config{}),
 				hyperswitch.New(hyperswitch.Config{}), revenuecat.New(revenuecat.Config{}),
