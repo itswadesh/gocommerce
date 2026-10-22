@@ -97,6 +97,12 @@ services:
       # <slug>.<base domain>, e.g. shops.example.com. The panel shows it, and
       # a domain under it cannot be added as a store's own.
       GOCOMMERCE_BASE_DOMAIN: ${GOCOMMERCE_BASE_DOMAIN:-}
+      # Several brands on one install, each a name on its own admin domain
+      # with its own stores (docs/operations.md, "Several brands"): a JSON
+      # array of {"name", "panel_url", "base_domain", "alias_base_domains",
+      # "reserved", "logo_url"}. Unset, the install is one brand made of the
+      # two settings above.
+      GOCOMMERCE_BRANDS: ${GOCOMMERCE_BRANDS:-}
       # Email and SMS delivery, every one optional: a backend without its key
       # installs idle and waits for Notifications › Setup Email / Setup SMS.
       # The engine sees only what is listed here, so a key set in the host's

@@ -84,23 +84,29 @@ func (a *App) normalizeHost(raw string) (string, error) {
 	return h, nil
 }
 
-// underBaseDomain refuses an address under the install's base domain: each
-// store already answers at <slug>.<base domain>, so the useful answer names
-// this store's own.
+// underBaseDomain refuses an address under any brand's store domain, base or
+// alias: each store already answers at <slug>.<its brand's base domain>, so
+// the useful answer names this store's own. A brand's panel host is not
+// refused — a store may hold one as its own domain (D111), and the panel
+// there still knows its brand.
 func (a *App) underBaseDomain(ctx context.Context, host string) *APIError {
-	base := strings.ToLower(a.cfg.BaseDomain)
-	if base == "" || (host != base && !strings.HasSuffix(host, "."+base)) {
+	base, _, ok := a.underStoreDomain(host)
+	if !ok {
 		return nil
 	}
 	st, err := a.Stores().Get(ctx, a.storeOf(ctx))
 	if err != nil {
 		return Validationf("addresses under %s come with each store; add a domain you own instead, such as shop.example.com", base)
 	}
-	own := st.Slug + "." + base
+	ownBase := a.storeBrand(st.BrandHost).BaseDomain
+	if ownBase == "" {
+		return Validationf("addresses under %s come with stores; add a domain you own instead, such as shop.example.com", base)
+	}
+	own := st.Slug + "." + ownBase
 	if host == own {
 		return Validationf("%s is already this store's address, so there is nothing to add; this is for a domain you own, such as shop.example.com", host)
 	}
-	return Validationf("%s cannot be added: addresses under %s come with each store, and this store's is %s; add a domain you own instead, such as shop.example.com", host, base, own)
+	return Validationf("%s cannot be added: addresses under %s come with stores, and this store's is %s; add a domain you own instead, such as shop.example.com", host, base, own)
 }
 
 func (a *App) mountDomainRoutes() {

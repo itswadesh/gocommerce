@@ -161,6 +161,11 @@ type Config struct {
 	// X-Forwarded-Host would carry a live token to a host they chose. Left
 	// empty, the reset email carries the bare token to paste instead.
 	PanelURL string
+	// Brands are the names this install answers under, each with its own
+	// admin domain and base domain (brands.go, D111). Empty, the install is
+	// one brand made of PanelURL and BaseDomain, called DefaultBrandName. Set,
+	// the first brand fills PanelURL and BaseDomain where they are empty.
+	Brands []Brand
 	// Signup lets anybody make an account on the panel's sign-in screen and
 	// open a store with it (POST /api/admin/signup). It is for an install that
 	// hosts stores for other people; a shop run for one business leaves it off
@@ -211,7 +216,10 @@ type Config struct {
 	// "first" means the oldest store. `gocommerce serve` leaves it empty, so
 	// in the product a statement that forgot its store sees nothing.
 	DefaultStore string
-	// BaseDomain, when set, lets a store answer at <slug>.<BaseDomain>.
+	// BaseDomain, when set, lets a store answer at <slug>.<BaseDomain>. With
+	// Brands set, a store answers under its own brand's base domain instead,
+	// and this names the brand the stores opened before brands belong to
+	// (D111).
 	BaseDomain string
 	// PricesIncludeTax says whether the prices in the catalog already contain
 	// tax. It changes what every figure on an order means, so it is snapshotted
@@ -312,6 +320,9 @@ func (c *Config) applyDefaults() error {
 				"gocommerce: Config.PanelURL must be an absolute base URL like https://shop.example.com")
 		}
 		c.PanelURL = strings.TrimRight(c.PanelURL, "/")
+	}
+	if err := c.applyBrands(); err != nil {
+		return err
 	}
 	if c.Logger == nil {
 		c.Logger = slog.Default()
@@ -565,6 +576,10 @@ func New(cfg Config, mods ...Module) (*App, error) {
 		return nil, err
 	}
 	if err := a.resolveDefaultStore(context.Background()); err != nil {
+		fail()
+		return nil, err
+	}
+	if err := a.assignStoreBrands(context.Background()); err != nil {
 		fail()
 		return nil, err
 	}
