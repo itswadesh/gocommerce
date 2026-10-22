@@ -14,7 +14,9 @@ import (
 // the operator reset, and never an outbox event.
 const EventNotificationTest = "notification.test"
 
-const testEmailTimeout = 20 * time.Second
+// sendNowTimeout bounds a send somebody is waiting on: the test email, and
+// NotifyNow.
+const sendNowTimeout = 20 * time.Second
 
 // SendTestEmail sends the test email to one address now, through the store's
 // email provider, and says why when it does not arrive. Without a provider
@@ -33,7 +35,7 @@ func (a *App) SendTestEmail(ctx context.Context, to string) error {
 	if st, err := a.stores.Get(ctx, a.storeOf(ctx)); err == nil {
 		store = st.Name
 	}
-	ctx, cancel := context.WithTimeout(ctx, testEmailTimeout)
+	ctx, cancel := context.WithTimeout(ctx, sendNowTimeout)
 	defer cancel()
 	err := a.notifier.send(ctx, Notification{
 		Event:    EventNotificationTest,
@@ -42,22 +44,59 @@ func (a *App) SendTestEmail(ctx context.Context, to string) error {
 		Language: a.mainLanguage(ctx),
 		Data:     map[string]string{"store_name": store, "to": to},
 	})
-	// 422, not 502: a 5xx's message is replaced before it leaves the server,
-	// and the provider's own words — "domain not verified", "API key is
-	// invalid" — are the answer the operator pressed the button for.
+	return a.sendFailure(err, ChannelEmail, "the test")
+}
+
+// NotifyNow is Notify for a caller with a person waiting on the answer — an
+// operator who pressed Send and will tell a customer the message went.
+//
+// Notify is shaped for an outbox handler, and two of its answers read as
+// "delivered" to anybody else: a refusal is dropped from its error, because a
+// retry would be refused again, and a channel with no provider that delivers
+// sends to the log and returns nil. So NotifyNow refuses when nothing on the
+// channel delivers, and says why when the provider refused or could not be
+// reached. The send is recorded like any other, so every attempt, failed or
+// not, is on the Notifications screen.
+func (a *App) NotifyNow(ctx context.Context, n Notification) error {
+	n, err := a.addressed(ctx, n)
+	if err != nil {
+		return err
+	}
+	if !a.notifier.delivers(ctx, n.Channel) {
+		return Conflictf("No %s provider is set up for this store, so nothing was sent. Set one up under Notifications, then try again.",
+			channelNoun(n.Channel))
+	}
+	ctx, cancel := context.WithTimeout(ctx, sendNowTimeout)
+	defer cancel()
+	return a.sendFailure(a.notifier.send(ctx, n), n.Channel, "the message")
+}
+
+// sendFailure is what an operator is told about a send that did not go.
+//
+// 422, not 502: a 5xx's message is replaced before it leaves the server, and
+// the provider's own words — "domain not verified", "API key is invalid" — are
+// the answer the operator pressed the button for.
+func (a *App) sendFailure(err error, channel, what string) error {
 	switch {
 	case err == nil:
 		return nil
 	case errors.Is(err, ErrNotificationRefused):
 		return &APIError{Status: http.StatusUnprocessableEntity, Code: "provider_refused",
-			Message: "The email provider refused the test: " + refusalReason(err)}
+			Message: "The " + channelNoun(channel) + " provider refused " + what + ": " + refusalReason(err)}
 	default:
 		// Unreachable: transient, and its detail is an address on the
 		// server's network, which stays in the log.
-		a.log.Error("test email could not reach the provider", "error", err)
+		a.log.Error("a message could not reach the provider", "channel", channel, "error", err)
 		return &APIError{Status: http.StatusUnprocessableEntity, Code: "provider_unreachable",
-			Message: "Could not reach the email provider, so nothing was sent. Try again in a minute; if it keeps failing, the server log says why."}
+			Message: "Could not reach the " + channelNoun(channel) + " provider, so nothing was sent. Try again in a minute; if it keeps failing, the server log says why."}
 	}
+}
+
+func channelNoun(channel string) string {
+	if channel == ChannelSMS {
+		return "SMS"
+	}
+	return channel
 }
 
 // refusalReason is what the provider said, without the module's prefix and

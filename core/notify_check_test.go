@@ -136,3 +136,55 @@ func TestSendTestEmailWhenTheProviderIsUnreachable(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// NotifyNow is for an operator who pressed Send and will tell a customer it
+// went. Notify cannot tell them: a refusal is dropped from its error so the
+// outbox does not retry it, and a channel with nobody to carry it "sends" to
+// the log. So NotifyNow refuses without a provider, and says why when the
+// provider refused or could not be reached — each as a 4xx, whose words leave
+// the server — and every attempt is on the Notifications screen.
+func TestNotifyNowSaysWhyAMessageDidNotGo(t *testing.T) {
+	ctx := context.Background()
+	note := Notification{Event: "contact.reply", Channel: ChannelEmail, To: "ann@example.com",
+		Data: map[string]string{"reply": "It ships today."}}
+	status := func(err error) (int, string) {
+		t.Helper()
+		var api *APIError
+		if !errors.As(err, &api) {
+			t.Fatalf("err = %v, want an APIError", err)
+		}
+		return api.Status, api.Message
+	}
+
+	if code, msg := status(newTestApp(t).NotifyNow(ctx, note)); code != http.StatusConflict ||
+		!strings.Contains(msg, "No email provider") {
+		t.Errorf("without a provider = %d %q, want 409 naming the missing provider", code, msg)
+	}
+
+	rec := &recordingNotifier{}
+	app := newTestApp(t, &notifyModule{rec: rec})
+	if err := app.NotifyNow(ctx, note); err != nil {
+		t.Fatalf("delivered: %v", err)
+	}
+	if rec.count("contact.reply") != 1 {
+		t.Errorf("sent = %d, want 1", rec.count("contact.reply"))
+	}
+	if err := app.NotifyNow(ctx, Notification{Event: "contact.reply", Channel: ChannelEmail, To: " "}); err == nil {
+		t.Error("a message with no recipient was accepted")
+	}
+
+	refusing := newTestApp(t, refusingNotifyModule{})
+	if code, msg := status(refusing.NotifyNow(ctx, note)); code != http.StatusUnprocessableEntity ||
+		msg != "The email provider refused the message: API key is invalid" {
+		t.Errorf("refused = %d %q", code, msg)
+	}
+	logged, _, err := refusing.Notifications().List(ctx, NotificationQuery{Event: "contact.reply"})
+	if err != nil || len(logged) != 1 || logged[0].Status != NotificationFailed {
+		t.Errorf("the refusal's record = %+v, %v; want one failed row", logged, err)
+	}
+
+	if code, msg := status(newTestApp(t, failingNotifyModule{}).NotifyNow(ctx, note)); code != http.StatusUnprocessableEntity ||
+		!strings.Contains(msg, "Could not reach") || strings.Contains(msg, "10.0.0.1") {
+		t.Errorf("unreachable = %d %q", code, msg)
+	}
+}

@@ -213,6 +213,18 @@ export function rightScope(right) {
  * the same thing, and a right that is not here still falls back to its name.
  */
 const MODULE_RIGHTS = {
+    "contact.read": {
+        label: "Read the contact inbox",
+        scope: "Messages and product enquiries the storefront collected — personal data",
+    },
+    "contact.write": {
+        label: "Clear the contact inbox",
+        scope: "Marking messages handled, and deleting them",
+    },
+    "contact.reply": {
+        label: "Reply to contact messages",
+        scope: "Answering a message or an enquiry by email from the store's address",
+    },
     "banners.read": {
         label: "See the banners",
         scope: "The pictures on the storefront's pages",
