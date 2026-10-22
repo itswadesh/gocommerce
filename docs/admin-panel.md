@@ -719,19 +719,27 @@ tablet slider and, with their phone pictures, its phone slider; each grid as a
 section as many tiles across as it has, two to four, on wider screens and two
 across on phones.
 
-## Contact: replying from the panel
+## Contact: replies and product enquiries
 
-**Customers → Contact messages** (`ext/contact`, D111) answers what shoppers
-send through the storefront's contact form. A reply goes to the shopper by
-email through the store's own provider — from its sender, with its reply-to
-address, so the answer comes back to the shop — and joins the message's
-thread with who sent it, marking the message replied. Only a reply the
-provider took is recorded: with no provider, or one that refuses the message,
-the drawer says why beside the button and keeps the text. **Open in my mail
-app** is still there for somebody who would rather answer from their own
-mail. Reading the inbox is `contact.read` (managers and staff), replying
-`contact.reply` (managers), marking and deleting `contact.write` (owners). A
-public demo sends no replies.
+**Customers → Contact messages** (`ext/contact`, D111) is one inbox for two
+kinds of message: what shoppers send through the storefront's contact form
+(`POST /x/contact/messages`) and the questions they ask about one product
+(`POST /x/contact/enquiries`). A filter beside the status picks either kind or
+both; an enquiry's row says so and names the product, and its drawer links to
+the product as it was called when the shopper asked. Both forms carry a
+honeypot and are limited together to ten messages a minute from one address.
+The Plugins screen's **Take product enquiries** switch closes the second form
+without closing the first.
+
+The drawer answers either kind. A reply goes to the shopper by email through
+the store's own provider — from its sender, with its reply-to address, so the
+answer comes back to the shop — and joins the message's thread with who sent
+it, marking the message replied. Only a reply the provider took is recorded:
+with no provider, or one that refuses the message, the drawer says why beside
+the button and keeps the text. **Open in my mail app** is still there for
+somebody who would rather answer from their own mail. Reading the inbox is
+`contact.read` (managers and staff), replying `contact.reply` (managers),
+marking and deleting `contact.write` (owners). A public demo sends no replies.
 
 ## Cash on delivery can be switched off
 
