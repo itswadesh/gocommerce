@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -674,7 +675,13 @@ func (m *Module) link(ctx context.Context, s Settings, linkToken, cartToken stri
 		return ""
 	}
 	if panel := m.panelURL(ctx); panel != "" {
-		return panel + "/x/cart-recovery/r/" + linkToken
+		// The panel's address names no store, and on an install of many the
+		// click has nothing else to go by, so the link names its own (D83).
+		store, ok := gocommerce.StoreFrom(ctx)
+		if !ok {
+			store = m.app.DefaultStore()
+		}
+		return panel + "/x/cart-recovery/r/" + linkToken + "?store=" + url.QueryEscape(store)
 	}
 	return storefront + "/cart/" + cartToken
 }
