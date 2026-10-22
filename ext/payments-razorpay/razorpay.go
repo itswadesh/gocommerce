@@ -26,6 +26,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -249,7 +250,7 @@ func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Orde
 	if !m.refresh(ctx) {
 		return "", errNotConfigured
 	}
-	paymentID, err := m.paymentIDFor(ctx, order.ID)
+	paymentID, err := m.paymentIDFor(ctx, order)
 	if err != nil {
 		return "", err
 	}
@@ -265,13 +266,19 @@ func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Orde
 
 // paymentIDFor finds the captured payment behind an order. Razorpay refunds
 // against the payment, not the order, and the two are different objects.
-func (m *Module) paymentIDFor(ctx context.Context, orderID int64) (string, error) {
+//
+// A payment recorded by asking Razorpay (Status) has no webhook row; its id is
+// the order's payment reference instead.
+func (m *Module) paymentIDFor(ctx context.Context, order *gocommerce.Order) (string, error) {
 	var paymentID sql.NullString
 	err := m.db.QueryRowContext(ctx, `
 		SELECT id FROM payments_razorpay_events
 		WHERE order_id = $1 AND event = 'payment.captured'
-		ORDER BY received_at DESC LIMIT 1`, orderID).Scan(&paymentID)
+		ORDER BY received_at DESC LIMIT 1`, order.ID).Scan(&paymentID)
 	if errors.Is(err, sql.ErrNoRows) || !paymentID.Valid {
+		if ref := strings.TrimSpace(order.PaymentReference); strings.HasPrefix(ref, "pay_") {
+			return ref, nil
+		}
 		return "", errors.New("razorpay: no captured payment recorded for this order")
 	}
 	if err != nil {
@@ -285,6 +292,78 @@ func (m *Module) paymentIDFor(ctx context.Context, orderID int64) (string, error
 		return "", err
 	}
 	return pid, nil
+}
+
+// razorpayPayment is one payment as Razorpay describes it.
+type razorpayPayment struct {
+	ID               string `json:"id"`
+	Amount           int64  `json:"amount"`
+	Currency         string `json:"currency"`
+	Status           string `json:"status"`
+	ErrorDescription string `json:"error_description"`
+}
+
+// Status implements gocommerce.PaymentStatusReader: it lists the payments on
+// the order's Razorpay order, for the order whose webhook never came. Before
+// the order is settled its payment reference is that Razorpay order; after, it
+// is the payment, which is read on its own.
+//
+// Paid means captured (or since refunded, which it was first) for the order's
+// total in its currency. An authorised payment is not money yet: Razorpay
+// releases it if nobody captures it.
+func (m *Module) Status(ctx context.Context, order *gocommerce.Order) (gocommerce.PaymentState, error) {
+	if !m.refresh(ctx) {
+		return gocommerce.PaymentState{}, errNotConfigured
+	}
+	ref := strings.TrimSpace(order.PaymentReference)
+	var payments []razorpayPayment
+	switch {
+	case strings.HasPrefix(ref, "order_"):
+		var list struct {
+			Items []razorpayPayment `json:"items"`
+		}
+		if err := m.get(ctx, "/v1/orders/"+url.PathEscape(ref)+"/payments", &list); err != nil {
+			return gocommerce.PaymentState{}, err
+		}
+		payments = list.Items
+	case strings.HasPrefix(ref, "pay_"):
+		var one razorpayPayment
+		if err := m.get(ctx, "/v1/payments/"+url.PathEscape(ref), &one); err != nil {
+			return gocommerce.PaymentState{}, err
+		}
+		payments = []razorpayPayment{one}
+	default:
+		return gocommerce.PaymentState{}, fmt.Errorf("razorpay: order %s has no Razorpay order to ask about (payment reference %q)", order.Number, ref)
+	}
+	if len(payments) == 0 {
+		return gocommerce.PaymentState{Detail: "no payment attempted yet"}, nil
+	}
+
+	var state gocommerce.PaymentState
+	for _, p := range payments {
+		if p.Status != "captured" && p.Status != "refunded" {
+			continue
+		}
+		currency := strings.ToUpper(p.Currency)
+		if p.Amount == order.Total.AmountMinor && strings.EqualFold(currency, order.Total.Currency) {
+			return gocommerce.PaymentState{Paid: true, Reference: p.ID, Detail: p.Status}, nil
+		}
+		state.Detail = fmt.Sprintf("%s for %d %s, not the order's %d %s",
+			p.Status, p.Amount, currency, order.Total.AmountMinor, strings.ToUpper(order.Total.Currency))
+	}
+	if state.Detail != "" {
+		return state, nil
+	}
+	// Razorpay lists the newest attempt first.
+	latest := payments[0]
+	state.Detail = latest.Status
+	if latest.Status == "failed" {
+		state.Failed = true
+		if latest.ErrorDescription != "" {
+			state.Detail += ": " + latest.ErrorDescription
+		}
+	}
+	return state, nil
 }
 
 // Webhook implements gocommerce.WebhookProvider.
@@ -408,9 +487,22 @@ func (m *Module) post(ctx context.Context, path string, payload any, out any) er
 	if err != nil {
 		return err
 	}
-	req.SetBasicAuth(m.conf(ctx).KeyID, m.conf(ctx).KeySecret)
 	req.Header.Set("Content-Type", "application/json")
+	return m.do(ctx, req, path, out)
+}
 
+func (m *Module) get(ctx context.Context, path string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.conf(ctx).BaseURL+path, nil)
+	if err != nil {
+		return err
+	}
+	return m.do(ctx, req, path, out)
+}
+
+// do sends an authenticated request and decodes the JSON reply, or
+// Razorpay's error.
+func (m *Module) do(ctx context.Context, req *http.Request, path string, out any) error {
+	req.SetBasicAuth(m.conf(ctx).KeyID, m.conf(ctx).KeySecret)
 	resp, err := m.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("razorpay: %s: %w", path, err)

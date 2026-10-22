@@ -35,6 +35,7 @@
     import { settings } from "$lib/settings.svelte.js";
     import { hasModule } from "$lib/modules.svelte.js";
     import { openDocument, safeFilename } from "$lib/download.js";
+    import { rise } from "$lib/motion.js";
     import AccessTokenCard from "$lib/components/AccessTokenCard.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
@@ -98,6 +99,8 @@
 
     $effect(() => {
         orderId;
+        // What a gateway said about the last order is no answer about this one.
+        gatewaySaid = null;
         if (readable) load();
     });
 
@@ -214,6 +217,33 @@
                 reason: "recorded from the admin panel",
             }),
         );
+
+    /**
+     * Asking the gateway what became of the payment, for the order whose
+     * webhook never arrived. The engine records a payment only when the
+     * gateway reports one, so what it said is shown either way — "no payment
+     * yet" is the answer the operator needs before reaching for Mark paid.
+     */
+    let gatewaySaid = $state(null);
+
+    async function checkPayment() {
+        const name = methodName;
+        busy = "Checking";
+        try {
+            const check = await api.post(`/api/admin/orders/${order.id}/check-payment`);
+            order = check.order;
+            loadTimeline(order.id);
+            gatewaySaid = check.gateway;
+            if (check.recorded) toast.success(`${name} says paid. Payment recorded.`);
+            else if (check.gateway.paid) toast.info(`${name} says paid. It was already recorded.`);
+            else if (check.gateway.failed) toast.warning(`${name} says the payment failed.`);
+            else toast.info(`${name} has no completed payment for this order yet.`);
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            busy = "";
+        }
+    }
 
     const undeliver = () =>
         act("Delivery undone", () => api.post(`/api/admin/orders/${order.id}/undeliver`));
@@ -529,6 +559,27 @@
         methods.find((m) => m.code === order?.payment_provider)?.name ??
             order?.payment_provider ??
             "—",
+    );
+
+    /* Offered only where the engine can ask (`checks_payments`), on a method
+       that is set up, for money not yet held: the same orders Mark paid is
+       offered on. */
+    const checkable = $derived.by(() => {
+        const method = methods.find((m) => m.code === order?.payment_provider);
+        return (
+            mayWrite &&
+            !!method?.checks_payments &&
+            !!method?.configured &&
+            order?.payment_status !== "paid" &&
+            order?.payment_status !== "refunded" &&
+            order?.status !== "cancelled"
+        );
+    });
+
+    /* The gateway's own words, or what its answer amounts to when it gave none. */
+    const gatewayWords = $derived(
+        gatewaySaid?.detail ||
+            (gatewaySaid?.paid ? "paid" : gatewaySaid?.failed ? "failed" : "no payment yet"),
     );
 
     /* Goods can only come back from an order that has sent some out. */
@@ -1685,6 +1736,30 @@
                                         {order.payment_reference}
                                     </div>
                                 {/if}
+                                {#if checkable}
+                                    <button
+                                        type="button"
+                                        class="btn sm secondary m-t-sm order-check-payment"
+                                        class:loading={busy === "Checking"}
+                                        disabled={busy === "Checking"}
+                                        onclick={checkPayment}
+                                    >
+                                        <i class="ri-search-eye-line" aria-hidden="true"></i>
+                                        <span class="txt">Check with {methodName}</span>
+                                    </button>
+                                {/if}
+                                <div class="order-gateway-said" role="status">
+                                    {#if gatewaySaid}
+                                        <span
+                                            class="order-gateway-chip"
+                                            class:is-paid={gatewaySaid.paid}
+                                            class:is-failed={gatewaySaid.failed}
+                                            transition:rise
+                                        >
+                                            {methodName} says: {gatewayWords}
+                                        </span>
+                                    {/if}
+                                </div>
                                 <OrderRefundList {order} />
                                 <!-- In the Payment card because an invoice is the
                                      document for money already taken. Gated on

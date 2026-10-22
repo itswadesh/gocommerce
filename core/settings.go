@@ -24,6 +24,10 @@ type ProviderInfo struct {
 	// and off, for the screen that lists it: a module's provider is switched
 	// by its module's plugin, and a built-in has no module to look up.
 	Plugin string `json:"plugin,omitempty"`
+	// ChecksPayments is whether the gateway can be asked what became of an
+	// order's payment ([PaymentStatusReader]), so the panel offers Check with
+	// it only where the answer can come back. Payment methods only.
+	ChecksPayments bool `json:"checks_payments,omitempty"`
 }
 
 // StoreSettings is what this store is configured as.
@@ -195,6 +199,7 @@ func (a *App) paymentInfo(ctx context.Context) []ProviderInfo {
 		if s, ok := a.payments.providers[code].(switchedByPlugin); ok {
 			info.Plugin = s.pluginKey()
 		}
+		_, info.ChecksPayments = a.payments.providers[code].(PaymentStatusReader)
 		out = append(out, info)
 	}
 	return out
