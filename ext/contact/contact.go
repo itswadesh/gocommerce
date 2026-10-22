@@ -1,8 +1,12 @@
-// Package contact is the storefront's contact form and the inbox behind it.
+// Package contact is the storefront's contact form, its product enquiries,
+// and the inbox behind both.
 //
-// A shopper writes; the store keeps the message, tells the operator by
-// email if the Plugins screen says where, and shows it in an inbox with
-// three states — new, replied, archived — and a place for notes.
+// A shopper writes — through the contact form, or by asking about one product
+// — and the store keeps the message and tells its own address by email, when
+// the Plugins screen says where. Both kinds land in one inbox: an enquiry is a
+// message marked as one, carrying the product as it was called when they
+// asked. The inbox has three states — new, replied, archived — and a place
+// for notes.
 //
 // An operator holding contact.reply answers from the panel. The reply goes to
 // the shopper by email through the store's own provider (App.NotifyNow), from
@@ -11,6 +15,9 @@
 // thread — who sent it, when, what it said — and the message is marked
 // replied, in one transaction. A reply that did not go is not recorded: the
 // operator is told why and keeps the text. A public demo sends no replies.
+//
+// Both public forms carry a honeypot and are limited per peer address, the
+// way ext/b2b limits its dealer form.
 package contact
 
 import (
@@ -22,6 +29,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
 )
@@ -30,6 +38,10 @@ const (
 	pluginKey  = "contact-form"
 	maxBody    = 5000
 	maxSubject = 200
+	maxName    = 200
+	maxPhone   = 40
+
+	defaultMessagesPerMinute = 10
 )
 
 // Statuses.
@@ -39,26 +51,40 @@ const (
 	StatusArchived = "archived"
 )
 
+// Kinds: what the shopper used to write in.
+const (
+	KindMessage = "message"
+	KindEnquiry = "enquiry"
+)
+
 // Config configures the module.
 type Config struct {
-	// NotifyEmail is where a new message is announced. The Plugins screen
-	// can set it too, and wins.
+	// NotifyEmail is where a new message or enquiry is announced. The Plugins
+	// screen can set it too, and wins.
 	NotifyEmail string
+	// MessagesPerMinute is how many messages and enquiries, counted together,
+	// one address may send in a minute. Zero means ten; a negative number
+	// turns the limit off. It counts by the connection's peer address and
+	// never by X-Forwarded-For, which anybody can write — so behind a reverse
+	// proxy every shopper shares the proxy's allowance.
+	MessagesPerMinute int
 }
 
 // Message is one message from a shopper.
 type Message struct {
-	ID          int64     `json:"id"`
-	Name        string    `json:"name"`
-	Email       string    `json:"email"`
-	Phone       string    `json:"phone,omitempty"`
-	Subject     string    `json:"subject"`
-	Body        string    `json:"body"`
-	OrderNumber string    `json:"order_number,omitempty"`
-	Status      string    `json:"status"`
-	Notes       string    `json:"notes,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          int64           `json:"id"`
+	Kind        string          `json:"kind"`
+	Name        string          `json:"name"`
+	Email       string          `json:"email"`
+	Phone       string          `json:"phone,omitempty"`
+	Subject     string          `json:"subject"`
+	Body        string          `json:"body"`
+	OrderNumber string          `json:"order_number,omitempty"`
+	Product     *EnquiryProduct `json:"product,omitempty"`
+	Status      string          `json:"status"`
+	Notes       string          `json:"notes,omitempty"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
 	// Replies is the thread, oldest first. Only a single message carries it:
 	// the list is for finding one.
 	Replies []Reply `json:"replies,omitempty"`
@@ -84,13 +110,19 @@ type MessagePatch struct {
 
 // Module is the routes and the tables.
 type Module struct {
-	cfg Config
-	app *gocommerce.App
-	db  *sql.DB
+	cfg   Config
+	app   *gocommerce.App
+	db    *sql.DB
+	limit *throttle
 }
 
 // New constructs the module.
-func New(cfg Config) *Module { return &Module{cfg: cfg} }
+func New(cfg Config) *Module {
+	if cfg.MessagesPerMinute == 0 {
+		cfg.MessagesPerMinute = defaultMessagesPerMinute
+	}
+	return &Module{cfg: cfg, limit: newThrottle(cfg.MessagesPerMinute, time.Minute)}
+}
 
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "contact" }
@@ -135,6 +167,24 @@ CREATE INDEX contact_replies_message_idx ON contact_replies (store_id, message_i
 `,
 		},
 		gocommerce.ScopeMigration("0004_replies_store_scope", "contact_replies"),
+		{
+			ID: "0005_enquiries",
+			SQL: `
+-- An enquiry is a message about one product. The product is kept as it was
+-- called when the shopper asked, and by id with no foreign key onto the
+-- catalogue: a product stays deletable, and the inbox keeps what was asked.
+ALTER TABLE contact_messages
+    ADD COLUMN kind          text    NOT NULL DEFAULT 'message' CHECK (kind IN ('message', 'enquiry')),
+    ADD COLUMN product_id    bigint,
+    ADD COLUMN product_title text    NOT NULL DEFAULT '',
+    ADD COLUMN product_slug  text    NOT NULL DEFAULT '',
+    ADD COLUMN variant_id    bigint,
+    ADD COLUMN variant_title text    NOT NULL DEFAULT '',
+    ADD COLUMN quantity      integer CHECK (quantity > 0),
+    ADD CONSTRAINT contact_messages_enquiry_has_product CHECK ((kind = 'enquiry') = (product_id IS NOT NULL));
+CREATE INDEX contact_messages_kind_idx ON contact_messages (store_id, kind, id DESC);
+`,
+		},
 	}
 }
 
@@ -158,29 +208,45 @@ func (m *Module) Register(app *gocommerce.App) error {
 Reply from the Contact screen, or to {{.from_email}} and mark it replied there.`,
 	})
 	app.RegisterNotifyTemplate(gocommerce.NotifyTemplate{
+		Channel: gocommerce.ChannelEmail, Event: "contact.enquiry", Title: "Product enquiry",
+		Description: "To the store's own address when a shopper asks about a product.",
+		Variables: []string{"from_name", "from_email", "phone", "product_title", "variant_title", "quantity",
+			"product_link", "body", "message_id"},
+		Subject: "{{.from_name}} asked about {{.product_title}}",
+		Body: `{{.from_name}} <{{.from_email}}>{{if .phone}}, {{.phone}},{{end}} asked about {{.product_title}}{{if .variant_title}} ({{.variant_title}}){{end}}{{if .quantity}}, {{.quantity}} of them{{end}}:
+
+{{.body}}
+{{if .product_link}}
+The product: {{.product_link}}
+{{end}}
+Reply from the Contact screen.`,
+	})
+	app.RegisterNotifyTemplate(gocommerce.NotifyTemplate{
 		Channel: gocommerce.ChannelEmail, Event: "contact.reply", Title: "Reply to a contact message",
-		Description: "To a shopper, when somebody answers their message from the Contact screen.",
-		Variables:   []string{"name", "subject", "reply", "original", "original_subject", "store_name"},
+		Description: "To a shopper, when somebody answers their message or enquiry from the Contact screen.",
+		Variables:   []string{"name", "subject", "reply", "original", "original_subject", "product_title", "store_name"},
 		Subject:     "{{.subject}}",
 		Body: `{{.reply}}
 {{if .store_name}}
 {{.store_name}}
 {{end}}
 ---
-You wrote:
+{{if .product_title}}You asked about {{.product_title}}{{else}}You wrote{{end}}:
 
 {{.original}}`,
 	})
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "Contact form", Category: "storefront", DefaultEnabled: true,
-		Description: "A contact form on the storefront, and the inbox behind it on the Contact screen. A new message is announced by email to the address below.",
+		Description: "A contact form on the storefront, product enquiries, and the inbox behind both on the Contact screen. Each new message and enquiry is announced by email to the address below.",
 		Fields: []gocommerce.PluginField{
-			{Key: "notify_email", Label: "Announce new messages to", Kind: "text", Required: m.cfg.NotifyEmail == "", Help: "The store's own address. Each announcement lands in Notifications too."},
+			{Key: "notify_email", Label: "Announce new messages to", Kind: "text", Required: m.cfg.NotifyEmail == "", Help: "The store's own address, for messages and product enquiries alike. Each announcement lands in Notifications too."},
 			{Key: "subjects", Label: "Subjects the form offers", Kind: "textarea", Public: true, Default: "An order\nA product\nReturns and exchanges\nSomething else", Help: "One per line; the storefront shows them as a list."},
 			{Key: "thanks", Label: "After sending", Kind: "text", Public: true, Default: "Thanks — we'll reply by email."},
+			{Key: "enquiries", Label: "Take product enquiries", Kind: "bool", Public: true, Default: true, Help: "Shoppers can ask about a product from its page; enquiries land in the same inbox, marked as such."},
 		},
 	})
 	app.HandleFunc("POST /x/contact/messages", m.handleSubmit)
+	app.HandleFunc("POST /x/contact/enquiries", m.handleEnquiry)
 
 	// An inbox is customer correspondence, with rights of its own (D65):
 	// reading it, writing from the store's address, and clearing it.
@@ -199,13 +265,31 @@ func (m *Module) notifyEmail(ctx context.Context) string {
 	return m.cfg.NotifyEmail
 }
 
-const messageColumns = `id, name, email, phone, subject, body, order_number, status, notes, created_at, updated_at`
+const messageColumns = `id, kind, name, email, phone, subject, body, order_number,
+	product_id, product_title, product_slug, variant_id, variant_title, quantity,
+	status, notes, created_at, updated_at`
 
 func scan(sc interface{ Scan(...any) error }) (*Message, error) {
-	var msg Message
-	if err := sc.Scan(&msg.ID, &msg.Name, &msg.Email, &msg.Phone, &msg.Subject, &msg.Body, &msg.OrderNumber,
+	var (
+		msg                     Message
+		productID, variantID    sql.NullInt64
+		quantity                sql.NullInt32
+		title, slug, variantTtl string
+	)
+	if err := sc.Scan(&msg.ID, &msg.Kind, &msg.Name, &msg.Email, &msg.Phone, &msg.Subject, &msg.Body, &msg.OrderNumber,
+		&productID, &title, &slug, &variantID, &variantTtl, &quantity,
 		&msg.Status, &msg.Notes, &msg.CreatedAt, &msg.UpdatedAt); err != nil {
 		return nil, err
+	}
+	if productID.Valid {
+		msg.Product = &EnquiryProduct{ID: productID.Int64, Title: title, Slug: slug, VariantTitle: variantTtl}
+		if variantID.Valid {
+			msg.Product.VariantID = &variantID.Int64
+		}
+		if quantity.Valid {
+			q := int(quantity.Int32)
+			msg.Product.Quantity = &q
+		}
 	}
 	return &msg, nil
 }
@@ -232,9 +316,71 @@ func (m *Module) withThread(ctx context.Context, id int64) (*Message, error) {
 
 // ----------------------------------------------------------------- public
 
-func (m *Module) handleSubmit(w http.ResponseWriter, r *http.Request) {
+// sender is who wrote in, checked the same way on both forms.
+type sender struct {
+	name, email, phone, body string
+}
+
+func checkSender(name, email, phone, body string) (sender, error) {
+	s := sender{name: strings.TrimSpace(name), phone: strings.TrimSpace(phone), body: strings.TrimSpace(body)}
+	if s.name == "" {
+		return s, gocommerce.Validationf("a name is required")
+	}
+	if utf8.RuneCountInString(s.name) > maxName {
+		return s, gocommerce.Validationf("the name is too long: %d characters at most", maxName)
+	}
+	addr, err := mail.ParseAddress(strings.TrimSpace(email))
+	if err != nil {
+		return s, gocommerce.Validationf("that does not look like an email address")
+	}
+	s.email = strings.ToLower(addr.Address)
+	if s.phone != "" && (len(s.phone) > maxPhone || !validPhone(s.phone)) {
+		return s, gocommerce.Validationf("a phone number is digits, spaces and + - ( ) . only")
+	}
+	if s.body == "" {
+		return s, gocommerce.Validationf("the message is empty")
+	}
+	if len(s.body) > maxBody {
+		return s, gocommerce.Validationf("the message is too long: %d characters at most", maxBody)
+	}
+	return s, nil
+}
+
+func validPhone(s string) bool {
+	digits := 0
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+			digits++
+		case strings.ContainsRune("+-(). ", r):
+		default:
+			return false
+		}
+	}
+	return digits >= 5
+}
+
+// open answers 404 while the contact form is switched off, and 429 for an
+// address that has written too often this minute. Every attempt counts, valid
+// or not: what is protected is the store's inbox, and a malformed request
+// still costs a validation.
+func (m *Module) open(w http.ResponseWriter, r *http.Request) bool {
 	if on, _ := m.app.Plugins().Enabled(r.Context(), pluginKey); !on {
 		gocommerce.RespondError(w, r, gocommerce.NotFoundf("the contact form is not open on this store"))
+		return false
+	}
+	store, _ := gocommerce.StoreFrom(r.Context())
+	if wait, ok := m.limit.allow(store+" "+peerAddr(r), time.Now()); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int((wait+time.Second-1)/time.Second)))
+		gocommerce.RespondError(w, r, &gocommerce.APIError{Status: http.StatusTooManyRequests,
+			Code: "too_many_attempts", Message: "too many messages from this address; try again in a minute"})
+		return false
+	}
+	return true
+}
+
+func (m *Module) handleSubmit(w http.ResponseWriter, r *http.Request) {
+	if !m.open(w, r) {
 		return
 	}
 	var in MessageInput
@@ -246,30 +392,21 @@ func (m *Module) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		gocommerce.Respond(w, http.StatusCreated, map[string]string{"status": StatusNew})
 		return
 	}
-	in.Name, in.Body, in.Subject = strings.TrimSpace(in.Name), strings.TrimSpace(in.Body), strings.TrimSpace(in.Subject)
-	if in.Name == "" {
-		gocommerce.RespondError(w, r, gocommerce.Validationf("a name is required"))
-		return
-	}
-	addr, err := mail.ParseAddress(strings.TrimSpace(in.Email))
+	s, err := checkSender(in.Name, in.Email, in.Phone, in.Body)
 	if err != nil {
-		gocommerce.RespondError(w, r, gocommerce.Validationf("that does not look like an email address"))
+		gocommerce.RespondError(w, r, err)
 		return
 	}
-	email := strings.ToLower(addr.Address)
-	if in.Body == "" {
-		gocommerce.RespondError(w, r, gocommerce.Validationf("the message is empty"))
-		return
-	}
-	if len(in.Body) > maxBody || len(in.Subject) > maxSubject {
-		gocommerce.RespondError(w, r, gocommerce.Validationf("the message is too long: %d characters at most", maxBody))
+	subject, order := strings.TrimSpace(in.Subject), strings.TrimSpace(in.OrderNumber)
+	if len(subject) > maxSubject {
+		gocommerce.RespondError(w, r, gocommerce.Validationf("the subject is too long: %d characters at most", maxSubject))
 		return
 	}
 	var id int64
 	if err := m.db.QueryRowContext(r.Context(), `
 		INSERT INTO contact_messages (name, email, phone, subject, body, order_number)
 		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-		in.Name, email, strings.TrimSpace(in.Phone), in.Subject, in.Body, strings.TrimSpace(in.OrderNumber)).Scan(&id); err != nil {
+		s.name, s.email, s.phone, subject, s.body, order).Scan(&id); err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
@@ -280,8 +417,8 @@ func (m *Module) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		_ = m.app.Notify(r.Context(), gocommerce.Notification{
 			Event: "contact.message", Channel: gocommerce.ChannelEmail, To: to,
 			Data: map[string]string{
-				"message_id": strconv.FormatInt(id, 10), "from_name": in.Name, "from_email": email,
-				"subject": in.Subject, "body": in.Body, "order_number": strings.TrimSpace(in.OrderNumber),
+				"message_id": strconv.FormatInt(id, 10), "from_name": s.name, "from_email": s.email,
+				"subject": subject, "body": s.body, "order_number": order,
 			},
 		})
 	}
@@ -306,18 +443,27 @@ func (m *Module) handleList(w http.ResponseWriter, r *http.Request) {
 		args = append(args, status)
 		where = append(where, fmt.Sprintf("status = $%d", len(args)))
 	}
+	if kind := q.Get("kind"); kind != "" {
+		if kind != KindMessage && kind != KindEnquiry {
+			gocommerce.RespondError(w, r, gocommerce.Validationf("kind must be message or enquiry"))
+			return
+		}
+		args = append(args, kind)
+		where = append(where, fmt.Sprintf("kind = $%d", len(args)))
+	}
 	if s := strings.TrimSpace(q.Get("q")); s != "" {
-		// A fragment for the people and the subject, the exact value for an
-		// order number: "42" must not sweep in every order with a 42 in it.
-		// Not the address where it is masked (a demo store, or an agent
-		// key): a contains-match would read it back a character at a time.
+		// A fragment for the people, the subject and the product asked about,
+		// the exact value for an order number: "42" must not sweep in every
+		// order with a 42 in it. Not the address where it is masked (a demo
+		// store, or an agent key): a contains-match would read it back a
+		// character at a time.
 		args = append(args, "%"+strings.ToLower(s)+"%", s)
 		email := fmt.Sprintf(" OR email LIKE $%d", len(args)-1)
 		if m.app.Masks(r.Context()) {
 			email = ""
 		}
-		where = append(where, fmt.Sprintf("(lower(name) LIKE $%d%s OR lower(subject) LIKE $%d OR order_number = $%d)",
-			len(args)-1, email, len(args)-1, len(args)))
+		where = append(where, fmt.Sprintf("(lower(name) LIKE $%d%s OR lower(subject) LIKE $%d OR lower(product_title) LIKE $%d OR order_number = $%d)",
+			len(args)-1, email, len(args)-1, len(args)-1, len(args)))
 	}
 	clause := strings.Join(where, " AND ")
 	var total int
@@ -457,7 +603,7 @@ func (m *Module) registerRights(app *gocommerce.App) {
 	app.RegisterRight(gocommerce.RightSpec{
 		Right:   rightContactRead,
 		Label:   "Read the contact inbox",
-		Scope:   "Messages the storefront's form collected — personal data",
+		Scope:   "Messages and product enquiries the storefront collected — personal data",
 		Default: []string{gocommerce.RoleManager, gocommerce.RoleStaff},
 	})
 	app.RegisterRight(gocommerce.RightSpec{
@@ -469,7 +615,7 @@ func (m *Module) registerRights(app *gocommerce.App) {
 	app.RegisterRight(gocommerce.RightSpec{
 		Right:   rightContactReply,
 		Label:   "Reply to contact messages",
-		Scope:   "Answering a message by email from the store's address",
+		Scope:   "Answering a message or an enquiry by email from the store's address",
 		Default: []string{gocommerce.RoleManager},
 	})
 }

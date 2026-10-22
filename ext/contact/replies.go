@@ -98,6 +98,9 @@ func (m *Module) handleReply(w http.ResponseWriter, r *http.Request) {
 		"name": msg.Name, "subject": in.Subject, "reply": in.Body,
 		"original": msg.Body, "original_subject": msg.Subject, "store_name": m.storeName(ctx),
 	}
+	if msg.Product != nil {
+		data["product_title"] = msg.Product.Title
+	}
 	if err := m.app.NotifyNow(ctx, gocommerce.Notification{
 		Event: "contact.reply", Channel: gocommerce.ChannelEmail, To: msg.Email, Data: data,
 	}); err != nil {
@@ -132,6 +135,9 @@ func (m *Module) handleReply(w http.ResponseWriter, r *http.Request) {
 // conversation's own subject, so the shopper's mail threads it.
 func replySubject(msg *Message) string {
 	about := msg.Subject
+	if about == "" && msg.Product != nil {
+		about = msg.Product.Title
+	}
 	if about == "" {
 		return "Re: your message"
 	}
