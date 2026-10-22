@@ -339,6 +339,10 @@ func (s *Invitations) AcceptFrom(ctx context.Context, token, password, clientIP 
 		return nil, nil, err
 	}
 	var su *Superuser
+	// Who joins through this invitation arrived through its store's brand,
+	// which their emails go out in when nothing else says which (D111). Read
+	// before the transaction, which must not wait on a second connection.
+	arrival := s.app.storeBrandHost(ctx)
 	err = InTx(ctx, s.app.db, func(tx *sql.Tx) error {
 		row := tx.QueryRowContext(ctx, `
 			SELECT `+invitationColumns+`
@@ -375,8 +379,8 @@ func (s *Invitations) AcceptFrom(ctx context.Context, token, password, clientIP 
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 			if err := tx.QueryRowContext(ctx, `
-				INSERT INTO superusers (email, password_hash) VALUES ($1, $2) RETURNING id`,
-				inv.Email, hash).Scan(&id); err != nil {
+				INSERT INTO superusers (email, password_hash, brand_host) VALUES ($1, $2, $3) RETURNING id`,
+				inv.Email, hash, arrival).Scan(&id); err != nil {
 				return Internalf(err, "create superuser")
 			}
 		case err != nil:
@@ -460,6 +464,7 @@ func (s *Invitations) email(ctx context.Context, inv *Invitation) (bool, string)
 		Language: s.app.mainLanguage(ctx),
 		Data: map[string]string{
 			"invite_url":       inv.AcceptURL,
+			"brand_name":       s.app.storeMailBrand(ctx).Name,
 			"store_name":       store,
 			"role":             inv.Role,
 			"invited_by":       inv.InvitedByName,
