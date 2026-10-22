@@ -83,6 +83,13 @@ const (
 	signatureTolerance = 5 * time.Minute
 	maxBodyBytes       = 1 << 20
 	currency           = "INR"
+	// maxAttempts caps the Cashfree orders one order may collect through
+	// retried checkouts: each is one more call whenever the order is checked.
+	maxAttempts = 10
+	// verifyQuiet is how long the public verify route answers from the store
+	// after asking Cashfree about a Cashfree order, so a page reloaded or
+	// called in a loop cannot spend the merchant's API allowance.
+	verifyQuiet = 15 * time.Second
 )
 
 // Config configures the module.
@@ -105,6 +112,7 @@ type Config struct {
 type Module struct {
 	cfg    Config
 	live   sync.Map // store id → *Config: each store has its own account
+	asked  sync.Map // store id + Cashfree order id → when the verify route last asked
 	app    *gocommerce.App
 	client *http.Client
 	log    *slog.Logger
@@ -267,6 +275,14 @@ func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts goc
 	if phone == "" {
 		return gocommerce.PaymentIntent{}, errors.New("cashfree: Cashfree needs the shopper's phone number, and the order has none")
 	}
+	var attempts int
+	if err := m.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM payments_cashfree_orders WHERE order_id = $1`, order.ID).Scan(&attempts); err != nil {
+		return gocommerce.PaymentIntent{}, fmt.Errorf("cashfree: could not count the payment attempts: %w", err)
+	}
+	if attempts >= maxAttempts {
+		return gocommerce.PaymentIntent{}, fmt.Errorf("cashfree: order %s has had %d payment attempts; place a new order to try again", order.Number, attempts)
+	}
 	cfOrderID, err := newOrderID(order.Number)
 	if err != nil {
 		return gocommerce.PaymentIntent{}, err
@@ -342,26 +358,27 @@ func (m *Module) Refund(ctx context.Context, order *gocommerce.Order, amountMino
 }
 
 // RefundWithReference implements gocommerce.ReferencedRefunder. Cashfree
-// refunds against its order, not the payment, so the Cashfree order the money
-// was taken on is found first.
+// refunds against its order, not the payment, so the payment the money was
+// taken on is found first, and with it how much Cashfree actually holds.
 func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Order, amountMinor int64) (string, error) {
 	if !m.refresh(ctx) {
 		return "", errNotConfigured
 	}
-	cfOrderID, err := m.paidCashfreeOrder(ctx, order)
+	cfOrderID, captured, err := m.paidPayment(ctx, order)
 	if err != nil {
 		return "", err
 	}
-	refundID, err := randomHex(6)
-	if err != nil {
-		return "", err
+	// An offer can pay part of an order, so Cashfree may hold less than the
+	// total the engine refunds against. Asking for more is refused here
+	// rather than by Cashfree.
+	if left := captured - order.Refunded.AmountMinor; amountMinor > left {
+		return "", fmt.Errorf("cashfree: Cashfree captured %d paise for order %s and %d has gone back, so it holds %d; a refund of %d is more than that (an offer paid the rest)",
+			captured, order.Number, order.Refunded.AmountMinor, left, amountMinor)
 	}
 	body := map[string]any{
 		"refund_amount": rupees(amountMinor),
-		// Cashfree's refund ids are the merchant's and must be unique; the
-		// order id keeps them findable in its dashboard.
-		"refund_id":   "gc" + strconv.FormatInt(order.ID, 10) + "r" + refundID,
-		"refund_note": clip("Refund for order "+order.Number, 100),
+		"refund_id":     refundID(order, amountMinor),
+		"refund_note":   clip("Refund for order "+order.Number, 100),
 	}
 	var out struct {
 		CFRefundID        string `json:"cf_refund_id"`
@@ -374,7 +391,7 @@ func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Orde
 	}
 	switch strings.ToUpper(out.RefundStatus) {
 	case "CANCELLED", "REJECTED":
-		return "", fmt.Errorf("cashfree: refund %s was %s: %s", out.RefundID, out.RefundStatus,
+		return "", fmt.Errorf("%s %s was %s: %s", refusedPrefix, out.RefundID, out.RefundStatus,
 			firstNonEmpty(out.StatusDescription, "no reason given"))
 	}
 	// PENDING and ONHOLD are refunds Cashfree accepted and will process; the
@@ -382,36 +399,79 @@ func (m *Module) RefundWithReference(ctx context.Context, order *gocommerce.Orde
 	return firstNonEmpty(out.CFRefundID, out.RefundID), nil
 }
 
-// paidCashfreeOrder is the Cashfree order an order's money was taken on. Most
-// orders have one; a retried checkout leaves more, and then Cashfree is asked
-// which of them holds the payment the order is settled by.
-func (m *Module) paidCashfreeOrder(ctx context.Context, order *gocommerce.Order) (string, error) {
+// refusedPrefix starts the error of a refund Cashfree answered and refused,
+// which the engine stores on the failed refund. A refund refused that way is
+// final, so the next attempt is a new refund with an id of its own.
+const refusedPrefix = "cashfree: Cashfree refused refund"
+
+// refundID is the merchant's id for a refund: the order, how many refunds of
+// it came before, and the amount. A refund whose answer was lost is retried
+// under the same id, so Cashfree refuses it as a duplicate instead of paying
+// it out twice; a separate refund, after one that went out or was refused,
+// gets a new one. Cashfree takes 3 to 40 letters and digits.
+func refundID(order *gocommerce.Order, amountMinor int64) string {
+	before := 0
+	for _, r := range order.Refunds {
+		if r.Status == gocommerce.RefundSucceeded || r.Status == gocommerce.RefundPending ||
+			(r.Status == gocommerce.RefundFailed && strings.HasPrefix(r.Error, refusedPrefix)) {
+			before++
+		}
+	}
+	id := fmt.Sprintf("gc%dr%da%d", order.ID, before, amountMinor)
+	if len(id) > 40 {
+		sum := sha256.Sum256([]byte(id))
+		id = "gc" + hex.EncodeToString(sum[:16])
+	}
+	return id
+}
+
+// paidPayment is the Cashfree order and payment an order's money was taken
+// on, and how much that payment captured. It is the payment the order's
+// reference names; an order marked paid by hand with some other reference is
+// settled by the one successful payment its Cashfree orders hold, if there is
+// exactly one.
+func (m *Module) paidPayment(ctx context.Context, order *gocommerce.Order) (cfOrderID string, captured int64, err error) {
 	rows, err := m.cashfreeOrders(ctx, order.ID)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	if len(rows) == 0 {
-		return "", fmt.Errorf("cashfree: order %s has no Cashfree order to refund", order.Number)
-	}
-	if len(rows) == 1 {
-		return rows[0].id, nil
+		return "", 0, fmt.Errorf("cashfree: order %s has no Cashfree order to refund", order.Number)
 	}
 	ref := strings.TrimSpace(order.PaymentReference)
+	type found struct {
+		cfOrder string
+		p       payment
+	}
+	var named *found
+	var successes []found
 	for _, row := range rows {
-		if row.id == ref {
-			return row.id, nil
-		}
-		payments, err := m.payments(ctx, row.id)
+		list, err := m.payments(ctx, row.id)
 		if err != nil {
-			return "", err
+			return "", 0, err
 		}
-		for _, p := range payments {
-			if string(p.CFPaymentID) == ref && strings.EqualFold(p.PaymentStatus, "SUCCESS") {
-				return row.id, nil
+		for _, p := range list {
+			if !strings.EqualFold(p.PaymentStatus, "SUCCESS") {
+				continue
+			}
+			successes = append(successes, found{row.id, p})
+			if named == nil && (string(p.CFPaymentID) == ref || row.id == ref) {
+				named = &found{row.id, p}
 			}
 		}
 	}
-	return "", fmt.Errorf("cashfree: none of order %s's Cashfree orders holds payment %q", order.Number, ref)
+	if named == nil {
+		if len(successes) != 1 {
+			return "", 0, fmt.Errorf("cashfree: cannot tell which Cashfree payment settled order %s (reference %q, %d successful payments)",
+				order.Number, ref, len(successes))
+		}
+		named = &successes[0]
+	}
+	captured, err = paise(named.p.PaymentAmount)
+	if err != nil {
+		return "", 0, fmt.Errorf("cashfree: Cashfree's payment amount for order %s could not be read: %w", order.Number, err)
+	}
+	return named.cfOrder, captured, nil
 }
 
 type cashfreeOrder struct {
@@ -446,6 +506,7 @@ type payment struct {
 	CFPaymentID    flexID      `json:"cf_payment_id"`
 	PaymentStatus  string      `json:"payment_status"`
 	OrderAmount    json.Number `json:"order_amount"`
+	PaymentAmount  json.Number `json:"payment_amount"`
 	PaymentMessage string      `json:"payment_message"`
 }
 
@@ -489,12 +550,15 @@ func (m *Module) Status(ctx context.Context, order *gocommerce.Order) (gocommerc
 			if !strings.EqualFold(p.PaymentStatus, "SUCCESS") {
 				continue
 			}
+			// Unreadable is not paid: the webhook refuses the same answer.
 			asked, err := paise(p.OrderAmount)
 			if err != nil {
-				asked = row.amount
+				state.Detail = fmt.Sprintf("SUCCESS, but Cashfree's order amount %q could not be read", p.OrderAmount.String())
+				continue
 			}
 			if asked == row.amount && row.amount == order.Total.AmountMinor && strings.EqualFold(order.Total.Currency, currency) {
-				return gocommerce.PaymentState{Paid: true, Reference: string(p.CFPaymentID), Detail: "SUCCESS"}, nil
+				return gocommerce.PaymentState{Paid: true, Reference: string(p.CFPaymentID), Detail: "SUCCESS",
+					Amount: &gocommerce.Money{AmountMinor: asked, Currency: currency}}, nil
 			}
 			state.Detail = fmt.Sprintf("SUCCESS for %d paise, not the order's %d %s",
 				asked, order.Total.AmountMinor, strings.ToUpper(order.Total.Currency))
@@ -548,7 +612,14 @@ func (m *Module) handleVerify(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	if order.PaymentStatus == gocommerce.PaymentPending || order.PaymentStatus == gocommerce.PaymentFailed {
+	// An operator may have moved the order to another method since; settling
+	// it is then that method's business, not Cashfree's.
+	if order.PaymentProvider != m.Code() {
+		gocommerce.RespondError(w, r, gocommerce.Conflictf("order %s is no longer paid through Cashfree", order.Number))
+		return
+	}
+	if (order.PaymentStatus == gocommerce.PaymentPending || order.PaymentStatus == gocommerce.PaymentFailed) &&
+		m.mayAsk(ctx, r.PathValue("cf_order_id")) {
 		check, err := m.pay.CheckPayment(ctx, orderID)
 		if err != nil {
 			gocommerce.RespondError(w, r, err)
@@ -560,6 +631,28 @@ func (m *Module) handleVerify(w http.ResponseWriter, r *http.Request) {
 		"order":          order.Number,
 		"payment_status": order.PaymentStatus,
 	})
+}
+
+// mayAsk says whether the verify route may ask Cashfree about a Cashfree
+// order now, and if so notes that it has: once per verifyQuiet, whatever the
+// caller does. Kept in memory, per process; after a restart the first verify
+// asks again, which is all a cap on a loop needs.
+func (m *Module) mayAsk(ctx context.Context, cfOrderID string) bool {
+	store, _ := gocommerce.StoreFrom(ctx)
+	key := store + "/" + cfOrderID
+	now := time.Now()
+	for {
+		last, loaded := m.asked.LoadOrStore(key, now)
+		if !loaded {
+			return true
+		}
+		if now.Sub(last.(time.Time)) < verifyQuiet {
+			return false
+		}
+		if m.asked.CompareAndSwap(key, last, now) {
+			return true
+		}
+	}
 }
 
 // ----------------------------------------------------------------- webhook
@@ -683,6 +776,20 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "could not apply the failure", http.StatusInternalServerError)
 			return
 		}
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Money for an order cancelled meanwhile cannot settle it, and has to go
+	// back. Retrying would change nothing, so it is acknowledged and put on
+	// the store's Errors screen, where somebody will see it and refund it.
+	if order.Status == gocommerce.OrderCancelled {
+		msg := fmt.Sprintf("Cashfree took a payment for order %s after it was cancelled; refund payment %s from Cashfree's dashboard", order.Number, paymentID)
+		m.log.Error(msg, "order_id", orderID, "cf_order_id", ev.Data.Order.OrderID, "payment", paymentID)
+		m.app.Errors().Capture(ctx, gocommerce.CapturedError{
+			Source: "server", Message: msg, Culprit: "payments-cashfree webhook",
+			Context: map[string]any{"order": order.Number, "cf_order_id": ev.Data.Order.OrderID, "cf_payment_id": paymentID},
+		})
 		w.WriteHeader(http.StatusOK)
 		return
 	}
