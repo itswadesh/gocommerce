@@ -340,6 +340,9 @@ type App struct {
 	// secretWarnings is when each unreadable secret was last logged, by store
 	// and field, so a hot reader logs it once an hour (secrets.go).
 	secretWarnings sync.Map
+	// startSeal is the start-up seal pass, so shutdown waits for it and a
+	// test can.
+	startSeal sync.WaitGroup
 	// reportsDB runs custom reports under a least-privileged login, kept apart
 	// from db so a report can never reach the engine's own database rights
 	// (D78). Nil when Config.ReportsDBURL is empty, which disables the feature.
@@ -696,6 +699,26 @@ func (a *App) startBackgroundWork() {
 		go a.runSweepers(ctx)
 		return nil
 	})
+	// With a key, what is stored is sealed as the engine starts, so a hosted
+	// install — whose image has no shell to run `secrets seal` in — needs only
+	// the key and a restart. Registered here, after every module's Register,
+	// so each module's secret columns are known; run in the background so
+	// serving is not held up; waited for on the way down, after its context
+	// is cancelled, so the pool is not closed under it.
+	if a.secrets.current != nil {
+		a.OnStart(func(ctx context.Context) error {
+			a.startSeal.Add(1)
+			go func() {
+				defer a.startSeal.Done()
+				a.sealAtStart(ctx)
+			}()
+			return nil
+		})
+		a.OnStop(func(context.Context) error {
+			a.startSeal.Wait()
+			return nil
+		})
+	}
 	// A reset email is delivered off the request goroutine, so shutdown waits
 	// for one in flight rather than dropping it. Capped, because a hung vendor
 	// must not hold the process open.

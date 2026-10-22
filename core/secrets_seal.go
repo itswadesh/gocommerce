@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"slices"
 	"sort"
@@ -146,6 +147,12 @@ func (a *App) SealSecrets(ctx context.Context) (*SealReport, error) {
 	if d := a.checkRowSecurity(ctx); d.Status == StatusFail {
 		return nil, fmt.Errorf("refusing to seal: %s, and a pass for one store must not be able to reach another's rows; %s", d.Detail, d.Hint)
 	}
+	return a.sealEveryStore(ctx, nil)
+}
+
+// sealEveryStore is the pass itself, for a caller that has checked the key
+// and the login. each, when set, hears each store's counts as it finishes.
+func (a *App) sealEveryStore(ctx context.Context, each func(store string, counts []SecretCount)) (*SealReport, error) {
 	rows, err := a.db.QueryContext(ctx, `SELECT id FROM stores ORDER BY created_at, id`)
 	if err != nil {
 		return nil, err
@@ -170,6 +177,9 @@ func (a *App) SealSecrets(ctx context.Context) (*SealReport, error) {
 		if err != nil {
 			return rep, fmt.Errorf("store %s: %w", id, err)
 		}
+		if each != nil {
+			each(id, counts)
+		}
 		if rep.Counts == nil {
 			rep.Counts = counts
 			continue
@@ -180,6 +190,53 @@ func (a *App) SealSecrets(ctx context.Context) (*SealReport, error) {
 	}
 	rep.NotInstalled, err = a.modulesNotInstalled(ctx)
 	return rep, err
+}
+
+// sealAtStart is the seal pass run as the engine starts with a key, so an
+// install whose image has no shell — a hosted one — needs nothing but the key
+// and a restart. It is SealSecrets with logging in place of a report: a line
+// for each store that had anything to seal or move or could not open, and
+// one line for the whole pass, never a value. Several instances starting at
+// once are safe: plugin rows are locked while rewritten and columns are
+// compare-and-set, so each value is sealed once and counted by the pass that
+// sealed it.
+func (a *App) sealAtStart(ctx context.Context) {
+	// The CLI refuses this login, and start-up skips for the same reason.
+	if d := a.checkRowSecurity(ctx); d.Status == StatusFail {
+		a.log.Warn("stored secrets were not sealed at start-up", "reason", d.Detail, "fix", d.Hint)
+		return
+	}
+	var total SecretCount
+	rep, err := a.sealEveryStore(ctx, func(store string, counts []SecretCount) {
+		attrs := []any{"store", store}
+		var here SecretCount
+		for _, c := range counts {
+			here.add(c)
+			attrs = append(attrs, slog.Group(strings.ReplaceAll(strings.ToLower(c.Label), " ", "_"),
+				"sealed", c.Readable, "moved", c.Previous, "already", c.Current, "unreadable", c.Unreadable))
+		}
+		total.add(here)
+		switch {
+		case here.Unreadable > 0:
+			a.log.Warn("stored secrets sealed at start-up; some open under no key here and were left as they are",
+				append(attrs, "where", strings.Join(here.Where, ", "))...)
+		case here.Readable+here.Previous > 0:
+			a.log.Info("stored secrets sealed at start-up", attrs...)
+		}
+	})
+	if err != nil {
+		// A shutdown during the pass cancels it; that is not a failure.
+		if ctx.Err() == nil {
+			a.log.Error("sealing stored secrets at start-up failed", "error", err)
+		}
+		return
+	}
+	attrs := []any{"key", rep.KeyID, "stores", rep.Stores,
+		"sealed", total.Readable, "moved", total.Previous, "already", total.Current, "unreadable", total.Unreadable}
+	if len(rep.NotInstalled) > 0 {
+		attrs = append(attrs, "not_reached", strings.Join(rep.NotInstalled, ", "))
+	}
+	a.log.Info("stored secrets checked at start-up", attrs...)
 }
 
 // modulesNotInstalled are the owners of applied migrations this App was not
@@ -344,8 +401,8 @@ func (a *App) surveySecretColumn(ctx context.Context, col SecretColumn, write bo
 
 	for _, v := range values {
 		state, plain := a.secrets.classify(store, col.Field, v.stored)
-		c.count(state, v.n, col.Field)
 		if !write || (state != stateReadable && state != statePrevious) {
+			c.count(state, v.n, col.Field)
 			continue
 		}
 		sealed, err := a.secrets.seal(store, col.Field, plain)
@@ -354,10 +411,19 @@ func (a *App) surveySecretColumn(ctx context.Context, col SecretColumn, write bo
 		}
 		// Compare-and-set on the value itself: a row the module rewrote since
 		// the read keeps what the module wrote, which it sealed already.
-		if _, err := a.db.ExecContext(ctx, fmt.Sprintf(`UPDATE %[1]s SET %[2]s = $2 WHERE %[2]s = $1 AND store_id = $3`,
-			quoteIdent(col.Table), quoteIdent(col.Column)), v.stored, sealed, store); err != nil {
+		res, err := a.db.ExecContext(ctx, fmt.Sprintf(`UPDATE %[1]s SET %[2]s = $2 WHERE %[2]s = $1 AND store_id = $3`,
+			quoteIdent(col.Table), quoteIdent(col.Column)), v.stored, sealed, store)
+		if err != nil {
 			return c, err
 		}
+		// Counted by what this pass rewrote, not by what it read: when several
+		// instances start at once, a row another pass sealed first is that
+		// pass's to count, and each report says what its own pass did.
+		n, err := res.RowsAffected()
+		if err != nil {
+			return c, err
+		}
+		c.count(state, int(n), col.Field)
 	}
 	return c, nil
 }
@@ -385,8 +451,10 @@ func (a *App) checkSecrets(ctx context.Context) Diagnostic {
 	if len(all.Where) > 5 {
 		where = strings.Join(all.Where[:5], ", ") + fmt.Sprintf(" and %d more", len(all.Where)-5)
 	}
-	keyHint := "set " + SecretsKeyEnv + " to 32 random bytes in base64 (`openssl rand -base64 32`), restart, " +
-		"then run `gocommerce secrets seal`; keep a copy of the key away from this server, because losing it means entering every secret again"
+	// Restart, not a command: the engine seals what is stored as it starts,
+	// and a hosted install's image has no shell to run one in.
+	keyHint := "set " + SecretsKeyEnv + " to 32 random bytes in base64 (`openssl rand -base64 32`) and restart: the engine seals what is stored " +
+		"when it starts. Keep a copy of the key away from this server, because losing it means entering every secret again"
 
 	if a.secrets.current == nil {
 		switch {
@@ -410,15 +478,18 @@ func (a *App) checkSecrets(ctx context.Context) Diagnostic {
 	case all.Unreadable > 0:
 		d.Status = StatusWarn
 		d.Detail = fmt.Sprintf("%d secret(s) were sealed under a key this install does not have, and read as unset: %s", all.Unreadable, where)
-		d.Hint = "put the key that sealed them in " + SecretsKeyPreviousEnv + " and run `gocommerce secrets seal`, or enter those secrets again"
+		d.Hint = "put the key that sealed them in " + SecretsKeyPreviousEnv + " and restart, so the engine moves them under the current key " +
+			"as it starts, or enter those secrets again"
 	case all.Readable > 0:
 		d.Status = StatusWarn
 		d.Detail = fmt.Sprintf("%d secret(s) are still stored readable; %s", all.Readable, sealed)
-		d.Hint = "run `gocommerce secrets seal`"
+		d.Hint = "restart the engine: it seals what is stored when it starts with " + SecretsKeyEnv + " (or run `gocommerce secrets seal`). " +
+			"If they stay readable after a restart, its log says why the start-up seal was skipped"
 	case all.Previous > 0:
 		d.Status = StatusOK
 		d.Detail = fmt.Sprintf("%s; %d still under the previous key", sealed, all.Previous)
-		d.Hint = "run `gocommerce secrets seal`, then unset " + SecretsKeyPreviousEnv
+		d.Hint = "restart the engine, which moves them under the current key as it starts (or run `gocommerce secrets seal`), then unset " +
+			SecretsKeyPreviousEnv
 	default:
 		d.Status = StatusOK
 		d.Detail = sealed
