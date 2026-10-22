@@ -27,6 +27,7 @@
     import Pager from "$lib/components/Pager.svelte";
     import { formatDate } from "$lib/format.js";
     import EmptyState from "$lib/components/EmptyState.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const PER_PAGE = 50;
 
@@ -154,7 +155,7 @@
     }
 </script>
 
-<svelte:head><title>Attribute dictionary · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Attribute dictionary")}</title></svelte:head>
 
 <div class="page page-attributes shopify-skin">
 

@@ -28,6 +28,7 @@
     import Confirm from "$lib/components/Confirm.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import SaveBar from "$lib/components/SaveBar.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /* 200 is the engine's MaxLimit, so this is five requests at worst. The cap
        is where "hold the whole membership in a page" stops being reasonable —
@@ -152,7 +153,7 @@
     }
 </script>
 
-<svelte:head><title>{collection?.title || "Collection"} · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled(collection?.title || "Collection")}</title></svelte:head>
 
 {#if !can("catalog.read")}
     <NoAccess right="catalog.read" what="collections" />

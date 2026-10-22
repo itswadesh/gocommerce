@@ -32,6 +32,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const PER_PAGE = 50;
     const list = listState({ q: "", overdue: false, page: 1, limit: PER_PAGE });
@@ -122,7 +123,7 @@
     const open = (o) => goto(`${base}/dash/orders/${o.order_id}`);
 </script>
 
-<svelte:head><title>Receivables · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Receivables")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="companies.read" what="receivables" />

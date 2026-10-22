@@ -601,3 +601,34 @@ func TestTheDoctorListsTheBrands(t *testing.T) {
 		t.Fatalf("two brands on one panel host: %+v", d)
 	}
 }
+
+// The panel learns its brand from auth-state, which answers before anybody
+// signs in: the sign-in screen wears the brand too.
+func TestAuthStateSaysWhichBrandItIs(t *testing.T) {
+	app := newTestApp(t)
+	type brandState struct {
+		Brand struct {
+			Name    string `json:"name"`
+			LogoURL string `json:"logo_url"`
+		} `json:"brand"`
+		ResetLink bool `json:"reset_link"`
+	}
+	var st brandState
+	decodeData(t, do(t, app, http.MethodGet, "/api/admin/auth-state"), &st)
+	if st.Brand.Name != DefaultBrandName || st.Brand.LogoURL != "" {
+		t.Fatalf("without brands: %+v", st)
+	}
+
+	app.cfg.Brands = twoBrands()
+	for host, want := range map[string][2]string{
+		"admin.alpha.test": {"Alpha", ""},
+		"admin.beta.test":  {"Beta", "https://cdn.beta.test/logo.svg"},
+		"evil.example":     {"Alpha", ""},
+	} {
+		st = brandState{}
+		decodeData(t, do(t, app, http.MethodGet, "/api/admin/auth-state", onHost(host)), &st)
+		if st.Brand.Name != want[0] || st.Brand.LogoURL != want[1] || !st.ResetLink {
+			t.Errorf("%s: %+v, want %v with a reset link", host, st, want)
+		}
+	}
+}

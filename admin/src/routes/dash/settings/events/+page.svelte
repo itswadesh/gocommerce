@@ -34,6 +34,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /* The starting page size, not the only one: `limit` is a listState key, so
        an operator can change it and the choice rides in the URL with the rest of
@@ -215,7 +216,7 @@
     }
 </script>
 
-<svelte:head><title>Events · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Events")}</title></svelte:head>
 
 <div class="page page-events shopify-skin">
 

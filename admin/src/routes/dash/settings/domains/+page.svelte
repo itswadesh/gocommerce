@@ -12,6 +12,7 @@
     import { formatDate } from "$lib/format.js";
     import { loadStores, myStores } from "$lib/stores.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
+    import { titled } from "$lib/brand.svelte.js";
 
     const writable = $derived(can("store.write"));
     // <slug>.<base domain>: the engine's to say, and empty on an install
@@ -94,7 +95,7 @@
     }
 </script>
 
-<svelte:head><title>Domains · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Domains")}</title></svelte:head>
 
 <div class="page page-domains shopify-skin">
     <div class="page-content">

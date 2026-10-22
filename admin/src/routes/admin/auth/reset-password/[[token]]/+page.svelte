@@ -34,6 +34,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import { rise } from "$lib/motion.js";
     import AuthShell from "$lib/components/AuthShell.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const LOGIN = `${base}/admin/auth/login`;
     const FORGOT = `${base}/admin/auth/forgot-password`;
@@ -132,7 +133,7 @@
     }
 </script>
 
-<svelte:head><title>Reset your password · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Reset your password")}</title></svelte:head>
 
 <AuthShell>
     {#if checking}

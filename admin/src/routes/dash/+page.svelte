@@ -16,6 +16,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import ReportsPanel from "$lib/components/ReportsPanel.svelte";
     import SetupGuide from "$lib/components/SetupGuide.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     let loading = $state(true);
     let recent = $state([]);
@@ -140,7 +141,7 @@
     );
 </script>
 
-<svelte:head><title>Home · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Home")}</title></svelte:head>
 
 <!-- `.page` stays: the shell renders each route straight into its flex row,
      so this element is the one that gets sized beside the sidebar, and the

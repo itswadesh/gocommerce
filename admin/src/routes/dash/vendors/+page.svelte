@@ -30,6 +30,7 @@
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
     import { countryOptions } from "$lib/countries.js";
+    import { titled } from "$lib/brand.svelte.js";
 
     const PER_PAGE = 50;
     const list = listState({ page: 1, limit: PER_PAGE, q: "", status: "" });
@@ -222,7 +223,7 @@
         ({ pending: "label-warning", approved: "label-success", suspended: "label-danger" })[s] ?? "";
 </script>
 
-<svelte:head><title>Vendors</title></svelte:head>
+<svelte:head><title>{titled("Vendors")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="vendors.read" />

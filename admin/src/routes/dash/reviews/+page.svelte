@@ -19,6 +19,7 @@
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const PER_PAGE = 25;
     const readable = $derived(can("catalog.read"));
@@ -118,7 +119,7 @@
     const stars = (n) => "★".repeat(n) + "☆".repeat(5 - n);
 </script>
 
-<svelte:head><title>Reviews · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Reviews")}</title></svelte:head>
 
 <div class="page page-reviews shopify-skin">
     <div class="page-content full-height tw:bg-background tw:text-foreground">

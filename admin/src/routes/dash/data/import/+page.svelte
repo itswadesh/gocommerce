@@ -22,6 +22,7 @@
     import Confirm from "$lib/components/Confirm.svelte";
     import DirtyGuard from "$lib/components/DirtyGuard.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const mayImport = $derived(can("data.import"));
 
@@ -155,7 +156,7 @@
     }
 </script>
 
-<svelte:head><title>Import · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Import")}</title></svelte:head>
 
 <!-- A pasted or loaded CSV that has not been imported is the most expensive
      thing on this screen to lose: it may be a file somebody spent an afternoon

@@ -27,6 +27,7 @@
     import Drawer from "$lib/components/Drawer.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginSettingsDrawer from "$lib/components/PluginSettingsDrawer.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /** @type {{ channel: "email" | "sms" }} */
     let { channel } = $props();
@@ -248,7 +249,7 @@
     }
 </script>
 
-<svelte:head><title>Setup {words.title} · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled(`Setup ${words.title}`)}</title></svelte:head>
 
 <div class="page page-notify-setup shopify-skin">
     <div class="page-content tw:bg-background tw:text-foreground">

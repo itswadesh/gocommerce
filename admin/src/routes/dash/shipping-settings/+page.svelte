@@ -27,6 +27,7 @@
     import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Select from "$lib/components/Select.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     let groups = $state([]);
     let loading = $state(true);
@@ -367,7 +368,7 @@
     });
 </script>
 
-<svelte:head><title>Shipping Settings · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Shipping Settings")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="shipping.read" what="shipping" />

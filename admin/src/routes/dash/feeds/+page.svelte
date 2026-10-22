@@ -28,6 +28,7 @@
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginFields from "$lib/components/PluginFields.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const PLUGIN = "product-feeds";
 
@@ -290,7 +291,7 @@
     });
 </script>
 
-<svelte:head><title>Feeds · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Feeds")}</title></svelte:head>
 
 <div class="page page-feeds shopify-skin">
     <div class="page-content">

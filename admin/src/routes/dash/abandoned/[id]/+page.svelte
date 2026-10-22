@@ -48,6 +48,7 @@
     import RecoveryLinkDialog from "$lib/components/RecoveryLinkDialog.svelte";
     import RecoverySendDialog from "$lib/components/RecoverySendDialog.svelte";
     import RecoverySuppressDialog from "$lib/components/RecoverySuppressDialog.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const POLL_MS = 30_000;
 
@@ -248,7 +249,7 @@
 </script>
 
 <svelte:head>
-    <title>{record ? `Abandoned ${kindWord}` : "Abandoned checkout"} · GoCommerce</title>
+    <title>{titled(record ? `Abandoned ${kindWord}` : "Abandoned checkout")}</title>
 </svelte:head>
 
 {#if !readable && !missing}

@@ -27,6 +27,7 @@
     import Confirm from "$lib/components/Confirm.svelte";
     import DirtyGuard from "$lib/components/DirtyGuard.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const readable = $derived(can("reports.read"));
     const writable = $derived(can("reports.write"));
@@ -187,7 +188,7 @@ ORDER BY units DESC`;
     }
 </script>
 
-<svelte:head><title>Reports · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Reports")}</title></svelte:head>
 
 <DirtyGuard
     dirty={dirty && !!sql.trim()}

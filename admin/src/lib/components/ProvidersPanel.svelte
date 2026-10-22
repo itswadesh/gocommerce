@@ -21,6 +21,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginSettingsDrawer from "$lib/components/PluginSettingsDrawer.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /** @type {{ kind: "payments" | "shipping" }} */
     let { kind } = $props();
@@ -145,7 +146,7 @@
     }
 </script>
 
-<svelte:head><title>{words.title} · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled(words.title)}</title></svelte:head>
 
 <!-- The provider's name is printed beside it, so the mark is decoration to a
      screen reader and is hidden from one. -->

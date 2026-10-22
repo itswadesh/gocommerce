@@ -40,6 +40,7 @@
     import CompanyTerritories from "$lib/components/CompanyTerritories.svelte";
     import CompanyStatement from "$lib/components/CompanyStatement.svelte";
     import CompanyHistory from "$lib/components/CompanyHistory.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const ORDERS_PER_PAGE = 25;
 
@@ -306,7 +307,7 @@
     const openOrder = (o) => goto(`${base}/dash/orders/${o.order_id}`);
 </script>
 
-<svelte:head><title>{company?.name ?? "Company"} · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled(company?.name ?? "Company")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="companies.read" what="companies" />

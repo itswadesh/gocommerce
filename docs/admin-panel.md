@@ -936,6 +936,18 @@ emailed keep working.
 Panel routes are marked `UI` in the route table so the OpenAPI coverage test
 skips them: a spec describing a file server would be noise.
 
+**The panel is named for the address it is opened on** (D111). On an install
+with several brands, `GET /api/admin/auth-state` says which brand the address
+is — its `name` and `logo_url` — and `$lib/brand.svelte.js` holds it: the sign-in
+screens' bar, the sidebar and every page title (`titled("Orders")` is
+"Orders · Alpha") use it, and a brand's logo takes the mark's place. The name
+is remembered per address in localStorage, so a reload shows it at once; on
+a first visit the bar shows the mark and the name fades in when the answer
+arrives, rather than flashing another brand's name. No screen prints a product
+name of its own, and `tests/brand.test.js` fails on a title that does; the
+trade portal and a printed packing slip are the store's own and keep its name.
+Without brands the name is GoCommerce, as before.
+
 ### The trade
 
 Owning the root means this binary cannot also serve a storefront there. That is

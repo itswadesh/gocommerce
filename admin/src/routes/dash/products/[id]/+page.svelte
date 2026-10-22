@@ -48,6 +48,7 @@
     import SeoPanel from "$lib/components/SeoPanel.svelte";
     import VariantMatrix from "$lib/components/VariantMatrix.svelte";
     import RecordHistory from "$lib/components/RecordHistory.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const SEO_TITLE_LIMIT = 60;
     const SEO_DESCRIPTION_LIMIT = 155;
@@ -1269,7 +1270,7 @@
     const statusLabel = { active: "success", draft: "info", archived: "" };
 </script>
 
-<svelte:head><title>{product?.title || "Product"} · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled(product?.title || "Product")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="catalog.read" what="products" />

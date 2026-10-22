@@ -30,6 +30,7 @@
     import OrderPlaced from "$lib/components/OrderPlaced.svelte";
     import VariantPicker from "$lib/components/VariantPicker.svelte";
     import { COUNTRIES } from "$lib/countries.js";
+    import { titled } from "$lib/brand.svelte.js";
 
     /* The starting page size, not the only one: it is a listState key below, so
        an operator can change it and the choice rides in the URL with the rest of
@@ -639,7 +640,7 @@
     });
 </script>
 
-<svelte:head><title>Orders · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Orders")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="orders.read" what="orders" />

@@ -31,6 +31,7 @@
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
     import AuditChanges from "$lib/components/AuditChanges.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /* The starting page size, not the only one: `limit` is a listState key, so
        an operator can change it and the choice rides in the URL with the rest of
@@ -64,6 +65,9 @@
         // Only its tax exemption is recorded (D76) — the one thing about a
         // group that decides what the store collects.
         { value: "customer_group", many: "Customer groups", one: "Customer group" },
+        // Only its move to another brand, the one change made above the store
+        // (D111).
+        { value: "store", many: "Stores", one: "Store" },
     ];
 
     const ENTITY_TYPES = [
@@ -241,7 +245,7 @@
     );
 </script>
 
-<svelte:head><title>Audit trail · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Audit trail")}</title></svelte:head>
 
 <div class="page page-audit shopify-skin">
 

@@ -18,6 +18,7 @@
     import MoveStock from "$lib/components/MoveStock.svelte";
     import { findVariants } from "$lib/components/VariantSearch.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const PER_PAGE = 25;
     const DEFAULT_THRESHOLD = 5;
@@ -448,7 +449,7 @@
     }
 </script>
 
-<svelte:head><title>Inventory · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Inventory")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="inventory.read" what="stock levels" />

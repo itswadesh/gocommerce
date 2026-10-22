@@ -46,6 +46,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import SaveBar from "$lib/components/SaveBar.svelte";
     import Select from "$lib/components/Select.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /** @type {{ kind: "checkout" | "cart" }} */
     let { kind } = $props();
@@ -409,7 +410,7 @@
     const readOnlyNote = `Your role can see this automation but not change it: that needs “${rightLabel("abandonment.automate")}”.`;
 </script>
 
-<svelte:head><title>{words.title} · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled(words.title)}</title></svelte:head>
 
 {#if !readable && !missing}
     <NoAccess right="abandonment.read" what="the marketing automations" />

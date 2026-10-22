@@ -3999,6 +3999,29 @@ button.media-check {
     letter-spacing: -0.01em;
 }
 
+/* A brand's own logo in the mark's place (D111): the mark's height, and its
+   own width up to a limit, so a wide wordmark cannot push the row apart. */
+.app-brand-logo {
+    flex: none;
+    height: 20px;
+    width: auto;
+    max-width: 120px;
+    object-fit: contain;
+}
+/* On a first visit the brand's name arrives with the auth-state answer, a
+   moment after the page: it fades in rather than popping into place. */
+.app-brand-name:empty {
+    opacity: 0;
+}
+.app-brand-name {
+    transition: opacity 200ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+    .app-brand-name {
+        transition: none;
+    }
+}
+
 /* No dark-mode correction any more: the mark and the name are a glyph and
    text, so both take the theme's colour the way everything else does. The
    filter that used to flatten and invert the image is gone with it. */

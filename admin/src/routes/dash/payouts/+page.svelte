@@ -15,6 +15,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Select from "$lib/components/Select.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const readable = $derived(can("orders.read"));
 
@@ -121,7 +122,7 @@
     });
 </script>
 
-<svelte:head><title>Payouts · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Payouts")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="orders.read" what="payouts" />

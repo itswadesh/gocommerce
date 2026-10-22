@@ -31,6 +31,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
     import { goto } from "$app/navigation";
+    import { titled } from "$lib/brand.svelte.js";
 
     const role = $derived(page.params.role);
 
@@ -284,7 +285,7 @@
     }
 </script>
 
-<svelte:head><title>{label} role · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled(`${label} role`)}</title></svelte:head>
 
 {#if !allowed}
     <NoAccess right="roles.write" what="the roles" />

@@ -24,6 +24,7 @@
     import Confirm from "$lib/components/Confirm.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import VariantSearch from "$lib/components/VariantSearch.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const id = $derived(page.params.id);
     const readable = $derived(can("vendors.read"));
@@ -186,7 +187,7 @@
     const ownPrice = (offer) => variants[offer.variant_id]?.price ?? null;
 </script>
 
-<svelte:head><title>{vendor?.name ?? "Vendor"}</title></svelte:head>
+<svelte:head><title>{titled(vendor?.name ?? "Vendor")}</title></svelte:head>
 
 {#if !readable}
     <NoAccess right="vendors.read" />

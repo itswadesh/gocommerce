@@ -24,6 +24,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import SaveBar from "$lib/components/SaveBar.svelte";
     import Select from "$lib/components/Select.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const id = $derived(route.params.id);
     const missing = $derived(modulesKnown() && !hasModule("showcases"));
@@ -213,7 +214,7 @@
     const featurable = $derived(shown.filter((p) => p.status === "active"));
 </script>
 
-<svelte:head><title>{show?.title || "Showcase"} · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled(show?.title || "Showcase")}</title></svelte:head>
 
 {#if missing}
     <ModuleMissing module="showcases" what="Video showcases are kept by ext/showcases, and this binary does not have it." />

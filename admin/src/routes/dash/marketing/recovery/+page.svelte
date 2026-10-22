@@ -37,6 +37,7 @@
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Select from "$lib/components/Select.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -212,7 +213,7 @@
     });
 </script>
 
-<svelte:head><title>Cart recovery · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Cart recovery")}</title></svelte:head>
 
 {#if !readable && !missing}
     <NoAccess right="abandonment.read" what="the recovery figures" />
