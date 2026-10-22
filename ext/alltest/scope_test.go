@@ -40,6 +40,7 @@ import (
 	sendgrid "github.com/itswadesh/gocommerce/ext/notify-sendgrid"
 	twilio "github.com/itswadesh/gocommerce/ext/notify-twilio"
 	adyen "github.com/itswadesh/gocommerce/ext/payments-adyen"
+	cashfree "github.com/itswadesh/gocommerce/ext/payments-cashfree"
 	clover "github.com/itswadesh/gocommerce/ext/payments-clover"
 	creem "github.com/itswadesh/gocommerce/ext/payments-creem"
 	helcim "github.com/itswadesh/gocommerce/ext/payments-helcim"
@@ -97,6 +98,7 @@ func everyModule() []gocommerce.Module {
 		sendgrid.New(sendgrid.Config{}),
 		twilio.New(twilio.Config{}),
 		adyen.New(adyen.Config{}),
+		cashfree.New(cashfree.Config{}),
 		clover.New(clover.Config{}),
 		creem.New(creem.Config{}),
 		helcim.New(helcim.Config{}),

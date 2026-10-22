@@ -45,10 +45,11 @@ Everything in `ports.go`. Nothing else in the engine is abstracted.
 
 | Port | Method(s) | Registered with | Implemented by |
 |---|---|---|---|
-| `PaymentProvider` | `Code`, `Initiate` | `RegisterPayment` | built-in `cod`, switched by the built-in plugin `payments-cod` (D102); `ext/payments-{stripe,razorpay,paddle,lemonsqueezy,creem,adyen,hyperswitch,helcim,clover,revenuecat}` |
+| `PaymentProvider` | `Code`, `Initiate` | `RegisterPayment` | built-in `cod`, switched by the built-in plugin `payments-cod` (D102); `ext/payments-{stripe,razorpay,cashfree,paddle,lemonsqueezy,creem,adyen,hyperswitch,helcim,clover,revenuecat}` |
 | `WebhookProvider` | `Webhook` | *optional, detected* | every gateway above except `cod` |
 | `Refunder` | `Refund` | *optional, detected* | every gateway except `cod` and `revenuecat` — RevenueCat has no refund API for Web Billing, so it does not claim one. `creem` claims it but refunds in full only: it refuses a partial request rather than returning the whole order while the books record a fraction |
-| `ReferencedRefunder` | `RefundWithReference` | *optional, detected; a `Refunder` as well* | stripe, razorpay, paddle, lemonsqueezy, adyen, hyperswitch, helcim, clover, creem — it returns the gateway's own refund id, which is recorded on the refund |
+| `ReferencedRefunder` | `RefundWithReference` | *optional, detected; a `Refunder` as well* | stripe, razorpay, cashfree, paddle, lemonsqueezy, adyen, hyperswitch, helcim, clover, creem — it returns the gateway's own refund id, which is recorded on the refund |
+| `PaymentStatusReader` | `Status` | *optional, detected* | stripe, razorpay, cashfree — it reads back what became of an order's payment, for `POST /api/admin/orders/{id}/check-payment` (D112); the settings mark such a method `checks_payments` |
 | `FulfillmentProvider` | `Code`, `Ship` | `RegisterFulfillment` | built-in `manual`; `ext/fulfill-{shiprocket,delhivery,nimbuspost,indiapost,shippo,shipstation,easyship,shippit,usps,onfleet,veeqo}` |
 | `Notifier` | `Notify` | `RegisterNotifier(channel, n)` | built-in log notifier; `ext/notify-resend` and `ext/notify-sendgrid` (email), `ext/notify-twilio` and `ext/notify-msg91` (SMS) |
 | *(sending one)* | — | `App.Notify(ctx, n)` | D50. The engine delivers `order.*` itself and nothing else; a module that wants to write to a shopper about anything else calls this. `ext/cart-recovery` is the first caller |
