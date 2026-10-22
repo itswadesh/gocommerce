@@ -289,10 +289,23 @@ environment:
 	offline := command != "serve"
 
 	// Env only, like the panel URL it extends: the names and admin domains an
-	// install answers under are facts about the deployment (D111).
-	brands, err := gocommerce.ParseBrands(os.Getenv(gocommerce.BrandsEnv))
-	if err != nil {
-		return err
+	// install answers under are facts about the deployment (D111). One bad
+	// entry stops every brand, so doctor checks the value as `serve` would
+	// (with -dev as given, not the Dev every offline command runs with) and
+	// reports it, rather than refusing to run.
+	brands, brandsErr := gocommerce.ParseBrands(os.Getenv(gocommerce.BrandsEnv))
+	if brandsErr == nil && command == "doctor" {
+		base := *baseDomain
+		if base == "" {
+			base = os.Getenv("GOCOMMERCE_BASE_DOMAIN")
+		}
+		brands, brandsErr = brandsFromEnv(os.Getenv(gocommerce.BrandsEnv), os.Getenv("GOCOMMERCE_PANEL_URL"), base, *dev)
+	}
+	switch {
+	case brandsErr != nil && command == "doctor":
+		brands = nil
+	case brandsErr != nil:
+		return brandsErr
 	}
 
 	languages := splitList(*langs)
@@ -569,7 +582,7 @@ environment:
 		if err != nil {
 			return err
 		}
-		return doctorCmd(ctx, app, *jsonOut)
+		return doctorCmd(ctx, app, *jsonOut, brandsErr)
 
 	case "brands":
 		defer app.Close()
@@ -767,8 +780,11 @@ func bootstrapSuperuser(ctx context.Context, app *gocommerce.App, log *slog.Logg
 //
 // It exits non-zero when a check fails, so CI and agents can gate on it
 // without parsing anything; -json is for when they want the detail.
-func doctorCmd(ctx context.Context, app *gocommerce.App, asJSON bool) error {
+func doctorCmd(ctx context.Context, app *gocommerce.App, asJSON bool, brandsErr error) error {
 	rep := app.Diagnose(ctx)
+	if brandsErr != nil {
+		markBrandsProblem(&rep, brandsErr)
+	}
 
 	if asJSON {
 		enc := json.NewEncoder(os.Stdout)
@@ -1039,4 +1055,37 @@ func firstEnv(keys ...string) string {
 		}
 	}
 	return ""
+}
+
+// brandsFromEnv reads GOCOMMERCE_BRANDS and checks it as the engine would at
+// start, beside the older panel URL and base domain.
+func brandsFromEnv(raw, panelURL, baseDomain string, dev bool) ([]gocommerce.Brand, error) {
+	brands, err := gocommerce.ParseBrands(raw)
+	if err != nil || len(brands) == 0 {
+		return brands, err
+	}
+	return brands, gocommerce.ValidateBrands(brands, panelURL, baseDomain, dev)
+}
+
+// markBrandsProblem puts a GOCOMMERCE_BRANDS the engine would refuse into the
+// doctor's report as a failed check. The rest of the report is of the install
+// as it would start without the value, which is still worth reading.
+func markBrandsProblem(rep *gocommerce.Report, err error) {
+	d := gocommerce.Diagnostic{
+		Name:   "brands",
+		Status: gocommerce.StatusFail,
+		Detail: gocommerce.BrandsEnv + " would stop the engine, and so every brand, from starting: " +
+			strings.TrimPrefix(err.Error(), "gocommerce: "),
+		Hint: "fix " + gocommerce.BrandsEnv + " and run gocommerce doctor again before deploying it",
+	}
+	replaced := false
+	for i, c := range rep.Checks {
+		if c.Name == "brands" {
+			rep.Checks[i], replaced = d, true
+		}
+	}
+	if !replaced {
+		rep.Checks = append(rep.Checks, d)
+	}
+	rep.OK = false
 }
