@@ -27,6 +27,7 @@
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Select from "$lib/components/Select.svelte";
+    import { titled } from "$lib/brand.svelte.js";
 
     /* The engine's SecretMask: what a saved secret reads as. */
     const MASK = "••••••••";
@@ -310,7 +311,7 @@
     }
 </script>
 
-<svelte:head><title>Setup Telegram · GoCommerce</title></svelte:head>
+<svelte:head><title>{titled("Setup Telegram")}</title></svelte:head>
 
 <div class="page page-notify-setup page-telegram shopify-skin">
     <div class="page-content tw:bg-background tw:text-foreground">
