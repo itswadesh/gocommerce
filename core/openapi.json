@@ -166,6 +166,61 @@
         }
       }
     },
+    "/internal/traefik": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Routes for the proxy",
+        "description": "Traefik's HTTP provider polls this for a router per verified store domain, each asking the configured ACME resolver for a certificate, and an http-to-https redirect for each (D113). The body is Traefik dynamic configuration, not the API's data envelope; with no verified domains it is {}. The route is absent (404) unless GOCOMMERCE_TRAEFIK_TOKEN is set, and wants that token as a bearer token; an admin token does not open it.",
+        "security": [
+          {
+            "proxyToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Traefik dynamic configuration.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "http": {
+                      "type": "object",
+                      "properties": {
+                        "routers": {
+                          "type": "object"
+                        },
+                        "middlewares": {
+                          "type": "object"
+                        },
+                        "services": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Domain routing is not configured on this install.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/doc": {
       "get": {
         "tags": [
@@ -15082,6 +15137,11 @@
         "type": "http",
         "scheme": "bearer",
         "description": "Either a static token from Config.AdminTokens — the right credential for a script, since it has no session and no expiry — or a superuser session token from /api/admin/auth-with-password, which is the right credential for a person. Both arrive the same way and satisfy the same middleware. An API key (gck_...) is the third: an integration key acts in a role; an agent key acts with the list of rights it was issued, sees personal data masked as a demo store shows it, and is limited to its requests a minute. Over that limit any admin route answers 429 (the RateLimited response) with a Retry-After header. An agent key is also refused, with 403 agent_key_refused: the notification log, label and invoice documents, saved custom reports, and any filter, sort or preview by a customer's email address."
+      },
+      "proxyToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "GOCOMMERCE_TRAEFIK_TOKEN, sent by the reverse proxy's HTTP provider. It opens only the proxy's routes."
       }
     },
     "parameters": {
@@ -21031,6 +21091,25 @@
             "type": "string",
             "description": "What the TXT record must say.",
             "example": "gocommerce-verify=k7m2..."
+          },
+          "point_type": {
+            "type": "string",
+            "enum": [
+              "A",
+              "AAAA",
+              "CNAME"
+            ],
+            "description": "The record that sends the domain's visitors to this server. Present only when the install names its address (GOCOMMERCE_DOMAIN_TARGET)."
+          },
+          "point_name": {
+            "type": "string",
+            "description": "Where that record goes: the domain itself.",
+            "example": "shop.example.com"
+          },
+          "point_value": {
+            "type": "string",
+            "description": "What it points at: the server's IP address or a host name.",
+            "example": "203.0.113.10"
           },
           "created_at": {
             "type": "string",

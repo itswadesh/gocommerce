@@ -31,6 +31,12 @@ type Domain struct {
 	TXTName   string    `json:"txt_name"`
 	TXTValue  string    `json:"txt_value"`
 	CreatedAt time.Time `json:"created_at"`
+	// PointType, PointName and PointValue are the record that sends the
+	// domain's visitors to this server — A, AAAA or CNAME — when the install
+	// names its address (Config.DomainTarget).
+	PointType  string `json:"point_type,omitempty"`
+	PointName  string `json:"point_name,omitempty"`
+	PointValue string `json:"point_value,omitempty"`
 }
 
 const (
@@ -104,6 +110,7 @@ func (a *App) underBaseDomain(ctx context.Context, host string) *APIError {
 }
 
 func (a *App) mountDomainRoutes() {
+	a.HandleFunc("GET "+TraefikConfigPath, a.handleTraefikConfig)
 	a.HandleAdminFunc("GET /api/admin/domains", a.handleListDomains)
 	a.HandleAdminFunc("POST /api/admin/domains", a.handleAddDomain, RightStoreWrite)
 	a.HandleAdminFunc("POST /api/admin/domains/{host}/verify", a.handleVerifyDomain, RightStoreWrite)
@@ -137,6 +144,7 @@ func (a *App) domain(ctx context.Context, host string) (*Domain, error) {
 	if err != nil {
 		return nil, Internalf(err, "read domain")
 	}
+	a.pointAt(d)
 	return d, nil
 }
 
@@ -157,6 +165,7 @@ func (a *App) handleListDomains(w http.ResponseWriter, r *http.Request) {
 			RespondError(w, r, Internalf(err, "list domains"))
 			return
 		}
+		a.pointAt(d)
 		out = append(out, d)
 	}
 	if err := rows.Err(); err != nil {

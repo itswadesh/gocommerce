@@ -229,9 +229,29 @@
                                      will look: on the domain's own row. -->
                                 <div class="domain-record">
                                     <p class="txt-hint txt-sm">
-                                        At your DNS provider, add this record, then press Verify. It can take
-                                        a few minutes to appear.
+                                        At your DNS provider, add {d.point_type ? "these records" : "this record"},
+                                        then press Verify. It can take a few minutes to appear. Once verified, the
+                                        domain gets its certificate on its own.
                                     </p>
+                                    {#if d.point_type}
+                                        <!-- Sends visitors here. Named by the engine from the
+                                             install's own address, so it is never a guess. -->
+                                        <div class="domain-record-grid">
+                                            <span class="txt-hint">Type</span>
+                                            <code>{d.point_type}</code>
+                                            <span></span>
+                                            <span class="txt-hint">Name</span>
+                                            <code class="txt-ellipsis">{d.point_name}</code>
+                                            <button type="button" class="btn xs transparent secondary" aria-label="Copy name" onclick={() => copy(d.point_name)}>
+                                                <i class="ri-file-copy-line" aria-hidden="true"></i>
+                                            </button>
+                                            <span class="txt-hint">Value</span>
+                                            <code class="txt-ellipsis">{d.point_value}</code>
+                                            <button type="button" class="btn xs transparent secondary" aria-label="Copy value" onclick={() => copy(d.point_value)}>
+                                                <i class="ri-file-copy-line" aria-hidden="true"></i>
+                                            </button>
+                                        </div>
+                                    {/if}
                                     <div class="domain-record-grid">
                                         <span class="txt-hint">Type</span>
                                         <code>TXT</code>

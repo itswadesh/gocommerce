@@ -149,6 +149,45 @@ Sign-up, password-reset links and the stores' own addresses are listed too:
 Notifications › Setup Email has a **Send test email** button: it sends one
 message now and shows the provider's answer, such as an unverified sender.
 
+### A store's own domain, without touching the proxy
+
+A store adds its own domain under Settings › Domains, adds the TXT record the
+panel shows, and presses Verify. From then on the engine sends that domain's
+requests to the store, but nothing reaches the engine until the reverse proxy
+has a route and a certificate for the name. Behind Traefik, as on Dokploy, the
+engine can give it both: Traefik's HTTP provider polls the engine, which
+answers with a router per verified domain, and Traefik asks Let's Encrypt for
+each certificate itself. A domain is live within a poll of being verified and
+gone within a poll of being removed. Only verified domains are listed, so
+somebody pointing their own DNS at the server cannot spend the install's
+certificate allowance.
+
+| Variable | What it does |
+|---|---|
+| `GOCOMMERCE_DOMAIN_TARGET` | Where a store's domain should point: this server's IP address, which the panel shows as an `A` (or `AAAA`) record, or a host name, shown as a `CNAME`. An apex domain such as `example.com` cannot be a `CNAME`, so the IP address is the safer choice. |
+| `GOCOMMERCE_TRAEFIK_TOKEN` | A long random string, e.g. `openssl rand -hex 32`. It turns on `GET /internal/traefik` and is the bearer token Traefik must send; unset, the route answers 404. The admin token does not open it. |
+| `GOCOMMERCE_TRAEFIK_UPSTREAM` | Where a store domain's visitors go: a URL Traefik can reach, such as `http://gocommerce:8080`, or the name of a service another provider defines, such as `storefront@docker`. Required with the token. |
+| `GOCOMMERCE_TRAEFIK_CERT_RESOLVER` | The ACME resolver in Traefik's static configuration. Defaults to `letsencrypt`, Dokploy's. |
+
+Then tell Traefik where to look, once, in its static configuration (on
+Dokploy: Settings › Traefik › `traefik.yml`), and restart Traefik:
+
+```yaml
+providers:
+  http:
+    endpoint: "http://gocommerce:8080/internal/traefik"
+    pollInterval: "15s"
+    headers:
+      Authorization: "Bearer <GOCOMMERCE_TRAEFIK_TOKEN>"
+```
+
+The routers use the `web` and `websecure` entry points, which is what Dokploy
+names ports 80 and 443; plain http redirects to https. If a poll fails,
+Traefik keeps the routes it last had, and the engine answers a failed database
+read with an error rather than an empty list for the same reason. A domain
+that a Dokploy domain entry already routes keeps working: both routes send it
+to the same place.
+
 ### Addresses a store sets
 
 Some addresses a store operator types are ones the server then connects to: a

@@ -179,6 +179,21 @@ environment:
                     the key before GOCOMMERCE_SECRETS_KEY, while rotating: it
                     still opens what it sealed until "secrets seal" has moved
                     everything under the new key
+  GOCOMMERCE_DOMAIN_TARGET
+                    where a store's own domain should point: this server's IP
+                    address, or a host name to CNAME to. The panel's Domains
+                    screen shows it as the record to add beside the TXT one
+  GOCOMMERCE_TRAEFIK_TOKEN
+                    turns on GET /internal/traefik, which Traefik's HTTP
+                    provider polls for a route and a certificate per verified
+                    store domain; the provider sends it as a bearer token
+  GOCOMMERCE_TRAEFIK_UPSTREAM
+                    with the token, where those routes send visitors: a URL
+                    Traefik can reach, such as http://gocommerce:8080, or a
+                    Traefik service name such as storefront@docker
+  GOCOMMERCE_TRAEFIK_CERT_RESOLVER
+                    the ACME resolver that issues the certificates; defaults
+                    to letsencrypt
 `)
 	}
 
@@ -488,6 +503,12 @@ environment:
 		*baseDomain = os.Getenv("GOCOMMERCE_BASE_DOMAIN")
 	}
 	cfg.BaseDomain = *baseDomain
+	// Env only: where the server is reached, and how its proxy is set up, are
+	// facts about the deployment, and the token is a secret.
+	cfg.DomainTarget = os.Getenv("GOCOMMERCE_DOMAIN_TARGET")
+	cfg.TraefikToken = os.Getenv("GOCOMMERCE_TRAEFIK_TOKEN")
+	cfg.TraefikUpstream = os.Getenv("GOCOMMERCE_TRAEFIK_UPSTREAM")
+	cfg.TraefikCertResolver = os.Getenv("GOCOMMERCE_TRAEFIK_CERT_RESOLVER")
 
 	app, err := gocommerce.New(cfg, buildModules("")...)
 	if err != nil {

@@ -97,6 +97,18 @@ services:
       # <slug>.<base domain>, e.g. shops.example.com. The panel shows it, and
       # a domain under it cannot be added as a store's own.
       GOCOMMERCE_BASE_DOMAIN: ${GOCOMMERCE_BASE_DOMAIN:-}
+      # Where a store's own domain should point — this server's IP address, or
+      # a host name to CNAME to. Settings › Domains shows it as the record to
+      # add, beside the TXT record that proves the domain.
+      GOCOMMERCE_DOMAIN_TARGET: ${GOCOMMERCE_DOMAIN_TARGET:-}
+      # Routes every verified store domain without adding it to the proxy by
+      # hand (D113). Set a long random token, then add Traefik's HTTP provider
+      # pointing at http://gocommerce:8080/internal/traefik with the
+      # header "Authorization: Bearer <token>" (docs/operations.md). The
+      # upstream is where a store domain's visitors go.
+      GOCOMMERCE_TRAEFIK_TOKEN: ${GOCOMMERCE_TRAEFIK_TOKEN:-}
+      GOCOMMERCE_TRAEFIK_UPSTREAM: ${GOCOMMERCE_TRAEFIK_UPSTREAM:-}
+      GOCOMMERCE_TRAEFIK_CERT_RESOLVER: ${GOCOMMERCE_TRAEFIK_CERT_RESOLVER:-}
       # Email and SMS delivery, every one optional: a backend without its key
       # installs idle and waits for Notifications › Setup Email / Setup SMS.
       # The engine sees only what is listed here, so a key set in the host's
