@@ -9,7 +9,7 @@ import (
 )
 
 // A GOCOMMERCE_BRANDS that would stop the engine is reported by doctor as a
-// failed check rather than stopping doctor too (D111 review), so a value can
+// failed check rather than stopping doctor too (D114 review), so a value can
 // be tried before it is deployed.
 func TestDoctorReportsBrandsThatWouldStopTheEngine(t *testing.T) {
 	rep := gocommerce.Report{OK: true, Checks: []gocommerce.Diagnostic{

@@ -687,7 +687,7 @@ func (m *Module) link(ctx context.Context, s Settings, linkToken, cartToken stri
 }
 
 // panelURL is the engine's public address for the store ctx is bound to: its
-// brand's panel (D111), so a shopper of one brand's store never sees another
+// brand's panel (D114), so a shopper of one brand's store never sees another
 // brand's domain in a link. Without brands it is Config.PanelURL, as before.
 func (m *Module) panelURL(ctx context.Context) string {
 	if b := m.app.StoreBrand(ctx); b.PanelURL != "" {

@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-// Brands (D111). One install — one database, one deployment — can answer under
+// Brands (D114). One install — one database, one deployment — can answer under
 // several names, each on its own admin domain. The panel is the same product
 // with a different name; what differs is what the panel and the emails to
 // staff call it, where those emails' links lead, and which stores it shows.
@@ -403,7 +403,7 @@ func (a *App) Brand(ctx context.Context) Brand {
 	return a.defaultBrand()
 }
 
-// StoreBrand is the brand of the store ctx is bound to (D111): what its
+// StoreBrand is the brand of the store ctx is bound to (D114): what its
 // emails to staff are named, and whose panel address its links go through.
 // Bound to no store, it is the request's brand, else the first.
 func (a *App) StoreBrand(ctx context.Context) Brand {

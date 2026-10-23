@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// One install, several brands (D111): each brand is a name and an admin
+// One install, several brands (D114): each brand is a name and an admin
 // domain, each store belongs to one brand and answers only under that brand's
 // base domain, and a request belongs to the brand its host names.
 

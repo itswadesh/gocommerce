@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// A store's own domain names the store, and so its brand (D111 review): staff
+// A store's own domain names the store, and so its brand (D114 review): staff
 // at the domain of a store that is not in the first brand work there as on
 // that brand's panel, and its emails are that brand's.
 func TestAStoresOwnDomainIsItsBrand(t *testing.T) {
@@ -61,7 +61,7 @@ func TestAnUnknownHostIsTheDefaultBrand(t *testing.T) {
 }
 
 // Signing in on one brand's admin answers with no standing in another brand's
-// store, named or not (D111 review), as storeMW and the store list already do.
+// store, named or not (D114 review), as storeMW and the store list already do.
 func TestSigningInOnABrandSaysNothingOfAnotherBrandsStore(t *testing.T) {
 	app := newStrictTestApp(t)
 	app.cfg.Brands = twoBrands()

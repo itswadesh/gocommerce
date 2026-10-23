@@ -134,7 +134,7 @@ func TestTheInvitePageSaysNothingAboutAnExistingAccount(t *testing.T) {
 }
 
 // An emailed invitation link comes only from configuration: the panel URL, or
-// with several brands the store's brand's (D111 review). Without one, the link
+// with several brands the store's brand's (D114 review). Without one, the link
 // is still shown to the owner who asked, built from the request so it works
 // from where they stand, but it is not emailed — a forwarded host header is
 // whatever a proxy or a client made it.

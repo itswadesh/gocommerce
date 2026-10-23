@@ -9,7 +9,7 @@ import (
 )
 
 // A store whose brand's panel host the list no longer has is said loudly at
-// start (D111 review): renaming a brand's panel_url otherwise moves every one
+// start (D114 review): renaming a brand's panel_url otherwise moves every one
 // of its stores to the default brand without a word.
 func TestAPanelHostNoBrandHasIsLoudAtStart(t *testing.T) {
 	before := newTestApp(t)
@@ -70,7 +70,7 @@ func TestRenamingABrandsPanelHostMovesItsStoresAndPeople(t *testing.T) {
 	}
 }
 
-// A logo that cannot be shown is not worth stopping every brand for (D111
+// A logo that cannot be shown is not worth stopping every brand for (D114
 // review): it is dropped with a warning at start and in the doctor.
 func TestABadLogoIsDroppedWithAWarning(t *testing.T) {
 	cfg := Config{DBURL: "postgres://unused", AdminTokens: []string{"t"}, Brands: []Brand{

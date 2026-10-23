@@ -98,7 +98,7 @@ func (a *App) handleCreateInvitation(w http.ResponseWriter, r *http.Request) {
 
 // acceptURL is where the invitee goes, and whether it may be emailed. From
 // configuration when there is any: the panel URL of the store's brand
-// (D111), which on an install without brands is Config.PanelURL. The invitee
+// (D114), which on an install without brands is Config.PanelURL. The invitee
 // must arrive where that store is listed, whichever admin domain sent it.
 //
 // Without a panel URL the link is built from the request, so an owner behind

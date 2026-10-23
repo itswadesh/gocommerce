@@ -73,7 +73,7 @@ func (a *App) handleAuthState(w http.ResponseWriter, r *http.Request) {
 		// Whether a reset email carries a link beside its code, so the
 		// forgot-password screen can say what to look for before it is asked.
 		"reset_link": brand.PanelURL != "",
-		// Which brand this address is (D111), so the panel names itself
+		// Which brand this address is (D114), so the panel names itself
 		// before anybody signs in. Only the name and the logo: the other
 		// brands, and their addresses, are no visitor's business.
 		"brand": map[string]string{"name": brand.Name, "logo_url": brand.LogoURL},
@@ -140,7 +140,7 @@ func (a *App) handleAuthWithPassword(w http.ResponseWriter, r *http.Request) {
 	// Signed in with no store named: a person who works in exactly one store
 	// is answered with their standing there, as every later request of theirs
 	// will be (storeMW's sole-membership rule).
-	// Both count only the brand the request came through (D111): a store of
+	// Both count only the brand the request came through (D114): a store of
 	// another brand is answered as one the person is not on.
 	if _, bound := StoreFrom(r.Context()); !bound {
 		if ms := a.membershipsInBrand(r.Context(), su.ID); len(ms) == 1 {

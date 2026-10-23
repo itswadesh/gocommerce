@@ -849,7 +849,7 @@ either, the form says the same as always and nothing is sent. When
 `GOCOMMERCE_PANEL_URL` says where the panel is reached, the email also carries
 a link to `/admin/auth/reset-password/<token>`. It is never built from the
 request's own host, which would let anybody mail a real operator a link to a
-host they chose. On an install with several brands (D111) the link is the
+host they chose. On an install with several brands (D114) the link is the
 panel URL of the brand whose admin domain the reset was asked from, when the
 person belongs to that brand, and the email is in its name; otherwise their
 own brand's. The link cannot be guessed, so wrong codes never use it up.
@@ -936,7 +936,7 @@ emailed keep working.
 Panel routes are marked `UI` in the route table so the OpenAPI coverage test
 skips them: a spec describing a file server would be noise.
 
-**The panel is named for the address it is opened on** (D111). On an install
+**The panel is named for the address it is opened on** (D114). On an install
 with several brands, `GET /api/admin/auth-state` says which brand the address
 is — its `name` and `logo_url` — and `$lib/brand.svelte.js` holds it: the sign-in
 screens' bar, the sidebar and every page title (`titled("Orders")` is

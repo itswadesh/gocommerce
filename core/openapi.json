@@ -1665,7 +1665,7 @@
                         },
                         "brand": {
                           "type": "object",
-                          "description": "The brand this address belongs to (D111): the brand whose admin domain the request came to, else the install's first brand. Without GOCOMMERCE_BRANDS the install's one brand, GoCommerce.",
+                          "description": "The brand this address belongs to (D114): the brand whose admin domain the request came to, else the install's first brand. Without GOCOMMERCE_BRANDS the install's one brand, GoCommerce.",
                           "properties": {
                             "name": {
                               "type": "string",

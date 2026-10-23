@@ -289,7 +289,7 @@ environment:
 	offline := command != "serve"
 
 	// Env only, like the panel URL it extends: the names and admin domains an
-	// install answers under are facts about the deployment (D111). One bad
+	// install answers under are facts about the deployment (D114). One bad
 	// entry stops every brand, so doctor checks the value as `serve` would
 	// (with -dev as given, not the Dev every offline command runs with) and
 	// reports it, rather than refusing to run.
@@ -691,7 +691,7 @@ func storeDemoCmd(ctx context.Context, app *gocommerce.App, name, state string) 
 	return nil
 }
 
-// storeBrandCmd moves a store to another brand (D111), and its address with
+// storeBrandCmd moves a store to another brand (D114), and its address with
 // it. The install owner's act, so a command rather than a panel screen: no
 // one store's owner decides which brand it is sold under.
 func storeBrandCmd(ctx context.Context, app *gocommerce.App, name, panelHost string) error {
@@ -716,7 +716,7 @@ func storeBrandCmd(ctx context.Context, app *gocommerce.App, name, panelHost str
 
 const brandsUsage = "usage: gocommerce brands rename-host <old panel host> <new panel host>"
 
-// brandsCmd is the install owner's tool for brands (D111). rename-host is what
+// brandsCmd is the install owner's tool for brands (D114). rename-host is what
 // to run after changing a brand's panel_url: stores and people record their
 // brand by panel host, so without it every one of them would be left under a
 // host no brand has.

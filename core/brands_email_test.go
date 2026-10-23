@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Emails to staff carry a brand (D111): its name, and links to its panel. A
+// Emails to staff carry a brand (D114): its name, and links to its panel. A
 // store's emails are its brand's; a password reset is the brand of the admin
 // domain it was asked from; with no request, the brand the person arrived
 // through. The link is only ever a configured brand's panel URL.
@@ -236,7 +236,7 @@ func postInvitationTo(t *testing.T, app *App, store, host, body string) (int, ma
 }
 
 // A public reset is in the brand it was asked from only when the person
-// belongs there (D111 review): a store in that brand, or arriving through it.
+// belongs there (D114 review): a store in that brand, or arriving through it.
 // Otherwise a stranger could choose which brand's name a real person's email
 // carries. The answer to the request does not change either way.
 func TestAResetGoesOutOnlyInABrandThePersonBelongsTo(t *testing.T) {
