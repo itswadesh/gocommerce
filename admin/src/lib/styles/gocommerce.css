@@ -4284,7 +4284,7 @@ button.media-check {
 .domain-record-grid + .domain-record-grid {
     margin-top: 10px;
     padding-top: 10px;
-    border-top: 1px solid var(--baseAlt1Color);
+    border-top: 1px solid var(--surfaceAlt2Color);
 }
 .domain-not-found {
     margin-top: 8px;
