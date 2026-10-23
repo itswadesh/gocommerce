@@ -29,6 +29,7 @@ services:
       - -sendgrid
       - -twilio
       - -msg91
+      - -telegram
       - -invoices
       - -cms
       - -faq
