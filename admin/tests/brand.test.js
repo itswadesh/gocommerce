@@ -1,5 +1,5 @@
 /*
- * The panel shows the brand of the domain it is opened on (D111): one install
+ * The panel shows the brand of the domain it is opened on (D114): one install
  * answers under several names, so no screen may print a product name of its
  * own. These read source, as tests/roles.test.js does, because node:test
  * cannot import a .svelte file.

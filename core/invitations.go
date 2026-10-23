@@ -340,7 +340,7 @@ func (s *Invitations) AcceptFrom(ctx context.Context, token, password, clientIP 
 	}
 	var su *Superuser
 	// Who joins through this invitation arrived through its store's brand,
-	// which their emails go out in when nothing else says which (D111). Read
+	// which their emails go out in when nothing else says which (D114). Read
 	// before the transaction, which must not wait on a second connection.
 	arrival := s.app.storeBrandHost(ctx)
 	err = InTx(ctx, s.app.db, func(tx *sql.Tx) error {

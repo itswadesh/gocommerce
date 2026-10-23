@@ -303,7 +303,7 @@ Flags: `-db`,
 `GOCOMMERCE_DEMO_ACCOUNT`, `GOCOMMERCE_ADMIN_EMAIL` and
 `GOCOMMERCE_ADMIN_PASSWORD` are the environment equivalents.
 `GOCOMMERCE_PANEL_URL`, `GOCOMMERCE_BASE_DOMAIN` and `GOCOMMERCE_BRANDS` (a
-JSON array of brands, D111) are environment only; `store create|demo|brand`
+JSON array of brands, D114) are environment only; `store create|demo|brand`
 opens a store, makes it a demo, or moves it to another brand, and `brands
 rename-host <old> <new>` follows a brand whose `panel_url` changed.
 `GOCOMMERCE_SECRETS_KEY` and `GOCOMMERCE_SECRETS_KEY_PREVIOUS` have no flag at
@@ -422,7 +422,7 @@ the `litekart_store_id` cookie, the host (`<slug>.<-base-domain>` or an
 attached domain), the signed-in person's only store, and the install's only
 store. Naming a store never grants access to it: staff must be members of it.
 
-**Several brands** (D111, `GOCOMMERCE_BRANDS`, `brands.go`): every request is
+**Several brands** (D114, `GOCOMMERCE_BRANDS`, `brands.go`): every request is
 first given a brand from its host (`BrandFrom(ctx)`, `App.Brand`): a panel
 host, a host under a base domain or alias, a store's own domain (its store's
 brand), else the default brand. It never changes the store the request is

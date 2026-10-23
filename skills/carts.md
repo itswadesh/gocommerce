@@ -201,7 +201,7 @@ any open status ──operator──► suppressed                  └─cart r
   which counts the click and redirects to `<storefront>/cart/<token>`. Without
   `Config.PanelURL` it goes straight to the storefront and clicks go uncounted.
   On an install with several brands, `PanelURL` is the panel URL of the
-  store's brand (`App.StoreBrand`, D111), so a shopper never sees another
+  store's brand (`App.StoreBrand`, D114), so a shopper never sees another
   brand's domain. Without a storefront address the message carries
   `cart_token` and no `recovery_url`. `link_token` opens the basket as surely as the cart token,
   so the admin reveals it only through `POST …/link`, which the timeline

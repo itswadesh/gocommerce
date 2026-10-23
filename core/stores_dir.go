@@ -29,7 +29,7 @@ type Store struct {
 	// Config.Languages (D87).
 	Languages []string  `json:"languages"`
 	CreatedAt time.Time `json:"created_at"`
-	// BrandHost is the panel host of the brand the store belongs to (D111),
+	// BrandHost is the panel host of the brand the store belongs to (D114),
 	// empty until the install configures brands. App.StoreBrand reads it as
 	// a brand.
 	BrandHost string `json:"-"`
@@ -130,7 +130,7 @@ func (s *Stores) BySlug(ctx context.Context, slug string) (*Store, error) {
 
 // ByHost returns the store a host name belongs to: an attached domain first,
 // then <slug>.<base domain>, which names a store only under the base domain
-// (or an alias) of the brand the store belongs to (D111). Under another
+// (or an alias) of the brand the store belongs to (D114). Under another
 // brand's it is nobody's, as an unknown slug is.
 func (s *Stores) ByHost(ctx context.Context, host string) (*Store, error) {
 	host = hostName(host)

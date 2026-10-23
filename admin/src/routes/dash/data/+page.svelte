@@ -28,7 +28,7 @@
     let exportFormat = $state("gocommerce");
     const formats = $derived([
         // Named for the panel it is read in: the layout is the same under every
-        // brand (D111), and the value stays the engine's own.
+        // brand (D114), and the value stays the engine's own.
         { value: "gocommerce", label: `${brand.name || "Store"} CSV` },
         { value: "shopify", label: "Shopify CSV" },
     ]);

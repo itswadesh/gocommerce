@@ -222,7 +222,7 @@ are set by whoever runs the server and are not held to it.
 ### Several brands
 
 One install — one database, one deployment — can answer under several names,
-each on its own admin domain (D111). The panel at `admin.alpha.example` is
+each on its own admin domain (D114). The panel at `admin.alpha.example` is
 called Alpha and the one at `admin.beta.example` is called Beta; everything
 behind them is the same engine. List the brands in `GOCOMMERCE_BRANDS`:
 

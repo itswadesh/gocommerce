@@ -1,5 +1,5 @@
 /**
- * The brand this panel is opened under (D111). One install can answer under
+ * The brand this panel is opened under (D114). One install can answer under
  * several names, each on its own admin domain, and the engine says which one
  * an address is in `GET /api/admin/auth-state`: its name, and a logo that
  * takes the mark's place when there is one.

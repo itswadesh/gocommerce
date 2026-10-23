@@ -66,7 +66,7 @@
         // group that decides what the store collects.
         { value: "customer_group", many: "Customer groups", one: "Customer group" },
         // Only its move to another brand, the one change made above the store
-        // (D111).
+        // (D114).
         { value: "store", many: "Stores", one: "Store" },
     ];
 

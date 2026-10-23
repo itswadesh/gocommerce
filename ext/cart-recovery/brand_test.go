@@ -10,7 +10,7 @@ import (
 	gocommerce "github.com/itswadesh/gocommerce/core"
 )
 
-// On an install with several brands (D111), a reminder's counted link goes
+// On an install with several brands (D114), a reminder's counted link goes
 // through the panel address of the store's own brand: a shopper of one brand's
 // store never sees another brand's domain.
 func TestARemindersLinkGoesThroughItsStoresBrand(t *testing.T) {

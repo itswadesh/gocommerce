@@ -5,7 +5,7 @@ import (
 	"database/sql"
 )
 
-// Emails to staff carry a brand (D111): its name, and links to its panel. A
+// Emails to staff carry a brand (D114): its name, and links to its panel. A
 // store's emails go out in the store's brand. A person's own — a password
 // reset — go out in the brand of the admin domain they were asked from, and
 // with no request behind them in the brand the person arrived through: the

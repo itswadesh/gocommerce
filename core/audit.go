@@ -84,7 +84,7 @@ const (
 	// audited, as they were not before.
 	AuditEntityCustomerGroup = "customer_group"
 	// The store itself, for the one thing about it decided above it: the
-	// brand it belongs to (D111).
+	// brand it belongs to (D114).
 	AuditEntityStore = "store"
 )
 
@@ -222,7 +222,7 @@ const (
 	AuditCustomerGroupTaxExemption = "customer_group.tax_exemption"
 
 	// AuditStoreSetBrand is a store moved to another brand by the install's
-	// owner (D111), which moves its address with it. Recorded in the store,
+	// owner (D114), which moves its address with it. Recorded in the store,
 	// where its own team can read it.
 	AuditStoreSetBrand = "store.set_brand"
 

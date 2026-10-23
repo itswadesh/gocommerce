@@ -268,7 +268,7 @@ func (s *Superusers) RequestResetFor(ctx context.Context, id int64) (ResetReques
 	}
 
 	// The teammate is mailed as the store's: its brand names the email and
-	// its panel is where the link leads (D111).
+	// its panel is where the link leads (D114).
 	brand := s.app.StoreBrand(ctx)
 	if !s.app.notifier.delivers(ctx, ChannelEmail) {
 		return s.accepted(DeliveryNone, brand), nil

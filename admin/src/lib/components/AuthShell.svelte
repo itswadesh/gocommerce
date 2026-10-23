@@ -54,7 +54,7 @@
 <div class="auth-shell">
     <header class="auth-bar">
         <span class="app-brand auth-brand">
-            <!-- The brand of the address this is opened on (D111): its logo
+            <!-- The brand of the address this is opened on (D114): its logo
                  where it has one, else the shell's mark, drawn the same way —
                  from parts, in currentColor, so it takes the theme. -->
             {#if brand.logo_url}

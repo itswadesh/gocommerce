@@ -345,7 +345,7 @@ Invite them. `POST /api/admin/invitations` returns a `token` and an `accept_url`
 **once** — only the SHA-256 is stored, exactly as with a session — and the
 invitee sets their own password at `/admin/auth/accept-invite/<token>`, which signs them in.
 
-On an install with several brands (D111) the link is the panel URL of the
+On an install with several brands (D114) the link is the panel URL of the
 store's brand, whichever admin domain sent it, and the email names that brand
 (`brand_name`). Somebody new who accepts is recorded as arriving through the
 store's brand (`superusers.brand_host`), as somebody who signs up is through

@@ -29,7 +29,7 @@ type MyStore struct {
 	// exists.
 	Domain string `json:"domain"`
 	// Subdomain is <slug>.<base domain>, the address a store has without
-	// adding a domain of its own, under its brand's base domain (D111); empty
+	// adding a domain of its own, under its brand's base domain (D114); empty
 	// when that brand has none.
 	Subdomain string `json:"subdomain"`
 }
@@ -80,7 +80,7 @@ func isAPIKeyShaped(token string) bool {
 }
 
 // myStores lists the stores the caller may enter: a person's, in the brand
-// the request came through (D111), or, for a static admin token, which is the
+// the request came through (D114), or, for a static admin token, which is the
 // install's operator, every store, as owner.
 func (a *App) myStores(ctx context.Context) ([]MyStore, error) {
 	const domain = `(SELECT host FROM store_domains d WHERE d.store_id = st.id AND d.verified_at IS NOT NULL

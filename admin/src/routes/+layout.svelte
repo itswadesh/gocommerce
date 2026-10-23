@@ -248,7 +248,7 @@
     });
 
     /*
-     * Which brand this address is (D111), asked once whether or not anybody
+     * Which brand this address is (D114), asked once whether or not anybody
      * is signed in: the sign-in screen wears it too.
      */
     $effect(() => {
@@ -644,7 +644,7 @@
         size the stylesheet already had a class for. The mark is remixicon, the
         icon set every other glyph in this panel comes from.
 
-        The word is the brand of the address the panel is opened on (D111),
+        The word is the brand of the address the panel is opened on (D114),
         and a brand with a logo of its own shows it in the mark's place.
     -->
     <a href="{base}/dash" class="app-brand" aria-label={brand.name || "Home"}>

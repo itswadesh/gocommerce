@@ -93,7 +93,7 @@ func (a *App) normalizeHost(raw string) (string, error) {
 // underBaseDomain refuses an address under any brand's store domain, base or
 // alias: each store already answers at <slug>.<its brand's base domain>, so
 // the useful answer names this store's own. A brand's panel host is not
-// refused — a store may hold one as its own domain (D111), and the panel
+// refused — a store may hold one as its own domain (D114), and the panel
 // there still knows its brand.
 func (a *App) underBaseDomain(ctx context.Context, host string) *APIError {
 	base, _, ok := a.underStoreDomain(host)

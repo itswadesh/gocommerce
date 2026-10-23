@@ -162,7 +162,7 @@ type Config struct {
 	// empty, the reset email carries the bare token to paste instead.
 	PanelURL string
 	// Brands are the names this install answers under, each with its own
-	// admin domain and base domain (brands.go, D111). Empty, the install is
+	// admin domain and base domain (brands.go, D114). Empty, the install is
 	// one brand made of PanelURL and BaseDomain, called DefaultBrandName. Set,
 	// the first brand fills PanelURL and BaseDomain where they are empty.
 	Brands []Brand
@@ -219,7 +219,7 @@ type Config struct {
 	// BaseDomain, when set, lets a store answer at <slug>.<BaseDomain>. With
 	// Brands set, a store answers under its own brand's base domain instead,
 	// and this names the brand the stores opened before brands belong to
-	// (D111).
+	// (D114).
 	BaseDomain string
 	// DomainTarget is where a store's own domain should point: the server's IP
 	// address (an A or AAAA record) or a host name to CNAME to. The panel
