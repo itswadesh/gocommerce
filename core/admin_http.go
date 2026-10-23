@@ -28,7 +28,7 @@ const AdminPanelPath = "/"
 // Without this, the root catch-all below would answer GET /api/typo with an
 // index.html, and a client decoding JSON would report a syntax error instead of
 // "no route for GET /api/typo".
-var apiPrefixes = []string{"/api", "/health", "/doc", "/docs", "/x"}
+var apiPrefixes = []string{"/api", "/health", "/doc", "/docs", "/x", "/internal"}
 
 func isAPIPath(p string) bool {
 	for _, prefix := range apiPrefixes {

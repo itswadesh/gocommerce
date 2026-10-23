@@ -213,6 +213,21 @@ type Config struct {
 	DefaultStore string
 	// BaseDomain, when set, lets a store answer at <slug>.<BaseDomain>.
 	BaseDomain string
+	// DomainTarget is where a store's own domain should point: the server's IP
+	// address (an A or AAAA record) or a host name to CNAME to. The panel
+	// shows it beside the TXT record; empty, it shows only the TXT.
+	DomainTarget string
+	// TraefikToken turns on the route Traefik's HTTP provider polls for a
+	// router per verified store domain (domain_routing.go, D113), and is the
+	// bearer token it must send. Empty, the route answers 404.
+	TraefikToken string
+	// TraefikUpstream is where those routers send a store's visitors: a URL
+	// the proxy can reach, such as http://gocommerce:8080, or the name of a
+	// service another provider defines, such as storefront@docker.
+	TraefikUpstream string
+	// TraefikCertResolver names the ACME resolver that issues each domain's
+	// certificate. Defaults to "letsencrypt", Dokploy's.
+	TraefikCertResolver string
 	// PricesIncludeTax says whether the prices in the catalog already contain
 	// tax. It changes what every figure on an order means, so it is snapshotted
 	// onto each order as it is placed: switching a live store must not rewrite
@@ -312,6 +327,9 @@ func (c *Config) applyDefaults() error {
 				"gocommerce: Config.PanelURL must be an absolute base URL like https://shop.example.com")
 		}
 		c.PanelURL = strings.TrimRight(c.PanelURL, "/")
+	}
+	if err := c.validateDomainRouting(); err != nil {
+		return err
 	}
 	if c.Logger == nil {
 		c.Logger = slog.Default()

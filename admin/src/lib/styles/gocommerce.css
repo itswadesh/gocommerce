@@ -4246,6 +4246,12 @@ button.media-check {
 .domain-record-grid code {
     overflow: hidden;
 }
+/* The pointing record and the TXT record read as two records, not one. */
+.domain-record-grid + .domain-record-grid {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--baseAlt1Color);
+}
 .domain-not-found {
     margin-top: 8px;
     font-size: 12px;
