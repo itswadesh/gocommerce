@@ -56,8 +56,9 @@ func storePath(p string) bool {
 // store's rows and no other's. Only store paths are resolved (storePath).
 //
 // First match wins: the API key's own store; the x-litekart-store header (or
-// X-Store, slug or id); ?store=; the litekart_store_id cookie; the host; the
-// signed-in person's only store; the install's only store. Naming a store
+// X-Store: id, slug or verified domain); ?store=; the litekart_store_id
+// cookie; the host; the signed-in person's only store; the install's only
+// store. Naming a store
 // grants nothing — the admin routes still check that the caller is on its
 // team (bearerAuth).
 //
@@ -176,6 +177,16 @@ func (a *App) lookupStore(ctx context.Context, candidates []string) (*Store, err
 		}
 		if storeSlugRE.MatchString(strings.ToLower(v)) {
 			return a.stores.BySlug(ctx, v)
+		}
+		// A storefront serving many stores reaches the engine from its own
+		// address, so it names a store by the domain its visitor used. Only a
+		// verified domain (or a subdomain of the base domain) answers.
+		if strings.Contains(v, ".") {
+			st, err := a.stores.ByHost(ctx, v)
+			if errors.Is(err, ErrNotFound) {
+				return nil, ErrStoreNotFound
+			}
+			return st, err
 		}
 		return nil, ErrStoreNotFound
 	}

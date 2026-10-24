@@ -417,7 +417,8 @@ superuser, or a role with `BYPASSRLS`, past every policy. `gocommerce doctor`
 fails on such a login; the Compose file creates an ordinary one.
 
 **A request finds its store**, first match wins: the API key's store, the
-`x-litekart-store` header (or `X-Store`, slug or id), a `?store=` parameter,
+`x-litekart-store` header (or `X-Store`: id, slug or verified domain, which is
+how a storefront serving many stores names one by its visitor's address), a `?store=` parameter,
 the `litekart_store_id` cookie, the host (`<slug>.<-base-domain>` or an
 attached domain), the signed-in person's only store, and the install's only
 store. Naming a store never grants access to it: staff must be members of it.
