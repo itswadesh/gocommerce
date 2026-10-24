@@ -137,6 +137,7 @@ default until a store enters its own:
 | `SENDGRID_API_KEY` | Sends email through SendGrid. |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` | Sends texts through Twilio. |
 | `MSG91_AUTH_KEY` (or `MSG91_AUTHKEY`) | Sends texts through MSG91. |
+| `MSG91_TEMPLATE_SIGN_IN_CODE`, `MSG91_TEMPLATE_ORDER_CODE`, `MSG91_TEMPLATE_ORDER_PLACED`, `MSG91_TEMPLATE_PAYMENT_RECEIVED`, `MSG91_TEMPLATE_ORDER_SHIPPED`, `MSG91_TEMPLATE_ORDER_DELIVERED`, `MSG91_TEMPLATE_ORDER_CANCELLED`, `MSG91_TEMPLATE_REFUND_ISSUED` | The DLT template id MSG91 sends for each message, for every store that has not set its own under Notifications › Setup SMS. MSG91 texts nothing it has no template for; a code's template carries `##code##`, and may use `##store_name##` and `##expires_in_minutes##`. |
 
 Sign-up, password-reset links and the stores' own addresses are listed too:
 

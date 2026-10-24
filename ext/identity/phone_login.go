@@ -118,17 +118,15 @@ func normalizePhone(phone string) (string, error) {
 	return "+" + string(d), nil
 }
 
-// smsDelivers is whether a code sent now would reach anybody.
-func (m *Module) smsDelivers(ctx context.Context) bool {
+// smsCarries is whether a sign-in code texted to phone now would reach it.
+// Asked of the code, not of SMS in general: MSG91 texts only what it has a
+// DLT template for, so a store texting about orders can still have nobody for
+// sign-in codes.
+func (m *Module) smsCarries(ctx context.Context, phone string) bool {
 	if m.cfg.Notifier != nil {
 		return true
 	}
-	for _, c := range m.app.NotifierChannelsFor(ctx) {
-		if c.Channel == gocommerce.ChannelSMS {
-			return c.Delivers
-		}
-	}
-	return false
+	return m.app.WouldDeliver(ctx, gocommerce.Notification{Event: EventLoginCode, Channel: gocommerce.ChannelSMS, To: phone})
 }
 
 // RequestPhoneCode sends a sign-in code to phone. A phone with no account yet
@@ -154,8 +152,9 @@ func (m *Module) sendPhoneCode(ctx context.Context, phone string) error {
 		return &gocommerce.APIError{Status: http.StatusForbidden, Code: "plan_required",
 			Message: "This shop can text sign-in codes to Indian (+91) numbers only. Use one, or sign in with your email."}
 	}
-	if !m.smsDelivers(ctx) {
-		return gocommerce.Conflictf("This shop cannot send text messages yet, so nobody can sign in. Try again later.")
+	if !m.smsCarries(ctx, phone) {
+		m.app.Log().Warn("phone sign-in refused: no SMS provider carries sign-in codes; set its Sign-in code template under Notifications › Setup SMS")
+		return gocommerce.Conflictf("This shop cannot text sign-in codes yet, so nobody can sign in with a phone. Try again later.")
 	}
 	code, err := newLoginCode()
 	if err != nil {

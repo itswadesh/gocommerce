@@ -6,9 +6,11 @@
 // to find it. The engine's SMS templates are therefore not what this module
 // sends; the template id for each event is.
 //
-// The key and the ids come from Config, or — when Config has none — from the
-// "sms-msg91" plugin, which the panel edits under Notifications › Setup SMS.
-// Installed with neither, the module is idle and the settings say so.
+// The key and the ids come from the "sms-msg91" plugin, which the panel edits
+// under Notifications › Setup SMS, or — where a store has set none — from
+// Config, which is the install's own and so every store's default (see
+// EnvTemplates). Installed with neither, the module is idle and the settings
+// say so.
 //
 //	app, err := gocommerce.New(cfg,
 //	    msg91.New(msg91.Config{
@@ -89,6 +91,27 @@ var eventFields = []struct {
 	{gocommerce.EventOrderDelivered, "template_order_delivered", "Order delivered"},
 	{gocommerce.EventOrderCancelled, "template_order_cancelled", "Order cancelled"},
 	{gocommerce.EventOrderRefunded, "template_refund_issued", "Refund issued"},
+	{gocommerce.EventOrderLookupCode, "template_order_code", "Order code"},
+	{EventLoginCode, "template_sign_in_code", "Sign-in code"},
+}
+
+// EventLoginCode is the identity module's sign-in code (identity.EventLoginCode),
+// named here rather than imported: one module does not build on another.
+const EventLoginCode = "identity.login_code"
+
+// EnvTemplates reads the install's template ids from its environment: one
+// variable per event, MSG91_TEMPLATE_ and the event's field in capitals —
+// MSG91_TEMPLATE_SIGN_IN_CODE, MSG91_TEMPLATE_ORDER_SHIPPED. Passed as
+// Config.Templates they are every store's default, as MSG91_AUTH_KEY is, so a
+// store on an install with MSG91 set up texts without setting anything.
+func EnvTemplates(getenv func(string) string) map[string]string {
+	out := map[string]string{}
+	for _, f := range eventFields {
+		if v := strings.TrimSpace(getenv("MSG91_" + strings.ToUpper(f.key))); v != "" {
+			out[f.event] = v
+		}
+	}
+	return out
 }
 
 // Register implements gocommerce.Module.
@@ -111,12 +134,12 @@ func (m *Module) Register(app *gocommerce.App) error {
 	for _, f := range eventFields {
 		fields = append(fields, gocommerce.PluginField{
 			Key: f.key, Label: f.label + " template ID", Kind: "text",
-			Help: "The DLT-approved flow template for this event. Empty sends nothing for it.",
+			Help: "The DLT-approved flow template for this event. Empty uses the install's, if it has one; with neither, nothing is sent for it.",
 		})
 	}
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "MSG91", Category: "notifications", DefaultEnabled: inCode,
-		Description: "Texts shoppers about their orders through MSG91's DLT flow templates: Indian numbers, and every number of a store whose country is India. The store's other SMS provider carries the rest, so nobody is texted twice. The wording is registered with MSG91; each event below names the template that carries it.",
+		Description: "Texts shoppers about their orders, and their sign-in and order codes, through MSG91's DLT flow templates: Indian numbers, and every number of a store whose country is India. The store's other SMS provider carries the rest, so nobody is texted twice. The wording is registered with MSG91; each event below names the template that carries it.",
 		Docs:        "https://docs.msg91.com/sms/send-sms",
 		Fields:      fields,
 	})
