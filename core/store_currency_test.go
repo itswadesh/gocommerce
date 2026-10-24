@@ -145,3 +145,37 @@ func TestEachStoreHasItsOwnCurrency(t *testing.T) {
 		t.Fatalf("other %q, this %q", app.Currency(other), app.Currency(context.Background()))
 	}
 }
+
+// An order that was cancelled before any money moved leaves nothing whose
+// amounts a new currency would change, so it does not fix the currency. One
+// that was paid does: the payment and its refund were in the old currency.
+func TestOnlyCancelledUnpaidOrdersLeaveTheCurrencyOpen(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	order := placeOrder(t, app, "CUR-CANCEL")
+	if _, err := app.Order().Cancel(ctx, order.ID, "test"); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	p, err := app.Profile().Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.CurrencyLocked {
+		t.Fatal("a store whose only order was cancelled unpaid reports its currency fixed")
+	}
+	p.Currency = "INR"
+	if _, err := app.Profile().Set(ctx, *p, nil); err != nil {
+		t.Fatalf("change after a cancelled order: %v", err)
+	}
+	if app.Currency(ctx) != "INR" {
+		t.Fatalf("currency = %q, want INR", app.Currency(ctx))
+	}
+
+	paid := paidOrder(t, app, "CUR-PAID", 2500, 3)
+	if _, err := app.Order().Cancel(ctx, paid.ID, "test"); err != nil {
+		t.Fatalf("cancel the paid order: %v", err)
+	}
+	if p, _ = app.Profile().Get(ctx); !p.CurrencyLocked {
+		t.Fatal("a store with a paid, cancelled order reports its currency unlocked")
+	}
+}

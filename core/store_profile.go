@@ -202,7 +202,7 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 				return err
 			}
 			if locked {
-				return Conflictf("this store has orders, so its currency is fixed: changing it would change what their amounts mean")
+				return Conflictf("this store has orders that were paid or not cancelled, so its currency is fixed: changing it would change what their amounts mean")
 			}
 			if err := p.app.setCurrency(ctx, tx, currency); err != nil {
 				return err

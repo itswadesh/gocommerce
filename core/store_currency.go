@@ -63,13 +63,15 @@ func (a *App) currencyOf(st *Store) string {
 	return a.cfg.Currency
 }
 
-// hasOrders is whether the store ctx is bound to has taken any order, which is
-// what fixes its currency.
+// hasOrders is whether the store ctx is bound to has an order whose amounts a
+// new currency would change, which is what fixes its currency. An order
+// cancelled before any money moved has none; a paid one keeps the old
+// currency in its payment and refund.
 func (a *App) hasOrders(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }) (bool, error) {
 	var any bool
-	err := q.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM orders)`).Scan(&any)
+	err := q.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM orders WHERE status <> 'cancelled' OR payment_status IN ('paid', 'refunded'))`).Scan(&any)
 	return any, err
 }
 

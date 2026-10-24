@@ -357,7 +357,7 @@
                                         {#if f.key === "currency"}
                                             <div class="field-help">
                                                 {profile?.currency_locked
-                                                    ? "Fixed: this store has orders, and changing it would change what their amounts mean."
+                                                    ? "Fixed: this store has orders that were paid or not cancelled, and changing it would change what their amounts mean."
                                                     : "What the store sells in. Fixed once it takes its first order; changing it now relabels the prices already entered, without converting them."}
                                             </div>
                                         {:else if f.hint}<div class="field-help">{f.hint}</div>{/if}
