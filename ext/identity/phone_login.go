@@ -27,10 +27,12 @@ import (
 // PluginKey is the module's plugin, which holds the sign-in choice.
 const PluginKey = "identity"
 
-// The two ways to sign in.
+// The ways to sign in. LoginEither offers both, and an email account can
+// link a phone it has proved, so either way opens it.
 const (
 	LoginEmailPassword = "email_password"
 	LoginPhoneOTP      = "phone_otp"
+	LoginEither        = "email_or_phone"
 )
 
 // EventLoginCode names the sign-in SMS.
@@ -54,8 +56,8 @@ func (m *Module) registerSignIn(app *gocommerce.App) {
 		Description: "How shoppers sign in to their account on the storefront. Switched off, the shop has no customer accounts and everybody checks out as a guest.",
 		Fields: []gocommerce.PluginField{{
 			Key: "login_method", Label: "How customers sign in", Kind: "select",
-			Options: []string{LoginEmailPassword, LoginPhoneOTP}, Default: LoginEmailPassword, Public: true,
-			Help: "email_password: an email address and a password. phone_otp: a phone number and a 4-digit code sent by SMS, which needs an SMS provider under Notifications.",
+			Options: []string{LoginEmailPassword, LoginPhoneOTP, LoginEither}, Default: LoginEmailPassword, Public: true,
+			Help: "email_password: an email address and a password. phone_otp: a phone number and a 4-digit code sent by SMS, which needs an SMS provider under Notifications. email_or_phone: either, and a customer signed in by email can add a phone with a code.",
 		}},
 	})
 	app.RegisterNotifyTemplate(gocommerce.NotifyTemplate{
@@ -76,7 +78,7 @@ func (m *Module) signInMethod(ctx context.Context) (method string, on bool) {
 	}
 	var s signInSettings
 	_ = m.app.Plugins().Fill(ctx, PluginKey, &s)
-	if s.LoginMethod != LoginPhoneOTP {
+	if s.LoginMethod != LoginPhoneOTP && s.LoginMethod != LoginEither {
 		s.LoginMethod = LoginEmailPassword
 	}
 	return s.LoginMethod, on
@@ -90,7 +92,7 @@ func (m *Module) requireMethod(ctx context.Context, want string) error {
 		return &gocommerce.APIError{Status: http.StatusConflict, Code: "sign_in_method",
 			Message: "This shop has no customer accounts. Check out as a guest."}
 	}
-	if method == want {
+	if method == want || method == LoginEither {
 		return nil
 	}
 	msg := "This shop signs customers in with an email address and a password."
@@ -135,6 +137,13 @@ func (m *Module) RequestPhoneCode(ctx context.Context, phone string) error {
 	if err := m.requireMethod(ctx, LoginPhoneOTP); err != nil {
 		return err
 	}
+	return m.sendPhoneCode(ctx, phone)
+}
+
+// sendPhoneCode texts a code to phone, within the limits, for signing in or
+// for linking the phone to an account. The two share the phone's codes and
+// limits, so linking is no way around them.
+func (m *Module) sendPhoneCode(ctx context.Context, phone string) error {
 	phone, err := normalizePhone(phone)
 	if err != nil {
 		return err
@@ -210,32 +219,9 @@ func (m *Module) VerifyPhoneCode(ctx context.Context, phone, code string) (*Cust
 	if err := m.requireMethod(ctx, LoginPhoneOTP); err != nil {
 		return nil, nil, err
 	}
-	wrong := &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "invalid_code",
-		Message: "That code is not right, or it has expired. Check it, or ask for a new one."}
-	phone, err := normalizePhone(phone)
+	phone, err := m.spendPhoneCode(ctx, phone, code)
 	if err != nil {
 		return nil, nil, err
-	}
-	code = strings.TrimSpace(code)
-	if len(code) != 4 {
-		return nil, nil, wrong
-	}
-	// Charged and matched in one statement, as an order's code is: a burst of
-	// guesses queues on the row lock, and a right code is spent with it.
-	var opened bool
-	err = m.db.QueryRowContext(ctx, `
-		WITH tried AS (
-			UPDATE identity_login_codes SET attempts = attempts + 1,
-			       expires_at = CASE WHEN code_hash = $2 THEN now() ELSE expires_at END
-			WHERE phone = $1 AND expires_at > now() AND attempts < $3
-			RETURNING code_hash)
-		SELECT true FROM tried WHERE code_hash = $2`,
-		phone, loginCodeHash(phone, code), loginCodeAttempts).Scan(&opened)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil, wrong
-	}
-	if err != nil {
-		return nil, nil, gocommerce.Internalf(err, "check sign-in code")
 	}
 
 	// The account on this phone, or a new one. ON CONFLICT makes two first
@@ -253,6 +239,72 @@ func (m *Module) VerifyPhoneCode(ctx context.Context, phone, code string) (*Cust
 		return nil, nil, err
 	}
 	return c, sess, nil
+}
+
+// spendPhoneCode spends one try and returns the normalized phone when code is
+// its open code. A wrong, spent or expired code is one answer.
+func (m *Module) spendPhoneCode(ctx context.Context, phone, code string) (string, error) {
+	wrong := &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "invalid_code",
+		Message: "That code is not right, or it has expired. Check it, or ask for a new one."}
+	phone, err := normalizePhone(phone)
+	if err != nil {
+		return "", err
+	}
+	code = strings.TrimSpace(code)
+	if len(code) != 4 {
+		return "", wrong
+	}
+	// Charged and matched in one statement, as an order's code is: a burst of
+	// guesses queues on the row lock, and a right code is spent with it.
+	var opened bool
+	err = m.db.QueryRowContext(ctx, `
+		WITH tried AS (
+			UPDATE identity_login_codes SET attempts = attempts + 1,
+			       expires_at = CASE WHEN code_hash = $2 THEN now() ELSE expires_at END
+			WHERE phone = $1 AND expires_at > now() AND attempts < $3
+			RETURNING code_hash)
+		SELECT true FROM tried WHERE code_hash = $2`,
+		phone, loginCodeHash(phone, code), loginCodeAttempts).Scan(&opened)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", wrong
+	}
+	if err != nil {
+		return "", gocommerce.Internalf(err, "check sign-in code")
+	}
+	return phone, nil
+}
+
+// RequestPhoneLink texts a code to phone so a signed-in customer can prove it
+// is theirs. Only a store that signs in by phone has a use for one.
+func (m *Module) RequestPhoneLink(ctx context.Context, phone string) error {
+	if err := m.requireMethod(ctx, LoginPhoneOTP); err != nil {
+		return err
+	}
+	return m.sendPhoneCode(ctx, phone)
+}
+
+// LinkPhone makes phone a way into customerID's account once code proves it,
+// so signing in with the phone opens this account. The phone on the profile
+// is set to it as well. A phone that already opens another account is not
+// taken from that one: merging two accounts is not this.
+func (m *Module) LinkPhone(ctx context.Context, customerID int64, phone, code string) (*Customer, error) {
+	if err := m.requireMethod(ctx, LoginPhoneOTP); err != nil {
+		return nil, err
+	}
+	phone, err := m.spendPhoneCode(ctx, phone, code)
+	if err != nil {
+		return nil, err
+	}
+	c, err := scanCustomer(m.db.QueryRowContext(ctx, `
+		UPDATE identity_customers SET login_phone = $2, phone = $2, updated_at = now()
+		WHERE id = $1 RETURNING `+customerColumns, customerID, phone))
+	if isUniqueViolation(err, "identity_customers_login_phone_key") {
+		return nil, gocommerce.Conflictf("%s already signs in to another account here.", phone)
+	}
+	if err != nil {
+		return nil, gocommerce.Internalf(err, "link phone")
+	}
+	return c, nil
 }
 
 func (m *Module) storeName(ctx context.Context) string {
@@ -319,4 +371,36 @@ func (m *Module) handleVerifyPhoneCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondAuth(w, http.StatusOK, c, sess)
+}
+
+func (m *Module) handleRequestPhoneLink(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Phone string `json:"phone"`
+	}
+	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	if err := m.RequestPhoneLink(r.Context(), in.Phone); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	gocommerce.Respond(w, http.StatusAccepted, map[string]int{"expires_in_minutes": int(loginCodeTTL / time.Minute)})
+}
+
+func (m *Module) handleLinkPhone(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Phone string `json:"phone"`
+		Code  string `json:"code"`
+	}
+	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	c, err := m.LinkPhone(r.Context(), CustomerFrom(r.Context()).ID, in.Phone, in.Code)
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	gocommerce.Respond(w, http.StatusOK, c)
 }

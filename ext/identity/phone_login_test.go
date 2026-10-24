@@ -161,3 +161,139 @@ func TestTheStorefrontCanReadTheChoice(t *testing.T) {
 	}
 	t.Fatalf("plugins = %+v, want %s among them", list, PluginKey)
 }
+
+// "Email or phone": both ways work side by side.
+func TestBothWaysWorkWhenTheStoreAllowsBoth(t *testing.T) {
+	sms := &capture{}
+	mod := New(Config{Notifier: sms})
+	app := gctest.New(t, mod)
+	signInBy(t, app, LoginEither)
+	register(t, app, "ada@example.com")
+	phoneCode(t, app, mod, sms, "+919876543210")
+}
+
+// An email account proves a phone with a code, and from then on signing in
+// with that phone opens the same account.
+func TestAnEmailAccountLinksAPhone(t *testing.T) {
+	sms := &capture{}
+	mod := New(Config{Notifier: sms})
+	app := gctest.New(t, mod)
+	signInBy(t, app, LoginEither)
+	auth := register(t, app, "ada@example.com")
+
+	if rec := as(t, app, auth.Token, http.MethodPost, "/x/identity/me/phone", map[string]any{"phone": "+91 98765 43210"}); rec.Code != http.StatusAccepted {
+		t.Fatalf("ask to link = %d %s", rec.Code, rec.Body)
+	}
+	mod.waitForSends(5 * time.Second)
+	code := sms.last().Data["code"]
+	rec := as(t, app, auth.Token, http.MethodPost, "/x/identity/me/phone/verify", map[string]any{"phone": "+919876543210", "code": code})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("link = %d %s", rec.Code, rec.Body)
+	}
+	var me Customer
+	gctest.DecodeData(t, rec, &me)
+	if !me.PhoneVerified || me.Phone != "+919876543210" {
+		t.Fatalf("after linking = %+v, want the phone verified", me)
+	}
+
+	// Signing in with the phone now opens the email account.
+	if _, err := mod.db.ExecContext(context.Background(), `UPDATE identity_login_codes SET created_at = now() - interval '2 minutes'`); err != nil {
+		t.Fatal(err)
+	}
+	code = phoneCode(t, app, mod, sms, "+919876543210")
+	rec = gctest.Request(t, app, http.MethodPost, "/x/identity/otp/verify", map[string]any{"phone": "+919876543210", "code": code})
+	var byPhone AuthResponse
+	gctest.DecodeData(t, rec, &byPhone)
+	if byPhone.Record == nil || byPhone.Record.ID != auth.Record.ID || byPhone.Record.Email != "ada@example.com" {
+		t.Fatalf("phone sign-in = %+v, want account %d", byPhone.Record, auth.Record.ID)
+	}
+}
+
+// A wrong code links nothing, and a phone that is already another account's
+// way in is not taken from it.
+func TestAPhoneIsLinkedOnlyWithItsCodeAndOnlyOnce(t *testing.T) {
+	sms := &capture{}
+	mod := New(Config{Notifier: sms})
+	app := gctest.New(t, mod)
+	signInBy(t, app, LoginEither)
+
+	// The phone opens an account of its own first.
+	code := phoneCode(t, app, mod, sms, "+919876543210")
+	gctest.Request(t, app, http.MethodPost, "/x/identity/otp/verify", map[string]any{"phone": "+919876543210", "code": code})
+	if _, err := mod.db.ExecContext(context.Background(), `UPDATE identity_login_codes SET created_at = now() - interval '2 minutes'`); err != nil {
+		t.Fatal(err)
+	}
+
+	auth := register(t, app, "ada@example.com")
+	if rec := as(t, app, auth.Token, http.MethodPost, "/x/identity/me/phone/verify", map[string]any{"phone": "+919876543210", "code": "0000"}); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("link with no code sent = %d, want 422", rec.Code)
+	}
+	as(t, app, auth.Token, http.MethodPost, "/x/identity/me/phone", map[string]any{"phone": "+919876543210"})
+	mod.waitForSends(5 * time.Second)
+	code = sms.last().Data["code"]
+	rec := as(t, app, auth.Token, http.MethodPost, "/x/identity/me/phone/verify", map[string]any{"phone": "+919876543210", "code": code})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("link a phone with its own account = %d %s, want 409", rec.Code, rec.Body)
+	}
+}
+
+// A store that signs in by email only has nothing to link a phone to.
+func TestLinkingAPhoneNeedsPhoneSignIn(t *testing.T) {
+	app, _ := newApp(t)
+	auth := register(t, app, "ada@example.com")
+	rec := as(t, app, auth.Token, http.MethodPost, "/x/identity/me/phone", map[string]any{"phone": "+919876543210"})
+	if rec.Code != http.StatusConflict || errorCode(t, rec) != "sign_in_method" {
+		t.Fatalf("link on an email-only store = %d %s, want 409", rec.Code, rec.Body)
+	}
+}
+
+// The other way round: an account opened with a phone adds an email and a
+// first password, and from then on either signs in to it.
+func TestAPhoneAccountAddsAnEmail(t *testing.T) {
+	sms := &capture{}
+	mod := New(Config{Notifier: sms})
+	app := gctest.New(t, mod)
+	signInBy(t, app, LoginEither)
+	code := phoneCode(t, app, mod, sms, "+919876543210")
+	rec := gctest.Request(t, app, http.MethodPost, "/x/identity/otp/verify", map[string]any{"phone": "+919876543210", "code": code})
+	var byPhone AuthResponse
+	gctest.DecodeData(t, rec, &byPhone)
+
+	if rec := as(t, app, byPhone.Token, http.MethodPatch, "/x/identity/me", map[string]any{"email": "ada@example.com"}); rec.Code != http.StatusOK {
+		t.Fatalf("add email = %d %s", rec.Code, rec.Body)
+	}
+	// No password yet, so none is asked for.
+	if rec := as(t, app, byPhone.Token, http.MethodPut, "/x/identity/me/password", map[string]any{"password": "correct horse"}); rec.Code != http.StatusOK {
+		t.Fatalf("first password = %d %s", rec.Code, rec.Body)
+	}
+	rec = gctest.Request(t, app, http.MethodPost, "/x/identity/login", map[string]any{"email": "ada@example.com", "password": "correct horse"})
+	var byEmail AuthResponse
+	gctest.DecodeData(t, rec, &byEmail)
+	if byEmail.Record == nil || byEmail.Record.ID != byPhone.Record.ID || !byEmail.Record.PhoneVerified {
+		t.Fatalf("email sign-in = %+v, want account %d with its phone", byEmail.Record, byPhone.Record.ID)
+	}
+
+	// With a password, changing it needs the current one again.
+	if rec := as(t, app, byEmail.Token, http.MethodPut, "/x/identity/me/password", map[string]any{"password": "another horse"}); rec.Code == http.StatusOK {
+		t.Fatal("a password was replaced without the current one")
+	}
+}
+
+// phone_verified describes the phone on the profile: typing another number
+// there does not make it a proved one.
+func TestAnEditedPhoneIsNotVerified(t *testing.T) {
+	sms := &capture{}
+	mod := New(Config{Notifier: sms})
+	app := gctest.New(t, mod)
+	signInBy(t, app, LoginPhoneOTP)
+	code := phoneCode(t, app, mod, sms, "+919876543210")
+	rec := gctest.Request(t, app, http.MethodPost, "/x/identity/otp/verify", map[string]any{"phone": "+919876543210", "code": code})
+	var auth AuthResponse
+	gctest.DecodeData(t, rec, &auth)
+	rec = as(t, app, auth.Token, http.MethodPatch, "/x/identity/me", map[string]any{"phone": "+911111111111"})
+	var me Customer
+	gctest.DecodeData(t, rec, &me)
+	if me.PhoneVerified {
+		t.Fatalf("after typing another phone = %+v, want it unverified", me)
+	}
+}

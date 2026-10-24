@@ -140,9 +140,13 @@ type Customer struct {
 	Email string `json:"email"`
 	// EmailVerified says the shopper has proved they read mail at Email. It is
 	// what a customer group's prices wait on (D66); signing up does not set it.
-	EmailVerified bool      `json:"email_verified"`
-	Name          string    `json:"name"`
-	Phone         string    `json:"phone"`
+	EmailVerified bool   `json:"email_verified"`
+	Name          string `json:"name"`
+	Phone         string `json:"phone"`
+	// PhoneVerified says Phone was proved with a code and signs in to this
+	// account (D118). Typing another number on the profile leaves the proved
+	// one signing in, and this false until the new one is proved.
+	PhoneVerified bool      `json:"phone_verified"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 
@@ -484,11 +488,11 @@ var invalidCredentials = &gocommerce.APIError{
 // customerColumns is in scanCustomer's order. Resolve spells it out again with
 // a table alias, so a column added here is added there too.
 // email and password_hash are NULL on an account opened with a phone (D116).
-const customerColumns = `id, coalesce(email, ''), coalesce(password_hash, ''), name, phone, email_verified_at IS NOT NULL, created_at, updated_at`
+const customerColumns = `id, coalesce(email, ''), coalesce(password_hash, ''), name, phone, email_verified_at IS NOT NULL, coalesce(login_phone = phone, false), created_at, updated_at`
 
 func scanCustomer(row interface{ Scan(...any) error }) (*Customer, error) {
 	var c Customer
-	if err := row.Scan(&c.ID, &c.Email, &c.passwordHash, &c.Name, &c.Phone, &c.EmailVerified,
+	if err := row.Scan(&c.ID, &c.Email, &c.passwordHash, &c.Name, &c.Phone, &c.EmailVerified, &c.PhoneVerified,
 		&c.CreatedAt, &c.UpdatedAt); err != nil {
 		return nil, err
 	}
@@ -687,7 +691,9 @@ func (m *Module) ChangePassword(ctx context.Context, id int64, current, password
 	if err != nil {
 		return nil, nil, err
 	}
-	if !verifyPassword(c.passwordHash, current) {
+	// An account opened with a phone has no password to check: its first is
+	// set by whoever holds its session, which is how it gets one (D118).
+	if c.passwordHash != "" && !verifyPassword(c.passwordHash, current) {
 		return nil, nil, invalidCredentials
 	}
 	if err := m.setPassword(ctx, id, password, ""); err != nil {
@@ -849,7 +855,7 @@ func (m *Module) Resolve(ctx context.Context, token string) (*Customer, bool) {
 	}
 	c, err := scanCustomer(m.db.QueryRowContext(ctx, `
 		SELECT c.id, coalesce(c.email, ''), coalesce(c.password_hash, ''), c.name, c.phone, c.email_verified_at IS NOT NULL,
-		       c.created_at, c.updated_at
+		       coalesce(c.login_phone = c.phone, false), c.created_at, c.updated_at
 		FROM identity_sessions s
 		JOIN identity_customers c ON c.id = s.customer_id
 		WHERE s.token_hash = $1 AND s.expires_at > now()`, hashToken(token)))

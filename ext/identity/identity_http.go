@@ -33,6 +33,9 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	app.HandleFunc("PATCH /x/identity/me", auth(m.handleUpdateMe))
 	app.HandleFunc("PUT /x/identity/me/password", auth(m.handleChangePassword))
 	app.HandleFunc("POST /x/identity/me/email-verification", auth(m.handleRequestVerification))
+	// Link a phone proved with a code, so it signs in to this account (D118).
+	app.HandleFunc("POST /x/identity/me/phone", auth(m.handleRequestPhoneLink))
+	app.HandleFunc("POST /x/identity/me/phone/verify", auth(m.handleLinkPhone))
 
 	app.HandleFunc("GET /x/identity/me/addresses", auth(m.handleListAddresses))
 	app.HandleFunc("POST /x/identity/me/addresses", auth(m.handleAddAddress))
