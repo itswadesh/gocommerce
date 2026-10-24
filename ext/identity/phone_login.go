@@ -148,6 +148,12 @@ func (m *Module) sendPhoneCode(ctx context.Context, phone string) error {
 	if err != nil {
 		return err
 	}
+	// Free for Indian numbers; any other country is part of the Pro plan
+	// (D119). Said to the shopper as what the shop can do, not as a plan.
+	if !strings.HasPrefix(phone, "+91") && m.app.StorePlan(ctx) != gocommerce.PlanPro {
+		return &gocommerce.APIError{Status: http.StatusForbidden, Code: "plan_required",
+			Message: "This shop can text sign-in codes to Indian (+91) numbers only. Use one, or sign in with your email."}
+	}
 	if !m.smsDelivers(ctx) {
 		return gocommerce.Conflictf("This shop cannot send text messages yet, so nobody can sign in. Try again later.")
 	}

@@ -23,6 +23,8 @@ type Store struct {
 	// Demo masks personal data on this store's admin routes and freezes who
 	// can sign in to it, as Config.Demo does for the whole install.
 	Demo bool `json:"demo"`
+	// Plan is PlanFree or PlanPro, set by the install's operator (D119).
+	Plan string `json:"plan"`
 	// Currency is what this store sells in; nil is Config.Currency (D85).
 	Currency *string `json:"currency"`
 	// Languages is what this store sells in, its main language first; nil is
@@ -89,7 +91,7 @@ func (a *App) resolveDefaultStore(ctx context.Context) error {
 	return nil
 }
 
-const storeColumns = `id, slug, name, status, order_prefix, demo, currency, to_jsonb(languages), created_at, coalesce(brand_host, '')`
+const storeColumns = `id, slug, name, status, order_prefix, demo, currency, to_jsonb(languages), created_at, coalesce(brand_host, ''), plan`
 
 // storeSlugRE is the shape the stores table's CHECK allows.
 var storeSlugRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
@@ -97,7 +99,7 @@ var storeSlugRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 func scanStore(row interface{ Scan(...any) error }) (*Store, error) {
 	var st Store
 	var langs []byte
-	if err := row.Scan(&st.ID, &st.Slug, &st.Name, &st.Status, &st.OrderPrefix, &st.Demo, &st.Currency, &langs, &st.CreatedAt, &st.BrandHost); err != nil {
+	if err := row.Scan(&st.ID, &st.Slug, &st.Name, &st.Status, &st.OrderPrefix, &st.Demo, &st.Currency, &langs, &st.CreatedAt, &st.BrandHost, &st.Plan); err != nil {
 		return nil, err
 	}
 	st.Languages = decodeLanguages(langs)
@@ -181,6 +183,40 @@ func (s *Stores) SetDemo(ctx context.Context, id string, on bool) error {
 		return NotFoundf("store not found")
 	}
 	return nil
+}
+
+// The plans a store can be on (D119). Every store starts free; what Pro adds
+// is decided where each feature checks StorePlan.
+const (
+	PlanFree = "free"
+	PlanPro  = "pro"
+)
+
+// SetPlan moves a store onto a plan. From the command line only, as SetDemo
+// is: a plan is what the store has paid for, not a setting its own staff
+// choose.
+func (s *Stores) SetPlan(ctx context.Context, id, plan string) error {
+	if plan != PlanFree && plan != PlanPro {
+		return Validationf("a plan is %q or %q", PlanFree, PlanPro)
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE stores SET plan = $2 WHERE id = $1`, id, plan)
+	if err != nil {
+		return Internalf(err, "set the store's plan")
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return NotFoundf("store not found")
+	}
+	return nil
+}
+
+// StorePlan is the plan of the store ctx is bound to, PlanFree when it cannot
+// be read: a feature on Pro stays shut rather than opening by accident.
+func (a *App) StorePlan(ctx context.Context) string {
+	var plan string
+	if err := a.db.QueryRowContext(ctx, `SELECT plan FROM stores WHERE id = $1`, a.storeOf(ctx)).Scan(&plan); err != nil || plan != PlanPro {
+		return PlanFree
+	}
+	return PlanPro
 }
 
 // Count is how many stores exist, serving or not.

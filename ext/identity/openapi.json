@@ -44,6 +44,7 @@
         "responses": {
           "202": {"description": "The code is on its way."},
           "400": {"description": "The phone has no country code.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
+          "403": {"description": "plan_required: a number outside India (+91) on a store without the Pro plan (D119).", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
           "409": {"description": "The store does not sign customers in by phone, or cannot send SMS.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
           "429": {"description": "A code was sent less than a minute ago, or five today.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
         }
@@ -78,6 +79,7 @@
         "responses": {
           "202": {"description": "The code is on its way."},
           "400": {"description": "The phone has no country code.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
+          "403": {"description": "plan_required: a number outside India (+91) on a store without the Pro plan (D119).", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
           "401": {"$ref": "#/components/responses/IdentityUnauthorized"},
           "409": {"description": "The store does not sign in by phone, or cannot send SMS.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
           "429": {"description": "A code was sent less than a minute ago, or five today.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
