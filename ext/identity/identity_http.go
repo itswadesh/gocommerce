@@ -19,6 +19,9 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	app.HandleFunc("POST /x/identity/login", m.handleLogin)
 	app.HandleFunc("POST /x/identity/password-reset", m.handleRequestReset)
 	app.HandleFunc("POST /x/identity/password-reset/confirm", m.handleConfirmReset)
+	// Or a phone and a code sent to it, when the store chose that (D116).
+	app.HandleFunc("POST /x/identity/otp", m.handleRequestPhoneCode)
+	app.HandleFunc("POST /x/identity/otp/verify", m.handleVerifyPhoneCode)
 	// Public: the link is opened from the inbox, often on a device where the
 	// shopper is not signed in. The token is the whole credential.
 	app.HandleFunc("POST /x/identity/email-verification/confirm", m.handleConfirmVerification)
@@ -124,6 +127,10 @@ func pathID(r *http.Request, name string) (int64, error) {
 // ------------------------------------------------------------------ public
 
 func (m *Module) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if err := m.requireMethod(r.Context(), LoginEmailPassword); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
 	var in struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -143,6 +150,10 @@ func (m *Module) handleRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if err := m.requireMethod(r.Context(), LoginEmailPassword); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
 	var in struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -160,6 +171,10 @@ func (m *Module) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) handleRequestReset(w http.ResponseWriter, r *http.Request) {
+	if err := m.requireMethod(r.Context(), LoginEmailPassword); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
 	var in struct {
 		Email string `json:"email"`
 	}

@@ -29,6 +29,7 @@
     import { goto } from "$app/navigation";
 
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
+    import CustomerSignInCard from "$lib/components/CustomerSignInCard.svelte";
     import Select from "$lib/components/Select.svelte";
     import { countryOptions } from "$lib/countries.js";
     import { currencyOptions } from "$lib/currencies.js";
@@ -439,6 +440,8 @@
                         </form>
                     </section>
                 {/if}
+
+                <CustomerSignInCard {channels} />
 
                 <!-- Everything below is read more than it is changed, so it is
                      folded, as on Sitemap and Feeds, and each fold says on its

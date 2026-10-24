@@ -32,6 +32,39 @@
         }
       }
     },
+    "/x/identity/otp": {
+      "post": {
+        "tags": ["identity"],
+        "summary": "Send a sign-in code to a phone",
+        "description": "For a store whose customers sign in with their phone (the identity plugin's login_method is phone_otp). Sends a 4-digit code by SMS; a phone with no account yet gets one too, because signing in with a code is how an account is opened. A code works for ten minutes and five tries; a phone gets one code a minute and five a day. The phone needs its country code. 409 sign_in_method when the store signs customers in with an email and password, or has no accounts; 409 when the store cannot send SMS.",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"type": "object", "required": ["phone"], "properties": {"phone": {"type": "string", "example": "+919876543210"}}}}}
+        },
+        "responses": {
+          "202": {"description": "The code is on its way."},
+          "400": {"description": "The phone has no country code.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
+          "409": {"description": "The store does not sign customers in by phone, or cannot send SMS.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
+          "429": {"description": "A code was sent less than a minute ago, or five today.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
+        }
+      }
+    },
+    "/x/identity/otp/verify": {
+      "post": {
+        "tags": ["identity"],
+        "summary": "Sign in with the code sent to a phone",
+        "description": "Spends one try. The right code signs in the account on that phone, opening one the first time, and is spent. A wrong, spent or expired code is one answer, 422 invalid_code.",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"type": "object", "required": ["phone", "code"], "properties": {"phone": {"type": "string"}, "code": {"type": "string", "example": "0420"}}}}}
+        },
+        "responses": {
+          "200": {"$ref": "#/components/responses/IdentityAuthResponse"},
+          "409": {"description": "The store does not sign customers in by phone.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
+          "422": {"description": "The code is wrong, spent or expired.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
+        }
+      }
+    },
     "/x/identity/logout": {
       "post": {
         "tags": ["identity"],

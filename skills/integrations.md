@@ -340,6 +340,13 @@ delete. It also shows a module authenticating its *own* callers: a shopper
 session is the module's middleware, not the engine's admin one, so a shopper
 token opens no admin route and an admin token reads no address book.
 
+A shopper signs in one way per store (D116): the module's plugin, `identity`,
+has a public `login_method` setting, `email_password` or `phone_otp`, and the
+routes of the other way answer 409 `sign_in_method`. Phone sign-in is
+`POST /x/identity/otp` then `/x/identity/otp/verify`; a phone with no
+account opens one, found again by `login_phone`, so such an account has no
+email and no password.
+
 ## Calling a model: through the gateway, never directly
 
 A module that wants a model's answer does not call a provider. It registers
