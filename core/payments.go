@@ -261,9 +261,10 @@ func (p *Payments) MarkUnpaid(ctx context.Context, orderID int64) (*Order, error
 			// to record going back.
 			return transitionResult{}, Conflictf("order %s was refunded; that is a payment that happened and came back, not one to erase", o.Number)
 		}
-		if o.Status == OrderCancelled {
-			return transitionResult{}, Conflictf("order %s is cancelled; money on it is a refund, not a mistake to unrecord", o.Number)
-		}
+		// A cancelled order is no exception. Cancelling records no refund, so a
+		// payment marked on it by mistake (a test order, the wrong row) is
+		// still that mistake; money that really went back is a refund, refused
+		// above.
 
 		// The reference goes with it. It described a payment that did not
 		// happen, and leaving it behind would have the next person looking for

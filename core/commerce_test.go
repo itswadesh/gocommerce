@@ -1425,6 +1425,36 @@ func TestMarkUnpaidRefusesARefund(t *testing.T) {
 	}
 }
 
+// Cancelling a paid order records no refund, so a payment recorded on it by
+// mistake is still a mistake after the cancel, and still taken back. A real
+// refund is what stays (TestMarkUnpaidRefusesARefund).
+func TestMarkUnpaidOnACancelledOrder(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+
+	product := simpleProduct(t, app, "UNPAY-4", 2000, 3)
+	cart := newCart(t, app)
+	addToCart(t, app, cart.Token, product.DefaultVariant().ID, 1)
+	result, err := app.Order().Checkout(ctx, CodeCOD, checkoutInput(cart.Token), "")
+	if err != nil {
+		t.Fatalf("checkout: %v", err)
+	}
+	id := result.Order.ID
+	if _, err := app.Pay().MarkPaid(ctx, id, "ref"); err != nil {
+		t.Fatalf("mark paid: %v", err)
+	}
+	if _, err := app.Order().Cancel(ctx, id, "test"); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	order, err := app.Pay().MarkUnpaid(ctx, id)
+	if err != nil {
+		t.Fatalf("mark unpaid on a cancelled order: %v", err)
+	}
+	if order.PaymentStatus != PaymentPending || order.Status != OrderCancelled {
+		t.Errorf("order = %s/%s, want cancelled and pending", order.Status, order.PaymentStatus)
+	}
+}
+
 // TestMarkUndelivered walks the delivery back, including the fulfillment rows
 // that were marked with it.
 func TestMarkUndelivered(t *testing.T) {
