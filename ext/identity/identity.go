@@ -203,6 +203,9 @@ type Module struct {
 	app      *gocommerce.App
 	db       *sql.DB
 	throttle *loginThrottle
+	// sends tracks the sign-in codes being delivered, so tests and shutdown
+	// can wait for them.
+	sends sync.WaitGroup
 }
 
 // New constructs the module.
@@ -318,6 +321,27 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			CREATE INDEX identity_email_verifications_customer_idx ON identity_email_verifications (customer_id);`,
 	},
 		gocommerce.ScopeMigration("0003_store_scope", "identity_customers", "identity_addresses", "identity_sessions", "identity_email_verifications", "identity_password_resets", "identity_orders"),
+		// An account opened with a phone has no email and no password, and is
+		// found again by login_phone, which only a code sent to it sets (D116).
+		// phone stays the editable profile field it always was: two email
+		// accounts may share one, and neither is a sign-in.
+		{ID: "0004_phone_sign_in", SQL: `
+			ALTER TABLE identity_customers
+			    ALTER COLUMN email DROP NOT NULL,
+			    ALTER COLUMN password_hash DROP NOT NULL,
+			    ADD COLUMN login_phone text;
+			CREATE UNIQUE INDEX identity_customers_login_phone_key
+			    ON identity_customers (store_id, login_phone) WHERE login_phone IS NOT NULL;
+			CREATE TABLE identity_login_codes (
+			    id         bigserial   PRIMARY KEY,
+			    phone      text        NOT NULL,
+			    code_hash  text        NOT NULL,
+			    attempts   int         NOT NULL DEFAULT 0,
+			    expires_at timestamptz NOT NULL,
+			    created_at timestamptz NOT NULL DEFAULT now()
+			);
+			CREATE INDEX identity_login_codes_phone_idx ON identity_login_codes (phone, created_at);`},
+		gocommerce.ScopeMigration("0005_scope_login_codes", "identity_login_codes"),
 	}
 }
 
@@ -327,6 +351,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	m.db = app.DB()
 	m.mountRoutes(app)
+	m.registerSignIn(app)
 	// The reset email's default wording, so the operator can reword it from
 	// the panel like the order emails. The absence of reset_url is
 	// meaningful: without a ResetURL the code stands in for the link.
@@ -458,7 +483,8 @@ var invalidCredentials = &gocommerce.APIError{
 
 // customerColumns is in scanCustomer's order. Resolve spells it out again with
 // a table alias, so a column added here is added there too.
-const customerColumns = `id, email, password_hash, name, phone, email_verified_at IS NOT NULL, created_at, updated_at`
+// email and password_hash are NULL on an account opened with a phone (D116).
+const customerColumns = `id, coalesce(email, ''), coalesce(password_hash, ''), name, phone, email_verified_at IS NOT NULL, created_at, updated_at`
 
 func scanCustomer(row interface{ Scan(...any) error }) (*Customer, error) {
 	var c Customer
@@ -822,7 +848,7 @@ func (m *Module) Resolve(ctx context.Context, token string) (*Customer, bool) {
 		return nil, false
 	}
 	c, err := scanCustomer(m.db.QueryRowContext(ctx, `
-		SELECT c.id, c.email, c.password_hash, c.name, c.phone, c.email_verified_at IS NOT NULL,
+		SELECT c.id, coalesce(c.email, ''), coalesce(c.password_hash, ''), c.name, c.phone, c.email_verified_at IS NOT NULL,
 		       c.created_at, c.updated_at
 		FROM identity_sessions s
 		JOIN identity_customers c ON c.id = s.customer_id
