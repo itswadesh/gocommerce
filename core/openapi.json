@@ -1275,6 +1275,44 @@
         }
       }
     },
+    "/api/checkout/countries": {
+      "get": {
+        "tags": [
+          "checkout"
+        ],
+        "summary": "Where the store delivers",
+        "description": "The countries the address form should offer: those named by the store's active shipping zones that have an active rate for everybody. everywhere is true, and countries empty, when nothing is ruled out: the store has no rates and charges its flat shipping anywhere, or a priced zone names no country.",
+        "responses": {
+          "200": {
+            "description": "Where the store delivers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "everywhere": {
+                          "type": "boolean"
+                        },
+                        "countries": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "example": "IN"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/media": {
       "get": {
         "tags": [

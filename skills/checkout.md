@@ -109,6 +109,12 @@ cards — is charged nothing to send and is not asked for a delivery option,
 wherever the address is; the flat number and the rates below apply the moment
 one physical line is in it.
 
+The address form offers the countries the store delivers to (D117):
+`GET /api/checkout/countries` answers the countries of the active zones that
+have a rate for everybody, or `everywhere: true` when the store has no rates or
+a priced zone names no country. It is a courtesy, not the check: an address no
+zone prices still gets no delivery option.
+
 **Who the cart is proven to belong to decides its delivery options and whether
 it pays tax, as it decides its prices (D66, D76).** All three read the cart's
 `verified_email` under the cart's lock — never the checkout's `email`, never

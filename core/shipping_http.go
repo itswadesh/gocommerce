@@ -11,6 +11,9 @@ func (a *App) mountShippingRoutes() {
 	// is also why it takes the cart's own token rather than a subtotal the
 	// caller could make up.
 	a.HandleFunc("GET /api/checkout/rates", a.handleShippingRates)
+	// Public: which countries the address form offers (D117). The zones'
+	// countries, nothing about their prices.
+	a.HandleFunc("GET /api/checkout/countries", a.handleShipsTo)
 
 	// Operator: where this store delivers and what it charges, under the
 	// shipping pair D63 gave it. Naming a customer group on a rate needs
@@ -196,4 +199,13 @@ func shippingPathID(r *http.Request) (int64, error) {
 		return 0, Validationf("id must be a positive integer")
 	}
 	return id, nil
+}
+
+func (a *App) handleShipsTo(w http.ResponseWriter, r *http.Request) {
+	out, err := a.shipping.ShipsTo(r.Context())
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, out)
 }
