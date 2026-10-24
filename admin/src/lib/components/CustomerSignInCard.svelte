@@ -130,6 +130,9 @@
                         </label>
                     </div>
                 </fieldset>
+                <div class="field-help tw:mb-2">
+                    Phone sign-in is free for Indian (+91) numbers. Other countries need the Pro plan.
+                </div>
                 {#if !smsReady}
                     <div class="field-help tw:mb-2">
                         {#if usesPhone(saved)}

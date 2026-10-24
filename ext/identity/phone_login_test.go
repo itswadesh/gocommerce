@@ -297,3 +297,19 @@ func TestAnEditedPhoneIsNotVerified(t *testing.T) {
 		t.Fatalf("after typing another phone = %+v, want it unverified", me)
 	}
 }
+
+// Phone sign-in is free for Indian numbers; any other country needs the Pro
+// plan (D118).
+func TestPhoneCodesOutsideIndiaNeedPro(t *testing.T) {
+	app, mod, sms := phoneApp(t)
+	rec := gctest.Request(t, app, http.MethodPost, "/x/identity/otp", map[string]any{"phone": "+44 7700 900123"})
+	if rec.Code != http.StatusForbidden || errorCode(t, rec) != "plan_required" {
+		t.Fatalf("a UK phone on the free plan = %d %s, want 403 plan_required", rec.Code, rec.Body)
+	}
+	phoneCode(t, app, mod, sms, "+919876543210")
+
+	if err := app.Stores().SetPlan(context.Background(), app.DefaultStore(), gocommerce.PlanPro); err != nil {
+		t.Fatal(err)
+	}
+	phoneCode(t, app, mod, sms, "+44 7700 900123")
+}

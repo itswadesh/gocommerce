@@ -85,8 +85,15 @@ func coreMigrations() []Migration {
 		{ID: "0074_superuser_brand", SQL: migration0074SuperuserBrand},
 		{ID: "0075_order_lookup_codes", SQL: migration0075OrderLookupCodes},
 		ScopeMigration("0076_scope_order_lookup_codes", "order_lookup_codes"),
+		{ID: "0077_store_plan", SQL: migration0077StorePlan},
 	}
 }
+
+// M77 — the plan a store is on (D119). Free unless the install's operator says
+// otherwise; a feature on Pro reads it through App.StorePlan.
+const migration0077StorePlan = `
+ALTER TABLE stores ADD COLUMN plan text NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'pro'));
+`
 
 // M75 — the 4-digit codes a guest opens their order with (D115). Only a hash
 // of the code is kept, keyed to its order. A row is the record that counts
