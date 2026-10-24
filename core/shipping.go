@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 )
 
@@ -771,4 +772,62 @@ func upperAll(in []string) []string {
 		}
 	}
 	return out
+}
+
+// ShipsTo is where a store delivers, for the address form at checkout (D117):
+// the countries its priced zones name, or everywhere.
+type ShipsTo struct {
+	// Everywhere is true when no country is ruled out: the store has no rates
+	// and charges its flat shipping anywhere, or a priced zone names no
+	// country, which makes it the rest of the world.
+	Everywhere bool `json:"everywhere"`
+	// Countries are ISO codes, sorted. Empty when Everywhere.
+	Countries []string `json:"countries"`
+}
+
+// ShipsTo reads the countries of the active zones that have an active rate
+// for everybody. A zone with no rate quotes nothing, and a customer group's
+// rate is an exception for that group, not a place the store delivers to
+// everybody — the same line configured draws.
+func (s *Shipping) ShipsTo(ctx context.Context) (*ShipsTo, error) {
+	rows, err := s.app.db.QueryContext(ctx, `
+		SELECT to_jsonb(z.countries) FROM shipping_zones z
+		WHERE z.active AND EXISTS (SELECT 1 FROM shipping_rates r
+		    WHERE r.zone_id = z.id AND r.active AND r.customer_group_id IS NULL)`)
+	if err != nil {
+		return nil, Internalf(err, "read shipping zones")
+	}
+	defer rows.Close()
+	out := &ShipsTo{Countries: []string{}}
+	seen := map[string]bool{}
+	priced := false
+	for rows.Next() {
+		// Through to_jsonb, as scanZone reads them.
+		var raw []byte
+		var countries []string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, Internalf(err, "read shipping zones")
+		}
+		if err := json.Unmarshal(raw, &countries); err != nil {
+			return nil, Internalf(err, "read shipping zones")
+		}
+		priced = true
+		if len(countries) == 0 {
+			out.Everywhere = true
+		}
+		for _, c := range countries {
+			if c = strings.ToUpper(strings.TrimSpace(c)); c != "" && !seen[c] {
+				seen[c] = true
+				out.Countries = append(out.Countries, c)
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, Internalf(err, "read shipping zones")
+	}
+	if !priced || out.Everywhere {
+		return &ShipsTo{Everywhere: true, Countries: []string{}}, nil
+	}
+	sort.Strings(out.Countries)
+	return out, nil
 }
