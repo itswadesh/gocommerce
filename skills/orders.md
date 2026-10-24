@@ -128,9 +128,16 @@ order read, guest or admin. `GetForGuest` compares it in constant time and
 reports a mismatch as **not found**, so the endpoint cannot be walked to discover
 which order numbers exist.
 
-The one way back to it is `POST /api/admin/orders/{id}/access-token`
-(`Orders.RevealAccessToken`), for the customer who has lost their "view your
-order" mail. It **reveals** rather than rotates — re-issuing would break the link
+A guest gets back to it with a code, not a link (D115):
+`POST /api/orders/{number}/code` with the email or phone on the order sends a
+4-digit code there (`Orders.RequestLookupCode`; 202 whether or not anything
+matched), and `POST /api/orders/{number}/code/verify` answers the order and
+its token (`Orders.VerifyLookupCode`). A code lives ten minutes and takes five
+tries; an order gets one a minute and five a day, counted in
+`order_lookup_codes`, which keeps only a hash keyed to the order.
+
+`POST /api/admin/orders/{id}/access-token` (`Orders.RevealAccessToken`) is
+still in the API, though the panel no longer offers it. It **reveals** rather than rotates — re-issuing would break the link
 that customer may still find in their inbox — and because handing out a bearer
 credential is an act rather than a reading it is a POST behind `orders.write`,
 and every call writes an `order.token_reveal` audit row naming the operator in

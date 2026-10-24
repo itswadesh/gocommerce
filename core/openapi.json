@@ -1157,6 +1157,124 @@
         }
       }
     },
+    "/api/orders/{number}/code": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "Send a code to open your order",
+        "description": "Sends a 4-digit code to the email or phone on the order, when contact is that email or phone (a phone matches by its last ten digits). The answer is 202 whether or not the order exists or the contact matched, and nothing is sent when it did not, so this cannot be used to find orders or check whose they are. A code works for ten minutes and five tries; an order gets one code a minute and five a day (429). 409 when the shop has no provider for that channel.",
+        "parameters": [
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "contact"
+                ],
+                "properties": {
+                  "contact": {
+                    "type": "string",
+                    "description": "The email address or phone number on the order."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Sent, if the order and contact matched."
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "description": "A code was sent less than a minute ago, or five today."
+          }
+        }
+      }
+    },
+    "/api/orders/{number}/code/verify": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "Open your order with its code",
+        "description": "Spends one try. The right code answers with the order and its access token, which reads the order again through GET /api/orders/{number}, and is spent. A wrong, spent or expired code is one answer, 422 invalid_code.",
+        "parameters": [
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "description": "The 4 digits that were sent."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The order and its access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "order": {
+                          "$ref": "#/components/schemas/Order"
+                        },
+                        "access_token": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The code is wrong, spent or expired."
+          }
+        }
+      }
+    },
     "/api/admin/media": {
       "get": {
         "tags": [

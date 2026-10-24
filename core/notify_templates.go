@@ -583,6 +583,18 @@ If it was not you, nothing has changed and you can ignore this message.`,
 	},
 
 	{
+		Channel: ChannelEmail, Event: EventOrderLookupCode, Title: "Order code",
+		Description: "To a shopper who asked to see their order on the storefront. The code works for ten minutes.",
+		Variables:   []string{"code", "order_number", "store_name", "expires_in_minutes"},
+		Subject:     "{{.code}} is your code for order {{.order_number}}",
+		Body: `Your code to see order {{.order_number}}{{with .store_name}} from {{.}}{{end}} is:
+
+{{.code}}
+
+Enter it on the order page within {{.expires_in_minutes}} minutes. If you did not ask for it, you can ignore this message.`,
+	},
+
+	{
 		Channel: ChannelEmail, Event: EventNotificationTest, Title: "Test email",
 		Description: "Sent from Setup Email to check that the provider delivers.",
 		Variables:   []string{"store_name", "to"},
@@ -618,5 +630,11 @@ If you are reading it, the store's email provider is set up and order emails wil
 		Description: "To the shopper's phone when their order is cancelled.",
 		Variables:   withVariables("reason"),
 		Body:        `Order {{.order_number}} has been cancelled.{{if .reason}} Reason: {{.reason}}{{end}}`,
+	},
+	{
+		Channel: ChannelSMS, Event: EventOrderLookupCode, Title: "Order code",
+		Description: "To a shopper who asked to see their order on the storefront. The code works for ten minutes.",
+		Variables:   []string{"code", "order_number", "store_name", "expires_in_minutes"},
+		Body:        `{{.code}} is your code to see order {{.order_number}}. It works for {{.expires_in_minutes}} minutes.`,
 	},
 }

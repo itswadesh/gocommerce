@@ -200,6 +200,9 @@ func (a *App) mountOrderRoutes() {
 	// Guest order lookup. There is no account to log into, so the order's
 	// access token is the credential.
 	a.HandleFunc("GET /api/orders/{number}", a.handleGuestOrder)
+	// Or with a 4-digit code sent to the order's email or phone (D115).
+	a.HandleFunc("POST /api/orders/{number}/code", a.handleRequestLookupCode)
+	a.HandleFunc("POST /api/orders/{number}/code/verify", a.handleVerifyLookupCode)
 
 	a.HandleAdminFunc("GET /api/admin/orders", a.handleListOrders, RightOrdersRead)
 	a.HandleAdminFunc("GET /api/admin/customers", a.handleListCustomers, RightCustomersRead)

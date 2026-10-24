@@ -152,9 +152,10 @@ Idempotency-Key: 0f9c2b1e-4d1a-4a2f-9c33-8e1b6a5d0f21
 
 201, and `access_token` appears **once** — it is the guest's only handle on the
 order afterwards (`GET /api/orders/GC-000042?token=…`), and no order read
-returns it. Persist it client-side at this moment. It is recoverable, but only
-deliberately: `POST /api/admin/orders/{id}/access-token` hands the same token
-back to an operator holding `orders.write` and records who asked for it.
+returns it. Persist it client-side at this moment. A shopper who lost it opens
+the order again with a 4-digit code sent to the email or phone on it
+(`POST /api/orders/{number}/code`, then `/code/verify`, which answers the
+same token; D115).
 
 `payment.kind` decides what the client does: `none` (nothing — the order is
 already confirmed and its stock committed), `client_action` (finish in the page
