@@ -347,6 +347,13 @@ routes of the other way answer 409 `sign_in_method`. Phone sign-in is
 account opens one, found again by `login_phone`, so such an account has no
 email and no password.
 
+With `email_or_phone` both ways work, and one account can carry both (D118):
+signed in by email, `POST /x/identity/me/phone` and `/x/identity/me/phone/verify`
+prove a phone and make it sign in to that account; signed in by phone, the
+customer adds an email with `PATCH /x/identity/me` and sets a first password
+with `PUT /x/identity/me/password`, which asks for no current one when there
+is none. A phone already signing in to another account is refused, not moved.
+
 ## Calling a model: through the gateway, never directly
 
 A module that wants a model's answer does not call a provider. It registers

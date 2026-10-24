@@ -6,8 +6,10 @@
      * installed. The engine refuses the other way, so this is not only what
      * the storefront draws.
      *
-     * Phone sign-in sends its codes by SMS, so it cannot be chosen until an SMS
-     * provider delivers: choosing it without one would lock every customer out.
+     * Phone sign-in sends its codes by SMS, so neither phone choice can be made
+     * until an SMS provider delivers: choosing one without it would lock those
+     * customers out. "Email or phone" lets an account carry both, each added
+     * from the account once it is proved (D118).
      */
     import { base } from "$app/paths";
     import { api, can } from "$lib/api.js";
@@ -23,7 +25,10 @@
     let method = $state("email_password");
     let saving = $state(false);
 
-    const saved = $derived(plugin?.settings?.login_method === "phone_otp" ? "phone_otp" : "email_password");
+    const METHODS = ["email_password", "phone_otp", "email_or_phone"];
+    const known = (v) => (METHODS.includes(v) ? v : "email_password");
+    const saved = $derived(known(plugin?.settings?.login_method));
+    const usesPhone = (v) => v === "phone_otp" || v === "email_or_phone";
 
     $effect(() => {
         load();
@@ -32,7 +37,7 @@
     async function load() {
         try {
             plugin = await api.get(`/api/admin/plugins/${KEY}`);
-            method = plugin?.settings?.login_method === "phone_otp" ? "phone_otp" : "email_password";
+            method = known(plugin?.settings?.login_method);
         } catch {
             // Not installed, or no right to read plugins: the card stays away.
             plugin = null;
@@ -44,7 +49,13 @@
         saving = true;
         try {
             plugin = await api.patch(`/api/admin/plugins/${KEY}`, { settings: { login_method: method } });
-            toast.success(method === "phone_otp" ? "Customers now sign in with their phone" : "Customers now sign in with email and password");
+            toast.success(
+                method === "phone_otp"
+                    ? "Customers now sign in with their phone"
+                    : method === "email_or_phone"
+                      ? "Customers now sign in with email or phone"
+                      : "Customers now sign in with email and password",
+            );
         } catch (err) {
             toast.error(err);
         } finally {
@@ -100,11 +111,28 @@
                                 </span>
                             </span>
                         </label>
+                        <label class="key-kind-option" class:is-on={method === "email_or_phone"}>
+                            <input
+                                type="radio"
+                                name="login-method"
+                                value="email_or_phone"
+                                bind:group={method}
+                                disabled={!smsReady && saved !== "email_or_phone"}
+                            />
+                            <i class="ri-user-shared-line key-kind-icon" aria-hidden="true"></i>
+                            <span class="key-kind-text">
+                                <span class="key-kind-title">Email or phone</span>
+                                <span class="txt-hint txt-sm">
+                                    Either one. A customer can add the other to their account once they prove it,
+                                    and then both open the same account.
+                                </span>
+                            </span>
+                        </label>
                     </div>
                 </fieldset>
                 {#if !smsReady}
                     <div class="field-help tw:mb-2">
-                        {#if saved === "phone_otp"}
+                        {#if usesPhone(saved)}
                             <b>No SMS provider is sending, so customers cannot sign in right now.</b>
                         {:else}
                             Phone sign-in needs an SMS provider first.
