@@ -461,7 +461,7 @@ environment:
 			}))
 		}
 		if *withMsg91 {
-			modules = append(modules, msg91.New(msg91.Config{AuthKey: firstEnv("MSG91_AUTH_KEY", "MSG91_AUTHKEY")}))
+			modules = append(modules, msg91.New(msg91.Config{AuthKey: firstEnv("MSG91_AUTH_KEY", "MSG91_AUTHKEY"), Templates: msg91.EnvTemplates(os.Getenv)}))
 		}
 		// No environment fallback, unlike the providers above: a bot and a chat
 		// belong to one owner, and on an install that hosts several stores a

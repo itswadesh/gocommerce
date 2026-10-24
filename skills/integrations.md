@@ -462,7 +462,9 @@ module's tools exposed, you say so in `main()`.
   `gocommerce.ScopedNotifier` (`Serves(ctx, n) bool`) and a message you serve
   is yours alone, the channel's other backends standing aside for it. MSG91
   does this for Indian numbers and India-based stores; Twilio, unscoped,
-  carries the rest.
+  carries the rest. Before telling somebody a code is on its way, ask
+  `app.WouldDeliver(ctx, n)`: a channel can deliver and still have nobody for
+  one message, as MSG91 has nobody for an event without a template.
 - **Calling out with `&http.Client{}`.** A store can set where most
   modules connect, so the default client is `app.OutboundClient(timeout)`,
   which reaches only public addresses unless the install allows otherwise

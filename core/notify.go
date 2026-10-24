@@ -78,6 +78,21 @@ func (n *notifierSet) delivers(ctx context.Context, channel string) bool {
 	return false
 }
 
+// carries is whether a backend that delivers would take note: delivers asked
+// of the one message rather than the channel, since a scoped backend such as
+// MSG91 texts only what it has a template for.
+func (n *notifierSet) carries(ctx context.Context, note Notification) bool {
+	for _, e := range carriers(ctx, n.forChannel(note.Channel), note) {
+		if _, isLog := e.notifier.(logNotifier); isLog {
+			continue
+		}
+		if ready(ctx, e.notifier) {
+			return true
+		}
+	}
+	return false
+}
+
 // describe reports one channel and what stands behind it, for the settings
 // response and the doctor. Both ask the same question, so neither gets to
 // answer it differently.

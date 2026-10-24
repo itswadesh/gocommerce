@@ -71,6 +71,14 @@ func (a *App) NotifyNow(ctx context.Context, n Notification) error {
 	return a.sendFailure(a.notifier.send(ctx, n), n.Channel, "the message")
 }
 
+// WouldDeliver is whether n, sent now, would reach a provider rather than only
+// the log. A channel can deliver and still have nobody for one message: a
+// provider that texts only what it has a template for leaves the rest. A
+// caller about to tell somebody "we sent you a code" asks this first.
+func (a *App) WouldDeliver(ctx context.Context, n Notification) bool {
+	return a.notifier.carries(ctx, n)
+}
+
 // sendFailure is what an operator is told about a send that did not go.
 //
 // 422, not 502: a 5xx's message is replaced before it leaves the server, and
