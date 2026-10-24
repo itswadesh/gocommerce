@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"sort"
 	"strings"
 )
@@ -81,7 +83,7 @@ func (f *Fulfillments) Create(ctx context.Context, orderID int64, providerCode s
 
 	shipment, err := provider.Ship(ctx, order, req)
 	if err != nil {
-		return nil, Internalf(err, "%s could not create the shipment", providerCode)
+		return nil, f.shipFailure(err, providerCode)
 	}
 	if shipment.Provider == "" {
 		shipment.Provider = providerCode
@@ -640,4 +642,26 @@ func (f *Fulfillments) parcelFor(ctx context.Context, o *Order, lines []ShipLine
 		}
 	}
 	return parcel, nil
+}
+
+// shipFailure is what an operator is told when a carrier did not book.
+//
+// 422, not 500: a 5xx's message is replaced before it leaves the server, and
+// the carrier's own words ("No such user", "pincode not serviceable") are the
+// answer the operator pressed the button for. A carrier that could not be
+// reached is the exception: that detail is an address on the server's
+// network, so it stays in the log, as a notification provider's does.
+func (f *Fulfillments) shipFailure(err error, providerCode string) error {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.Status < 500 {
+		return err
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		f.app.log.Error("a shipment could not reach the carrier", "provider", providerCode, "error", err)
+		return &APIError{Status: http.StatusUnprocessableEntity, Code: "provider_unreachable",
+			Message: "Could not reach " + providerCode + ", so nothing was booked. Try again in a minute; if it keeps failing, the server log says why."}
+	}
+	return &APIError{Status: http.StatusUnprocessableEntity, Code: "provider_refused",
+		Message: providerCode + " refused the shipment: " + err.Error(), wrapped: err}
 }

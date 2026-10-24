@@ -100,7 +100,9 @@ func newApp(t *testing.T, cfg Config, shape func(*stub)) (*gocommerce.App, *stub
 		}
 	})
 
-	cfg.Token = "dl_test"
+	if cfg.Token == "" {
+		cfg.Token = "dl_test"
+	}
 	cfg.BaseURL = server.URL
 	if cfg.PickupLocation == "" {
 		cfg.PickupLocation = "Primary"
@@ -211,6 +213,23 @@ func TestRefusedShipmentIsAFailure(t *testing.T) {
 	}
 	if order.Status == gocommerce.OrderShipped {
 		t.Error("the order moved to shipped on a refused manifest")
+	}
+}
+
+// The panel shows the operator what Delhivery said. A rejected token comes
+// back as "No such user"; a 500 would have replaced it with "internal error".
+func TestTheOperatorSeesDelhiverysReason(t *testing.T) {
+	app, _ := newApp(t, Config{Token: "not_a_token"}, nil)
+	product := gctest.CreateProduct(t, app, "DL-6", 2500, 10)
+	result := gctest.Buy(t, app, gocommerce.CodeCOD, product.DefaultVariant().ID, 1)
+
+	rec := gctest.AdminRequest(t, app, http.MethodPost, "/api/admin/create-fulfillment",
+		map[string]any{"order_id": result.Order.ID, "provider": "delhivery"})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d %s, want 422", rec.Code, rec.Body)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, "bad token") || !strings.Contains(body, "provider_refused") {
+		t.Errorf("body = %s, want Delhivery's own words", body)
 	}
 }
 
