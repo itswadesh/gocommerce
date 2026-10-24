@@ -206,10 +206,17 @@
             </div>
         {/if}
 
+        <!-- From 1280px the page is two columns: what the store sold on the
+             left, where the chart has room, and what needs doing next (the
+             latest orders, stock running out) beside it, so a desktop sees
+             all of it without scrolling. Narrower, one column, in the same
+             order. -->
+        <div class="tw:grid tw:grid-cols-1 tw:items-start tw:gap-3 tw:xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] tw:xl:grid-rows-[auto_1fr]">
         {#if mayOrders}
             <!-- The latest orders, two columns wide from 1024px as Litekart
-                 draws them: ten orders in the height of five. -->
-            <section class="tw:rounded-xl tw:border tw:bg-card">
+                 draws them: ten orders in the height of five. In the side
+                 column from 1280px they are one list again. -->
+            <section class="tw:min-w-0 tw:rounded-xl tw:border tw:bg-card tw:xl:col-start-2 tw:xl:row-start-1">
                 <div class="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2 tw:border-b tw:px-4 tw:py-2 tw:sm:px-5">
                     <h2 class="tw:text-sm tw:font-semibold">Orders</h2>
                     <!-- Secondary navigation is a text link with an arrow, not a
@@ -222,26 +229,20 @@
                     </a>
                 </div>
 
-                <div class="tw:grid tw:grid-cols-1 tw:lg:grid-cols-2 recent-grid">
+                <div class="tw:grid tw:grid-cols-1 tw:lg:grid-cols-2 tw:xl:grid-cols-1 recent-grid">
                     {#each recent as order (order.id)}
                         <!-- A row is a link rather than a clickable <tr>: it
                              middle-clicks into a second tab, takes focus, and
                              answers Enter without a key handler of its own. -->
                         <a
                             href="{base}/dash/orders/{order.id}"
+                            title="Placed {relativeTime(order.created_at)}"
                             class="recent-row tw:flex tw:items-center tw:gap-3 tw:px-4 tw:py-1.5 tw:text-foreground tw:no-underline tw:transition-colors tw:hover:bg-muted/50 tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:focus-visible:ring-inset tw:focus-visible:outline-none tw:sm:px-5"
                         >
                             <div class="tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-2">
                                 <span class="tw:size-1.5 tw:shrink-0 tw:rounded-full {dotFor(order.status)}" aria-hidden="true"></span>
                                 <span class="tw:shrink-0 tw:font-mono tw:text-sm tw:font-semibold">{order.number}</span>
                                 <span class="tw:truncate tw:text-xs tw:text-muted-foreground">{order.name || order.email}</span>
-                                <!-- The time sits with the row rather than under
-                                     it, and is the first thing to go when the
-                                     column is narrow: which order and whose it
-                                     is both outrank "yesterday". -->
-                                <span class="tw:ml-auto tw:hidden tw:shrink-0 tw:text-xs tw:text-muted-foreground tw:xl:inline">
-                                    {relativeTime(order.created_at)}
-                                </span>
                             </div>
                             <span class="tw:shrink-0 tw:text-sm tw:font-medium tw:tabular-nums">{formatMoney(order.total)}</span>
                             <!-- Status is never the dot alone; the word is always
@@ -263,7 +264,7 @@
                     {/if}
 
                     {#if !loading && !recent.length}
-                        <p class="tw:px-4 tw:py-8 tw:text-center tw:text-sm tw:text-muted-foreground tw:sm:px-5 tw:lg:col-span-2">
+                        <p class="tw:px-4 tw:py-8 tw:text-center tw:text-sm tw:text-muted-foreground tw:sm:px-5 tw:lg:col-span-2 tw:xl:col-span-1">
                             No orders yet. They will appear here as soon as somebody buys something.
                         </p>
                     {/if}
@@ -271,12 +272,16 @@
             </section>
 
             <!-- What the store sold: the Reports screen embedded, without its
-                 own tile row — the revenue tile above is that figure. -->
-            <ReportsPanel embedded tiles={false} onreport={(r) => (revenue = r?.currencies?.[0]?.totals?.net ?? null)} />
+                 own tile row — the revenue tile above is that figure. After the
+                 orders in the page, as a phone reads it; the grid puts it on
+                 the left from 1280px. -->
+            <div class="tw:min-w-0 tw:xl:col-start-1 tw:xl:row-span-2 tw:xl:row-start-1">
+                <ReportsPanel embedded tiles={false} onreport={(r) => (revenue = r?.currencies?.[0]?.totals?.net ?? null)} />
+            </div>
         {/if}
 
         {#if mayStock}
-            <section class="tw:rounded-xl tw:border tw:bg-card">
+            <section class="tw:min-w-0 tw:rounded-xl tw:border tw:bg-card {mayOrders ? 'tw:xl:col-start-2' : 'tw:xl:col-span-2'}">
                 <div class="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2 tw:border-b tw:px-4 tw:py-2 tw:sm:px-5">
                     <h2 class="tw:text-sm tw:font-semibold">Running low</h2>
                     <a
@@ -289,7 +294,7 @@
 
                 <div class="tw:divide-y">
                     {#each lowStock as variant (variant.id)}
-                        <div class="tw:flex tw:flex-col tw:gap-1 tw:px-4 tw:py-1.5 tw:sm:flex-row tw:sm:items-center tw:sm:gap-4 tw:sm:px-5">
+                        <div class="tw:flex tw:flex-col tw:gap-1 tw:px-4 tw:py-1.5 tw:sm:flex-row tw:sm:items-center tw:sm:gap-4 tw:sm:px-5 tw:xl:flex-col tw:xl:items-stretch tw:xl:gap-1">
                             <!-- SKU and variant on one line where there is room
                                  for them, the way the order rows above read.
                                  Stacked they cost twenty pixels a row to put
@@ -303,13 +308,13 @@
                                  take fixed tracks above it so the digits line up
                                  in columns down the list. -->
                             <div class="tw:flex tw:items-center tw:gap-4 tw:text-xs tw:text-muted-foreground">
-                                <span class="tw:shrink-0 tw:sm:w-24 tw:sm:text-right">
+                                <span class="tw:shrink-0 tw:sm:w-24 tw:sm:text-right tw:xl:w-auto tw:xl:text-left">
                                     on hand <b class="tw:font-medium tw:text-foreground tw:tabular-nums">{variant.stock_on_hand}</b>
                                 </span>
-                                <span class="tw:shrink-0 tw:sm:w-24 tw:sm:text-right">
+                                <span class="tw:shrink-0 tw:sm:w-24 tw:sm:text-right tw:xl:w-auto tw:xl:text-left">
                                     reserved <b class="tw:font-medium tw:text-foreground tw:tabular-nums">{variant.stock_reserved}</b>
                                 </span>
-                                <span class="tw:shrink-0 tw:sm:w-24 tw:sm:text-right">
+                                <span class="tw:shrink-0 tw:sm:w-24 tw:sm:text-right tw:xl:w-auto tw:xl:text-left">
                                     available
                                     <b class="tw:font-semibold tw:tabular-nums {variant.available <= 0 ? 'tw:text-destructive' : 'tw:text-foreground'}">
                                         {variant.available}
@@ -335,6 +340,8 @@
             </section>
         {/if}
 
+        </div>
+
         {#if !mayOrders && !mayCatalog && !mayStock}
             <p class="tw:py-8 tw:text-center tw:text-sm tw:text-muted-foreground">
                 Your role does not carry any of the figures this page shows. The screens it does reach
@@ -355,7 +362,7 @@
     .recent-row {
         border-bottom: 1px solid var(--surfaceAlt2Color);
     }
-    @media (min-width: 1024px) {
+    @media (min-width: 1024px) and (max-width: 1279.98px) {
         .recent-row:nth-child(odd) {
             border-right: 1px solid var(--surfaceAlt2Color);
         }
