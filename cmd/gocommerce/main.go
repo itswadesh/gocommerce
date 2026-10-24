@@ -89,7 +89,8 @@ commands:
   migrate    apply migrations and exit
   superuser  create or update an admin-panel operator, then exit
   store      create a store: store create <slug> [name]; or mark one a demo
-             (masked personal data): store demo <slug> on|off; then exit
+             (masked personal data): store demo <slug> on|off; or set its plan:
+             store plan <slug> free|pro; then exit
   doctor     run operational diagnostics and exit (-json for agents)
   secrets    secrets seal: seal every stored secret in every store under
              GOCOMMERCE_SECRETS_KEY, including what the previous key sealed;
@@ -639,7 +640,7 @@ environment:
 // variable must not silently reset that operator's password.
 // storeCmd opens a new store, seeded so it can stock and sell. Its first
 // operator is added with `superuser create` and -store.
-const storeUsage = "usage: gocommerce store create <slug> [name] | gocommerce store demo <slug> on|off | gocommerce store brand <slug> <panel host>"
+const storeUsage = "usage: gocommerce store create <slug> [name] | gocommerce store demo <slug> on|off | gocommerce store brand <slug> <panel host> | gocommerce store plan <slug> free|pro"
 
 func storeCmd(ctx context.Context, app *gocommerce.App, args []string) error {
 	if len(args) == 3 && args[0] == "demo" {
@@ -647,6 +648,9 @@ func storeCmd(ctx context.Context, app *gocommerce.App, args []string) error {
 	}
 	if len(args) == 3 && args[0] == "brand" {
 		return storeBrandCmd(ctx, app, args[1], args[2])
+	}
+	if len(args) == 3 && args[0] == "plan" {
+		return storePlanCmd(ctx, app, args[1], args[2])
 	}
 	if len(args) < 2 || args[0] != "create" {
 		return errors.New(storeUsage)
@@ -688,6 +692,24 @@ func storeDemoCmd(ctx context.Context, app *gocommerce.App, name, state string) 
 	} else {
 		fmt.Printf("store %s is live again: its admin screens show personal data in full\n", st.Slug)
 	}
+	return nil
+}
+
+// storePlanCmd moves a store onto the free or the Pro plan (D119). A command,
+// as demo is: a plan is what the store has paid for, not a switch its own
+// staff reach.
+func storePlanCmd(ctx context.Context, app *gocommerce.App, name, plan string) error {
+	st, err := app.Stores().BySlug(ctx, name)
+	if err != nil && gocommerce.ValidStoreID(name) {
+		st, err = app.Stores().Get(ctx, name)
+	}
+	if err != nil {
+		return fmt.Errorf("no store %q", name)
+	}
+	if err := app.Stores().SetPlan(ctx, st.ID, strings.ToLower(plan)); err != nil {
+		return err
+	}
+	fmt.Printf("store %s is now on the %s plan\n", st.Slug, strings.ToLower(plan))
 	return nil
 }
 

@@ -264,7 +264,9 @@ the same screen; somebody in several stores picks one after signing in, and
 can open a new store from there. A store kept to show people can be made a
 demo on its own with `gocommerce store demo <slug> on`: its admin screens mask
 emails and phone numbers and its team, roles and API keys are frozen, while
-the stores beside it stay live (`off` turns it back). `GET /api/stores/my`, `POST
+the stores beside it stay live (`off` turns it back). A store is on the free plan
+until `gocommerce store plan <slug> pro` moves it; Pro is what lets its
+customers sign in with a phone outside India (D119). `GET /api/stores/my`, `POST
 /api/stores/switch` and `POST /api/stores/create` do the same for a script.
 
 Stores are kept apart by PostgreSQL row-level security, so **the engine must
