@@ -36,7 +36,6 @@
     import { hasModule } from "$lib/modules.svelte.js";
     import { openDocument, safeFilename } from "$lib/download.js";
     import { rise } from "$lib/motion.js";
-    import AccessTokenCard from "$lib/components/AccessTokenCard.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
@@ -1945,16 +1944,6 @@
                                     <div class="txt-hint txt-sm m-t-5">
                                         Written to in {order.language}
                                     </div>
-                                {/if}
-                                <!-- In the Customer card because the access
-                                     token is the customer's, not the shop's: it
-                                     is how they read this order back, and the
-                                     call it answers is "I have lost my link".
-                                     Behind orders.write, which is what the route
-                                     asks for — reading an order is every role's,
-                                     handing out the key to it is not. -->
-                                {#if mayWrite}
-                                    <AccessTokenCard {order} />
                                 {/if}
                             {/if}
                         </section>

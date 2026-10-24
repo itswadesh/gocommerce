@@ -83,8 +83,25 @@ func coreMigrations() []Migration {
 		ScopeMigration("0072_scope_api_key_rates", "api_key_rates"),
 		{ID: "0073_store_brand", SQL: migration0073StoreBrand},
 		{ID: "0074_superuser_brand", SQL: migration0074SuperuserBrand},
+		{ID: "0075_order_lookup_codes", SQL: migration0075OrderLookupCodes},
+		ScopeMigration("0076_scope_order_lookup_codes", "order_lookup_codes"),
 	}
 }
+
+// M75 — the 4-digit codes a guest opens their order with (D115). Only a hash
+// of the code is kept, keyed to its order. A row is the record that counts
+// the per-minute and per-day limits, so it is kept a day past its expiry.
+const migration0075OrderLookupCodes = `
+CREATE TABLE order_lookup_codes (
+    id         bigserial   PRIMARY KEY,
+    order_id   bigint      NOT NULL REFERENCES orders (id) ON DELETE CASCADE,
+    code_hash  text        NOT NULL,
+    attempts   int         NOT NULL DEFAULT 0,
+    expires_at timestamptz NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX order_lookup_codes_order_idx ON order_lookup_codes (order_id, created_at);
+`
 
 // M55 — a revoked invitation is kept, marked, rather than deleted, so the
 // team screen can list what was sent and what became of it, as it already
