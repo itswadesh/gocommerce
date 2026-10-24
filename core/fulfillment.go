@@ -656,6 +656,13 @@ func (f *Fulfillments) shipFailure(err error, providerCode string) error {
 	if errors.As(err, &apiErr) && apiErr.Status < 500 {
 		return err
 	}
+	// Before the network check, which it would also match: the operator
+	// typed this address, so naming it is the answer, and the error names
+	// only what they typed (outbound.go).
+	if errors.Is(err, ErrNotPublic) {
+		return &APIError{Status: http.StatusUnprocessableEntity, Code: "provider_refused",
+			Message: providerCode + " was not called: " + err.Error(), wrapped: err}
+	}
 	var netErr net.Error
 	if errors.As(err, &netErr) {
 		f.app.log.Error("a shipment could not reach the carrier", "provider", providerCode, "error", err)
