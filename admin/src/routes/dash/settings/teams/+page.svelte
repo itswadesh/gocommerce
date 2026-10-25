@@ -646,7 +646,7 @@
                             <td class="col-field-name-id" data-name="Email">
                                 <span class="txt-bold">{su.email}</span>
                                 {#if me && su.id === me.id}
-                                    <span class="label sm">you</span>
+                                    <span class="label sm you">you</span>
                                 {/if}
                             </td>
                             <!-- The picker is the control, not a link into the
@@ -709,7 +709,7 @@
                             >
                                 {relativeTime(su.updated_at)}
                             </td>
-                            <td class="col-meta min-width">
+                            <td class="col-meta min-width row-actions">
                                 <!-- Enabled whatever the count says: a number
                                      read a few minutes ago must never disable a
                                      security control. The title is what changes. -->
@@ -737,7 +737,7 @@
                                         <i class="ri-delete-bin-7-line" aria-hidden="true"></i>
                                     </button>
                                 {/if}
-                                <i class="ri-arrow-right-s-line" aria-hidden="true"></i>
+                                <i class="ri-arrow-right-s-line row-chevron" aria-hidden="true"></i>
                             </td>
                         </tr>
                     {/each}
@@ -803,7 +803,7 @@
                                     <th class="col-field-type-select">Role</th>
                                     <th class="col-field-type-select">Status</th>
                                     <th class="col-field-type-date">Expires</th>
-                                    <th class="col-meta min-width">Actions</th>
+                                    <th class="col-meta min-width actions-heading">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -854,7 +854,7 @@
                                                 {#if inv.status === "expired"}<span class="txt-hint">(expired)</span>{/if}
                                             {/if}
                                         </td>
-                                        <td class="col-meta min-width" data-name="Actions">
+                                        <td class="col-meta min-width row-actions" data-name="Actions">
                                             {#if writable && open}
                                                 <div class="inline-flex gap-5">
                                                     <button
@@ -1261,5 +1261,28 @@
     .invite-select {
         width: auto;
         flex: 0 0 auto;
+    }
+
+    /*
+     * On a phone each person is a card. Their buttons stay (row-actions):
+     * signing someone out, removing them, and resending or revoking an
+     * invitation are what a phone is reached for here. The chevron goes, the
+     * card itself still opening the editor; "you" is a tag beside the email,
+     * not a bar under it; and the actions column's heading, alone above the
+     * cards, goes with the column.
+     */
+    @media (max-width: 600px) {
+        .page-superusers .responsive-table td.row-actions .row-chevron,
+        .page-superusers .responsive-table th.actions-heading {
+            display: none;
+        }
+        .page-superusers .responsive-table td.col-field-name-id .label.you {
+            width: auto;
+            margin-left: 6px;
+            font-weight: normal;
+        }
+        .page-superusers .responsive-table td.row-actions {
+            margin-top: -8px;
+        }
     }
 </style>
