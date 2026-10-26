@@ -1,27 +1,32 @@
 package gocommerce
 
 import (
+	"context"
+	"database/sql"
+	"encoding/json"
 	"regexp"
 	"sort"
 	"strings"
 )
 
-// The notification log is open to anybody who may read orders, and some of
-// what the store sends is a key to somebody's account: an operator's reset
-// link and code, an invitation, a shopper's reset or confirmation link, a
-// basket's token. Nobody reading the log needs another person's key — the
-// person it was for has it in their inbox — so every read of the log shows
-// those values as hiddenCredential, whoever is reading, the owner included.
+// The notification log is open to anybody who may read orders, and its table
+// to anybody who may run a saved report, and some of what the store sends is a
+// key to somebody's account: an operator's reset link and code, an invitation,
+// a shopper's reset or confirmation link, a sign-in code, a basket's token.
+// Nobody reading the log needs another person's key — the person it was for
+// has it in their inbox — so the key never reaches the log.
 //
-// The row itself keeps them, because Resend delivers the stored data again to
-// the same recipient and a resent reset link must still work. Resend is the
-// one reader that sees them (Notifications.stored), and it hands them to the
-// delivery backends, never to the caller. Hiding on the way out rather than
-// on the way in is also what covers the rows written before this rule.
+// Two layers. The sender names its credentials (Notification.Secrets) and the
+// row is written with each of them hidden (withoutSecrets), so the table holds
+// nothing to use, and a message whose key is gone cannot be sent again from
+// the log (Notifications.Resend). Every read of the log also hides values by
+// their name and by what they hold (hideNotificationCredentials), for a module
+// that has not named its credentials.
 
-// hiddenCredential stands in for a value the log does not show. Non-empty on
-// purpose: a template that branches on the value ({{if .reset_url}}) previews
-// the branch the message took, and an empty value stays empty.
+// hiddenCredential stands in for a value the log does not keep or show.
+// Non-empty on purpose: a template that branches on the value ({{if
+// .reset_url}}) previews the branch the message took, and an empty value stays
+// empty.
 const hiddenCredential = "(hidden)"
 
 // minCredentialLen is the shortest credential looked for inside other values.
@@ -64,28 +69,57 @@ func credentialParam(name string) bool {
 	}
 }
 
-// hideNotificationCredentials hides rec's credentials in place: every value
-// whose key names one, every other value's copy of one, every credential a
-// link carries in its query, and the same in the error a backend returned —
-// a provider may quote the message it refused.
-func hideNotificationCredentials(rec *NotificationRecord) {
+// hideKeys hides, in place, every non-empty value of data whose key secret
+// reports, and returns what hides a copy of one of them in other text.
+func hideKeys(data map[string]string, secret func(key string) bool) func(string) string {
 	var known []string
-	for k, v := range rec.Data {
-		if v == "" || !credentialKey(k) {
+	for k, v := range data {
+		if v == "" || !secret(k) {
 			continue
 		}
 		if len(v) >= minCredentialLen {
 			known = append(known, v)
 		}
-		rec.Data[k] = hiddenCredential
+		data[k] = hiddenCredential
 	}
 	// Longest first, so a link is replaced whole before the token inside it.
 	sort.Slice(known, func(i, j int) bool { return len(known[i]) > len(known[j]) })
-	scrub := func(s string) string {
+	return func(s string) string {
 		for _, c := range known {
 			s = strings.ReplaceAll(s, c, hiddenCredential)
 		}
-		return queryParam.ReplaceAllStringFunc(s, func(m string) string {
+		return s
+	}
+}
+
+// withoutSecrets is note's data and the backends' error as the log keeps
+// them: each of note.Secrets hidden, and any copy of one elsewhere — a
+// provider may quote the message it refused.
+func withoutSecrets(note Notification, errText string) (map[string]string, string) {
+	secret := map[string]bool{}
+	for _, k := range note.Secrets {
+		secret[k] = true
+	}
+	data := make(map[string]string, len(note.Data))
+	for k, v := range note.Data {
+		data[k] = v
+	}
+	scrub := hideKeys(data, func(k string) bool { return secret[k] })
+	for k, v := range data {
+		if !secret[k] {
+			data[k] = scrub(v)
+		}
+	}
+	return data, scrub(errText)
+}
+
+// hideNotificationCredentials hides rec's credentials in place for a reader:
+// every value whose key names one, every other value's copy of one, every
+// credential a link carries in its query, and the same in the error.
+func hideNotificationCredentials(rec *NotificationRecord) {
+	known := hideKeys(rec.Data, credentialKey)
+	scrub := func(s string) string {
+		return queryParam.ReplaceAllStringFunc(known(s), func(m string) string {
 			p := queryParam.FindStringSubmatch(m)
 			if p[3] == "" || !credentialParam(p[2]) {
 				return m
@@ -99,4 +133,95 @@ func hideNotificationCredentials(rec *NotificationRecord) {
 		}
 	}
 	rec.Error = scrub(rec.Error)
+}
+
+// carriedCredential reports whether a stored message had a credential taken
+// out of it, so sending it again would send "(hidden)" where the key was.
+func carriedCredential(data map[string]string) bool {
+	for _, v := range data {
+		if v == hiddenCredential {
+			return true
+		}
+	}
+	return false
+}
+
+// legacySecrets are the credentials the engine and its modules sent before
+// Notification.Secrets existed, which migration 0078 hides in the rows
+// already written.
+var legacySecrets = []string{
+	"reset_token", "reset_code", "reset_url", "invite_url", "invite_token",
+	"verify_token", "verify_url", "cart_token", "recovery_url", "code",
+}
+
+// migrate0078HideLoggedCredentials hides the credentials in every store's
+// existing notification rows, the way record writes new ones. Store by store,
+// because row security shows a statement one store's rows.
+func migrate0078HideLoggedCredentials(ctx context.Context, tx *sql.Tx) error {
+	stores, err := tx.QueryContext(ctx, `SELECT id FROM stores`)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for stores.Next() {
+		var id string
+		if err := stores.Scan(&id); err != nil {
+			stores.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	stores.Close()
+	if err := stores.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := hideLoggedCredentialsIn(WithStore(ctx, id), tx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func hideLoggedCredentialsIn(ctx context.Context, tx *sql.Tx) error {
+	type row struct {
+		id     int64
+		data   []byte
+		errMsg string
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, data, error FROM notifications
+		WHERE jsonb_exists_any(data, ARRAY['`+strings.Join(legacySecrets, "', '")+`'])`)
+	if err != nil {
+		return err
+	}
+	var found []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.data, &r.errMsg); err != nil {
+			rows.Close()
+			return err
+		}
+		found = append(found, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, r := range found {
+		note := Notification{Secrets: legacySecrets}
+		if err := json.Unmarshal(r.data, &note.Data); err != nil {
+			return err
+		}
+		data, errMsg := withoutSecrets(note, r.errMsg)
+		raw, err := json.Marshal(data)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE notifications SET data = $2, error = $3 WHERE id = $1`,
+			r.id, raw, errMsg); err != nil {
+			return err
+		}
+	}
+	return nil
 }

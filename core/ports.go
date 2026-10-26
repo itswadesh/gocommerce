@@ -267,6 +267,11 @@ type Notification struct {
 	To       string            `json:"to"`
 	Language string            `json:"language"`
 	Data     map[string]string `json:"data"`
+	// Secrets names the Data keys that hold a live credential: a reset link,
+	// a sign-in code, an invitation. The message carries them; the
+	// notification log keeps "(hidden)" in their place, because its table is
+	// readable by more people than the one the key is for.
+	Secrets []string `json:"-"`
 }
 
 // --------------------------------------------------------------- i18n

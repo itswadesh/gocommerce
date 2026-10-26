@@ -470,6 +470,7 @@ func (s *Invitations) email(ctx context.Context, inv *Invitation) (bool, string)
 			"invited_by":       inv.InvitedByName,
 			"expires_in_hours": strconv.Itoa(int(invitationTTL / time.Hour)),
 		},
+		Secrets: []string{"invite_url"},
 	})
 	if err != nil {
 		// The link is never logged: it is a credential until it is used.

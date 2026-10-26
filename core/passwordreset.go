@@ -596,6 +596,7 @@ func (s *Superusers) deliverReset(reqCtx context.Context, id int64, email, token
 			To:       email,
 			Language: s.app.cfg.DefaultLanguage,
 			Data:     data,
+			Secrets:  []string{"reset_token", "reset_code", "reset_url"},
 		}); err != nil {
 			// The token is never logged: the log is not a place a live
 			// credential belongs.

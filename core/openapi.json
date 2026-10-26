@@ -9579,7 +9579,7 @@
             "adminToken": []
           }
         ],
-        "description": "Delivers the recorded message again through whatever backends the store has now — the one that failed last week may be fixed, and one that only reached the log may have an email module behind it today. The new attempt is its own row, pointing at this one, and is what comes back. It carries the links the first one did, to the same recipient; the row that comes back hides them, as the log does. Needs orders.write.",
+        "description": "Delivers the recorded message again through whatever backends the store has now — the one that failed last week may be fixed, and one that only reached the log may have an email module behind it today. The new attempt is its own row, pointing at this one, and is what comes back, to the same recipient. A message that carried a credential — a reset or confirmation link, an invitation, a one-time code — is refused with 409: the log never keeps the credential, so there is nothing to send; the person asks for a new one. Needs orders.write.",
         "parameters": [
           {
             "$ref": "#/components/parameters/PathID"
@@ -9606,6 +9606,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       }

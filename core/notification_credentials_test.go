@@ -178,31 +178,60 @@ func TestTheLogHidesAnInvitationLink(t *testing.T) {
 	}
 }
 
-// Sending a message again sends what was sent: the live link, to the person it
-// was for. Only what the log shows is hidden.
-func TestAResendStillCarriesTheLiveLinkToItsRecipient(t *testing.T) {
+// The log does not keep the link, so it cannot send it again: a resend is
+// refused with a reason, and sends nothing, rather than mailing "(hidden)".
+func TestAMessageWhoseLinkIsGoneIsNotResent(t *testing.T) {
 	app, rec := resetApp(t)
 	app.cfg.PanelURL = "https://admin.example"
 	newSuperuser(t, app, "owner@example.com", "the old password")
-	link := resetMail(t, app, rec, "owner@example.com").Data["reset_url"]
+	resetMail(t, app, rec, "owner@example.com")
 
 	staff := logReaders(t, app)[0]
 	row := listLogged(t, app, staff, EventSuperuserPasswordReset)[0]
 	again := do(t, app, http.MethodPost, "/api/admin/notifications/"+strconv.FormatInt(row.ID, 10)+"/resend", staff.auth)
-	if again.Code != http.StatusOK {
-		t.Fatalf("resend = %d: %s", again.Code, again.Body)
+	if again.Code != http.StatusConflict || !strings.Contains(again.Body.String(), "Ask for a new one") {
+		t.Fatalf("resend = %d: %s; want 409 saying to ask for a new one", again.Code, again.Body)
 	}
-	var body struct {
-		Data NotificationRecord `json:"data"`
+	if notes := resetNotes(t, app, rec); len(notes) != 1 {
+		t.Fatalf("%d reset emails went out; want only the first", len(notes))
 	}
-	decodeJSONBody(t, again.Body.Bytes(), &body)
-	showsNone(t, "the resend's answer", body.Data, []string{link})
+}
 
-	notes := resetNotes(t, app, rec)
-	last := notes[len(notes)-1]
-	if len(notes) != 2 || last.To != "owner@example.com" || last.Data["reset_url"] != link {
-		t.Fatalf("resent %d emails, the last to %q with link %q; want the live link %q to the owner",
-			len(notes), last.To, last.Data["reset_url"], link)
+// Rows written before the log stopped keeping credentials lose them too.
+func TestTheMigrationHidesCredentialsAlreadyLogged(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	const tok = "tok-0123456789abcdef"
+	link := "https://admin.example/admin/auth/reset-password/" + tok
+	if _, err := app.db.ExecContext(ctx, `
+		INSERT INTO notifications (event, channel, recipient, status, error, data)
+		VALUES ('superuser.password_reset', 'email', 'owner@example.com', 'failed', $1, $2)`,
+		"provider refused: "+link,
+		`{"reset_token":"`+tok+`","reset_code":"123456","reset_url":"`+link+`","operator_email":"owner@example.com"}`); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := app.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate0078HideLoggedCredentials(ctx, tx); err != nil {
+		tx.Rollback()
+		t.Fatalf("migrate: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var data, errText string
+	if err := app.db.QueryRowContext(ctx, `SELECT data::text, error FROM notifications`).Scan(&data, &errText); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{tok, "123456"} {
+		if strings.Contains(data, s) || strings.Contains(errText, s) {
+			t.Errorf("after the migration the row holds %q: data %s, error %q", s, data, errText)
+		}
+	}
+	if !strings.Contains(data, "owner@example.com") || errText != "provider refused: "+hiddenCredential {
+		t.Errorf("data %s, error %q; want the rest of the row kept", data, errText)
 	}
 }
 

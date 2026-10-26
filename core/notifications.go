@@ -100,11 +100,12 @@ func (s *Notifications) record(ctx context.Context, note Notification, outcome n
 	message := ""
 	if sendErr != nil {
 		message = sendErr.Error()
-		if len(message) > 2000 {
-			message = message[:2000]
-		}
 	}
-	data, err := json.Marshal(note.Data)
+	kept, message := withoutSecrets(note, message)
+	if len(message) > 2000 {
+		message = message[:2000]
+	}
+	data, err := json.Marshal(kept)
 	if err != nil {
 		data = []byte("{}")
 	}
@@ -202,6 +203,9 @@ func (s *Notifications) Resend(ctx context.Context, id int64) (*NotificationReco
 	if err != nil {
 		return nil, err
 	}
+	if carriedCredential(note.Data) {
+		return nil, Conflictf("This message carried a one-time link or code, which the log does not keep, so it cannot be sent again. Ask for a new one instead.")
+	}
 	sendErr := s.app.notifier.sendFrom(ctx, note, &id)
 	// The row the funnel just wrote is the answer, whichever way it went.
 	var latest NotificationRecord
@@ -217,10 +221,8 @@ func (s *Notifications) Resend(ctx context.Context, id int64) (*NotificationReco
 	return &latest, nil
 }
 
-// stored is the message as it went out, credentials and all — the one read of
-// the log nobody is shown. Resend hands it to the delivery backends, addressed
-// to whoever it was addressed to before; every other read hides them
-// (hideNotificationCredentials).
+// stored is the message as the log keeps it, for Resend to hand to the
+// delivery backends, addressed to whoever it was addressed to before.
 func (s *Notifications) stored(ctx context.Context, id int64) (Notification, error) {
 	var note Notification
 	var raw []byte

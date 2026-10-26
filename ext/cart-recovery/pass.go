@@ -592,6 +592,7 @@ func (m *Module) sendStep(ctx context.Context, set *settingsRow, c claimed, res 
 	data := m.data(ctx, set.Settings, cur, contact, c.linkToken, c.stepsSent+1)
 	sendErr := m.app.Notify(ctx, gocommerce.Notification{
 		Event: step.Template, Channel: gocommerce.ChannelEmail, To: contact, Data: data,
+		Secrets: linkSecrets,
 	})
 	if sendErr != nil {
 		res.Failed++
@@ -639,6 +640,9 @@ func (m *Module) sendStep(ctx context.Context, set *settingsRow, c claimed, res 
 	}
 	return tx.Commit()
 }
+
+// linkSecrets are the keys in data that open the shopper's basket.
+var linkSecrets = []string{"cart_token", "recovery_url"}
 
 // data flattens one message for a template, in the flat strings the order
 // notifications use: the module hands a notifier values, and the store's
