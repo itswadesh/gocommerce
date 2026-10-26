@@ -400,7 +400,7 @@ func AssertSpecCoversModuleRoutes(t *testing.T, app *gocommerce.App, module stri
 
 // AssertNotificationLogHides fails when the notification log shows any of
 // secrets for event — in the list, in a row, or in its preview — to staff, to
-// an owner, or to the static admin token.
+// an owner, or to the static admin token — or when the stored row holds one.
 //
 // The log is open to anybody who may read orders, so a module whose message
 // carries a credential — a reset link, an invitation, a basket's token — proves
@@ -458,6 +458,23 @@ func AssertNotificationLogHides(t *testing.T, app *gocommerce.App, event string,
 			DecodeData(t, pv, &preview)
 			shows(r.who+" previewing "+event, preview.Subject, preview.Body)
 		}
+	}
+	// The row itself, which a saved report reads around every screen above.
+	rows, err := app.DB().QueryContext(context.Background(),
+		`SELECT data::text, error FROM notifications WHERE event = $1`, event)
+	if err != nil {
+		t.Fatalf("gctest: read the stored %s rows: %v", event, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var data, errText string
+		if err := rows.Scan(&data, &errText); err != nil {
+			t.Fatalf("gctest: scan a stored %s row: %v", event, err)
+		}
+		shows("the stored "+event+" row", data, errText)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("gctest: read the stored %s rows: %v", event, err)
 	}
 }
 

@@ -253,3 +253,47 @@ func TestCredentialsAreHiddenByNameAndByValue(t *testing.T) {
 		t.Errorf("error = %q, want the token hidden and the rest kept", rec.Error)
 	}
 }
+
+// The log is a table, and a saved report reads tables: staff may run any
+// report the owner saved, around everything the log's screens hide. So the
+// row itself must keep no key to anybody's account.
+func TestTheLogKeepsNoLiveCredential(t *testing.T) {
+	app, rec := resetApp(t)
+	app.cfg.PanelURL = "https://admin.example"
+	newSuperuser(t, app, "owner@example.com", "the old password")
+	mail := resetMail(t, app, rec, "owner@example.com")
+	code, inv := postInvitation(t, app, `{"email":"new-owner@example.com","role":"owner"}`)
+	if code != http.StatusCreated || inv["emailed"] != true {
+		t.Fatalf("invite = %d %v", code, inv)
+	}
+	inviteToken, _ := inv["token"].(string)
+	secrets := []string{mail.Data["reset_token"], mail.Data["reset_code"], mail.Data["reset_url"], inviteToken}
+	for _, s := range secrets {
+		if s == "" {
+			t.Fatalf("reset %v, invitation %v: the test needs every credential to look for", mail.Data, inv)
+		}
+	}
+
+	report, err := app.CustomReports().Save(context.Background(), CustomReportInput{
+		Name: "Delivery log", SQL: "SELECT event, data::text AS data, error FROM notifications ORDER BY id",
+	}, nil)
+	if err != nil {
+		t.Fatalf("save report: %v", err)
+	}
+	staff := logReaders(t, app)[0]
+	run := do(t, app, http.MethodPost, "/api/admin/reports/custom/"+strconv.FormatInt(report.ID, 10)+"/run", staff.auth)
+	if run.Code != http.StatusOK {
+		t.Fatalf("staff running the report = %d: %s", run.Code, run.Body)
+	}
+	body := run.Body.String()
+	for _, event := range []string{EventSuperuserPasswordReset, EventSuperuserInvitation} {
+		if !strings.Contains(body, event) {
+			t.Fatalf("the report holds no %s row; there is nothing to check:\n%s", event, body)
+		}
+	}
+	for _, s := range secrets {
+		if strings.Contains(body, s) {
+			t.Errorf("staff read %q out of the log through a report:\n%s", s, body)
+		}
+	}
+}
