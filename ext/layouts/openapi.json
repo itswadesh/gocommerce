@@ -1,0 +1,665 @@
+{
+  "paths": {
+    "/x/layouts/{page}": {
+      "get": {
+        "tags": [
+          "layouts"
+        ],
+        "summary": "A storefront page as the shop arranged it",
+        "description": "The published page (D125): its shown sections in order, each `{id, type, settings}`, and each product grid's `products` resolved live — active, on the request's channel, translated. Hidden sections are left out. With `preview=<key>` from the editor, the saved draft instead, answered `Cache-Control: no-store` and `X-Robots-Tag: noindex`. 404 while the `layouts` plugin is off or nothing is published: the storefront then draws its built-in page.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home"
+              ]
+            },
+            "description": "The page; only `home` can be arranged so far."
+          },
+          {
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "A preview key from the editor."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LayoutPublicPage"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Switched off, not published, or an expired preview key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/x/layouts/sections": {
+      "get": {
+        "tags": [
+          "layouts"
+        ],
+        "summary": "The section library",
+        "description": "Every section type a page can hold, with the fields the editor draws its form from and the engine validates against, and the themes a page may name.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The registry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "sections": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "themes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "pages": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/x/layouts/{page}": {
+      "get": {
+        "tags": [
+          "layouts"
+        ],
+        "summary": "A page's draft and what is published",
+        "description": "The draft (or, before the first save, the starting template: `saved` false, `version` 0), the published revision, and whether the two differ.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home"
+              ]
+            },
+            "description": "The page; only `home` can be arranged so far."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The page as the editor works on it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LayoutState"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a page that can be arranged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "adminToken": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "layouts"
+        ],
+        "summary": "Save the draft",
+        "description": "Replaces the draft with `document`, validated against the section library: an unknown type, a link that is not a web address or a path, a setting out of range, over 50 sections or 256 KB is 400 `validation_failed` naming the section. `version` is the one it was read at (0 for the first save); a stale one is 409 `stale_draft` and nothing is saved.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home"
+              ]
+            },
+            "description": "The page; only `home` can be arranged so far."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The page as the editor works on it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LayoutState"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Somebody saved the page after it was read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The document breaks a rule; the message names the section.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "version",
+                  "document"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "integer"
+                  },
+                  "document": {
+                    "$ref": "#/components/schemas/LayoutDocument"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/x/layouts/{page}/publish": {
+      "post": {
+        "tags": [
+          "layouts"
+        ],
+        "summary": "Publish the draft",
+        "description": "Makes the saved draft at `version` what the storefront shows, as a new immutable revision, in one transaction. 409 when the draft was saved since, or never saved.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home"
+              ]
+            },
+            "description": "The page; only `home` can be arranged so far."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The page as the editor works on it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LayoutState"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale or unsaved draft.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "version"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "integer",
+                    "description": "The draft's version as it was read."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/x/layouts/{page}/revisions": {
+      "get": {
+        "tags": [
+          "layouts"
+        ],
+        "summary": "Published versions",
+        "description": "The page's published revisions, newest first: number, when, by whom, how many sections, and which revision a rollback restored.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home"
+              ]
+            },
+            "description": "The page; only `home` can be arranged so far."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The revisions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LayoutRevision"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "adminToken": []
+          }
+        ]
+      }
+    },
+    "/api/admin/x/layouts/{page}/rollback": {
+      "post": {
+        "tags": [
+          "layouts"
+        ],
+        "summary": "Roll back",
+        "description": "Publishes an earlier revision's document again, as a new revision, and makes it the draft.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home"
+              ]
+            },
+            "description": "The page; only `home` can be arranged so far."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The page as the editor works on it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LayoutState"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such revision.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "revision"
+                ],
+                "properties": {
+                  "revision": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/x/layouts/{page}/preview": {
+      "post": {
+        "tags": [
+          "layouts"
+        ],
+        "summary": "A preview key",
+        "description": "A key that lets the storefront show the saved draft for 30 minutes: open the storefront with `?preview=<key>`. 409 before the first save.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home"
+              ]
+            },
+            "description": "The page; only `home` can be arranged so far."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "token": {
+                          "type": "string"
+                        },
+                        "expires_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nothing saved yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "adminToken": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "LayoutSection": {
+        "type": "object",
+        "required": [
+          "id",
+          "type"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,40}$"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "announcement-bar",
+              "hero",
+              "product-grid",
+              "image-with-text",
+              "rich-text",
+              "benefits"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "settings": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "LayoutDocument": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "integer"
+          },
+          "theme": {
+            "type": "string",
+            "default": "default"
+          },
+          "sections": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/LayoutSection"
+            }
+          }
+        }
+      },
+      "LayoutRevision": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "integer"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "published_by": {
+            "type": "string"
+          },
+          "restored_from": {
+            "type": "integer",
+            "nullable": true
+          },
+          "sections": {
+            "type": "integer"
+          }
+        }
+      },
+      "LayoutState": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string"
+          },
+          "document": {
+            "$ref": "#/components/schemas/LayoutDocument"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "saved": {
+            "type": "boolean"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "type": "string"
+          },
+          "published": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LayoutRevision"
+              }
+            ],
+            "nullable": true
+          },
+          "changed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "LayoutPublicPage": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string"
+          },
+          "theme": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "preview": {
+            "type": "boolean"
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "settings": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "products": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Product"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

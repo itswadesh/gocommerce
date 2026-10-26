@@ -42,6 +42,7 @@ import (
 	amazon "github.com/itswadesh/gocommerce/ext/import-amazon"
 	"github.com/itswadesh/gocommerce/ext/invoices"
 	"github.com/itswadesh/gocommerce/ext/klaviyo"
+	"github.com/itswadesh/gocommerce/ext/layouts"
 	"github.com/itswadesh/gocommerce/ext/navigation"
 	"github.com/itswadesh/gocommerce/ext/newsletter"
 	msg91 "github.com/itswadesh/gocommerce/ext/notify-msg91"
@@ -238,6 +239,7 @@ environment:
 		withFAQ      = fs.Bool("faq", false, "install the faq module: the shop's questions and answers at /x/faq, edited on the FAQ screen")
 		withShow     = fs.Bool("showcases", false, "install the showcases module: videos of the store showing its products, from YouTube or Facebook, beside those products at /x/showcases")
 		withBanners  = fs.Bool("banners", false, "install the banners module: pictures on the storefront's pages, slides across the top and grids of tiles under a heading, served at /x/banners")
+		withLayouts  = fs.Bool("layouts", false, "install the layouts module: the storefront's home page arranged from sections, drafted and published without a deployment, served at /x/layouts/home")
 		withTransl   = fs.Bool("translations", false, "install the translations module: products, categories and collections in each of a store's languages, written on the Translations screen")
 		withWishlist = fs.Bool("wishlist", false, "install the wishlist module: shoppers save products, and the Wishlists screen shows what is wanted most")
 		withB2B      = fs.Bool("b2b", false, "install the b2b module: companies, buyer roles, orders on account against a credit limit, approvals and quotes (implies -identity)")
@@ -512,6 +514,9 @@ environment:
 		}
 		if *withBanners {
 			modules = append(modules, banners.New(banners.Config{}))
+		}
+		if *withLayouts {
+			modules = append(modules, layouts.New(layouts.Config{}))
 		}
 		if *withWishlist {
 			modules = append(modules, wishlist.New(wishlist.Config{}))
