@@ -95,6 +95,9 @@ func coreMigrations() []Migration {
 		// hold an API key and a provider's keys as they are.
 		WithholdFromReports("0081_withhold_keys_from_reports",
 			"idempotency_keys", "api_keys.secret", "plugins.settings"),
+		// cart.abandoned carries the basket's token, for the recovery email's
+		// link, and an event is kept after it is published.
+		WithholdFromReports("0082_withhold_event_payloads_from_reports", "outbox_events.payload"),
 	}
 }
 
