@@ -35,8 +35,19 @@ func TestTextsTheSignInAndOrderCodes(t *testing.T) {
 		t.Fatal("with a sign-in template, MSG91 should carry the code")
 	}
 
+	// The sign-in code goes through MSG91's OTP API, as an OTP template
+	// must: sent through the Flow API, MSG91 answers success and delivers
+	// nothing.
+	if err := app.Notify(ctx, codeNote(EventLoginCode, "0420")); err != nil {
+		t.Fatal(err)
+	}
+	otp := s.all()[0]
+	if otp.Path != "/api/v5/otp" || otp.Query.Get("template_id") != "tpl-signin" || otp.Query.Get("mobile") != "919876543210" ||
+		otp.Query.Get("otp") != "0420" || otp.Body["website"] != "Chillish" || otp.AuthKey != "k" {
+		t.Fatalf("sign-in code sent %+v, want MSG91's OTP API with the code and the store's name", otp)
+	}
+
 	for _, c := range []struct{ event, code, tpl string }{
-		{EventLoginCode, "0420", "tpl-signin"},
 		{gocommerce.EventOrderLookupCode, "1234", "tpl-order"},
 	} {
 		if err := app.Notify(ctx, codeNote(c.event, c.code)); err != nil {
@@ -71,7 +82,7 @@ func TestTemplatesFromTheEnvironmentServeEveryStore(t *testing.T) {
 	if err := app.Notify(ctx, codeNote(EventLoginCode, "0420")); err != nil {
 		t.Fatal(err)
 	}
-	if calls := s.all(); len(calls) != 1 || calls[0].TemplateID != "env-signin" {
+	if calls := s.all(); len(calls) != 1 || calls[0].Query.Get("template_id") != "env-signin" {
 		t.Fatalf("calls = %+v, want the install's sign-in template", calls)
 	}
 
@@ -83,7 +94,7 @@ func TestTemplatesFromTheEnvironmentServeEveryStore(t *testing.T) {
 	if err := app.Notify(ctx, codeNote(EventLoginCode, "0421")); err != nil {
 		t.Fatal(err)
 	}
-	if calls := s.all(); calls[len(calls)-1].TemplateID != "store-signin" {
+	if calls := s.all(); calls[len(calls)-1].Query.Get("template_id") != "store-signin" {
 		t.Fatalf("last call = %+v, want the store's own template", calls[len(calls)-1])
 	}
 }
@@ -95,9 +106,9 @@ func TestTextsGoFromTheInstallsSender(t *testing.T) {
 	server := gctest.StubHTTP(t, s.handler)
 	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{
 		BaseURL: server.URL, AuthKey: "k", Sender: " MISIKI ",
-		Templates: map[string]string{EventLoginCode: "tpl-signin"},
+		Templates: map[string]string{gocommerce.EventOrderLookupCode: "tpl-order"},
 	}))
-	if err := app.Notify(context.Background(), codeNote(EventLoginCode, "0420")); err != nil {
+	if err := app.Notify(context.Background(), codeNote(gocommerce.EventOrderLookupCode, "0420")); err != nil {
 		t.Fatal(err)
 	}
 	if calls := s.all(); len(calls) != 1 || calls[0].Sender != "MISIKI" {

@@ -41,3 +41,18 @@ func TestASentTextIsLogged(t *testing.T) {
 		t.Fatal("the sign-in code was written to the log")
 	}
 }
+
+// MSG91's OTP API takes the code in its address, and a failed request names
+// its address in the error; the error, which is logged, must not carry the
+// code.
+func TestAFailedSignInTextKeepsTheCodeOutOfTheError(t *testing.T) {
+	mod := New(Config{BaseURL: "http://127.0.0.1:1", AuthKey: "k", Templates: map[string]string{EventLoginCode: "tpl-signin"}})
+	gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, mod)
+	err := mod.Notify(context.Background(), codeNote(EventLoginCode, "0420"))
+	if err == nil {
+		t.Fatal("a closed port took the text")
+	}
+	if strings.Contains(err.Error(), "0420") {
+		t.Fatalf("error %q carries the code", err)
+	}
+}

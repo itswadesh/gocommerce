@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"sync"
 	"testing"
 
@@ -15,6 +16,9 @@ import (
 // flow is one call the stub MSG91 received.
 type flow struct {
 	AuthKey    string
+	Path       string
+	Query      url.Values
+	Body       map[string]string
 	TemplateID string              `json:"template_id"`
 	Sender     string              `json:"sender"`
 	Recipients []map[string]string `json:"recipients"`
@@ -29,7 +33,9 @@ func (s *stub) handler(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	var f flow
 	_ = json.Unmarshal(body, &f)
+	_ = json.Unmarshal(body, &f.Body)
 	f.AuthKey = r.Header.Get("authkey")
+	f.Path, f.Query = r.URL.Path, r.URL.Query()
 	s.mu.Lock()
 	s.calls = append(s.calls, f)
 	s.mu.Unlock()

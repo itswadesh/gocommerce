@@ -26,10 +26,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -259,14 +261,36 @@ func (m *Module) Notify(ctx context.Context, n gocommerce.Notification) error {
 		recipient["website"] = v
 	}
 
-	payload := map[string]any{
-		"template_id": templateID,
-		"recipients":  []map[string]string{recipient},
+	var (
+		path    string
+		payload any
+	)
+	if n.Event == EventLoginCode {
+		// A sign-in code's template is an OTP template, and MSG91 delivers one
+		// only through its OTP API: sent through the Flow API it answers
+		// success and no text arrives. The code goes as the API's otp, the
+		// template's other variables in the body.
+		q := url.Values{"template_id": {templateID}, "mobile": {recipient["mobiles"]}, "otp": {n.Data["code"]}}
+		vars := map[string]string{}
+		for k, v := range recipient {
+			switch k {
+			case "mobiles", "code", "otp", "OTP":
+			default:
+				vars[k] = v
+			}
+		}
+		path, payload = "/api/v5/otp?"+q.Encode(), vars
+	} else {
+		flow := map[string]any{
+			"template_id": templateID,
+			"recipients":  []map[string]string{recipient},
+		}
+		if sender := strings.TrimSpace(m.cfg.Sender); sender != "" {
+			flow["sender"] = sender
+		}
+		path, payload = "/api/v5/flow/", flow
 	}
-	if sender := strings.TrimSpace(m.cfg.Sender); sender != "" {
-		payload["sender"] = sender
-	}
-	id, err := m.post(ctx, key, "/api/v5/flow/", payload)
+	id, err := m.post(ctx, key, path, payload)
 	if err != nil {
 		return err
 	}
@@ -311,7 +335,13 @@ func (m *Module) post(ctx context.Context, key, path string, payload any) (strin
 
 	resp, err := m.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("msg91: %s: %w", path, err)
+		// The OTP API carries the code in the address, and a failed request
+		// repeats its address; the error is logged, so it names neither.
+		var uerr *url.Error
+		if errors.As(err, &uerr) {
+			err = uerr.Err
+		}
+		return "", fmt.Errorf("msg91: %s: %w", strings.SplitN(path, "?", 2)[0], err)
 	}
 	defer resp.Body.Close()
 
@@ -319,8 +349,9 @@ func (m *Module) post(ctx context.Context, key, path string, payload any) (strin
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		// MSG91 answers 200 to a rejected message too, with type "error".
 		var result struct {
-			Type    string `json:"type"`
-			Message string `json:"message"`
+			Type      string `json:"type"`
+			Message   string `json:"message"`
+			RequestID string `json:"request_id"`
 		}
 		_ = json.Unmarshal(body, &result)
 		if strings.EqualFold(result.Type, "error") {
@@ -328,11 +359,14 @@ func (m *Module) post(ctx context.Context, key, path string, payload any) (strin
 			// Rejected again if retried: a refusal, recorded and not retried.
 			return "", fmt.Errorf("msg91: %w: %s", gocommerce.ErrNotificationRefused, result.Message)
 		}
+		if result.RequestID != "" {
+			return result.RequestID, nil
+		}
 		return result.Message, nil
 	}
 	if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
 		m.log.Error("MSG91 rejected the request", "status", resp.Status, "detail", string(body))
 		return "", fmt.Errorf("msg91: %w: %s (%s)", gocommerce.ErrNotificationRefused, strings.TrimSpace(string(body)), resp.Status)
 	}
-	return "", fmt.Errorf("msg91: %s returned %s", path, resp.Status)
+	return "", fmt.Errorf("msg91: %s returned %s", strings.SplitN(path, "?", 2)[0], resp.Status)
 }
