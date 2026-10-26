@@ -201,6 +201,7 @@ CREATE INDEX cart_recovery_events_of ON cart_recovery_events (abandonment_id, at
 			    DROP CONSTRAINT cart_recovery_settings_pkey,
 			    ADD PRIMARY KEY (store_id);`,
 		},
+		gocommerce.WithholdFromReports("0004_withhold_from_reports", "cart_recovery_abandonments.link_token"),
 	}
 }
 

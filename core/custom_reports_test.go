@@ -2,6 +2,7 @@ package gocommerce
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -374,5 +375,50 @@ func TestAnUnrecordedReportConnectionSeesNothing(t *testing.T) {
 	}
 	if n != 0 {
 		t.Fatalf("an unrecorded reports connection read %d rows", n)
+	}
+}
+
+// Staff may run any saved report, so a report reads no key to somebody's
+// account: not an order look-up code, not the token that opens a basket or a
+// guest's order. It still reads the rest of those rows.
+func TestASavedReportReadsNoCodeOrToken(t *testing.T) {
+	app := newTestApp(t)
+	staff := bearer(signInAs(t, app, "report-staff@example.com", RoleStaff))
+	run := func(query string) (int, string) {
+		t.Helper()
+		saved, err := app.CustomReports().Save(context.Background(), CustomReportInput{Name: query, SQL: query}, nil)
+		if err != nil {
+			t.Fatalf("save %q: %v", query, err)
+		}
+		rec := do(t, app, http.MethodPost, "/api/admin/reports/custom/"+strconv.FormatInt(saved.ID, 10)+"/run", staff)
+		return rec.Code, rec.Body.String()
+	}
+	for _, q := range []string{
+		"SELECT code_hash FROM order_lookup_codes",
+		"SELECT count(*) FROM order_lookup_codes",
+		"SELECT token FROM carts",
+		"SELECT * FROM carts",
+		"SELECT access_token FROM orders",
+	} {
+		if code, body := run(q); code != http.StatusBadRequest || !strings.Contains(body, "permission denied") {
+			t.Errorf("staff running %q = %d, want the database's permission denied: %s", q, code, body)
+		}
+	}
+	for _, q := range []string{"SELECT id, created_at FROM carts", "SELECT number, status FROM orders"} {
+		if code, body := run(q); code != http.StatusOK {
+			t.Errorf("staff running %q = %d, want the rest of the row: %s", q, code, body)
+		}
+	}
+}
+
+// A misspelt name would leave the credential it meant readable, so it fails.
+func TestWithholdingANameThatIsNotThereFails(t *testing.T) {
+	app := newTestApp(t)
+	for _, target := range []string{"carts.tokn", "no_such_table"} {
+		ctx := context.Background()
+		err := InTx(ctx, app.db, func(tx *sql.Tx) error { return WithholdFromReports("x", target).Run(ctx, tx) })
+		if err == nil || !strings.Contains(err.Error(), "no such table or column") {
+			t.Errorf("withholding %q = %v, want it refused", target, err)
+		}
 	}
 }

@@ -139,6 +139,7 @@ CREATE INDEX wishlist_items_product_idx ON wishlist_items (product_id);
 `,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "wishlists", "wishlist_items"),
+		gocommerce.WithholdFromReports("0003_withhold_from_reports", "wishlists.token"),
 	}
 }
 
