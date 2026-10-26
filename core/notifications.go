@@ -114,7 +114,7 @@ func (s *Notifications) record(ctx context.Context, note Notification, outcome n
 	if _, err := s.app.db.ExecContext(ctx, `
 		INSERT INTO notifications (event, channel, recipient, language, order_number, backend, status, error, data, resend_of)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-		note.Event, note.Channel, note.To, note.Language, note.Data["order_number"],
+		note.Event, note.Channel, note.To, note.Language, kept["order_number"],
 		strings.Join(outcome.backends, ", "), status, message, data, outcome.resendOf); err != nil {
 		s.app.log.Error("notification not recorded", "event", note.Event, "channel", note.Channel, "error", err)
 	}

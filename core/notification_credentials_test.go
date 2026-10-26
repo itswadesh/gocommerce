@@ -197,19 +197,24 @@ func TestAMessageWhoseLinkIsGoneIsNotResent(t *testing.T) {
 	}
 }
 
-// Rows written before the log stopped keeping credentials lose them too.
+// Rows written before the log stopped keeping credentials lose them too, in
+// every store: row security shows a statement one store's rows at a time.
 func TestTheMigrationHidesCredentialsAlreadyLogged(t *testing.T) {
 	app := newTestApp(t)
-	ctx := context.Background()
+	stores := []string{app.DefaultStore(), addTestStore(t, app, "bee")}
 	const tok = "tok-0123456789abcdef"
 	link := "https://admin.example/admin/auth/reset-password/" + tok
-	if _, err := app.db.ExecContext(ctx, `
-		INSERT INTO notifications (event, channel, recipient, status, error, data)
-		VALUES ('superuser.password_reset', 'email', 'owner@example.com', 'failed', $1, $2)`,
-		"provider refused: "+link,
-		`{"reset_token":"`+tok+`","reset_code":"123456","reset_url":"`+link+`","operator_email":"owner@example.com"}`); err != nil {
-		t.Fatal(err)
+	for _, store := range stores {
+		if _, err := app.db.ExecContext(WithStore(context.Background(), store), `
+			INSERT INTO notifications (event, channel, recipient, status, error, data)
+			VALUES ('superuser.password_reset', 'email', 'owner@example.com', 'failed', $1, $2),
+			       ('identity.login_code', 'sms', '+919876543210', 'failed', 'refused: code 0208', '{"code":"0208","store_name":"Bee"}')`,
+			"provider refused: "+link,
+			`{"reset_token":"`+tok+`","reset_code":"123456","reset_url":"`+link+`","operator_email":"owner@example.com"}`); err != nil {
+			t.Fatal(err)
+		}
 	}
+	ctx := context.Background()
 	tx, err := app.db.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -221,17 +226,30 @@ func TestTheMigrationHidesCredentialsAlreadyLogged(t *testing.T) {
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	var data, errText string
-	if err := app.db.QueryRowContext(ctx, `SELECT data::text, error FROM notifications`).Scan(&data, &errText); err != nil {
-		t.Fatal(err)
-	}
-	for _, s := range []string{tok, "123456"} {
-		if strings.Contains(data, s) || strings.Contains(errText, s) {
-			t.Errorf("after the migration the row holds %q: data %s, error %q", s, data, errText)
+	for _, store := range stores {
+		got := map[string][2]string{}
+		rows, err := app.db.QueryContext(WithStore(ctx, store), `SELECT event, data::text, error FROM notifications`)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if !strings.Contains(data, "owner@example.com") || errText != "provider refused: "+hiddenCredential {
-		t.Errorf("data %s, error %q; want the rest of the row kept", data, errText)
+		for rows.Next() {
+			var event, data, errText string
+			if err := rows.Scan(&event, &data, &errText); err != nil {
+				t.Fatal(err)
+			}
+			got[event] = [2]string{data, errText}
+		}
+		rows.Close()
+		reset, code := got["superuser.password_reset"], got["identity.login_code"]
+		for _, s := range []string{tok, "123456", "0208"} {
+			if strings.Contains(reset[0]+reset[1]+code[0]+code[1], s) {
+				t.Errorf("store %s: after the migration a row holds %q: %v", store, s, got)
+			}
+		}
+		if !strings.Contains(reset[0], "owner@example.com") || reset[1] != "provider refused: "+hiddenCredential ||
+			!strings.Contains(code[0], `"store_name": "Bee"`) || code[1] != "refused: code "+hiddenCredential {
+			t.Errorf("store %s: rows %v; want the rest of each row kept", store, got)
+		}
 	}
 }
 
@@ -347,5 +365,21 @@ func TestTheLogKeepsNoOrderLookupCode(t *testing.T) {
 	decodeJSONBody(t, []byte(raw), &kept)
 	if kept["code"] != hiddenCredential || kept["order_number"] != order.Number || errText != "" {
 		t.Errorf("the row keeps %s, error %q; want the code hidden and the rest kept", raw, errText)
+	}
+}
+
+// A provider's error is about this message, so a short code it quotes is the
+// code and is hidden; elsewhere in the data four digits may be an order
+// number, and stay.
+func TestANamedCodeIsHiddenFromTheErrorAtAnyLength(t *testing.T) {
+	data, errText := withoutSecrets(Notification{
+		Data:    map[string]string{"code": "0208", "order_number": "GC-0208"},
+		Secrets: []string{"code"},
+	}, "provider refused: your code is 0208")
+	if data["code"] != hiddenCredential || data["order_number"] != "GC-0208" {
+		t.Errorf("data = %v, want the code hidden and the order number kept", data)
+	}
+	if errText != "provider refused: your code is "+hiddenCredential {
+		t.Errorf("error = %q, want the code hidden", errText)
 	}
 }
