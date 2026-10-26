@@ -35,6 +35,7 @@ const (
 	holdNoProvider         = "no_email_provider"
 	holdSendFailed         = "send_failed"
 	holdSequenceDone       = "sequence_done"
+	holdNewerBasket        = "newer_basket"
 )
 
 // Bounds on one pass. Each is a batch rather than a backlog, so a store that
@@ -577,6 +578,16 @@ func (m *Module) sendStep(ctx context.Context, set *settingsRow, c claimed, res 
 		res.Held++
 		return m.hold(ctx, c.id, holdNoProvider, c.stepsSent+1)
 	}
+	// One shopper, one sequence: somebody who left a basket on their phone
+	// and another on a laptop is written to about the newest, or about none
+	// once one of them became an order. Without this each basket ran its own
+	// sequence, and every reminder arrived once per basket in the same minute.
+	if newer, err := m.hasNewerBasket(ctx, c.id, contact); err != nil {
+		return m.release(ctx, c.id)
+	} else if newer {
+		res.Held++
+		return m.hold(ctx, c.id, holdNewerBasket, c.stepsSent+1)
+	}
 	// Never write to somebody who is in the basket right now. Not a failure:
 	// the step moves to when this visit will count as over.
 	if quiet := cur.updatedAt.Add(a.threshold()); time.Now().Before(quiet) {
@@ -643,6 +654,25 @@ func (m *Module) sendStep(ctx context.Context, set *settingsRow, c claimed, res 
 
 // linkSecrets are the keys in data that open the shopper's basket.
 var linkSecrets = []string{"cart_token", "recovery_url"}
+
+// hasNewerBasket is whether the same address has a basket in this store that
+// was touched after this one and is still being chased, or was bought. The
+// address is compared without case, as a shopper types it either way.
+func (m *Module) hasNewerBasket(ctx context.Context, id int64, contact string) (bool, error) {
+	var newer bool
+	err := m.app.DB().QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM cart_recovery_abandonments me
+			JOIN cart_recovery_abandonments o
+			  ON o.store_id = me.store_id AND o.id <> me.id
+			WHERE me.id = $1
+			  AND lower(o.email) = lower($2)
+			  AND o.status IN ('scheduled', 'contacted', 'recovered')
+			  AND (o.last_active_at, o.id) > (me.last_active_at, me.id))`,
+		id, contact).Scan(&newer)
+	return newer, err
+}
 
 // data flattens one message for a template, in the flat strings the order
 // notifications use: the module hands a notifier values, and the store's

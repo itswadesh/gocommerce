@@ -75,6 +75,7 @@ const INDICATOR_LABELS = {
     no_steps: "No steps to send",
     before_install: "Before recovery was set up",
     sequence_done: "Sequence finished",
+    newer_basket: "Newer basket",
 };
 
 const HOLD_SENTENCES = {
@@ -86,6 +87,7 @@ const HOLD_SENTENCES = {
     no_email_provider: "No email provider is set up, so nothing can be sent.",
     send_failed: "The last message could not be sent.",
     sequence_done: "Every step of the recovery sequence has run.",
+    newer_basket: "The same shopper left a newer basket. Reminders go to that one, so nobody gets each email twice.",
 };
 
 /** Why nothing is scheduled for an open record, as a sentence for its banner. */

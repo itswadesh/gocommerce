@@ -202,6 +202,11 @@ CREATE INDEX cart_recovery_events_of ON cart_recovery_events (abandonment_id, at
 			    ADD PRIMARY KEY (store_id);`,
 		},
 		gocommerce.WithholdFromReports("0004_withhold_from_reports", "cart_recovery_abandonments.link_token"),
+		{
+			// A send asks whether the shopper has a newer basket, by address.
+			ID:  "0005_abandonments_by_email",
+			SQL: `CREATE INDEX cart_recovery_by_email ON cart_recovery_abandonments (store_id, lower(email));`,
+		},
 	}
 }
 
