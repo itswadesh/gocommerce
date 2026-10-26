@@ -39,7 +39,7 @@
         "description": "For a store whose customers sign in with their phone (the identity plugin's login_method is phone_otp). Sends a 4-digit code by SMS; a phone with no account yet gets one too, because signing in with a code is how an account is opened. A code works for ten minutes and five tries; a phone gets one code a minute and five a day. The phone needs its country code. 409 sign_in_method when the store signs customers in with an email and password, or has no accounts; 409 when the store cannot send SMS.",
         "requestBody": {
           "required": true,
-          "content": {"application/json": {"schema": {"type": "object", "required": ["phone"], "properties": {"phone": {"type": "string", "example": "+919876543210"}}}}}
+          "content": {"application/json": {"schema": {"type": "object", "required": ["phone"], "properties": {"phone": {"type": "string", "example": "+919876543210"}, "domain": {"type": "string", "example": "chillish.in", "description": "The storefront's host. When it is a verified domain of this store, or its subdomain of the base domain, the text ends \"@<domain> #<code>\" so Chrome on Android fills the code in (Web OTP, D124); any other host is left out."}}}}}
         },
         "responses": {
           "202": {"description": "The code is on its way."},

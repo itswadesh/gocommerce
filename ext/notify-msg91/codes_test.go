@@ -115,3 +115,30 @@ func TestTextsGoFromTheInstallsSender(t *testing.T) {
 		t.Fatalf("calls = %+v, want one text from MISIKI", calls)
 	}
 }
+
+// The sign-in text's last line for Chrome, "@site #code", goes as one
+// variable too: written out in a template, "###OTP##" would be three hashes
+// in a row for MSG91 to parse.
+func TestTheSignInCodeCarriesTheWebOTPLine(t *testing.T) {
+	s := &stub{}
+	server := gctest.StubHTTP(t, s.handler)
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true},
+		New(Config{BaseURL: server.URL, AuthKey: "k", Templates: map[string]string{EventLoginCode: "tpl-signin"}}))
+	note := codeNote(EventLoginCode, "0420")
+	note.Data["domain"] = "chillish.in"
+	if err := app.Notify(context.Background(), note); err != nil {
+		t.Fatal(err)
+	}
+	got := s.all()[0].Body
+	if got["domain"] != "chillish.in" || got["web_otp"] != "@chillish.in #0420" {
+		t.Fatalf("body = %v, want the site and the Web OTP line", got)
+	}
+
+	// No site, no line: a text that cannot be filled in says nothing about it.
+	if err := app.Notify(context.Background(), codeNote(EventLoginCode, "0421")); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.all()[1].Body; got["web_otp"] != "" {
+		t.Fatalf("body = %v, want no Web OTP line", got)
+	}
+}
