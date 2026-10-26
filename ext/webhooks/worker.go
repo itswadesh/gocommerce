@@ -5,12 +5,14 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -165,6 +167,12 @@ func (m *Module) markDelivered(ctx context.Context, id int64, status int) error 
 
 // markFailed schedules the next try, or gives up.
 func (m *Module) markFailed(ctx context.Context, p pending, status int, cause error) error {
+	// A *url.Error quotes the endpoint's whole address, and a hook's address
+	// often carries its own key; the log shows the operation and the cause.
+	var ue *url.Error
+	if errors.As(cause, &ue) {
+		cause = fmt.Errorf("%s: %w", ue.Op, ue.Err)
+	}
 	if p.attempts >= maxAttempts {
 		_, err := m.db.ExecContext(ctx, `
 			UPDATE webhook_deliveries
@@ -182,6 +190,38 @@ func (m *Module) markFailed(ctx context.Context, p pending, status int, cause er
 		    last_status = nullif($3, 0), last_error = $4
 		WHERE id = $1`, p.id, backoff(p.attempts).Seconds(), status, cause.Error())
 	return err
+}
+
+// dropAddressFromOldErrors rewrites what markFailed stored before it took the
+// address out: Go's `Post "https://…": cause` becomes `Post: cause`, store by
+// store, because the row policy shows a statement one store's rows.
+func dropAddressFromOldErrors(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM stores`)
+	if err != nil {
+		return err
+	}
+	var stores []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		stores = append(stores, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range stores {
+		if _, err := tx.ExecContext(gocommerce.WithStore(ctx, id), `
+			UPDATE webhook_deliveries
+			SET last_error = regexp_replace(last_error, '^(\w+) "(?:[^"\\]|\\.)*": ', '\1: ')
+			WHERE last_error ~ '^\w+ "'`); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // backoff doubles from a second, capped. The cap matters more than the curve: a

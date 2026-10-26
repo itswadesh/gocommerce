@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -154,6 +155,57 @@ func TestAFailedDeliveryBacksOffAndStaysPending(t *testing.T) {
 		}
 		if !d.AvailableAt.After(time.Now()) {
 			t.Errorf("available_at %v is not in the future, so there is no backoff", d.AvailableAt)
+		}
+	}
+}
+
+// A hook's address often carries its own key, in the path or the query, and
+// Go's client error quotes the whole address. The delivery log says what
+// failed without it.
+func TestAFailedDeliverysErrorDoesNotQuoteTheAddress(t *testing.T) {
+	mod := New(Config{})
+	app := localApp(t, mod)
+	insertEndpoint(t, app, "https://gc-no-such-host.invalid/hooks/PATHKEY4417?key=QUERYKEY9021")
+
+	gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
+	gctest.DrainOutbox(t, app)
+	deliverOnce(t, mod)
+
+	ds := deliveries(t, app)
+	if len(ds) == 0 {
+		t.Fatal("no deliveries")
+	}
+	for _, d := range ds {
+		if strings.Contains(d.LastError, "PATHKEY4417") || strings.Contains(d.LastError, "QUERYKEY9021") {
+			t.Errorf("delivery %d last_error = %q, want no path or query", d.ID, d.LastError)
+		}
+		if !strings.Contains(d.LastError, "Post") || !strings.Contains(d.LastError, "gc-no-such-host.invalid") {
+			t.Errorf("delivery %d last_error = %q, want what failed and which host", d.ID, d.LastError)
+		}
+	}
+}
+
+// A delivery that failed before the address was taken out keeps the cause.
+func TestAnOlderErrorLosesTheAddressAndKeepsTheCause(t *testing.T) {
+	app := localApp(t, New(Config{}))
+	insertEndpoint(t, app, "https://hooks.example.com/hooks")
+	gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
+	gctest.DrainOutbox(t, app)
+	ctx := gocommerce.WithStore(context.Background(), app.DefaultStore())
+	if _, err := app.DB().ExecContext(ctx, `UPDATE webhook_deliveries SET last_error =
+		'Post "https://hooks.example.com/hooks/PATHKEY4417?key=QUERYKEY9021": dial tcp: lookup hooks.example.com: no such host'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := gocommerce.InTx(ctx, app.DB(), func(tx *sql.Tx) error { return dropAddressFromOldErrors(ctx, tx) }); err != nil {
+		t.Fatal(err)
+	}
+	ds := deliveries(t, app)
+	if len(ds) == 0 {
+		t.Fatal("no deliveries")
+	}
+	for _, d := range ds {
+		if want := "Post: dial tcp: lookup hooks.example.com: no such host"; d.LastError != want {
+			t.Errorf("delivery %d last_error = %q, want %q", d.ID, d.LastError, want)
 		}
 	}
 }
