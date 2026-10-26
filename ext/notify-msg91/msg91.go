@@ -262,7 +262,16 @@ func (m *Module) Notify(ctx context.Context, n gocommerce.Notification) error {
 	if sender := strings.TrimSpace(m.cfg.Sender); sender != "" {
 		payload["sender"] = sender
 	}
-	return m.post(ctx, key, "/api/v5/flow/", payload)
+	id, err := m.post(ctx, key, "/api/v5/flow/", payload)
+	if err != nil {
+		return err
+	}
+	// The sent line, as Resend's "email sent": without it a text MSG91 took
+	// and one that was never tried leave the same silence in the log. The id
+	// is what MSG91's reports file it under. The variables stay out: a
+	// sign-in code is one of them.
+	m.log.Info("text sent", "event", n.Event, "to", recipient["mobiles"], "template", templateID, "id", id)
+	return nil
 }
 
 func (m *Module) normalizeNumber(ctx context.Context, raw string) string {
@@ -283,21 +292,22 @@ func (m *Module) normalizeNumber(ctx context.Context, raw string) string {
 	return number
 }
 
-func (m *Module) post(ctx context.Context, key, path string, payload any) error {
+// post sends payload and answers the request id MSG91 gave the message.
+func (m *Module) post(ctx context.Context, key, path string, payload any) (string, error) {
 	encoded, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return "", err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.cfg.BaseURL+path, bytes.NewReader(encoded))
 	if err != nil {
-		return err
+		return "", err
 	}
 	req.Header.Set("authkey", key)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := m.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("msg91: %s: %w", path, err)
+		return "", fmt.Errorf("msg91: %s: %w", path, err)
 	}
 	defer resp.Body.Close()
 
@@ -312,13 +322,13 @@ func (m *Module) post(ctx context.Context, key, path string, payload any) error 
 		if strings.EqualFold(result.Type, "error") {
 			m.log.Error("MSG91 rejected the message", "detail", result.Message)
 			// Rejected again if retried: a refusal, recorded and not retried.
-			return fmt.Errorf("msg91: %w: %s", gocommerce.ErrNotificationRefused, result.Message)
+			return "", fmt.Errorf("msg91: %w: %s", gocommerce.ErrNotificationRefused, result.Message)
 		}
-		return nil
+		return result.Message, nil
 	}
 	if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
 		m.log.Error("MSG91 rejected the request", "status", resp.Status, "detail", string(body))
-		return fmt.Errorf("msg91: %w: %s (%s)", gocommerce.ErrNotificationRefused, strings.TrimSpace(string(body)), resp.Status)
+		return "", fmt.Errorf("msg91: %w: %s (%s)", gocommerce.ErrNotificationRefused, strings.TrimSpace(string(body)), resp.Status)
 	}
-	return fmt.Errorf("msg91: %s returned %s", path, resp.Status)
+	return "", fmt.Errorf("msg91: %s returned %s", path, resp.Status)
 }
