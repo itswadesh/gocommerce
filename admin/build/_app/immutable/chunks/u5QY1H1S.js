@@ -1,1 +1,0 @@
-import{E as s,ay as n}from"./-k_2SE_F.js";function b(o,i,r,f,a){var d=()=>{f(r[o])};r.addEventListener(i,d),a?s(()=>{r[o]=a()}):d(),(r===document.body||r===window||r===document)&&n(()=>{r.removeEventListener(i,d)})}export{b};
