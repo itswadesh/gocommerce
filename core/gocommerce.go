@@ -619,6 +619,9 @@ func New(cfg Config, mods ...Module) (*App, error) {
 			a.log.Error("custom reports are off: their access could not be set up", "err", err)
 			a.reportsDB.Close()
 			a.reportsDB = nil
+		} else if readable, gone, err := a.reportsWithholdingProblems(context.Background()); err == nil && len(readable)+len(gone) > 0 {
+			// A renamed column withholds nothing; say so where an operator looks first.
+			a.log.Error("what is withheld from custom reports needs a look; see gocommerce doctor", "readable", readable, "gone", gone)
 		}
 	}
 

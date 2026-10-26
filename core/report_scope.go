@@ -95,6 +95,78 @@ func reportsRole(dsn string) (string, error) {
 	return u.User.Username(), nil
 }
 
+// reportsAccessLockKey is an advisory lock key ("reportsa" in ASCII).
+const reportsAccessLockKey int64 = 0x7265706F72747361
+
+// reportsWithholdingProblems compares report_withheld with what the reports
+// login may read. readable names what it may read all the same, granted by a
+// version that did not know the name; gone names what a later migration
+// renamed or dropped, which withholds nothing under the new name.
+func (a *App) reportsWithholdingProblems(ctx context.Context) (readable, gone []string, err error) {
+	role, err := reportsRole(a.cfg.ReportsDBURL)
+	if err != nil {
+		return nil, nil, err
+	}
+	rows, err := a.db.QueryContext(ctx, `
+		WITH w AS (
+		    SELECT w.table_name, w.column_name,
+		           quote_ident(current_schema()) || '.' || quote_ident(w.table_name) AS rel,
+		           EXISTS (SELECT 1 FROM information_schema.columns c
+		                   WHERE c.table_schema = current_schema() AND c.table_name = w.table_name
+		                     AND (w.column_name = '' OR c.column_name = w.column_name)) AS present
+		    FROM report_withheld w)
+		SELECT CASE WHEN column_name = '' THEN table_name ELSE table_name || '.' || column_name END,
+		       present,
+		       present AND CASE WHEN column_name = '' THEN has_any_column_privilege($1, rel, 'SELECT')
+		                        ELSE has_column_privilege($1, rel, column_name, 'SELECT') END
+		FROM w ORDER BY 1`, role)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		var present, open bool
+		if err := rows.Scan(&name, &present, &open); err != nil {
+			return nil, nil, err
+		}
+		switch {
+		case !present:
+			gone = append(gone, name)
+		case open:
+			readable = append(readable, name)
+		}
+	}
+	return readable, gone, rows.Err()
+}
+
+// checkReportWithholding fails when reports can read what is withheld from
+// them (D120), and warns when a withheld name no longer exists.
+func (a *App) checkReportWithholding(ctx context.Context) Diagnostic {
+	d := Diagnostic{Name: "report withholding", Status: StatusOK}
+	if a.reportsDB == nil {
+		d.Detail = "custom reports are off"
+		return d
+	}
+	readable, gone, err := a.reportsWithholdingProblems(ctx)
+	switch {
+	case err != nil:
+		d.Status, d.Detail, d.Cause = StatusFail, "could not compare what reports may read with what is withheld", err.Error()
+		d.Hint = "check that the engine can read report_withheld and the catalogue"
+	case len(readable) > 0:
+		d.Status = StatusFail
+		d.Detail = "saved reports can read what is withheld from them: " + strings.Join(readable, ", ")
+		d.Hint = "an older version granted it, during a rolling deploy or after a rollback; start this version again, which takes it back"
+	case len(gone) > 0:
+		d.Status = StatusWarn
+		d.Detail = "withheld from reports but no longer in the database: " + strings.Join(gone, ", ")
+		d.Hint = "a migration renamed or dropped it; a renamed one is readable under its new name until a migration withholds that name"
+	default:
+		d.Detail = "saved reports read nothing that is withheld from them"
+	}
+	return d
+}
+
 // ensureReportsAccess gives the reports login read on the store tables, under
 // the restrictive policy, and takes everything else away from it. It runs at
 // every start, after the migrations, and it is idempotent. It runs as the
@@ -105,7 +177,14 @@ func (a *App) ensureReportsAccess(ctx context.Context) error {
 		return err
 	}
 	ident := quoteIdent(role)
-	rows, err := a.db.QueryContext(ctx, `
+	return InTx(ctx, a.db, func(tx *sql.Tx) error {
+		// Copies of the engine starting together would grant on the same objects
+		// at once, which PostgreSQL refuses, and each would create the same
+		// policy: one at a time, reading the tables once it is this one's turn.
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, reportsAccessLockKey); err != nil {
+			return fmt.Errorf("gocommerce: set up reports access: %w", err)
+		}
+		rows, err := tx.QueryContext(ctx, `
 		SELECT c.relname,
 		       EXISTS (SELECT 1 FROM pg_policies p
 		               WHERE p.schemaname = n.nspname AND p.tablename = c.relname AND p.policyname = 'store_scope'),
@@ -121,35 +200,34 @@ func (a *App) ensureReportsAccess(ctx context.Context) error {
 		FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 		WHERE c.relkind IN ('r', 'p') AND n.nspname = current_schema()
 		ORDER BY c.relname`)
-	if err != nil {
-		return fmt.Errorf("gocommerce: list tables for reports: %w", err)
-	}
-	type table struct {
-		name     string
-		scoped   bool
-		reports  []string
-		withheld bool
-		// readable lists the columns a report may read, when some of the
-		// table's are withheld; NULL when all of them may be read.
-		readable sql.NullString
-	}
-	var tables []table
-	for rows.Next() {
-		var t table
-		var roles []string
-		if err := rows.Scan(&t.name, &t.scoped, (*pgTextArray)(&roles), &t.withheld, &t.readable); err != nil {
-			rows.Close()
+		if err != nil {
 			return fmt.Errorf("gocommerce: list tables for reports: %w", err)
 		}
-		t.reports = roles
-		tables = append(tables, t)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("gocommerce: list tables for reports: %w", err)
-	}
+		type table struct {
+			name     string
+			scoped   bool
+			reports  []string
+			withheld bool
+			// readable lists the columns a report may read, when some of the
+			// table's are withheld; NULL when all of them may be read.
+			readable sql.NullString
+		}
+		var tables []table
+		for rows.Next() {
+			var t table
+			var roles []string
+			if err := rows.Scan(&t.name, &t.scoped, (*pgTextArray)(&roles), &t.withheld, &t.readable); err != nil {
+				rows.Close()
+				return fmt.Errorf("gocommerce: list tables for reports: %w", err)
+			}
+			t.reports = roles
+			tables = append(tables, t)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("gocommerce: list tables for reports: %w", err)
+		}
 
-	return InTx(ctx, a.db, func(tx *sql.Tx) error {
 		exec := func(q string) error {
 			if _, err := tx.ExecContext(ctx, q); err != nil {
 				return fmt.Errorf("gocommerce: set up reports access (%s): %w", q, err)

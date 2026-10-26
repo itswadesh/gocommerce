@@ -234,7 +234,9 @@ rewritten keys do. A table or column that holds a credential (a one-time
 code, a token that opens a basket) is kept from custom reports with
 `gocommerce.WithholdFromReports("000N_withhold_from_reports", "my_codes",
 "my_table.token")`, because staff may run any saved report;
-`gctest.AssertReportsCannotRead` proves it.
+`gctest.AssertReportsCannotRead` proves it, and `ext/alltest` fails on a
+readable column named like a credential. A migration that renames a withheld
+name withholds the new one.
 
 ### 16. An address a store chose is called through `app.OutboundClient`
 

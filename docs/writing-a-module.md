@@ -129,6 +129,23 @@ mistake with a new migration.
 Use `Run: func(ctx, *sql.Tx) error` instead of `SQL` for a data fix that SQL
 alone cannot express.
 
+Staff may run any saved custom report, and a report reads your tables
+directly. Every table and column is readable unless a migration withholds it,
+so withhold each one that holds a key to something: a token, a one-time code,
+a session, a secret, a provider's key, a link that signs someone in.
+
+```go
+gocommerce.WithholdFromReports("0002_withhold_from_reports", "hello_codes", "hello_greetings.token"),
+```
+
+A bare name withholds the whole table; `table.column` withholds one column and
+leaves the rest of the row readable. `gctest.AssertReportsCannotRead` proves
+it, and `ext/alltest` fails when a report can read a column whose name looks
+like a credential. The withholding is by name, so a migration that renames a
+withheld table or column withholds the new name in the same release. Until it
+does, the new name is readable and `gocommerce doctor` warns that the old
+one no longer exists.
+
 If your module needs another module's tables, the application author lists that
 module first. Explicit wiring extends to schema; there is no dependency
 resolver, and there does not need to be one.
