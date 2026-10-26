@@ -160,6 +160,7 @@ CREATE INDEX webhook_deliveries_endpoint ON webhook_deliveries (endpoint_id, id 
 		gocommerce.WithholdFromReports("0003_withhold_from_reports", "webhook_endpoints.secret", "webhook_endpoints.url"),
 		// A delivery is a copy of its event, a basket's token included.
 		gocommerce.WithholdFromReports("0004_withhold_payloads_from_reports", "webhook_deliveries.payload"),
+		{ID: "0005_errors_without_address", Run: dropAddressFromOldErrors},
 	}
 }
 
