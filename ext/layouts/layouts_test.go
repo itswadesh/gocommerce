@@ -1,0 +1,269 @@
+package layouts
+
+import (
+	"context"
+	"net/http"
+	"strings"
+	"testing"
+
+	gocommerce "github.com/itswadesh/gocommerce/core"
+	"github.com/itswadesh/gocommerce/gctest"
+)
+
+func layoutsApp(t *testing.T) *gocommerce.App {
+	t.Helper()
+	app := gctest.New(t, New(Config{}))
+	switchOn(t, app, true)
+	return app
+}
+
+func switchOn(t *testing.T, app *gocommerce.App, on bool) {
+	t.Helper()
+	if rec := gctest.AdminRequest(t, app, http.MethodPatch, "/api/admin/plugins/"+pluginKey, map[string]any{"enabled": on}); rec.Code != http.StatusOK {
+		t.Fatalf("switch = %d %s", rec.Code, rec.Body)
+	}
+}
+
+func adminState(t *testing.T, app *gocommerce.App, method, target string, body any, want int) State {
+	t.Helper()
+	rec := gctest.AdminRequest(t, app, method, target, body)
+	if rec.Code != want {
+		t.Fatalf("%s %s = %d %s, want %d", method, target, rec.Code, rec.Body, want)
+	}
+	var st State
+	if want < 300 {
+		gctest.DecodeData(t, rec, &st)
+	}
+	return st
+}
+
+func publicPage(t *testing.T, app *gocommerce.App, target string, want int) PublicPage {
+	t.Helper()
+	rec := gctest.Request(t, app, http.MethodGet, target, nil)
+	if rec.Code != want {
+		t.Fatalf("GET %s = %d %s, want %d", target, rec.Code, rec.Body, want)
+	}
+	var p PublicPage
+	if want < 300 {
+		gctest.DecodeData(t, rec, &p)
+	}
+	return p
+}
+
+func ids(p PublicPage) string {
+	var out []string
+	for _, s := range p.Sections {
+		out = append(out, s.ID)
+	}
+	return strings.Join(out, ",")
+}
+
+func sections(list ...map[string]any) map[string]any { return map[string]any{"sections": list} }
+
+func hero(id, heading string) map[string]any {
+	return map[string]any{"id": id, "type": "hero", "enabled": true, "settings": map[string]any{"heading": heading}}
+}
+
+// The page is edited as a draft and the storefront sees only what is
+// published, whole; each publish is kept, and rolling back publishes an
+// earlier one again.
+func TestAPageIsDraftedPublishedAndRolledBack(t *testing.T) {
+	app := layoutsApp(t)
+
+	st := adminState(t, app, http.MethodGet, "/api/admin/x/layouts/home", nil, http.StatusOK)
+	if st.Saved || st.Version != 0 || len(st.Document.Sections) == 0 || st.Published != nil {
+		t.Fatalf("before any save = %+v, want the unsaved starter", st)
+	}
+	publicPage(t, app, "/x/layouts/home", http.StatusNotFound)
+
+	first := sections(hero("a", "One"), hero("b", "Two"),
+		map[string]any{"id": "c", "type": "rich-text", "enabled": false, "settings": map[string]any{"body": "Hidden"}})
+	st = adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 0, "document": first}, http.StatusOK)
+	if !st.Saved || st.Version != 1 || !st.Changed {
+		t.Fatalf("after the first save = %+v", st)
+	}
+	publicPage(t, app, "/x/layouts/home", http.StatusNotFound)
+
+	st = adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/publish", map[string]any{"version": 1}, http.StatusOK)
+	if st.Published == nil || st.Published.Number != 1 || st.Changed {
+		t.Fatalf("after publishing = %+v", st)
+	}
+	if got := publicPage(t, app, "/x/layouts/home", http.StatusOK); ids(got) != "a,b" || got.Revision != 1 {
+		t.Fatalf("published page = %s (revision %d), want a,b: the hidden section is not shown", ids(got), got.Revision)
+	}
+
+	// An edit to the draft leaves the storefront alone until it is published.
+	moved := sections(hero("b", "Two"), hero("new", "Inserted"), hero("a", "One"))
+	st = adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 1, "document": moved}, http.StatusOK)
+	if !st.Changed {
+		t.Fatal("the draft differs from what is published")
+	}
+	if got := publicPage(t, app, "/x/layouts/home", http.StatusOK); ids(got) != "a,b" {
+		t.Fatalf("storefront after a draft edit = %s, want still a,b", ids(got))
+	}
+	adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/publish", map[string]any{"version": 2}, http.StatusOK)
+	if got := publicPage(t, app, "/x/layouts/home", http.StatusOK); ids(got) != "b,new,a" || got.Revision != 2 {
+		t.Fatalf("after the second publish = %s (revision %d), want b,new,a at 2", ids(got), got.Revision)
+	}
+
+	st = adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/rollback", map[string]any{"revision": 1}, http.StatusOK)
+	if got := publicPage(t, app, "/x/layouts/home", http.StatusOK); ids(got) != "a,b" || got.Revision != 3 {
+		t.Fatalf("after rolling back = %s (revision %d), want a,b as revision 3", ids(got), got.Revision)
+	}
+	if st.Published == nil || st.Published.RestoredFrom == nil || *st.Published.RestoredFrom != 1 || len(st.Document.Sections) != 3 {
+		t.Fatalf("state after rolling back = %+v, want revision 3 from 1 and the draft back to it", st)
+	}
+
+	rec := gctest.AdminRequest(t, app, http.MethodGet, "/api/admin/x/layouts/home/revisions", nil)
+	var revs []Revision
+	gctest.DecodeData(t, rec, &revs)
+	if len(revs) != 3 || revs[0].Number != 3 || revs[2].Number != 1 {
+		t.Fatalf("revisions = %+v, want 3, 2, 1", revs)
+	}
+}
+
+// A save names the version it was read at: two editors on one page cannot
+// overwrite each other unseen.
+func TestAStaleSaveIsRefused(t *testing.T) {
+	app := layoutsApp(t)
+	body := map[string]any{"version": 0, "document": sections(hero("a", "One"))}
+	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", body, http.StatusOK)
+
+	rec := gctest.AdminRequest(t, app, http.MethodPut, "/api/admin/x/layouts/home", body)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "stale_draft") {
+		t.Fatalf("second first-save = %d %s, want 409 stale_draft", rec.Code, rec.Body)
+	}
+	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 1, "document": sections(hero("a", "Mine"))}, http.StatusOK)
+	rec = gctest.AdminRequest(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 1, "document": sections(hero("a", "Theirs"))})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("save at an old version = %d, want 409", rec.Code)
+	}
+	if rec := gctest.AdminRequest(t, app, http.MethodPost, "/api/admin/x/layouts/home/publish", map[string]any{"version": 1}); rec.Code != http.StatusConflict {
+		t.Fatalf("publish at an old version = %d, want 409", rec.Code)
+	}
+}
+
+func TestABadPageIsRefusedWithItsReason(t *testing.T) {
+	app := layoutsApp(t)
+	rec := gctest.AdminRequest(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 0, "document": sections(
+		map[string]any{"id": "a", "type": "announcement-bar", "settings": map[string]any{"text": "Hi", "link": "javascript:alert(1)"}})})
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "Announcement bar") {
+		t.Fatalf("a script link = %d %s, want 400 naming the section", rec.Code, rec.Body)
+	}
+	if rec := gctest.AdminRequest(t, app, http.MethodGet, "/api/admin/x/layouts/checkout", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("a page that cannot be arranged = %d, want 404", rec.Code)
+	}
+}
+
+// Switched off, the storefront is told there is no arranged page even when
+// one is published, and draws its built-in home page.
+func TestTheSwitchHidesThePublishedPage(t *testing.T) {
+	app := layoutsApp(t)
+	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 0, "document": sections(hero("a", "One"))}, http.StatusOK)
+	adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/publish", map[string]any{"version": 1}, http.StatusOK)
+	publicPage(t, app, "/x/layouts/home", http.StatusOK)
+	switchOn(t, app, false)
+	publicPage(t, app, "/x/layouts/home", http.StatusNotFound)
+}
+
+// A product grid holds references; the storefront gets the products as the
+// catalogue has them now — only active ones, in the shop's order, the limit
+// respected — and a grid whose collection is gone is empty, not an error.
+func TestProductGridsShowLiveProducts(t *testing.T) {
+	app := layoutsApp(t)
+	ctx := context.Background()
+	a := gctest.CreateProduct(t, app, "LY-A", 1000, 3)
+	b := gctest.CreateProduct(t, app, "LY-B", 1500, 3)
+	c := gctest.CreateProduct(t, app, "LY-C", 2000, 3)
+	col, err := app.Collections().Create(ctx, gocommerce.CollectionInput{Title: "Featured"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Collections().SetCollectionProducts(ctx, col.ID, []int64{c.ID, a.ID, b.ID}); err != nil {
+		t.Fatal(err)
+	}
+	draft := gocommerce.ProductDraft
+	if _, err := app.Products().UpdateProduct(ctx, b.ID, gocommerce.ProductPatch{Status: &draft}); err != nil {
+		t.Fatal(err)
+	}
+
+	doc := sections(
+		map[string]any{"id": "picked", "type": "product-grid", "enabled": true, "settings": map[string]any{
+			"source": "products", "products": []int64{b.ID, c.ID, a.ID}, "limit": 1}},
+		map[string]any{"id": "featured", "type": "product-grid", "enabled": true, "settings": map[string]any{"collection": col.ID}},
+		map[string]any{"id": "gone", "type": "product-grid", "enabled": true, "settings": map[string]any{"collection": 999999}},
+	)
+	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 0, "document": doc}, http.StatusOK)
+	adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/publish", map[string]any{"version": 1}, http.StatusOK)
+
+	got := publicPage(t, app, "/x/layouts/home", http.StatusOK)
+	if len(got.Sections) != 3 {
+		t.Fatalf("sections = %d, want 3", len(got.Sections))
+	}
+	if p := got.Sections[0].Products; len(p) != 1 || p[0].ID != c.ID {
+		t.Errorf("picked grid = %v, want only %d: the draft is skipped and the limit is one", p, c.ID)
+	}
+	if p := got.Sections[1].Products; len(p) != 2 || p[0].ID != c.ID || p[1].ID != a.ID {
+		t.Errorf("collection grid = %v, want %d then %d", p, c.ID, a.ID)
+	}
+	if p := got.Sections[2].Products; len(p) != 0 {
+		t.Errorf("grid of a deleted collection = %v, want empty", p)
+	}
+	if p := got.Sections[1].Products[0]; p.Variants[0].Price.AmountMinor != 2000 {
+		t.Errorf("price = %d, want the catalogue's 2000", p.Variants[0].Price.AmountMinor)
+	}
+}
+
+// A preview key shows the saved draft, for half an hour, to whoever holds it,
+// and is never cached or indexed; without it only the published page shows.
+func TestAPreviewShowsTheDraftToItsKey(t *testing.T) {
+	app := layoutsApp(t)
+	if rec := gctest.AdminRequest(t, app, http.MethodPost, "/api/admin/x/layouts/home/preview", nil); rec.Code != http.StatusConflict {
+		t.Fatalf("preview before a save = %d, want 409", rec.Code)
+	}
+	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 0, "document": sections(hero("draft", "Draft"))}, http.StatusOK)
+
+	rec := gctest.AdminRequest(t, app, http.MethodPost, "/api/admin/x/layouts/home/preview", nil)
+	var key struct {
+		Token string `json:"token"`
+	}
+	gctest.DecodeData(t, rec, &key)
+	if rec.Code != http.StatusCreated || key.Token == "" {
+		t.Fatalf("preview = %d %s", rec.Code, rec.Body)
+	}
+
+	prev := gctest.Request(t, app, http.MethodGet, "/x/layouts/home?preview="+key.Token, nil)
+	if prev.Code != http.StatusOK || prev.Header().Get("Cache-Control") != "no-store" || prev.Header().Get("X-Robots-Tag") != "noindex" {
+		t.Fatalf("preview page = %d, cache %q, robots %q", prev.Code, prev.Header().Get("Cache-Control"), prev.Header().Get("X-Robots-Tag"))
+	}
+	var p PublicPage
+	gctest.DecodeData(t, prev, &p)
+	if !p.Preview || ids(p) != "draft" {
+		t.Fatalf("preview = %+v, want the draft", p)
+	}
+	publicPage(t, app, "/x/layouts/home?preview=not-a-key", http.StatusNotFound)
+	publicPage(t, app, "/x/layouts/home", http.StatusNotFound)
+}
+
+func TestTheRegistryDescribesEverySection(t *testing.T) {
+	app := layoutsApp(t)
+	rec := gctest.AdminRequest(t, app, http.MethodGet, "/api/admin/x/layouts/sections", nil)
+	var reg struct {
+		Sections []SectionType `json:"sections"`
+		Themes   []Theme       `json:"themes"`
+	}
+	gctest.DecodeData(t, rec, &reg)
+	if len(reg.Sections) != len(Sections) || len(reg.Themes) == 0 {
+		t.Fatalf("registry = %+v", reg)
+	}
+	// The starter is a valid page: what the editor opens with can be saved.
+	if _, err := Validate(Starter()); err != nil {
+		t.Fatalf("the starter page does not validate: %v", err)
+	}
+}
+
+func TestRoutesDeclareRightsAndAreDocumented(t *testing.T) {
+	app := layoutsApp(t)
+	gctest.AssertAdminRoutesDeclareRights(t, app, "layouts")
+	gctest.AssertSpecCoversModuleRoutes(t, app, "layouts")
+}

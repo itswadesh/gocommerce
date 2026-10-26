@@ -147,6 +147,7 @@ Every gateway and carrier module installs idle: `-gateways` and `-carriers` put 
 | `wishlist` | Shoppers save products; the panel ranks what is wanted most and what of it is out of stock |
 | `showcases` | The store's own YouTube or Facebook videos beside the products they show, with the product being shown now and honest live labels; nothing is uploaded, served at `/x/showcases` |
 | `banners` | Pictures on the storefront's pages: slides across the top and grids of tiles under a heading, each with a phone crop and a link, served at `/x/banners` |
+| `layouts` | The storefront's home page arranged from sections — hero, product grids, image and text, benefits — in any order, drafted, previewed and published without a deployment, served at `/x/layouts/home` |
 
 A module that ships an admin surface also ships its panel screen: install
 `cms`, `invoices`, `identity` or `mcp` and the screen appears in the

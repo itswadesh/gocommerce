@@ -32,6 +32,7 @@ import (
 	indexnow "github.com/itswadesh/gocommerce/ext/indexnow"
 	invoices "github.com/itswadesh/gocommerce/ext/invoices"
 	klaviyo "github.com/itswadesh/gocommerce/ext/klaviyo"
+	layouts "github.com/itswadesh/gocommerce/ext/layouts"
 	mcp "github.com/itswadesh/gocommerce/ext/mcp"
 	navigation "github.com/itswadesh/gocommerce/ext/navigation"
 	newsletter "github.com/itswadesh/gocommerce/ext/newsletter"
@@ -74,6 +75,7 @@ func everyModule() []gocommerce.Module {
 		faq.New(faq.Config{}),
 		showcases.New(showcases.Config{}),
 		banners.New(banners.Config{}),
+		layouts.New(layouts.Config{}),
 		feeds.New(feeds.Config{}),
 		delhivery.New(delhivery.Config{}),
 		easyship.New(easyship.Config{}),
