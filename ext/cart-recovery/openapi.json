@@ -204,7 +204,7 @@
           "cart_id": {"type": "integer", "format": "int64"},
           "kind": {"type": "string", "enum": ["cart", "checkout"]},
           "status": {"type": "string", "enum": ["abandoned", "scheduled", "contacted", "recovered", "suppressed", "expired"]},
-          "indicator": {"type": "string", "description": "purchased, clicked, email_sent, inventory_unavailable, send_failed, no_email_provider, scheduled, no_contact, automation_off, no_steps, before_install or sequence_done."},
+          "indicator": {"type": "string", "description": "purchased, clicked, email_sent, inventory_unavailable, send_failed, no_email_provider, scheduled, no_contact, automation_off, no_steps, before_install, sequence_done or newer_basket."},
           "hold_reason": {"type": "string"},
           "email": {"type": "string"},
           "name": {"type": "string", "description": "From the newest order placed with the email; absent for a shopper with no order."},

@@ -1003,6 +1003,7 @@ var holdLabels = map[string]string{
 	holdNoProvider:         "no email provider is set up",
 	holdSendFailed:         "sending kept failing",
 	holdSequenceDone:       "the sequence is finished",
+	holdNewerBasket:        "the same shopper has a newer basket, which carries the reminders",
 }
 
 func labelOf(kind string, d map[string]any, currency string) string {
