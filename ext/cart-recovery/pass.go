@@ -696,7 +696,54 @@ func (m *Module) data(ctx context.Context, s Settings, cur *cartNow, to, linkTok
 	if d.DiscountCode != "" {
 		out["discount_code"] = d.DiscountCode
 	}
+	// What the message shows: each item with its price, the total, the shop,
+	// and the shopper by name when an order of theirs gave one — a basket
+	// itself carries no name.
+	out["items"] = itemLines(d.Lines)
+	out["cart_total"] = gocommerce.FormatMoney(d.Subtotal.AmountMinor, d.Subtotal.Currency)
+	if first := m.firstName(ctx, to); first != "" {
+		out["customer_first_name"] = first
+	}
+	if p, err := m.app.Profile().Get(ctx); err == nil {
+		if p.Name != "" {
+			out["store_name"] = p.Name
+		}
+		if p.Email != "" {
+			out["store_email"] = p.Email
+		}
+	}
 	return out
+}
+
+// firstName is the first word of the name on the shopper's newest order, or
+// nothing for somebody who has not ordered.
+func (m *Module) firstName(ctx context.Context, email string) string {
+	var name string
+	if err := m.app.DB().QueryRowContext(ctx, `
+		SELECT coalesce(name, '') FROM orders
+		WHERE lower(email) = lower($1) AND coalesce(name, '') <> ''
+		ORDER BY created_at DESC, id DESC LIMIT 1`, email).Scan(&name); err != nil {
+		return ""
+	}
+	first, _, _ := strings.Cut(strings.TrimSpace(name), " ")
+	return first
+}
+
+// itemLines is the basket one item to a line, with its price:
+// "2 × Linen shirt (M) — ₹2,998.00".
+func itemLines(lines []gocommerce.CartLine) string {
+	var b strings.Builder
+	for i, l := range lines {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(strconv.Itoa(l.Quantity) + " × " + l.Title)
+		if l.VariantLabel != "" {
+			b.WriteString(" (" + l.VariantLabel + ")")
+		}
+		b.WriteString(" — " + gocommerce.FormatMoney(l.Total.AmountMinor, l.Total.Currency))
+	}
+	return b.String()
 }
 
 // link is where a message points. Through this module's own redirect when the
