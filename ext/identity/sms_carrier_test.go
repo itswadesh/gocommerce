@@ -50,3 +50,22 @@ func TestASignInCodeNobodyWouldCarryIsRefused(t *testing.T) {
 		t.Fatalf("with sign-in codes set up, ask = %d %s", got.Code, got.Body)
 	}
 }
+
+// The sign-in text reads like the DLT template MSG91 carries, so a store on
+// another SMS provider sends the same words. "<#>" lets Android read the code
+// for the shopper.
+func TestTheSignInTextReadsLikeTheDLTTemplate(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	ctx := context.Background()
+	tpl, ok, err := app.NotifyTemplates().GetIn(ctx, gocommerce.ChannelSMS, EventLoginCode, "en")
+	if err != nil || !ok {
+		t.Fatalf("sign-in template: ok=%v err=%v", ok, err)
+	}
+	got, err := gocommerce.RenderNotifyText(tpl.Body, map[string]string{"code": "0420", "store_name": "Chillish", "expires_in_minutes": "10"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "<#> Hi, 0420 is your OTP to login to Chillish"; got != want {
+		t.Fatalf("text = %q, want %q", got, want)
+	}
+}
