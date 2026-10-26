@@ -380,7 +380,8 @@ func TestAnUnrecordedReportConnectionSeesNothing(t *testing.T) {
 
 // Staff may run any saved report, so a report reads no key to somebody's
 // account: not an order look-up code, not the token that opens a basket or a
-// guest's order. It still reads the rest of those rows.
+// guest's order, not an API key or a provider's key. It still reads the rest
+// of those rows.
 func TestASavedReportReadsNoCodeOrToken(t *testing.T) {
 	app := newTestApp(t)
 	staff := bearer(signInAs(t, app, "report-staff@example.com", RoleStaff))
@@ -399,12 +400,16 @@ func TestASavedReportReadsNoCodeOrToken(t *testing.T) {
 		"SELECT token FROM carts",
 		"SELECT * FROM carts",
 		"SELECT access_token FROM orders",
+		"SELECT secret FROM api_keys",
+		"SELECT settings FROM plugins",
+		"SELECT count(*) FROM idempotency_keys",
 	} {
 		if code, body := run(q); code != http.StatusBadRequest || !strings.Contains(body, "permission denied") {
 			t.Errorf("staff running %q = %d, want the database's permission denied: %s", q, code, body)
 		}
 	}
-	for _, q := range []string{"SELECT id, created_at FROM carts", "SELECT number, status FROM orders"} {
+	for _, q := range []string{"SELECT id, created_at FROM carts", "SELECT number, status FROM orders",
+		"SELECT name, role FROM api_keys", "SELECT key, enabled FROM plugins"} {
 		if code, body := run(q); code != http.StatusOK {
 			t.Errorf("staff running %q = %d, want the rest of the row: %s", q, code, body)
 		}

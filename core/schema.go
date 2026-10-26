@@ -90,6 +90,11 @@ func coreMigrations() []Migration {
 		{ID: "0079_report_withheld", SQL: migration0079ReportWithheld},
 		WithholdFromReports("0080_withhold_credentials_from_reports",
 			"error_issues", "error_events", "order_lookup_codes", "carts.token", "orders.access_token"),
+		// A checkout's kept answer holds the guest's order token and the
+		// provider's payment details; with no secrets key set, the other two
+		// hold an API key and a provider's keys as they are.
+		WithholdFromReports("0081_withhold_keys_from_reports",
+			"idempotency_keys", "api_keys.secret", "plugins.settings"),
 	}
 }
 

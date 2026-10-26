@@ -14,3 +14,11 @@ func TestAReportReadsNoPartialCheckoutsBasketToken(t *testing.T) {
 	app := gctest.NewWithReports(t, accounts, New(Config{Accounts: accounts}))
 	gctest.AssertReportsCannotRead(t, app, "b2b_partial_checkouts", "cart_token")
 }
+
+// The basket a partial checkout came from is named by its token, and that
+// basket stays open with the lines not yet placed.
+func TestAReportReadsNoPartialCheckoutsSourceBasket(t *testing.T) {
+	accounts := identity.New(identity.Config{})
+	app := gctest.NewWithReports(t, accounts, New(Config{Accounts: accounts}))
+	gctest.AssertReportsCannotRead(t, app, "b2b_partial_checkouts", "source_cart")
+}
