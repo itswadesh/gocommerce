@@ -247,9 +247,13 @@ func (m *Module) Notify(ctx context.Context, n gocommerce.Notification) error {
 		recipient[k] = v
 	}
 	// A DLT OTP template is usually registered as "##otp## ... ##website##",
-	// so the code and the store's name go under those names as well.
+	// so the code and the store's name go under those names as well. MSG91
+	// matches a variable's name exactly, and templates are written both
+	// ways, so the code goes as ##OTP## too: an empty variable makes the text
+	// differ from the approved one, and DLT drops it after MSG91 said success.
 	if v, ok := n.Data["code"]; ok {
 		recipient["otp"] = v
+		recipient["OTP"] = v
 	}
 	if v, ok := n.Data["store_name"]; ok {
 		recipient["website"] = v
