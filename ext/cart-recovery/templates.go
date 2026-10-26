@@ -17,58 +17,64 @@ var templateEvents = []string{templateFirst, templateSecond, templateLast}
 
 // templateVariables are the keys data() fills. recovery_url is absent when no
 // storefront address is configured, and the defaults branch on it the way the
-// password-reset mail branches on reset_url.
+// password-reset mail branches on reset_url; customer_first_name, store_name
+// and store_email are absent when nobody has given them.
 var templateVariables = []string{
-	"recovery_url", "cart_token", "customer_email", "item_count", "summary",
-	"subtotal_minor", "currency", "discount_code", "step",
+	"customer_first_name", "items", "cart_total", "recovery_url", "cart_token",
+	"customer_email", "item_count", "summary", "subtotal_minor", "currency",
+	"discount_code", "store_name", "store_email", "step",
 }
 
-func (m *Module) registerTemplates(app *gocommerce.App) {
-	link := `{{if .recovery_url}}Pick up where you left off:
-{{.recovery_url}}{{else}}Your basket reference is {{.cart_token}}.{{end}}`
+// recoveryBody is the shape the three share, taken from reminders a live
+// store already sends: the shopper by name, why we are writing, the items
+// with their prices and the total, one way back, and somebody to ask.
+func recoveryBody(intro, action string) string {
+	return `Hi{{with .customer_first_name}} {{.}}{{end}},
 
-	app.RegisterNotifyTemplate(gocommerce.NotifyTemplate{
-		Channel: gocommerce.ChannelEmail, Event: templateFirst,
-		Title:       "Checkout recovery #1",
-		Description: "The first reminder about a basket somebody left, sent by the recovery automation.",
-		Variables:   templateVariables,
-		Subject:     "You left something in your basket",
-		Body: `Hi,
+` + intro + `
 
-You were nearly there — {{.summary}} is still waiting in your basket.
+{{.items}}
 
-` + link + `
+Total: {{.cart_total}}
+
+{{if .recovery_url}}` + action + `: {{.recovery_url}}{{else}}Your cart reference is {{.cart_token}}.{{end}}
 {{if .discount_code}}
 Your code {{.discount_code}} is still applied.
 {{end}}
-If you have changed your mind, there is nothing to do; we won't keep writing for long.`,
+Questions? Reply to this email{{with .store_email}} or contact us at {{.}}{{end}}.
+{{with .store_name}}
+{{.}}{{end}}`
+}
+
+func (m *Module) registerTemplates(app *gocommerce.App) {
+	app.RegisterNotifyTemplate(gocommerce.NotifyTemplate{
+		Channel: gocommerce.ChannelEmail, Event: templateFirst,
+		Title:       "Checkout recovery #1",
+		Description: "The first reminder about a cart somebody left, sent by the recovery automation.",
+		Variables:   templateVariables,
+		Subject:     "You left something in your cart",
+		Body: recoveryBody(
+			"You left these in your cart. They're saved, and you can pick up right where you left off.",
+			"Complete your order"),
 	})
 	app.RegisterNotifyTemplate(gocommerce.NotifyTemplate{
 		Channel: gocommerce.ChannelEmail, Event: templateSecond,
 		Title:       "Checkout recovery #2",
-		Description: "A second reminder, for a basket the first one did not bring back.",
+		Description: "A second reminder, for a cart the first one did not bring back.",
 		Variables:   templateVariables,
 		Subject:     "Still thinking it over?",
-		Body: `Hi,
-
-Your basket is saved: {{.summary}}.
-
-If something stopped you — a question about sizing, delivery or payment — just reply to this email and we'll help.
-
-` + link,
+		Body: recoveryBody(
+			"Your cart is still saved. If anything is holding you back, a question about sizing, delivery or one of these items, just reply to this email and we'll help.",
+			"Return to your cart"),
 	})
 	app.RegisterNotifyTemplate(gocommerce.NotifyTemplate{
 		Channel: gocommerce.ChannelEmail, Event: templateLast,
 		Title:       "Checkout recovery #3",
-		Description: "The last reminder in the sequence. Nothing is sent about this basket after it.",
+		Description: "The last reminder in the sequence. Nothing is sent about this cart after it.",
 		Variables:   templateVariables,
-		Subject:     "Last chance for the items in your basket",
-		Body: `Hi,
-
-This is our last note about your basket: {{.summary}}.
-
-Stock is not held for a basket, so we can't promise it will all still be there later.
-
-` + link,
+		Subject:     "Last chance to complete your order",
+		Body: recoveryBody(
+			"This is our last reminder about the items in your cart. Stock and prices change, so we can't promise they'll be waiting much longer.",
+			"Complete your order"),
 	})
 }
