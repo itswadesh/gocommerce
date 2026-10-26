@@ -92,3 +92,80 @@ func TestEveryWithheldNameIsWithheld(t *testing.T) {
 	}
 	t.Fatal("the doctor has no report withholding check")
 }
+
+// columnsHolding names every store-table column whose value contains needle,
+// as "table.column": only those a saved report may read when readable is set,
+// otherwise every one.
+func columnsHolding(t *testing.T, app *gocommerce.App, needle string, readable bool) []string {
+	t.Helper()
+	ctx := gocommerce.WithStore(context.Background(), app.DefaultStore())
+	rows, err := app.DB().QueryContext(ctx, `
+		SELECT table_name, column_name FROM information_schema.columns
+		WHERE table_schema = current_schema()
+		  AND (NOT $2 OR has_column_privilege($1, quote_ident(table_name), column_name, 'SELECT'))
+		ORDER BY 1, 2`, testdb.ReportsRole, readable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cols [][2]string
+	for rows.Next() {
+		var c [2]string
+		if err := rows.Scan(&c[0], &c[1]); err != nil {
+			t.Fatal(err)
+		}
+		cols = append(cols, c)
+	}
+	rows.Close()
+	var found []string
+	for _, c := range cols {
+		var hit bool
+		q := `SELECT EXISTS (SELECT 1 FROM "` + c[0] + `" WHERE strpos("` + c[1] + `"::text, $1) > 0)`
+		if err := app.DB().QueryRowContext(ctx, q, needle).Scan(&hit); err != nil {
+			t.Fatalf("%s.%s: %v", c[0], c[1], err)
+		}
+		if hit {
+			found = append(found, c[0]+"."+c[1])
+		}
+	}
+	return found
+}
+
+// cart.abandoned carries the basket's token so a recovery email can link back
+// to it, and the event is kept after it is published, in the outbox and in
+// each webhook delivery. No column a saved report may read holds that token.
+func TestNoReportReadsAnAbandonedBasketsToken(t *testing.T) {
+	app := gctest.NewWithReports(t, everyModule()...)
+	ctx := gocommerce.WithStore(context.Background(), app.DefaultStore())
+	if rec := gctest.AdminRequest(t, app, "POST", "/api/admin/x/webhooks/endpoints",
+		map[string]any{"url": "https://hooks.example.com/baskets", "events": []string{"cart.abandoned"}}); rec.Code != 201 {
+		t.Fatalf("create the endpoint = %d: %s", rec.Code, rec.Body)
+	}
+	product := gctest.CreateProduct(t, app, "ABANDON-REPORT", 2500, 5)
+	cart, err := app.Cart().Create(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Cart().AddLine(ctx, cart.Token, product.DefaultVariant().ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Cart().SetEmail(ctx, cart.Token, "shopper@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.DB().ExecContext(ctx, `UPDATE carts SET expires_at = now() - interval '1 minute' WHERE token = $1`, cart.Token); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := app.Cart().Abandon(ctx); err != nil || n != 1 {
+		t.Fatalf("Abandon = %d, %v; want 1", n, err)
+	}
+	gctest.DrainOutbox(t, app)
+
+	all := strings.Join(columnsHolding(t, app, cart.Token, false), " ")
+	for _, col := range []string{"outbox_events.payload", "webhook_deliveries.payload"} {
+		if !strings.Contains(all, col) {
+			t.Fatalf("the basket's token is in %s, not %s; this test looks at nothing", all, col)
+		}
+	}
+	if got := columnsHolding(t, app, cart.Token, true); len(got) > 0 {
+		t.Errorf("a saved report reads the basket's token out of %v", got)
+	}
+}
