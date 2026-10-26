@@ -64,7 +64,9 @@ func (m *Module) registerSignIn(app *gocommerce.App) {
 		Channel: gocommerce.ChannelSMS, Event: EventLoginCode, Title: "Sign-in code",
 		Description: "To a shopper signing in with their phone. The code works for ten minutes.",
 		Variables:   []string{"code", "store_name", "expires_in_minutes"},
-		Body:        `{{.code}} is your {{with .store_name}}{{.}} {{end}}sign-in code. It works for {{.expires_in_minutes}} minutes.`,
+		// The wording of the DLT template MSG91 carries, so every SMS provider
+		// sends the same text. "<#>" lets Android read the code for the shopper.
+		Body: `<#> Hi, {{.code}} is your OTP to login to {{with .store_name}}{{.}}{{else}}your account{{end}}`,
 	})
 }
 

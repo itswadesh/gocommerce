@@ -47,6 +47,10 @@ func TestTextsTheSignInAndOrderCodes(t *testing.T) {
 		if last.TemplateID != c.tpl || last.Recipients[0]["code"] != c.code || last.Recipients[0]["mobiles"] != "919876543210" {
 			t.Errorf("%s sent %+v, want template %s carrying the code", c.event, last, c.tpl)
 		}
+		// A DLT template names its variables ##otp## and ##website##.
+		if last.Recipients[0]["otp"] != c.code || last.Recipients[0]["website"] != "Chillish" {
+			t.Errorf("%s sent %+v, want otp and website for the template's variables", c.event, last.Recipients[0])
+		}
 	}
 }
 

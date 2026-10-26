@@ -238,6 +238,14 @@ func (m *Module) Notify(ctx context.Context, n gocommerce.Notification) error {
 	for k, v := range n.Data {
 		recipient[k] = v
 	}
+	// A DLT OTP template is usually registered as "##otp## ... ##website##",
+	// so the code and the store's name go under those names as well.
+	if v, ok := n.Data["code"]; ok {
+		recipient["otp"] = v
+	}
+	if v, ok := n.Data["store_name"]; ok {
+		recipient["website"] = v
+	}
 
 	payload := map[string]any{
 		"template_id": templateID,
