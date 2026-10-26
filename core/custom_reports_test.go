@@ -343,7 +343,7 @@ func TestAReportReadsOnlyItsOwnStore(t *testing.T) {
 func TestAReportCannotReadTheInstallsOwnTables(t *testing.T) {
 	app := newTestApp(t)
 	for _, table := range []string{"superusers", "superuser_sessions", "superuser_password_resets",
-		"stores", "store_members", "api_key_index", "report_runs"} {
+		"stores", "store_members", "api_key_index", "report_runs", "report_withheld"} {
 		code, body := runReportOver(t, app, app.DefaultStore(), "SELECT count(*) FROM "+table)
 		if code != http.StatusBadRequest || !strings.Contains(body, "permission denied") {
 			t.Fatalf("reading %s = %d, want the database's permission denied: %s", table, code, body)
