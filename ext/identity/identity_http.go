@@ -22,6 +22,7 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	// Or a phone and a code sent to it, when the store chose that (D116).
 	app.HandleFunc("POST /x/identity/otp", m.handleRequestPhoneCode)
 	app.HandleFunc("POST /x/identity/otp/verify", m.handleVerifyPhoneCode)
+	app.HandleFunc("POST /x/identity/otp/new-account", m.handleOpenPhoneAccount)
 	// Public: the link is opened from the inbox, often on a device where the
 	// shopper is not signed in. The token is the whole credential.
 	app.HandleFunc("POST /x/identity/email-verification/confirm", m.handleConfirmVerification)
@@ -160,12 +161,25 @@ func (m *Module) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
+		// A phone proved by its code that has no account yet, to make a way
+		// into this one (D123).
+		Phone      string `json:"phone"`
+		PhoneToken string `json:"phone_token"`
 	}
 	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	c, sess, err := m.Authenticate(r.Context(), in.Email, in.Password, clientIP(r))
+	var (
+		c    *Customer
+		sess *Session
+		err  error
+	)
+	if in.PhoneToken != "" {
+		c, sess, err = m.AuthenticateAddingPhone(r.Context(), in.Email, in.Password, clientIP(r), in.Phone, in.PhoneToken)
+	} else {
+		c, sess, err = m.Authenticate(r.Context(), in.Email, in.Password, clientIP(r))
+	}
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return

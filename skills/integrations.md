@@ -347,6 +347,12 @@ routes of the other way answer 409 `sign_in_method`. Phone sign-in is
 account opens one, found again by `login_phone`, so such an account has no
 email and no password.
 
+With `email_or_phone` the storefront asks phone first, as Myntra does
+(D123): `/x/identity/otp/verify` with `ask_if_new` answers a new phone with
+`{new_phone, phone_token}` instead of an account, and the shopper either signs
+in with their email and password plus `phone` and `phone_token`, which adds
+the phone, or opens a new account at `/x/identity/otp/new-account`.
+
 With `email_or_phone` both ways work, and one account can carry both (D118):
 signed in by email, `POST /x/identity/me/phone` and `/x/identity/me/phone/verify`
 prove a phone and make it sign in to that account; signed in by phone, the

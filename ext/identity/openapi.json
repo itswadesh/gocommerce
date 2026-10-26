@@ -54,15 +54,31 @@
       "post": {
         "tags": ["identity"],
         "summary": "Sign in with the code sent to a phone",
-        "description": "Spends one try. The right code signs in the account on that phone, opening one the first time, and is spent. A wrong, spent or expired code is one answer, 422 invalid_code.",
+        "description": "Spends one try. The right code signs in the account on that phone, opening one the first time, and is spent. A wrong, spent or expired code is one answer, 422 invalid_code. With ask_if_new on a store that signs in either way (email_or_phone), a phone with no account opens none: the answer is {new_phone: true, phone_token}, and the storefront asks whether the shopper already has an account (D123). They sign in with their email and password plus phone and phone_token, which adds the phone to that account, or open a new one at /x/identity/otp/new-account. The proof works for ten minutes, and asking for a new code retires it.",
         "requestBody": {
           "required": true,
-          "content": {"application/json": {"schema": {"type": "object", "required": ["phone", "code"], "properties": {"phone": {"type": "string"}, "code": {"type": "string", "example": "0420"}}}}}
+          "content": {"application/json": {"schema": {"type": "object", "required": ["phone", "code"], "properties": {"phone": {"type": "string"}, "code": {"type": "string", "example": "0420"}, "ask_if_new": {"type": "boolean", "description": "Ask before opening an account for a new phone (D123)."}}}}}
+        },
+        "responses": {
+          "200": {"description": "Signed in, or, with ask_if_new and a new phone, {new_phone: true, phone_token} and no session.", "content": {"application/json": {"schema": {"oneOf": [{"$ref": "#/components/schemas/IdentityAuth"}, {"type": "object", "properties": {"new_phone": {"type": "boolean"}, "phone_token": {"type": "string"}}}]}}}},
+          "409": {"description": "The store does not sign customers in by phone.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
+          "422": {"description": "The code is wrong, spent or expired.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
+        }
+      }
+    },
+    "/x/identity/otp/new-account": {
+      "post": {
+        "tags": ["identity"],
+        "summary": "Open an account on a phone a code proved",
+        "description": "The shopper said they have no account already (D123): spends the phone_token /x/identity/otp/verify answered with ask_if_new, and signs in a new account on the phone. A spent, stale or other phone's token is 422 invalid_code.",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"type": "object", "required": ["phone", "phone_token"], "properties": {"phone": {"type": "string"}, "phone_token": {"type": "string"}}}}}
         },
         "responses": {
           "200": {"$ref": "#/components/responses/IdentityAuthResponse"},
           "409": {"description": "The store does not sign customers in by phone.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
-          "422": {"description": "The code is wrong, spent or expired.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
+          "422": {"description": "The proof is spent, stale, or another phone's.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
         }
       }
     },
@@ -516,7 +532,9 @@
         "required": ["email", "password"],
         "properties": {
           "email": {"type": "string", "format": "email"},
-          "password": {"type": "string", "format": "password"}
+          "password": {"type": "string", "format": "password"},
+          "phone": {"type": "string", "description": "With phone_token: the phone a code just proved, which has no account yet. It becomes a way into this account (D123)."},
+          "phone_token": {"type": "string", "description": "The proof /x/identity/otp/verify answered with ask_if_new. A wrong password leaves it unspent; a stale one is 422 invalid_code."}
         }
       },
       "IdentityAuth": {

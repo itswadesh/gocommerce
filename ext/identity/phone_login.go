@@ -224,14 +224,161 @@ func (m *Module) sendPhoneCode(ctx context.Context, phone string) error {
 // VerifyPhoneCode spends one try and, when code is the phone's open code,
 // signs in the account on that phone, opening one if it has none.
 func (m *Module) VerifyPhoneCode(ctx context.Context, phone, code string) (*Customer, *Session, error) {
+	c, sess, _, err := m.VerifyPhoneCodeAsking(ctx, phone, code, false)
+	return c, sess, err
+}
+
+// PhoneProof is the answer to a right code for a phone with no account, on a
+// store that signs in either way (D123): the shopper says whether they
+// already have an account, signing in to it with the proof to add the phone,
+// or opens a new one with it (OpenPhoneAccount).
+type PhoneProof struct {
+	NewPhone   bool   `json:"new_phone"`
+	PhoneToken string `json:"phone_token"`
+}
+
+// phoneProofTTL is how long the shopper has to answer.
+const phoneProofTTL = 10 * time.Minute
+
+// VerifyPhoneCodeAsking is VerifyPhoneCode, except that with ask, on a store
+// that signs in either way, a phone with no account opens none: it answers a
+// PhoneProof instead, as Myntra asks "already have an account?", so a
+// customer who signed up by email is not handed a second, empty account.
+func (m *Module) VerifyPhoneCodeAsking(ctx context.Context, phone, code string, ask bool) (*Customer, *Session, *PhoneProof, error) {
 	if err := m.requireMethod(ctx, LoginPhoneOTP); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	phone, err := m.spendPhoneCode(ctx, phone, code)
 	if err != nil {
+		return nil, nil, nil, err
+	}
+	if method, _ := m.signInMethod(ctx); ask && method == LoginEither {
+		var known bool
+		if err := m.db.QueryRowContext(ctx,
+			`SELECT EXISTS (SELECT 1 FROM identity_customers WHERE login_phone = $1)`, phone).Scan(&known); err != nil {
+			return nil, nil, nil, gocommerce.Internalf(err, "look up phone")
+		}
+		if !known {
+			token, err := newToken()
+			if err != nil {
+				return nil, nil, nil, gocommerce.Internalf(err, "prove phone")
+			}
+			// Kept beside the phone's codes, so asking for a new code
+			// retires it as it retires them.
+			if _, err := m.db.ExecContext(ctx,
+				`INSERT INTO identity_login_codes (phone, code_hash, expires_at) VALUES ($1, $2, $3)`,
+				phone, phoneProofHash(phone, token), time.Now().Add(phoneProofTTL)); err != nil {
+				return nil, nil, nil, gocommerce.Internalf(err, "prove phone")
+			}
+			return nil, nil, &PhoneProof{NewPhone: true, PhoneToken: token}, nil
+		}
+	}
+	c, sess, err := m.openPhoneAccount(ctx, phone)
+	return c, sess, nil, err
+}
+
+// OpenPhoneAccount spends a phone's proof and signs in a new account on it:
+// the shopper said they have no account already.
+func (m *Module) OpenPhoneAccount(ctx context.Context, phone, token string) (*Customer, *Session, error) {
+	if err := m.requireMethod(ctx, LoginPhoneOTP); err != nil {
 		return nil, nil, err
 	}
+	phone, err := m.spendPhoneProof(ctx, m.db, phone, token)
+	if err != nil {
+		return nil, nil, err
+	}
+	return m.openPhoneAccount(ctx, phone)
+}
 
+// AuthenticateAddingPhone signs in with an email and a password and makes the
+// proved phone a way into that account, as LinkPhone does. A wrong password
+// leaves the proof unspent, to try again.
+func (m *Module) AuthenticateAddingPhone(ctx context.Context, email, password, clientIP, phone, token string) (*Customer, *Session, error) {
+	if err := m.requireMethod(ctx, LoginPhoneOTP); err != nil {
+		return nil, nil, err
+	}
+	phone, err := normalizePhone(phone)
+	if err != nil {
+		return nil, nil, err
+	}
+	// The proof is checked before the password, so a stale one is said
+	// plainly rather than after the shopper typed the password right.
+	var open bool
+	if err := m.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM identity_login_codes
+		WHERE phone = $1 AND code_hash = $2 AND expires_at > now())`,
+		phone, phoneProofHash(phone, token)).Scan(&open); err != nil {
+		return nil, nil, gocommerce.Internalf(err, "check phone")
+	}
+	if !open {
+		return nil, nil, phoneProofExpired
+	}
+	c, err := m.checkPassword(ctx, email, password, clientIP)
+	if err != nil {
+		return nil, nil, err
+	}
+	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+		if _, err := m.spendPhoneProof(ctx, tx, phone, token); err != nil {
+			return err
+		}
+		linked, err := scanCustomer(tx.QueryRowContext(ctx, `
+			UPDATE identity_customers SET login_phone = $2, phone = $2, updated_at = now()
+			WHERE id = $1 AND (login_phone IS NULL OR login_phone = $2) RETURNING `+customerColumns, c.ID, phone))
+		if errors.Is(err, sql.ErrNoRows) {
+			return gocommerce.Conflictf("This account already signs in with another phone. Sign in with that phone, or with your email alone.")
+		}
+		if isUniqueViolation(err, "identity_customers_login_phone_key") {
+			return gocommerce.Conflictf("%s already signs in to another account here.", phone)
+		}
+		if err != nil {
+			return gocommerce.Internalf(err, "add phone")
+		}
+		c = linked
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	sess, err := m.issue(ctx, c.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return c, sess, nil
+}
+
+var phoneProofExpired = &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "invalid_code",
+	Message: "That phone check has expired. Ask for a new code."}
+
+// rowQuerier is a database or a transaction.
+type rowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// spendPhoneProof spends phone's open proof, returning the normalized phone.
+func (m *Module) spendPhoneProof(ctx context.Context, q rowQuerier, phone, token string) (string, error) {
+	phone, err := normalizePhone(phone)
+	if err != nil {
+		return "", err
+	}
+	var id int64
+	err = q.QueryRowContext(ctx, `
+		UPDATE identity_login_codes SET expires_at = now()
+		WHERE phone = $1 AND code_hash = $2 AND expires_at > now() RETURNING id`,
+		phone, phoneProofHash(phone, token)).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", phoneProofExpired
+	}
+	if err != nil {
+		return "", gocommerce.Internalf(err, "spend phone check")
+	}
+	return phone, nil
+}
+
+func phoneProofHash(phone, token string) string {
+	return hashToken("proof:" + phone + ":" + token)
+}
+
+// openPhoneAccount signs in the account on phone, opening it the first time.
+func (m *Module) openPhoneAccount(ctx context.Context, phone string) (*Customer, *Session, error) {
 	// The account on this phone, or a new one. ON CONFLICT makes two first
 	// sign-ins at once open one account between them.
 	c, err := scanCustomer(m.db.QueryRowContext(ctx, `
@@ -366,14 +513,36 @@ func (m *Module) handleRequestPhoneCode(w http.ResponseWriter, r *http.Request) 
 
 func (m *Module) handleVerifyPhoneCode(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Phone string `json:"phone"`
-		Code  string `json:"code"`
+		Phone    string `json:"phone"`
+		Code     string `json:"code"`
+		AskIfNew bool   `json:"ask_if_new"`
 	}
 	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	c, sess, err := m.VerifyPhoneCode(r.Context(), in.Phone, in.Code)
+	c, sess, proof, err := m.VerifyPhoneCodeAsking(r.Context(), in.Phone, in.Code, in.AskIfNew)
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	if proof != nil {
+		gocommerce.Respond(w, http.StatusOK, proof)
+		return
+	}
+	respondAuth(w, http.StatusOK, c, sess)
+}
+
+func (m *Module) handleOpenPhoneAccount(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Phone      string `json:"phone"`
+		PhoneToken string `json:"phone_token"`
+	}
+	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	c, sess, err := m.OpenPhoneAccount(r.Context(), in.Phone, in.PhoneToken)
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
