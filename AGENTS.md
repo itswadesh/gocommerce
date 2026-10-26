@@ -230,7 +230,11 @@ there by appending `gocommerce.ScopeMigration("000N_store_scope", "my_table",
 that is not. Every database call takes the caller's `ctx` — one without a
 context runs unbound and sees nothing — and background work runs through
 `app.ForEachStore`. An `ON CONFLICT` target names `store_id` first, as the
-rewritten keys do.
+rewritten keys do. A table or column that holds a credential (a one-time
+code, a token that opens a basket) is kept from custom reports with
+`gocommerce.WithholdFromReports("000N_withhold_from_reports", "my_codes",
+"my_table.token")`, because staff may run any saved report;
+`gctest.AssertReportsCannotRead` proves it.
 
 ### 16. An address a store chose is called through `app.OutboundClient`
 

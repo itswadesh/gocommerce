@@ -131,7 +131,10 @@ func TestEveryModuleTableIsScoped(t *testing.T) {
 		                        'superuser_password_resets', 'gocommerce_migrations',
 		                        -- Which connection runs a report for which store (D84):
 		                        -- the record that scopes reports, so no one store's.
-		                        'report_runs')
+		                        'report_runs',
+		                        -- Which tables and columns reports may not read: the
+		                        -- schema's, the same for every store (D120).
+		                        'report_withheld')
 		  AND NOT (c.relrowsecurity AND c.relforcerowsecurity AND EXISTS (
 		      SELECT 1 FROM pg_policies p
 		      WHERE p.schemaname = n.nspname AND p.tablename = c.relname AND p.policyname = 'store_scope'))

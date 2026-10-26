@@ -72,7 +72,10 @@ func storeTables(t *testing.T, app *App) []string {
 		// the reports policy is keyed on something a query cannot set, so it
 		// must not itself be read through gocommerce.store_id; the reports
 		// login has no rights on it at all (report_scope.go).
-		"report_runs": true}
+		"report_runs": true,
+		// Which tables and columns reports may not read: the schema's, the same
+		// for every store (D120).
+		"report_withheld": true}
 	rows, err := app.db.QueryContext(context.Background(),
 		`SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY 1`)
 	if err != nil {
