@@ -1,8 +1,10 @@
 package gocommerce
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -137,6 +139,26 @@ func TestDoctorFailsWhenReportsCanReadWhatIsWithheld(t *testing.T) {
 	d = findCheck(t, app.Diagnose(ctx), "report withholding")
 	if d.Status != StatusWarn || !strings.Contains(d.Detail, "orders.access_token") {
 		t.Errorf("after a rename: %+v, want a warning naming orders.access_token", d)
+	}
+}
+
+// A start says so too, where an operator looks before running the doctor.
+func TestAStartLogsAWithheldNameThatIsGone(t *testing.T) {
+	app := newTestApp(t)
+	if _, err := app.db.ExecContext(context.Background(),
+		`INSERT INTO report_withheld (table_name, column_name) VALUES ('carts', 'renamed_away')`); err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	cfg := testConfig(app.cfg.DBURL)
+	cfg.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+	again, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer again.Close()
+	if !strings.Contains(logs.String(), "carts.renamed_away") {
+		t.Errorf("the start logged nothing about carts.renamed_away:\n%s", logs.String())
 	}
 }
 
