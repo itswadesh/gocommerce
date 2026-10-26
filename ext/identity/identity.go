@@ -583,9 +583,23 @@ func (m *Module) Signup(ctx context.Context, email, password, name, phone string
 // Authenticate verifies an email and password and issues a session. Every
 // failure is the same error, and the timing says no more than the message.
 func (m *Module) Authenticate(ctx context.Context, email, password, clientIP string) (*Customer, *Session, error) {
+	c, err := m.checkPassword(ctx, email, password, clientIP)
+	if err != nil {
+		return nil, nil, err
+	}
+	sess, err := m.issue(ctx, c.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return c, sess, nil
+}
+
+// checkPassword is the account an email and a password open, under the same
+// throttle and with one answer for a wrong address or a wrong password.
+func (m *Module) checkPassword(ctx context.Context, email, password, clientIP string) (*Customer, error) {
 	email = normalizeEmail(email)
 	if retryAfter, ok := m.throttle.blocked(email, clientIP); ok {
-		return nil, nil, &gocommerce.APIError{
+		return nil, &gocommerce.APIError{
 			Status:  http.StatusTooManyRequests,
 			Code:    "too_many_attempts",
 			Message: fmt.Sprintf("too many failed attempts; try again in %s", retryAfter.Round(time.Second)),
@@ -596,20 +610,16 @@ func (m *Module) Authenticate(ctx context.Context, email, password, clientIP str
 		if errors.Is(err, sql.ErrNoRows) {
 			m.dummyVerify(ctx, password)
 			m.throttle.fail(email, clientIP)
-			return nil, nil, invalidCredentials
+			return nil, invalidCredentials
 		}
-		return nil, nil, gocommerce.Internalf(err, "look up account")
+		return nil, gocommerce.Internalf(err, "look up account")
 	}
 	if !verifyPassword(c.passwordHash, password) {
 		m.throttle.fail(email, clientIP)
-		return nil, nil, invalidCredentials
+		return nil, invalidCredentials
 	}
 	m.throttle.succeed(email, clientIP)
-	sess, err := m.issue(ctx, c.ID)
-	if err != nil {
-		return nil, nil, err
-	}
-	return c, sess, nil
+	return c, nil
 }
 
 // Update changes the account's own details. An email change keeps every
