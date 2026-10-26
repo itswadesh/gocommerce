@@ -58,7 +58,7 @@ func TestTextsTheSignInAndOrderCodes(t *testing.T) {
 // that has not set its own, as the install's auth key does. A store's own id
 // wins.
 func TestTemplatesFromTheEnvironmentServeEveryStore(t *testing.T) {
-	env := map[string]string{"MSG91_TEMPLATE_SIGN_IN_CODE": " env-signin ", "MSG91_TEMPLATE_ORDER_SHIPPED": "env-shipped", "UNRELATED": "x"}
+	env := map[string]string{"SMS_OTP_TEMPLATE_ID": " env-signin ", "MSG91_TEMPLATE_ORDER_SHIPPED": "env-shipped", "UNRELATED": "x"}
 	tpl := EnvTemplates(func(k string) string { return env[k] })
 	if len(tpl) != 2 || tpl[EventLoginCode] != "env-signin" || tpl[gocommerce.EventOrderShipped] != "env-shipped" {
 		t.Fatalf("EnvTemplates = %v, want the sign-in and shipped ids", tpl)
@@ -85,5 +85,22 @@ func TestTemplatesFromTheEnvironmentServeEveryStore(t *testing.T) {
 	}
 	if calls := s.all(); calls[len(calls)-1].TemplateID != "store-signin" {
 		t.Fatalf("last call = %+v, want the store's own template", calls[len(calls)-1])
+	}
+}
+
+// The install's DLT sender goes with every text, so MSG91 sends from the
+// header the template is registered under.
+func TestTextsGoFromTheInstallsSender(t *testing.T) {
+	s := &stub{}
+	server := gctest.StubHTTP(t, s.handler)
+	app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, New(Config{
+		BaseURL: server.URL, AuthKey: "k", Sender: " MISIKI ",
+		Templates: map[string]string{EventLoginCode: "tpl-signin"},
+	}))
+	if err := app.Notify(context.Background(), codeNote(EventLoginCode, "0420")); err != nil {
+		t.Fatal(err)
+	}
+	if calls := s.all(); len(calls) != 1 || calls[0].Sender != "MISIKI" {
+		t.Fatalf("calls = %+v, want one text from MISIKI", calls)
 	}
 }
