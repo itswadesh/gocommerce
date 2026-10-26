@@ -539,6 +539,22 @@ export const banners = {
     reorder: (page, ids) => api.put("/api/admin/x/banners/order", { page, ids }),
 };
 
+/**
+ * layouts is ext/layouts (D125): the home page as the shop arranges it, an
+ * ordered list of sections drafted, previewed and published whole.
+ */
+export const layouts = {
+    registry: () => api.get("/api/admin/x/layouts/sections"),
+    get: (page) => api.get(`/api/admin/x/layouts/${page}`),
+    save: (page, version, document) => api.put(`/api/admin/x/layouts/${page}`, { version, document }),
+    publish: (page, version) => api.post(`/api/admin/x/layouts/${page}/publish`, { version }),
+    revisions: (page) => api.get(`/api/admin/x/layouts/${page}/revisions`),
+    rollback: (page, revision) => api.post(`/api/admin/x/layouts/${page}/rollback`, { revision }),
+    preview: (page) => api.post(`/api/admin/x/layouts/${page}/preview`, {}),
+    plugin: () => api.get("/api/admin/plugins/layouts"),
+    switchOn: () => api.patch("/api/admin/plugins/layouts", { enabled: true }),
+};
+
 export const recovery = {
     list: (params) => api.get(`${RECOVERY}/abandonments` + query(params)),
     summary: (params) => api.get(`${RECOVERY}/summary` + query(params)),

@@ -694,6 +694,33 @@ every install has them whether or not it can store uploads. They are under the
 | Banner: Apparel | [No Revisions](https://unsplash.com/photos/kWVImL5QxJI) |
 | Banner: For the home | [Eric Prouzet](https://unsplash.com/photos/5lUMTeo7-bE) |
 
+## Homepage
+
+**Content → Homepage** (`ext/layouts`, D125) is the storefront's home page as
+the shop arranges it: a list of sections read top to bottom — announcement
+bar, hero, product grid, image with text, text, benefits — any of them any
+number of times. **Add section** sits above the first row, between every two
+and below the last, and puts the chosen type exactly there. Each row moves up
+and down, is duplicated, hidden (its settings kept) or removed, and opens a
+drawer whose form is drawn from the type's fields in the engine's registry:
+pictures from Files, products and collections from the same picker discounts
+use, lists of benefits with their own add and move.
+
+Edits stay on the screen until **Save draft**; the storefront changes only on
+**Publish**, which keeps every published version under **History**, where an
+earlier one can be rolled back to (it goes live again as a new version).
+**Preview** opens the storefront in a new tab with a 30-minute key for the
+saved draft, at the store's primary verified domain, or an address typed once
+and remembered by the browser. A save made over somebody else's newer one is
+refused, and the screen offers to reload.
+
+The `layouts` plugin starts off, and the screen says so: until it is switched
+on and a page published, the storefront keeps its built-in home page. Before
+the first save the screen shows that built-in page as sections — its words,
+not its stock pictures — to start from. Seeing the screen is `layouts.read`
+(managers and staff by default), saving, publishing, previewing and rolling
+back `layouts.write` (managers).
+
 ## Banners
 
 **Content → Banners** (`ext/banners`, D99) holds the pictures on the
