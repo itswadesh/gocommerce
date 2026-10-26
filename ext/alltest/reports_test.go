@@ -30,6 +30,7 @@ var reportsMayRead = map[string]string{
 	"b2b_partial_checkouts.idempotency_key":   "a buyer's retry key, matched only for that buyer",
 	"cart_recovery_settings.settings":         "the reminder steps and the storefront's address; no key",
 	"media.storage_key":                       "a file's path in storage",
+	"payments_clover_sessions.session_id":     "the order's payment reference, which order readers see; it opens that order's hosted payment page, not an account",
 	"plugins.key":                             "a module's name",
 	"roles.key":                               "a role's name",
 	"variants.option_key":                     "the variant's option values",
