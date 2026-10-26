@@ -137,7 +137,8 @@ default until a store enters its own:
 | `SENDGRID_API_KEY` | Sends email through SendGrid. |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` | Sends texts through Twilio. |
 | `MSG91_AUTH_KEY` (or `MSG91_AUTHKEY`) | Sends texts through MSG91. |
-| `MSG91_TEMPLATE_SIGN_IN_CODE`, `MSG91_TEMPLATE_ORDER_CODE`, `MSG91_TEMPLATE_ORDER_PLACED`, `MSG91_TEMPLATE_PAYMENT_RECEIVED`, `MSG91_TEMPLATE_ORDER_SHIPPED`, `MSG91_TEMPLATE_ORDER_DELIVERED`, `MSG91_TEMPLATE_ORDER_CANCELLED`, `MSG91_TEMPLATE_REFUND_ISSUED` | The DLT template id MSG91 sends for each message, for every store that has not set its own under Notifications › Setup SMS. MSG91 texts nothing it has no template for; a code's template carries the code as `##otp##` (or `##code##`), and may use the store's name as `##website##` (or `##store_name##`) and `##expires_in_minutes##`. |
+| `SMS_OTP_TEMPLATE_ID` (the sign-in code), `MSG91_TEMPLATE_ORDER_CODE`, `MSG91_TEMPLATE_ORDER_PLACED`, `MSG91_TEMPLATE_PAYMENT_RECEIVED`, `MSG91_TEMPLATE_ORDER_SHIPPED`, `MSG91_TEMPLATE_ORDER_DELIVERED`, `MSG91_TEMPLATE_ORDER_CANCELLED`, `MSG91_TEMPLATE_REFUND_ISSUED` | The DLT template id MSG91 sends for each message, for every store that has not set its own under Notifications › Setup SMS. MSG91 texts nothing it has no template for; a code's template carries the code as `##otp##` (or `##code##`), and may use the store's name as `##website##` (or `##store_name##`) and `##expires_in_minutes##`. These are MSG91's own template ids, not the DLT template ids. |
+| `SMS_SENDER_ID` | The DLT-registered sender id MSG91 sends every text from, such as `MISIKI`. Empty uses the one set on each template in MSG91. |
 
 Sign-up, password-reset links and the stores' own addresses are listed too:
 

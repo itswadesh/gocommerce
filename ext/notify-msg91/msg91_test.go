@@ -16,6 +16,7 @@ import (
 type flow struct {
 	AuthKey    string
 	TemplateID string              `json:"template_id"`
+	Sender     string              `json:"sender"`
 	Recipients []map[string]string `json:"recipients"`
 }
 

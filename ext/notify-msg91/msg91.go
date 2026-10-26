@@ -51,6 +51,9 @@ type Config struct {
 	// event with no template is not sent — which is the usual case, since
 	// most stores text about shipping and nothing else.
 	Templates map[string]string
+	// Sender is the DLT-registered sender id, such as "MISIKI", sent with
+	// every text. Empty leaves it to the template's own in MSG91.
+	Sender string
 	// DefaultCountryCode is prefixed to recipient numbers that have none,
 	// e.g. "91". MSG91 requires the country code.
 	DefaultCountryCode string
@@ -100,14 +103,19 @@ var eventFields = []struct {
 const EventLoginCode = "identity.login_code"
 
 // EnvTemplates reads the install's template ids from its environment: one
-// variable per event, MSG91_TEMPLATE_ and the event's field in capitals —
-// MSG91_TEMPLATE_SIGN_IN_CODE, MSG91_TEMPLATE_ORDER_SHIPPED. Passed as
-// Config.Templates they are every store's default, as MSG91_AUTH_KEY is, so a
-// store on an install with MSG91 set up texts without setting anything.
+// variable per event, MSG91_TEMPLATE_ and the event's field in capitals, such
+// as MSG91_TEMPLATE_ORDER_SHIPPED — except the sign-in code, which is
+// SMS_OTP_TEMPLATE_ID. Passed as Config.Templates they are every store's
+// default, as MSG91_AUTH_KEY is, so a store on an install with MSG91 set up
+// texts without setting anything.
 func EnvTemplates(getenv func(string) string) map[string]string {
 	out := map[string]string{}
 	for _, f := range eventFields {
-		if v := strings.TrimSpace(getenv("MSG91_" + strings.ToUpper(f.key))); v != "" {
+		name := "MSG91_" + strings.ToUpper(f.key)
+		if f.event == EventLoginCode {
+			name = "SMS_OTP_TEMPLATE_ID"
+		}
+		if v := strings.TrimSpace(getenv(name)); v != "" {
 			out[f.event] = v
 		}
 	}
@@ -250,6 +258,9 @@ func (m *Module) Notify(ctx context.Context, n gocommerce.Notification) error {
 	payload := map[string]any{
 		"template_id": templateID,
 		"recipients":  []map[string]string{recipient},
+	}
+	if sender := strings.TrimSpace(m.cfg.Sender); sender != "" {
+		payload["sender"] = sender
 	}
 	return m.post(ctx, key, "/api/v5/flow/", payload)
 }
