@@ -3,12 +3,13 @@ package identity
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
 	"github.com/itswadesh/gocommerce/gctest"
 )
 
-// engineMail is an email backend registered with the engine, so the module's
+// engineMail is an email and SMS backend registered with the engine, so the module's
 // messages go through the engine's funnel — and into its log — the way they
 // do in a store, rather than straight to Config.Notifier.
 type engineMail struct{ rec *gctest.RecordingNotifier }
@@ -17,6 +18,7 @@ func (engineMail) Name() string                       { return "engine-mail" }
 func (engineMail) Migrations() []gocommerce.Migration { return nil }
 func (m engineMail) Register(app *gocommerce.App) error {
 	app.RegisterNotifier(gocommerce.ChannelEmail, m.rec)
+	app.RegisterNotifier(gocommerce.ChannelSMS, m.rec)
 	return nil
 }
 
@@ -69,4 +71,21 @@ func TestTheNotificationLogHidesAShoppersLinks(t *testing.T) {
 	}); rec.Code != http.StatusOK {
 		t.Errorf("the emailed reset link = %d: %s", rec.Code, rec.Body)
 	}
+}
+
+// A sign-in code is the shopper's alone: the log shows the text, not the code.
+func TestTheNotificationLogHidesASignInCode(t *testing.T) {
+	sms := &gctest.RecordingNotifier{}
+	mod := New(Config{})
+	app := gctest.New(t, engineMail{rec: sms}, mod)
+	signInBy(t, app, LoginPhoneOTP)
+	if rec := gctest.Request(t, app, http.MethodPost, "/x/identity/otp", map[string]any{"phone": "+919876543210"}); rec.Code != http.StatusAccepted {
+		t.Fatalf("ask for a code = %d %s", rec.Code, rec.Body)
+	}
+	mod.waitForSends(5 * time.Second)
+	code := lastOf(t, sms, EventLoginCode).Data["code"]
+	if len(code) != 4 {
+		t.Fatalf("code = %q, want the 4 digits the SMS carried", code)
+	}
+	gctest.AssertNotificationLogHides(t, app, EventLoginCode, code)
 }

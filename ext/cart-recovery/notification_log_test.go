@@ -1,6 +1,7 @@
 package cartrecovery
 
 import (
+	"net/http"
 	"testing"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
@@ -33,4 +34,25 @@ func TestTheNotificationLogHidesARemindersLinkAndToken(t *testing.T) {
 			gctest.AssertNotificationLogHides(t, h.app, templateFirst, token, link)
 		})
 	}
+}
+
+// An operator's own send carries the same link and token, and the log hides
+// them the same way.
+func TestTheNotificationLogHidesAManualSendsLinkAndToken(t *testing.T) {
+	h := newHarness(t, Config{StorefrontURL: "https://shop.example.com"}, testAppConfig())
+	token, cartID, _ := h.basket("R-LOG-MANUAL", "manual-log@example.com", 1)
+	h.idle(cartID, 20)
+	h.pass()
+	rec := gctest.AdminRequest(t, h.app, http.MethodPost,
+		"/api/admin/x/cart-recovery/abandonments/"+itoa(h.record(cartID).ID)+"/send",
+		map[string]any{"channel": "email", "template": templateSecond})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("send = %d %s", rec.Code, rec.Body)
+	}
+	sent := h.rec.All()
+	link := sent[len(sent)-1].Data["recovery_url"]
+	if link == "" || sent[len(sent)-1].Data["cart_token"] != token {
+		t.Fatalf("the send carries %v; want the basket's token and a link", sent[len(sent)-1].Data)
+	}
+	gctest.AssertNotificationLogHides(t, h.app, templateSecond, token, link)
 }
