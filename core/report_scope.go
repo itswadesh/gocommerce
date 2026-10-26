@@ -170,8 +170,8 @@ func (a *App) ensureReportsAccess(ctx context.Context) error {
 			}
 			grant := `GRANT SELECT ON ` + name + ` TO ` + ident
 			if t.readable.Valid {
-				// Column by column: a grant on the table covers every column,
-				// the withheld ones too, and outlives a column grant.
+				// Column by column, after taking back any grant on the whole
+				// table: that one covers the withheld columns too.
 				if err := exec(`REVOKE ALL ON ` + name + ` FROM ` + ident); err != nil {
 					return err
 				}
