@@ -346,6 +346,9 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			);
 			CREATE INDEX identity_login_codes_phone_idx ON identity_login_codes (phone, created_at);`},
 		gocommerce.ScopeMigration("0005_scope_login_codes", "identity_login_codes"),
+		// A four-digit code is guessed from its hash at once, and a weak
+		// password from its hash in time; staff may run any saved report.
+		gocommerce.WithholdFromReports("0006_withhold_from_reports", "identity_login_codes", "identity_customers.password_hash"),
 	}
 }
 

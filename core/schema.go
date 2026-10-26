@@ -87,6 +87,9 @@ func coreMigrations() []Migration {
 		ScopeMigration("0076_scope_order_lookup_codes", "order_lookup_codes"),
 		{ID: "0077_store_plan", SQL: migration0077StorePlan},
 		{ID: "0078_hide_logged_credentials", Run: migrate0078HideLoggedCredentials},
+		{ID: "0079_report_withheld", SQL: migration0079ReportWithheld},
+		WithholdFromReports("0080_withhold_credentials_from_reports",
+			"error_issues", "error_events", "order_lookup_codes", "carts.token", "orders.access_token"),
 	}
 }
 

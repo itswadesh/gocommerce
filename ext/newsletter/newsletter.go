@@ -91,6 +91,7 @@ CREATE INDEX newsletter_subscriptions_status_idx ON newsletter_subscriptions (st
 `,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "newsletter_subscriptions"),
+		gocommerce.WithholdFromReports("0003_withhold_from_reports", "newsletter_subscriptions.token"),
 	}
 }
 

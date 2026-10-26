@@ -58,20 +58,7 @@ func NewWithConfig(t *testing.T, cfg gocommerce.Config, mods ...gocommerce.Modul
 	t.Helper()
 
 	if cfg.DBURL == "" {
-		// A database of its own, copied from one migrated once for this set
-		// of modules: far cheaper than migrating per test.
-		cfg.DBURL = testdb.Clone(t, "gctest:"+moduleKey(mods), func(dsn string) error {
-			app, err := gocommerce.New(gocommerce.Config{
-				DBURL:        dsn,
-				AdminTokens:  []string{AdminToken},
-				Logger:       slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError})),
-				DefaultStore: "first",
-			}, mods...)
-			if err != nil {
-				return err
-			}
-			return app.Close()
-		})
+		cfg.DBURL = clone(t, mods)
 	}
 	if len(cfg.AdminTokens) == 0 {
 		cfg.AdminTokens = []string{AdminToken}
@@ -92,6 +79,38 @@ func NewWithConfig(t *testing.T, cfg gocommerce.Config, mods ...gocommerce.Modul
 	}
 	t.Cleanup(func() { _ = app.Close() })
 	return app
+}
+
+// NewWithReports is New with custom reports on, run as the least-privileged
+// login an install gives them, so a module can prove what a saved report may
+// not read (AssertReportsCannotRead).
+func NewWithReports(t *testing.T, mods ...gocommerce.Module) *gocommerce.App {
+	t.Helper()
+	dsn := clone(t, mods)
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatalf("gctest: parse the test DSN: %v", err)
+	}
+	u.User = url.UserPassword(testdb.ReportsRole, testdb.ReportsPassword)
+	return NewWithConfig(t, gocommerce.Config{DBURL: dsn, ReportsDBURL: u.String()}, mods...)
+}
+
+// clone is a database of its own, copied from one migrated once for this set
+// of modules: far cheaper than migrating per test.
+func clone(t *testing.T, mods []gocommerce.Module) string {
+	t.Helper()
+	return testdb.Clone(t, "gctest:"+moduleKey(mods), func(dsn string) error {
+		app, err := gocommerce.New(gocommerce.Config{
+			DBURL:        dsn,
+			AdminTokens:  []string{AdminToken},
+			Logger:       slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError})),
+			DefaultStore: "first",
+		}, mods...)
+		if err != nil {
+			return err
+		}
+		return app.Close()
+	})
 }
 
 // moduleKey names everything that decides a test app's schema: the modules,
@@ -476,6 +495,56 @@ func AssertNotificationLogHides(t *testing.T, app *gocommerce.App, event string,
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatalf("gctest: read the stored %s rows: %v", event, err)
+	}
+}
+
+// AssertReportsCannotRead fails when a saved report, run by staff, reads
+// table, or, when columns are named, any of those columns of it; the rest of
+// that table must stay readable.
+//
+// Staff may run any saved report, and a report reads the store's tables
+// directly, so a table or column holding a key to somebody's account (a
+// one-time code, a basket's token) is withheld from reports with
+// gocommerce.WithholdFromReports. The app must come from NewWithReports.
+func AssertReportsCannotRead(t *testing.T, app *gocommerce.App, table string, columns ...string) {
+	t.Helper()
+	staff := OperatorToken(t, app, "report-staff-"+randomSuffix(t)+"@example.com", gocommerce.RoleStaff)
+	run := func(query string) *httptest.ResponseRecorder {
+		t.Helper()
+		saved := AdminRequest(t, app, http.MethodPost, "/api/admin/reports/custom",
+			map[string]string{"name": query, "sql": query})
+		if saved.Code != http.StatusCreated {
+			t.Fatalf("gctest: save the report %q = %d: %s", query, saved.Code, saved.Body)
+		}
+		var report struct {
+			ID int64 `json:"id"`
+		}
+		DecodeData(t, saved, &report)
+		return SessionRequest(t, app, staff, http.MethodPost,
+			"/api/admin/reports/custom/"+strconv.FormatInt(report.ID, 10)+"/run", nil)
+	}
+	denied := func(query string) {
+		t.Helper()
+		if rec := run(query); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "permission denied") {
+			t.Errorf("staff running the saved report %q = %d, want the database's permission denied: %s", query, rec.Code, rec.Body)
+		}
+	}
+	readable := func(query string) {
+		t.Helper()
+		if rec := run(query); rec.Code != http.StatusOK {
+			t.Fatalf("staff running the saved report %q = %d, want it to run: %s", query, rec.Code, rec.Body)
+		}
+	}
+	// Reports must run at all, or every denial below proves nothing.
+	readable("SELECT 1")
+	if len(columns) == 0 {
+		denied("SELECT count(*) FROM " + table)
+		return
+	}
+	readable("SELECT count(*) FROM " + table)
+	denied("SELECT * FROM " + table)
+	for _, c := range columns {
+		denied("SELECT " + c + " FROM " + table)
 	}
 }
 
