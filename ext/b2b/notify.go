@@ -87,12 +87,12 @@ This is lead {{.lead_id}} in your account.`,
 // not returned: the invitation, the request or the quote already exists, and
 // the store can resend; failing the call would leave the caller unsure
 // whether it did.
-func (m *Module) send(ctx context.Context, event, to string, data map[string]string) {
+func (m *Module) send(ctx context.Context, event, to string, data map[string]string, secrets ...string) {
 	if strings.TrimSpace(to) == "" {
 		return
 	}
 	if err := m.app.Notify(ctx, gocommerce.Notification{
-		Event: event, Channel: gocommerce.ChannelEmail, To: to, Data: data,
+		Event: event, Channel: gocommerce.ChannelEmail, To: to, Data: data, Secrets: secrets,
 	}); err != nil {
 		m.app.Log().Warn("b2b: notification not sent", "event", event, "error", err)
 	}
@@ -120,7 +120,7 @@ func (m *Module) notifyInvitation(ctx context.Context, c *Company, email, role, 
 	if m.cfg.InviteURL != "" {
 		data["invite_url"] = strings.ReplaceAll(m.cfg.InviteURL, "{token}", token)
 	}
-	m.send(ctx, EventInvitation, email, data)
+	m.send(ctx, EventInvitation, email, data, "invite_token", "invite_url")
 }
 
 // notifyApprovers tells every approver and admin of the company, the

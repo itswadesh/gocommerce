@@ -404,9 +404,10 @@ func AssertSpecCoversModuleRoutes(t *testing.T, app *gocommerce.App, module stri
 //
 // The log is open to anybody who may read orders, so a module whose message
 // carries a credential — a reset link, an invitation, a basket's token — proves
-// with this that the log shows the message and not the key. The engine hides a
-// value by its name (a key ending in _token, _code, _url or _link) and by what
-// it holds; a module that names its credential otherwise finds out here.
+// with this that the log shows the message and not the key. The row is kept
+// without the keys the message lists in Notification.Secrets, and its screens
+// also hide a value by its name (a key ending in _token, _code, _url or _link);
+// a module that forgets either finds out here.
 //
 // It fails, too, when the log holds no such message, so a test that sent
 // nothing cannot pass by looking at nothing.

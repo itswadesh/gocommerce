@@ -86,6 +86,7 @@ func coreMigrations() []Migration {
 		{ID: "0075_order_lookup_codes", SQL: migration0075OrderLookupCodes},
 		ScopeMigration("0076_scope_order_lookup_codes", "order_lookup_codes"),
 		{ID: "0077_store_plan", SQL: migration0077StorePlan},
+		{ID: "0078_hide_logged_credentials", Run: migrate0078HideLoggedCredentials},
 	}
 }
 

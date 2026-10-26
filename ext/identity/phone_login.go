@@ -203,6 +203,7 @@ func (m *Module) sendPhoneCode(ctx context.Context, phone string) error {
 		Event: EventLoginCode, Channel: gocommerce.ChannelSMS, To: phone, Language: m.language(ctx),
 		Data: map[string]string{"code": code, "store_name": m.storeName(ctx),
 			"expires_in_minutes": fmt.Sprint(int(loginCodeTTL / time.Minute))},
+		Secrets: []string{"code"},
 	}
 	sendCtx := context.WithoutCancel(ctx)
 	m.sends.Add(1)

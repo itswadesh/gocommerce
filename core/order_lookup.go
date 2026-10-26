@@ -138,6 +138,7 @@ func (s *Orders) RequestLookupCode(ctx context.Context, number, contact string) 
 			"code": code, "order_number": number, "store_name": store,
 			"expires_in_minutes": strconv.Itoa(int(orderLookupTTL / time.Minute)),
 		},
+		Secrets: []string{"code"},
 	}
 	// Sent after the reply, so how long a provider takes says nothing about
 	// whether the contact matched. The store binding travels with the context.

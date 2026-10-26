@@ -1243,7 +1243,8 @@ func (m *Module) handleSend(w http.ResponseWriter, r *http.Request) {
 	// after the provider has answered.
 	if err := m.app.Notify(ctx, gocommerce.Notification{
 		Event: req.Template, Channel: gocommerce.ChannelEmail, To: to,
-		Data: m.data(ctx, set.Settings, cur, to, linkToken, a.StepsSent+1),
+		Data:    m.data(ctx, set.Settings, cur, to, linkToken, a.StepsSent+1),
+		Secrets: linkSecrets,
 	}); err != nil {
 		gocommerce.RespondError(w, r, &gocommerce.APIError{Status: http.StatusBadGateway,
 			Code: "send_failed", Message: "The email provider refused the message: " + err.Error()})

@@ -930,6 +930,7 @@ func (m *Module) RequestReset(ctx context.Context, email string) error {
 	}
 	if err := m.notify(ctx, gocommerce.Notification{
 		Event: EventPasswordReset, Channel: gocommerce.ChannelEmail, To: c.Email, Language: m.language(ctx), Data: data,
+		Secrets: []string{"reset_token", "reset_url"},
 	}); err != nil {
 		// The token is stored and the shopper can ask again; what must not
 		// happen is a 500 that tells them the address exists.
@@ -1086,6 +1087,7 @@ func (m *Module) RequestVerification(ctx context.Context, customerID int64) erro
 	if err := m.notify(ctx, gocommerce.Notification{
 		Event: EventEmailVerification, Channel: gocommerce.ChannelEmail, To: c.Email,
 		Language: m.language(ctx), Data: data,
+		Secrets: []string{"verify_token", "verify_url"},
 	}); err != nil {
 		// Unlike a reset there is nothing to hide — the shopper is signed in
 		// and the address is their own — so the failure is reported rather
