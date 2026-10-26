@@ -260,6 +260,12 @@ func (m *Module) Notify(ctx context.Context, n gocommerce.Notification) error {
 	if v, ok := n.Data["store_name"]; ok {
 		recipient["website"] = v
 	}
+	// The last line Chrome on Android reads to fill a code in (Web OTP),
+	// "@site #code", as one variable: written out in a template it would be
+	// "###OTP##", three hashes in a row for MSG91 to parse.
+	if site, code := n.Data["domain"], n.Data["code"]; site != "" && code != "" {
+		recipient["web_otp"] = "@" + site + " #" + code
+	}
 
 	var (
 		path    string

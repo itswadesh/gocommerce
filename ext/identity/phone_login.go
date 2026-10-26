@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -63,10 +64,13 @@ func (m *Module) registerSignIn(app *gocommerce.App) {
 	app.RegisterNotifyTemplate(gocommerce.NotifyTemplate{
 		Channel: gocommerce.ChannelSMS, Event: EventLoginCode, Title: "Sign-in code",
 		Description: "To a shopper signing in with their phone. The code works for ten minutes.",
-		Variables:   []string{"code", "store_name", "expires_in_minutes"},
+		Variables:   []string{"code", "store_name", "expires_in_minutes", "domain"},
 		// The wording of the DLT template MSG91 carries, so every SMS provider
-		// sends the same text. "<#>" lets Android read the code for the shopper.
-		Body: `<#> Hi, {{.code}} is your OTP to login to {{with .store_name}}{{.}}{{else}}your account{{end}}`,
+		// sends the same text. The last line, when the shopper is on the
+		// store's own site, is the one Chrome on Android reads to fill the
+		// code in (the Web OTP API).
+		Body: `<#> Hi, {{.code}} is your OTP to login to {{with .store_name}}{{.}}{{else}}your account{{end}}` +
+			`{{with .domain}}` + "\n\n" + `@{{.}} #{{$.code}}{{end}}`,
 	})
 }
 
@@ -134,16 +138,49 @@ func (m *Module) smsCarries(ctx context.Context, phone string) bool {
 // RequestPhoneCode sends a sign-in code to phone. A phone with no account yet
 // gets one too: signing in with a code is how an account is opened.
 func (m *Module) RequestPhoneCode(ctx context.Context, phone string) error {
+	return m.RequestPhoneCodeOn(ctx, phone, "")
+}
+
+// RequestPhoneCodeOn is RequestPhoneCode from a page on site, the storefront's
+// host. When the site is this store's own, the text names it, so Chrome on
+// Android can fill the code in by itself (the Web OTP API reads a last line
+// "@site #code"). Any other site is left out: Chrome fills a code in only on
+// the site the text names, and naming one the store does not own would hand
+// a shopper's code to that site.
+func (m *Module) RequestPhoneCodeOn(ctx context.Context, phone, site string) error {
 	if err := m.requireMethod(ctx, LoginPhoneOTP); err != nil {
 		return err
 	}
-	return m.sendPhoneCode(ctx, phone)
+	return m.sendPhoneCode(ctx, phone, m.ownSite(ctx, site))
+}
+
+// ownSite is host, lower-cased and without a port, when it is a verified
+// domain of the store ctx is bound to or its subdomain of the base domain;
+// otherwise empty.
+func (m *Module) ownSite(ctx context.Context, host string) string {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.TrimSuffix(host, ".")
+	if host == "" {
+		return ""
+	}
+	id, ok := gocommerce.StoreFrom(ctx)
+	if !ok {
+		return ""
+	}
+	st, err := m.app.Stores().ByHost(ctx, host)
+	if err != nil || st == nil || st.ID != id {
+		return ""
+	}
+	return host
 }
 
 // sendPhoneCode texts a code to phone, within the limits, for signing in or
 // for linking the phone to an account. The two share the phone's codes and
 // limits, so linking is no way around them.
-func (m *Module) sendPhoneCode(ctx context.Context, phone string) error {
+func (m *Module) sendPhoneCode(ctx context.Context, phone, site string) error {
 	phone, err := normalizePhone(phone)
 	if err != nil {
 		return err
@@ -204,7 +241,7 @@ func (m *Module) sendPhoneCode(ctx context.Context, phone string) error {
 	n := gocommerce.Notification{
 		Event: EventLoginCode, Channel: gocommerce.ChannelSMS, To: phone, Language: m.language(ctx),
 		Data: map[string]string{"code": code, "store_name": m.storeName(ctx),
-			"expires_in_minutes": fmt.Sprint(int(loginCodeTTL / time.Minute))},
+			"expires_in_minutes": fmt.Sprint(int(loginCodeTTL / time.Minute)), "domain": site},
 		Secrets: []string{"code"},
 	}
 	sendCtx := context.WithoutCancel(ctx)
@@ -435,7 +472,7 @@ func (m *Module) RequestPhoneLink(ctx context.Context, phone string) error {
 	if err := m.requireMethod(ctx, LoginPhoneOTP); err != nil {
 		return err
 	}
-	return m.sendPhoneCode(ctx, phone)
+	return m.sendPhoneCode(ctx, phone, "")
 }
 
 // LinkPhone makes phone a way into customerID's account once code proves it,
@@ -499,12 +536,15 @@ func (m *Module) waitForSends(max time.Duration) {
 func (m *Module) handleRequestPhoneCode(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Phone string `json:"phone"`
+		// The storefront's host, named in the text when it is this store's
+		// own, for Chrome to fill the code in (RequestPhoneCodeOn).
+		Domain string `json:"domain"`
 	}
 	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	if err := m.RequestPhoneCode(r.Context(), in.Phone); err != nil {
+	if err := m.RequestPhoneCodeOn(r.Context(), in.Phone, in.Domain); err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
