@@ -326,3 +326,26 @@ func TestTheLogKeepsNoLiveCredential(t *testing.T) {
 		}
 	}
 }
+
+// An order's look-up code opens that order, so its row keeps the message and
+// not the code.
+func TestTheLogKeepsNoOrderLookupCode(t *testing.T) {
+	app, rec, order := lookupApp(t)
+	if status := askCode(t, app, order.Number, "shopper@example.com"); status != http.StatusAccepted {
+		t.Fatalf("ask = %d, want 202", status)
+	}
+	sent := lookupCodes(t, app, rec)
+	if len(sent) != 1 || len(sent[0].Data["code"]) != 4 {
+		t.Fatalf("sent %+v, want one 4-digit code", sent)
+	}
+	var raw, errText string
+	if err := app.db.QueryRowContext(context.Background(),
+		`SELECT data::text, error FROM notifications WHERE event = $1`, EventOrderLookupCode).Scan(&raw, &errText); err != nil {
+		t.Fatal(err)
+	}
+	var kept map[string]string
+	decodeJSONBody(t, []byte(raw), &kept)
+	if kept["code"] != hiddenCredential || kept["order_number"] != order.Number || errText != "" {
+		t.Errorf("the row keeps %s, error %q; want the code hidden and the rest kept", raw, errText)
+	}
+}
