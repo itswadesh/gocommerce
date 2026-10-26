@@ -29,9 +29,9 @@ import (
 // empty.
 const hiddenCredential = "(hidden)"
 
-// minCredentialLen is the shortest credential looked for inside other values.
-// The six-digit reset code is the shortest the engine sends; anything shorter
-// would match by accident and hide harmless text.
+// minCredentialLen is the shortest credential looked for inside other values,
+// where a shorter one would match by accident and hide harmless text: a
+// four-digit code turns up in prices and order numbers.
 const minCredentialLen = 6
 
 // credentialKey reports whether a data key names a credential. The name is the
@@ -70,26 +70,29 @@ func credentialParam(name string) bool {
 }
 
 // hideKeys hides, in place, every non-empty value of data whose key secret
-// reports, and returns what hides a copy of one of them in other text.
-func hideKeys(data map[string]string, secret func(key string) bool) func(string) string {
-	var known []string
+// reports, and returns the values it hid, longest first, so a link is
+// replaced whole before the token inside it (hideIn).
+func hideKeys(data map[string]string, secret func(key string) bool) []string {
+	var hid []string
 	for k, v := range data {
 		if v == "" || !secret(k) {
 			continue
 		}
-		if len(v) >= minCredentialLen {
-			known = append(known, v)
-		}
+		hid = append(hid, v)
 		data[k] = hiddenCredential
 	}
-	// Longest first, so a link is replaced whole before the token inside it.
-	sort.Slice(known, func(i, j int) bool { return len(known[i]) > len(known[j]) })
-	return func(s string) string {
-		for _, c := range known {
-			s = strings.ReplaceAll(s, c, hiddenCredential)
+	sort.Slice(hid, func(i, j int) bool { return len(hid[i]) > len(hid[j]) })
+	return hid
+}
+
+// hideIn hides in s every copy of the values at least minLen long.
+func hideIn(s string, values []string, minLen int) string {
+	for _, v := range values {
+		if len(v) >= minLen {
+			s = strings.ReplaceAll(s, v, hiddenCredential)
 		}
-		return s
 	}
+	return s
 }
 
 // withoutSecrets is note's data and the backends' error as the log keeps
@@ -104,22 +107,24 @@ func withoutSecrets(note Notification, errText string) (map[string]string, strin
 	for k, v := range note.Data {
 		data[k] = v
 	}
-	scrub := hideKeys(data, func(k string) bool { return secret[k] })
+	hid := hideKeys(data, func(k string) bool { return secret[k] })
 	for k, v := range data {
 		if !secret[k] {
-			data[k] = scrub(v)
+			data[k] = hideIn(v, hid, minCredentialLen)
 		}
 	}
-	return data, scrub(errText)
+	// The error is the provider's text about this message, so a four-digit
+	// code it quotes is that code, not a chance match.
+	return data, hideIn(errText, hid, 1)
 }
 
 // hideNotificationCredentials hides rec's credentials in place for a reader:
 // every value whose key names one, every other value's copy of one, every
 // credential a link carries in its query, and the same in the error.
 func hideNotificationCredentials(rec *NotificationRecord) {
-	known := hideKeys(rec.Data, credentialKey)
+	hid := hideKeys(rec.Data, credentialKey)
 	scrub := func(s string) string {
-		return queryParam.ReplaceAllStringFunc(known(s), func(m string) string {
+		return queryParam.ReplaceAllStringFunc(hideIn(s, hid, minCredentialLen), func(m string) string {
 			p := queryParam.FindStringSubmatch(m)
 			if p[3] == "" || !credentialParam(p[2]) {
 				return m
