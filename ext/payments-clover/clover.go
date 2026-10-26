@@ -208,6 +208,8 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			CREATE INDEX payments_clover_events_received_idx ON payments_clover_events (received_at);`,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "payments_clover_sessions", "payments_clover_events"),
+		// A session id opens its order's hosted checkout page.
+		gocommerce.WithholdFromReports("0003_withhold_from_reports", "payments_clover_sessions.session_id"),
 	}
 }
 

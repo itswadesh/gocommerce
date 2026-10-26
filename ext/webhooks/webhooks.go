@@ -155,6 +155,9 @@ CREATE INDEX webhook_deliveries_claim
 CREATE INDEX webhook_deliveries_endpoint ON webhook_deliveries (endpoint_id, id DESC);`,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "webhook_endpoints", "webhook_deliveries"),
+		// The secret signs deliveries a receiver trusts, and a hook's address
+		// often carries its own key.
+		gocommerce.WithholdFromReports("0003_withhold_from_reports", "webhook_endpoints.secret", "webhook_endpoints.url"),
 	}
 }
 

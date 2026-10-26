@@ -518,6 +518,8 @@ func (m *Module) Migrations() []gocommerce.Migration {
 	},
 		gocommerce.ScopeMigration("0005_store_scope", "b2b_companies", "b2b_members", "b2b_invitations", "b2b_orders", "b2b_approvals", "b2b_quotes", "b2b_quote_lines", "b2b_partial_checkouts", "b2b_territories", "b2b_leads", "b2b_company_history", "b2b_account_entries", "b2b_catalogues", "b2b_catalogue_products", "b2b_catalogue_categories"),
 		gocommerce.WithholdFromReports("0006_withhold_from_reports", "b2b_partial_checkouts.cart_token"),
+		// The source basket, by its token: it stays open with the lines not placed.
+		gocommerce.WithholdFromReports("0007_withhold_source_cart", "b2b_partial_checkouts.source_cart"),
 	}
 }
 
