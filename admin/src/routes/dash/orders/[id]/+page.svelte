@@ -52,6 +52,9 @@
     import ShipDialog from "$lib/components/ShipDialog.svelte";
     import VariantPicker from "$lib/components/VariantPicker.svelte";
     import { titled } from "$lib/brand.svelte.js";
+    import { copyText } from "$lib/clipboard.js";
+    import { myStores } from "$lib/stores.svelte.js";
+    import { orderTrackingURL } from "$lib/tracking.js";
 
     const orderId = $derived(route.params.id);
     const readable = $derived(can("orders.read"));
@@ -371,6 +374,21 @@
     let form = $state({});
 
     const ADDRESS_FIELDS = ["line1", "line2", "city", "state", "postal_code", "country"];
+
+    // The storefront page where the customer opens this order with a code
+    // (D115); the same link the order emails carry, to paste into a chat.
+    const trackingURL = $derived(orderTrackingURL(myStores.current, order?.number));
+    let trackingCopied = $state(false);
+    let trackingTimer;
+    async function copyTracking() {
+        if (await copyText(trackingURL)) {
+            trackingCopied = true;
+            clearTimeout(trackingTimer);
+            trackingTimer = setTimeout(() => (trackingCopied = false), 2000);
+        } else {
+            toast.error("Could not copy. Select the link and copy it instead.");
+        }
+    }
 
     function startEditCustomer() {
         editingCard = "customer";
@@ -1943,6 +1961,35 @@
                                 {#if order.language}
                                     <div class="txt-hint txt-sm m-t-5">
                                         Written to in {order.language}
+                                    </div>
+                                {/if}
+                                {#if trackingURL}
+                                    <div class="order-tracking">
+                                        <div class="txt-hint txt-sm">Order status page</div>
+                                        <div class="order-tracking-row">
+                                            <a
+                                                class="order-contact txt-ellipsis"
+                                                href={trackingURL}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                            >
+                                                {trackingURL.replace(/^https:\/\//, "")}
+                                            </a>
+                                            <button
+                                                type="button"
+                                                class="btn xs circle transparent secondary order-tracking-copy"
+                                                class:is-copied={trackingCopied}
+                                                title={trackingCopied ? "Copied" : "Copy link"}
+                                                aria-label={trackingCopied ? "Order status link copied" : "Copy the order status link"}
+                                                onclick={copyTracking}
+                                            >
+                                                <i class={trackingCopied ? "ri-check-line" : "ri-file-copy-line"} aria-hidden="true"></i>
+                                            </button>
+                                        </div>
+                                        <div class="txt-hint txt-sm">
+                                            The customer opens it with a code sent to the email or
+                                            phone on the order.
+                                        </div>
                                     </div>
                                 {/if}
                             {/if}

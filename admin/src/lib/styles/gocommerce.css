@@ -3558,6 +3558,40 @@ button.media-check {
     color: var(--surfaceTxtHintColor);
 }
 
+/* The storefront page the customer checks the order on, with a copy button
+   for pasting it into a chat. The link shrinks before the button does. */
+.order-tracking {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--surfaceAlt2Color);
+}
+.order-tracking-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+.order-tracking-row .order-contact {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-top: 0;
+}
+.order-tracking-copy i {
+    transition: transform var(--activeAnimationSpeed, 150ms) ease-out;
+}
+.order-tracking-copy.is-copied i {
+    transform: scale(1.15);
+    color: var(--successColor);
+}
+@media (prefers-reduced-motion: reduce) {
+    .order-tracking-copy i {
+        transition: none;
+    }
+    .order-tracking-copy.is-copied i {
+        transform: none;
+    }
+}
+
 /* ---------------------------------------------------------------- the items */
 
 /*
