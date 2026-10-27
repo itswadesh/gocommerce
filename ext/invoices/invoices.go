@@ -440,10 +440,9 @@ func (m *Module) handleGet(w http.ResponseWriter, r *http.Request) {
 	m.app.MaskOrder(r.Context(), &order)
 
 	// JSON for a client that wants the data, HTML for a human who wants to
-	// print it.
-	// A tax invoice is printed from the document as issued, never from the
-	// order or the profile as they are now. It holds no buyer email or phone,
-	// so the mask above has nothing in it to hide.
+	// print it. A tax invoice is both from the document as issued, never from
+	// the order or the profile as they are now; it holds no buyer email or
+	// phone, so the mask above has nothing in it to hide.
 	if strings.Contains(r.Header.Get("Accept"), "application/json") {
 		body := map[string]any{"number": number, "issued_at": issuedAt, "order": order}
 		if taxDoc != nil {
