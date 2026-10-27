@@ -477,6 +477,8 @@ export const webhooks = {
     // a POST with no body confuses more proxies than it ought.
     rotate: (id) => api.post(`/api/admin/x/webhooks/endpoints/${id}/rotate-secret`, {}),
     deliveries: (params) => api.get("/api/admin/x/webhooks/deliveries" + query(params)),
+    // The events an endpoint can name, grouped, with what each means.
+    events: () => api.get("/api/admin/x/webhooks/events"),
     retry: (id) => api.post(`/api/admin/x/webhooks/deliveries/${id}/retry`, {}),
 };
 

@@ -12173,3 +12173,79 @@ html .tw\:rounded-2xl {
         animation-duration: 1ms;
     }
 }
+
+/* Webhooks › the event picker: the engine's events, grouped, ticked rather
+   than typed. */
+.webhook-events {
+    border: 0;
+    margin: 0 0 var(--baseSpacing, 16px);
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.webhook-events legend {
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+.webhook-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-left: 4px;
+    transition: opacity 0.2s ease;
+}
+.webhook-group.dimmed {
+    opacity: 0.55;
+}
+.webhook-event {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+.webhook-event:hover {
+    background: var(--surfaceAlt1Color);
+}
+.webhook-event:focus-within {
+    outline: 2px solid var(--markColor);
+    outline-offset: 1px;
+}
+.webhook-event input {
+    margin-top: 3px;
+    flex: none;
+    width: 16px;
+    height: 16px;
+    accent-color: var(--markColor);
+}
+.webhook-event-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.webhook-event code {
+    overflow-wrap: anywhere;
+    align-self: flex-start;
+}
+.webhook-event.group {
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+/* A state or a secret hint broke mid-word once the events column filled. */
+.page-webhooks td .label,
+.page-webhooks td code {
+    white-space: nowrap;
+}
+.webhook-event.every {
+    border: 1px solid var(--surfaceAlt2Color);
+}
+@media (prefers-reduced-motion: reduce) {
+    .webhook-group,
+    .webhook-event {
+        transition: none;
+    }
+}

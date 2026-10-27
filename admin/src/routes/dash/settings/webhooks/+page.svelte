@@ -22,6 +22,7 @@
      * in with. The filter renders in its active state rather than being applied
      * silently, because a view that quietly drops rows is worse than a noisy one.
      */
+    import { untrack } from "svelte";
     import { can, webhooks } from "$lib/api.js";
     import { listState } from "$lib/liststate.svelte.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
@@ -35,6 +36,7 @@
     import Pager from "$lib/components/Pager.svelte";
     import Select from "$lib/components/Select.svelte";
     import { titled } from "$lib/brand.svelte.js";
+    import { eventsToSend, groupEvents, toggleGroup } from "$lib/webhookevents.js";
 
     /* Display only, and a copy of the module's own maxAttempts. The API reports
        what a row has spent, not the budget it was given — "3" alone says
@@ -57,7 +59,13 @@
     let revealed = $state(null);
 
     let addOpen = $state(false);
-    let form = $state({ url: "", events: "order.*" });
+    /* `editing` is the endpoint whose events the drawer is changing; null adds
+       a new one. The events are ticked from the engine's own list rather than
+       typed, because nobody can be expected to know them. */
+    let editing = $state(null);
+    let form = $state({ url: "", all: false, picked: ["order.created"] });
+    let catalog = $state([]);
+    const groups = $derived(groupEvents(catalog));
     let saving = $state(false);
     let confirmDelete = $state(null);
     let confirmOpen = $state(false);
@@ -105,22 +113,61 @@
         void list.params.page;
         void perPage;
         load();
+        /* untracked: the catalogue is read once, and reading it here would
+           make every load re-run when it arrives. */
+        untrack(loadCatalog);
     });
 
+    async function loadCatalog() {
+        if (catalog.length) return;
+        try {
+            // A list without paging comes back as the array itself.
+            catalog = (await webhooks.events()) ?? [];
+        } catch (err) {
+            toast.error(err.message);
+        }
+    }
+
+    function openAdd() {
+        editing = null;
+        form = { url: "", all: false, picked: ["order.created"] };
+        addOpen = true;
+        loadCatalog();
+    }
+
+    /* An endpoint stored with a pattern (order.*) opens with every event the
+       pattern covers ticked, so saving without a change keeps what it hears. */
+    async function openEdit(e) {
+        editing = e;
+        await loadCatalog();
+        const all = e.events.includes("*");
+        const picked = catalog
+            .map((c) => c.name)
+            .filter((n) => e.events.some((p) => p === n || (p.endsWith(".*") && n.startsWith(p.slice(0, -1)))));
+        form = { url: e.url, all, picked };
+        addOpen = true;
+    }
+
+    function togglePick(name) {
+        form.picked = form.picked.includes(name) ? form.picked.filter((n) => n !== name) : [...form.picked, name];
+    }
+
     async function add() {
-        const events = form.events
-            .split(/[\s,]+/)
-            .map((e) => e.trim())
-            .filter(Boolean);
-        if (!form.url.trim()) return toast.error("An endpoint needs a URL.");
-        if (!events.length) return toast.error("An endpoint needs at least one event.");
+        const events = eventsToSend(form, catalog);
+        if (!editing && !form.url.trim()) return toast.error("An endpoint needs a URL.");
+        if (!events.length) return toast.error("Tick at least one event.");
 
         saving = true;
         try {
-            const created = await webhooks.create({ url: form.url.trim(), events });
-            revealed = { endpoint: created, why: "created" };
+            if (editing) {
+                await webhooks.update(editing.id, { events });
+                toast.success("Events saved");
+            } else {
+                const created = await webhooks.create({ url: form.url.trim(), events });
+                revealed = { endpoint: created, why: "created" };
+            }
             addOpen = false;
-            form = { url: "", events: "order.*" };
+            editing = null;
             await load();
         } catch (err) {
             toast.error(err.message);
@@ -215,7 +262,7 @@
 
                 {#if !missing}
                     <div class="page-header-primary-btns">
-                        <button type="button" class="btn" onclick={() => (addOpen = true)}>
+                        <button type="button" class="btn" onclick={openAdd}>
                             <i class="ri-add-line" aria-hidden="true"></i>
                             <span class="txt">Add endpoint</span>
                         </button>
@@ -277,7 +324,7 @@
                             text="Add one and every event it names will be POSTed to it, signed, with retries."
                         >
                             {#if writable}
-                                <button type="button" class="btn" onclick={() => (addOpen = true)}>
+                                <button type="button" class="btn" onclick={openAdd}>
                                     <i class="ri-add-line" aria-hidden="true"></i>
                                     <span class="txt">Add endpoint</span>
                                 </button>
@@ -301,7 +348,12 @@
                                             <td><span class="txt-ellipsis" title={e.url}>{e.url}</span></td>
                                             <td>
                                                 {#each e.events as ev (ev)}
-                                                    <span class="label m-r-5">{ev}</span>
+                                                    <span
+                                                        class="label m-r-5"
+                                                        title={ev === "*"
+                                                            ? "Every event, including ones added later"
+                                                            : (catalog.find((c) => c.name === ev)?.description ?? "")}
+                                                    >{ev === "*" ? "all events" : ev}</span>
                                                 {/each}
                                             </td>
                                             <td class="txt-hint"><code>…{e.secret_hint}</code></td>
@@ -340,6 +392,15 @@
                                                         popover="auto"
                                                         role="menu"
                                                     >
+                                                        <button
+                                                            type="button"
+                                                            role="menuitem"
+                                                            class="dropdown-item"
+                                                            onclick={() => { closeMenu(e.id); openEdit(e); }}
+                                                        >
+                                                            <i class="ri-list-check-2" aria-hidden="true"></i>
+                                                            <span class="txt">Edit events</span>
+                                                        </button>
                                                         <button
                                                             type="button"
                                                             role="menuitem"
@@ -517,7 +578,7 @@
         </div>
     </div>
 
-    <Drawer open={addOpen} title="Add endpoint" onclose={() => (addOpen = false)}>
+    <Drawer open={addOpen} title={editing ? "Edit events" : "Add endpoint"} onclose={() => (addOpen = false)}>
         <form
             class="block"
             onsubmit={(e) => {
@@ -525,31 +586,64 @@
                 add();
             }}
         >
-            <div class="field">
-                <label for="endpoint-url">URL</label>
-                <input
-                    id="endpoint-url"
-                    type="url"
-                    placeholder="https://merchant.example.com/hooks"
-                    bind:value={form.url}
-                    required
-                />
-            </div>
-            <div class="field">
-                <label for="endpoint-events">Events</label>
-                <input
-                    id="endpoint-events"
-                    type="text"
-                    placeholder="order.*, cart.abandoned"
-                    bind:value={form.events}
-                />
-                <div class="txt-hint txt-sm m-t-5">
-                    An exact name (<code>order.paid</code>), a prefix (<code>order.*</code>) or
-                    <code>*</code> for everything. Separate several with commas.
+            {#if editing}
+                <p class="txt-hint m-b-sm txt-ellipsis" title={editing.url}>{editing.url}</p>
+            {:else}
+                <div class="field">
+                    <label for="endpoint-url">URL</label>
+                    <input
+                        id="endpoint-url"
+                        type="url"
+                        placeholder="https://merchant.example.com/hooks"
+                        bind:value={form.url}
+                        required
+                    />
                 </div>
-            </div>
+            {/if}
+            <fieldset class="webhook-events">
+                <legend>Events</legend>
+                <label class="webhook-event every">
+                    <input type="checkbox" bind:checked={form.all} />
+                    <span class="webhook-event-text">
+                        <span class="txt-bold">Every event</span>
+                        <span class="txt-hint txt-sm">Including events added to the store later.</span>
+                    </span>
+                </label>
+                {#if !catalog.length}
+                    <p class="txt-hint txt-sm">Loading the events…</p>
+                {/if}
+                {#each groups as g (g.group)}
+                    {@const on = g.events.filter((e) => form.picked.includes(e.name)).length}
+                    <div class="webhook-group" class:dimmed={form.all}>
+                        <label class="webhook-event group">
+                            <input
+                                type="checkbox"
+                                disabled={form.all}
+                                checked={on === g.events.length}
+                                indeterminate={on > 0 && on < g.events.length}
+                                onchange={() => (form.picked = toggleGroup(form.picked, g))}
+                            />
+                            <span class="txt-bold">{g.group}</span>
+                        </label>
+                        {#each g.events as ev (ev.name)}
+                            <label class="webhook-event">
+                                <input
+                                    type="checkbox"
+                                    disabled={form.all}
+                                    checked={form.all || form.picked.includes(ev.name)}
+                                    onchange={() => togglePick(ev.name)}
+                                />
+                                <span class="webhook-event-text">
+                                    <code>{ev.name}</code>
+                                    <span class="txt-hint txt-sm">{ev.description}</span>
+                                </span>
+                            </label>
+                        {/each}
+                    </div>
+                {/each}
+            </fieldset>
             <button type="submit" class="btn" disabled={saving} class:loading={saving}>
-                Add endpoint
+                {editing ? "Save events" : "Add endpoint"}
             </button>
         </form>
     </Drawer>
