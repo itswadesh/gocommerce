@@ -153,6 +153,15 @@ type Config struct {
 	// MediaURLPrefix is the path MediaDir is served at. Defaults to "/media".
 	MediaURLPrefix string
 
+	// PostcodesFile is India's post office directory as a CSV, the file
+	// data.gov.in publishes ("All India Pincode Directory", under the
+	// Government Open Data Licence), read once at start. With it a checkout
+	// fills the city and state from a six-digit PIN code
+	// (GET /api/postcodes/IN/{pin}); without it that route answers 404 and the
+	// shopper types both, as before (D134). Install-wide, not per store: the
+	// post office's map is the same for every shop.
+	PostcodesFile string
+
 	// PanelURL is where this store's admin panel is reached —
 	// "https://shop.example.com". It is the base of a password-reset link, and
 	// it is configuration rather than something derived from the request
@@ -433,10 +442,13 @@ type App struct {
 	media        *Media
 	discounts    *Discounts
 	upsells      *Upsells
-	locations    *Locations
-	invitations  *Invitations
-	taxes        *Taxes
-	shipping     *Shipping
+	// postcodes is the PIN code directory, nil when Config.PostcodesFile is
+	// unset.
+	postcodes   *Postcodes
+	locations   *Locations
+	invitations *Invitations
+	taxes       *Taxes
+	shipping    *Shipping
 	// errq records error occurrences off the request path (D86).
 	errq *errorQueue
 	// reports is a reading of the orders: it owns no table and writes nothing,
@@ -544,6 +556,15 @@ func New(cfg Config, mods ...Module) (*App, error) {
 	if err := cfg.applyDefaults(); err != nil {
 		return nil, err
 	}
+	// Read before anything is opened, so a wrong path stops the start rather
+	// than leaving a checkout that quietly never fills a city.
+	var postcodes *Postcodes
+	if cfg.PostcodesFile != "" {
+		var err error
+		if postcodes, err = LoadPostcodes(cfg.PostcodesFile); err != nil {
+			return nil, fmt.Errorf("gocommerce: postcodes file: %w", err)
+		}
+	}
 	for _, w := range cfg.brandWarnings {
 		cfg.Logger.Warn("gocommerce: "+w, "fix", "the entry in "+BrandsEnv)
 	}
@@ -583,6 +604,7 @@ func New(cfg Config, mods ...Module) (*App, error) {
 
 	a := &App{
 		cfg:               cfg,
+		postcodes:         postcodes,
 		db:                db,
 		secrets:           keys,
 		reportsDB:         reportsDB,

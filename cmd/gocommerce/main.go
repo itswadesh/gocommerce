@@ -147,6 +147,10 @@ environment:
                     where uploaded media is written, used when -media-dir is
                     not given; leaving it unset disables uploads and the media
                     library records files by URL only
+  GOCOMMERCE_POSTCODES_FILE
+                    India Post's PIN code directory, the CSV data.gov.in
+                    publishes; with it a checkout fills the city and state
+                    from a PIN code (GET /api/postcodes/IN/{pin})
   GOCOMMERCE_IDENTITY_RESET_URL
                     with -identity, the storefront page a password-reset email
                     links to, with {token} where the token goes
@@ -357,6 +361,7 @@ environment:
 		*mediaDir = os.Getenv("GOCOMMERCE_MEDIA_DIR")
 	}
 	cfg.MediaDir = *mediaDir
+	cfg.PostcodesFile = os.Getenv("GOCOMMERCE_POSTCODES_FILE")
 	if len(languages) > 0 {
 		cfg.DefaultLanguage = languages[0]
 	}

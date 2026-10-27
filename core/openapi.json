@@ -16043,6 +16043,57 @@
           }
         }
       }
+    },
+    "/api/postcodes/{country}/{code}": {
+      "get": {
+        "tags": [
+          "checkout"
+        ],
+        "summary": "Look up a postcode",
+        "description": "The city and state for a postcode, from India Post's directory when the install has one (Config.PostcodesFile, D134). India only; a PIN code is six digits not starting with 0. 404 for one the directory does not hold, another country, or an install without a directory.",
+        "parameters": [
+          {
+            "name": "country",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ISO 3166-1 alpha-2."
+          },
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The place.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Postcode"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -22468,6 +22519,28 @@
               "$ref": "#/components/schemas/ErrorEvent"
             },
             "description": "The latest occurrences, newest first; read with one issue."
+          }
+        }
+      },
+      "Postcode": {
+        "type": "object",
+        "description": "What a postcode tells a checkout: the city (India Post's district) and the state.",
+        "properties": {
+          "country": {
+            "type": "string"
+          },
+          "postcode": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "state_code": {
+            "type": "string",
+            "description": "The state as tax rates and shipping zones store it (D72); empty when the engine has no code for it."
           }
         }
       }
