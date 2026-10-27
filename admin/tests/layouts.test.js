@@ -328,3 +328,59 @@ test("the theme settings row says what is set", () => {
     assert.equal(themeSettingsSummary({ accent: "#112233" }), "1 setting changed");
     assert.equal(themeSettingsSummary({ accent: "#112233", radius: "large" }), "2 settings changed");
 });
+
+// ------------------------------------------------------------ Phase 4 (D128)
+
+import { PAGES, pageMeta, libraryFor, isFixed, previewPath, localInputValue, fromLocalInput, scheduleLine } from "../src/lib/layouts.js";
+
+const pageRegistry = [
+    { type: "hero", label: "Hero", description: "", fields: [] },
+    { type: "main-product", label: "Product", description: "", fixed: true, pages: ["product"], fields: [] },
+    { type: "product-reviews", label: "Reviews", description: "", pages: ["product"], fields: [] },
+    { type: "main-collection", label: "Products", description: "", fixed: true, pages: ["collection"], fields: [] },
+];
+
+test("each page has its route, its title and the engine's key", () => {
+    assert.deepEqual(PAGES.map((p) => p.key), ["home", "product", "collection"]);
+    assert.equal(pageMeta("product").route, "product");
+    assert.equal(pageMeta("home").route, "homepage");
+    assert.equal(pageMeta("nope"), undefined);
+});
+
+test("the library offers what a page can hold, never its fixed core", () => {
+    assert.deepEqual(libraryFor(pageRegistry, "home").map((t) => t.type), ["hero"]);
+    assert.deepEqual(libraryFor(pageRegistry, "product").map((t) => t.type), ["hero", "product-reviews"]);
+    assert.deepEqual(libraryFor(pageRegistry, "collection").map((t) => t.type), ["hero"]);
+    assert.equal(isFixed({ type: "main-product" }, pageRegistry), true);
+    assert.equal(isFixed({ type: "hero" }, pageRegistry), false);
+});
+
+test("the preview opens the page being edited, on the product or collection picked", () => {
+    assert.equal(previewPath("home", null), "/");
+    assert.equal(previewPath("product", { slug: "blue mug" }), "/products/blue%20mug");
+    assert.equal(previewPath("collection", { slug: "summer" }), "/collections/summer");
+    assert.equal(previewPath("product", null), "");
+    assert.equal(
+        previewAddress("https://shop.example.com", "k", "https://admin.example.com", "/products/mug"),
+        "https://shop.example.com/products/mug?preview=k&editor=https%3A%2F%2Fadmin.example.com",
+    );
+});
+
+test("a schedule's time goes to and from the browser's local date-time box", () => {
+    const at = new Date(2026, 10, 3, 9, 5);
+    assert.equal(localInputValue(at), "2026-11-03T09:05");
+    assert.equal(fromLocalInput("2026-11-03T09:05").getTime(), at.getTime());
+    assert.equal(fromLocalInput(""), null);
+    assert.equal(fromLocalInput("not a time"), null);
+});
+
+test("the schedule line says when, and whether later edits are in it", () => {
+    const when = (d) => d.toISOString();
+    const s = { publish_at: "2026-11-03T09:05:00Z", scheduled_by: "a@example.com", outdated: false };
+    assert.equal(scheduleLine(s, when), "Publishes 2026-11-03T09:05:00.000Z, set by a@example.com.");
+    assert.equal(
+        scheduleLine({ ...s, outdated: true }, when),
+        "Publishes 2026-11-03T09:05:00.000Z, set by a@example.com. Edits since are not in it: schedule again to include them.",
+    );
+    assert.equal(scheduleLine(null, when), "");
+});
