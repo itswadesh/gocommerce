@@ -126,7 +126,7 @@ Every gateway and carrier module installs idle: `-gateways` and `-carriers` put 
 | `fulfill-usps` | USPS labels bought directly, served to print |
 | `fulfill-onfleet` | Dispatching your own drivers, last mile |
 | `fulfill-veeqo` | Telling Veeqo a parcel went out |
-| `invoices` | Numbered, gapless invoices on payment |
+| `invoices` | Numbered, gapless invoices on payment, and GST tax invoices for a store in India with a GSTIN |
 | `cms` | Content pages, per language |
 | `translations` | Products, categories and collections in each of a store's languages, written on the Translations screen |
 | `identity` | Shopper accounts: sessions, saved addresses, order history, password reset, confirmed email addresses |
