@@ -786,7 +786,9 @@ like a page.
 Two more elements are not pages of the editor and are listed whether or not
 the build has it (D132): **Banners** (below) and **Storefront extras**
 (`/dash/themes/extras`), the hello bar, news ticker, trust badges and share
-buttons, each with its switch and settings. They are the same plugin rows they
+buttons, the sold count and the basket suggestions (D134), each with its
+switch and settings. A `collection` setting, the basket suggestions' one,
+is drawn as a picker of the store's collections and stored as the handle. They are the same plugin rows they
 always were, so a storefront reading `GET /api/plugins` sees no change. The
 Header page's announcement strip does the hello bar's job, and the extras
 screen says so; both stay, because stores use the hello bar today.

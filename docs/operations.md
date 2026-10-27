@@ -37,6 +37,7 @@ Only `DBURL` and one admin token are required.
 | `OutboxBatchSize` / `OutboxPoll` | 100 / 1s | Dispatcher tuning. |
 | `FlatShippingMinor` | 0 | v1's entire shipping calculation. |
 | `OrderPrefix` | `GC-` | Prefixes human order numbers. |
+| `PostcodesFile` | none | `GOCOMMERCE_POSTCODES_FILE`. India Post's PIN code directory, the "All India Pincode Directory" CSV data.gov.in publishes under the Government Open Data Licence, read once at start. With it `GET /api/postcodes/IN/{pin}` answers the city (the district) and state, and a checkout fills both from six digits (D134); unset, that route is a 404 and the shopper types them. A file that cannot be read stops the start. |
 
 Generate an admin token with real entropy:
 

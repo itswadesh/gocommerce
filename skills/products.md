@@ -409,6 +409,33 @@ a shell.
   that PUT replaces the whole membership**, including rows the caller never
   fetched, so a client pages the lot before it saves.
 
+## Highlights, a free gift note, videos and the sold count
+
+Two keys at the top of a product's `metadata` are the engine's own (D134):
+
+- `highlights`, up to 8 lines of plain text, 80 characters each;
+- `free_gift`, one such line ("Free screen guard with every case").
+
+Both are trimmed on create and update, an empty one is removed, and anything
+longer, longer-listed or not text is a `400` (`normalizeProductMetadata`). A
+storefront draws them as text, never as markup.
+
+The public product (`GET /api/products/{id}`, `/slug/{slug}`, `/sku/{sku}`)
+carries two fields no listing does:
+
+- `media`, the product's pictures and videos in order (`kind` `image` or
+  `video`; a YouTube link is a linked video), so a gallery can play them;
+- `sold_at_least`, the units sold rounded down to tens under 100, hundreds
+  under 1,000 and thousands above. It is present only when the shop has
+  **Sold count** on (`sold-count`, Themes › Storefront extras, off by
+  default) and the product has sold at least its threshold (default 25).
+
+The count is never estimated: units on orders that are confirmed, part
+shipped, shipped or delivered, not refunded and not sample orders (D96). The
+sweeper recounts every store with the count on into `product_sales_counts`
+every five minutes (`Catalog.RefreshSalesCounts`), so a page view reads one
+row.
+
 ## How to change status or delete
 
 ```go
