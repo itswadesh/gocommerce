@@ -437,6 +437,8 @@
             category_id: null,
             collection_ids: [],
             metafields: [],
+            highlights: [""],
+            free_gift: "",
             // Values for the fields the chosen category defines. Keyed by the
             // attribute key, so a renamed label keeps the answers under it.
             category_meta: {},
