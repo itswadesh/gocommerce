@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -235,6 +236,43 @@ func TestABuyerChecksOutOnAccountAtTheCompanysPrice(t *testing.T) {
 	me := gctest.SessionRequest(t, f.app, tok, http.MethodGet, "/x/b2b/me", nil)
 	if !strings.Contains(me.Body.String(), `"outstanding":{"amount_minor":16000`) {
 		t.Errorf("credit = %s; want 16000 outstanding", me.Body)
+	}
+}
+
+// A company whose tax id is a GSTIN has it on every order, where a GST tax
+// invoice reads the buyer's registration; any other tax id stays off.
+func TestAB2BOrderCarriesTheCompanysGSTIN(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	_, tok := f.member(t, "boss@acme.test", RoleAdmin)
+
+	for _, c := range []struct {
+		taxID string
+		want  any
+	}{
+		{"21aabct1332l1zq", map[string]any{"gstin": "21AABCT1332L1ZQ", "name": "Acme Distribution"}},
+		{"GB123456789", nil},
+	} {
+		if rec := gctest.AdminRequest(t, f.app, http.MethodPatch, f.companyPath(), map[string]any{"tax_id": c.taxID}); rec.Code != http.StatusOK {
+			t.Fatalf("set tax id = %d: %s", rec.Code, rec.Body)
+		}
+		r := f.checkout(t, tok, f.cart(t, 1), nil)
+		if r.code != http.StatusCreated {
+			t.Fatalf("checkout = %d: %s", r.code, r.body)
+		}
+		var placed struct {
+			Order struct {
+				ID int64 `json:"id"`
+			} `json:"order"`
+		}
+		decodeBody(t, r.body, &placed)
+		order, err := f.app.Order().Get(ctx, placed.Order.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := order.Metadata["gst"]; !reflect.DeepEqual(got, c.want) {
+			t.Errorf("tax id %q: metadata.gst = %#v, want %#v", c.taxID, got, c.want)
+		}
 	}
 }
 

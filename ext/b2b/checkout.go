@@ -270,7 +270,15 @@ func orderMeta(p *placement, netDays int) gocommerce.Metadata {
 	if p.quoteID != 0 {
 		b["quote_id"] = p.quoteID
 	}
-	return gocommerce.Metadata{metaKey: b}
+	meta := gocommerce.Metadata{metaKey: b}
+	// The buyer's GSTIN for a GST tax invoice (D126), under the key any
+	// checkout uses, snapshotted so editing the company later cannot change
+	// last month's invoice. A tax id that is not a GSTIN, such as a UK VAT
+	// number, is not one to print.
+	if g, err := gocommerce.ParseGSTIN(p.company.TaxID); err == nil {
+		meta["gst"] = map[string]any{"gstin": string(g), "name": p.company.Name}
+	}
+	return meta
 }
 
 // Checkout places a buyer's cart for their company. The cart is priced as
