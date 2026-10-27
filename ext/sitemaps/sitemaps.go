@@ -30,7 +30,7 @@ const (
 )
 
 // Config configures the module. Every field can also be set from the
-// Plugins screen, which wins.
+// panel, which wins.
 type Config struct {
 	// StorefrontURL is where the pages live: https://shop.example.
 	StorefrontURL string
@@ -60,6 +60,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "Sitemap", Icon: "ri-compass-3-line", Category: "marketing",
+		Home:           "/dash/sitemap",
 		Description:    "A sitemap of every active product and collection — and every published page when the CMS is installed — at /x/sitemaps/sitemap.xml, for search engines. Point the storefront's /sitemap.xml at it.",
 		DefaultEnabled: m.cfg.StorefrontURL != "",
 		Docs:           "https://www.sitemaps.org/protocol.html",
@@ -137,7 +138,7 @@ func (m *Module) ready(w http.ResponseWriter, r *http.Request) (settings, bool) 
 		return s, false
 	}
 	if s.storefront == "" {
-		gocommerce.RespondError(w, r, gocommerce.Conflictf("the sitemap needs the storefront URL: set it on the Plugins screen"))
+		gocommerce.RespondError(w, r, gocommerce.Conflictf("the sitemap needs the storefront URL: set it on the Sitemap screen"))
 		return s, false
 	}
 	return s, true

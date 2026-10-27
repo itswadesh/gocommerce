@@ -225,6 +225,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "Creem", Icon: "ri-wallet-3-line", Category: "payments", DefaultEnabled: inCode,
+		Home:        "/dash/settings/payments",
 		Description: "Checkouts through Creem as merchant of record, each created against one placeholder one-time product. Creem refunds in full only, so a partial refund has to be made in its dashboard.",
 		Docs:        "https://docs.creem.io/api-reference/introduction",
 		Fields: []gocommerce.PluginField{

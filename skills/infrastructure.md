@@ -399,7 +399,7 @@ With no store bound, a statement sees nothing and an insert fails.
 
 **Provider keys in the environment are every store's default.** A key set
 for the install — `RESEND_API_KEY`, a Stripe key in a module's `Config` — is
-what each store uses until it enters its own on its Plugins screen, and the
+what each store uses until it enters its own on its provider's screen, and the
 store's own wins from then on. So a new store can send email and take
 payment from its first minute, through the install's accounts. A store whose
 customers' money must not pass through the install's payment account enters

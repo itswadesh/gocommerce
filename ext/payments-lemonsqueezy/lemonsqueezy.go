@@ -191,6 +191,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "Lemon Squeezy", Icon: "ri-money-dollar-circle-line", Category: "payments", DefaultEnabled: inCode,
+		Home:        "/dash/settings/payments",
 		Description: "Checkouts through Lemon Squeezy as merchant of record, each created against one placeholder variant.",
 		Docs:        "https://docs.lemonsqueezy.com/api",
 		Fields: []gocommerce.PluginField{

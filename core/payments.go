@@ -40,7 +40,7 @@ func (p *Payments) installed() []string {
 
 // Methods lists the payment codes this store accepts: the installed ones
 // that are set up. A gateway installed idle — its key not yet typed into
-// the Plugins screen — is not offered, because offering it would send a
+// its screen in the panel — is not offered, because offering it would send a
 // shopper into a checkout that cannot complete.
 func (p *Payments) Methods() []string { return p.MethodsFor(context.Background()) }
 

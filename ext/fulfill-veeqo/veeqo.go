@@ -172,6 +172,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "Veeqo", Icon: "ri-box-3-line", Category: "shipping", DefaultEnabled: inCode,
+		Home:        "/dash/shipping-settings/providers",
 		Description: "Tells Veeqo a parcel went out, so its stock and channels follow. Labels are bought elsewhere.",
 		Docs:        "https://developers.veeqo.com/",
 		Fields: []gocommerce.PluginField{

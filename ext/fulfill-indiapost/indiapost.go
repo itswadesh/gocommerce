@@ -141,6 +141,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "India Post", Icon: "ri-mail-line", Category: "shipping", DefaultEnabled: inCode,
+		Home:        "/dash/shipping-settings/providers",
 		Description: "Records a consignment handed to India Post at the counter or booked in the Department of Posts portal. Nothing is booked from here.",
 		Docs:        "https://www.indiapost.gov.in/",
 		Fields: []gocommerce.PluginField{

@@ -187,6 +187,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "NimbusPost", Icon: "ri-truck-line", Category: "shipping", DefaultEnabled: inCode,
+		Home:        "/dash/shipping-settings/providers",
 		Description: "NimbusPost's courier aggregation, India: one login books across the couriers it holds.",
 		Docs:        "https://documentation.nimbuspost.com/",
 		Fields: []gocommerce.PluginField{

@@ -165,7 +165,7 @@ func (a *App) NotifierChannels() []NotifierChannelInfo {
 }
 
 // NotifierChannelsFor is NotifierChannels for the store ctx is bound to: a
-// backend is configured per store, on its Plugins screen.
+// backend is configured per store, on its own screen.
 func (a *App) NotifierChannelsFor(ctx context.Context) []NotifierChannelInfo {
 	channels := []string{ChannelEmail, ChannelSMS}
 	out := make([]NotifierChannelInfo, 0, len(channels))

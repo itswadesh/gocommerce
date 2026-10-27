@@ -3,7 +3,7 @@
 //
 // A shopper writes — through the contact form, or by asking about one product
 // — and the store keeps the message and tells its own address by email, when
-// the Plugins screen says where. Both kinds land in one inbox: an enquiry is a
+// its screen in the panel says where. Both kinds land in one inbox: an enquiry is a
 // message marked as one, carrying the product as it was called when they
 // asked. The inbox has three states — new, replied, archived — and a place
 // for notes.
@@ -237,6 +237,7 @@ Reply from the Contact screen.`,
 	})
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "Contact form", Icon: "ri-customer-service-2-line", Category: "storefront", DefaultEnabled: true,
+		Home:        "/dash/contact",
 		Description: "A contact form on the storefront, product enquiries, and the inbox behind both on the Contact screen. Each new message and enquiry is announced by email to the address below.",
 		Fields: []gocommerce.PluginField{
 			{Key: "notify_email", Label: "Announce new messages to", Kind: "text", Required: m.cfg.NotifyEmail == "", Help: "The store's own address, for messages and product enquiries alike. Each announcement lands in Notifications too."},

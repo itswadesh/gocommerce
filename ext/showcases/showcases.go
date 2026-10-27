@@ -159,6 +159,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "Video showcases", Icon: "ri-video-line", Category: "storefront", DefaultEnabled: true,
+		Home: "/dash/showcases",
 		Description: "Videos of the store showing what it sells — from YouTube or Facebook, never uploaded here — " +
 			"beside the products they show, served at /x/showcases for the storefront to play.",
 	})

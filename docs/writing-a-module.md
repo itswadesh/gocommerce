@@ -91,7 +91,7 @@ and you cannot forget one.
 
 Build your default HTTP client with `app.OutboundClient(timeout)`, not
 `&http.Client{}`. A store operator can usually choose where your module
-connects — an API base URL on the Plugins screen, a shop to import from — and
+connects — an API base URL in a plugin's settings, a shop to import from — and
 on an install that hosts stores for other people that operator is a stranger.
 Unless the install sets `AllowPrivateURLs`, the client connects only to public
 addresses, judged on the address it actually dials, redirects included

@@ -219,6 +219,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "Clover", Icon: "ri-bank-card-line", Category: "payments", DefaultEnabled: inCode,
+		Home:        "/dash/settings/payments",
 		Description: "Card payments on Clover's Hosted Checkout page, with the signed webhook marking orders paid. United States and Canada.",
 		Docs:        "https://docs.clover.com/dev/docs/hosted-checkout-api",
 		Fields: []gocommerce.PluginField{

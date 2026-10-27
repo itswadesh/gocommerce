@@ -4,7 +4,7 @@
       "post": {
         "tags": ["contact"],
         "summary": "Send the store a message",
-        "description": "The storefront's contact form. A name, an email and a message are required; a subject, a phone and an order number are welcome. `website` is a honeypot — a field no person sees — and a filled one is accepted and dropped. One address may send ten messages and enquiries a minute between them by default (the connection's peer address, never X-Forwarded-For); past that the answer is 429 with Retry-After. The operator is told by email at the address the Plugins screen holds, and that announcement lands in Notifications. 404 while the plugin is off.",
+        "description": "The storefront's contact form. A name, an email and a message are required; a subject, a phone and an order number are welcome. `website` is a honeypot — a field no person sees — and a filled one is accepted and dropped. One address may send ten messages and enquiries a minute between them by default (the connection's peer address, never X-Forwarded-For); past that the answer is 429 with Retry-After. The operator is told by email at the address the Contact messages screen holds, and that announcement lands in Notifications. 404 while the plugin is off.",
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ContactMessageInput"}}}},
         "responses": {
           "201": {"description": "Received.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ContactReceived"}}}},

@@ -27,7 +27,7 @@ const (
 	maxAnswer   = 8000
 )
 
-// Config configures the module. The Plugins screen holds the same heading
+// Config configures the module. Its screen in the panel holds the same heading
 // and wins.
 type Config struct {
 	// Heading is what the storefront's page is called. Defaults to
@@ -107,6 +107,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	}
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "FAQ", Icon: "ri-question-answer-line", Category: "storefront", DefaultEnabled: true,
+		Home:        "/dash/faq",
 		Description: "A page of the questions this shop is asked often, grouped into sections and ordered by hand, edited on the FAQ screen and served at /x/faq.",
 		Fields: []gocommerce.PluginField{
 			{Key: "heading", Label: "Page heading", Kind: "text", Public: true, Default: heading},

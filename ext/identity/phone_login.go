@@ -54,6 +54,7 @@ type signInSettings struct {
 func (m *Module) registerSignIn(app *gocommerce.App) {
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "Customer sign-in", Icon: "ri-user-follow-line", Category: "storefront", DefaultEnabled: true,
+		Home:        "/dash/settings",
 		Description: "How shoppers sign in to their account on the storefront. Switched off, the shop has no customer accounts and everybody checks out as a guest.",
 		Fields: []gocommerce.PluginField{{
 			Key: "login_method", Label: "How customers sign in", Kind: "select",

@@ -5,7 +5,7 @@
 // content page, the home page, or any URL — by handle rather than by id, so
 // a menu survives a re-import and reads sensibly in an export. The public
 // route resolves every item to a storefront path using the paths the
-// Plugins screen holds, so a storefront renders the tree without knowing
+// Menus screen holds, so a storefront renders the tree without knowing
 // what kind of thing each item is; the kind travels too, for one that wants
 // to know.
 //
@@ -43,7 +43,7 @@ const (
 var kinds = map[string]bool{KindURL: true, KindHome: true, KindProduct: true, KindCollection: true, KindCategory: true, KindPage: true}
 
 // Config configures the module. Every path can also be set from the
-// Plugins screen, which wins.
+// panel, which wins.
 type Config struct {
 	ProductPath, CollectionPath, CategoryPath, PagePath string
 }
@@ -135,6 +135,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.db = app.DB()
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "Menus", Icon: "ri-menu-2-line", Category: "storefront", DefaultEnabled: true,
+		Home:        "/dash/menus",
 		Description: "The storefront's menus — header, footer, wherever — as trees of links to products, collections, categories, pages and URLs, edited from the Menus screen and served at /x/navigation/menus/{handle}.",
 		Fields: []gocommerce.PluginField{
 			{Key: "product_path", Label: "Product page path", Kind: "text", Default: "/products/{slug}", Public: true},

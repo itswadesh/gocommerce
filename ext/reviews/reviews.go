@@ -2,10 +2,10 @@
 // five and some words, moderated before it shows.
 //
 // A review arrives from the storefront and waits for an operator unless
-// the Plugins screen says to approve on sight; approved reviews are what
+// its screen in the panel says to approve on sight; approved reviews are what
 // the storefront reads, with the average and the count beside them. A
 // review is marked verified when its email has bought the product, which
-// the store can tell from its own orders — and the Plugins screen can make
+// the store can tell from its own orders — and its screen in the panel can make
 // that a condition of posting at all.
 package reviews
 
@@ -34,7 +34,7 @@ const (
 	StatusRejected = "rejected"
 )
 
-// Config configures the module. The Plugins screen holds the same two
+// Config configures the module. Its screen in the panel holds the same two
 // switches and wins.
 type Config struct {
 	// AutoApprove shows a review the moment it is posted.
@@ -138,6 +138,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.db = app.DB()
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "Product reviews", Icon: "ri-star-line", Category: "storefront", DefaultEnabled: true,
+		Home:        "/dash/reviews",
 		Description: "Ratings and reviews on the product page, moderated on the Reviews screen. A review from an email that bought the product is marked verified.",
 		Fields: []gocommerce.PluginField{
 			{Key: "auto_approve", Label: "Show reviews without moderation", Kind: "bool", Default: m.cfg.AutoApprove},

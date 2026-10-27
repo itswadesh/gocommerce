@@ -195,6 +195,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "ShipStation", Icon: "ri-truck-line", Category: "shipping", DefaultEnabled: inCode,
+		Home:        "/dash/shipping-settings/providers",
 		Description: "Multi-carrier labels through ShipStation's V2 API, on the service you name.",
 		Docs:        "https://docs.shipstation.com/",
 		Fields: []gocommerce.PluginField{

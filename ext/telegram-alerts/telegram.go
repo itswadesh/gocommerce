@@ -163,6 +163,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	inCode := strings.TrimSpace(m.cfg.BotToken) != "" && strings.TrimSpace(m.cfg.ChatID) != ""
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "Telegram alerts", Icon: "ri-telegram-line", Category: "notifications", DefaultEnabled: inCode,
+		Home:        "/dash/notifications/telegram",
 		Description: "Sends the owner a Telegram message for every new order, payment, cancellation and return. Free: you make a bot with @BotFather and it writes to you. Set it up, and word the messages, under Notifications › Setup Telegram.",
 		Docs:        "https://core.telegram.org/bots/features#botfather",
 		Fields: []gocommerce.PluginField{

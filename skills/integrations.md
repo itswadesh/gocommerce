@@ -184,6 +184,21 @@ stored)` when it reads (a value never sealed comes back as it is), and
 What a plugin is not: code that arrives at runtime. The Plugins screen
 lists what this binary can do; adding to it is adding a module.
 
+Not every descriptor is an add-on (D132). A plugin on the Plugins screen is an
+optional third-party integration or extra: an analytics or chat tag, a
+marketing or search integration, an import. A feature that is part of the
+product — menus, banners, a payment gateway, a notification sender, the
+sign-in method — sets `Home` to the panel screen it is set up on, a path
+under `/dash/`. The Plugins screen leaves it out, and that screen shows its
+switch and settings (the panel's `FeatureSwitch` component reads
+`GET /api/admin/plugins/{key}` and opens the same settings drawer). Nothing
+else changes: the row, the secrets, `Fill` and `GET /api/plugins` treat it
+like any plugin. `AlwaysOn` goes further — no switch at all: on with no row,
+and a patch may not turn it off, though a row stored off before keeps the
+store's storefront as it was until the store turns it on once. Banners is the
+one. `ext/alltest` names every plugin as an add-on or a built-in feature, so a
+new module's plugin is a decision rather than a default.
+
 ## Notification templates: the words are the store's
 
 A notifier module carries messages; it does not own their wording (D58).

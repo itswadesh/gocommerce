@@ -180,6 +180,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "Delhivery", Icon: "ri-truck-line", Category: "shipping", DefaultEnabled: inCode,
+		Home:        "/dash/shipping-settings/providers",
 		Description: "Manifests parcels with Delhivery and takes the waybill it assigns. India's largest carrier.",
 		Docs:        "https://delhivery-express-api-doc.readme.io/",
 		Fields: []gocommerce.PluginField{

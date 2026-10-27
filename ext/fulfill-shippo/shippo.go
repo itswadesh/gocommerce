@@ -199,6 +199,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "Shippo", Icon: "ri-truck-line", Category: "shipping", DefaultEnabled: inCode,
+		Home:        "/dash/shipping-settings/providers",
 		Description: "Multi-carrier labels through Shippo: an instant purchase on the carrier account and service you name.",
 		Docs:        "https://docs.goshippo.com/",
 		Fields: []gocommerce.PluginField{
