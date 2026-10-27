@@ -1,3 +1,20 @@
+<script module>
+    import { api } from "$lib/api.js";
+
+    // The store's menus, read once per visit to the panel for every menu
+    // choice on the screen; null until they arrive, [] when they cannot be
+    // read (no Menus module, or no right to list them).
+    let menus = $state(null);
+    let menusAsked = false;
+    function askMenus() {
+        if (menusAsked) return;
+        menusAsked = true;
+        api.get("/api/admin/x/navigation/menus")
+            .then((list) => (menus = Array.isArray(list) ? list : Array.isArray(list?.data) ? list.data : []))
+            .catch(() => (menus = []));
+    }
+</script>
+
 <script>
     /**
      * A homepage section's settings form, drawn from its type's fields in the
@@ -7,18 +24,22 @@
      * Images use the Files library (ImageField), products and collections the
      * discount screen's picker (TargetPicker); a list repeats its item fields
      * with add, move and remove. A colour is a swatch and its #rrggbb, and an
-     * unset one says the storefront keeps its own (D127).
+     * unset one says the storefront keeps its own (D127). A menu is chosen
+     * from the store's menus by its handle (D131).
      */
     import Select from "$lib/components/Select.svelte";
     import ImageField from "$lib/components/ImageField.svelte";
     import TargetPicker from "$lib/components/TargetPicker.svelte";
-    import { visibleFields } from "$lib/layouts.js";
+    import { visibleFields, menuOptions } from "$lib/layouts.js";
     import { rise } from "$lib/motion.js";
     import Self from "./SectionFields.svelte";
 
     let { fields = [], settings = $bindable({}), idPrefix = "sf", errorKey = "" } = $props();
 
     const shown = $derived(visibleFields(fields, settings));
+    $effect(() => {
+        if (fields.some((f) => f.kind === "menu")) askMenus();
+    });
 
     function set(key, v) {
         const next = { ...settings };
@@ -138,6 +159,12 @@
                     <textarea {id} rows="4" maxlength={f.max_length || undefined} value={settings[f.key] ?? ""} oninput={(e) => set(f.key, e.currentTarget.value)}></textarea>
                 {:else if f.kind === "select"}
                     <Select {id} options={f.options ?? []} bind:value={() => settings[f.key] ?? f.default ?? "", (v) => set(f.key, v)} />
+                {:else if f.kind === "menu"}
+                    {#if menus === null}
+                        <span class="skeleton-loader sf-menu-wait" aria-hidden="true"></span>
+                    {:else}
+                        <Select {id} options={menuOptions(menus, settings[f.key] ?? f.default ?? "")} bind:value={() => settings[f.key] ?? f.default ?? "", (v) => set(f.key, v)} />
+                    {/if}
                 {:else if f.kind === "number"}
                     <input
                         {id}
@@ -175,6 +202,10 @@
 {/each}
 
 <style>
+    .sf-menu-wait {
+        display: block;
+        height: 36px;
+    }
     .sf-field + .sf-field {
         margin-top: 12px;
     }

@@ -66,7 +66,7 @@ export function sectionSummary(section, registry) {
     if (!t) return { label: `Unknown section (${section.type})`, text: "" };
     const s = section.settings ?? {};
     const list = Array.isArray(s.items) ? s.items : Array.isArray(s.slides) ? s.slides : [];
-    const text = s.heading || s.text || s.body || list.map((i) => i?.title || i?.heading || i?.question).filter(Boolean).join(" · ") || "";
+    const text = s.heading || s.text || s.body || s.announcement_text || list.map((i) => i?.title || i?.heading || i?.question).filter(Boolean).join(" · ") || "";
     return { label: t.label, text: String(text).slice(0, 120) };
 }
 
@@ -225,7 +225,7 @@ export function createAutosave({ save, delay = 800, setTimer = setTimeout, clear
  * panel's origin, which the storefront then accepts messages from and lets
  * frame it. Only an http(s) address makes one; anything else is "".
  */
-export function previewAddress(storefront, key, editorOrigin, path = "/") {
+export function previewAddress(storefront, key, editorOrigin, path = "/", part = "") {
     let url;
     try {
         url = new URL(storefront);
@@ -236,6 +236,9 @@ export function previewAddress(storefront, key, editorOrigin, path = "/") {
     const out = new URL(path || "/", url.origin);
     out.searchParams.set("preview", key);
     if (editorOrigin) out.searchParams.set("editor", editorOrigin);
+    // The header's or footer's key opens neither the page it is shown on nor
+    // any other; the storefront is told which part of every page it is for.
+    if (part) out.searchParams.set("preview_page", part);
     return out.href;
 }
 
@@ -324,14 +327,30 @@ export const PAGES = [
     { key: "home", route: "homepage", title: "Homepage", noun: "home page", icon: "ri-home-4-line" },
     { key: "product", route: "product", title: "Product page", noun: "product page", icon: "ri-shopping-bag-3-line" },
     { key: "collection", route: "collection", title: "Collection page", noun: "collection page", icon: "ri-layout-grid-line" },
+    { key: "header", route: "header", title: "Header", noun: "header", icon: "ri-layout-top-line" },
+    { key: "footer", route: "footer", title: "Footer", noun: "footer", icon: "ri-layout-bottom-line" },
 ];
+
+/**
+ * The header and the footer (D131): each one section, the storefront's own,
+ * drawn on every page, whose settings the shop edits; nothing is added to
+ * them, moved or removed.
+ */
+export function isChrome(key) {
+    return key === "header" || key === "footer";
+}
 
 export function pageMeta(key) {
     return PAGES.find((p) => p.key === key);
 }
 
-/** The section types the shop may add to page: those allowed there, never its fixed core. */
-export function libraryFor(registry, page) {
+/**
+ * The section types the shop may add to page: those allowed there, never its
+ * fixed core, and nothing at all on a page that is its core alone (the
+ * engine's pages, which say so).
+ */
+export function libraryFor(registry, page, pages = []) {
+    if (pages.find((p) => p.key === page)?.core_only) return [];
     return registry.filter((t) => !t.fixed && (!t.pages?.length || t.pages.includes(page)));
 }
 
@@ -346,7 +365,7 @@ export function isFixed(section, registry) {
  * one is picked.
  */
 export function previewPath(page, subject) {
-    if (page === "home") return "/";
+    if (page === "home" || isChrome(page)) return "/";
     if (!subject?.slug) return "";
     return `/${page === "product" ? "products" : "collections"}/${encodeURIComponent(subject.slug)}`;
 }
@@ -373,5 +392,16 @@ export function scheduleLine(scheduled, when) {
     if (scheduled.scheduled_by) out += `, set by ${scheduled.scheduled_by}`;
     out += ".";
     if (scheduled.outdated) out += " Edits since are not in it: schedule again to include them.";
+    return out;
+}
+
+/**
+ * The choices for a menu setting: the store's menus by title, and the one
+ * set, when it is not among them — deleted since, or not listable by this
+ * person — so the box shows what is saved rather than quietly another.
+ */
+export function menuOptions(menus, current) {
+    const out = (menus ?? []).map((m) => ({ value: m.handle, label: m.title || m.handle }));
+    if (current && !out.some((o) => o.value === current)) out.push({ value: current, label: `${current} (not found in Menus)` });
     return out;
 }

@@ -1,8 +1,9 @@
 <script>
     /**
      * Themes (ext/layouts, D125, D129): the store's theme and the elements of
-     * it the shop arranges — the homepage, and the templates every product and
-     * every collection is drawn in. Each opens the same editor, so a page
+     * it the shop arranges — the homepage, the templates every product and
+     * every collection is drawn in, and the header and footer every page is
+     * drawn between (D131). Each opens the same editor, so a page
      * added to the engine's registry joins this list rather than the menu.
      * Theme settings — colours, fonts, corners (D127) — open in the
      * homepage's editor, since they publish with the home page.

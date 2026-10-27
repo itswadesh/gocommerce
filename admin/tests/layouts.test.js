@@ -341,7 +341,7 @@ const pageRegistry = [
 ];
 
 test("each page has its route, its title and the engine's key", () => {
-    assert.deepEqual(PAGES.map((p) => p.key), ["home", "product", "collection"]);
+    assert.deepEqual(PAGES.map((p) => p.key), ["home", "product", "collection", "header", "footer"]);
     assert.equal(pageMeta("product").route, "product");
     assert.equal(pageMeta("home").route, "homepage");
     assert.equal(pageMeta("nope"), undefined);
@@ -383,4 +383,67 @@ test("the schedule line says when, and whether later edits are in it", () => {
         "Publishes 2026-11-03T09:05:00.000Z, set by a@example.com. Edits since are not in it: schedule again to include them.",
     );
     assert.equal(scheduleLine(null, when), "");
+});
+
+// ------------------------------------------------------------ the header and footer (D131)
+
+import { menuOptions, isChrome } from "../src/lib/layouts.js";
+
+const chromeRegistry = [
+    ...pageRegistry,
+    { type: "header", label: "Header", description: "", fixed: true, pages: ["header"], fields: [{ key: "announcement_text", kind: "text" }] },
+    { type: "footer", label: "Footer", description: "", fixed: true, pages: ["footer"], fields: [] },
+];
+const chromePages = [
+    { key: "home" },
+    { key: "product", core: "main-product" },
+    { key: "header", core: "header", core_only: true },
+    { key: "footer", core: "footer", core_only: true },
+];
+
+test("the header and the footer are their own section and nothing else", () => {
+    assert.deepEqual(libraryFor(chromeRegistry, "header", chromePages), []);
+    assert.deepEqual(libraryFor(chromeRegistry, "footer", chromePages), []);
+    // A page that is not one of them still offers every type it may hold.
+    assert.deepEqual(libraryFor(chromeRegistry, "home", chromePages).map((t) => t.type), ["hero"]);
+    assert.equal(isChrome("header"), true);
+    assert.equal(isChrome("footer"), true);
+    assert.equal(isChrome("home"), false);
+    assert.equal(pageMeta("header").route, "header");
+    assert.equal(pageMeta("footer").noun, "footer");
+});
+
+test("the header and footer are previewed on the home page, which draws both", () => {
+    assert.equal(previewPath("header", null), "/");
+    assert.equal(previewPath("footer", null), "/");
+    // The storefront is told which part the key is for: on the home page it
+    // would otherwise try it as the home page's.
+    assert.equal(
+        previewAddress("https://shop.example.com", "k", "https://admin.example.com", "/", "footer"),
+        "https://shop.example.com/?preview=k&editor=https%3A%2F%2Fadmin.example.com&preview_page=footer",
+    );
+    assert.equal(previewAddress("https://shop.example.com", "k", "", "/", ""), "https://shop.example.com/?preview=k");
+});
+
+test("a header's row says what its strip says", () => {
+    assert.equal(sectionSummary({ type: "header", settings: { announcement_text: "Free returns" } }, chromeRegistry).text, "Free returns");
+});
+
+test("the menu choice lists the store's menus, and keeps one it cannot find", () => {
+    const menus = [
+        { handle: "main", title: "Main menu" },
+        { handle: "footer", title: "Footer" },
+    ];
+    assert.deepEqual(menuOptions(menus, "main"), [
+        { value: "main", label: "Main menu" },
+        { value: "footer", label: "Footer" },
+    ]);
+    // A menu deleted since, or one this person cannot list, is still the
+    // setting: it shows rather than silently becoming another.
+    assert.deepEqual(menuOptions(menus, "gone"), [
+        { value: "main", label: "Main menu" },
+        { value: "footer", label: "Footer" },
+        { value: "gone", label: "gone (not found in Menus)" },
+    ]);
+    assert.deepEqual(menuOptions(null, ""), []);
 });
