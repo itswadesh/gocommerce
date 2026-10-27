@@ -184,11 +184,17 @@ func (m *Module) loadSettings(ctx context.Context) (*settingsRow, error) {
 }
 
 // storefront is where a link lands: the screen's address, else the Config's.
-func (m *Module) storefront(s Settings) string {
+func (m *Module) storefront(ctx context.Context, s Settings) string {
 	if s.StorefrontURL != "" {
 		return s.StorefrontURL
 	}
-	return m.cfg.StorefrontURL
+	if m.cfg.StorefrontURL != "" {
+		return m.cfg.StorefrontURL
+	}
+	// A shop that never typed an address still has one: its own domain, or
+	// its address under the base domain. Without this the reminder had no
+	// link, and handed the shopper a cart token they could do nothing with.
+	return m.app.StorefrontURL(ctx)
 }
 
 // saveSettings stores the screen and re-plans every open record in the same

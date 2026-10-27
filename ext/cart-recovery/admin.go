@@ -1108,7 +1108,7 @@ func (m *Module) options(ctx context.Context, set *settingsRow, a *Abandonment, 
 	} else {
 		o.CanSend = true
 	}
-	if err := m.linkable(set, a, cur); err != nil {
+	if err := m.linkable(ctx, set, a, cur); err != nil {
 		o.LinkBlockedReason = err.Message
 	} else {
 		o.CanCopyLink = true
@@ -1167,11 +1167,11 @@ func (m *Module) sendable(ctx context.Context, a *Abandonment, cur *cartNow) *go
 	return nil
 }
 
-func (m *Module) linkable(set *settingsRow, a *Abandonment, cur *cartNow) *gocommerce.APIError {
+func (m *Module) linkable(ctx context.Context, set *settingsRow, a *Abandonment, cur *cartNow) *gocommerce.APIError {
 	if err := terminal(a, cur); err != nil {
 		return err
 	}
-	if m.storefront(set.Settings) == "" {
+	if m.storefront(ctx, set.Settings) == "" {
 		return conflict("no_storefront",
 			"Set the storefront address on the recovery automation first, so the link has somewhere to land.", nil)
 	}
@@ -1314,7 +1314,7 @@ func (m *Module) handleLink(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	if apiErr := m.linkable(set, a, cur); apiErr != nil {
+	if apiErr := m.linkable(ctx, set, a, cur); apiErr != nil {
 		gocommerce.RespondError(w, r, apiErr)
 		return
 	}
@@ -1558,7 +1558,7 @@ func (m *Module) handleClick(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	storefront := m.storefront(set.Settings)
+	storefront := m.storefront(ctx, set.Settings)
 	if storefront == "" {
 		gocommerce.RespondError(w, r, gocommerce.NotFoundf("this store has no storefront address set"))
 		return
