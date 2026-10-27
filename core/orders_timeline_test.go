@@ -393,3 +393,45 @@ func TestOrderTimelinePagesWithoutRepeatingAnything(t *testing.T) {
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+// The panel reads an order's history latest event first, and asks the engine
+// for it that way rather than turning a page over: the first page of a long
+// history has to be its newest entries, not its oldest reversed.
+func TestOrderTimelineCanBeReadNewestFirst(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	order := placeOrder(t, app, "TIME-10")
+	for i := 0; i < 3; i++ {
+		if _, err := app.Order().Update(ctx, order.ID, metaPatch(map[string]any{
+			OrderNoteKey: "note " + itoa(int64(i)),
+		})); err != nil {
+			t.Fatalf("note %d: %v", i, err)
+		}
+	}
+	oldest := timelineOf(t, app, order.ID)
+
+	rec := do(t, app, http.MethodGet, "/api/admin/orders/"+itoa(order.ID)+"/timeline?order=newest&limit=2", withAdmin)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("timeline = %d %s", rec.Code, rec.Body)
+	}
+	var page struct {
+		Data []OrderTimelineEntry `json:"data"`
+		Meta ListMeta             `json:"meta"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Data) != 2 || page.Meta.Total != len(oldest) {
+		t.Fatalf("got %d entries of %d, want 2 of %d", len(page.Data), page.Meta.Total, len(oldest))
+	}
+	for i, e := range page.Data {
+		want := oldest[len(oldest)-1-i]
+		if !e.At.Equal(want.At) || e.Action != want.Action || e.Name != want.Name {
+			t.Errorf("entry %d = %s %s, want %s %s", i, e.Name, e.Action, want.Name, want.Action)
+		}
+	}
+
+	if rec := do(t, app, http.MethodGet, "/api/admin/orders/"+itoa(order.ID)+"/timeline?order=sideways", withAdmin); rec.Code != http.StatusBadRequest {
+		t.Errorf("an unknown order = %d, want 400", rec.Code)
+	}
+}
