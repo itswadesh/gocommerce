@@ -253,7 +253,15 @@ placed it, derived and read-only. The populations overlap, the keys are
 different — an int64 against an email address — and the two screens never
 cross-link, because an order joins an account by its own access token and never
 by the address on it. The drawer's one link is labelled as what it is: orders
-placed with the same email. **An invoice is fetched, not linked to.** The
+placed with the same email. **A GST tax invoice is marked GST in the list**
+from the row's `kind`, never from the store's country, and opens like any other
+(D126). It prints what checkout charged: within a state CGST is half of each
+line's tax rounded down and SGST or UTGST the rest, so an odd paisa goes to the
+state and the heads add up to what was paid; between states all of it is IGST.
+Delivery is an untaxed line, flagged `freight_untaxed`. **The Taxes screen can
+aim a rate at one product**, found by name or SKU, for the item taxed
+differently from its category; it beats every category rule. **An invoice is
+fetched, not linked to.** The
 document is behind admin authentication and a link cannot carry a header, so
 `$lib/download.js` fetches it with the token and opens a blob in a new tab. The
 window is opened synchronously inside the click, because by the time the fetch
