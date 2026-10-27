@@ -429,16 +429,17 @@
                                 <div class="zone-disabled">
                                     <p class="zone-disabled-word">DISABLED</p>
                                     {#if writable}
-                                        <label class="form-field form-field-toggle zone-disabled-toggle">
+                                        <div class="field zone-disabled-toggle">
                                             <input
                                                 type="checkbox"
+                                                class="switch"
                                                 id="zone-on-{g.zone.id}"
                                                 checked={false}
                                                 disabled={saving}
                                                 onchange={() => activate(g.zone)}
                                             />
                                             <label for="zone-on-{g.zone.id}">Turn {g.zone.name} back on</label>
-                                        </label>
+                                        </div>
                                     {/if}
                                 </div>
                             {/if}
@@ -564,10 +565,10 @@
                 <label for="zone-name">Zone Name</label>
                 <input id="zone-name" type="text" placeholder="Domestic" bind:value={zoneForm.name} required />
             </div>
-            <label class="form-field form-field-toggle m-t-sm">
-                <input type="checkbox" id="zone-active" bind:checked={zoneForm.active} />
+            <div class="field m-t-sm">
+                <input type="checkbox" class="switch" id="zone-active" bind:checked={zoneForm.active} />
                 <label for="zone-active">Active</label>
-            </label>
+            </div>
             <div class="field m-t-sm">
                 <label for="zone-description">Description</label>
                 <input id="zone-description" type="text" placeholder="Optional" bind:value={zoneForm.description} />
@@ -635,10 +636,10 @@
                 <label for="rate-name">Custom rate name</label>
                 <input id="rate-name" type="text" placeholder="Standard" bind:value={rateForm.name} required />
             </div>
-            <label class="form-field form-field-toggle m-t-sm">
-                <input type="checkbox" id="rate-active" bind:checked={rateForm.active} />
+            <div class="field m-t-sm">
+                <input type="checkbox" class="switch" id="rate-active" bind:checked={rateForm.active} />
                 <label for="rate-active">Active</label>
-            </label>
+            </div>
             <div class="field m-t-sm">
                 <label for="rate-description">Description</label>
                 <input id="rate-description" type="text" placeholder="Optional, shown to the shopper" bind:value={rateForm.description} />
