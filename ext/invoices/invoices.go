@@ -118,6 +118,18 @@ func (m *Module) Migrations() []gocommerce.Migration {
 				ALTER TABLE invoices_documents ADD CONSTRAINT invoices_documents_gst_number
 				    CHECK (tax_doc IS NULL OR number ~ '^[A-Za-z0-9/-]{1,16}$');`,
 		},
+		{
+			// The store's Tally ledger names (D127), one row per store; no
+			// row reads as the defaults.
+			ID: "0004_tally_ledgers",
+			SQL: `
+				CREATE TABLE invoices_tally_ledgers (
+				    store_id   text        PRIMARY KEY,
+				    names      jsonb       NOT NULL,
+				    updated_at timestamptz NOT NULL DEFAULT now()
+				);`,
+		},
+		gocommerce.ScopeMigration("0005_tally_store_scope", "invoices_tally_ledgers"),
 	}
 }
 
@@ -164,6 +176,9 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// whoever may not, may not.
 	app.HandleAdminFunc("GET /api/admin/x/invoices", m.handleList, rightInvoicesRead)
 	app.HandleAdminFunc("GET /api/admin/x/invoices/{orderId}", m.handleGet, rightInvoicesRead)
+	app.HandleAdminFunc("GET /api/admin/x/invoices/tally", m.handleTallyExport, rightInvoicesRead)
+	app.HandleAdminFunc("GET /api/admin/x/invoices/tally/ledgers", m.handleTallyLedgersGet, rightInvoicesRead)
+	app.HandleAdminFunc("PUT /api/admin/x/invoices/tally/ledgers", m.handleTallyLedgersPut, rightInvoicesConfigure)
 
 	// Delivery is at-least-once but not guaranteed to have happened before a
 	// crash, and an invoice that was never issued is an accounting hole. So
@@ -549,7 +564,8 @@ const invoiceHTML = `<!doctype html>
 // borrowed from, and the screens had no row of their own on the Roles grid.
 // Default names the roles that held the old right, so nobody's access moves.
 const (
-	rightInvoicesRead gocommerce.Right = "invoices.read" // was orders.read
+	rightInvoicesRead      gocommerce.Right = "invoices.read" // was orders.read
+	rightInvoicesConfigure gocommerce.Right = "invoices.configure"
 )
 
 func (m *Module) registerRights(app *gocommerce.App) {
@@ -558,5 +574,11 @@ func (m *Module) registerRights(app *gocommerce.App) {
 		Label:   "See invoices",
 		Scope:   "The numbered invoice for a paid order",
 		Default: []string{gocommerce.RoleManager, gocommerce.RoleStaff},
+	})
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightInvoicesConfigure,
+		Label:   "Set the Tally ledger names",
+		Scope:   "The ledger names a GST store's Tally export uses",
+		Default: []string{gocommerce.RoleManager},
 	})
 }
