@@ -208,6 +208,18 @@ func TestTallyVouchersForAnInterStateInvoice(t *testing.T) {
 	}
 }
 
+func TestTallyUsesTheUTGSTLedgerInAUnionTerritory(t *testing.T) {
+	app := gstStore(t, gocommerce.Config{}, gstModule(""), "Chandigarh", "04AAPFU0939F1Z3")
+	taxRate(t, app, gocommerce.TaxRateInput{Name: "GST 18%", RateBP: 1800, Country: "IN"})
+	cloth := hsnProduct(t, app, "CLOTH", 10000, "630790")
+	buyAndPay(t, app, purchase{Address: chandigarh, Lines: []*gocommerce.Product{cloth}})
+
+	v := onlyVoucher(t, app)
+	if want := []string{"Cash Sales -118.00", "Sales 100.00", "CGST 9.00", "UTGST 9.00"}; !reflect.DeepEqual(v.entries(), want) {
+		t.Errorf("entries = %v, want %v", v.entries(), want)
+	}
+}
+
 func TestTallySalesPerRateUsesTheSavedNames(t *testing.T) {
 	app := gstStore(t, gocommerce.Config{}, gstModule(""), "Odisha", supplierGSTIN)
 	chain := hsnProduct(t, app, "CHAIN", 10000, "711319")
@@ -288,6 +300,8 @@ func TestTallyLedgerNamesDefaultAndRefuseBadOnes(t *testing.T) {
 		{map[string]any{"sales_ledger": strings.Repeat("ś", 101)}, "sales_ledger: at most 100 characters"},
 		{map[string]any{"freight": "Delivery\nCharges"}, "freight: no tabs, line breaks"},
 		{map[string]any{"cgst": "CGST", "gst": "x"}, "unknown field"},
+		{map[string]any{"unregistered_party": "Sales"}, `sales_ledger: \"Sales\" is already a ledger under Sundry Debtors`},
+		{map[string]any{"freight": "IGST"}, `igst: \"IGST\" is already a ledger under Sales Accounts`},
 	} {
 		rec := gctest.AdminRequest(t, app, http.MethodPut, path, c.body)
 		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), c.want) {
