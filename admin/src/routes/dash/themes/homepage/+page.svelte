@@ -208,6 +208,11 @@
     // ------------------------------------------------------------ editing
 
     let selectedId = $state(null);
+    // Wide enough for Shopify's three columns — sections, preview, settings —
+    // the settings open on the right and the list stays put. Measured on the
+    // editor rather than the window, since the panel's own menu takes a share.
+    let editorWidth = $state(0);
+    const threeCol = $derived(editorWidth >= 1100);
     const selectedIndex = $derived(selectedId === null ? -1 : sections.findIndex((s) => s.id === selectedId));
     const selected = $derived(selectedIndex < 0 ? null : sections[selectedIndex]);
     const selectedType = $derived(selected ? sectionType(selected.type, registry) : null);
@@ -547,6 +552,32 @@
 <svelte:head><title>{titled("Homepage · Themes")}</title></svelte:head>
 <svelte:window {onkeydown} />
 
+{#snippet settingsPanel(beside)}
+    {@const sum = sectionSummary(selected, registry)}
+    <div class="hp-settings" in:rise={{ y: 0, duration: 150 }}>
+        <div class="hp-settings-head">
+            <button type="button" class="btn sm circle transparent secondary" onclick={() => (selectedId = null)} aria-label={beside ? "Close the settings" : "Back to the sections"}>
+                <i class={beside ? "ri-close-line" : "ri-arrow-left-line"} aria-hidden="true"></i>
+            </button>
+            <h2 class="hp-settings-title">{sum.label}</h2>
+            {#if writable}
+                <button type="button" class="btn sm circle transparent secondary" onclick={() => edit(toggleSection(sections, selectedIndex))} aria-label={selected.enabled ? `Hide ${sum.label}` : `Show ${sum.label}`} aria-pressed={!selected.enabled}>
+                    <i class={selected.enabled ? "ri-eye-line" : "ri-eye-off-line"} aria-hidden="true"></i>
+                </button>
+                <button type="button" class="btn sm circle transparent secondary" onclick={() => duplicate(selectedIndex)} aria-label="Duplicate {sum.label}">
+                    <i class="ri-file-copy-line" aria-hidden="true"></i>
+                </button>
+                <button type="button" class="btn sm circle transparent danger" onclick={() => { removingId = selected.id; confirmRemove = true; }} aria-label="Remove {sum.label}">
+                    <i class="ri-delete-bin-line" aria-hidden="true"></i>
+                </button>
+            {/if}
+        </div>
+        {#if writable}
+            {@render settingsBody(selected, selectedType)}
+        {/if}
+    </div>
+{/snippet}
+
 {#snippet gap(index)}
     {#if writable}
         <div class="hp-gap">
@@ -719,32 +750,10 @@
         {:else if st}
             <!-- ------------------------------------------------ the visual editor -->
             {@render alerts()}
-            <div class="hp-editor" in:rise>
+            <div class="hp-editor" class:three={threeCol && !!selected} bind:clientWidth={editorWidth} in:rise>
                 <aside class="hp-rail" aria-label="Sections">
-                    {#if selected && selectedType}
-                        {@const sum = sectionSummary(selected, registry)}
-                        <div class="hp-settings" in:rise={{ y: 0, duration: 150 }}>
-                            <div class="hp-settings-head">
-                                <button type="button" class="btn sm circle transparent secondary" onclick={() => (selectedId = null)} aria-label="Back to the sections">
-                                    <i class="ri-arrow-left-line" aria-hidden="true"></i>
-                                </button>
-                                <h2 class="hp-settings-title">{sum.label}</h2>
-                                {#if writable}
-                                    <button type="button" class="btn sm circle transparent secondary" onclick={() => edit(toggleSection(sections, selectedIndex))} aria-label={selected.enabled ? `Hide ${sum.label}` : `Show ${sum.label}`} aria-pressed={!selected.enabled}>
-                                        <i class={selected.enabled ? "ri-eye-line" : "ri-eye-off-line"} aria-hidden="true"></i>
-                                    </button>
-                                    <button type="button" class="btn sm circle transparent secondary" onclick={() => duplicate(selectedIndex)} aria-label="Duplicate {sum.label}">
-                                        <i class="ri-file-copy-line" aria-hidden="true"></i>
-                                    </button>
-                                    <button type="button" class="btn sm circle transparent danger" onclick={() => { removingId = selected.id; confirmRemove = true; }} aria-label="Remove {sum.label}">
-                                        <i class="ri-delete-bin-line" aria-hidden="true"></i>
-                                    </button>
-                                {/if}
-                            </div>
-                            {#if writable}
-                                {@render settingsBody(selected, selectedType)}
-                            {/if}
-                        </div>
+                    {#if selected && selectedType && !threeCol}
+                        {@render settingsPanel(false)}
                     {:else}
                         <div class="hp-rail-list" in:rise={{ y: 0, duration: 150 }}>
                             {@render statusLine()}
@@ -755,7 +764,7 @@
                                 {#each sections as section, i (section.id)}
                                     {@const sum = sectionSummary(section, registry)}
                                     {@const known = !!sectionType(section.type, registry)}
-                                    <li class="hp-rrow" data-row class:off={!section.enabled} class:dragging={dragId === section.id} animate:flip={{ duration: dragId === section.id ? 0 : flipDuration() }}>
+                                    <li class="hp-rrow" data-row class:off={!section.enabled} class:selected={threeCol && selectedId === section.id} class:dragging={dragId === section.id} animate:flip={{ duration: dragId === section.id ? 0 : flipDuration() }}>
                                         {#if writable}
                                             <button
                                                 type="button"
@@ -846,6 +855,12 @@
                         />
                     {/if}
                 </section>
+
+                {#if threeCol && selected && selectedType}
+                    <aside class="hp-inspector" aria-label="Section settings">
+                        {@render settingsPanel(true)}
+                    </aside>
+                {/if}
             </div>
         {/if}
         <p class="hp-sr" aria-live="polite">{announce}</p>
@@ -1019,6 +1034,30 @@
         grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
         gap: 16px;
         min-height: 520px;
+    }
+    .hp-editor.three {
+        grid-template-columns: minmax(260px, 300px) minmax(0, 1fr) minmax(280px, 320px);
+    }
+    .hp-inspector {
+        min-height: 0;
+        overflow: auto;
+        padding-left: 4px;
+        animation: hp-slide-in 200ms ease-out;
+    }
+    @keyframes hp-slide-in {
+        from {
+            opacity: 0;
+            transform: translateX(12px);
+        }
+    }
+    .hp-rrow.selected {
+        border-color: var(--primaryColor, var(--txtHintColor));
+        box-shadow: 0 0 0 1px var(--primaryColor, var(--txtHintColor));
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .hp-inspector {
+            animation: none;
+        }
     }
     .hp-rail {
         min-height: 0;
