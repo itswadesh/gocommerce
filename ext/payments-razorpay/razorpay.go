@@ -451,8 +451,9 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		Payload struct {
 			Payment struct {
 				Entity struct {
-					ID    string `json:"id"`
-					Notes notes  `json:"notes"`
+					ID      string `json:"id"`
+					OrderID string `json:"order_id"`
+					Notes   notes  `json:"notes"`
 				} `json:"entity"`
 			} `json:"payment"`
 		} `json:"payload"`
@@ -465,6 +466,19 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	entity := event.Payload.Payment.Entity
 	noted, _ := entity.Notes["order_id"].(string)
 	orderID, _ := strconv.ParseInt(noted, 10, 64)
+	if orderID == 0 && entity.OrderID != "" {
+		// Initiate notes the store order on the Razorpay order, and Razorpay
+		// does not promise to copy those notes onto its payments. Until the
+		// order is paid, its payment reference is that Razorpay order. Row
+		// security keeps the lookup to this store.
+		err := m.db.QueryRowContext(ctx,
+			`SELECT id FROM orders WHERE payment_reference = $1`, entity.OrderID).Scan(&orderID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			m.log.Error("could not find the order", "razorpay_order", entity.OrderID, "error", err)
+			http.Error(w, "storage error", http.StatusInternalServerError)
+			return
+		}
+	}
 	// The event name plus the payment id is the idempotency key rather than
 	// the X-Razorpay-Event-Id header: the same payment being captured is the
 	// same fact however many times, or under however many event ids, we are
