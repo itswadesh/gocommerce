@@ -89,7 +89,11 @@
         { key: "state", label: "State or region" },
         { key: "postal_code", label: "Postal code" },
         { key: "country", label: "Country", kind: "select", hint: "Where the business is registered." },
-        { key: "tax_id", label: "Tax registration", hint: "VAT, GST or equivalent." },
+        {
+            key: "tax_id",
+            label: "Tax registration",
+            hint: "VAT, GST or equivalent. In India, your GSTIN: it is checked when you save, and with INR as the currency every paid order gets a GST tax invoice.",
+        },
         { key: "support_url", label: "Support URL" },
         {
             key: "timezone",

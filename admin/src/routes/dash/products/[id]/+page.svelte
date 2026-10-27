@@ -2103,7 +2103,8 @@
                                 />
                             </div>
                             <div class="field-help">
-                                Six digits, stored as digits: 6109.10 and 610910 are the same code.
+                                4 to 10 digits, stored as digits: 6109.10 and 610910 are the same code.
+                                In India this is the HSN printed on a GST tax invoice.
                             </div>
 
                             <h6 class="section-title m-t-base">Package dimensions</h6>

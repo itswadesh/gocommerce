@@ -107,9 +107,10 @@
                     <!-- The question an operator looking at a wrong seller name
                          has no other way to answer. -->
                     <div class="field-help">
-                        The seller name, address and tax ID printed on every document come from the
+                        The seller name, address and tax ID printed on a plain invoice come from the
                         store's own <code class="txt-code">main()</code> and cannot be changed from
-                        here.
+                        here. A store in India with its GSTIN in Settings and selling in INR issues
+                        GST tax invoices, marked GST, whose seller details come from Settings.
                     </div>
                 </div>
 
@@ -133,7 +134,12 @@
                                     onkeydown={(e) => rowKey(e, () => openDocument(documentPath(row), documentName(row)))}
                                 >
                                     <td class="col-field-name-id" data-name="Number">
-                                        <span class="txt-code txt-bold">{row.number}</span>
+                                        <span class="inline-flex gap-5">
+                                            <span class="txt-code txt-bold">{row.number}</span>
+                                            {#if row.kind === "tax_invoice"}
+                                                <span class="label" title="A GST tax invoice">GST</span>
+                                            {/if}
+                                        </span>
                                     </td>
                                     <td
                                         class="col-field-type-date min-width txt-hint"
