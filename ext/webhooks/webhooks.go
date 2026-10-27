@@ -203,6 +203,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.HandleAdminFunc("PATCH /api/admin/x/webhooks/endpoints/{id}", m.handleUpdate, rightWebhooksWrite)
 	app.HandleAdminFunc("DELETE /api/admin/x/webhooks/endpoints/{id}", m.handleDelete, rightWebhooksWrite)
 	app.HandleAdminFunc("POST /api/admin/x/webhooks/endpoints/{id}/rotate-secret", m.handleRotate, rightWebhooksWrite)
+	app.HandleAdminFunc("GET /api/admin/x/webhooks/events", m.handleEvents, rightWebhooksRead)
 	app.HandleAdminFunc("GET /api/admin/x/webhooks/deliveries", m.handleDeliveries, rightWebhooksRead)
 	app.HandleAdminFunc("POST /api/admin/x/webhooks/deliveries/{id}/retry", m.handleRetry, rightWebhooksWrite)
 
@@ -248,9 +249,14 @@ func (m *Module) validURL(raw string) error {
 func cleanEvents(in []string) ([]string, error) {
 	out := make([]string, 0, len(in))
 	for _, e := range in {
-		if e = strings.TrimSpace(e); e != "" {
-			out = append(out, e)
+		e = strings.TrimSpace(e)
+		if e == "" {
+			continue
 		}
+		if !gocommerce.KnownEventPattern(e) {
+			return nil, gocommerce.Validationf("events: %q matches no event this store sends; GET /api/admin/x/webhooks/events lists them", e)
+		}
+		out = append(out, e)
 	}
 	if len(out) == 0 {
 		return nil, gocommerce.Validationf("events must name at least one event, such as \"order.*\"")

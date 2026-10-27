@@ -303,3 +303,9 @@ func pathID(r *http.Request) (int64, error) {
 	}
 	return id, nil
 }
+
+// handleEvents lists the events an endpoint can name, so the panel can offer
+// them instead of asking the merchant to know them.
+func (m *Module) handleEvents(w http.ResponseWriter, r *http.Request) {
+	gocommerce.Respond(w, http.StatusOK, gocommerce.EventCatalog())
+}

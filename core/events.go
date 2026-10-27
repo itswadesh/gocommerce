@@ -76,6 +76,54 @@ const (
 	EventCollectionUpdated = "collection.updated"
 )
 
+// EventInfo is one event of the taxonomy as a merchant reads it: what to
+// subscribe to and when it happens.
+type EventInfo struct {
+	Name        string `json:"name"`
+	Group       string `json:"group"`
+	Description string `json:"description"`
+}
+
+// eventCatalog is the taxonomy above with its meaning, in the order a screen
+// lists it. A name added to the taxonomy is added here too, or nobody wiring
+// a webhook will know it exists.
+var eventCatalog = []EventInfo{
+	{EventOrderCreated, "Orders", "An order is placed."},
+	{EventOrderPaid, "Orders", "An order is marked paid."},
+	{EventOrderShipped, "Orders", "An order is shipped."},
+	{EventOrderDelivered, "Orders", "An order is delivered."},
+	{EventOrderCancelled, "Orders", "An order is cancelled."},
+	{EventOrderRefunded, "Orders", "Money is refunded on an order; once per refund, so a partial refund is its own event."},
+	{EventOrderEdited, "Orders", "An order is changed after it was placed."},
+	{EventOrderReturned, "Orders", "Goods come back off a shipped or delivered order."},
+	{EventOrderUnpaid, "Corrections", "A payment recorded by mistake is taken back."},
+	{EventOrderUnshipped, "Corrections", "A shipment recorded by mistake is taken back."},
+	{EventOrderUndelivered, "Corrections", "A delivery recorded by mistake is taken back."},
+	{EventOrderUnreturned, "Corrections", "A return recorded by mistake is taken back."},
+	{EventCartAbandoned, "Carts", "A basket has sat idle long enough to count as abandoned."},
+	{EventProductCreated, "Catalogue", "A product is added."},
+	{EventProductUpdated, "Catalogue", "A product's own details change, including going on or off sale."},
+	{EventProductDeleted, "Catalogue", "A product is deleted."},
+	{EventCollectionUpdated, "Catalogue", "A collection, or the products in it, changes."},
+}
+
+// EventCatalog lists every event the engine sends to subscribers and webhooks.
+func EventCatalog() []EventInfo {
+	return append([]EventInfo(nil), eventCatalog...)
+}
+
+// KnownEventPattern says whether pattern — an exact name, "prefix.*" or "*" —
+// matches at least one event the engine sends. A pattern that matches none
+// would wait forever.
+func KnownEventPattern(pattern string) bool {
+	for _, e := range eventCatalog {
+		if matchEventPattern(pattern, e.Name) {
+			return true
+		}
+	}
+	return false
+}
+
 // Aggregate types name what an event is about.
 const AggregateOrder = "order"
 
