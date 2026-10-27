@@ -5,6 +5,8 @@ import (
 	"io/fs"
 	"net/http"
 	"path"
+	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/itswadesh/gocommerce/admin"
@@ -75,15 +77,60 @@ func (a *App) handleUI(pattern string, h http.HandlerFunc) {
 }
 
 func (a *App) handleAdminPanel(w http.ResponseWriter, r *http.Request) {
-	ServeAdminPanel(w, r)
+	// Only a document obeys a policy, and only the shell is one: a script or
+	// a font is served without the store lookup.
+	var frames []string
+	if path.Ext(r.URL.Path) == "" {
+		frames = a.panelFrameOrigins(r)
+	}
+	serveAdminPanel(w, r, frames)
 }
+
+// panelFrameOrigins are the storefront addresses the panel may frame (D126):
+// those of the store the shell is opened for, and the origins the server's
+// owner listed in CORSOrigins, which name the storefronts it trusts.
+//
+// The shell is fetched by a browser navigation, which sends no X-Store, so
+// the store is the one the address names (?store=), else the store cookie,
+// else the host, else the install's only store — resolveStore's order. A
+// document's policy is fixed when it loads, so the theme editor reloads
+// itself with ?store= when this guess was another store than its tab's.
+// Naming a store here widens framing to that store's public addresses and
+// nothing else: no data, no right.
+func (a *App) panelFrameOrigins(r *http.Request) []string {
+	var out []string
+	for _, o := range a.cfg.CORSOrigins {
+		if frameOrigin(o) {
+			out = append(out, strings.TrimSuffix(o, "/"))
+		}
+	}
+	st, err := a.resolveStore(r)
+	if err != nil || st == nil {
+		return out
+	}
+	for _, o := range a.storefrontOrigins(WithStore(r.Context(), st.ID)) {
+		if frameOrigin(o) && !slices.Contains(out, o) {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// frameOriginRE is a bare origin: scheme, host, optional port. Anything else
+// — a wildcard, a path, a stray semicolon — could change the policy it is
+// written into, so it is left out rather than escaped.
+var frameOriginRE = regexp.MustCompile(`^https?://[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]{1,5})?/?$`)
+
+func frameOrigin(o string) bool { return frameOriginRE.MatchString(o) }
 
 // ServeAdminPanel serves the embedded panel's files — index.html for a
 // client-side route — with the cache rules and Content-Security-Policy a
 // store's own host sends. It is exported so a program that mounts the engine
 // under its own mux serves the panel with the same policy.
 // A binary built without the panel answers a JSON 404.
-func ServeAdminPanel(w http.ResponseWriter, r *http.Request) {
+func ServeAdminPanel(w http.ResponseWriter, r *http.Request) { serveAdminPanel(w, r, nil) }
+
+func serveAdminPanel(w http.ResponseWriter, r *http.Request, frames []string) {
 	if admin.DistFS == nil {
 		RespondError(w, r, NotFoundf("this binary was built without the admin panel"))
 		return
@@ -173,11 +220,16 @@ func ServeAdminPanel(w http.ResponseWriter, r *http.Request) {
 	// the video it is attaching products to. A frame cannot read the panel or
 	// its token; the addresses are built on the server from a video's id,
 	// never pasted.
+	//
+	// And from the storefront of the store being worked on (frames), so the
+	// theme editor can show the real home page as it is edited (D126). A frame
+	// is another origin: it cannot read the panel or its token, and it talks
+	// to the panel only through messages the panel checks the origin of.
 	w.Header().Set("Content-Security-Policy",
 		"default-src 'self'; script-src 'self' 'unsafe-inline'; "+
 			"style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http:; "+
 			"font-src 'self'; connect-src 'self'; base-uri 'self'; "+
-			"frame-src https://www.youtube-nocookie.com https://www.facebook.com; "+
+			"frame-src https://www.youtube-nocookie.com https://www.facebook.com"+frameList(frames)+"; "+
 			"object-src 'none'; frame-ancestors 'none'")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "same-origin")
@@ -212,3 +264,10 @@ func setAdminCacheHeaders(w http.ResponseWriter, name string) {
 
 // HasAdminPanel reports whether this binary was built with the panel.
 func HasAdminPanel() bool { return admin.DistFS != nil }
+
+func frameList(origins []string) string {
+	if len(origins) == 0 {
+		return ""
+	}
+	return " " + strings.Join(origins, " ")
+}

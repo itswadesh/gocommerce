@@ -44,9 +44,12 @@ export default {
                 "font-src": ["self"],
                 "connect-src": ["self"],
                 "base-uri": ["self"],
-                // The showcase editor's player preview (D88); the header in
-                // core/admin_http.go says the same and why.
-                "frame-src": ["https://www.youtube-nocookie.com", "https://www.facebook.com"],
+                // Any web address, because this policy is fixed at build time
+                // and the frames the panel may show depend on the store: the
+                // showcase editor's players (D88) and the theme editor's
+                // storefront (D126). The header in core/admin_http.go names
+                // exactly which, per store, and a frame must pass both.
+                "frame-src": ["https:", "http:"],
                 "object-src": ["none"],
             },
         },

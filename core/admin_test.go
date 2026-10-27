@@ -1,6 +1,7 @@
 package gocommerce
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"regexp"
@@ -182,30 +183,73 @@ func TestCSPShowsPicturesTheStoreLinks(t *testing.T) {
 	}
 }
 
-// The showcase editor plays the video it is attaching products to (D88), so
-// both policies let frames in from the two players, and from nowhere else.
-func TestCSPFramesOnlyTheTwoVideoPlayers(t *testing.T) {
+// The showcase editor plays the video it is attaching products to (D88), and
+// the theme editor shows the store's own storefront beside its sections
+// (D126). So the header lets frames in from the two players and from the
+// addresses of the store the panel opens in — its verified domains, its
+// address under the base domain, and the storefront origins the server's
+// owner listed for CORS — and from nowhere else. The meta policy is fixed at
+// build time and cannot know a store, so it allows any web address and leaves
+// the narrowing to the header: both are enforced, so a frame needs both.
+func TestCSPFramesOnlyThePlayersAndTheStoresStorefront(t *testing.T) {
 	if !HasAdminPanel() {
 		t.Skip("built with -tags no_admin")
 	}
 	app := newTestApp(t)
-
-	rec := do(t, app, http.MethodGet, "/")
-	meta := regexp.MustCompile(`http-equiv="content-security-policy" content="([^"]*)"`).
-		FindStringSubmatch(rec.Body.String())
-	if meta == nil {
-		t.Fatal("the page ships no meta CSP")
+	ctx := WithStore(context.Background(), app.DefaultStore())
+	st, err := app.Stores().Get(ctx, app.DefaultStore())
+	if err != nil {
+		t.Fatal(err)
 	}
-	want := []string{"https://www.facebook.com", "https://www.youtube-nocookie.com"}
-	for name, csp := range map[string]string{
-		"header": rec.Header().Get("Content-Security-Policy"),
-		"meta":   meta[1],
-	} {
-		src := strings.Fields(directive(csp, "frame-src"))
-		slices.Sort(src)
-		if !slices.Equal(src, want) {
-			t.Errorf("the %s CSP's frame-src is %q, want exactly %q", name, src, want)
+	frames := func(target string) ([]string, []string) {
+		t.Helper()
+		rec := do(t, app, http.MethodGet, target)
+		meta := regexp.MustCompile(`http-equiv="content-security-policy" content="([^"]*)"`).
+			FindStringSubmatch(rec.Body.String())
+		if meta == nil {
+			t.Fatal("the page ships no meta CSP")
 		}
+		header := strings.Fields(directive(rec.Header().Get("Content-Security-Policy"), "frame-src"))
+		slices.Sort(header)
+		m := strings.Fields(directive(meta[1], "frame-src"))
+		slices.Sort(m)
+		return header, m
+	}
+	players := []string{"https://www.facebook.com", "https://www.youtube-nocookie.com"}
+
+	header, meta := frames("/")
+	if !slices.Equal(header, players) {
+		t.Errorf("with no storefront address the header's frame-src is %q, want exactly %q", header, players)
+	}
+	if want := []string{"http:", "https:"}; !slices.Equal(meta, want) {
+		t.Errorf("the meta CSP's frame-src is %q, want %q", meta, want)
+	}
+
+	app.cfg.BaseDomain = "shops.test"
+	app.cfg.CORSOrigins = []string{"http://localhost:3000", "*"}
+	if _, err := app.db.ExecContext(ctx,
+		`INSERT INTO store_domains (host, store_id, verified_at, is_primary) VALUES ('shop.example.com', $1, now(), true)`, st.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.db.ExecContext(ctx, `INSERT INTO store_domains (host, store_id) VALUES ('pending.example.com', $1)`, st.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.db.ExecContext(ctx, `UPDATE store_domains SET verified_at = NULL WHERE host = 'pending.example.com'`); err != nil {
+		t.Fatal(err)
+	}
+	want := append([]string{"http://localhost:3000", "https://" + st.Slug + ".shops.test", "https://shop.example.com"}, players...)
+	slices.Sort(want)
+	for _, target := range []string{"/", "/dash/themes/homepage?store=" + st.Slug} {
+		if header, _ := frames(target); !slices.Equal(header, want) {
+			t.Errorf("GET %s: the header's frame-src is %q, want exactly %q: an unproven domain and a CORS wildcard are not storefronts", target, header, want)
+		}
+	}
+	// A store named that does not exist widens nothing, and the shell is
+	// still served.
+	only := append([]string{"http://localhost:3000"}, players...)
+	slices.Sort(only)
+	if header, _ := frames("/dash/themes/homepage?store=no-such-store"); !slices.Equal(header, only) {
+		t.Errorf("for a store that does not exist the header's frame-src is %q, want %q", header, only)
 	}
 }
 
