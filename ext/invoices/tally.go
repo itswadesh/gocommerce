@@ -74,8 +74,8 @@ func (n *TallyLedgers) clean() error {
 		}
 	}
 	// One name is one Tally ledger under one group, so a name may not be both a
-	// buyer and an income ledger, or an income and a tax ledger. Sales and
-	// delivery may share one, and so may the tax heads.
+	// buyer and an income ledger, or an income and a tax ledger, whatever its
+	// case. Sales and delivery may share one, and so may the tax heads.
 	group := map[string]string{}
 	for _, f := range []struct{ name, group, field string }{
 		{n.UnregisteredParty, tallySundryDebtors, "unregistered_party"},
@@ -83,10 +83,11 @@ func (n *TallyLedgers) clean() error {
 		{n.CGST, tallyDutiesTaxes, "cgst"}, {n.SGST, tallyDutiesTaxes, "sgst"},
 		{n.UTGST, tallyDutiesTaxes, "utgst"}, {n.IGST, tallyDutiesTaxes, "igst"},
 	} {
-		if g, ok := group[f.name]; ok && g != f.group {
+		key := strings.ToLower(f.name)
+		if g, ok := group[key]; ok && g != f.group {
 			return gocommerce.Validationf("%s: %q is already a ledger under %s", f.field, f.name, g)
 		}
-		group[f.name] = f.group
+		group[key] = f.group
 	}
 	return nil
 }
