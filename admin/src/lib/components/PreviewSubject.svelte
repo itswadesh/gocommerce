@@ -1,7 +1,7 @@
 <script>
     /**
      * Which of the store's products, or collections, the theme editor shows
-     * a template on (D128). A product page is one template for every
+     * a template on (D129). A product page is one template for every
      * product, so the preview needs a real one to draw it around; the shop
      * picks which, and this browser remembers the pick for the store.
      *

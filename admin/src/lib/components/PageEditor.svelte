@@ -1,6 +1,6 @@
 <script>
     /**
-     * Themes › a page (ext/layouts, D125, D126, D128): the storefront's home
+     * Themes › a page (ext/layouts, D125, D126, D129): the storefront's home
      * page, or the template every product or every collection is drawn in, as
      * the shop arranges it — one element of the store's theme. A product or
      * collection page has a core the catalogue draws (its pictures, price and
@@ -23,7 +23,7 @@
      * are part of the home page's draft: they save, undo, preview and publish
      * with it, and every page of the storefront applies them once published.
      *
-     * Any page's draft can also be set to publish at a time (D128).
+     * Any page's draft can also be set to publish at a time (D129).
      */
     import { onMount, untrack } from "svelte";
     import { page as pageState } from "$app/state";
@@ -448,7 +448,7 @@
         }
     }
 
-    // ------------------------------------------------------------ scheduling (D128)
+    // ------------------------------------------------------------ scheduling (D129)
 
     let scheduleOpen = $state(false);
     let scheduleAt = $state("");
@@ -1567,7 +1567,7 @@
         }
     }
 
-    /* ---------------------------------------------- page templates and schedules (D128) */
+    /* ---------------------------------------------- page templates and schedules (D129) */
     .hp-scheduled {
         display: flex;
         flex-wrap: wrap;

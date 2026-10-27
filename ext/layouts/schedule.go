@@ -15,7 +15,7 @@ import (
 const maxScheduleAhead = 366 * 24 * time.Hour
 
 // SchedulePublish sets the page's saved draft at version to publish at the
-// given time (D128). The draft is copied as it is now: later edits keep
+// given time (D129). The draft is copied as it is now: later edits keep
 // saving to the draft and are not in what goes live, which the state says
 // (Outdated). A page has one schedule; setting another replaces it. Manual
 // publishing, rolling back and resetting leave it alone, because each is its
