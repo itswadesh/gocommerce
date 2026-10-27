@@ -148,6 +148,29 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 	if in.Email != "" && !strings.Contains(in.Email, "@") {
 		return nil, Validationf("that does not look like an email address")
 	}
+	// An Indian store's tax id is its GSTIN, printed on every tax invoice
+	// (D126), so a mistyped one is refused as it is typed. Only a changed one
+	// is refused: an old value nobody is editing must not block an edit to
+	// the phone number.
+	if in.Country == "IN" && in.TaxID != "" {
+		var stored string
+		if err := p.app.db.QueryRowContext(ctx, `SELECT tax_id FROM store_profile WHERE id = 1`).
+			Scan(&stored); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return nil, Internalf(err, "read the store profile")
+		}
+		g, err := ParseGSTIN(in.TaxID)
+		if err != nil && in.TaxID != stored {
+			return nil, err
+		}
+		if err == nil {
+			in.TaxID = string(g)
+			reg := g.State()
+			if st, ok := GSTStateOfAddress(Address{Country: "IN", State: in.State}); ok && st.Code != reg.Code {
+				return nil, Validationf("the GSTIN %s is registered in %s (%s), but the store's state is %s (%s)",
+					g, reg.Name, reg.Code, st.Name, st.Code)
+			}
+		}
+	}
 	// Loaded, not pattern-matched: the only useful question about a timezone
 	// is whether this machine can resolve it, and a name that looks right and
 	// does not load prints the wrong date on every invoice for a year before

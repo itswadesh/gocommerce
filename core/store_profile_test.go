@@ -256,3 +256,43 @@ func TestTheStoresPublicFaceIsItsNameAndContactsOnly(t *testing.T) {
 		}
 	}
 }
+
+// An Indian store's tax id is the GSTIN on every tax invoice it issues, so a
+// mistyped one is refused when it is saved and a good one is stored canonical.
+func TestAProfileWithAnInvalidGSTINIsRefused(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+
+	_, err := app.Profile().Set(ctx, StoreProfile{Country: "IN", State: "Maharashtra", TaxID: "27AAPFU0939F1ZW"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "the last character should be V") {
+		t.Fatalf("a GSTIN with the wrong check character = %v, want it refused naming V", err)
+	}
+	saved, err := app.Profile().Set(ctx, StoreProfile{Country: "IN", State: "Maharashtra", TaxID: " 27aapfu0939f1zv "}, nil)
+	if err != nil {
+		t.Fatalf("a good GSTIN: %v", err)
+	}
+	if saved.TaxID != "27AAPFU0939F1ZV" {
+		t.Errorf("tax id stored as %q, want 27AAPFU0939F1ZV", saved.TaxID)
+	}
+}
+
+func TestAProfileWithAGSTINFromAnotherStateIsRefused(t *testing.T) {
+	app := newTestApp(t)
+	_, err := app.Profile().Set(context.Background(),
+		StoreProfile{Country: "IN", State: "Odisha", TaxID: "27AAPFU0939F1ZV"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "registered in Maharashtra (27), but the store's state is Odisha (21)") {
+		t.Errorf("a Maharashtra GSTIN on an Odisha store = %v, want both states named", err)
+	}
+}
+
+func TestAGBVATNumberOnAGBStoreStillSaves(t *testing.T) {
+	app := newTestApp(t)
+	saved, err := app.Profile().Set(context.Background(),
+		StoreProfile{Country: "GB", TaxID: "GB123456789"}, nil)
+	if err != nil {
+		t.Fatalf("a UK VAT number: %v", err)
+	}
+	if saved.TaxID != "GB123456789" {
+		t.Errorf("tax id stored as %q, want it as typed", saved.TaxID)
+	}
+}
