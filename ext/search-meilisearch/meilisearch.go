@@ -157,7 +157,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	}
 
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: pluginKey, Title: "Meilisearch", Category: "search",
+		Key: pluginKey, Title: "Meilisearch", Icon: "ri-search-2-line", Category: "search",
 		Description:    "Typo-tolerant product search from a Meilisearch index the store keeps up to date. The storefront searches through GET /x/meilisearch/search, or straight at Meilisearch with the search key.",
 		DefaultEnabled: m.cfg.Host != "" && m.cfg.APIKey != "",
 		Docs:           "https://www.meilisearch.com/docs",

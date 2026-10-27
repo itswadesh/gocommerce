@@ -59,7 +59,7 @@ func (m *Module) Migrations() []gocommerce.Migration { return nil }
 func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: pluginKey, Title: "Sitemap", Category: "marketing",
+		Key: pluginKey, Title: "Sitemap", Icon: "ri-compass-3-line", Category: "marketing",
 		Description:    "A sitemap of every active product and collection — and every published page when the CMS is installed — at /x/sitemaps/sitemap.xml, for search engines. Point the storefront's /sitemap.xml at it.",
 		DefaultEnabled: m.cfg.StorefrontURL != "",
 		Docs:           "https://www.sitemaps.org/protocol.html",

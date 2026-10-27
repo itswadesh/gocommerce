@@ -198,7 +198,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// Config starts idle and waits for the panel.
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: PluginKey, Title: "Helcim", Category: "payments", DefaultEnabled: inCode,
+		Key: PluginKey, Title: "Helcim", Icon: "ri-bank-card-line", Category: "payments", DefaultEnabled: inCode,
 		Description: "Card payments through Helcim's HelcimPay.js, with the verified webhook marking orders paid.",
 		Docs:        "https://devdocs.helcim.com/",
 		Fields: []gocommerce.PluginField{

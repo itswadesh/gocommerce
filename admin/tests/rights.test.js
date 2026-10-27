@@ -51,3 +51,11 @@ test("an unknown right falls back to its identifier", () => {
     assert.equal(rightLabel("something.new"), "something.new");
     assert.equal(rightScope("something.new"), "something.new");
 });
+
+test("the account screen sums a list of rights up in one line", async () => {
+    const { rightsSummary, RIGHT_ORDER } = await import("../src/lib/rights.js");
+    assert.equal(rightsSummary([]), "Nothing yet");
+    assert.equal(rightsSummary(RIGHT_ORDER), "Everything in the panel");
+    assert.equal(rightsSummary(["orders.read", "orders.write", "reports.read"]), "Change orders; see reports");
+    assert.equal(rightsSummary(["catalog.read", "apikeys.read"]), "See catalog, API keys");
+});

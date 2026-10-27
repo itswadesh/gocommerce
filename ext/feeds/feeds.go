@@ -62,7 +62,7 @@ func (m *Module) Migrations() []gocommerce.Migration { return nil }
 func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: pluginKey, Title: "Product feeds", Category: "marketing",
+		Key: pluginKey, Title: "Product feeds", Icon: "ri-rss-line", Category: "marketing",
 		Description:    "Google Merchant Center and Meta catalogue feeds, generated from the live catalogue at /x/feeds/google.xml and /x/feeds/meta.csv — one item per variant, in the store's currency.",
 		DefaultEnabled: m.cfg.StorefrontURL != "",
 		Docs:           "https://support.google.com/merchants/answer/7052112",

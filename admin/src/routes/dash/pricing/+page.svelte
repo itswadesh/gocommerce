@@ -410,10 +410,10 @@
         matters when two live lists cover the same line; higher wins.
     </div>
 
-    <label class="form-field form-field-toggle m-t-sm">
-        <input type="checkbox" id="pl-active" bind:checked={form.active} />
+    <div class="field m-t-sm">
+        <input type="checkbox" class="switch" id="pl-active" bind:checked={form.active} />
         <label for="pl-active">Live</label>
-    </label>
+    </div>
 
     {#snippet footer()}
         <button type="button" class="btn secondary" onclick={() => (listOpen = false)}>

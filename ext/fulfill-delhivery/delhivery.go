@@ -179,7 +179,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// Config starts idle and waits for the panel.
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: PluginKey, Title: "Delhivery", Category: "shipping", DefaultEnabled: inCode,
+		Key: PluginKey, Title: "Delhivery", Icon: "ri-truck-line", Category: "shipping", DefaultEnabled: inCode,
 		Description: "Manifests parcels with Delhivery and takes the waybill it assigns. India's largest carrier.",
 		Docs:        "https://delhivery-express-api-doc.readme.io/",
 		Fields: []gocommerce.PluginField{

@@ -213,7 +213,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// Config starts idle and waits for the panel.
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: PluginKey, Title: "Easyship", Category: "shipping", DefaultEnabled: inCode,
+		Key: PluginKey, Title: "Easyship", Icon: "ri-global-line", Category: "shipping", DefaultEnabled: inCode,
 		Description: "Cross-border labels and customs paperwork through Easyship, booked on a courier service you choose.",
 		Docs:        "https://developers.easyship.com/",
 		Fields: []gocommerce.PluginField{

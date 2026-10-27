@@ -186,7 +186,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// Config starts idle and waits for the panel.
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: PluginKey, Title: "NimbusPost", Category: "shipping", DefaultEnabled: inCode,
+		Key: PluginKey, Title: "NimbusPost", Icon: "ri-truck-line", Category: "shipping", DefaultEnabled: inCode,
 		Description: "NimbusPost's courier aggregation, India: one login books across the couriers it holds.",
 		Docs:        "https://documentation.nimbuspost.com/",
 		Fields: []gocommerce.PluginField{

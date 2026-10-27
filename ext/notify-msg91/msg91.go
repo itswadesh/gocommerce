@@ -148,7 +148,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 		})
 	}
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: PluginKey, Title: "MSG91", Category: "notifications", DefaultEnabled: inCode,
+		Key: PluginKey, Title: "MSG91", Icon: "ri-message-3-line", Category: "notifications", DefaultEnabled: inCode,
 		Description: "Texts shoppers about their orders, and their sign-in and order codes, through MSG91's DLT flow templates: Indian numbers, and every number of a store whose country is India. The store's other SMS provider carries the rest, so nobody is texted twice. The wording is registered with MSG91; each event below names the template that carries it.",
 		Docs:        "https://docs.msg91.com/sms/send-sms",
 		Fields:      fields,

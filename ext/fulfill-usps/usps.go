@@ -281,7 +281,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// Config starts idle and waits for the panel.
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: PluginKey, Title: "USPS", Category: "shipping", DefaultEnabled: inCode,
+		Key: PluginKey, Title: "USPS", Icon: "ri-truck-line", Category: "shipping", DefaultEnabled: inCode,
 		Description: "USPS labels bought directly through the USPS APIs and served to print, on an Enterprise Payment account.",
 		Docs:        "https://developer.usps.com/",
 		Fields: []gocommerce.PluginField{

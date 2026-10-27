@@ -152,7 +152,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// Config starts idle and waits for the panel.
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: PluginKey, Title: "Shiprocket", Category: "shipping", DefaultEnabled: inCode,
+		Key: PluginKey, Title: "Shiprocket", Icon: "ri-truck-line", Category: "shipping", DefaultEnabled: inCode,
 		Description: "Books shipments and waybills through Shiprocket, India's aggregator: one login across its couriers.",
 		Docs:        "https://apidocs.shiprocket.in/",
 		Fields: []gocommerce.PluginField{

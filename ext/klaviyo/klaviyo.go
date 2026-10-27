@@ -96,7 +96,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 		m.client = app.OutboundClient(8 * time.Second)
 	}
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: pluginKey, Title: "Klaviyo", Category: "marketing",
+		Key: pluginKey, Title: "Klaviyo", Icon: "ri-mail-star-line", Category: "marketing",
 		Description:    "Email and SMS marketing: every order and abandoned cart becomes a Klaviyo event on the shopper's profile, under the metric names Klaviyo's flows already know. The public key powers onsite tracking and signup forms.",
 		DefaultEnabled: m.cfg.PrivateKey != "",
 		Docs:           "https://developers.klaviyo.com/en/reference/create_event",

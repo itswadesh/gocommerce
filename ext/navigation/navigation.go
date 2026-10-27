@@ -134,7 +134,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	m.db = app.DB()
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: pluginKey, Title: "Menus", Category: "storefront", DefaultEnabled: true,
+		Key: pluginKey, Title: "Menus", Icon: "ri-menu-2-line", Category: "storefront", DefaultEnabled: true,
 		Description: "The storefront's menus — header, footer, wherever — as trees of links to products, collections, categories, pages and URLs, edited from the Menus screen and served at /x/navigation/menus/{handle}.",
 		Fields: []gocommerce.PluginField{
 			{Key: "product_path", Label: "Product page path", Kind: "text", Default: "/products/{slug}", Public: true},

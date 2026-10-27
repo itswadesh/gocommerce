@@ -236,7 +236,7 @@ Reply from the Contact screen.`,
 {{.original}}`,
 	})
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: pluginKey, Title: "Contact form", Category: "storefront", DefaultEnabled: true,
+		Key: pluginKey, Title: "Contact form", Icon: "ri-customer-service-2-line", Category: "storefront", DefaultEnabled: true,
 		Description: "A contact form on the storefront, product enquiries, and the inbox behind both on the Contact screen. Each new message and enquiry is announced by email to the address below.",
 		Fields: []gocommerce.PluginField{
 			{Key: "notify_email", Label: "Announce new messages to", Kind: "text", Required: m.cfg.NotifyEmail == "", Help: "The store's own address, for messages and product enquiries alike. Each announcement lands in Notifications too."},

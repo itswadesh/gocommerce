@@ -200,19 +200,19 @@
         refused rather than served the default, so a typo fails at the first request.
     </div>
 
-    <label class="form-field form-field-toggle m-t-sm">
-        <input type="checkbox" id="ch-active" bind:checked={form.active} />
+    <div class="field m-t-sm">
+        <input type="checkbox" class="switch" id="ch-active" bind:checked={form.active} />
         <label for="ch-active">Selling</label>
-    </label>
+    </div>
     <div class="field-help">
         A closed channel refuses requests rather than answering with an empty catalogue, which
         would read as a broken import.
     </div>
 
-    <label class="form-field form-field-toggle m-t-sm">
-        <input type="checkbox" id="ch-default" bind:checked={form.default} />
+    <div class="field m-t-sm">
+        <input type="checkbox" class="switch" id="ch-default" bind:checked={form.default} />
         <label for="ch-default">The default</label>
-    </label>
+    </div>
     <div class="field-help">
         Served to any request that names no channel. Setting it here moves the default rather
         than adding a second one.

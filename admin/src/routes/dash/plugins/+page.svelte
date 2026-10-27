@@ -251,6 +251,7 @@
                                 {@const st = stateOf(p)}
                                 <section class="card plugin-card" class:active={p.enabled && p.configured}>
                                     <div class="flex gap-10">
+                                        <span class="plugin-icon" aria-hidden="true"><i class={p.icon || "ri-plug-line"}></i></span>
                                         <div class="flex-fill">
                                             <div class="plugin-title">{p.title}</div>
                                             <div class="txt-hint txt-sm">
@@ -303,7 +304,10 @@
                                     {#each group.items as p (p.key)}
                                         {@const st = stateOf(p)}
                                         <div class="plugin-away-row">
-                                            <span class="plugin-away-name">{p.title}</span>
+                                            <span class="plugin-away-name">
+                                                <i class="plugin-away-icon {p.icon || 'ri-plug-line'}" aria-hidden="true"></i>
+                                                {p.title}
+                                            </span>
                                             <span class="label {st.cls}">{st.label}</span>
                                             <button
                                                 type="button"
@@ -347,6 +351,25 @@
     }
     .plugin-title {
         font-weight: 600;
+    }
+    .plugin-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: none;
+        width: 36px;
+        height: 36px;
+        border-radius: var(--borderRadius);
+        background: var(--surfaceAlt1Color);
+        color: var(--surfaceTxtColor);
+        font-size: 18px;
+    }
+    .plugin-card.active .plugin-icon {
+        color: var(--successColor);
+    }
+    .plugin-away-icon {
+        margin-right: 6px;
+        color: var(--txtHintColor);
     }
     .plugin-description {
         flex: 1 1 auto;

@@ -201,7 +201,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// Config starts idle and waits for the panel.
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: PluginKey, Title: "Paddle", Category: "payments", DefaultEnabled: inCode,
+		Key: PluginKey, Title: "Paddle", Icon: "ri-secure-payment-line", Category: "payments", DefaultEnabled: inCode,
 		Description: "Transactions through Paddle Billing as merchant of record, with its signed notification marking orders paid.",
 		Docs:        "https://developer.paddle.com/",
 		Fields: []gocommerce.PluginField{

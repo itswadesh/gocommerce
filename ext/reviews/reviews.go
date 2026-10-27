@@ -137,7 +137,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	m.db = app.DB()
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: pluginKey, Title: "Product reviews", Category: "storefront", DefaultEnabled: true,
+		Key: pluginKey, Title: "Product reviews", Icon: "ri-star-line", Category: "storefront", DefaultEnabled: true,
 		Description: "Ratings and reviews on the product page, moderated on the Reviews screen. A review from an email that bought the product is marked verified.",
 		Fields: []gocommerce.PluginField{
 			{Key: "auto_approve", Label: "Show reviews without moderation", Kind: "bool", Default: m.cfg.AutoApprove},

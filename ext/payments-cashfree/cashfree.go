@@ -224,7 +224,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// Config starts idle and waits for the panel (D59).
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: PluginKey, Title: "Cashfree", Category: "payments", DefaultEnabled: inCode,
+		Key: PluginKey, Title: "Cashfree", Icon: "ri-funds-line", Category: "payments", DefaultEnabled: inCode,
 		Description: "UPI, cards, netbanking and wallets on Cashfree's checkout, India, with its signed webhook marking orders paid. Rupees only.",
 		Docs:        "https://www.cashfree.com/docs/payments/online/intro",
 		Fields: []gocommerce.PluginField{

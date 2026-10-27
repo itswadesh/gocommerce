@@ -149,7 +149,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	m.db = app.DB()
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: pluginKey, Title: "Wishlist", Category: "storefront", DefaultEnabled: true,
+		Key: pluginKey, Title: "Wishlist", Icon: "ri-heart-3-line", Category: "storefront", DefaultEnabled: true,
 		Description: "A heart on every product and a page of the ones a shopper saved. The Wishlists screen shows what is wanted most and how much of it is out of stock.",
 		Fields: []gocommerce.PluginField{
 			{Key: "heading", Label: "Page heading", Kind: "text", Public: true, Default: "Your wishlist"},

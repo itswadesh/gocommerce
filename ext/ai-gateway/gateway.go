@@ -167,7 +167,7 @@ func (m *Module) registerPlugin(app *gocommerce.App) {
 		return gocommerce.PluginField{Key: key, Label: label, Kind: "number", Help: help}
 	}
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: PluginKey, Title: "AI gateway", Category: "ai",
+		Key: PluginKey, Title: "AI gateway", Icon: "ri-robot-2-line", Category: "ai",
 		Description: "Every model call this store makes, recorded and capped: your own provider key, a monthly cap in the store's currency, " +
 			"the price of each model, and which kinds of data may leave the store. Nothing is called until a key, a cap and prices are set.",
 		Fields: []gocommerce.PluginField{

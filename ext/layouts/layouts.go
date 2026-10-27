@@ -129,7 +129,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	m.db = app.DB()
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: pluginKey, Title: "Theme editor", Category: "storefront", DefaultEnabled: true,
+		Key: pluginKey, Title: "Theme editor", Icon: "ri-palette-line", Category: "storefront", DefaultEnabled: true,
 		Description: "Arrange the storefront's home page, product page and collection page from sections — a hero, a slideshow, product grids, collections, video, " +
 			"questions and answers, reviews — in any order, set the header's announcement and menu and the footer's columns, words and social links, " +
 			"set the store's colours, fonts and corner rounding, and publish each now or at a time you choose, " +

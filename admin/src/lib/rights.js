@@ -504,3 +504,30 @@ export function rightsByResource(all) {
     }
     return rows;
 }
+
+const AREA_NAMES = { apikeys: "API keys", store: "the store", data: "data", errors: "errors", team: "the team", roles: "roles" };
+
+/**
+ * One line for a list of rights, for the account screen's folded list:
+ * everything, nothing, or which areas you can change and which you can only see.
+ */
+export function rightsSummary(rights) {
+    const have = new Set(rights ?? []);
+    if (!have.size) return "Nothing yet";
+    if (RIGHT_ORDER.every((r) => have.has(r))) return "Everything in the panel";
+    const change = [];
+    const see = [];
+    for (const r of RIGHT_ORDER) {
+        if (!have.has(r)) continue;
+        const area = r.split(".")[0];
+        const name = AREA_NAMES[area] ?? area;
+        if (r.endsWith(".read")) {
+            if (!see.includes(name)) see.push(name);
+        } else if (!change.includes(name)) change.push(name);
+    }
+    const seeOnly = see.filter((a) => !change.includes(a));
+    const parts = [];
+    if (change.length) parts.push("Change " + change.join(", "));
+    if (seeOnly.length) parts.push((change.length ? "see " : "See ") + seeOnly.join(", "));
+    return parts.join("; ");
+}

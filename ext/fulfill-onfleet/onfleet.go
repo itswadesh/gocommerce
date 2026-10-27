@@ -159,7 +159,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// Config starts idle and waits for the panel.
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: PluginKey, Title: "Onfleet", Category: "shipping", DefaultEnabled: inCode,
+		Key: PluginKey, Title: "Onfleet", Icon: "ri-route-line", Category: "shipping", DefaultEnabled: inCode,
 		Description: "Dispatches your own drivers through Onfleet: every shipment becomes a delivery task.",
 		Docs:        "https://docs.onfleet.com/",
 		Fields: []gocommerce.PluginField{
