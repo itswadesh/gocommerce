@@ -126,6 +126,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.HandleAdminFunc("POST /api/admin/x/layouts/{page}/publish", m.handlePublish, rightLayoutsWrite)
 	app.HandleAdminFunc("GET /api/admin/x/layouts/{page}/revisions", m.handleRevisions, rightLayoutsRead)
 	app.HandleAdminFunc("POST /api/admin/x/layouts/{page}/rollback", m.handleRollback, rightLayoutsWrite)
+	app.HandleAdminFunc("POST /api/admin/x/layouts/{page}/reset", m.handleReset, rightLayoutsWrite)
 	app.HandleAdminFunc("POST /api/admin/x/layouts/{page}/preview", m.handlePreview, rightLayoutsWrite)
 	return nil
 }
@@ -140,7 +141,7 @@ func (m *Module) registerRights(app *gocommerce.App) {
 	app.RegisterRight(gocommerce.RightSpec{
 		Right:   rightLayoutsWrite,
 		Label:   "Edit and publish the home page",
-		Scope:   "Saving the draft, publishing it, previewing it and rolling back",
+		Scope:   "Saving the draft, resetting it, publishing it, previewing it and rolling back",
 		Default: []string{gocommerce.RoleManager},
 	})
 }
@@ -376,6 +377,53 @@ func (m *Module) Rollback(ctx context.Context, page string, number int) (*State,
 	return out, err
 }
 
+// Reset throws the draft away: it becomes the published document again, or
+// the starting page when nothing has been published. Like a save it names the
+// version it was read at, so an edit made in another tab since is never
+// discarded unseen; the storefront is untouched either way. Before the first
+// save there is nothing to throw away, and the starter is answered as it is.
+func (m *Module) Reset(ctx context.Context, page string, version int) (*State, error) {
+	var out *State
+	err := gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+		var current int
+		var pubID sql.NullInt64
+		err := tx.QueryRowContext(ctx, `SELECT version, published_revision FROM layout_pages WHERE page = $1 FOR UPDATE`, page).Scan(&current, &pubID)
+		if errors.Is(err, sql.ErrNoRows) {
+			if version != 0 {
+				return stale()
+			}
+			out, err = m.state(ctx, tx, page)
+			return err
+		}
+		if err != nil {
+			return gocommerce.Internalf(err, "read the page")
+		}
+		if current != version {
+			return stale()
+		}
+		doc := Starter()
+		if pubID.Valid {
+			_, published, err := m.revision(ctx, tx, "id = $1", pubID.Int64)
+			if err != nil {
+				return err
+			}
+			doc = *published
+		}
+		raw, err := json.Marshal(doc)
+		if err != nil {
+			return gocommerce.Internalf(err, "encode the page")
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE layout_pages SET draft = $2, version = version + 1, updated_at = now(), updated_by = $3
+			WHERE page = $1`, page, raw, actor(ctx)); err != nil {
+			return gocommerce.Internalf(err, "reset the page")
+		}
+		out, err = m.state(ctx, tx, page)
+		return err
+	})
+	return out, err
+}
+
 // Revisions lists the page's published versions, newest first.
 func (m *Module) Revisions(ctx context.Context, page string) ([]Revision, error) {
 	rows, err := m.db.QueryContext(ctx, `
@@ -404,15 +452,9 @@ func (m *Module) Revisions(ctx context.Context, page string) ([]Revision, error)
 // ---------------------------------------------------------------- previews
 
 // Preview issues a key that lets the storefront show the saved draft for half
-// an hour.
+// an hour — the starting page, before the first save, so the theme editor can
+// frame the page as soon as it opens without writing anything.
 func (m *Module) Preview(ctx context.Context, page string) (string, time.Time, error) {
-	var exists bool
-	if err := m.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM layout_pages WHERE page = $1)`, page).Scan(&exists); err != nil {
-		return "", time.Time{}, gocommerce.Internalf(err, "read the page")
-	}
-	if !exists {
-		return "", time.Time{}, gocommerce.Conflictf("Save the page before previewing it.")
-	}
 	buf := make([]byte, 24)
 	if _, err := rand.Read(buf); err != nil {
 		return "", time.Time{}, gocommerce.Internalf(err, "make a preview key")
@@ -434,17 +476,22 @@ func hashToken(t string) string {
 	return base64.RawStdEncoding.EncodeToString(sum[:])
 }
 
-// draftFor is the saved draft a live preview key opens, or not found.
+// draftFor is the draft a live preview key opens — the starting page while
+// nothing is saved — or not found.
 func (m *Module) draftFor(ctx context.Context, page, token string) (*Document, error) {
 	var raw []byte
 	err := m.db.QueryRowContext(ctx, `
-		SELECT p.draft FROM layout_previews v JOIN layout_pages p ON p.page = v.page
+		SELECT p.draft FROM layout_previews v LEFT JOIN layout_pages p ON p.page = v.page
 		WHERE v.token_hash = $1 AND v.page = $2 AND v.expires_at > now()`, hashToken(token), page).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, gocommerce.NotFoundf("this preview has expired; open a new one from the editor")
 	}
 	if err != nil {
 		return nil, gocommerce.Internalf(err, "read the preview")
+	}
+	if raw == nil {
+		doc := Starter()
+		return &doc, nil
 	}
 	var doc Document
 	if err := json.Unmarshal(raw, &doc); err != nil {
