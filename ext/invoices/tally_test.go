@@ -302,6 +302,7 @@ func TestTallyLedgerNamesDefaultAndRefuseBadOnes(t *testing.T) {
 		{map[string]any{"cgst": "CGST", "gst": "x"}, "unknown field"},
 		{map[string]any{"unregistered_party": "Sales"}, `sales_ledger: \"Sales\" is already a ledger under Sundry Debtors`},
 		{map[string]any{"freight": "IGST"}, `igst: \"IGST\" is already a ledger under Sales Accounts`},
+		{map[string]any{"unregistered_party": "sales"}, `sales_ledger: \"Sales\" is already a ledger under Sundry Debtors`},
 	} {
 		rec := gctest.AdminRequest(t, app, http.MethodPut, path, c.body)
 		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), c.want) {
@@ -311,6 +312,14 @@ func TestTallyLedgerNamesDefaultAndRefuseBadOnes(t *testing.T) {
 	if got := read(); got != defaults {
 		t.Errorf("after refusals = %+v, want the defaults untouched", got)
 	}
+	// Ledgers in one group may share a name: one tax ledger for every head,
+	// delivery booked to sales.
+	shared := map[string]any{"sgst": "GST", "cgst": "GST", "utgst": "GST", "igst": "GST", "freight": "Sales"}
+	if rec := gctest.AdminRequest(t, app, http.MethodPut, path, shared); rec.Code != http.StatusOK {
+		t.Errorf("shared names in one group = %d: %s", rec.Code, rec.Body)
+	}
+	gctest.AdminRequest(t, app, http.MethodPut, path, map[string]any{
+		"sgst": "SGST", "cgst": "CGST", "utgst": "UTGST", "igst": "IGST", "freight": "Delivery Charges"})
 	if rec := gctest.AdminRequest(t, app, http.MethodPut, path, map[string]any{"sales_ledger": strings.Repeat("ś", 100)}); rec.Code != http.StatusOK {
 		t.Errorf("a 100-character name = %d: %s", rec.Code, rec.Body)
 	}
