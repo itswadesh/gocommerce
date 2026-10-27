@@ -136,7 +136,7 @@
         try {
             // 200 is the engine's MaxLimit, so this is the largest single page
             // it will serve — and more history than any order has.
-            const res = await api.get(`/api/admin/orders/${id}/timeline` + query({ limit: 200 }));
+            const res = await api.get(`/api/admin/orders/${id}/timeline` + query({ limit: 200, order: "newest" }));
             timeline = res.data ?? [];
         } catch {
             // A history that failed to load must not toast over an order that

@@ -57,6 +57,9 @@
      * the same transaction, and deciding in the browser which of the two rows
      * was the same moment would be a heuristic over timestamps.
      *
+     * Latest event first: the order page asks the engine for the history
+     * newest first, so the top of the card is what happened last.
+     *
      * Nothing here is clickable. A history is a report, and a row that reads as
      * pressable and does nothing is worse than a plain one.
      */
