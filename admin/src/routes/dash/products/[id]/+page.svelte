@@ -48,6 +48,8 @@
     import SeoPanel from "$lib/components/SeoPanel.svelte";
     import VariantMatrix from "$lib/components/VariantMatrix.svelte";
     import ProductUpsells from "$lib/components/ProductUpsells.svelte";
+    import ProductHighlights from "$lib/components/ProductHighlights.svelte";
+    import { freeGiftOf, highlightLines, highlightRows, lineProblem } from "$lib/highlights.js";
     import RecordHistory from "$lib/components/RecordHistory.svelte";
     import { titled } from "$lib/brand.svelte.js";
 
@@ -518,6 +520,11 @@
             category_id: p.category?.id ?? null,
             collection_ids: (p.collections ?? []).map((c) => c.id),
             category_meta: categoryMetaOf(p),
+            // Highlights and the free gift note (D134), the engine's own keys
+            // at the top of metadata. Rows include the blank one being typed
+            // into, so the comparison at Save is on the lines, not the rows.
+            highlights: highlightRows(p.metadata),
+            free_gift: freeGiftOf(p.metadata),
             metafields: Object.entries(p.metadata?.custom ?? {}).map(([key, value]) => ({
                 key,
                 // Anything a module wrote as a number or an object is shown as
@@ -945,6 +952,11 @@
             toast.error(upsellProblem);
             return;
         }
+        const highlightProblem = [...form.highlights, form.free_gift].map(lineProblem).find(Boolean);
+        if (highlightProblem) {
+            toast.error(`A highlight or the free gift note: ${highlightProblem}`);
+            return;
+        }
         // The other two money boxes, refused out loud rather than into `errors`:
         // neither has an error slot in the form to hang a message on, and an
         // amount toMinor cannot read reaches the wire as null — which on these
@@ -998,7 +1010,10 @@
             if (
                 JSON.stringify(form.metafields) !== JSON.stringify(snapshot.metafields) ||
                 JSON.stringify(form.category_meta) !== JSON.stringify(snapshot.category_meta) ||
-                form.focus_keyword !== snapshot.focus_keyword
+                form.focus_keyword !== snapshot.focus_keyword ||
+                JSON.stringify(highlightLines(form.highlights)) !==
+                    JSON.stringify(highlightLines(snapshot.highlights)) ||
+                form.free_gift.trim() !== snapshot.free_gift.trim()
             ) {
                 // The patch replaces `metadata` whole, so the rest of it has to
                 // be carried across: writing only `{custom: …}` would delete
@@ -1007,6 +1022,8 @@
                     ...(product.metadata ?? {}),
                     custom: metafieldsObject(),
                     category: categoryMetaObject(),
+                    highlights: highlightLines(form.highlights),
+                    free_gift: form.free_gift.trim(),
                     // Merged rather than replaced: metadata.seo is this panel's
                     // namespace but not necessarily only this field's, and a
                     // future key under it should survive a keyword edit.
@@ -1463,6 +1480,11 @@
                     </div>
 
                     </section>
+                    <ProductHighlights
+                        bind:rows={form.highlights}
+                        bind:freeGift={form.free_gift}
+                        disabled={!writable}
+                    />
                     <section class="card">
                     <h6 class="section-title">
                         <i class="ri-image-line" aria-hidden="true"></i>

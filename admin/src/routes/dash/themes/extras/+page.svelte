@@ -18,7 +18,7 @@
     import { titled } from "$lib/brand.svelte.js";
 
     const readable = $derived(can("plugins.read"));
-    const EXTRAS = ["hello-bar", "news-ticker", "trust-badges", "social-sharing"];
+    const EXTRAS = ["hello-bar", "news-ticker", "trust-badges", "social-sharing", "sold-count", "cart-suggestions"];
 </script>
 
 <svelte:head><title>{titled("Storefront extras")}</title></svelte:head>

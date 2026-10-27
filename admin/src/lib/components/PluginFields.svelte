@@ -16,6 +16,7 @@
      * renders whatever it is given and decides nothing about when it is saved.
      */
     import Select from "$lib/components/Select.svelte";
+    import { api, query } from "$lib/api.js";
 
     /** @type {{ fields?: any[], form: Record<string, any>, idPrefix?: string, unopened?: string[] }} */
     let { fields = [], form = $bindable({}), idPrefix = "pf", unopened = [] } = $props();
@@ -23,6 +24,28 @@
     /* What the API sends back in place of a stored secret. Typing over it
        replaces the secret; leaving it alone keeps it. */
     const SECRET_MASK = "••••••••";
+
+    /* A `collection` field stores a collection's handle (D134); the store's
+       collections are fetched once, and only when a field asks for them. A
+       handle that is no longer a collection stays listed, so opening the form
+       does not quietly change what is saved. */
+    let collections = $state(null);
+    const wantsCollections = $derived((fields ?? []).some((f) => f.kind === "collection"));
+    $effect(() => {
+        if (!wantsCollections || collections) return;
+        api.get("/api/admin/collections" + query({ limit: 200 }))
+            .then((result) => (collections = (result?.data ?? []).map((c) => ({ value: c.slug, label: c.title }))))
+            .catch(() => (collections = []));
+    });
+    function collectionOptions(current) {
+        const list = collections ?? [];
+        const known = !current || list.some((o) => o.value === current);
+        return [
+            { value: "", label: "—" },
+            ...list,
+            ...(known ? [] : [{ value: current, label: `${current} (not found)` }]),
+        ];
+    }
 </script>
 
 {#each fields ?? [] as f (f.key)}
@@ -42,6 +65,8 @@
                     bind:value={form[f.key]}
                     options={[{ value: "", label: "—" }, ...(f.options ?? []).map((o) => ({ value: o, label: o }))]}
                 />
+            {:else if f.kind === "collection"}
+                <Select id="{idPrefix}-{f.key}" bind:value={form[f.key]} options={collectionOptions(form[f.key])} />
             {:else if f.kind === "secret"}
                 <input
                     id="{idPrefix}-{f.key}"
