@@ -145,6 +145,14 @@ ticked "Show in the basket's offers" (`listed`); an unlisted code is never
 shown. The free-delivery figure is read from the shipping rates, never typed
 twice.
 
+A shop can also pick one collection for every basket (D134): **Basket
+suggestions** on Themes › Storefront extras (`cart-suggestions`, a
+`collection` setting holding the handle). `CartCrossSells` then appends that
+collection's published products, in its own order, after what the basket's
+products suggest and less what the basket holds. Off, or with the collection
+gone, the basket's suggestions are what they were; a storefront still falls
+back to related products when the answer is empty.
+
 ## How to handle a price change before checkout
 
 Read the cart and act on the flags rather than waiting for the 409:

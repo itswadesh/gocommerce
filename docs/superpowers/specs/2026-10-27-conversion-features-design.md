@@ -31,18 +31,18 @@ cart and the checkout):
 | # | Before | Now |
 |---|---|---|
 | 1 | Nothing. | **Built.** Add-ons per product with an optional offer price the engine keeps (below). Panel: a Complete the set card in the product editor. Storefront: checkboxes in the buy box. |
-| 2 | Variants with any number of options, and the storefront's picker cross-filters values against real variants, so "Brand" then "Model" works as two options. | **Already there**, with a gap for long lists (below). |
-| 3 | Nothing. | Remaining (below). |
-| 4 | Metafields and category specifications, drawn as a table. | Remaining (below). |
-| 5 | Nothing. | Remaining (below). |
-| 6 | The storefront's gallery plays MP4 and YouTube; the connector passes only pictures. | Remaining (below). |
+| 2 | Variants with any number of options, and the storefront's picker cross-filters values against real variants, so "Brand" then "Model" works as two options. | **Built (D134).** An option with more than 12 values is a searchable picker; values are judged against the earlier options only, so the brand can change after a model is chosen. |
+| 3 | Nothing. | **Built (D134):** Sold count, off by default. |
+| 4 | Metafields and category specifications, drawn as a table. | **Built (D134):** a Highlights card, a ticked list in the buy box. |
+| 5 | Nothing. | **Built (D134):** a free gift note under the price. |
+| 6 | The storefront's gallery plays MP4 and YouTube; the connector passes only pictures. | **Built (D134):** the public product carries its media and the connector passes the videos. |
 | 7 | A sticky Add to bag on the phone, without the price. | **Built**: the price is on the bar. |
 | 8 | Related products (category, then collections, then newest), drawn without cart buttons. | **Built.** Curated cross-sells per product, a "You may also like" product-page section in the theme editor, cards with a one-tap Add that becomes "N in cart". Related products stay as they were. |
 | 9 | Free-over rates existed (a rate band from a subtotal at price 0), but nothing told the shopper. | **Built.** `GET /api/carts/{cartId}/free-shipping`, read from the rates; a bar in the cart. |
 | 10 | Codes could be applied, never listed: a list would hand every shopper every code. | **Built.** A code the shop marks "Show in the basket's offers" is listed, judged against the basket. Shown in the cart and the payment step. |
 | 11 | Nothing. | **Built.** The basket's products' cross-sells, less what it holds, falling back to the first item's related products. |
 | 12 | A "You saved" banner and a sticky checkout bar existed, but a cart line had no MRP, so only a code's saving showed. | **Built**: cart lines carry the variant's compare-at price, so MRP and the saving on it show per line and in the summary. |
-| 13 | Sign-in by phone code (D116) and codes at the payment step existed. | PIN lookup and the address label remain (below). |
+| 13 | Sign-in by phone code (D116) and codes at the payment step existed. | **Built (D134):** PIN lookup from a directory file the install provides, and Home / Work / Other in the address book. |
 
 ## The order bump (add-ons)
 
@@ -74,6 +74,20 @@ answer published products only, in the shop's order. The product page's
 optional heading) in the starting product template; with nothing curated it
 draws nothing, because Related products already fills in. The basket's
 carousel falls back to the first item's related products in the connector.
+
+## The second round (D134)
+
+Each design below was built as written, except:
+
+- **3.** The bands are tens under 100, hundreds under 1,000 and thousands
+  above, so "30+ sold" reads as the reference store's does; the setting is on
+  Themes › Storefront extras, where the storefront's other extras are.
+- **13a.** The engine ships no directory: `GOCOMMERCE_POSTCODES_FILE` points at
+  the CSV data.gov.in publishes, and without it nothing is filled. No state is
+  guessed from the PIN's digits, because the postal circles do not follow
+  state borders.
+- **Store-wide basket suggestions** are on Storefront extras too, with a
+  collection picker.
 
 ## Remaining gaps, each with a design
 
