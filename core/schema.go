@@ -103,8 +103,17 @@ func coreMigrations() []Migration {
 		{ID: "0085_product_sales_counts", SQL: migration0085ProductSalesCounts},
 		ScopeMigration("0086_scope_sales_counts", "product_sales_counts"),
 		{ID: "0087_tax_rate_product_target", SQL: migration0087TaxRateProductTarget},
+		{ID: "0088_four_digit_hs_code", SQL: migration0088FourDigitHSCode},
 	}
 }
+
+// M84 — an HS code may be 4 digits, the HSN an Indian business under ₹5 crore
+// turnover prints on a GST invoice (D126).
+const migration0088FourDigitHSCode = `
+ALTER TABLE variants DROP CONSTRAINT variants_hs_code_check;
+ALTER TABLE variants ADD CONSTRAINT variants_hs_code_check
+    CHECK (hs_code = '' OR hs_code ~ '^[0-9]{4,10}$');
+`
 
 // M83 — a tax rule may target one product (D126).
 //
