@@ -190,7 +190,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// Config starts idle and waits for the panel.
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: PluginKey, Title: "Lemon Squeezy", Category: "payments", DefaultEnabled: inCode,
+		Key: PluginKey, Title: "Lemon Squeezy", Icon: "ri-money-dollar-circle-line", Category: "payments", DefaultEnabled: inCode,
 		Description: "Checkouts through Lemon Squeezy as merchant of record, each created against one placeholder variant.",
 		Docs:        "https://docs.lemonsqueezy.com/api",
 		Fields: []gocommerce.PluginField{

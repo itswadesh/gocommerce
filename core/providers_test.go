@@ -135,7 +135,7 @@ func TestPluginsFill(t *testing.T) {
 	app := newTestApp(t)
 	ctx := context.Background()
 	if err := app.plugins.register(PluginDef{
-		Key: "fill-test", Title: "Fill test", Category: "integration",
+		Key: "fill-test", Title: "Fill test", Icon: "ri-plug-line", Category: "integration",
 		Fields: []PluginField{
 			{Key: "api_key", Label: "Key", Kind: "secret"},
 			{Key: "mode", Label: "Mode", Kind: "select", Options: []string{"a", "b"}, Default: "a"},

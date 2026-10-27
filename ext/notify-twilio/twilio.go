@@ -89,7 +89,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 
 	inCode := strings.TrimSpace(m.cfg.AccountSID) != "" && strings.TrimSpace(m.cfg.AuthToken) != ""
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: PluginKey, Title: "Twilio", Category: "notifications", DefaultEnabled: inCode,
+		Key: PluginKey, Title: "Twilio", Icon: "ri-message-3-line", Category: "notifications", DefaultEnabled: inCode,
 		Description: "Texts shoppers about their orders through Twilio. The wording is the store's own — edit it under Notifications › Setup SMS — so nothing has to be registered with a carrier first.",
 		Docs:        "https://www.twilio.com/docs/messaging/api/message-resource",
 		Fields: []gocommerce.PluginField{

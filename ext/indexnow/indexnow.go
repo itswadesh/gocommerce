@@ -130,7 +130,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 		m.cfg.HTTP = app.OutboundClient(15 * time.Second)
 	}
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: pluginKey, Title: "IndexNow", Category: "marketing",
+		Key: pluginKey, Title: "IndexNow", Icon: "ri-send-plane-2-line", Category: "marketing",
 		Description: "Tell Bing, Yandex, Seznam and Naver the moment a page changes, instead of " +
 			"waiting for them to crawl. No account: the key file this serves is the whole of " +
 			"the verification. Google does not take part — that one still needs Search Console.",

@@ -19,7 +19,7 @@ func (fakePlugin) Name() string            { return "fake-mail" }
 func (fakePlugin) Migrations() []Migration { return nil }
 func (fakePlugin) Register(app *App) error {
 	app.RegisterPlugin(PluginDef{
-		Key: "fake-mail", Title: "Fake Mail", Category: "marketing",
+		Key: "fake-mail", Title: "Fake Mail", Icon: "ri-plug-line", Category: "marketing",
 		Fields: []PluginField{
 			{Key: "api_key", Label: "API key", Kind: "secret", Required: true},
 			{Key: "public_key", Label: "Public key", Kind: "text", Public: true},
@@ -259,7 +259,7 @@ func (fakeProvider) Name() string            { return "fake-provider" }
 func (fakeProvider) Migrations() []Migration { return nil }
 func (fakeProvider) Register(app *App) error {
 	app.RegisterPlugin(PluginDef{
-		Key: "fake-provider", Title: "Fake Provider", Category: "payments",
+		Key: "fake-provider", Title: "Fake Provider", Icon: "ri-plug-line", Category: "payments",
 		Fields: []PluginField{
 			{Key: "api_key", Label: "API key", Kind: "secret"},
 			{Key: "base_url", Label: "API base URL", Kind: "url", Outbound: true},
@@ -326,6 +326,22 @@ func TestAnOutboundHostSettingMustBePublic(t *testing.T) {
 	for _, good := range []string{"acme", "acme.example.com", "https://acme.example.com/admin", "acme.example.com/admin/products"} {
 		if _, err := app.Plugins().Update(ctx, "fake-provider", PluginPatch{Settings: map[string]any{"account": good}}); err != nil {
 			t.Errorf("account %q was refused: %v", good, err)
+		}
+	}
+}
+
+// The panel draws every plugin with its icon, so one without a Remix Icon
+// class is refused when it registers rather than shown as a blank square.
+func TestAPluginNeedsAnIcon(t *testing.T) {
+	app := newTestApp(t)
+	for _, icon := range []string{"", "plug", "ri-plug-fill", "ri-plug-line;color:red"} {
+		if err := app.plugins.register(PluginDef{Key: "no-icon", Title: "No icon", Icon: icon, Category: "integration"}); err == nil {
+			t.Errorf("icon %q: registered, want it refused", icon)
+		}
+	}
+	for _, p := range builtinPlugins {
+		if !pluginIconRE.MatchString(p.Icon) {
+			t.Errorf("built-in plugin %q has icon %q", p.Key, p.Icon)
 		}
 	}
 }

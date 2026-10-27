@@ -16,7 +16,7 @@ type menusStub struct{}
 func (menusStub) Name() string                       { return "menus-stub" }
 func (menusStub) Migrations() []gocommerce.Migration { return nil }
 func (menusStub) Register(app *gocommerce.App) error {
-	app.RegisterPlugin(gocommerce.PluginDef{Key: "navigation", Title: "Menus", Category: "storefront", DefaultEnabled: true})
+	app.RegisterPlugin(gocommerce.PluginDef{Key: "navigation", Title: "Menus", Icon: "ri-plug-line", Category: "storefront", DefaultEnabled: true})
 	return nil
 }
 

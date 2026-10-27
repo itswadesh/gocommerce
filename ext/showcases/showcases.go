@@ -158,7 +158,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.outbound = app.OutboundClient(5 * time.Second)
 
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: pluginKey, Title: "Video showcases", Category: "storefront", DefaultEnabled: true,
+		Key: pluginKey, Title: "Video showcases", Icon: "ri-video-line", Category: "storefront", DefaultEnabled: true,
 		Description: "Videos of the store showing what it sells — from YouTube or Facebook, never uploaded here — " +
 			"beside the products they show, served at /x/showcases for the storefront to play.",
 	})

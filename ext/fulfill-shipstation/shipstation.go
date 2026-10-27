@@ -194,7 +194,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// Config starts idle and waits for the panel.
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: PluginKey, Title: "ShipStation", Category: "shipping", DefaultEnabled: inCode,
+		Key: PluginKey, Title: "ShipStation", Icon: "ri-truck-line", Category: "shipping", DefaultEnabled: inCode,
 		Description: "Multi-carrier labels through ShipStation's V2 API, on the service you name.",
 		Docs:        "https://docs.shipstation.com/",
 		Fields: []gocommerce.PluginField{

@@ -106,7 +106,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 		heading = "Frequently asked questions"
 	}
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: pluginKey, Title: "FAQ", Category: "storefront", DefaultEnabled: true,
+		Key: pluginKey, Title: "FAQ", Icon: "ri-question-answer-line", Category: "storefront", DefaultEnabled: true,
 		Description: "A page of the questions this shop is asked often, grouped into sections and ordered by hand, edited on the FAQ screen and served at /x/faq.",
 		Fields: []gocommerce.PluginField{
 			{Key: "heading", Label: "Page heading", Kind: "text", Public: true, Default: heading},

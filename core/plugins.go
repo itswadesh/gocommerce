@@ -34,8 +34,10 @@ import (
 type PluginDef struct {
 	// Key is [a-z0-9-]+ and unique. A module's plugin normally shares the
 	// module's name.
-	Key         string `json:"key"`
-	Title       string `json:"title"`
+	Key   string `json:"key"`
+	Title string `json:"title"`
+	// Icon is a Remix Icon class (ri-…-line) the panel shows beside the title.
+	Icon        string `json:"icon"`
 	Description string `json:"description"`
 	// Category groups the list: storefront, marketing, analytics, chat,
 	// search, operations, integration.
@@ -114,6 +116,7 @@ type PluginPublic struct {
 const SecretMask = "••••••••"
 
 var pluginKeyRE = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+var pluginIconRE = regexp.MustCompile(`^ri-[a-z0-9]+(-[a-z0-9]+)*-line$`)
 
 // Plugins is the registry and the state.
 type Plugins struct {
@@ -154,6 +157,9 @@ func (p *Plugins) register(def PluginDef) error {
 	}
 	if strings.TrimSpace(def.Title) == "" {
 		return fmt.Errorf("plugin %q has no title", def.Key)
+	}
+	if !pluginIconRE.MatchString(def.Icon) {
+		return fmt.Errorf("plugin %q: icon %q is not a Remix Icon class such as ri-plug-line", def.Key, def.Icon)
 	}
 	seen := map[string]bool{}
 	for _, f := range def.Fields {

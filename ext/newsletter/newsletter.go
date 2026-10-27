@@ -101,7 +101,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	m.db = app.DB()
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: pluginKey, Title: "Newsletter", Category: "marketing", DefaultEnabled: true,
+		Key: pluginKey, Title: "Newsletter", Icon: "ri-mail-send-line", Category: "marketing", DefaultEnabled: true,
 		Description: "A signup box on the storefront: addresses are kept with their consent, listed and exported from the Newsletter screen, and removed with the unsubscribe link every mail should carry.",
 		Fields: []gocommerce.PluginField{
 			{Key: "heading", Label: "Signup heading", Kind: "text", Public: true, Default: "Get the news"},

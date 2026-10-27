@@ -199,7 +199,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// Config starts idle and waits for the panel.
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: PluginKey, Title: "Hyperswitch", Category: "payments", DefaultEnabled: inCode,
+		Key: PluginKey, Title: "Hyperswitch", Icon: "ri-route-line", Category: "payments", DefaultEnabled: inCode,
 		Description: "Payment links through Hyperswitch, the open-source payments router, with its signed webhook marking orders paid.",
 		Docs:        "https://docs.hyperswitch.io/",
 		Fields: []gocommerce.PluginField{

@@ -163,7 +163,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// Config starts idle and waits for the panel.
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: PluginKey, Title: "Stripe", Category: "payments", DefaultEnabled: inCode,
+		Key: PluginKey, Title: "Stripe", Icon: "ri-bank-card-line", Category: "payments", DefaultEnabled: inCode,
 		Description: "Cards and wallets through Stripe PaymentIntents, with the signed webhook marking orders paid.",
 		Docs:        "https://docs.stripe.com/payments",
 		Fields: []gocommerce.PluginField{

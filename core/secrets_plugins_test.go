@@ -257,7 +257,7 @@ func (m fakePluginLater) Register(app *App) error {
 	if m.keyAsText {
 		fields = append(fields, PluginField{Key: "api_key", Label: "API key", Kind: "text"})
 	}
-	app.RegisterPlugin(PluginDef{Key: "fake-mail", Title: "Fake Mail", Category: "marketing", Fields: fields})
+	app.RegisterPlugin(PluginDef{Key: "fake-mail", Title: "Fake Mail", Icon: "ri-plug-line", Category: "marketing", Fields: fields})
 	return nil
 }
 

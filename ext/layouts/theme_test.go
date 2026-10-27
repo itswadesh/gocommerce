@@ -114,7 +114,7 @@ type newsletterStub struct{}
 func (newsletterStub) Name() string                       { return "newsletter-stub" }
 func (newsletterStub) Migrations() []gocommerce.Migration { return nil }
 func (newsletterStub) Register(app *gocommerce.App) error {
-	app.RegisterPlugin(gocommerce.PluginDef{Key: "newsletter", Title: "Newsletter", Category: "marketing", DefaultEnabled: true})
+	app.RegisterPlugin(gocommerce.PluginDef{Key: "newsletter", Title: "Newsletter", Icon: "ri-plug-line", Category: "marketing", DefaultEnabled: true})
 	return nil
 }
 

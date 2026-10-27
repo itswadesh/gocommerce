@@ -99,7 +99,7 @@ func (m *Module) Migrations() []gocommerce.Migration {
 func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: pluginKey, Title: "Import from Shopify", Category: "catalog",
+		Key: pluginKey, Title: "Import from Shopify", Icon: "ri-upload-cloud-line", Category: "catalog",
 		Description: "Bring a Shopify catalogue over the API — products, variants, options, " +
 			"pictures and stock. Re-running updates what it imported before rather than " +
 			"duplicating it.",

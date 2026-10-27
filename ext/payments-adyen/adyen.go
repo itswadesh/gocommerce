@@ -200,7 +200,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// Config starts idle and waits for the panel.
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: PluginKey, Title: "Adyen", Category: "payments", DefaultEnabled: inCode,
+		Key: PluginKey, Title: "Adyen", Icon: "ri-bank-card-line", Category: "payments", DefaultEnabled: inCode,
 		Description: "Card and local payments through Adyen's Checkout API, with the HMAC-signed notification marking orders paid.",
 		Docs:        "https://docs.adyen.com/online-payments/",
 		Fields: []gocommerce.PluginField{

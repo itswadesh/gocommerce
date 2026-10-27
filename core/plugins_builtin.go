@@ -11,7 +11,7 @@ package gocommerce
 // what this binary can actually do.
 var builtinPlugins = []PluginDef{
 	{
-		Key: "hello-bar", Title: "Hello bar", Category: "storefront",
+		Key: "hello-bar", Title: "Hello bar", Icon: "ri-megaphone-line", Category: "storefront",
 		Description: "A line across the top of every storefront page — a promotion, a notice, a shipping threshold.",
 		Fields: []PluginField{
 			{Key: "message", Label: "Message", Kind: "text", Public: true, Required: true},
@@ -20,14 +20,14 @@ var builtinPlugins = []PluginDef{
 		},
 	},
 	{
-		Key: "store-close", Title: "Store closed", Category: "storefront",
+		Key: "store-close", Title: "Store closed", Icon: "ri-door-closed-line", Category: "storefront",
 		Description: "Close the storefront with a message — a holiday, a stock-take, a relaunch — without touching the catalogue.",
 		Fields: []PluginField{
 			{Key: "message", Label: "Message", Kind: "textarea", Public: true, Required: true, Default: "We are closed for a short while. Back soon."},
 		},
 	},
 	{
-		Key: "enquiry-mode", Title: "Enquiry mode", Category: "storefront",
+		Key: "enquiry-mode", Title: "Enquiry mode", Icon: "ri-question-answer-line", Category: "storefront",
 		Description: "Shoppers enquire about a product instead of buying it: the storefront shows an enquiry form where the Add to cart button was.",
 		Fields: []PluginField{
 			{Key: "button", Label: "Button text", Kind: "text", Public: true, Default: "Enquire"},
@@ -39,11 +39,11 @@ var builtinPlugins = []PluginDef{
 	// owner says otherwise, and every store that ran before the switch existed
 	// keeps taking it.
 	{
-		Key: CODPluginKey, Title: "Cash on delivery", Category: "payments", DefaultEnabled: true,
+		Key: CODPluginKey, Title: "Cash on delivery", Icon: "ri-hand-coin-line", Category: "payments", DefaultEnabled: true,
 		Description: "Shoppers pay in cash when the order arrives. Off, checkout offers only the gateways that are set up.",
 	},
 	{
-		Key: "guest-checkout", Title: "Guest checkout", Category: "storefront", DefaultEnabled: true,
+		Key: "guest-checkout", Title: "Guest checkout", Icon: "ri-user-3-line", Category: "storefront", DefaultEnabled: true,
 		Description: "Let a shopper check out without an account. Off, the storefront asks them to sign in first.",
 	},
 	// No "wishlist" here any more. It was a switch with nothing behind it —
@@ -51,28 +51,28 @@ var builtinPlugins = []PluginDef{
 	// implements the feature under the same key, so a store that had the
 	// placeholder switched on keeps its switch and gains what it promised.
 	{
-		Key: "recent-purchase-popup", Title: "Recent purchase popup", Category: "marketing",
+		Key: "recent-purchase-popup", Title: "Recent purchase popup", Icon: "ri-notification-3-line", Category: "marketing",
 		Description: "A small note that somebody just bought something, for the social proof of it.",
 		Fields: []PluginField{
 			{Key: "delay_seconds", Label: "Seconds between popups", Kind: "number", Public: true, Default: 8},
 		},
 	},
 	{
-		Key: "trust-badges", Title: "Trust badges", Category: "storefront",
+		Key: "trust-badges", Title: "Trust badges", Icon: "ri-shield-check-line", Category: "storefront",
 		Description: "Badges under the Add to cart button — secure checkout, free returns, whatever this store stands behind.",
 		Fields: []PluginField{
 			{Key: "badges", Label: "Badges", Kind: "textarea", Public: true, Required: true, Help: "One per line."},
 		},
 	},
 	{
-		Key: "social-sharing", Title: "Social sharing buttons", Category: "marketing",
+		Key: "social-sharing", Title: "Social sharing buttons", Icon: "ri-share-forward-line", Category: "marketing",
 		Description: "Share buttons on the product page.",
 		Fields: []PluginField{
 			{Key: "networks", Label: "Networks", Kind: "text", Public: true, Default: "facebook, x, whatsapp, pinterest", Help: "Comma-separated."},
 		},
 	},
 	{
-		Key: "whatsapp-chat", Title: "WhatsApp chat button", Category: "chat",
+		Key: "whatsapp-chat", Title: "WhatsApp chat button", Icon: "ri-whatsapp-line", Category: "chat",
 		Description: "A WhatsApp button in the storefront's corner that opens a chat with the store.",
 		Fields: []PluginField{
 			{Key: "phone", Label: "Phone number", Kind: "text", Public: true, Required: true, Help: "International format, digits only: 919876543210."},
@@ -80,14 +80,14 @@ var builtinPlugins = []PluginDef{
 		},
 	},
 	{
-		Key: "header-scripts", Title: "Header scripts", Category: "storefront",
+		Key: "header-scripts", Title: "Header scripts", Icon: "ri-code-s-slash-line", Category: "storefront",
 		Description: "HTML the storefront puts in every page's head: verification tags, a font, a pixel nothing else here covers.",
 		Fields: []PluginField{
 			{Key: "html", Label: "HTML", Kind: "textarea", Public: true, Required: true},
 		},
 	},
 	{
-		Key: "google-analytics", Title: "Google Analytics, Tag Manager and Ads", Category: "analytics",
+		Key: "google-analytics", Title: "Google Analytics, Tag Manager and Ads", Icon: "ri-google-line", Category: "analytics",
 		Description: "GA4 measurement, a Tag Manager container, and the Google Ads conversion the storefront fires on an order.",
 		Fields: []PluginField{
 			{Key: "ga4_measurement_id", Label: "GA4 measurement ID", Kind: "text", Public: true, Help: "G-XXXXXXXXXX"},
@@ -97,21 +97,21 @@ var builtinPlugins = []PluginDef{
 		},
 	},
 	{
-		Key: "meta-pixel", Title: "Meta pixel", Category: "analytics",
+		Key: "meta-pixel", Title: "Meta pixel", Icon: "ri-meta-line", Category: "analytics",
 		Description: "The Facebook and Instagram pixel, for ads that know what was bought.",
 		Fields: []PluginField{
 			{Key: "pixel_id", Label: "Pixel ID", Kind: "text", Public: true, Required: true},
 		},
 	},
 	{
-		Key: "tidio", Title: "Tidio", Category: "chat",
+		Key: "tidio", Title: "Tidio", Icon: "ri-chat-smile-3-line", Category: "chat",
 		Description: "Tidio's live chat and chatbot widget.",
 		Fields: []PluginField{
 			{Key: "public_key", Label: "Public key", Kind: "text", Public: true, Required: true},
 		},
 	},
 	{
-		Key: "tawk-to", Title: "tawk.to", Category: "chat",
+		Key: "tawk-to", Title: "tawk.to", Icon: "ri-chat-3-line", Category: "chat",
 		Description: "tawk.to's free live chat widget.",
 		Fields: []PluginField{
 			{Key: "property_id", Label: "Property ID", Kind: "text", Public: true, Required: true},
@@ -119,7 +119,7 @@ var builtinPlugins = []PluginDef{
 		},
 	},
 	{
-		Key: "umami", Title: "Umami", Category: "analytics",
+		Key: "umami", Title: "Umami", Icon: "ri-bar-chart-2-line", Category: "analytics",
 		Description: "Umami's privacy-friendly analytics script.",
 		Fields: []PluginField{
 			{Key: "script_url", Label: "Script URL", Kind: "url", Public: true, Required: true, Help: "https://analytics.example.com/script.js"},
@@ -127,7 +127,7 @@ var builtinPlugins = []PluginDef{
 		},
 	},
 	{
-		Key: "plausible", Title: "Plausible", Category: "analytics",
+		Key: "plausible", Title: "Plausible", Icon: "ri-line-chart-line", Category: "analytics",
 		Description: "Plausible's privacy-friendly analytics script.",
 		Fields: []PluginField{
 			{Key: "domain", Label: "Domain", Kind: "text", Public: true, Required: true, Help: "shop.example.com"},
@@ -135,7 +135,7 @@ var builtinPlugins = []PluginDef{
 		},
 	},
 	{
-		Key: "trustpilot", Title: "Trustpilot", Category: "marketing",
+		Key: "trustpilot", Title: "Trustpilot", Icon: "ri-star-smile-line", Category: "marketing",
 		Description: "The Trustpilot TrustBox on the storefront.",
 		Fields: []PluginField{
 			{Key: "business_unit_id", Label: "Business unit ID", Kind: "text", Public: true, Required: true},
@@ -143,7 +143,7 @@ var builtinPlugins = []PluginDef{
 		},
 	},
 	{
-		Key: "news-ticker", Title: "News ticker", Category: "storefront",
+		Key: "news-ticker", Title: "News ticker", Icon: "ri-newspaper-line", Category: "storefront",
 		Description: "A scrolling line of short notices.",
 		Fields: []PluginField{
 			{Key: "items", Label: "Notices", Kind: "textarea", Public: true, Required: true, Help: "One per line."},

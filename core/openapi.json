@@ -20868,6 +20868,10 @@
           "title": {
             "type": "string"
           },
+          "icon": {
+            "type": "string",
+            "description": "A Remix Icon class, ri-…-line, the panel shows beside the title."
+          },
           "description": {
             "type": "string"
           },
