@@ -2033,7 +2033,8 @@ func normalizeOriginCountry(in string) (string, error) {
 // "6109 10 00", and all three spellings are the same code — so the separators
 // are dropped rather than being an error nobody can see the cause of. Length is
 // checked after that: 6 digits is the international part, and an importing
-// country extends it to 8 or 10.
+// country extends it to 8 or 10. Four is allowed too, because India's GST
+// asks a business under ₹5 crore turnover for the 4-digit HSN on its invoices.
 func normalizeHSCode(in string) (string, error) {
 	var digits strings.Builder
 	for _, r := range strings.TrimSpace(in) {
@@ -2050,8 +2051,8 @@ func normalizeHSCode(in string) (string, error) {
 	if code == "" {
 		return "", nil
 	}
-	if len(code) < 6 || len(code) > 10 {
-		return "", Validationf("hs_code must be 6 to 10 digits, like 610910")
+	if len(code) < 4 || len(code) > 10 {
+		return "", Validationf("hs_code must be 4 to 10 digits, like 7113 or 711319")
 	}
 	return code, nil
 }
