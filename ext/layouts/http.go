@@ -269,7 +269,7 @@ func (m *Module) handlePublic(w http.ResponseWriter, r *http.Request) {
 	} else {
 		var rev *Revision
 		if rev, doc, err = m.published(ctx, page); err != nil {
-			gocommerce.RespondError(w, r, gocommerce.NotFoundf("the home page has not been published"))
+			gocommerce.RespondError(w, r, gocommerce.NotFoundf("the %s has not been published", pageInfo(page).Label))
 			return
 		}
 		out.Revision = rev.Number
@@ -468,11 +468,25 @@ func int64Array(ids []int64) string {
 }
 
 // Starter is the page a shop starts from before its first save: the
-// storefront's built-in home page, section for section and word for word, so
+// storefront's built-in page, section for section and word for word, so
 // switching the editor on and publishing changes nothing a shopper sees until
-// the shop changes it. It has no pictures — the built-in page's are stock
-// photographs, and a shop's pictures are its own to choose.
-func Starter() Document {
+// the shop changes it. The home page has no pictures — the built-in page's
+// are stock photographs, and a shop's pictures are its own to choose. The
+// product page is its core with the reviews and related products under it;
+// the collection page is its grid.
+func Starter(page string) Document {
+	switch page {
+	case "product":
+		return Document{SchemaVersion: schemaVersion, Theme: Themes[0].ID, Sections: []Section{
+			{ID: "product", Type: "main-product", Enabled: true, Settings: map[string]any{}},
+			{ID: "reviews", Type: "product-reviews", Enabled: true, Settings: map[string]any{}},
+			{ID: "related", Type: "related-products", Enabled: true, Settings: map[string]any{}},
+		}}
+	case "collection":
+		return Document{SchemaVersion: schemaVersion, Theme: Themes[0].ID, Sections: []Section{
+			{ID: "products", Type: "main-collection", Enabled: true, Settings: map[string]any{}},
+		}}
+	}
 	return Document{SchemaVersion: schemaVersion, Theme: Themes[0].ID, Sections: []Section{
 		{ID: "announcement", Type: "announcement-bar", Enabled: true, Settings: map[string]any{
 			"text": "Free shipping on your first order · Easy 7-day returns", "link": "/products"}},
