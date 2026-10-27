@@ -107,10 +107,14 @@
                     <!-- The question an operator looking at a wrong seller name
                          has no other way to answer. -->
                     <div class="field-help">
-                        The seller name, address and tax ID printed on a plain invoice come from the
-                        store's own <code class="txt-code">main()</code> and cannot be changed from
-                        here. A store in India with its GSTIN in Settings and selling in INR issues
-                        GST tax invoices, marked GST, whose seller details come from Settings.
+                        {#if invoices.some((row) => row.kind === "tax_invoice")}
+                            GST tax invoices, marked GST, take the seller's name, address and GSTIN
+                            from Settings as they were when each invoice was issued.
+                        {:else}
+                            The seller name, address and tax ID printed on every document come from the
+                            store's own <code class="txt-code">main()</code> and cannot be changed from
+                            here.
+                        {/if}
                     </div>
                 </div>
 
