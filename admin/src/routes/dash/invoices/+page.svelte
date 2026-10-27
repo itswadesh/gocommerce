@@ -62,6 +62,73 @@
         }
     }
 
+    /* The Tally export (D127). The ledger names' 404 is how a store that
+       issues no GST tax invoices says so, and then none of it is drawn. */
+    const TALLY = "/api/admin/x/invoices/tally";
+    const LEDGER_FIELDS = [
+        { key: "company_name", label: "Tally company", hint: "Empty imports into the company open in Tally." },
+        { key: "sales_ledger", label: "Sales ledger" },
+        { key: "cgst", label: "CGST ledger" },
+        { key: "sgst", label: "SGST ledger" },
+        { key: "utgst", label: "UTGST ledger" },
+        { key: "igst", label: "IGST ledger" },
+        { key: "freight", label: "Delivery ledger" },
+        { key: "unregistered_party", label: "Party for buyers without a GSTIN" },
+        { key: "voucher_type", label: "Voucher type" },
+    ];
+
+    let ledgers = $state(null);
+    let saving = $state(false);
+    let downloading = $state("");
+
+    /* A local date, not toISOString's UTC one, which is yesterday for an
+       evening in India. */
+    const day = (d) =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const now = new Date();
+    let to = $state(day(now));
+    let from = $state(`${now.getMonth() < 3 ? now.getFullYear() - 1 : now.getFullYear()}-04-01`);
+
+    $effect(() => {
+        if (can("invoices.read") && hasModule("invoices")) loadLedgers();
+    });
+
+    async function loadLedgers() {
+        try {
+            ledgers = await api.get(`${TALLY}/ledgers`);
+        } catch (err) {
+            if (err.status !== 404) toast.error(err);
+            ledgers = null;
+        }
+    }
+
+    async function saveLedgers() {
+        if (saving) return;
+        saving = true;
+        try {
+            ledgers = await api.put(`${TALLY}/ledgers`, ledgers);
+            toast.success("Ledger names saved");
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            saving = false;
+        }
+    }
+
+    async function exportPart(part) {
+        if (downloading) return;
+        downloading = part;
+        try {
+            await downloadFile(
+                `${TALLY}?part=${part}&from=${from}&to=${to}`,
+                `tally-${part}-${from}-${to}.xml`,
+                "application/xml",
+            );
+        } finally {
+            downloading = "";
+        }
+    }
+
     /* The path parameter is the ORDER's id and not the invoice's — the row
        carries both, and this is the single easiest thing to get wrong here. */
     const documentPath = (row) => `/api/admin/x/invoices/${row.order_id}`;
@@ -117,6 +184,95 @@
                         {/if}
                     </div>
                 </div>
+
+                {#if ledgers}
+                    <section class="card m-b-sm">
+                        <h2 class="tw:mb-3 tw:text-sm tw:font-semibold">Export for Tally</h2>
+                        <form class="grid" onsubmit={(e) => e.preventDefault()}>
+                            <div class="col-md-3">
+                                <div class="field">
+                                    <label for="tally-from">From</label>
+                                    <input id="tally-from" type="date" bind:value={from} max={to || undefined} />
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="field">
+                                    <label for="tally-to">To</label>
+                                    <input id="tally-to" type="date" bind:value={to} min={from || undefined} />
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <div class="field-help m-b-sm">
+                                    Import the ledgers first, then the vouchers: in TallyPrime, Alt+O, Masters,
+                                    then Alt+O, Transactions. Importing a voucher again replaces it.
+                                </div>
+                                <div class="inline-flex gap-sm">
+                                    {#each ["ledgers", "vouchers"] as part, i (part)}
+                                        <button
+                                            type="button"
+                                            class="btn sm secondary"
+                                            disabled={!from || !to || !!downloading}
+                                            aria-busy={downloading === part}
+                                            onclick={() => exportPart(part)}
+                                        >
+                                            <i class="ri-download-2-line" aria-hidden="true"></i>
+                                            <span class="txt">
+                                                {downloading === part ? "Downloading…" : `${i + 1}. ${part === "ledgers" ? "Ledgers" : "Vouchers"}`}
+                                            </span>
+                                        </button>
+                                    {/each}
+                                </div>
+                            </div>
+                        </form>
+
+                        <details class="map-fold m-t-sm">
+                            <summary>
+                                <span class="map-fold-title">Ledger names</span>
+                                <span class="txt-hint txt-sm">Match the ledgers in your Tally company</span>
+                                <i class="ri-arrow-down-s-line map-fold-chevron" aria-hidden="true"></i>
+                            </summary>
+                            <form class="grid m-t-sm" onsubmit={(e) => (e.preventDefault(), saveLedgers())}>
+                                {#each LEDGER_FIELDS as f (f.key)}
+                                    <div class="col-md-4">
+                                        <div class="field" class:readonly={!can("invoices.configure")}>
+                                            <label for="tally-{f.key}">{f.label}</label>
+                                            <input
+                                                id="tally-{f.key}"
+                                                type="text"
+                                                maxlength="100"
+                                                readonly={!can("invoices.configure")}
+                                                bind:value={ledgers[f.key]}
+                                            />
+                                            {#if f.hint}<div class="field-help">{f.hint}</div>{/if}
+                                        </div>
+                                    </div>
+                                {/each}
+                                <div class="col-12">
+                                    <div class="field">
+                                        <input
+                                            id="tally-per-rate"
+                                            type="checkbox"
+                                            disabled={!can("invoices.configure")}
+                                            bind:checked={ledgers.sales_per_rate}
+                                        />
+                                        <label for="tally-per-rate">
+                                            One sales ledger per rate, named like “{ledgers.sales_ledger} 18%”
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    {#if can("invoices.configure")}
+                                        <button type="submit" class="btn sm" disabled={saving}>
+                                            <span class="txt">{saving ? "Saving…" : "Save ledger names"}</span>
+                                        </button>
+                                    {:else}
+                                        <div class="field-help">Changing these needs invoices.configure.</div>
+                                    {/if}
+                                </div>
+                            </form>
+                        </details>
+                    </section>
+                {/if}
 
                 <div class="page-table-wrapper tw:rounded-xl tw:border">
                     <table class="table responsive-table">
