@@ -759,8 +759,9 @@ answers the editor; an older one shows the saved draft and reloads after each
 save.
 
 The `layouts` plugin starts on, so a shop's first publish is what the
-storefront shows; until then it keeps its built-in home page. Switched off in
-Plugins, the screen says so and the storefront goes back to the built-in page. Before
+storefront shows; until then it keeps its built-in home page. Its switch is on
+the Themes screen itself (D132); switched off, the screen says so and the
+storefront goes back to the built-in page. Before
 the first save the screen shows that built-in page as sections — its words,
 not its stock pictures — to start from. Seeing the screen is `layouts.read`
 (managers and staff by default); editing, resetting, publishing, previewing
@@ -782,9 +783,17 @@ header or footer without publishing again. Anything left empty keeps the
 storefront's own. Both save, preview, publish, schedule, reset and roll back
 like a page.
 
+Two more elements are not pages of the editor and are listed whether or not
+the build has it (D132): **Banners** (below) and **Storefront extras**
+(`/dash/themes/extras`), the hello bar, news ticker, trust badges and share
+buttons, each with its switch and settings. They are the same plugin rows they
+always were, so a storefront reading `GET /api/plugins` sees no change. The
+Header page's announcement strip does the hello bar's job, and the extras
+screen says so; both stay, because stores use the hello bar today.
+
 ## Banners
 
-**Content → Banners** (`ext/banners`, D99) holds the pictures on the
+**Themes → Banners** (`/dash/themes/banners`; `ext/banners`, D99, D132) holds the pictures on the
 storefront's home page, the one page a storefront shows banners on yet. It is
 shown as it reads: its **slides** across the top, then each **grid** of tiles
 under its heading. A banner is a picture, an
@@ -807,6 +816,12 @@ tablet slider and, with their phone pictures, its phone slider; each grid as a
 section as many tiles across as it has, two to four, on wider screens and two
 across on phones.
 
+Banners are part of every store and have no switch (`AlwaysOn`, D132): each
+banner's own switch is the way to show none. A store that had the old switch
+off keeps it off, so its storefront does not change, and the Banners screen
+offers it one switch to turn them on, after which it stays on. The old
+address, `/dash/banners`, redirects here.
+
 ## Contact: replies and product enquiries
 
 **Customers → Contact messages** (`ext/contact`, D111) is one inbox for two
@@ -816,8 +831,9 @@ kinds of message: what shoppers send through the storefront's contact form
 both; an enquiry's row says so and names the product, and its drawer links to
 the product as it was called when the shopper asked. Both forms carry a
 honeypot and are limited together to ten messages a minute from one address.
-The Plugins screen's **Take product enquiries** switch closes the second form
-without closing the first.
+The contact form's switch and its settings sit at the top of the screen
+(D132); its **Take product enquiries** setting closes the second form without
+closing the first.
 
 The drawer answers either kind. A reply goes to the shopper by email through
 the store's own provider — from its sender, with its reply-to address, so the

@@ -13,6 +13,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
+    import FeatureSwitch from "$lib/components/FeatureSwitch.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
@@ -174,6 +175,11 @@
                 </div>
             {/if}
         </header>
+
+        {#if !missing && readable}
+            <!-- The feature's switch and settings live here, beside it (D132). -->
+            <FeatureSwitch pluginKey="faq" />
+        {/if}
 
         {#if !readable}
             <NoAccess right="catalog.read" what="the FAQ" />
