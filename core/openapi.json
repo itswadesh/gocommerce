@@ -7349,7 +7349,7 @@
           "cart"
         ],
         "summary": "What a basket's products suggest",
-        "description": "The cross-sells of the products in the basket, in the order they went in, less what the basket already holds (D133). Empty when none are curated.",
+        "description": "The cross-sells of the products in the basket, in the order they went in, then the products of the collection the shop chose for every basket (D134), less what the basket already holds (D133). Empty when none are curated and no collection is chosen.",
         "parameters": [
           {
             "name": "cartId",
@@ -21501,7 +21501,8 @@
               "number",
               "bool",
               "select",
-              "url"
+              "url",
+              "collection"
             ]
           },
           "help": {

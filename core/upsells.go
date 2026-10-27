@@ -355,7 +355,56 @@ func (u *Upsells) CartCrossSells(ctx context.Context, cart *Cart, limit int) ([]
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	more, err := u.storeSuggestionIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range more {
+		if !held[id] {
+			ids = append(ids, id)
+		}
+	}
 	return u.liveProducts(ctx, dedupeIDs(ids), limit)
+}
+
+// CartSuggestionsPluginKey is the store-wide basket suggestions (D134): one
+// collection the shop picks, suggested after what the basket's own products
+// suggest.
+const CartSuggestionsPluginKey = "cart-suggestions"
+
+// storeSuggestionIDs are the chosen collection's products in its own order,
+// and none when the feature is off or the collection has gone: a basket with
+// fewer suggestions is not an error a shopper should see.
+func (u *Upsells) storeSuggestionIDs(ctx context.Context) ([]int64, error) {
+	on, err := u.app.plugins.Enabled(ctx, CartSuggestionsPluginKey)
+	if err != nil || !on {
+		return nil, err
+	}
+	settings, err := u.app.plugins.Settings(ctx, CartSuggestionsPluginKey)
+	if err != nil {
+		return nil, err
+	}
+	handle, _ := settings["collection"].(string)
+	if strings.TrimSpace(handle) == "" {
+		return nil, nil
+	}
+	col, err := u.app.Collections().GetBySlug(ctx, handle)
+	if errors.Is(err, ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	products, _, err := u.app.Collections().ProductsInCollection(ctx, col.ID,
+		ProductQuery{Status: ProductActive, Limit: maxCrossSells + maxAddOns})
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int64, 0, len(products))
+	for _, p := range products {
+		ids = append(ids, p.ID)
+	}
+	return ids, nil
 }
 
 // liveProducts reads the published ones of ids, keeping their order.
