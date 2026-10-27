@@ -17,9 +17,14 @@ import (
 
 func postWebhook(t *testing.T, app *gocommerce.App, body string) *httptest.ResponseRecorder {
 	t.Helper()
+	return postWebhookTo(t, app, "/api/checkout/razorpay/webhook", body)
+}
+
+func postWebhookTo(t *testing.T, app *gocommerce.App, target, body string) *httptest.ResponseRecorder {
+	t.Helper()
 	mac := hmac.New(sha256.New, []byte("whsec"))
 	mac.Write([]byte(body))
-	req := httptest.NewRequest(http.MethodPost, "/api/checkout/razorpay/webhook", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, target, strings.NewReader(body))
 	req.Header.Set("X-Razorpay-Signature", hex.EncodeToString(mac.Sum(nil)))
 	rec := httptest.NewRecorder()
 	app.Handler().ServeHTTP(rec, req)
@@ -47,16 +52,16 @@ func TestWebhookAcceptsNotesOfEveryShapeRazorpaySends(t *testing.T) {
 	app, _ := newStatusApp(t)
 	result := gctest.PlaceOrder(t, app, "razorpay")
 
-	if rec := postWebhook(t, app, paymentEvent("payment.captured", "pay_NONOTES", `[]`)); rec.Code != http.StatusOK {
-		t.Fatalf("notes [] answered %d, want 200: %s", rec.Code, rec.Body)
-	}
-
 	notes := fmt.Sprintf(`{"order_id":"%d","order_number":%q,"attempt":2,"gift":true}`, result.Order.ID, result.Order.Number)
 	if rec := postWebhook(t, app, paymentEvent("payment.captured", "pay_OK1", notes)); rec.Code != http.StatusOK {
 		t.Fatalf("notes with non-string values answered %d, want 200: %s", rec.Code, rec.Body)
 	}
 	if got := paymentStatus(t, app, result.Order.ID); got != gocommerce.PaymentPaid {
 		t.Errorf("payment status = %q, want paid", got)
+	}
+
+	if rec := postWebhook(t, app, paymentEvent("payment.captured", "pay_NONOTES", `[]`)); rec.Code != http.StatusOK {
+		t.Fatalf("notes [] answered %d, want 200: %s", rec.Code, rec.Body)
 	}
 }
 
@@ -76,5 +81,47 @@ func TestALateFailureForAPaidOrderIsAcknowledged(t *testing.T) {
 	}
 	if got := paymentStatus(t, app, result.Order.ID); got != gocommerce.PaymentPaid {
 		t.Errorf("payment status = %q after a late failure, want paid", got)
+	}
+}
+
+// Initiate writes the store order's id into the Razorpay order's notes, and
+// Razorpay does not promise to copy them onto the payment. A capture with no
+// notes is matched by the Razorpay order it was paid against.
+func TestACaptureWithoutNotesIsMatchedByItsRazorpayOrder(t *testing.T) {
+	app, _ := newStatusApp(t)
+	result := gctest.PlaceOrder(t, app, "razorpay") // its Razorpay order is order_RZP1
+
+	if rec := postWebhook(t, app, paymentEvent("payment.captured", "pay_NONOTES", `[]`)); rec.Code != http.StatusOK {
+		t.Fatalf("capture answered %d: %s", rec.Code, rec.Body)
+	}
+	if got := paymentStatus(t, app, result.Order.ID); got != gocommerce.PaymentPaid {
+		t.Errorf("payment status = %q, want paid", got)
+	}
+}
+
+// Two stores on one Razorpay account each receive every event. Store B
+// getting a capture for store A's Razorpay order acknowledges it and leaves it
+// for A.
+func TestAnotherStoresRazorpayOrderIsLeftForIt(t *testing.T) {
+	app, _ := newStatusApp(t)
+	b, err := app.Stores().Create(context.Background(), "Second", "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := gctest.PlaceOrder(t, app, "razorpay") // in store A
+	body := paymentEvent("payment.captured", "pay_SHARED", `[]`)
+
+	if rec := postWebhookTo(t, app, "/api/checkout/razorpay/webhook?store="+b.ID, body); rec.Code != http.StatusOK {
+		t.Fatalf("store B's endpoint answered %d to store A's capture: %s", rec.Code, rec.Body)
+	}
+	if got := paymentStatus(t, app, result.Order.ID); got != gocommerce.PaymentPending {
+		t.Fatalf("store B's endpoint set store A's order to %q", got)
+	}
+
+	if rec := postWebhook(t, app, body); rec.Code != http.StatusOK {
+		t.Fatalf("store A's endpoint answered %d: %s", rec.Code, rec.Body)
+	}
+	if got := paymentStatus(t, app, result.Order.ID); got != gocommerce.PaymentPaid {
+		t.Fatalf("store A's order is %q: its capture was swallowed by store B", got)
 	}
 }
