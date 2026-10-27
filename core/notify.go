@@ -245,6 +245,9 @@ func (a *App) subscribeNotifications() {
 
 func (a *App) notifyOrder(ctx context.Context, event string, ev *OrderEvent) error {
 	data := OrderNotificationData(ev)
+	if link := a.orderTrackingURL(ctx, ev.Number); link != "" {
+		data["order_tracking_url"] = link
+	}
 	// The language the customer ordered in, while the store still sells in
 	// it, else the store's main language (D87).
 	lang := a.profile.MessageLanguage(ctx, ev.Language)
