@@ -171,3 +171,41 @@ func itoa(id int64) string {
 	}
 	return string(b[i:])
 }
+
+// The panel cannot offer events it does not know about, and a merchant cannot
+// guess them: the engine says which ones it sends, with what each one means.
+func TestTheEventsAnEndpointCanNameAreListed(t *testing.T) {
+	app := newApp(t)
+	rec := gctest.AdminRequest(t, app, "GET", "/api/admin/x/webhooks/events", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list events: status %d, body %s", rec.Code, rec.Body.String())
+	}
+	var out []gocommerce.EventInfo
+	gctest.DecodeData(t, rec, &out)
+	seen := map[string]bool{}
+	for _, e := range out {
+		if e.Name == "" || e.Group == "" || e.Description == "" {
+			t.Errorf("event %+v is missing a name, group or description", e)
+		}
+		seen[e.Name] = true
+	}
+	for _, want := range []string{"order.created", "order.paid", "order.unpaid", "cart.abandoned", "product.updated", "collection.updated"} {
+		if !seen[want] {
+			t.Errorf("%s is not listed", want)
+		}
+	}
+}
+
+// A name the engine never sends would leave the endpoint waiting forever, so
+// a typo is refused while it is being typed. Patterns still work.
+func TestAnEndpointCannotNameAnEventThatNeverHappens(t *testing.T) {
+	app := newApp(t)
+	for _, events := range [][]string{{"order.payed"}, {"orders.*"}, {"identity.login_code"}} {
+		rec := gctest.AdminRequest(t, app, "POST", "/api/admin/x/webhooks/endpoints",
+			map[string]any{"url": "https://merchant.example.com/hooks", "events": events})
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("events %v accepted with status %d, want 400", events, rec.Code)
+		}
+	}
+	create(t, app, map[string]any{"url": "https://merchant.example.com/hooks", "events": []string{"*", "order.*", "product.deleted"}})
+}

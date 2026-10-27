@@ -297,6 +297,35 @@
         ]
       }
     },
+    "/api/admin/x/webhooks/events": {
+      "get": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "The events an endpoint can name",
+        "description": "Every event the engine sends to webhooks, grouped, with what it means. An endpoint's `events` must each match at least one of these: an exact name, a `prefix.*` pattern or `*`.",
+        "responses": {
+          "200": {
+            "description": "The event list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WebhookEvent"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/x/webhooks/deliveries/{id}/retry": {
       "post": {
         "tags": [
@@ -506,6 +535,27 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "WebhookEvent": {
+        "type": "object",
+        "required": [
+          "name",
+          "group",
+          "description"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "order.paid"
+          },
+          "group": {
+            "type": "string",
+            "example": "Orders"
+          },
+          "description": {
+            "type": "string"
           }
         }
       }
