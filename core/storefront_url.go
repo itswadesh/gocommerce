@@ -57,3 +57,35 @@ func (a *App) orderTrackingURL(ctx context.Context, orderID int64, number string
 	}
 	return link
 }
+
+// storefrontOrigins are every address shoppers may reach the store ctx is
+// bound to by — each verified domain, then <slug>.<base domain> — as
+// https://host origins. The panel lets these, and only these, be framed, so
+// the theme editor can show the store's own home page (D126). An unproven
+// domain is somebody's claim, not yet the store's, and is left out.
+func (a *App) storefrontOrigins(ctx context.Context) []string {
+	id := a.storeOf(ctx)
+	if id == "" || id == installScope {
+		return nil
+	}
+	var out []string
+	rows, err := a.db.QueryContext(ctx, `SELECT host FROM store_domains WHERE store_id = $1 AND verified_at IS NOT NULL
+		ORDER BY is_primary DESC, created_at, host LIMIT 20`, id)
+	if err != nil {
+		a.log.Warn("read the store's domains", "store", id, "err", err)
+	} else {
+		for rows.Next() {
+			var host string
+			if rows.Scan(&host) == nil && host != "" {
+				out = append(out, "https://"+host)
+			}
+		}
+		rows.Close()
+	}
+	if st, err := a.stores.Get(ctx, id); err == nil {
+		if base := a.storeBrand(st.BrandHost).BaseDomain; base != "" {
+			out = append(out, "https://"+st.Slug+"."+base)
+		}
+	}
+	return out
+}
