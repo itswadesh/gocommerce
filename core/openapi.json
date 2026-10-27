@@ -18311,7 +18311,7 @@
       },
       "TaxRate": {
         "type": "object",
-        "description": "A rule about a place and a kind of thing. The most specific rule that fits a line is the one that applies: a category beats a country, a country beats a bare fallback, and within categories the deeper one wins. A rule on a category reaches its whole subtree.",
+        "description": "A rule about a place and a kind of thing. The most specific rule that fits a line is the one that applies: a product beats any category, a category beats a country, a country beats a bare fallback, and within categories the deeper one wins. A rule on a category reaches its whole subtree.",
         "properties": {
           "id": {
             "type": "integer",
@@ -18340,6 +18340,16 @@
             "description": "Absent applies to everything."
           },
           "category_name": {
+            "type": "string",
+            "description": "Read-only, for display."
+          },
+          "product_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "One product, which outranks every category rule. A rule names a category or a product, not both."
+          },
+          "product_title": {
             "type": "string",
             "description": "Read-only, for display."
           },
@@ -18388,6 +18398,12 @@
             "format": "int64",
             "nullable": true,
             "description": "Absent applies to everything."
+          },
+          "product_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "One product, which outranks every category rule. Set it or category_id, not both."
           },
           "active": {
             "type": "boolean"
