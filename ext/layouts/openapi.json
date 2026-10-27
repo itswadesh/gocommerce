@@ -645,7 +645,7 @@
           "layouts"
         ],
         "summary": "Schedule the page's draft to publish",
-        "description": "Sets the saved draft at `version` to publish at `publish_at` (D128), within half a minute of it, through the same publish as the button: a revision marked `scheduled`, `published_by` the person who scheduled it. The draft is copied as it is now; later edits keep saving to the draft and are not in it, which the state's `scheduled.outdated` says. A page has one schedule, and scheduling again replaces it. Publishing by hand, rolling back and resetting leave it alone. Needs `layouts.write`.",
+        "description": "Sets the saved draft at `version` to publish at `publish_at` (D129), within half a minute of it, through the same publish as the button: a revision marked `scheduled`, `published_by` the person who scheduled it. The draft is copied as it is now; later edits keep saving to the draft and are not in it, which the state's `scheduled.outdated` says. A page has one schedule, and scheduling again replaces it. Publishing by hand, rolling back and resetting leave it alone. Needs `layouts.write`.",
         "parameters": [
           {
             "name": "page",

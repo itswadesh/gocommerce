@@ -1,6 +1,6 @@
 <script>
     /**
-     * Themes (ext/layouts, D125, D128): the store's theme and the elements of
+     * Themes (ext/layouts, D125, D129): the store's theme and the elements of
      * it the shop arranges — the homepage, and the templates every product and
      * every collection is drawn in. Each opens the same editor, so a page
      * added to the engine's registry joins this list rather than the menu.

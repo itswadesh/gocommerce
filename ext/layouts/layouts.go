@@ -102,7 +102,7 @@ CREATE TABLE layout_previews (
 		// report, and a hash is all a report could do anything with.
 		gocommerce.WithholdFromReports("0003_withhold_from_reports", "layout_previews"),
 		{
-			// A page's draft, set to publish at a time (D128). The document is
+			// A page's draft, set to publish at a time (D129). The document is
 			// the draft as it was when scheduled, so what goes live is what
 			// the shop looked at, not whatever the autosave holds by then.
 			ID: "0004_schedules",

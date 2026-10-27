@@ -312,7 +312,7 @@ export function absoluteMedia(doc, origin) {
     return { ...doc, sections: fix(JSON.parse(JSON.stringify(doc.sections ?? [])), null) };
 }
 
-// ------------------------------------------------------------ page templates (D128)
+// ------------------------------------------------------------ page templates (D129)
 
 /**
  * The pages a shop arranges, in the Themes screen's order. key is the

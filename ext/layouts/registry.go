@@ -71,7 +71,7 @@ type SectionType struct {
 	// sent it otherwise; a draft that holds one still saves.
 	Requires string `json:"requires,omitempty"`
 	// Pages are the pages the type may be on; none means every page. A
-	// product's reviews mean nothing on the home page (D128).
+	// product's reviews mean nothing on the home page (D129).
 	Pages []string `json:"pages,omitempty"`
 	// Fixed marks a page's core: the part the catalogue draws, which the page
 	// holds exactly once and always shows. The shop moves it, and arranges
@@ -255,7 +255,7 @@ var Sections = []SectionType{
 		},
 	},
 
-	// The product page (D128). Its core is the catalogue's: the pictures, the
+	// The product page (D129). Its core is the catalogue's: the pictures, the
 	// title, the price and options, the buy button and the description. The
 	// two below it on the storefront's own page are sections, so the shop can
 	// move them, hide them, or put its own between.
@@ -293,7 +293,7 @@ type PageInfo struct {
 
 // Pages are the pages a shop can arrange, each drawn by the storefront from
 // its own document: the home page, and the templates every product and every
-// collection is drawn in (D128).
+// collection is drawn in (D129).
 var Pages = []PageInfo{
 	{Key: "home", Label: "home page"},
 	{Key: "product", Label: "product page", Core: "main-product"},
