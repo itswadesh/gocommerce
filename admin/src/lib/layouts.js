@@ -221,11 +221,11 @@ export function createAutosave({ save, delay = 800, setTimer = setTimeout, clear
 }
 
 /**
- * The storefront's home page with a preview key, and — for the frame — the
+ * The storefront's page at path with a preview key, and — for the frame — the
  * panel's origin, which the storefront then accepts messages from and lets
  * frame it. Only an http(s) address makes one; anything else is "".
  */
-export function previewAddress(storefront, key, editorOrigin) {
+export function previewAddress(storefront, key, editorOrigin, path = "/") {
     let url;
     try {
         url = new URL(storefront);
@@ -233,7 +233,7 @@ export function previewAddress(storefront, key, editorOrigin) {
         return "";
     }
     if (url.protocol !== "https:" && url.protocol !== "http:") return "";
-    const out = new URL("/", url.origin);
+    const out = new URL(path || "/", url.origin);
     out.searchParams.set("preview", key);
     if (editorOrigin) out.searchParams.set("editor", editorOrigin);
     return out.href;
@@ -310,4 +310,68 @@ export function absoluteMedia(doc, origin) {
         return v;
     };
     return { ...doc, sections: fix(JSON.parse(JSON.stringify(doc.sections ?? [])), null) };
+}
+
+// ------------------------------------------------------------ page templates (D128)
+
+/**
+ * The pages a shop arranges, in the Themes screen's order. key is the
+ * engine's; route is the screen under /dash/themes. A product or collection
+ * page is a template: one document every product, or every collection, is
+ * drawn in, around the catalogue's own core.
+ */
+export const PAGES = [
+    { key: "home", route: "homepage", title: "Homepage", noun: "home page", icon: "ri-home-4-line" },
+    { key: "product", route: "product", title: "Product page", noun: "product page", icon: "ri-shopping-bag-3-line" },
+    { key: "collection", route: "collection", title: "Collection page", noun: "collection page", icon: "ri-layout-grid-line" },
+];
+
+export function pageMeta(key) {
+    return PAGES.find((p) => p.key === key);
+}
+
+/** The section types the shop may add to page: those allowed there, never its fixed core. */
+export function libraryFor(registry, page) {
+    return registry.filter((t) => !t.fixed && (!t.pages?.length || t.pages.includes(page)));
+}
+
+/** Whether section is its page's core: always shown, never removed or copied. */
+export function isFixed(section, registry) {
+    return !!sectionType(section?.type, registry)?.fixed;
+}
+
+/**
+ * The storefront path the preview opens for page: the home page, or the
+ * product or collection the shop picked to see the template on; "" until
+ * one is picked.
+ */
+export function previewPath(page, subject) {
+    if (page === "home") return "/";
+    if (!subject?.slug) return "";
+    return `/${page === "product" ? "products" : "collections"}/${encodeURIComponent(subject.slug)}`;
+}
+
+const pad = (n) => String(n).padStart(2, "0");
+
+/** A time as a datetime-local box writes it, in this browser's zone. */
+export function localInputValue(date) {
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** What a datetime-local box holds, as a time; null for empty or malformed. */
+export function fromLocalInput(value) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value ?? "");
+    if (!m) return null;
+    const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+    return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** What the editor says of a page's pending schedule; "" for none. */
+export function scheduleLine(scheduled, when) {
+    if (!scheduled) return "";
+    let out = `Publishes ${when(new Date(scheduled.publish_at))}`;
+    if (scheduled.scheduled_by) out += `, set by ${scheduled.scheduled_by}`;
+    out += ".";
+    if (scheduled.outdated) out += " Edits since are not in it: schedule again to include them.";
+    return out;
 }

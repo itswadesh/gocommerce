@@ -556,6 +556,8 @@ export const layouts = {
     revisions: (page) => api.get(`/api/admin/x/layouts/${page}/revisions`),
     rollback: (page, revision) => api.post(`/api/admin/x/layouts/${page}/rollback`, { revision }),
     preview: (page) => api.post(`/api/admin/x/layouts/${page}/preview`, {}),
+    schedule: (page, version, publishAt) => api.post(`/api/admin/x/layouts/${page}/schedule`, { version, publish_at: publishAt }),
+    cancelSchedule: (page) => api.delete(`/api/admin/x/layouts/${page}/schedule`),
     plugin: () => api.get("/api/admin/plugins/layouts"),
     switchOn: () => api.patch("/api/admin/plugins/layouts", { enabled: true }),
 };
