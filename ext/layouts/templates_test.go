@@ -39,8 +39,8 @@ func TestTheProductPageIsArrangedAroundItsCore(t *testing.T) {
 	for _, s := range st.Document.Sections {
 		types = append(types, s.Type)
 	}
-	if st.Saved || strings.Join(types, ",") != "main-product,product-reviews,related-products" {
-		t.Fatalf("the product page's starter = %v, want the storefront's own page: core, reviews, related", types)
+	if st.Saved || strings.Join(types, ",") != "main-product,cross-sells,product-reviews,related-products" {
+		t.Fatalf("the product page's starter = %v, want the storefront's own page: core, its suggestions, reviews, related", types)
 	}
 	publicPage(t, app, "/x/layouts/product", http.StatusNotFound)
 
@@ -48,6 +48,7 @@ func TestTheProductPageIsArrangedAroundItsCore(t *testing.T) {
 	refused(t, app, "product", sections(core("m", "main-product"), core("n", "main-product")), "once")
 	refused(t, app, "home", sections(core("m", "main-product")), "home page")
 	refused(t, app, "home", sections(core("r", "product-reviews")), "home page")
+	refused(t, app, "home", sections(core("x", "cross-sells")), "home page")
 	refused(t, app, "collection", sections(core("m", "main-product"), core("c", "main-collection")), "collection page")
 
 	hidden := core("m", "main-product")

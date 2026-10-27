@@ -85,6 +85,9 @@ func (a *App) handleAddLineItem(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		VariantID int64 `json:"variant_id"`
 		Quantity  int   `json:"quantity"`
+		// AddOnID adds an add-on at its offer price instead (D133); the
+		// add-on names its own variant.
+		AddOnID int64 `json:"add_on_id"`
 	}
 	if err := DecodeJSON(w, r, &in); err != nil {
 		RespondError(w, r, err)
@@ -93,7 +96,13 @@ func (a *App) handleAddLineItem(w http.ResponseWriter, r *http.Request) {
 	if in.Quantity == 0 {
 		in.Quantity = 1
 	}
-	cart, err := a.carts.AddLine(r.Context(), r.PathValue("cartId"), in.VariantID, in.Quantity)
+	var cart *Cart
+	var err error
+	if in.AddOnID != 0 {
+		cart, err = a.carts.AddAddOn(r.Context(), r.PathValue("cartId"), in.AddOnID, in.Quantity)
+	} else {
+		cart, err = a.carts.AddLine(r.Context(), r.PathValue("cartId"), in.VariantID, in.Quantity)
+	}
 	if err != nil {
 		RespondError(w, r, err)
 		return

@@ -349,6 +349,9 @@ type ProductQuery struct {
 	// switches the ordering to the collection's own, which is the order an
 	// operator curated by hand.
 	CollectionID int64
+	// IDs narrows to these products, for a caller that already knows which
+	// it wants (cross-sells, D133). Empty does not narrow.
+	IDs []int64
 	// Attributes narrows by the answers a category asked for. Several values of
 	// one attribute widen the result and several attributes narrow it — see
 	// AttributeFilter.
@@ -1354,6 +1357,10 @@ func productFilters(q ProductQuery, args []any) (join string, where []string, ou
 		args = append(args, q.CollectionID)
 		join = fmt.Sprintf(
 			" JOIN product_collections pc ON pc.product_id = p.id AND pc.collection_id = $%d", len(args))
+	}
+	if len(q.IDs) > 0 {
+		args = append(args, int64Array(q.IDs))
+		where = append(where, fmt.Sprintf("p.id = ANY($%d::bigint[])", len(args)))
 	}
 	if q.Status != "" {
 		args = append(args, q.Status)

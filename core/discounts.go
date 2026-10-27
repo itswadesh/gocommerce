@@ -150,6 +150,10 @@ type Discount struct {
 	UsageLimit   *int `json:"usage_limit,omitempty"`
 	UsedCount    int  `json:"used_count"`
 	OncePerEmail bool `json:"once_per_email"`
+	// Listed puts the code in the basket's list of offers a shopper can apply
+	// with one tap (D133). Off unless the shop says so: an unlisted code stays
+	// known only to whoever was given it.
+	Listed bool `json:"listed"`
 
 	Active    bool      `json:"active"`
 	Metadata  Metadata  `json:"metadata"`
@@ -237,6 +241,7 @@ type DiscountInput struct {
 	EndsAt           *time.Time `json:"ends_at"`
 	UsageLimit       *int       `json:"usage_limit"`
 	OncePerEmail     bool       `json:"once_per_email"`
+	Listed           *bool      `json:"listed"`
 	Active           *bool      `json:"active"`
 	Metadata         Metadata   `json:"metadata"`
 	// sample marks a discount of the sample shop (D96), and only the engine
@@ -267,6 +272,7 @@ type DiscountPatch struct {
 	// key was not in the body".
 	UsageLimit   NullableInt64 `json:"usage_limit"`
 	OncePerEmail *bool         `json:"once_per_email"`
+	Listed       *bool         `json:"listed"`
 	Active       *bool         `json:"active"`
 	Metadata     *Metadata     `json:"metadata"`
 }
@@ -284,7 +290,7 @@ type DiscountQuery struct {
 
 const discountColumns = `id, coalesce(code, ''), title, kind,
 	coalesce(value_bp, 0), coalesce(value_minor, 0), scope, min_subtotal_minor,
-	starts_at, ends_at, usage_limit, used_count, once_per_email, active,
+	starts_at, ends_at, usage_limit, used_count, once_per_email, listed, active,
 	metadata, created_at, updated_at`
 
 func scanDiscount(row interface{ Scan(...any) error }) (*Discount, error) {
@@ -292,7 +298,7 @@ func scanDiscount(row interface{ Scan(...any) error }) (*Discount, error) {
 	var meta []byte
 	if err := row.Scan(&d.ID, &d.Code, &d.Title, &d.Kind, &d.ValueBP, &d.ValueMinor,
 		&d.Scope, &d.MinSubtotalMinor, &d.StartsAt, &d.EndsAt, &d.UsageLimit,
-		&d.UsedCount, &d.OncePerEmail, &d.Active, &meta, &d.CreatedAt, &d.UpdatedAt); err != nil {
+		&d.UsedCount, &d.OncePerEmail, &d.Listed, &d.Active, &meta, &d.CreatedAt, &d.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if err := scanMetadata(meta, &d.Metadata); err != nil {
@@ -586,13 +592,13 @@ func (s *Discounts) Create(ctx context.Context, in DiscountInput) (*Discount, er
 		d, derr = scanDiscount(tx.QueryRowContext(ctx, `
 			INSERT INTO discounts (code, title, kind, value_bp, value_minor, scope,
 			                       min_subtotal_minor, starts_at, ends_at, usage_limit,
-			                       once_per_email, active, metadata, sample)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+			                       once_per_email, active, metadata, sample, listed)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 			RETURNING `+discountColumns,
 			nullString(strings.TrimSpace(in.Code)), in.Title, in.Kind,
 			nullInt(in.ValueBP), nullInt64(in.ValueMinor), in.Scope,
 			in.MinSubtotalMinor, in.StartsAt, in.EndsAt, in.UsageLimit,
-			in.OncePerEmail, active, meta, in.sample))
+			in.OncePerEmail, active, meta, in.sample, in.Listed != nil && *in.Listed))
 		if derr != nil {
 			return translateDiscountErr(derr)
 		}
@@ -881,6 +887,9 @@ func (s *Discounts) applyPatch(ctx context.Context, tx *sql.Tx, current *Discoun
 	if patch.OncePerEmail != nil {
 		add("once_per_email", *patch.OncePerEmail)
 	}
+	if patch.Listed != nil {
+		add("listed", *patch.Listed)
+	}
 	if patch.Active != nil {
 		add("active", *patch.Active)
 	}
@@ -913,6 +922,7 @@ func (s *Discounts) applyPatch(ctx context.Context, tx *sql.Tx, current *Discoun
 		"value_bp": current.ValueBP, "value_minor": current.ValueMinor,
 		"scope": current.Scope, "active": current.Active,
 		"once_per_email": current.OncePerEmail,
+		"listed":         current.Listed,
 		"target_ids":     current.TargetIDs,
 	} {
 		if _, changed := after[col]; changed {
