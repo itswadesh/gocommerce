@@ -78,6 +78,10 @@
     ];
 
     let ledgers = $state(null);
+    /* The names as last saved: the files are built from those, so an edit not
+       yet saved must not look as if it were in them. */
+    let savedLedgers = $state("");
+    const unsaved = $derived(ledgers !== null && JSON.stringify(ledgers) !== savedLedgers);
     let saving = $state(false);
     let downloading = $state("");
 
@@ -96,6 +100,7 @@
     async function loadLedgers() {
         try {
             ledgers = await api.get(`${TALLY}/ledgers`);
+            savedLedgers = JSON.stringify(ledgers);
         } catch (err) {
             if (err.status !== 404) toast.error(err);
             ledgers = null;
@@ -107,6 +112,7 @@
         saving = true;
         try {
             ledgers = await api.put(`${TALLY}/ledgers`, ledgers);
+            savedLedgers = JSON.stringify(ledgers);
             toast.success("Ledger names saved");
         } catch (err) {
             toast.error(err);
@@ -204,14 +210,16 @@
                             <div class="col-12">
                                 <div class="field-help m-b-sm">
                                     Import the ledgers first, then the vouchers: in TallyPrime, Alt+O, Masters,
-                                    then Alt+O, Transactions. Importing a voucher again replaces it.
+                                    then Alt+O, Transactions. Importing a voucher again replaces it when
+                                    Tally's import is set to overwrite a voucher with the same GUID.
+                                    {#if unsaved}<strong>Save the ledger names below to use them in the files.</strong>{/if}
                                 </div>
                                 <div class="inline-flex gap-sm">
                                     {#each ["ledgers", "vouchers"] as part, i (part)}
                                         <button
                                             type="button"
                                             class="btn sm secondary"
-                                            disabled={!from || !to || !!downloading}
+                                            disabled={!from || !to || !!downloading || unsaved}
                                             aria-busy={downloading === part}
                                             onclick={() => exportPart(part)}
                                         >
