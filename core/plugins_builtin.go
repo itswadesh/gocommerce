@@ -159,4 +159,14 @@ var builtinPlugins = []PluginDef{
 			{Key: "items", Label: "Notices", Kind: "textarea", Public: true, Required: true, Help: "One per line."},
 		},
 	},
+	// The sold count (D134). The engine applies it, so its setting is not
+	// public: a storefront reads sold_at_least on the product.
+	{
+		Key: SoldCountPluginKey, Home: homeStorefrontExtras, Title: "Sold count", Icon: "ri-fire-line", Category: "storefront",
+		Description: "Product pages say how many have sold, rounded down: \"30+ sold\", \"45k+ sold\". Counted from confirmed orders that were not cancelled or refunded, sample orders left out, and refreshed every few minutes.",
+		Fields: []PluginField{
+			{Key: "threshold", Label: "Show from", Kind: "number", Default: defaultSoldThreshold,
+				Help: "A product shows its count once it has sold at least this many. Under it, nothing is shown."},
+		},
+	},
 }

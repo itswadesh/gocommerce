@@ -32,6 +32,7 @@ func TestThePluginsScreenListsOnlyAddOns(t *testing.T) {
 		"layouts":         "/dash/themes",
 		"hello-bar":       "/dash/themes/extras",
 		"news-ticker":     "/dash/themes/extras",
+		"sold-count":      "/dash/themes/extras",
 		"trust-badges":    "/dash/themes/extras",
 		"social-sharing":  "/dash/themes/extras",
 		"telegram-alerts": "/dash/notifications/telegram",

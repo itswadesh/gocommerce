@@ -100,6 +100,8 @@ func coreMigrations() []Migration {
 		WithholdFromReports("0082_withhold_event_payloads_from_reports", "outbox_events.payload"),
 		{ID: "0083_add_ons_and_cross_sells", SQL: migration0083AddOnsAndCrossSells},
 		ScopeMigration("0084_scope_add_ons", "product_add_ons", "product_cross_sells"),
+		{ID: "0085_product_sales_counts", SQL: migration0085ProductSalesCounts},
+		ScopeMigration("0086_scope_sales_counts", "product_sales_counts"),
 	}
 }
 
