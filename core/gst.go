@@ -133,15 +133,6 @@ func gstinCheck(g string) byte {
 // State is where the GSTIN is registered, from its first two digits.
 func (g GSTIN) State() GSTState { return gstByCode[string(g)[:2]] }
 
-// PAN is the holder's income-tax number, characters 3 to 12.
-func (g GSTIN) PAN() string { return string(g)[2:12] }
-
-// GSTStateByCode looks up a two-digit GST code, retired ones included.
-func GSTStateByCode(code string) (GSTState, bool) {
-	s, ok := gstByCode[code]
-	return s, ok
-}
-
 // GSTStateOfAddress is the GST state an Indian address is in, by any spelling
 // StateCode knows ("Odisha", "OR", "IN-OD"). False outside India and for a
 // state it cannot place.

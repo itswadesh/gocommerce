@@ -31,8 +31,8 @@ func TestGSTINChecksum(t *testing.T) {
 		}
 	}
 	g, _ := ParseGSTIN("27AAPFU0939F1ZV")
-	if g.State().Name != "Maharashtra" || g.PAN() != "AAPFU0939F" {
-		t.Errorf("state %q, PAN %q", g.State().Name, g.PAN())
+	if g.State().Name != "Maharashtra" {
+		t.Errorf("state %q, want Maharashtra", g.State().Name)
 	}
 }
 
