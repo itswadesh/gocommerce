@@ -694,9 +694,11 @@ every install has them whether or not it can store uploads. They are under the
 | Banner: Apparel | [No Revisions](https://unsplash.com/photos/kWVImL5QxJI) |
 | Banner: For the home | [Eric Prouzet](https://unsplash.com/photos/5lUMTeo7-bE) |
 
-## Homepage
+## Themes and the homepage
 
-**Content → Homepage** (`ext/layouts`, D125) is the storefront's home page as
+**Content → Themes** shows the store's theme and the elements of it a shop
+arranges; the first is **Homepage** (`/dash/themes/homepage`, `ext/layouts`,
+D125), the storefront's home page as
 the shop arranges it: a list of sections read top to bottom — announcement
 bar, hero, product grid, image with text, text, benefits — any of them any
 number of times. **Add section** sits above the first row, between every two
