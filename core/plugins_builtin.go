@@ -159,14 +159,23 @@ var builtinPlugins = []PluginDef{
 			{Key: "items", Label: "Notices", Kind: "textarea", Public: true, Required: true, Help: "One per line."},
 		},
 	},
-	// The sold count (D134). The engine applies it, so its setting is not
-	// public: a storefront reads sold_at_least on the product.
+	// The sold count and the basket's store-wide suggestions (D134). The
+	// engine applies both, so neither setting is public: a storefront reads
+	// sold_at_least on the product and the basket's suggestions as they are.
 	{
 		Key: SoldCountPluginKey, Home: homeStorefrontExtras, Title: "Sold count", Icon: "ri-fire-line", Category: "storefront",
 		Description: "Product pages say how many have sold, rounded down: \"30+ sold\", \"45k+ sold\". Counted from confirmed orders that were not cancelled or refunded, sample orders left out, and refreshed every few minutes.",
 		Fields: []PluginField{
 			{Key: "threshold", Label: "Show from", Kind: "number", Default: defaultSoldThreshold,
 				Help: "A product shows its count once it has sold at least this many. Under it, nothing is shown."},
+		},
+	},
+	{
+		Key: CartSuggestionsPluginKey, Home: homeStorefrontExtras, Title: "Basket suggestions", Icon: "ri-shopping-basket-line", Category: "storefront",
+		Description: "The basket suggests products from one collection — cheap add-ons, best sellers — after the suggestions each product in it makes.",
+		Fields: []PluginField{
+			{Key: "collection", Label: "Collection", Kind: "collection", Required: true,
+				Help: "Its products are suggested in the collection's order, less what the basket already holds."},
 		},
 	},
 }

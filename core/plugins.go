@@ -70,7 +70,9 @@ type PluginDef struct {
 type PluginField struct {
 	Key   string `json:"key"`
 	Label string `json:"label"`
-	// Kind is text, textarea, secret, number, bool, select or url.
+	// Kind is text, textarea, secret, number, bool, select, url or
+	// collection. A collection is stored as its handle, as text is; the kind
+	// only tells the panel to offer the store's collections to pick from.
 	Kind    string   `json:"kind"`
 	Help    string   `json:"help,omitempty"`
 	Options []string `json:"options,omitempty"`
@@ -191,7 +193,7 @@ func (p *Plugins) register(def PluginDef) error {
 		}
 		seen[f.Key] = true
 		switch f.Kind {
-		case "text", "textarea", "secret", "number", "bool", "select", "url":
+		case "text", "textarea", "secret", "number", "bool", "select", "url", "collection":
 		default:
 			return fmt.Errorf("plugin %q: field %q has unknown kind %q", def.Key, f.Key, f.Kind)
 		}
