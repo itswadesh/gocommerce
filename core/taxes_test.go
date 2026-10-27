@@ -2,6 +2,8 @@ package gocommerce
 
 import (
 	"context"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -189,6 +191,66 @@ func TestTaxRateSpecificity(t *testing.T) {
 	}
 	if order4.Lines[0].Tax.Name != "Shirts" {
 		t.Errorf("tax = %+v, want the rule without a state", order4.Lines[0].Tax)
+	}
+}
+
+// A rule on one product beats every category rule, however specific, and
+// leaves the other products in the category alone.
+func TestTaxRuleForAProductOutranksItsCategory(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+
+	jewellery, err := app.Categories().Create(ctx, CategoryInput{Title: "Jewellery"})
+	if err != nil {
+		t.Fatalf("category: %v", err)
+	}
+	gold := simpleProduct(t, app, "TAX-GOLD", 10000, 5)
+	polish := simpleProduct(t, app, "TAX-POLISH", 10000, 5)
+	for _, p := range []*Product{gold, polish} {
+		if _, err := app.catalog.UpdateProduct(ctx, p.ID, ProductPatch{CategoryID: SetID(jewellery.ID)}); err != nil {
+			t.Fatalf("categorise: %v", err)
+		}
+	}
+	newTaxRate(t, app, TaxRateInput{
+		Name: "GST 18%", RateBP: 1800, Country: "IN", State: "OD", CategoryID: &jewellery.ID})
+	rule := newTaxRate(t, app, TaxRateInput{Name: "GST 3%", RateBP: 300, ProductID: &gold.ID})
+
+	order, err := checkoutTo(t, app, gold.DefaultVariant().ID, 1, "IN", "Odisha")
+	if err != nil {
+		t.Fatalf("checkout: %v", err)
+	}
+	if order.Lines[0].Tax.Name != "GST 3%" || order.Tax.AmountMinor != 300 {
+		t.Errorf("gold tax = %+v / %d, want the product's 3%% (300)", order.Lines[0].Tax, order.Tax.AmountMinor)
+	}
+	order, err = checkoutTo(t, app, polish.DefaultVariant().ID, 1, "IN", "Odisha")
+	if err != nil {
+		t.Fatalf("checkout: %v", err)
+	}
+	if order.Tax.AmountMinor != 1800 {
+		t.Errorf("polish tax = %d, want the category's 1800", order.Tax.AmountMinor)
+	}
+
+	list, err := app.Taxes().List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list[0].ID != rule.ID || list[0].ProductTitle != "Test TAX-GOLD" {
+		t.Errorf("the list starts with %+v, want the product rule with its product's title", list[0])
+	}
+	var audited bool
+	if err := app.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM admin_audit
+		WHERE action = $1 AND entity_id = $2 AND changes::text LIKE '%"product_id": ' || $3 || '%')`,
+		AuditTaxRateCreate, strconv.FormatInt(rule.ID, 10), strconv.FormatInt(gold.ID, 10)).Scan(&audited); err != nil {
+		t.Fatal(err)
+	}
+	if !audited {
+		t.Error("the audit row does not name the product")
+	}
+
+	_, err = app.Taxes().Create(ctx, TaxRateInput{
+		Name: "Both", RateBP: 500, CategoryID: &jewellery.ID, ProductID: &gold.ID})
+	if err == nil || !strings.Contains(err.Error(), "a category or a product, not both") {
+		t.Errorf("a rule with a category and a product = %v, want it refused", err)
 	}
 }
 
