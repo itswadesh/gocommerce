@@ -391,7 +391,7 @@ func (m *Module) Status(ctx context.Context, order *gocommerce.Order) (gocommerc
 // order, by the store order id it wrote into the notes.
 func (m *Module) madeFor(ctx context.Context, order *gocommerce.Order, razorpayOrderID string) (bool, error) {
 	var ro struct {
-		Notes map[string]any `json:"notes"`
+		Notes notes `json:"notes"`
 	}
 	if err := m.get(ctx, "/v1/orders/"+url.PathEscape(razorpayOrderID), &ro); err != nil {
 		return false, err
@@ -451,8 +451,8 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		Payload struct {
 			Payment struct {
 				Entity struct {
-					ID    string            `json:"id"`
-					Notes map[string]string `json:"notes"`
+					ID    string `json:"id"`
+					Notes notes  `json:"notes"`
 				} `json:"entity"`
 			} `json:"payment"`
 		} `json:"payload"`
@@ -463,10 +463,12 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	entity := event.Payload.Payment.Entity
-	orderID, _ := strconv.ParseInt(entity.Notes["order_id"], 10, 64)
-	// Razorpay has no per-delivery event id, so the payment id plus the event
-	// name is the natural idempotency key: the same payment being captured is
-	// the same fact however many times we are told about it.
+	noted, _ := entity.Notes["order_id"].(string)
+	orderID, _ := strconv.ParseInt(noted, 10, 64)
+	// The event name plus the payment id is the idempotency key rather than
+	// the X-Razorpay-Event-Id header: the same payment being captured is the
+	// same fact however many times, or under however many event ids, we are
+	// told about it. Refunds read the payment id back out of it.
 	eventKey := event.Event + ":" + entity.ID
 
 	res, err := m.db.ExecContext(r.Context(), `
@@ -481,18 +483,23 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK) // already handled
 		return
 	}
+	if orderID == 0 {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	// An event for another store's order: two stores on one provider account
 	// each receive every event. Acknowledged, and the claim given back, so it
 	// is left for the store whose order it is.
-	if orderID != 0 {
-		if _, err := m.app.Order().Get(r.Context(), orderID); errors.Is(err, gocommerce.ErrNotFound) {
-			m.releaseClaim(r.Context(), eventKey)
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-	}
-	if orderID == 0 {
+	order, err := m.app.Order().Get(r.Context(), orderID)
+	if errors.Is(err, gocommerce.ErrNotFound) {
+		m.releaseClaim(r.Context(), eventKey)
 		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if err != nil {
+		m.log.Error("could not read the order", "order_id", orderID, "error", err)
+		m.releaseClaim(r.Context(), eventKey)
+		http.Error(w, "could not read the order", http.StatusInternalServerError)
 		return
 	}
 
@@ -505,6 +512,14 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "payment.failed":
+		// Events arrive out of order: an earlier attempt's failure can come
+		// after the payment that settled the order. Recording it would be
+		// refused, and a refusal answered 500 is retried for a day.
+		if order.PaymentStatus == gocommerce.PaymentPaid || order.PaymentStatus == gocommerce.PaymentRefunded {
+			m.log.Info("ignored a Razorpay payment failure for a settled order",
+				"order_id", orderID, "payment", entity.ID, "payment_status", order.PaymentStatus)
+			break
+		}
 		if _, err := m.pay.MarkFailed(r.Context(), orderID, "razorpay reported a failed payment"); err != nil {
 			m.log.Error("could not mark the payment failed", "order_id", orderID, "error", err)
 			m.releaseClaim(r.Context(), eventKey)
@@ -513,6 +528,17 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// notes is a Razorpay entity's notes. Razorpay sends an empty JSON array
+// for none, and a note's value need not be a string.
+type notes map[string]any
+
+func (n *notes) UnmarshalJSON(b []byte) error {
+	if string(bytes.TrimSpace(b)) == "[]" {
+		return nil
+	}
+	return json.Unmarshal(b, (*map[string]any)(n))
 }
 
 func (m *Module) releaseClaim(ctx context.Context, id string) {
