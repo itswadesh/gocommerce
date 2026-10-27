@@ -3929,7 +3929,7 @@
                   },
                   "hs_code": {
                     "type": "string",
-                    "description": "Tariff number, 6 to 10 digits."
+                    "description": "Tariff number (HS or HSN), 4 to 10 digits."
                   },
                   "active": {
                     "type": "boolean"
@@ -16430,7 +16430,7 @@
           },
           "hs_code": {
             "type": "string",
-            "description": "Tariff number, 6 to 10 digits."
+            "description": "Tariff number (HS or HSN), 4 to 10 digits."
           },
           "active": {
             "type": "boolean"
@@ -16747,7 +16747,7 @@
           },
           "hs_code": {
             "type": "string",
-            "description": "Tariff number, 6 to 10 digits."
+            "description": "Tariff number (HS or HSN), 4 to 10 digits."
           },
           "active": {
             "type": "boolean",

@@ -99,8 +99,17 @@ func coreMigrations() []Migration {
 		// link, and an event is kept after it is published.
 		WithholdFromReports("0082_withhold_event_payloads_from_reports", "outbox_events.payload"),
 		{ID: "0083_tax_rate_product_target", SQL: migration0083TaxRateProductTarget},
+		{ID: "0084_four_digit_hs_code", SQL: migration0084FourDigitHSCode},
 	}
 }
+
+// M84 — an HS code may be 4 digits, the HSN an Indian business under ₹5 crore
+// turnover prints on a GST invoice (D126).
+const migration0084FourDigitHSCode = `
+ALTER TABLE variants DROP CONSTRAINT variants_hs_code_check;
+ALTER TABLE variants ADD CONSTRAINT variants_hs_code_check
+    CHECK (hs_code = '' OR hs_code ~ '^[0-9]{4,10}$');
+`
 
 // M83 — a tax rule may target one product (D126).
 //

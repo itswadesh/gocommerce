@@ -129,6 +129,13 @@ func TestCustomsFieldsAreNormalized(t *testing.T) {
 		}
 	}
 
+	// A 4-digit HSN, which is what a small Indian business prints on a GST
+	// invoice, is a code too, and the database takes it.
+	four := "61.09"
+	if updated, err := app.Products().UpdateVariant(ctx, v.ID, VariantPatch{HSCode: &four}); err != nil || updated.HSCode != "6109" {
+		t.Errorf("hs_code %q = %v / %+v, want 6109", four, err, updated)
+	}
+
 	// And what it refuses, with a reason rather than a constraint violation.
 	for _, bad := range []struct{ field, value string }{
 		{"hs_code", "61"},
