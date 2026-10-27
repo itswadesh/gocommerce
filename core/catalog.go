@@ -55,6 +55,10 @@ type Product struct {
 	// shows the lead one and wants to say there are more.
 	MediaCount int `json:"media_count,omitempty"`
 
+	// Media is the product's pictures and videos in order (D134), on the
+	// public product only, the one a product page reads; nil everywhere else.
+	Media []VariantImage `json:"media,omitempty"`
+
 	Options  []ProductOption `json:"options"`
 	Variants []Variant       `json:"variants"`
 	// Collections the product belongs to, carried on every read so the admin
@@ -544,6 +548,9 @@ func (c *Catalog) normalizeInput(in *ProductInput) error {
 	in.SEOTitle = strings.TrimSpace(in.SEOTitle)
 	in.SEODescription = strings.TrimSpace(in.SEODescription)
 	in.Tags = normalizeTags(in.Tags)
+	if err := normalizeProductMetadata(in.Metadata); err != nil {
+		return err
+	}
 
 	// The single-variant shorthand: a product with no options is still a
 	// product with one variant, the client just should not have to say so.
@@ -791,6 +798,9 @@ func (c *Catalog) UpdateProduct(ctx context.Context, id int64, patch ProductPatc
 		add("seo_description", strings.TrimSpace(*patch.SEODescription))
 	}
 	if patch.Metadata != nil {
+		if err := normalizeProductMetadata(*patch.Metadata); err != nil {
+			return nil, err
+		}
 		meta, err := patch.Metadata.value()
 		if err != nil {
 			return nil, Validationf("metadata is not valid JSON: %v", err)
