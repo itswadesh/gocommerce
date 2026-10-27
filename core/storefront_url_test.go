@@ -2,6 +2,7 @@ package gocommerce
 
 import (
 	"context"
+	"net/url"
 	"testing"
 )
 
@@ -17,12 +18,19 @@ func TestOrderMessagesLinkToTheTrackingPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	order := placeOrder(t, app, "LINK-1")
+	rec.mu.Lock()
+	rec.sent = nil
+	rec.mu.Unlock()
+	// The link opens the order by itself: it carries the order's access key,
+	// so the customer does not type their email again.
+	query := "?order=" + url.QueryEscape(order.Number) + "&key=" + url.QueryEscape(order.AccessToken)
 	link := func() string {
 		t.Helper()
 		rec.mu.Lock()
 		rec.sent = nil
 		rec.mu.Unlock()
-		if err := app.notifyOrder(ctx, EventOrderCreated, &OrderEvent{Number: "GC 64", Email: "asha@example.com"}); err != nil {
+		if err := app.notifyOrder(ctx, EventOrderCreated, &OrderEvent{OrderID: order.ID, Number: order.Number, Email: "asha@example.com"}); err != nil {
 			t.Fatal(err)
 		}
 		rec.mu.Lock()
@@ -39,7 +47,7 @@ func TestOrderMessagesLinkToTheTrackingPage(t *testing.T) {
 	}
 
 	app.cfg.BaseDomain = "shops.test"
-	if got, want := link(), "https://"+st.Slug+".shops.test/order-tracking?order=GC+64"; got != want {
+	if got, want := link(), "https://"+st.Slug+".shops.test/order-tracking"+query; got != want {
 		t.Errorf("link = %q, want %q", got, want)
 	}
 
@@ -54,7 +62,7 @@ func TestOrderMessagesLinkToTheTrackingPage(t *testing.T) {
 		`INSERT INTO store_domains (host, store_id, verified_at, is_primary) VALUES ('shop.example.com', $1, now(), true)`, st.ID); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := link(), "https://shop.example.com/order-tracking?order=GC+64"; got != want {
+	if got, want := link(), "https://shop.example.com/order-tracking"+query; got != want {
 		t.Errorf("with a domain the link = %q, want %q", got, want)
 	}
 }

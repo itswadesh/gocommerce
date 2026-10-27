@@ -18,3 +18,10 @@ test("a store with no address, or an order with no number, has no link", () => {
     assert.equal(orderTrackingURL(null, "64"), "");
     assert.equal(orderTrackingURL({ domain: "chillish.in" }, ""), "");
 });
+
+test("with the order's key the link opens the order by itself, number first", () => {
+    assert.equal(
+        orderTrackingURL({ domain: "chillish.in" }, "GC-000004", "a1b2"),
+        "https://chillish.in/order-tracking?order=GC-000004&key=a1b2",
+    );
+});

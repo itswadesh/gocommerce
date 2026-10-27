@@ -37,13 +37,23 @@ func (a *App) StorefrontURL(ctx context.Context) string {
 	return "https://" + host
 }
 
-// orderTrackingURL is the storefront page where a guest opens an order with
-// a code sent to its contact (D115), the number filled in. The link is no
-// credential: it names the order, and the code still has to come.
-func (a *App) orderTrackingURL(ctx context.Context, number string) string {
+// orderTrackingURL is the storefront page where a customer sees an order,
+// the number filled in and the order's access key beside it, so the link in
+// their email opens the order without asking for anything (owner, 2026-10-27).
+// The key is what the storefront already reads a guest's order with; an order
+// with none gets the page alone, where the number and email still open it.
+func (a *App) orderTrackingURL(ctx context.Context, orderID int64, number string) string {
 	base := a.StorefrontURL(ctx)
 	if base == "" || number == "" {
 		return ""
 	}
-	return base + "/order-tracking?" + url.Values{"order": {number}}.Encode()
+	link := base + "/order-tracking?order=" + url.QueryEscape(number)
+	var key string
+	if err := a.db.QueryRowContext(ctx, `SELECT access_token FROM orders WHERE id = $1`, orderID).Scan(&key); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		a.log.Warn("read the order's key for its link", "order", number, "err", err)
+	}
+	if key != "" {
+		link += "&key=" + url.QueryEscape(key)
+	}
+	return link
 }
