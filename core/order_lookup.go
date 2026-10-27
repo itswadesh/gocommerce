@@ -35,6 +35,11 @@ const (
 	orderLookupSendWait = 30 * time.Second
 )
 
+// orderOpensPerWindow is how many times one client (an IPv6 /64) may try an
+// order number and contact in an hour. Order numbers count up, so without it
+// the open route would walk a known address through every order in the shop.
+const orderOpensPerWindow = 20
+
 // lookupSends tracks the codes being delivered, so shutdown and tests can
 // wait for them. Package-level because Orders is a bare handle on the app.
 var lookupSends sync.WaitGroup
@@ -206,6 +211,34 @@ func (s *Orders) VerifyLookupCode(ctx context.Context, number, code string) (*Or
 	return &OrderLookup{Order: order, AccessToken: token}, nil
 }
 
+// OpenWithContact returns the order and its access token when contact is the
+// email or phone on it: the storefront's way in without a code (owner,
+// 2026-10-27, reversing D115's code). An unknown number and a wrong contact
+// are one answer, so the reply says nothing about which orders exist.
+func (s *Orders) OpenWithContact(ctx context.Context, number, contact string) (*OrderLookup, error) {
+	none := NotFoundf("No order matches that number and email or phone. Check both and try again.")
+	var (
+		email, phone, token string
+	)
+	err := s.app.db.QueryRowContext(ctx,
+		`SELECT email, coalesce(phone, ''), access_token FROM orders WHERE number = $1`,
+		strings.TrimSpace(number)).Scan(&email, &phone, &token)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, none
+	}
+	if err != nil {
+		return nil, Internalf(err, "look up order")
+	}
+	if !sameContact(contact, email, phone) {
+		return nil, none
+	}
+	order, err := s.GetForGuest(ctx, number, token)
+	if err != nil {
+		return nil, err
+	}
+	return &OrderLookup{Order: order, AccessToken: token}, nil
+}
+
 // sameContact is whether contact is the order's email, ignoring case and
 // spaces, or its phone, by the last ten digits so a country code and spacing
 // do not matter.
@@ -286,6 +319,33 @@ func (a *App) handleVerifyLookupCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out, err := a.orders.VerifyLookupCode(r.Context(), r.PathValue("number"), in.Code)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, out)
+}
+
+func (a *App) handleOpenOrder(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Contact string `json:"contact"`
+	}
+	if err := DecodeJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	if strings.TrimSpace(in.Contact) == "" {
+		RespondError(w, r, Validationf("contact is the email address or phone number on the order"))
+		return
+	}
+	// Every well-formed try counts, matched or not: a limit on failures alone
+	// would say which tries matched.
+	if _, ok := a.orderOpens.take(limitKey(clientIP(r)), time.Now()); !ok {
+		RespondError(w, r, &APIError{Status: http.StatusTooManyRequests, Code: "too_many_requests",
+			Message: "Too many tries. Wait a while and try again."})
+		return
+	}
+	out, err := a.orders.OpenWithContact(r.Context(), r.PathValue("number"), in.Contact)
 	if err != nil {
 		RespondError(w, r, err)
 		return
