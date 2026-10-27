@@ -12,7 +12,7 @@
      * unlocked laptop should not be enough to take the account over.
      */
     import { auth, getRecord } from "$lib/api.js";
-    import { rightLabel } from "$lib/rights.js";
+    import { rightLabel, rightsSummary } from "$lib/rights.js";
     import { formatDate } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import Confirm from "$lib/components/Confirm.svelte";
@@ -187,20 +187,29 @@
                 </div>
             </div>
 
-            <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">What you may do</h2>
-            <div class="list m-b-base">
-                {#each me.rights ?? [] as right (right)}
-                    <div class="list-item">
-                        <i class="ri-check-line" aria-hidden="true"></i>
-                        <span class="txt" title={right}>{rightLabel(right)}</span>
-                    </div>
-                {/each}
-                {#if !(me.rights ?? []).length}
-                    <div class="list-item txt-hint">
-                        Nothing yet — ask an owner to give you a role.
-                    </div>
-                {/if}
-            </div>
+            <details class="map-fold tw:mt-6 m-b-base">
+                <summary>
+                    <h2 class="map-fold-title tw:text-sm tw:m-0">What you may do</h2>
+                    <span class="txt-hint txt-sm">
+                        {rightsSummary(me.rights)} · {(me.rights ?? []).length}
+                        {(me.rights ?? []).length === 1 ? "right" : "rights"}
+                    </span>
+                    <i class="ri-arrow-down-s-line map-fold-chevron" aria-hidden="true"></i>
+                </summary>
+                <div class="list tw:mt-3">
+                    {#each me.rights ?? [] as right (right)}
+                        <div class="list-item">
+                            <i class="ri-check-line" aria-hidden="true"></i>
+                            <span class="txt" title={right}>{rightLabel(right)}</span>
+                        </div>
+                    {/each}
+                    {#if !(me.rights ?? []).length}
+                        <div class="list-item txt-hint">
+                            Nothing yet — ask an owner to give you a role.
+                        </div>
+                    {/if}
+                </div>
+            </details>
 
             <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Change your details</h2>
             <form onsubmit={save} class="m-b-base">
