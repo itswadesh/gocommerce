@@ -155,6 +155,17 @@ func TestABadPageIsRefusedWithItsReason(t *testing.T) {
 	}
 }
 
+// On by default: a shop that publishes a page sees it on the storefront
+// without first finding a switch, and until it publishes the storefront still
+// draws its built-in home page.
+func TestTheEditorIsOnUntilSwitchedOff(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	publicPage(t, app, "/x/layouts/home", http.StatusNotFound)
+	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 0, "document": sections(hero("a", "One"))}, http.StatusOK)
+	adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/publish", map[string]any{"version": 1}, http.StatusOK)
+	publicPage(t, app, "/x/layouts/home", http.StatusOK)
+}
+
 // Switched off, the storefront is told there is no arranged page even when
 // one is published, and draws its built-in home page.
 func TestTheSwitchHidesThePublishedPage(t *testing.T) {
