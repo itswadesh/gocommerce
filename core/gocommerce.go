@@ -831,6 +831,9 @@ func (a *App) runSweepOnce(ctx context.Context) {
 		if _, err := a.orders.SweepUnpaid(ctx); err != nil {
 			a.log.Error("unpaid order sweep failed", "error", err)
 		}
+		if err := a.catalog.RefreshSalesCounts(ctx); err != nil {
+			a.log.Error("sales count refresh failed", "error", err)
+		}
 		return nil
 	})
 }

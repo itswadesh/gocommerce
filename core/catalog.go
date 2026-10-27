@@ -55,9 +55,12 @@ type Product struct {
 	// shows the lead one and wants to say there are more.
 	MediaCount int `json:"media_count,omitempty"`
 
-	// Media is the product's pictures and videos in order (D134), on the
-	// public product only, the one a product page reads; nil everywhere else.
-	Media []VariantImage `json:"media,omitempty"`
+	// Media is the product's pictures and videos in order, and SoldAtLeast
+	// the sold count rounded down (D134). Both are on the public product only,
+	// the one a product page reads; nil everywhere else. SoldAtLeast is absent
+	// unless the shop shows counts and this product has passed its threshold.
+	Media       []VariantImage `json:"media,omitempty"`
+	SoldAtLeast *int64         `json:"sold_at_least,omitempty"`
 
 	Options  []ProductOption `json:"options"`
 	Variants []Variant       `json:"variants"`

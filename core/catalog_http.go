@@ -213,10 +213,14 @@ func (a *App) respondPublicProduct(w http.ResponseWriter, r *http.Request, p *Pr
 		return
 	}
 	a.translateProducts(r, []*Product{p})
-	// The gallery is the product page's, so it is read here and not on every
-	// listing row.
+	// The gallery and the sold count are the product page's, so they are read
+	// here and not on every listing row.
 	var err error
 	if p.Media, err = a.catalog.productGallery(r.Context(), p.ID); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	if p.SoldAtLeast, err = a.catalog.soldAtLeast(r.Context(), p.ID); err != nil {
 		RespondError(w, r, err)
 		return
 	}

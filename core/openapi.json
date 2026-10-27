@@ -17004,6 +17004,11 @@
               "$ref": "#/components/schemas/VariantImage"
             }
           },
+          "sold_at_least": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many have sold, rounded down to tens under 100, hundreds under 1,000 and thousands above: confirmed orders not cancelled or refunded, sample orders left out (D134). On the public product only, and only when the shop shows sold counts and the product has passed its threshold."
+          },
           "options": {
             "type": "array",
             "items": {
