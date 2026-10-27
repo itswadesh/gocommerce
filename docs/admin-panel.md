@@ -698,31 +698,52 @@ every install has them whether or not it can store uploads. They are under the
 
 **Content → Themes** shows the store's theme and the elements of it a shop
 arranges; the first is **Homepage** (`/dash/themes/homepage`, `ext/layouts`,
-D125), the storefront's home page as
-the shop arranges it: a list of sections read top to bottom — announcement
-bar, hero, product grid, image with text, text, benefits — any of them any
-number of times. **Add section** sits above the first row, between every two
-and below the last, and puts the chosen type exactly there. Each row moves up
-and down, is duplicated, hidden (its settings kept) or removed, and opens a
-drawer whose form is drawn from the type's fields in the engine's registry:
-pictures from Files, products and collections from the same picker discounts
-use, lists of benefits with their own add and move.
+D125, D126), the storefront's home page as the shop arranges it: a list of
+sections read top to bottom — announcement bar, hero, product grid, image with
+text, text, benefits — any of them any number of times. Forms are drawn from
+each type's fields in the engine's registry: pictures from Files, products and
+collections from the same picker discounts use, lists of benefits with their
+own add and move.
 
-Edits stay on the screen until **Save draft**; the storefront changes only on
-**Publish**, which keeps every published version under **History**, where an
-earlier one can be rolled back to (it goes live again as a new version).
-**Preview** opens the storefront in a new tab with a 30-minute key for the
-saved draft, at the store's primary verified domain, or an address typed once
-and remembered by the browser. A save made over somebody else's newer one is
-refused, and the screen offers to reload.
+On a computer the screen is a visual editor. The sections are on the left:
+drag one by its handle, or focus the handle and use the arrow keys, to move
+it; the eye hides it (its settings kept); clicking one opens its settings in
+the same column, with duplicate and remove. **Add section** at the bottom puts
+the chosen type after the open section, or at the end. Beside them is the
+store's real storefront in a frame, at desktop or phone width: each edit shows
+there as it is typed, before it is saved, and clicking a section in the frame
+opens its settings. On a phone the screen is the list — **Add section** between
+every two rows, settings in a drawer — and **Open preview** opens the storefront
+in a tab.
+
+Every edit saves the draft by itself a moment after the last change, and again
+on leaving the screen; the header says **Saving…**, **Saved**, or **Couldn't
+save** with a retry. **Undo** and **Redo** (Ctrl/Cmd+Z, Shift+Z, outside a text
+field) walk the edits made since the screen opened. **Reset** throws the draft
+away, back to the published page — or to the starting page when nothing is
+published — and Undo brings the changes back. A save over somebody else's newer
+one, from another tab or another person, is refused: the screen stops saving
+and offers to reload. The storefront changes only on **Publish**, which keeps
+every published version under **History**, where an earlier one can be rolled
+back to (it goes live again as a new version).
+
+The frame shows the store's primary verified domain, else its address under
+the base domain; the link button beside the width switch sets another address,
+remembered by this browser for this store. The panel lets only that store's
+own addresses, and the storefront origins the server lists in
+`GOCOMMERCE_CORS_ORIGINS`, be framed (its Content-Security-Policy is written
+per store), so an address that is none of those offers the preview in a tab
+instead. The storefront draws edits live only when it is a version that
+answers the editor; an older one shows the saved draft and reloads after each
+save.
 
 The `layouts` plugin starts on, so a shop's first publish is what the
 storefront shows; until then it keeps its built-in home page. Switched off in
 Plugins, the screen says so and the storefront goes back to the built-in page. Before
 the first save the screen shows that built-in page as sections — its words,
 not its stock pictures — to start from. Seeing the screen is `layouts.read`
-(managers and staff by default), saving, publishing, previewing and rolling
-back `layouts.write` (managers).
+(managers and staff by default); editing, resetting, publishing, previewing
+and rolling back are `layouts.write` (managers).
 
 ## Banners
 
