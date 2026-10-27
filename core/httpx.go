@@ -562,6 +562,7 @@ func (a *App) mountCoreRoutes() {
 	a.mountEventRoutes()
 	a.mountSettingsRoutes()
 	a.mountCartRoutes()
+	a.mountUpsellRoutes()
 	a.mountCheckoutRoutes()
 	a.mountOrderRoutes()
 	// Beside the orders, because a report is a reading of them.

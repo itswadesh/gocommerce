@@ -684,14 +684,15 @@ func translatePricingErr(err error) error {
 // cartLinePriceSQL is what a cart line costs now, for the statements that read
 // cart_line_items l joined to variants v and carts c: the price agreed on the
 // line when it has one (D68), otherwise the one resolved for the cart's
-// verified address (D66).
+// verified address (D66). An add-on line's offer price comes between the
+// two, while the offer holds (D133).
 //
 // Every reader of "the current price" goes through this, because the snapshot
 // is checked against it. A reader that forgot the agreed price would see an
 // agreed line as price_changed and refuse the order it was agreed for.
 func cartLinePriceSQL() string {
-	return `coalesce(l.agreed_price_minor, ` +
-		effectivePriceSQL("v.id", "l.quantity", "c.verified_email", "c.channel_id", "v.price_minor") + `)`
+	effective := effectivePriceSQL("v.id", "l.quantity", "c.verified_email", "c.channel_id", "v.price_minor")
+	return `coalesce(l.agreed_price_minor, ` + addOnPriceSQL(effective) + `, ` + effective + `)`
 }
 
 // effectivePriceSQL is PriceFor's rule as a SQL scalar expression.

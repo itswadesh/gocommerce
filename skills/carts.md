@@ -112,6 +112,39 @@ Quantity `0` removes the line rather than erroring, because that is what a
 quantity stepper stepping down to nothing means. A line id belonging to another
 cart is `404 — "line item %d is not in this cart"`, never someone else's data.
 
+## Add-ons, suggestions and what a basket is offered
+
+A product can offer **add-ons** (an order bump: "Complete the set") and
+**suggest** other products ("You may also like"), D133.
+
+```http
+GET  /api/add-ons?product_id=41                → the add-ons a shopper can buy
+POST /api/carts/<token>/line-items  {"add_on_id": 7}            → 200, the whole cart
+GET  /api/cross-sells?product_id=41            → the products it suggests
+GET  /api/carts/<token>/cross-sells            → what the basket's products suggest
+GET  /api/carts/<token>/offers                 → the listed discount codes, judged
+GET  /api/carts/<token>/free-shipping?country=IN  → how far from free delivery
+```
+
+An add-on is bought on **a line of its own** (`add_on_id` on the line), beside
+any ordinary line of the same variant. Its offer price is part of the price
+every reader uses (`cartLinePriceSQL`), and holds only while the product it is
+offered with is in the basket, for no more of it than there are of that
+product. So:
+
+- adding one with its product absent, or past that count, is a `409`;
+- `UpdateLine` and `RemoveLine` settle the add-on lines in the same
+  transaction: what no longer fits moves to the ordinary line, at its own
+  price, and nothing leaves the basket;
+- the shop withdrawing an offer reprices the line, which reads
+  `price_changed` and is refused at checkout until the shopper has seen it.
+
+An add-on with no offer price is only a suggestion, and `AddAddOn` adds it as
+an ordinary line. A discount code appears in the offers only when the shop
+ticked "Show in the basket's offers" (`listed`); an unlisted code is never
+shown. The free-delivery figure is read from the shipping rates, never typed
+twice.
+
 ## How to handle a price change before checkout
 
 Read the cart and act on the flags rather than waiting for the 409:

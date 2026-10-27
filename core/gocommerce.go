@@ -432,6 +432,7 @@ type App struct {
 	defaultStore string
 	media        *Media
 	discounts    *Discounts
+	upsells      *Upsells
 	locations    *Locations
 	invitations  *Invitations
 	taxes        *Taxes
@@ -713,6 +714,7 @@ func (a *App) buildServices() {
 	a.orderOpens = newWindowLimit(orderOpensPerWindow, time.Hour)
 	a.media = &Media{app: a}
 	a.discounts = &Discounts{app: a}
+	a.upsells = &Upsells{app: a}
 	a.locations = &Locations{app: a}
 	a.invitations = &Invitations{app: a}
 	a.taxes = &Taxes{app: a}

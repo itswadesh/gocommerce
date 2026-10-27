@@ -82,6 +82,16 @@ type CartLine struct {
 	Available    int   `json:"available"`
 	InStock      bool  `json:"in_stock"`
 	PriceChanged bool  `json:"price_changed"`
+
+	// AddOnID is the add-on this line was bought as (D133), and AddOnFor the
+	// product it is offered with; both zero on an ordinary line. The same
+	// variant can be in a basket twice: once at the offer price, beside the
+	// product, and once on its own.
+	AddOnID  int64 `json:"add_on_id,omitempty"`
+	AddOnFor int64 `json:"add_on_for,omitempty"`
+	// CompareAtPrice is the variant's "was" price, for a basket that shows
+	// what the shopper saves on it. Nil when the shop set none.
+	CompareAtPrice *Money `json:"compare_at_price,omitempty"`
 }
 
 // CartSummary is a cart as an operator sees it in a list: enough to judge
@@ -254,7 +264,10 @@ func (c *Carts) linesOf(ctx context.Context, cartID int64, currency string) (lin
 		       l.unit_price_minor,
 		       `+cartLinePriceSQL()+`,
 		       v.track_inventory,
-		       coalesce((SELECT sum(vs.on_hand - vs.reserved) FROM variant_stock vs WHERE vs.variant_id = v.id), 0), v.active
+		       coalesce((SELECT sum(vs.on_hand - vs.reserved) FROM variant_stock vs WHERE vs.variant_id = v.id), 0), v.active,
+		       coalesce(l.add_on_id, 0),
+		       coalesce((SELECT a.product_id FROM product_add_ons a WHERE a.id = l.add_on_id), 0),
+		       v.compare_at_price_minor
 		FROM cart_line_items l
 		JOIN variants v ON v.id = l.variant_id
 		JOIN products p ON p.id = v.product_id
@@ -273,10 +286,15 @@ func (c *Carts) linesOf(ctx context.Context, cartID int64, currency string) (lin
 		var currentPrice int64
 		var tracks, active bool
 		var available int
+		var compareAt sql.NullInt64
 		if err := rows.Scan(&l.ID, &l.VariantID, &l.ProductID, &l.SKU, &l.Title,
 			&l.Quantity, &l.UnitPrice.AmountMinor, &currentPrice, &tracks,
-			&available, &active); err != nil {
+			&available, &active, &l.AddOnID, &l.AddOnFor, &compareAt); err != nil {
 			return nil, 0, 0, err
+		}
+		if compareAt.Valid {
+			m := money(compareAt.Int64, currency)
+			l.CompareAtPrice = &m
 		}
 		l.UnitPrice.Currency = currency
 		l.Total = money(l.UnitPrice.AmountMinor*int64(l.Quantity), currency)
@@ -500,101 +518,7 @@ func (c *Carts) AddLine(ctx context.Context, tok string, variantID int64, qty in
 		if err != nil {
 			return err
 		}
-
-		var base int64
-		var active, tracks, oversell bool
-		var available int
-		err = tx.QueryRowContext(ctx, `
-			SELECT price_minor, active, track_inventory, continue_selling,
-			       coalesce((SELECT sum(on_hand - reserved) FROM variant_stock WHERE variant_id = $1), 0)
-			FROM variants WHERE id = $1`, variantID,
-		).Scan(&base, &active, &tracks, &oversell, &available)
-		if errors.Is(err, sql.ErrNoRows) {
-			return NotFoundf("variant %d does not exist", variantID)
-		}
-		if err != nil {
-			return err
-		}
-		if !active {
-			return Conflictf("that variant is not available")
-		}
-
-		var existing int
-		var storedPrice, agreedPrice sql.NullInt64
-		var cartEmail string
-		var cartChannel sql.NullInt64
-		// The verified address, not the typed one (D66): the price of a line is
-		// a statement about who is buying, and only the verified column has
-		// anything behind it.
-		err = tx.QueryRowContext(ctx, `
-			SELECT coalesce((SELECT quantity FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2), 0),
-			       (SELECT unit_price_minor FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2),
-			       (SELECT agreed_price_minor FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2),
-			       coalesce((SELECT verified_email FROM carts WHERE id = $1), ''),
-			       (SELECT channel_id FROM carts WHERE id = $1)`,
-			cartID, variantID).Scan(&existing, &storedPrice, &agreedPrice, &cartEmail, &cartChannel)
-		if err != nil {
-			return err
-		}
-		var channelID *int64
-		if cartChannel.Valid {
-			channelID = &cartChannel.Int64
-		}
-		if tracks && !oversell && available < existing+qty {
-			return Conflictf("only %d left in stock", available)
-		}
-
-		// What this line costs at the quantity it will hold once this call is
-		// applied — the resulting total rather than the units just added,
-		// because a quantity break is a statement about the line.
-		price, err := c.app.Pricing().priceFor(ctx, tx, variantID, existing+qty, cartEmail, channelID)
-		if err != nil {
-			return err
-		}
-
-		// Two things can move a line's price, and only one of them is the
-		// shopper's doing. Crossing a quantity break is theirs and needs no
-		// telling; the shop changing a price underneath them is not, and the
-		// snapshot diverging from the live price is exactly what stops checkout
-		// and asks them to look again.
-		//
-		// Repricing on every re-add loses the second, which is not a trade-off
-		// but a hole: adding one more of something silently accepted whatever
-		// the price had become since. TestAddLineKeepsTheOriginalPriceSnapshot
-		// caught it, having been written for the rule this replaced.
-		//
-		// So the two are told apart rather than conflated. What the line would
-		// cost *at the quantity it already had* says whether anything moved
-		// underneath: if it still matches the snapshot, the only change is the
-		// quantity and the new price is safe to take; if it does not, the price
-		// moved and the snapshot stays put for checkout to notice.
-		if existing > 0 && storedPrice.Valid {
-			atOldQuantity, err := c.app.Pricing().priceFor(ctx, tx, variantID, existing, cartEmail, channelID)
-			if err != nil {
-				return err
-			}
-			if atOldQuantity != storedPrice.Int64 {
-				price = storedPrice.Int64
-			}
-		}
-		// An agreed price is per unit and holds at any quantity (D68): it was
-		// agreed for this line, and neither a break nor a list moves it.
-		if agreedPrice.Valid {
-			price = agreedPrice.Int64
-		}
-
-		_, err = tx.ExecContext(ctx, `
-			INSERT INTO cart_line_items (cart_id, variant_id, quantity, unit_price_minor)
-			VALUES ($1, $2, $3, $4)
-			-- The price moves when the quantity does, and only then — see the
-			-- rule above this statement, which decides whether the value bound
-			-- here is the newly resolved price or the one already stored.
-			ON CONFLICT (store_id, cart_id, variant_id) DO UPDATE
-			SET quantity = cart_line_items.quantity + EXCLUDED.quantity,
-			    unit_price_minor = EXCLUDED.unit_price_minor,
-			    updated_at = now()`,
-			cartID, variantID, qty, price)
-		if err != nil {
+		if err := c.addOrdinaryTx(ctx, tx, cartID, variantID, qty); err != nil {
 			return err
 		}
 		return touchCart(ctx, tx, cartID, c.app.cfg.CartTTL)
@@ -603,6 +527,107 @@ func (c *Carts) AddLine(ctx context.Context, tok string, variantID int64, qty in
 		return nil, err
 	}
 	return c.GetByToken(ctx, tok)
+}
+
+// addOrdinaryTx adds qty of a variant to its ordinary line, the one not
+// bought as an add-on, inside the caller's transaction.
+func (c *Carts) addOrdinaryTx(ctx context.Context, tx *sql.Tx, cartID, variantID int64, qty int) error {
+	var base int64
+	var active, tracks, oversell bool
+	var available int
+	err := tx.QueryRowContext(ctx, `
+		SELECT price_minor, active, track_inventory, continue_selling,
+		       coalesce((SELECT sum(on_hand - reserved) FROM variant_stock WHERE variant_id = $1), 0)
+		FROM variants WHERE id = $1`, variantID,
+	).Scan(&base, &active, &tracks, &oversell, &available)
+	if errors.Is(err, sql.ErrNoRows) {
+		return NotFoundf("variant %d does not exist", variantID)
+	}
+	if err != nil {
+		return err
+	}
+	if !active {
+		return Conflictf("that variant is not available")
+	}
+
+	var existing, others int
+	var storedPrice, agreedPrice sql.NullInt64
+	var cartEmail string
+	var cartChannel sql.NullInt64
+	// The verified address, not the typed one (D66): the price of a line is
+	// a statement about who is buying, and only the verified column has
+	// anything behind it.
+	err = tx.QueryRowContext(ctx, `
+		SELECT coalesce((SELECT quantity FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2 AND add_on_id IS NULL), 0),
+		       (SELECT unit_price_minor FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2 AND add_on_id IS NULL),
+		       (SELECT agreed_price_minor FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2 AND add_on_id IS NULL),
+		       coalesce((SELECT verified_email FROM carts WHERE id = $1), ''),
+		       (SELECT channel_id FROM carts WHERE id = $1),
+		       -- The same variant bought as an add-on draws on the same shelf.
+		       coalesce((SELECT sum(quantity) FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2 AND add_on_id IS NOT NULL), 0)`,
+		cartID, variantID).Scan(&existing, &storedPrice, &agreedPrice, &cartEmail, &cartChannel, &others)
+	if err != nil {
+		return err
+	}
+	var channelID *int64
+	if cartChannel.Valid {
+		channelID = &cartChannel.Int64
+	}
+	if tracks && !oversell && available < existing+others+qty {
+		return Conflictf("only %d left in stock", available)
+	}
+
+	// What this line costs at the quantity it will hold once this call is
+	// applied — the resulting total rather than the units just added,
+	// because a quantity break is a statement about the line.
+	price, err := c.app.Pricing().priceFor(ctx, tx, variantID, existing+qty, cartEmail, channelID)
+	if err != nil {
+		return err
+	}
+
+	// Two things can move a line's price, and only one of them is the
+	// shopper's doing. Crossing a quantity break is theirs and needs no
+	// telling; the shop changing a price underneath them is not, and the
+	// snapshot diverging from the live price is exactly what stops checkout
+	// and asks them to look again.
+	//
+	// Repricing on every re-add loses the second, which is not a trade-off
+	// but a hole: adding one more of something silently accepted whatever
+	// the price had become since. TestAddLineKeepsTheOriginalPriceSnapshot
+	// caught it, having been written for the rule this replaced.
+	//
+	// So the two are told apart rather than conflated. What the line would
+	// cost *at the quantity it already had* says whether anything moved
+	// underneath: if it still matches the snapshot, the only change is the
+	// quantity and the new price is safe to take; if it does not, the price
+	// moved and the snapshot stays put for checkout to notice.
+	if existing > 0 && storedPrice.Valid {
+		atOldQuantity, err := c.app.Pricing().priceFor(ctx, tx, variantID, existing, cartEmail, channelID)
+		if err != nil {
+			return err
+		}
+		if atOldQuantity != storedPrice.Int64 {
+			price = storedPrice.Int64
+		}
+	}
+	// An agreed price is per unit and holds at any quantity (D68): it was
+	// agreed for this line, and neither a break nor a list moves it.
+	if agreedPrice.Valid {
+		price = agreedPrice.Int64
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO cart_line_items (cart_id, variant_id, quantity, unit_price_minor)
+		VALUES ($1, $2, $3, $4)
+		-- The price moves when the quantity does, and only then — see the
+		-- rule above this statement, which decides whether the value bound
+		-- here is the newly resolved price or the one already stored.
+		ON CONFLICT (store_id, cart_id, variant_id) WHERE add_on_id IS NULL DO UPDATE
+		SET quantity = cart_line_items.quantity + EXCLUDED.quantity,
+		    unit_price_minor = EXCLUDED.unit_price_minor,
+		    updated_at = now()`,
+		cartID, variantID, qty, price)
+	return err
 }
 
 // UpdateLine sets a line's quantity. Zero removes it, which is what a quantity
@@ -620,30 +645,40 @@ func (c *Carts) UpdateLine(ctx context.Context, tok string, lineID int64, qty in
 			return err
 		}
 		var variantID int64
-		err = tx.QueryRowContext(ctx,
-			`SELECT variant_id FROM cart_line_items WHERE id = $1 AND cart_id = $2`,
-			lineID, cartID).Scan(&variantID)
+		// offeredWith is how many of the product an add-on line is offered
+		// with are in the basket, or -1 for a line no offer limits (D133).
+		var offeredWith int
+		var addOnTitle, productTitle string
+		err = tx.QueryRowContext(ctx, `
+			SELECT l.variant_id,
+			       CASE WHEN a.id IS NULL OR a.price_minor IS NULL THEN -1
+			            ELSE (SELECT coalesce(sum(m.quantity), 0) FROM cart_line_items m JOIN variants mv ON mv.id = m.variant_id
+			                  WHERE m.cart_id = l.cart_id AND m.add_on_id IS NULL AND mv.product_id = a.product_id) END,
+			       coalesce((SELECT p.title FROM variants v JOIN products p ON p.id = v.product_id WHERE v.id = l.variant_id), ''),
+			       coalesce((SELECT p.title FROM products p WHERE p.id = a.product_id), '')
+			FROM cart_line_items l
+			LEFT JOIN product_add_ons a ON a.id = l.add_on_id AND a.variant_id = l.variant_id
+			WHERE l.id = $1 AND l.cart_id = $2`,
+			lineID, cartID).Scan(&variantID, &offeredWith, &addOnTitle, &productTitle)
 		if errors.Is(err, sql.ErrNoRows) {
 			return NotFoundf("line item %d is not in this cart", lineID)
 		}
 		if err != nil {
 			return err
 		}
-
-		var tracks, oversell bool
-		var available int
-		if err := tx.QueryRowContext(ctx,
-			`SELECT track_inventory, continue_selling, coalesce((SELECT sum(on_hand - reserved) FROM variant_stock WHERE variant_id = $1), 0)
-			 FROM variants WHERE id = $1`,
-			variantID).Scan(&tracks, &oversell, &available); err != nil {
-			return err
+		if offeredWith >= 0 && qty > offeredWith {
+			return Conflictf("the offer on %s is for one with each %s in the basket", addOnTitle, productTitle)
 		}
-		if tracks && !oversell && available < qty {
-			return Conflictf("only %d left in stock", available)
+		if err := checkVariantStock(ctx, tx, cartID, variantID, qty, lineID); err != nil {
+			return err
 		}
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE cart_line_items SET quantity = $2, updated_at = now() WHERE id = $1`,
 			lineID, qty); err != nil {
+			return err
+		}
+		// Fewer of a product can leave its add-ons outnumbering it.
+		if err := c.settleAddOns(ctx, tx, cartID); err != nil {
 			return err
 		}
 		return touchCart(ctx, tx, cartID, c.app.cfg.CartTTL)
@@ -668,6 +703,10 @@ func (c *Carts) RemoveLine(ctx context.Context, tok string, lineID int64) (*Cart
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
 			return NotFoundf("line item %d is not in this cart", lineID)
+		}
+		// A product taken out takes its add-ons' offer with it.
+		if err := c.settleAddOns(ctx, tx, cartID); err != nil {
+			return err
 		}
 		return touchCart(ctx, tx, cartID, c.app.cfg.CartTTL)
 	})

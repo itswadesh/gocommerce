@@ -813,13 +813,15 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "variant_id"
-                ],
                 "properties": {
                   "variant_id": {
                     "type": "integer",
                     "format": "int64"
+                  },
+                  "add_on_id": {
+                    "type": "integer",
+                    "format": "int64",
+                    "description": "Adds this add-on at its offer price instead of variant_id (D133). Refused while the product it is offered with is not in the basket, or would be outnumbered by it."
                   },
                   "quantity": {
                     "type": "integer",
@@ -7241,6 +7243,251 @@
         }
       }
     },
+    "/api/add-ons": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "A product's add-ons",
+        "description": "What the shop offers with a published product, ticked beside its buy button (D133): each a variant, optionally at an offer price that holds only while the product is in the same basket. Only add-ons that can be bought are listed. A draft product is a 404.",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The add-ons, in the shop's order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AddOn"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/cross-sells": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "What a product suggests",
+        "description": "The published products the shop chose to suggest with this one (\"you may also like\"), in its order, at their own prices (D133). Empty when none were chosen.",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The products.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Product"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/carts/{cartId}/cross-sells": {
+      "get": {
+        "tags": [
+          "cart"
+        ],
+        "summary": "What a basket's products suggest",
+        "description": "The cross-sells of the products in the basket, in the order they went in, less what the basket already holds (D133). Empty when none are curated.",
+        "parameters": [
+          {
+            "name": "cartId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The products.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Product"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/carts/{cartId}/offers": {
+      "get": {
+        "tags": [
+          "cart"
+        ],
+        "summary": "The discount codes a basket can apply",
+        "description": "The codes the shop listed (`listed` on a discount), live now and not used up, each judged against this basket without claiming anything: whether it applies and for how much, or how much more the basket needs (D133). An unlisted code is never shown.",
+        "parameters": [
+          {
+            "name": "cartId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The offers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CartOffer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/carts/{cartId}/free-shipping": {
+      "get": {
+        "tags": [
+          "cart"
+        ],
+        "summary": "How far a basket is from free delivery",
+        "description": "Read from the shop's own rates for the destination (the store's country when none is given): whether a free option applies now, or the smallest basket at which one starts and how much more that is (D133). A basket priced for a customer group is told only whether it qualifies.",
+        "parameters": [
+          {
+            "name": "cartId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "country",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The progress.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/FreeShipping"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/carts/{token}/discount": {
       "put": {
         "tags": [
@@ -12122,6 +12369,267 @@
         "responses": {
           "204": {
             "description": "Gone."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/products/{id}/add-ons": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "A product's add-ons",
+        "description": "Every add-on, including ones that cannot be bought right now (`item.live` false).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The add-ons.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AddOn"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Replace a product's add-ons",
+        "description": "The whole list, in order, at most ten. An add-on that stays keeps its id, so baskets holding it keep the offer; one that goes is withdrawn from every basket as a price change. A variant of the product itself, or one listed twice, is refused.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "add_ons": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "variant_id"
+                      ],
+                      "properties": {
+                        "variant_id": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "price_minor": {
+                          "type": "integer",
+                          "format": "int64",
+                          "nullable": true,
+                          "description": "The offer price; null sells it at its own price."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The add-ons as saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AddOn"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/products/{id}/cross-sells": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "What a product suggests",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The product ids, in order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "product_ids": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer",
+                            "format": "int64"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Replace what a product suggests",
+        "description": "The whole list, in order, at most 24. The product itself is refused.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "product_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "format": "int64"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The product ids as saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "product_ids": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer",
+                            "format": "int64"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
@@ -17081,6 +17589,130 @@
           }
         }
       },
+      "AddOn": {
+        "type": "object",
+        "description": "A variant offered with a product (D133).",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "product_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The product it is offered with."
+          },
+          "variant_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "offer_price": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ],
+            "nullable": true,
+            "description": "Its price bought with the product; null is its own price."
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "compare_at_price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "item": {
+            "type": "object",
+            "properties": {
+              "product_id": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "variant_label": {
+                "type": "string"
+              },
+              "sku": {
+                "type": "string"
+              },
+              "image_url": {
+                "type": "string"
+              },
+              "live": {
+                "type": "boolean"
+              },
+              "in_stock": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "CartOffer": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "value_bp": {
+            "type": "integer"
+          },
+          "value_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "min_subtotal_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "applies": {
+            "type": "boolean"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "free_shipping": {
+            "type": "boolean"
+          },
+          "remaining": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "FreeShipping": {
+        "type": "object",
+        "properties": {
+          "qualifies": {
+            "type": "boolean"
+          },
+          "threshold": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "remaining": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "subtotal": {
+            "$ref": "#/components/schemas/Money"
+          }
+        }
+      },
       "CartLine": {
         "type": "object",
         "properties": {
@@ -17115,6 +17747,19 @@
             "$ref": "#/components/schemas/Money"
           },
           "current_price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "add_on_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The add-on this line was bought as (D133); absent on an ordinary line. The same variant can also have an ordinary line."
+          },
+          "add_on_for": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The product the add-on is offered with."
+          },
+          "compare_at_price": {
             "$ref": "#/components/schemas/Money"
           },
           "price_changed": {
@@ -18357,6 +19002,10 @@
             "type": "integer",
             "description": "Read-only: a fact about what happened, not a setting."
           },
+          "listed": {
+            "type": "boolean",
+            "description": "Shown in a basket's offers (GET /api/carts/{cartId}/offers) for a shopper to apply with one tap (D133). False keeps the code known only to whoever was given it."
+          },
           "once_per_email": {
             "type": "boolean",
             "description": "Per email, not per customer, and named so. Guest checkout is permanent (D22), so there is no customer to count against — this is a deterrent, not a control."
@@ -18501,6 +19150,10 @@
             "type": "integer",
             "nullable": true,
             "description": "How many times the code may be redeemed in total. Absent leaves a stored limit alone; an explicit null removes it, so a promotion can be reopened without recreating it. Zero is refused: a limit of none is null, not 0."
+          },
+          "listed": {
+            "type": "boolean",
+            "description": "Shown in a basket's offers (GET /api/carts/{cartId}/offers) for a shopper to apply with one tap (D133). False keeps the code known only to whoever was given it."
           },
           "once_per_email": {
             "type": "boolean",

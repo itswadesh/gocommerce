@@ -537,6 +537,7 @@ func Starter(page string) Document {
 	case "product":
 		return Document{SchemaVersion: schemaVersion, Theme: Themes[0].ID, Sections: []Section{
 			{ID: "product", Type: "main-product", Enabled: true, Settings: map[string]any{}},
+			{ID: "cross-sells", Type: "cross-sells", Enabled: true, Settings: map[string]any{}},
 			{ID: "reviews", Type: "product-reviews", Enabled: true, Settings: map[string]any{}},
 			{ID: "related", Type: "related-products", Enabled: true, Settings: map[string]any{}},
 		}}

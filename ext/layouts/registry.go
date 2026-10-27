@@ -268,6 +268,17 @@ var Sections = []SectionType{
 		Type: "main-product", Label: "Product", Icon: "ri-shopping-bag-3-line", Pages: []string{"product"}, Fixed: true,
 		Description: "The product's pictures, title, price, options, buy button and description, as the catalogue has them. Always on the page; move it up or down.",
 	},
+	// The products the shop chose to suggest with this one (D133). Only the
+	// curated ones: the related products below already fill in from the
+	// category, and drawing the same fill twice would be noise. Empty draws
+	// nothing.
+	{
+		Type: "cross-sells", Label: "You may also like", Icon: "ri-heart-add-line", Pages: []string{"product"},
+		Description: "The products chosen in the product's You may also like card, each with a quick Add to cart. Nothing shows for a product with none chosen.",
+		Fields: []Field{
+			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort, Help: "Empty says \"You may also like\"."},
+		},
+	},
 	{
 		Type: "product-reviews", Label: "Reviews", Icon: "ri-star-line", Pages: []string{"product"},
 		Description: "The product's reviews and rating, and the form a shopper writes one in.",

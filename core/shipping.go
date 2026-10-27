@@ -652,36 +652,9 @@ func (s *Shipping) publicQuotes(ctx context.Context, q rowQuerier, country, stat
 	// every consumer in Karnataka and offer them nothing. A zone with no rates
 	// at all still wins, as it always has — that is how a store says it does
 	// not deliver to one state of a country it otherwise covers.
-	var zoneID int64
-	rows, qerr := q.QueryContext(ctx, `
-		SELECT z.id
-		FROM shipping_zones z
-		WHERE z.active
-		  AND (cardinality(z.countries) = 0 OR $1 = ANY(z.countries))
-		  AND (cardinality(z.states) = 0 OR z.states && $2::text[])
-		  AND (NOT EXISTS (SELECT 1 FROM shipping_rates r WHERE r.zone_id = z.id)
-		       OR EXISTS (SELECT 1 FROM shipping_rates r
-		                  WHERE r.zone_id = z.id AND r.customer_group_id IS NULL))
-		ORDER BY (cardinality(z.states) > 0) DESC, (cardinality(z.countries) > 0) DESC, z.id
-		LIMIT 1`, country, states)
-	if qerr != nil {
-		return nil, qerr
-	}
-	found := false
-	for rows.Next() {
-		if err := rows.Scan(&zoneID); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		found = true
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
+	zoneID, found, err := s.publicZone(ctx, q, country, states)
+	if err != nil || !found {
 		return nil, err
-	}
-	rows.Close()
-	if !found {
-		return nil, nil
 	}
 
 	rateRows, err2 := q.QueryContext(ctx, `
@@ -704,6 +677,35 @@ func (s *Shipping) publicQuotes(ctx context.Context, q rowQuerier, country, stat
 		out = append(out, quoteOf(r))
 	}
 	return out, rateRows.Err()
+}
+
+// publicZone is the zone whose rates everybody is offered at a place, and
+// false when no zone covers it.
+func (s *Shipping) publicZone(ctx context.Context, q rowQuerier, country, states string) (int64, bool, error) {
+	var zoneID int64
+	rows, qerr := q.QueryContext(ctx, `
+		SELECT z.id
+		FROM shipping_zones z
+		WHERE z.active
+		  AND (cardinality(z.countries) = 0 OR $1 = ANY(z.countries))
+		  AND (cardinality(z.states) = 0 OR z.states && $2::text[])
+		  AND (NOT EXISTS (SELECT 1 FROM shipping_rates r WHERE r.zone_id = z.id)
+		       OR EXISTS (SELECT 1 FROM shipping_rates r
+		                  WHERE r.zone_id = z.id AND r.customer_group_id IS NULL))
+		ORDER BY (cardinality(z.states) > 0) DESC, (cardinality(z.countries) > 0) DESC, z.id
+		LIMIT 1`, country, states)
+	if qerr != nil {
+		return 0, false, qerr
+	}
+	defer rows.Close()
+	found := false
+	for rows.Next() {
+		if err := rows.Scan(&zoneID); err != nil {
+			return 0, false, err
+		}
+		found = true
+	}
+	return zoneID, found, rows.Err()
 }
 
 // rateFits is the SQL that a rate's band holds the basket: its subtotal for a
