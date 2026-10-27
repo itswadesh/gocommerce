@@ -67,14 +67,14 @@ const taxInvoiceHTML = `<!doctype html>
  h1{font-size:1.25rem;margin:0 0 .25rem}
  .doc{text-align:right}
  .doc h2{font-size:1.25rem;letter-spacing:.06em;margin:0 0 .25rem}
- .muted{color:#555;font-size:.875rem}
+ .muted{color:#555;font-size:.875em}
  .parties{display:flex;flex-wrap:wrap;gap:1rem 2rem;justify-content:space-between;margin:1.25rem 0}
  .parties>div{min-width:14rem;flex:1}
- .label{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:#555;margin:0 0 .25rem}
+ .label{font-size:.75em;text-transform:uppercase;letter-spacing:.06em;color:#555;margin:0 0 .25rem}
  .lines{overflow-x:auto;margin:1rem 0}
  table{width:100%;border-collapse:collapse}
  th,td{text-align:left;padding:.4rem .5rem .4rem 0;border-bottom:1px solid #ddd;vertical-align:top}
- th{font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;color:#555;white-space:nowrap}
+ th{font-size:.75em;text-transform:uppercase;letter-spacing:.04em;color:#555;white-space:nowrap}
  .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
  tfoot td{border:0;font-weight:700;border-top:2px solid #111}
  .totals{margin-left:auto;max-width:22rem}
@@ -82,6 +82,7 @@ const taxInvoiceHTML = `<!doctype html>
  .totals tr:last-child td{font-weight:700;border-top:2px solid #111;padding-top:.5rem;font-size:1.05rem}
  .sign{margin-top:3rem;text-align:right}
  .sign .line{display:inline-block;min-width:14rem;border-top:1px solid #111;padding-top:.25rem;margin-top:3rem}
+ @media (max-width:600px){.doc{text-align:left}}
  @media print{body{margin:0;max-width:none;font-size:12px}.lines{overflow:visible}}
 </style></head>
 <body>
