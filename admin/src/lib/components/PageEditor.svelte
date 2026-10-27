@@ -24,6 +24,11 @@
      * with it, and every page of the storefront applies them once published.
      *
      * Any page's draft can also be set to publish at a time (D129).
+     *
+     * The header and the footer (D131) open here too: each is one section,
+     * the storefront's own, drawn on every page, so the screen opens straight
+     * on its settings and offers nothing to add, move or remove. The preview
+     * is the home page, which shows both.
      */
     import { onMount, untrack } from "svelte";
     import { page as pageState } from "$app/state";
@@ -56,6 +61,7 @@
         localInputValue,
         fromLocalInput,
         scheduleLine,
+        isChrome,
     } from "$lib/layouts.js";
     import { toast } from "$lib/toast.svelte.js";
     import { rise, flipDuration } from "$lib/motion.js";
@@ -69,7 +75,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import { titled } from "$lib/brand.svelte.js";
 
-    /** @type {{ page: "home" | "product" | "collection" }} */
+    /** @type {{ page: "home" | "product" | "collection" | "header" | "footer" }} */
     let { page } = $props();
     // Each page's screen mounts an editor of its own, so the page never
     // changes under one.
@@ -77,11 +83,14 @@
     const meta = pageMeta(PAGE);
     // The design tokens publish with the home page alone (D127).
     const HOME = PAGE === "home";
+    // The header or footer: one section of settings, nothing to arrange.
+    const CHROME = isChrome(PAGE);
     const missing = $derived(modulesKnown() && !hasModule("layouts"));
     const readable = $derived(can("layouts.read"));
     const writable = $derived(can("layouts.write"));
 
     let registry = $state([]);
+    let pageInfos = $state([]); // the engine's pages: which have a core, which are only that
     let tokenGroups = $state([]); // the theme settings' fields, in titled groups
     let themeSettings = $state({});
     let st = $state(null); // the engine's view: version, published revision, …
@@ -197,6 +206,7 @@
                 api.plugin().catch(() => null),
             ]);
             registry = reg?.sections ?? [];
+            pageInfos = reg?.pages ?? [];
             // A font or rounding left empty is the storefront's own, so each
             // choice list starts with that.
             tokenGroups = (reg?.theme_settings ?? []).map((g) => ({
@@ -205,6 +215,8 @@
             }));
             adopt(state);
             autosave.reset();
+            // There is nothing to choose between: open its settings.
+            if (CHROME && sections.length) selectedId = sections[0].id;
             pluginOn = plugin ? !!plugin.enabled : true;
         } catch (err) {
             toast.error(err);
@@ -249,7 +261,8 @@
 
     async function reloadAfterConflict() {
         await load();
-        selectedId = null;
+        // The header's or footer's one section stays open: load picked it.
+        if (!CHROME) selectedId = null;
     }
 
     // ------------------------------------------------------------ editing
@@ -284,10 +297,13 @@
         themeOpen = false;
     }
 
+    // Nothing can be added to the header or the footer.
+    const addable = $derived(!CHROME);
+
     let inserting = $state(null); // the index a new section goes in at
     let filter = $state("");
     const library = $derived(
-        libraryFor(registry, PAGE).filter((t) => {
+        libraryFor(registry, PAGE, pageInfos).filter((t) => {
             const q = filter.trim().toLowerCase();
             return !q || t.label.toLowerCase().includes(q) || t.description.toLowerCase().includes(q);
         }),
@@ -548,7 +564,7 @@
         !path
             ? ""
             : writable && previewKey && address
-              ? previewAddress(address, previewKey, location.origin, path)
+              ? previewAddress(address, previewKey, location.origin, path, CHROME ? PAGE : "")
               : !writable && frameOrigin
                 ? frameOrigin + path
                 : "",
@@ -612,7 +628,7 @@
                 askAddress = true;
                 return;
             }
-            const url = previewAddress(where, res.token, "", path);
+            const url = previewAddress(where, res.token, "", path, CHROME ? PAGE : "");
             if (tab) tab.location.href = url;
             else window.location.assign(url);
         } catch (err) {
@@ -756,7 +772,7 @@
 {/snippet}
 
 {#snippet gap(index)}
-    {#if writable}
+    {#if writable && addable}
         <div class="hp-gap">
             <button type="button" class="hp-add" onclick={() => openLibrary(index)} aria-label={index === 0 ? "Add a section at the top" : index === sections.length ? "Add a section at the bottom" : `Add a section after section ${index}`}>
                 <i class="ri-add-line" aria-hidden="true"></i><span>Add section</span>
@@ -789,6 +805,8 @@
             {#if st.changed || !st.saved}<span class="label warning">Unpublished changes</span>{/if}
         {:else if st.saved}
             <span class="label warning">Not published</span> The storefront shows its built-in {meta.noun} until you publish.
+        {:else if CHROME}
+            <span class="label">Starting point</span> These are the settings of the storefront's own {meta.noun}. Change them, then publish to show them on every page.
         {:else}
             <span class="label">Starting point</span> This is the storefront's built-in {meta.noun} as sections. Change it, then publish.
         {/if}
@@ -831,7 +849,7 @@
 
 {#snippet settingsBody(section, type)}
     <p class="txt-hint txt-sm m-b-sm">{type.description}</p>
-    {#if type.fixed}
+    {#if type.fixed && !type.fields?.length}
         <p class="hp-fixed-note txt-sm" in:rise>
             <i class="ri-lock-line" aria-hidden="true"></i>
             Always on the {meta.noun}. What it shows is each {PAGE}'s own, from the catalogue; change it there.
@@ -904,7 +922,7 @@
                 {@render alerts()}
                 {#if HOME}
                     {@render themeRow()}
-                {:else if writable}
+                {:else if writable && !CHROME}
                     <div class="hp-subject-row">
                         <span class="txt-hint txt-sm">Preview on</span>
                         <PreviewSubject kind={PAGE} bind:subject bind:status={subjectStatus} />
@@ -930,7 +948,7 @@
                                     {#if sum.text}<span class="hp-sub txt-hint txt-sm">{sum.text}</span>{/if}
                                     {#if !section.enabled}<span class="label sm">Hidden</span>{/if}
                                 </button>
-                                {#if writable}
+                                {#if writable && addable}
                                     <div class="hp-actions">
                                         {#if !fixed}
                                             <div class="field hp-toggle">
@@ -980,7 +998,7 @@
                                     {@const known = !!sectionType(section.type, registry)}
                                     {@const fixed = isFixed(section, registry)}
                                     <li class="hp-rrow" data-row class:off={!section.enabled} class:fixed class:selected={threeCol && selectedId === section.id} class:dragging={dragId === section.id} animate:flip={{ duration: dragId === section.id ? 0 : flipDuration() }}>
-                                        {#if writable}
+                                        {#if writable && addable}
                                             <button
                                                 type="button"
                                                 class="hp-handle"
@@ -1001,7 +1019,7 @@
                                                 {#if sum.text}<span class="hp-sub txt-hint txt-sm">{sum.text}</span>{/if}
                                             </span>
                                         </button>
-                                        {#if writable}
+                                        {#if writable && addable}
                                             <span class="hp-rbtns">
                                                 <button type="button" class="btn sm circle transparent secondary" disabled={i === 0} onclick={() => move(i, -1)} aria-label="Move {sum.label} up">
                                                     <i class="ri-arrow-up-line" aria-hidden="true"></i>
@@ -1020,7 +1038,7 @@
                                 {/each}
                             </ol>
                             <p id="hp-drag-help" class="hp-sr">Drag a section by its handle to move it, or focus the handle and use the up and down arrow keys.</p>
-                            {#if writable}
+                            {#if writable && addable}
                                 <button type="button" class="hp-add hp-add-end" onclick={() => openLibrary(selectedIndex >= 0 ? selectedIndex + 1 : sections.length)}>
                                     <i class="ri-add-line" aria-hidden="true"></i><span>Add section</span>
                                 </button>
@@ -1039,7 +1057,7 @@
                                 <i class="ri-smartphone-line" aria-hidden="true"></i><span class="txt">Mobile</span>
                             </button>
                         </div>
-                        {#if !HOME}
+                        {#if !HOME && !CHROME}
                             <PreviewSubject kind={PAGE} bind:subject bind:status={subjectStatus} />
                         {:else if address}
                             <span class="hp-address txt-hint txt-sm" title={address}>{frameOrigin}</span>
@@ -1053,7 +1071,7 @@
                             </button>
                         {/if}
                     </div>
-                    {#if !HOME && subjectStatus === "empty"}
+                    {#if !HOME && !CHROME && subjectStatus === "empty"}
                         <div class="hp-stage-note" in:rise>
                             <p>The store has no {PAGE === "product" ? "active products" : "collections"} yet, so there is nothing to show the {meta.noun} on. The page still saves and publishes as you arrange it.</p>
                         </div>
@@ -1155,7 +1173,11 @@
 <Confirm
     bind:open={confirmPublish}
     title="Publish the {meta.noun}?"
-    message={HOME ? "Shoppers see this page from now on. You can roll back to an earlier version." : `Every ${PAGE} is shown this way from now on. You can roll back to an earlier version.`}
+    message={HOME
+        ? "Shoppers see this page from now on. You can roll back to an earlier version."
+        : CHROME
+          ? `Every page of the storefront shows this ${PAGE} from now on. You can roll back to an earlier version.`
+          : `Every ${PAGE} is shown this way from now on. You can roll back to an earlier version.`}
     confirmLabel="Publish"
     onconfirm={publish}
 />
