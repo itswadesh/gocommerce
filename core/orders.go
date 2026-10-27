@@ -2103,6 +2103,16 @@ WITH ev AS (
 // never repeats or skips an entry. Ascending because a history is read
 // top-down.
 func (s *Orders) Timeline(ctx context.Context, id int64, limit, offset int) ([]OrderTimelineEntry, int, error) {
+	return s.timeline(ctx, id, limit, offset, false)
+}
+
+// TimelineNewestFirst is Timeline read from the latest entry back, so the first
+// page of a long history is its most recent events (the panel's order page).
+func (s *Orders) TimelineNewestFirst(ctx context.Context, id int64, limit, offset int) ([]OrderTimelineEntry, int, error) {
+	return s.timeline(ctx, id, limit, offset, true)
+}
+
+func (s *Orders) timeline(ctx context.Context, id int64, limit, offset int, newest bool) ([]OrderTimelineEntry, int, error) {
 	// An id no order has is a 404 rather than an empty history: the two mean
 	// very different things to somebody asking what happened to an order, and
 	// an order that genuinely has no entries is a real answer.
@@ -2126,11 +2136,17 @@ func (s *Orders) Timeline(ctx context.Context, id int64, limit, offset int) ([]O
 	if limit <= 0 {
 		limit = DefaultLimit
 	}
+	// Both directions are the same total order, so paging either way never
+	// repeats or skips an entry.
+	order := "at, kind, row_id"
+	if newest {
+		order = "at DESC, kind DESC, row_id DESC"
+	}
 	rows, err := s.app.db.QueryContext(ctx, orderTimelineSource+`
 		SELECT at, kind, action, summary, actor_kind, actor_email, actor_role,
 		       actor_label, changes, event_name, event_id, published_at,
 		       attempts, dead, last_error, payload
-		FROM merged ORDER BY at, kind, row_id LIMIT $5 OFFSET $6`,
+		FROM merged ORDER BY `+order+` LIMIT $5 OFFSET $6`,
 		append(args, limit, offset)...)
 	if err != nil {
 		return nil, 0, err

@@ -352,7 +352,16 @@ func (a *App) handleOrderTimeline(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	entries, total, err := a.orders.Timeline(r.Context(), id, limit, offset)
+	read := a.orders.Timeline
+	switch r.URL.Query().Get("order") {
+	case "", "oldest":
+	case "newest":
+		read = a.orders.TimelineNewestFirst
+	default:
+		RespondError(w, r, Validationf("order is oldest or newest"))
+		return
+	}
+	entries, total, err := read(r.Context(), id, limit, offset)
 	if err != nil {
 		RespondError(w, r, err)
 		return

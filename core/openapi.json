@@ -4785,11 +4785,23 @@
           },
           {
             "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "description": "`oldest` (the default) or `newest`: which end of the history the first page starts from.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "oldest",
+                "newest"
+              ]
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "The order's history, oldest first.",
+            "description": "The order's history, oldest first unless `order=newest`.",
             "content": {
               "application/json": {
                 "schema": {
