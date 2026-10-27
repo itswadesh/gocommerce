@@ -131,7 +131,8 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "Theme editor", Category: "storefront", DefaultEnabled: true,
 		Description: "Arrange the storefront's home page, product page and collection page from sections — a hero, a slideshow, product grids, collections, video, " +
-			"questions and answers, reviews — in any order, set the store's colours, fonts and corner rounding, and publish each page now or at a time you choose, " +
+			"questions and answers, reviews — in any order, set the header's announcement and menu and the footer's columns, words and social links, " +
+			"set the store's colours, fonts and corner rounding, and publish each now or at a time you choose, " +
 			"without a deployment. On by default; switched off, or until a page's first publish, the storefront shows its built-in page and its own look.",
 	})
 
@@ -182,7 +183,7 @@ func (m *Module) registerRights(app *gocommerce.App) {
 	app.RegisterRight(gocommerce.RightSpec{
 		Right:   rightLayoutsRead,
 		Label:   "See the theme editor",
-		Scope:   "The home, product and collection pages' sections, their drafts, schedules and published versions",
+		Scope:   "The home, product and collection pages' sections, the header and footer, their drafts, schedules and published versions",
 		Default: []string{gocommerce.RoleManager, gocommerce.RoleStaff},
 	})
 	app.RegisterRight(gocommerce.RightSpec{
@@ -240,7 +241,7 @@ type Schedule struct {
 func pageKey(r *http.Request) (string, error) {
 	p := r.PathValue("page")
 	if pageInfo(p) == nil {
-		return "", gocommerce.NotFoundf("there is no page %q to arrange; the home, product and collection pages can be", p)
+		return "", gocommerce.NotFoundf("there is no page %q to arrange; the home, product and collection pages, the header and the footer can be", p)
 	}
 	return p, nil
 }

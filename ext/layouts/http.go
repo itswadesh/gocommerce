@@ -16,13 +16,22 @@ func (m *Module) handleRegistry(w http.ResponseWriter, r *http.Request) {
 }
 
 // offered is the section library: every type, less those whose plugin is off
-// or not in this binary, which a shop could add but a shopper could not use.
+// or not in this binary, which a shop could add but a shopper could not use —
+// and, the same way, each type less its settings whose plugin is off.
 func (m *Module) offered(ctx context.Context) []SectionType {
 	out := make([]SectionType, 0, len(Sections))
 	for _, s := range Sections {
-		if s.Requires == "" || m.pluginOn(ctx, s.Requires) {
-			out = append(out, s)
+		if s.Requires != "" && !m.pluginOn(ctx, s.Requires) {
+			continue
 		}
+		fields := make([]Field, 0, len(s.Fields))
+		for _, f := range s.Fields {
+			if f.Requires == "" || m.pluginOn(ctx, f.Requires) {
+				fields = append(fields, f)
+			}
+		}
+		s.Fields = fields
+		out = append(out, s)
 	}
 	return out
 }
@@ -273,6 +282,13 @@ func (m *Module) handlePublic(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out.Revision = rev.Number
+		// The header and footer are read for every page the storefront
+		// draws; like the theme settings, a short cache keeps that cheap
+		// without holding a publish back for long.
+		if pageInfo(page).CoreOnly {
+			w.Header().Set("Cache-Control", "public, max-age=30")
+			w.Header().Add("Vary", "X-Store")
+		}
 	}
 	out.Theme = doc.Theme
 	out.ThemeSettings = doc.ThemeSettings
@@ -318,7 +334,7 @@ func (m *Module) resolve(r *http.Request, sections []Section) ([]PublicSection, 
 		if st := sectionType(s.Type); st != nil && st.Requires != "" && !m.pluginOn(ctx, st.Requires) {
 			continue
 		}
-		ps := PublicSection{ID: s.ID, Type: s.Type, Settings: s.Settings}
+		ps := PublicSection{ID: s.ID, Type: s.Type, Settings: m.usable(ctx, s)}
 		if s.Type == "collection-list" {
 			ps.Collections = m.collectionCards(ctx, ints(s.Settings["collections"]))
 		}
@@ -346,6 +362,36 @@ func (m *Module) resolve(r *http.Request, sections []Section) ([]PublicSection, 
 	}
 	m.app.TranslateProducts(r, shown)
 	return out, nil
+}
+
+// usable is a section's settings less any whose plugin is off: a newsletter
+// box with no newsletter, or a menu with no menus, would be a promise the
+// storefront cannot keep.
+func (m *Module) usable(ctx context.Context, s Section) map[string]any {
+	st := sectionType(s.Type)
+	if st == nil {
+		return s.Settings
+	}
+	var out map[string]any
+	for _, f := range st.Fields {
+		if f.Requires == "" || m.pluginOn(ctx, f.Requires) {
+			continue
+		}
+		if _, held := s.Settings[f.Key]; !held {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]any, len(s.Settings))
+			for k, v := range s.Settings {
+				out[k] = v
+			}
+		}
+		delete(out, f.Key)
+	}
+	if out == nil {
+		return s.Settings
+	}
+	return out
 }
 
 // collectionCards reads the picked collections, in the order picked; one
@@ -473,9 +519,21 @@ func int64Array(ids []int64) string {
 // the shop changes it. The home page has no pictures — the built-in page's
 // are stock photographs, and a shop's pictures are its own to choose. The
 // product page is its core with the reviews and related products under it;
-// the collection page is its grid.
+// the collection page is its grid. The header is the storefront's own strip,
+// on the home page as it is today, over the "header" menu; the footer reads
+// the "footer" menu, and leaves the rest to the storefront (D131).
 func Starter(page string) Document {
 	switch page {
+	case "header":
+		return Document{SchemaVersion: schemaVersion, Theme: Themes[0].ID, Sections: []Section{
+			{ID: "header", Type: "header", Enabled: true, Settings: map[string]any{
+				"show_announcement": true, "announcement_text": "Free shipping on your first order · Easy 7-day returns",
+				"announcement_link": "/products", "announcement_pages": "home", "menu": "header"}},
+		}}
+	case "footer":
+		return Document{SchemaVersion: schemaVersion, Theme: Themes[0].ID, Sections: []Section{
+			{ID: "footer", Type: "footer", Enabled: true, Settings: map[string]any{"menu": "footer", "newsletter": true}},
+		}}
 	case "product":
 		return Document{SchemaVersion: schemaVersion, Theme: Themes[0].ID, Sections: []Section{
 			{ID: "product", Type: "main-product", Enabled: true, Settings: map[string]any{}},

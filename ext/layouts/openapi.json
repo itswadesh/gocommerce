@@ -53,7 +53,7 @@
           "layouts"
         ],
         "summary": "A storefront page as the shop arranged it",
-        "description": "The published page (D125): its shown sections in order, each `{id, type, settings}`, and each product grid's `products` resolved live — active, on the request's channel, translated. Hidden sections are left out. With `preview=<key>` from the editor, the saved draft instead, answered `Cache-Control: no-store` and `X-Robots-Tag: noindex`. 404 while the `layouts` plugin is off or nothing is published: the storefront then draws its built-in page.",
+        "description": "The published page (D125): its shown sections in order, each `{id, type, settings}`, and each product grid's `products` resolved live — active, on the request's channel, translated. Hidden sections are left out, and so are settings whose plugin is off. The published `header` and `footer` are answered `Cache-Control: public, max-age=30`. With `preview=<key>` from the editor, the saved draft instead, answered `Cache-Control: no-store` and `X-Robots-Tag: noindex`. 404 while the `layouts` plugin is off or nothing is published: the storefront then draws its built-in page.",
         "parameters": [
           {
             "name": "page",
@@ -64,10 +64,12 @@
               "enum": [
                 "home",
                 "product",
-                "collection"
+                "collection",
+                "header",
+                "footer"
               ]
             },
-            "description": "The page; only `home` can be arranged so far."
+            "description": "The page: `home`, the `product` and `collection` templates (D129), or the `header` and `footer` drawn on every page (D131)."
           },
           {
             "name": "preview",
@@ -176,10 +178,12 @@
               "enum": [
                 "home",
                 "product",
-                "collection"
+                "collection",
+                "header",
+                "footer"
               ]
             },
-            "description": "The page; only `home` can be arranged so far."
+            "description": "The page: `home`, the `product` and `collection` templates (D129), or the `header` and `footer` drawn on every page (D131)."
           }
         ],
         "responses": {
@@ -231,10 +235,12 @@
               "enum": [
                 "home",
                 "product",
-                "collection"
+                "collection",
+                "header",
+                "footer"
               ]
             },
-            "description": "The page; only `home` can be arranged so far."
+            "description": "The page: `home`, the `product` and `collection` templates (D129), or the `header` and `footer` drawn on every page (D131)."
           }
         ],
         "responses": {
@@ -320,10 +326,12 @@
               "enum": [
                 "home",
                 "product",
-                "collection"
+                "collection",
+                "header",
+                "footer"
               ]
             },
-            "description": "The page; only `home` can be arranged so far."
+            "description": "The page: `home`, the `product` and `collection` templates (D129), or the `header` and `footer` drawn on every page (D131)."
           }
         ],
         "responses": {
@@ -396,10 +404,12 @@
               "enum": [
                 "home",
                 "product",
-                "collection"
+                "collection",
+                "header",
+                "footer"
               ]
             },
-            "description": "The page; only `home` can be arranged so far."
+            "description": "The page: `home`, the `product` and `collection` templates (D129), or the `header` and `footer` drawn on every page (D131)."
           }
         ],
         "responses": {
@@ -446,10 +456,12 @@
               "enum": [
                 "home",
                 "product",
-                "collection"
+                "collection",
+                "header",
+                "footer"
               ]
             },
-            "description": "The page; only `home` can be arranged so far."
+            "description": "The page: `home`, the `product` and `collection` templates (D129), or the `header` and `footer` drawn on every page (D131)."
           }
         ],
         "responses": {
@@ -521,10 +533,12 @@
               "enum": [
                 "home",
                 "product",
-                "collection"
+                "collection",
+                "header",
+                "footer"
               ]
             },
-            "description": "The page; only `home` can be arranged so far."
+            "description": "The page: `home`, the `product` and `collection` templates (D129), or the `header` and `footer` drawn on every page (D131)."
           }
         ],
         "requestBody": {
@@ -596,10 +610,12 @@
               "enum": [
                 "home",
                 "product",
-                "collection"
+                "collection",
+                "header",
+                "footer"
               ]
             },
-            "description": "The page; only `home` can be arranged so far."
+            "description": "The page: `home`, the `product` and `collection` templates (D129), or the `header` and `footer` drawn on every page (D131)."
           }
         ],
         "responses": {
@@ -656,7 +672,9 @@
               "enum": [
                 "home",
                 "product",
-                "collection"
+                "collection",
+                "header",
+                "footer"
               ]
             },
             "description": "The page: the home page, or the template every product or every collection is drawn in."
@@ -741,7 +759,9 @@
               "enum": [
                 "home",
                 "product",
-                "collection"
+                "collection",
+                "header",
+                "footer"
               ]
             },
             "description": "The page: the home page, or the template every product or every collection is drawn in."

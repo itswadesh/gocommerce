@@ -27,6 +27,7 @@ const (
 	KindList        = "list"        // repeated items, each with Fields
 	KindColor       = "color"       // a colour as #rrggbb, nothing else
 	KindVideo       = "video"       // a video file's address, from the Files library or pasted
+	KindMenu        = "menu"        // one of the store's menus, by its handle (Content → Menus)
 )
 
 // Option is one choice of a select field.
@@ -56,6 +57,10 @@ type Field struct {
 	ShowWhen map[string]string `json:"show_when,omitempty"`
 	// Fields are a list item's settings.
 	Fields []Field `json:"fields,omitempty"`
+	// Requires names the plugin the setting works through, as a section
+	// type's Requires does: offered only while it is on, and left out of what
+	// the storefront is sent otherwise; a draft that holds it still saves.
+	Requires string `json:"requires,omitempty"`
 }
 
 // SectionType is a kind of section a page can hold, any number of times, at
@@ -281,6 +286,64 @@ var Sections = []SectionType{
 		Type: "main-collection", Label: "Products", Icon: "ri-layout-grid-line", Pages: []string{"collection"}, Fixed: true,
 		Description: "The collection's title, description and its products, as the catalogue has them. Always on the page; move it up or down.",
 	},
+
+	// The header and the footer (D131): each the whole of its page, drawn by
+	// the storefront at the top and the bottom of every page. Unlike a
+	// template's core they have settings, because what they show is the
+	// shop's own words and menus, not the catalogue's.
+	{
+		Type: "header", Label: "Header", Icon: "ri-layout-top-line", Pages: []string{"header"}, Fixed: true,
+		Description: "The strip of news above the header, and the menu across it. The logo, search, account and basket stay where they are.",
+		Fields: []Field{
+			{Key: "show_announcement", Label: "Show the announcement strip", Kind: KindBool},
+			{Key: "announcement_text", Label: "Announcement", Kind: KindText, MaxLen: maxShort, ShowWhen: map[string]string{"show_announcement": "true"}},
+			{Key: "announcement_link", Label: "Announcement link", Kind: KindURL, Help: "Where the strip goes when tapped. Leave empty for none.",
+				ShowWhen: map[string]string{"show_announcement": "true"}},
+			{Key: "announcement_pages", Label: "Show the strip on", Kind: KindSelect, Default: "all",
+				Options: []Option{{"all", "Every page"}, {"home", "The home page only"}}, ShowWhen: map[string]string{"show_announcement": "true"}},
+			{Key: "menu", Label: "Header menu", Kind: KindMenu, Default: "header", Requires: "navigation",
+				Help: "Its links run across the header, and fill the menu on phones. Make and edit menus in Content → Menus."},
+		},
+		Check: func(s map[string]any) error {
+			if on, _ := s["show_announcement"].(bool); on && s["announcement_text"] == nil {
+				return errors.New("the announcement strip is on, so it needs an announcement; switch it off to show none")
+			}
+			return nil
+		},
+	},
+	{
+		Type: "footer", Label: "Footer", Icon: "ri-layout-bottom-line", Pages: []string{"footer"}, Fixed: true,
+		Description: "The columns of links at the foot of every page, a few words about the shop, its social links and the copyright line.",
+		Fields: []Field{
+			{Key: "menu", Label: "Footer menu", Kind: KindMenu, Default: "footer", Requires: "navigation",
+				Help: "Each top-level link with links under it becomes a column, headed by its title; links with none under them share one column. Make and edit menus in Content → Menus."},
+			{Key: "about", Label: "About the shop", Kind: KindTextarea, MaxLen: 600, Help: "A few words beside the logo. Empty uses the store's description."},
+			{Key: "newsletter", Label: "Show the newsletter sign-up", Kind: KindBool, Default: true, Requires: "newsletter"},
+			{Key: "social", Label: "Social links", Kind: KindList, MaxItems: 8,
+				Help: "Empty keeps the social links set in the storefront's plugins.", Fields: []Field{
+					{Key: "network", Label: "Network", Kind: KindSelect, Required: true, Options: SocialNetworks},
+					{Key: "url", Label: "Address", Kind: KindURL, Required: true, Help: "The page's full address, https://…"},
+				}},
+			{Key: "copyright", Label: "Copyright line", Kind: KindText, MaxLen: maxShort, Help: "Empty says © this year, the store's name, all rights reserved."},
+		},
+		Check: func(s map[string]any) error {
+			links, _ := s["social"].([]map[string]any)
+			for i, l := range links {
+				// A social link leaves the store, so a path on it is a mistake.
+				if u, _ := l["url"].(string); strings.HasPrefix(u, "/") {
+					return fmt.Errorf("Social links, %d: Address must be a web address (https://…)", i+1)
+				}
+			}
+			return nil
+		},
+	},
+}
+
+// SocialNetworks are the networks a footer links to, each drawn with its own
+// mark by the storefront.
+var SocialNetworks = []Option{
+	{"instagram", "Instagram"}, {"facebook", "Facebook"}, {"x", "X"}, {"youtube", "YouTube"},
+	{"pinterest", "Pinterest"}, {"linkedin", "LinkedIn"}, {"whatsapp", "WhatsApp"}, {"telegram", "Telegram"},
 }
 
 // PageInfo is a page the shop can arrange.
@@ -289,6 +352,9 @@ type PageInfo struct {
 	Label string `json:"label"`
 	// Core is the page's fixed section type; empty when it has none.
 	Core string `json:"core,omitempty"`
+	// CoreOnly is a page that is its core and nothing more: the header and
+	// the footer, which the storefront draws around every other page (D131).
+	CoreOnly bool `json:"core_only,omitempty"`
 }
 
 // Pages are the pages a shop can arrange, each drawn by the storefront from
@@ -298,6 +364,8 @@ var Pages = []PageInfo{
 	{Key: "home", Label: "home page"},
 	{Key: "product", Label: "product page", Core: "main-product"},
 	{Key: "collection", Label: "collection page", Core: "main-collection"},
+	{Key: "header", Label: "header", Core: "header", CoreOnly: true},
+	{Key: "footer", Label: "footer", Core: "footer", CoreOnly: true},
 }
 
 func pageInfo(key string) *PageInfo {
@@ -310,6 +378,9 @@ func pageInfo(key string) *PageInfo {
 }
 
 func (s SectionType) allowedOn(page string) bool {
+	if p := pageInfo(page); p != nil && p.CoreOnly {
+		return s.Type == p.Core
+	}
 	if len(s.Pages) == 0 {
 		return true
 	}
@@ -404,9 +475,11 @@ const schemaVersion = 1
 
 var (
 	sectionIDRE = regexp.MustCompile(`^[A-Za-z0-9_-]{1,40}$`)
-	colorRE     = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
-	youTubeIDRE = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
-	vimeoIDRE   = regexp.MustCompile(`^[0-9]{1,12}$`)
+	// menuHandleRE is ext/navigation's rule for a handle.
+	menuHandleRE = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+	colorRE      = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
+	youTubeIDRE  = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
+	vimeoIDRE    = regexp.MustCompile(`^[0-9]{1,12}$`)
 )
 
 func sectionType(t string) *SectionType {
@@ -523,7 +596,7 @@ func cleanField(where string, f Field, v any) (any, error) {
 		v = f.Default
 	}
 	switch f.Kind {
-	case KindText, KindTextarea, KindURL, KindImage, KindVideo, KindSelect, KindColor:
+	case KindText, KindTextarea, KindURL, KindImage, KindVideo, KindSelect, KindColor, KindMenu:
 		s, ok := v.(string)
 		if v != nil && !ok {
 			return nil, bad("must be text")
@@ -543,6 +616,12 @@ func cleanField(where string, f Field, v any) (any, error) {
 			return nil, bad("is longer than %d characters", f.MaxLen)
 		}
 		switch f.Kind {
+		case KindMenu:
+			// A handle, not the menu: the storefront reads the menu's links
+			// live, so a menu edited in Content → Menus shows without a publish.
+			if len(s) > 64 || !menuHandleRE.MatchString(s) {
+				return nil, bad("must name a menu by its handle: lowercase letters, digits and single dashes")
+			}
 		case KindColor:
 			// The value is written into a style sheet: nothing but the six
 			// digits may pass.
