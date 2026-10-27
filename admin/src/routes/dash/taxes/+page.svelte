@@ -27,6 +27,7 @@
     import Confirm from "$lib/components/Confirm.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import CategoryPicker from "$lib/components/CategoryPicker.svelte";
+    import VariantSearch from "$lib/components/VariantSearch.svelte";
     import Pager from "$lib/components/Pager.svelte";
     import RecordHistory from "$lib/components/RecordHistory.svelte";
     import Select from "$lib/components/Select.svelte";
@@ -115,6 +116,7 @@
                 countryName(r.country),
                 r.state,
                 r.category_name,
+                r.product_title,
                 r.active ? "on active" : "off inactive",
                 `${r.rate_bp / 100}%`,
             ]
@@ -163,7 +165,10 @@
     const COMPARE = {
         name: (a, b) => collate(a.name, b.name),
         applies: (a, b) =>
-            collate(a.category_name || "Everything", b.category_name || "Everything"),
+            collate(
+                a.product_title || a.category_name || "Everything",
+                b.product_title || b.category_name || "Everything",
+            ),
         where: (a, b) => collate(where(a), where(b)),
         rate: (a, b) => a.rate_bp - b.rate_bp,
         active: (a, b) => Number(!!a.active) - Number(!!b.active),
@@ -235,6 +240,8 @@
             country: "",
             state: "",
             category_id: null,
+            product_id: null,
+            product_title: "",
             active: true,
         };
     }
@@ -253,6 +260,8 @@
             country: r.country ?? "",
             state: r.state ?? "",
             category_id: r.category_id ?? null,
+            product_id: r.product_id ?? null,
+            product_title: r.product_title ?? "",
             active: r.active,
         };
         open = true;
@@ -270,7 +279,9 @@
             // a state it knows by name as its code (D72) and matches every
             // spelling of it, so "Karnataka" here is saved as KA.
             state: form.state.trim().toUpperCase(),
-            category_id: form.category_id,
+            // One or the other: the engine refuses a rule with both.
+            category_id: form.product_id ? null : form.category_id,
+            product_id: form.product_id,
             active: form.active,
         };
         try {
@@ -607,7 +618,10 @@
                                 <span class="txt-bold">{r.name}</span>
                             </td>
                             <td class="col-field-type-text" data-name="Applies to">
-                                {#if r.category_name}
+                                {#if r.product_id}
+                                    <span class="txt-ellipsis">{r.product_title}</span>
+                                    <span class="txt-hint txt-sm">this product only</span>
+                                {:else if r.category_name}
                                     <span class="txt-ellipsis">{r.category_name}</span>
                                     <span class="txt-hint txt-sm">and everything under it</span>
                                 {:else}
@@ -765,8 +779,8 @@
                 </span>
             {:else}
                 <span class="txt">
-                    Rules are read most specific first — a category beats a country, and a deeper
-                    category beats the one above it.
+                    Rules are read most specific first — a product beats any category, a category
+                    beats a country, and a deeper category beats the one above it.
                 </span>
             {/if}
             <!--
@@ -867,18 +881,59 @@
             carries it.
         </div>
 
+        {#if !form.product_id}
+            <div class="field m-t-sm">
+                <label for="t-category">Category</label>
+                <CategoryPicker
+                    id="t-category"
+                    bind:value={form.category_id}
+                    {categories}
+                    remote={categoriesTruncated}
+                />
+            </div>
+            <div class="field-help">
+                Leave it empty to tax everything. A category reaches everything beneath it, and a
+                rule on a deeper category wins.
+            </div>
+        {/if}
+
         <div class="field m-t-sm">
-            <label for="t-category">Category</label>
-            <CategoryPicker
-                id="t-category"
-                bind:value={form.category_id}
-                {categories}
-                remote={categoriesTruncated}
-            />
+            <label for={form.product_id ? undefined : "t-product"}>Product</label>
+            {#if form.product_id}
+                <div class="fields">
+                    <div class="field addon">
+                        <span class="txt-ellipsis">{form.product_title}</span>
+                    </div>
+                    <div class="field addon p-r-5">
+                        <button
+                            type="button"
+                            class="btn circle sm transparent secondary"
+                            aria-label="Apply to a category instead"
+                            title="Remove"
+                            onclick={() => {
+                                form.product_id = null;
+                                form.product_title = "";
+                            }}
+                        >
+                            <i class="ri-close-line" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </div>
+            {:else}
+                <VariantSearch
+                    id="t-product"
+                    placeholder="Search a product by name or SKU"
+                    onpick={(row) => {
+                        form.product_id = row.product.id;
+                        form.product_title = row.product.title;
+                    }}
+                />
+            {/if}
         </div>
         <div class="field-help">
-            Leave it empty to tax everything. A category reaches everything beneath it, and a rule
-            on a deeper category wins.
+            For the one product taxed differently from its category, such as gold jewellery at 3% in
+            a shop otherwise at 18%. A product rule beats every category rule, and takes the place of
+            the category here.
         </div>
 
         <div class="field m-t-sm">
