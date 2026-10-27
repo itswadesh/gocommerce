@@ -86,12 +86,15 @@ function storeQuery(store) {
  * server treats them identically, so nothing here has to know which it holds.
  */
 export async function request(method, path, options = {}) {
-    const { body, admin = true, raw = false, headers = {}, store = true } = options;
+    const { body, admin = true, raw = false, headers = {}, store = true, keepalive = false } = options;
 
     // Every request names the store this tab works in (D83); a caller that
     // names one itself, such as an invitation link's, is left alone, and one
     // that belongs to no store at all, such as signing up, names none.
     const init = { method, headers: { ...(store ? storeHeaders() : {}), ...headers } };
+    // A request that must outlive the page's closing, such as the theme
+    // editor's last save as the tab goes away.
+    if (keepalive) init.keepalive = true;
 
     if (admin) {
         const token = getToken();
@@ -546,7 +549,9 @@ export const banners = {
 export const layouts = {
     registry: () => api.get("/api/admin/x/layouts/sections"),
     get: (page) => api.get(`/api/admin/x/layouts/${page}`),
-    save: (page, version, document) => api.put(`/api/admin/x/layouts/${page}`, { version, document }),
+    save: (page, version, document, opts = {}) =>
+        request("PUT", `/api/admin/x/layouts/${page}`, { body: { version, document }, keepalive: !!opts.keepalive }),
+    reset: (page, version) => api.post(`/api/admin/x/layouts/${page}/reset`, { version }),
     publish: (page, version) => api.post(`/api/admin/x/layouts/${page}/publish`, { version }),
     revisions: (page) => api.get(`/api/admin/x/layouts/${page}/revisions`),
     rollback: (page, revision) => api.post(`/api/admin/x/layouts/${page}/rollback`, { revision }),

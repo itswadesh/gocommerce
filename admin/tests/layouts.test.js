@@ -114,3 +114,152 @@ test("a duplicate copies a proxied section, as the screen's state is", () => {
     assert.equal(out.length, 2);
     assert.equal(out[1].settings.heading, "One");
 });
+
+// ------------------------------------------------------------ phase 2 (D126)
+
+import { moveTo, dropIndex, createHistory, createAutosave, previewAddress } from "../src/lib/layouts.js";
+
+test("moveTo moves one section to any position, and leaves the list alone for a no-op", () => {
+    const list = ["a", "b", "c", "d"].map((id) => ({ id }));
+    assert.deepEqual(moveTo(list, 0, 2).map((s) => s.id), ["b", "c", "a", "d"]);
+    assert.deepEqual(moveTo(list, 3, 0).map((s) => s.id), ["d", "a", "b", "c"]);
+    assert.equal(moveTo(list, 1, 1), list);
+    assert.equal(moveTo(list, 1, 9), list);
+});
+
+test("dropIndex is the slot the pointer is over, by the rows' middles", () => {
+    const middles = [20, 60, 100];
+    assert.equal(dropIndex(middles, 0), 0);
+    assert.equal(dropIndex(middles, 59), 1);
+    assert.equal(dropIndex(middles, 61), 2);
+    assert.equal(dropIndex(middles, 500), 2);
+});
+
+test("history undoes and redoes, and a new edit forgets what was undone", () => {
+    const h = createHistory();
+    assert.equal(h.canUndo(), false);
+    h.record("v1");
+    h.record("v2");
+    assert.equal(h.undo("v3"), "v2");
+    assert.equal(h.undo("v2"), "v1");
+    assert.equal(h.undo("v1"), null);
+    assert.equal(h.redo("v1"), "v2");
+    h.record("v2");
+    assert.equal(h.canRedo(), false);
+});
+
+test("history folds a run of typing in one field into one step", () => {
+    let now = 0;
+    const h = createHistory({ now: () => now, window: 1000 });
+    h.record("before", "hero.heading");
+    now = 400;
+    h.record("typing", "hero.heading");
+    now = 800;
+    h.record("still typing", "hero.heading");
+    assert.equal(h.undo("done"), "before");
+    assert.equal(h.canUndo(), false);
+    now = 5000;
+    h.record("x", "hero.heading");
+    now = 7000;
+    h.record("y", "hero.heading");
+    assert.equal(h.size(), 2, "a pause starts a new step");
+});
+
+function fakeTimers() {
+    const timers = new Map();
+    let next = 1;
+    return {
+        set: (fn) => (timers.set(next, fn), next++),
+        clear: (id) => timers.delete(id),
+        fire() {
+            const all = [...timers.values()];
+            timers.clear();
+            all.forEach((fn) => fn());
+        },
+        pending: () => timers.size,
+    };
+}
+
+test("autosave waits for a pause, saves the latest edit once, then reports saved", async () => {
+    const t = fakeTimers();
+    const saved = [];
+    const states = [];
+    const a = createAutosave({ save: async (doc) => saved.push(doc), setTimer: t.set, clearTimer: t.clear, onstate: (s) => states.push(s) });
+    a.change("one");
+    a.change("two");
+    assert.deepEqual(saved, []);
+    assert.equal(a.state(), "pending");
+    t.fire();
+    await a.idle();
+    assert.deepEqual(saved, ["two"]);
+    assert.equal(a.state(), "saved");
+    assert.deepEqual(states, ["pending", "saving", "saved"]);
+});
+
+test("autosave saves one at a time: an edit during a save goes in the next", async () => {
+    const t = fakeTimers();
+    const saved = [];
+    let release;
+    const a = createAutosave({
+        save: (doc) => new Promise((ok) => { saved.push(doc); release = ok; }),
+        setTimer: t.set, clearTimer: t.clear,
+    });
+    a.change("one");
+    a.flush();
+    a.change("two");
+    a.flush();
+    assert.deepEqual(saved, ["one"], "the second waits for the first");
+    release();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.deepEqual(saved, ["one", "two"]);
+    release();
+    await a.idle();
+    assert.equal(a.state(), "saved");
+});
+
+test("autosave keeps a failed edit to retry, and stops on a conflict", async () => {
+    const t = fakeTimers();
+    let fail = { status: 0 };
+    const saved = [];
+    const a = createAutosave({
+        save: async (doc) => { if (fail) throw fail; saved.push(doc); },
+        setTimer: t.set, clearTimer: t.clear,
+    });
+    a.change("one");
+    await a.flush();
+    assert.equal(a.state(), "error");
+    fail = null;
+    await a.retry();
+    assert.deepEqual(saved, ["one"]);
+
+    fail = { status: 409 };
+    a.change("two");
+    await a.flush();
+    assert.equal(a.state(), "conflict");
+    a.change("three");
+    assert.equal(t.pending(), 0, "nothing more is sent over somebody else's save");
+    await a.flush();
+    assert.deepEqual(saved, ["one"]);
+});
+
+test("cancel drops a pending edit, for a reset that throws the draft away", async () => {
+    const t = fakeTimers();
+    const saved = [];
+    const a = createAutosave({ save: async (doc) => saved.push(doc), setTimer: t.set, clearTimer: t.clear });
+    a.change("one");
+    await a.cancel();
+    t.fire();
+    await a.idle();
+    assert.deepEqual(saved, []);
+    assert.equal(a.state(), "saved");
+});
+
+test("previewAddress opens the storefront's home page with the key and the panel's origin", () => {
+    assert.equal(
+        previewAddress("https://shop.example.com/", "k-1", "https://admin.example.com"),
+        "https://shop.example.com/?preview=k-1&editor=https%3A%2F%2Fadmin.example.com",
+    );
+    assert.equal(previewAddress("https://shop.example.com/some/page", "k", ""), "https://shop.example.com/?preview=k");
+    assert.equal(previewAddress("not an address", "k", ""), "");
+    assert.equal(previewAddress("javascript:alert(1)", "k", ""), "");
+});
