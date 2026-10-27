@@ -181,22 +181,22 @@ func tallyVoucherOf(storeID, order string, doc *TaxInvoice, n TallyLedgers) (tal
 
 // tallyPeriod reads from and to, both inclusive dates on the store's clock,
 // which is the clock each document's date was written on.
-func tallyPeriod(from, to string) (string, string, error) {
+func tallyPeriod(from, to string) error {
 	f, err := time.Parse("2006-01-02", from)
 	if err != nil {
-		return "", "", gocommerce.Validationf("from: a date like 2026-04-01")
+		return gocommerce.Validationf("from: a date like 2026-04-01")
 	}
 	t, err := time.Parse("2006-01-02", to)
 	if err != nil {
-		return "", "", gocommerce.Validationf("to: a date like 2027-03-31")
+		return gocommerce.Validationf("to: a date like 2027-03-31")
 	}
 	if t.Before(f) {
-		return "", "", gocommerce.Validationf("to is before from")
+		return gocommerce.Validationf("to is before from")
 	}
 	if !t.Before(f.AddDate(1, 0, 0)) {
-		return "", "", gocommerce.Validationf("at most a year at a time: a financial year is 1 April to 31 March")
+		return gocommerce.Validationf("at most a year at a time: a financial year is 1 April to 31 March")
 	}
-	return from, to, nil
+	return nil
 }
 
 // tallyRead builds the period's vouchers, in date then number order, and the
@@ -439,8 +439,8 @@ func (m *Module) handleTallyExport(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, gocommerce.Validationf("part: ledgers or vouchers"))
 		return
 	}
-	from, to, err := tallyPeriod(q.Get("from"), q.Get("to"))
-	if err != nil {
+	from, to := q.Get("from"), q.Get("to")
+	if err := tallyPeriod(from, to); err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
@@ -481,23 +481,22 @@ func (m *Module) handleTallyLedgersPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n, err := m.tallyLedgers(r.Context())
-	if err == nil {
-		err = gocommerce.DecodeJSON(w, r, &n)
-	}
-	if err == nil {
-		err = n.clean()
-	}
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	raw, err := json.Marshal(n)
-	if err == nil {
-		_, err = m.db.ExecContext(r.Context(), `
-			INSERT INTO invoices_tally_ledgers (names) VALUES ($1)
-			ON CONFLICT (store_id) DO UPDATE SET names = EXCLUDED.names, updated_at = now()`, raw)
+	if err := gocommerce.DecodeJSON(w, r, &n); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
 	}
-	if err != nil {
+	if err := n.clean(); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	raw, _ := json.Marshal(n)
+	if _, err := m.db.ExecContext(r.Context(), `
+		INSERT INTO invoices_tally_ledgers (names) VALUES ($1)
+		ON CONFLICT (store_id) DO UPDATE SET names = EXCLUDED.names, updated_at = now()`, raw); err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
