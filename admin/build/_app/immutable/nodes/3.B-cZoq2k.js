@@ -1,1 +1,0 @@
-import"../chunks/Bzak7iHL.js";import"../chunks/69_IOA4Y.js";import{o as r}from"../chunks/Z7W_RNPH.js";import{p as t,b as p}from"../chunks/DDwF5Ib4.js";import{i as a}from"../chunks/DOn_GYtI.js";import{g as m}from"../chunks/DO_UxG8K.js";import{b as i}from"../chunks/Cr7dKmNc.js";function h(s,o){t(o,!1),r(()=>m(`${i}/dash`,{replaceState:!0})),a(),p()}export{h as component};
