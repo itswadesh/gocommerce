@@ -270,6 +270,73 @@ not available and that is a CSP fact: the panel sends `frame-ancestors 'none'`,
 and its `frame-src` names only the two video players the showcase editor plays
 (D88), so a `blob:` frame is refused.
 
+## Exporting to TallyPrime
+
+A store that issues GST tax invoices gets an **Export for Tally** card on the
+Invoices screen (D127). Any other store does not: the ledger names route
+answers 404 there, and that answer is what hides the card.
+
+The export reads the issued tax invoices and nothing else. No tax is worked out
+again; every amount is a figure the invoice already holds. It comes as two
+files, and the order matters:
+
+1. **Ledgers.** In TallyPrime, press Alt+O, choose Masters, and import the
+   ledgers file. It holds each registered buyer once, named by legal name and
+   GSTIN (`Asha Traders Pvt Ltd (21AABCT1332L1ZQ)`) under Sundry Debtors with
+   their address, PIN code and state, plus the store's own ledgers the vouchers
+   use: sales under Sales Accounts, CGST, SGST, UTGST and IGST under Duties &
+   Taxes, delivery under Sales Accounts, and the party for buyers without a
+   GSTIN (`Cash Sales`) under Sundry Debtors.
+2. **Vouchers.** Press Alt+O again, choose Transactions, and import the
+   vouchers file. Each invoice is one Sales voucher in invoice view without
+   stock items: the party is debited the total with a New Ref bill named by
+   the invoice number, and sales, each tax head and delivery are credited.
+
+Tally imports masters before transactions. A voucher that names a ledger Tally
+does not have is put in its exceptions report ("Referenced master is missing")
+rather than imported, so import the ledgers first.
+
+Each voucher carries a REMOTEID, `gocommerce:<store>:<invoice number>`.
+Without one, importing the same file twice makes duplicates. With it, and with
+Tally's import option to overwrite a voucher with the same GUID or REMOTEID,
+a second import replaces the first. For masters Tally has its own import
+behaviour setting: combine, ignore duplicates, or modify. A ledger that
+already exists is treated as that setting says.
+
+**Ledger names** are set once per store under the card, and the defaults are
+Tally's usual ones. They must match the ledgers in the accountant's Tally
+company. With "one sales ledger per rate" each rate gets its own sales ledger,
+named like `Sales 18%`. Saving them needs `invoices.configure`, which only
+managers carry by default; exporting needs `invoices.read`. An agent key cannot
+export, because the file names buyers and their addresses.
+
+The file names no GST duty head on the tax ledgers. The accountant sets that
+once in Tally on the CGST, SGST, UTGST and IGST ledgers, or keeps the ledgers
+the company already has and types their names here.
+
+**What is checked against Tally's own documentation** (help.tallysolutions.com):
+the Import Data envelope and the voucher and ledger tags
+([sample XML](https://help.tallysolutions.com/sample-xml/),
+[integration using XML](https://help.tallysolutions.com/xml-integration/),
+[understanding Tally XML tags](https://help.tallysolutions.com/understanding-tally-xml-tags/)),
+importing masters before transactions and the duplicates rule
+([import data](https://help.tallysolutions.com/import-data-from-xml-or-json/),
+[import FAQ](https://help.tallysolutions.com/import-data-faq/),
+[exceptions](https://help.tallysolutions.com/data-exceptions-resolutions-in-tallyprime/)),
+and the names of the voucher's GST fields
+([release 3.0 schema changes](https://help.tallysolutions.com/developer-reference/release-3-tdl-enhancements-tally-prime/what-are-the-changes-in-xml-tags/)).
+
+**What is not checked yet:** no official sample shows the GST registration
+details on a party ledger, so the file leaves them out; the exact GST tags
+TallyPrime 3.0 and later read on a voucher (`PARTYGSTIN`, `PLACEOFSUPPLY`,
+`STATENAME`, `GSTREGISTRATIONTYPE`, `CMPGSTIN`) come from field names, not from
+an XML sample; and Tally's own exports are UTF-16, while this file is UTF-8
+with every character outside ASCII written as a character reference, so it
+reads the same either way. Tally's advice for exactly this gap is to enter one
+voucher by hand, export it, and compare. Before relying on the export, import
+both files into a copy of the company and check one voucher against its
+printed invoice.
+
 ## Diagnostics, and the buttons beside the rows
 
 **Settings → Diagnostics** draws `GET /api/admin/diagnostics` — the same
