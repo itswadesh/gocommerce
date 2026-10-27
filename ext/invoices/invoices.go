@@ -212,9 +212,6 @@ func (m *Module) issue(ctx context.Context, orderID int64) error {
 	if err != nil {
 		return err
 	}
-	if reg != nil && order.Currency != "INR" {
-		reg = nil
-	}
 	var shares []int64
 	var hsn map[int64]string
 	if reg != nil {
