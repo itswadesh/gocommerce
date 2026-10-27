@@ -218,7 +218,7 @@ menus and FAQ — and says plainly where the two do not meet yet.
 
 ## Quick start
 
-Requires Go 1.23+ and PostgreSQL 16+.
+Requires Go 1.27+ and PostgreSQL 16+.
 
 ```sh
 createdb mystore
