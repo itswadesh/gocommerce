@@ -111,7 +111,8 @@ func TestTheRegistryNamesEachTypesPages(t *testing.T) {
 	if h := byType["hero"]; h.Fixed || len(h.Pages) != 0 {
 		t.Fatalf("hero = %+v, want every page", h)
 	}
-	if len(reg.Pages) != 3 || reg.Pages[0].Key != "home" || reg.Pages[1].Core != "main-product" || reg.Pages[2].Core != "main-collection" {
+	if len(reg.Pages) != 5 || reg.Pages[0].Key != "home" || reg.Pages[1].Core != "main-product" || reg.Pages[2].Core != "main-collection" ||
+		!reg.Pages[3].CoreOnly || reg.Pages[3].Core != "header" || !reg.Pages[4].CoreOnly || reg.Pages[4].Core != "footer" {
 		t.Fatalf("pages = %+v", reg.Pages)
 	}
 	for _, p := range Pages {

@@ -766,6 +766,22 @@ not its stock pictures — to start from. Seeing the screen is `layouts.read`
 (managers and staff by default); editing, resetting, publishing, previewing
 and rolling back are `layouts.write` (managers).
 
+**Header** and **Footer** (`/dash/themes/header`, `/dash/themes/footer`,
+D131) are listed under Elements too, and open in the same editor straight on
+their settings: each is one section, the storefront's own, drawn on every
+page, so there is nothing to add, move or remove. The frame shows the home
+page, which has both. The header sets the announcement strip above it — on or
+off, its words, a link, and whether it shows on every page or the home page
+only — and which of the store's menus runs across it. The footer sets the menu
+whose links become its columns (each top-level link with links under it is a
+column under its title; links with none share one), a few words about the
+shop, whether the newsletter sign-up shows (offered while the Newsletter
+plugin is on), social links, and the copyright line. Menus are picked from
+**Content → Menus** by name and read live, so a menu edited there changes the
+header or footer without publishing again. Anything left empty keeps the
+storefront's own. Both save, preview, publish, schedule, reset and roll back
+like a page.
+
 ## Banners
 
 **Content → Banners** (`ext/banners`, D99) holds the pictures on the
