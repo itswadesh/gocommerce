@@ -1,17 +1,18 @@
 <script>
     /**
-     * Themes (ext/layouts, D125): the store's theme and the elements of it the
-     * shop arranges. The homepage is the first element; each one opens its own
-     * editor, so a page added to the engine's registry joins this list rather
-     * than the menu. Theme settings — colours, fonts, corners (D127) — open
-     * in the same editor, since they publish with the home page.
+     * Themes (ext/layouts, D125, D128): the store's theme and the elements of
+     * it the shop arranges — the homepage, and the templates every product and
+     * every collection is drawn in. Each opens the same editor, so a page
+     * added to the engine's registry joins this list rather than the menu.
+     * Theme settings — colours, fonts, corners (D127) — open in the
+     * homepage's editor, since they publish with the home page.
      */
     import { base } from "$app/paths";
     import { can, layouts as api } from "$lib/api.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
     import { rise } from "$lib/motion.js";
-    import { themeSettingsSummary } from "$lib/layouts.js";
+    import { themeSettingsSummary, PAGES } from "$lib/layouts.js";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import { titled } from "$lib/brand.svelte.js";
@@ -20,22 +21,25 @@
     const readable = $derived(can("layouts.read"));
 
     let themes = $state([]);
-    let home = $state(null);
+    let states = $state({}); // each page's state, by its key
     let pluginOn = $state(true);
     let loading = $state(true);
 
+    const home = $derived(states.home ?? null);
     const theme = $derived(themes.find((t) => t.id === (home?.document?.theme || "default")) ?? themes[0] ?? null);
 
     async function load() {
         loading = true;
         try {
-            const [reg, state, plugin] = await Promise.all([
+            const [reg, plugin, ...pages] = await Promise.all([
                 api.registry(),
-                api.get("home"),
                 api.plugin().catch(() => null),
+                // A page an older engine does not know answers 404; the list
+                // still shows the ones it does.
+                ...PAGES.map((p) => api.get(p.key).catch(() => null)),
             ]);
             themes = reg?.themes ?? [];
-            home = state;
+            states = Object.fromEntries(PAGES.map((p, i) => [p.key, pages[i]]));
             pluginOn = plugin ? !!plugin.enabled : true;
         } catch (err) {
             toast.error(err);
@@ -50,6 +54,10 @@
 
     function when(at) {
         return at ? new Date(at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
+    }
+
+    function whenTime(at) {
+        return new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
     }
 </script>
 
@@ -96,24 +104,33 @@
                                 <i class="ri-arrow-right-s-line th-chevron" aria-hidden="true"></i>
                             </a>
                         </li>
-                        <li>
-                            <a class="th-row" href="{base}/dash/themes/homepage">
-                                <i class="ri-home-4-line th-icon" aria-hidden="true"></i>
-                                <span class="th-row-text">
-                                    <span class="th-row-title">Homepage</span>
-                                    <span class="txt-hint txt-sm">
-                                        {#if home?.published}
-                                            Published, version {home.published.number}, {when(home.published.published_at)}{#if home.changed}{" · unpublished changes"}{/if}
-                                        {:else if home?.saved}
-                                            Draft saved, not published
-                                        {:else}
-                                            Built-in home page
+                        {#each PAGES.filter((p) => states[p.key]) as p (p.key)}
+                            {@const s = states[p.key]}
+                            <li>
+                                <a class="th-row" href="{base}/dash/themes/{p.route}">
+                                    <i class="{p.icon} th-icon" aria-hidden="true"></i>
+                                    <span class="th-row-text">
+                                        <span class="th-row-title">{p.title}</span>
+                                        <span class="txt-hint txt-sm">
+                                            {#if s.published}
+                                                Published, version {s.published.number}, {when(s.published.published_at)}{#if s.changed}{" · unpublished changes"}{/if}
+                                            {:else if s.saved}
+                                                Draft saved, not published
+                                            {:else}
+                                                Built-in {p.noun}
+                                            {/if}
+                                        </span>
+                                        {#if s.scheduled}
+                                            <span class="th-scheduled txt-sm">
+                                                <i class="ri-calendar-schedule-line" aria-hidden="true"></i>
+                                                Publishes {whenTime(s.scheduled.publish_at)}
+                                            </span>
                                         {/if}
                                     </span>
-                                </span>
-                                <i class="ri-arrow-right-s-line th-chevron" aria-hidden="true"></i>
-                            </a>
-                        </li>
+                                    <i class="ri-arrow-right-s-line th-chevron" aria-hidden="true"></i>
+                                </a>
+                            </li>
+                        {/each}
                     </ul>
                 </section>
             </div>
@@ -184,6 +201,12 @@
     }
     .th-row-title {
         font-weight: 600;
+    }
+    .th-scheduled {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: var(--infoColor, var(--txtPrimaryColor));
     }
     .th-chevron {
         color: var(--surfaceTxtHintColor);
