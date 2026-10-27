@@ -508,6 +508,61 @@ func TestTheBuilderRefusesWhatItCannotStandBehind(t *testing.T) {
 	}
 }
 
+func TestAnOrderWithNoAddressIsSuppliedInTheSuppliersState(t *testing.T) {
+	g, err := gocommerce.ParseGSTIN(supplierGSTIN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := buildTaxInvoice(taxInput{Regime: regime{GSTIN: g, Location: ist}, IssuedAt: time.Now(),
+		DiscountShares: []int64{0}, Order: &gocommerce.Order{Number: "1002", Currency: "INR",
+			Lines: []gocommerce.OrderLine{{SKU: "EBOOK", Quantity: 1, Total: gocommerce.Money{AmountMinor: 10000},
+				Tax: gocommerce.LineTax{RateBP: 1800, AmountMinor: 1800}}},
+			Total: gocommerce.Money{AmountMinor: 11800}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Supply{Kind: SupplyIntra, PlaceOfSupplyCode: "21", PlaceOfSupply: "Odisha", StateTaxName: "SGST"}
+	if doc.Supply != want {
+		t.Errorf("supply = %+v, want %+v, not an export", doc.Supply, want)
+	}
+	if l := doc.Lines[0]; l.CGSTMinor != 900 || l.SGSTMinor != 900 || l.IGSTMinor != 0 {
+		t.Errorf("line = %+v, want CGST 900 and SGST 900", l)
+	}
+}
+
+// TestTwoDeliveriesAtOnceLeaveNoGap: the paid event and the startup
+// reconcile can both reach an order with no invoice; the loser must give its
+// number back.
+func TestTwoDeliveriesAtOnceLeaveNoGap(t *testing.T) {
+	mod := gstModule("INV/{fy}/{seq:05}")
+	app := gstStore(t, gocommerce.Config{}, mod, "Odisha", supplierGSTIN)
+	taxRate(t, app, gocommerce.TaxRateInput{Name: "GST 18%", RateBP: 1800, Country: "IN"})
+	cloth := hsnProduct(t, app, "CLOTH", 10000, "630790")
+	ctx := context.Background()
+
+	result, err := checkout(t, app, purchase{Address: odisha, Lines: []*gocommerce.Product{cloth}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Pay().MarkPaid(ctx, result.Order.ID, "cash"); err != nil {
+		t.Fatal(err)
+	}
+	errs := make(chan error, 2)
+	for range 2 {
+		go func() { errs <- mod.issue(ctx, result.Order.ID) }()
+	}
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Errorf("issue: %v", err)
+		}
+	}
+	gctest.DrainOutbox(t, app)
+	second := buyAndPay(t, app, purchase{Address: odisha, Lines: []*gocommerce.Product{cloth}})
+	if got := taxDocOf(t, app, second.ID).Number; !strings.HasSuffix(got, "/00002") {
+		t.Errorf("the next invoice = %s, want sequence 00002 with no number lost", got)
+	}
+}
+
 func TestRupeesAndRates(t *testing.T) {
 	t.Parallel()
 	for minor, want := range map[int64]string{0: "0.00", 5: "0.05", 99999: "999.99", 103893333: "10,38,933.33",
