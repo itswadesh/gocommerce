@@ -7,6 +7,11 @@
      * added to the engine's registry joins this list rather than the menu.
      * Theme settings — colours, fonts, corners (D127) — open in the
      * homepage's editor, since they publish with the home page.
+     *
+     * Two elements are not pages of the editor: the banners (ext/banners) and
+     * the storefront extras (hello bar, ticker, badges, share buttons), which
+     * are part of how the store looks rather than add-ons (D132). They are
+     * listed here whether or not this build has the editor.
      */
     import { base } from "$app/paths";
     import { can, layouts as api } from "$lib/api.js";
@@ -14,16 +19,22 @@
     import { toast } from "$lib/toast.svelte.js";
     import { rise } from "$lib/motion.js";
     import { themeSettingsSummary, PAGES } from "$lib/layouts.js";
+    import FeatureSwitch from "$lib/components/FeatureSwitch.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import { titled } from "$lib/brand.svelte.js";
 
     const missing = $derived(modulesKnown() && !hasModule("layouts"));
     const readable = $derived(can("layouts.read"));
+    const editor = $derived(!missing && readable);
+    const showBanners = $derived(hasModule("banners") && can("banners.read"));
+    const showExtras = $derived(can("plugins.read"));
 
     let themes = $state([]);
     let states = $state({}); // each page's state, by its key
-    let pluginOn = $state(true);
+    // The theme editor's switch, kept current by its card.
+    let editorPlugin = $state(null);
+    const pluginOn = $derived(editorPlugin ? !!editorPlugin.enabled : true);
     let loading = $state(true);
 
     const home = $derived(states.home ?? null);
@@ -32,16 +43,14 @@
     async function load() {
         loading = true;
         try {
-            const [reg, plugin, ...pages] = await Promise.all([
+            const [reg, ...pages] = await Promise.all([
                 api.registry(),
-                api.plugin().catch(() => null),
                 // A page an older engine does not know answers 404; the list
                 // still shows the ones it does.
                 ...PAGES.map((p) => api.get(p.key).catch(() => null)),
             ]);
             themes = reg?.themes ?? [];
             states = Object.fromEntries(PAGES.map((p, i) => [p.key, pages[i]]));
-            pluginOn = plugin ? !!plugin.enabled : true;
         } catch (err) {
             toast.error(err);
         } finally {
@@ -50,7 +59,8 @@
     }
 
     $effect(() => {
-        if (!missing && readable) load();
+        if (editor) load();
+        else loading = false;
     });
 
     function when(at) {
@@ -73,67 +83,103 @@
             </nav>
         </header>
 
-        {#if missing}
-            <ModuleMissing module="layouts" what="Themes are ext/layouts, and this binary does not have it. Start it with -layouts." />
-        {:else if !readable}
-            <NoAccess right="layouts.read" what="themes" />
-        {:else if loading && !home}
+        {#if !editor && !showBanners && !showExtras}
+            {#if missing}
+                <ModuleMissing module="layouts" what="Themes are ext/layouts, and this binary does not have it. Start it with -layouts." />
+            {:else}
+                <NoAccess right="layouts.read" what="themes" />
+            {/if}
+        {:else if editor && loading && !home}
             <div class="th-wrap"><span class="skeleton-loader"></span></div>
         {:else}
             <div class="th-wrap" in:rise>
                 <section class="th-card">
-                    <div class="th-current">
-                        <span class="txt-hint txt-sm">Current theme</span>
-                        <h2 class="th-name">{theme?.label ?? "Default"}</h2>
-                    </div>
+                    {#if editor}
+                        <div class="th-current">
+                            <span class="txt-hint txt-sm">Current theme</span>
+                            <h2 class="th-name">{theme?.label ?? "Default"}</h2>
+                        </div>
 
-                    {#if !pluginOn}
-                        <p class="txt-hint txt-sm th-off">
-                            Switched off in Plugins, so the storefront shows its built-in pages.
-                        </p>
+                        {#if !pluginOn}
+                            <p class="txt-hint txt-sm th-off">
+                                The theme editor is switched off, so the storefront shows its built-in pages.
+                            </p>
+                        {/if}
                     {/if}
 
                     <h3 class="th-subhead txt-sm">Elements</h3>
                     <ul class="th-list">
-                        <li>
-                            <a class="th-row" href="{base}/dash/themes/homepage?panel=theme">
-                                <i class="ri-palette-line th-icon" aria-hidden="true"></i>
-                                <span class="th-row-text">
-                                    <span class="th-row-title">Theme settings</span>
-                                    <span class="txt-hint txt-sm">{themeSettingsSummary(home?.document?.theme_settings)}</span>
-                                </span>
-                                <i class="ri-arrow-right-s-line th-chevron" aria-hidden="true"></i>
-                            </a>
-                        </li>
-                        {#each PAGES.filter((p) => states[p.key]) as p (p.key)}
-                            {@const s = states[p.key]}
+                        {#if editor}
                             <li>
-                                <a class="th-row" href="{base}/dash/themes/{p.route}">
-                                    <i class="{p.icon} th-icon" aria-hidden="true"></i>
+                                <a class="th-row" href="{base}/dash/themes/homepage?panel=theme">
+                                    <i class="ri-palette-line th-icon" aria-hidden="true"></i>
                                     <span class="th-row-text">
-                                        <span class="th-row-title">{p.title}</span>
-                                        <span class="txt-hint txt-sm">
-                                            {#if s.published}
-                                                Published, version {s.published.number}, {when(s.published.published_at)}{#if s.changed}{" · unpublished changes"}{/if}
-                                            {:else if s.saved}
-                                                Draft saved, not published
-                                            {:else}
-                                                Built-in {p.noun}
-                                            {/if}
-                                        </span>
-                                        {#if s.scheduled}
-                                            <span class="th-scheduled txt-sm">
-                                                <i class="ri-calendar-schedule-line" aria-hidden="true"></i>
-                                                Publishes {whenTime(s.scheduled.publish_at)}
-                                            </span>
-                                        {/if}
+                                        <span class="th-row-title">Theme settings</span>
+                                        <span class="txt-hint txt-sm">{themeSettingsSummary(home?.document?.theme_settings)}</span>
                                     </span>
                                     <i class="ri-arrow-right-s-line th-chevron" aria-hidden="true"></i>
                                 </a>
                             </li>
-                        {/each}
+                            {#each PAGES.filter((p) => states[p.key]) as p (p.key)}
+                                {@const s = states[p.key]}
+                                <li>
+                                    <a class="th-row" href="{base}/dash/themes/{p.route}">
+                                        <i class="{p.icon} th-icon" aria-hidden="true"></i>
+                                        <span class="th-row-text">
+                                            <span class="th-row-title">{p.title}</span>
+                                            <span class="txt-hint txt-sm">
+                                                {#if s.published}
+                                                    Published, version {s.published.number}, {when(s.published.published_at)}{#if s.changed}{" · unpublished changes"}{/if}
+                                                {:else if s.saved}
+                                                    Draft saved, not published
+                                                {:else}
+                                                    Built-in {p.noun}
+                                                {/if}
+                                            </span>
+                                            {#if s.scheduled}
+                                                <span class="th-scheduled txt-sm">
+                                                    <i class="ri-calendar-schedule-line" aria-hidden="true"></i>
+                                                    Publishes {whenTime(s.scheduled.publish_at)}
+                                                </span>
+                                            {/if}
+                                        </span>
+                                        <i class="ri-arrow-right-s-line th-chevron" aria-hidden="true"></i>
+                                    </a>
+                                </li>
+                            {/each}
+                        {/if}
+                        {#if showBanners}
+                            <li>
+                                <a class="th-row" href="{base}/dash/themes/banners">
+                                    <i class="ri-image-2-line th-icon" aria-hidden="true"></i>
+                                    <span class="th-row-text">
+                                        <span class="th-row-title">Banners</span>
+                                        <span class="txt-hint txt-sm">Slides across the top of the home page, and grids of pictures under a heading</span>
+                                    </span>
+                                    <i class="ri-arrow-right-s-line th-chevron" aria-hidden="true"></i>
+                                </a>
+                            </li>
+                        {/if}
+                        {#if showExtras}
+                            <li>
+                                <a class="th-row" href="{base}/dash/themes/extras">
+                                    <i class="ri-magic-line th-icon" aria-hidden="true"></i>
+                                    <span class="th-row-text">
+                                        <span class="th-row-title">Storefront extras</span>
+                                        <span class="txt-hint txt-sm">Hello bar, news ticker, trust badges and share buttons</span>
+                                    </span>
+                                    <i class="ri-arrow-right-s-line th-chevron" aria-hidden="true"></i>
+                                </a>
+                            </li>
+                        {/if}
                     </ul>
                 </section>
+
+                {#if editor}
+                    <div class="th-switch">
+                        <FeatureSwitch pluginKey="layouts" bind:plugin={editorPlugin} />
+                    </div>
+                {/if}
             </div>
         {/if}
     </div>
@@ -153,6 +199,9 @@
         margin: 2px 0 0;
         font-size: 1.125rem;
         font-weight: 600;
+    }
+    .th-switch {
+        margin-top: 16px;
     }
     .th-off {
         margin: 8px 0 0;

@@ -37,11 +37,15 @@
  * values live in gocommerce.css, so light and dark can differ; here they are
  * only names.
  *
+ * `anyRight` is for a screen several rights lead to, any one of them enough:
+ * Themes holds the theme editor, the banners and the storefront extras, each
+ * under its own right, and an operator with any of them has a reason to open it.
+ *
  * `keywords` are for the palette alone: what an operator might type that is not
  * the label. Nothing draws them.
  */
 
-import { can } from "$lib/session.svelte.js";
+import { can, canAny } from "$lib/session.svelte.js";
 import { hasModule } from "$lib/modules.svelte.js";
 import { moduleScreens } from "$lib/screens.svelte.js";
 
@@ -216,12 +220,19 @@ export const NAV = [
         icon: "ri-layout-line",
         right: "catalog.read",
         accent: "blue",
-        keywords: "media files themes homepage pages banners menus cms feeds sitemap",
+        keywords: "media files themes homepage pages menus cms feeds sitemap",
         children: [
             { href: "/dash/media", label: "Files", right: "media.read", keywords: "media images pictures uploads" },
-            { href: "/dash/themes", label: "Themes", right: "layouts.read", module: "layouts", keywords: "theme homepage home page sections hero layout customize composer builder publish" },
+            // Banners and the storefront extras are elements of the theme
+            // (D132), so they are found here, and Themes shows in a build
+            // without the editor when it has either of them.
+            {
+                href: "/dash/themes",
+                label: "Themes",
+                anyRight: ["layouts.read", "banners.read", "plugins.read"],
+                keywords: "theme homepage home page sections hero layout customize composer builder publish banners slider carousel hello bar ticker trust badges share buttons extras",
+            },
             { href: "/dash/cms", label: "Pages", right: "pages.read", module: "cms", keywords: "content copy about" },
-            { href: "/dash/banners", label: "Banners", right: "banners.read", module: "banners", keywords: "banner slider hero carousel home page pictures grid" },
             { href: "/dash/menus", label: "Menus", right: "menus.read", module: "navigation", keywords: "navigation header footer links" },
             { href: "/dash/feeds", label: "Feeds", right: "plugins.read", module: "feeds", keywords: "google merchant meta catalogue feed" },
             { href: "/dash/sitemap", label: "Sitemap", right: "plugins.read", module: "sitemaps", keywords: "sitemap.xml search console" },
@@ -274,9 +285,10 @@ export const NAV = [
             { href: "/dash/ai/approvals", label: "Approvals", right: "ai.approve", module: "ai-gateway", keywords: "ai proposals agent review approve reject" },
         ],
     },
-    // What this binary can do that is switched on from the panel: storefront
-    // extras, widgets, search, marketing. Shopify's "Apps", under the name
-    // this store uses. plugins.read to see them and plugins.write to change
+    // The add-ons this binary carries: analytics and chat widgets, marketing
+    // and search integrations, imports. Shopify's "Apps", under the name this
+    // store uses. A feature that is part of the product is set up on its own
+    // screen instead (D132). plugins.read to see them and plugins.write to change
     // one, because a plugin's settings are where a gateway's live keys live.
     {
         href: "/dash/plugins",
@@ -284,7 +296,7 @@ export const NAV = [
         icon: "ri-puzzle-line",
         right: "plugins.read",
         accent: "violet",
-        keywords: "apps plugins integrations widgets search klaviyo meilisearch",
+        keywords: "apps plugins add-ons integrations widgets analytics chat search klaviyo meilisearch",
     },
     // Settings has no right of its own: the section is a shell, and every
     // screen inside it carries its own gate. Hiding the whole section from
@@ -351,7 +363,8 @@ export const NAV = [
  * is: the section is the way to the child.
  */
 export function visibleNav(items = NAV) {
-    const reachable = (item) => (!item.module || hasModule(item.module)) && (!item.right || can(item.right));
+    const reachable = (item) =>
+        (!item.module || hasModule(item.module)) && (!item.right || can(item.right)) && (!item.anyRight || canAny(...item.anyRight));
     return withModuleScreens(items)
         .filter((item) => reachable(item) || (item.children ?? []).some(reachable))
         .map((item) =>
@@ -394,7 +407,8 @@ function withModuleScreens(items) {
  * A child borrows its section's icon and accent, since it has none of its own.
  */
 export function flatNav(items = NAV) {
-    const reachable = (item) => (!item.module || hasModule(item.module)) && (!item.right || can(item.right));
+    const reachable = (item) =>
+        (!item.module || hasModule(item.module)) && (!item.right || can(item.right)) && (!item.anyRight || canAny(...item.anyRight));
     const out = [];
     for (const item of visibleNav(items)) {
         if (reachable(item)) out.push(item);

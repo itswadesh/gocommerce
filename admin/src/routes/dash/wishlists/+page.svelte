@@ -14,6 +14,7 @@
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { formatMoney, formatDate, relativeTime } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
+    import FeatureSwitch from "$lib/components/FeatureSwitch.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
@@ -142,6 +143,11 @@
                 </div>
             {/if}
         </header>
+
+        {#if !missing && readable}
+            <!-- The feature's switch and settings live here, beside it (D132). -->
+            <FeatureSwitch pluginKey="wishlist" />
+        {/if}
 
         {#if !readable}
             <NoAccess right="customers.read" what="wishlists" />

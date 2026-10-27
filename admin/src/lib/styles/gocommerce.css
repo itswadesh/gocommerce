@@ -7143,65 +7143,6 @@ kbd + kbd {
     }
 }
 
-/* -------------------------------------------- plugins configured elsewhere */
-
-/*
- * The second list on the Plugins screen: what is switched on here and set up
- * somewhere with more context.
- *
- * Rows rather than cards, deliberately. A card says "this is a thing you act
- * on"; these are a register of what is installed, and the action — the switch
- * — is one button at the end of a line. Giving them the same card as a plugin
- * you actually configure here would say the two are the same kind of row, and
- * the whole point is that they are not.
- */
-.shopify-skin .plugin-away-note {
-    max-width: 75ch;
-}
-.shopify-skin .plugin-away {
-    margin-bottom: var(--smSpacing);
-    border: 1px solid var(--surfaceAlt2Color);
-    border-radius: var(--borderRadius);
-    overflow: hidden;
-}
-.shopify-skin .plugin-away-home {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 12px;
-    background: var(--surfaceAlt1Color);
-    font-weight: 600;
-    color: var(--surfaceTxtColor);
-    border-bottom: 1px solid var(--surfaceAlt2Color);
-}
-.shopify-skin .plugin-away-home:hover {
-    color: var(--markColor);
-}
-.shopify-skin .plugin-away-row {
-    display: grid;
-    grid-template-columns: 1fr auto auto;
-    align-items: center;
-    gap: var(--smSpacing);
-    padding: 7px 12px;
-    border-bottom: 1px solid var(--surfaceAlt1Color);
-}
-.shopify-skin .plugin-away-items > .plugin-away-row:last-child {
-    border-bottom: 0;
-}
-.shopify-skin .plugin-away-name {
-    min-width: 0;
-    overflow-wrap: anywhere;
-}
-/* The switch is quiet until wanted: a column of buttons down a register reads
-   as a list of things to press. */
-.shopify-skin .plugin-away-btn {
-    opacity: 0.55;
-}
-.shopify-skin .plugin-away-row:hover .plugin-away-btn,
-.shopify-skin .plugin-away-btn:focus-visible {
-    opacity: 1;
-}
-
 /* ------------------------------------------------------------ api keys */
 
 /*

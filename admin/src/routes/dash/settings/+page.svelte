@@ -30,6 +30,7 @@
 
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
     import CustomerSignInCard from "$lib/components/CustomerSignInCard.svelte";
+    import FeatureSwitch from "$lib/components/FeatureSwitch.svelte";
     import Select from "$lib/components/Select.svelte";
     import { countryOptions } from "$lib/countries.js";
     import { currencyOptions } from "$lib/currencies.js";
@@ -75,6 +76,9 @@
      */
     const editable = $derived(can("store.write"));
     let profile = $state(null);
+    // Bumped when customer accounts are switched, so the sign-in card reads
+    // the plugin again and shows its form or its "switched off" note.
+    let signInVersion = $state(0);
     let draft = $state(null);
     let saving = $state(false);
 
@@ -441,7 +445,19 @@
                     </section>
                 {/if}
 
-                <CustomerSignInCard {channels} />
+                <!-- How shoppers get in and check out, and whether the shop is
+                     open: the store's own rules, so they are set here rather
+                     than among the add-ons on Plugins (D132). The sign-in
+                     method has a form of its own below the switch, which knows
+                     whether an SMS provider can send the codes. -->
+                <h2 class="section-title">Customers and checkout</h2>
+                <FeatureSwitch pluginKey="identity" settings={false} onchange={() => signInVersion++} />
+                {#key signInVersion}
+                    <CustomerSignInCard {channels} />
+                {/key}
+                <FeatureSwitch pluginKey="guest-checkout" />
+                <FeatureSwitch pluginKey="store-close" />
+                <FeatureSwitch pluginKey="enquiry-mode" />
 
                 <!-- Everything below is read more than it is changed, so it is
                      folded, as on Sitemap and Feeds, and each fold says on its

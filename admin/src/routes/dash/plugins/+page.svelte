@@ -11,12 +11,19 @@
      * with what. Nothing is downloaded, which is the whole reason a
      * store.operate right is enough to use it.
      *
+     * Only add-ons are listed (D132): an analytics or chat tag, a marketing
+     * or search integration, an import. A feature that is part of the
+     * product — menus, banners, a payment gateway, the sign-in method — names
+     * the screen it is set up on (`home`), and is switched and configured
+     * there instead.
+     *
      * A card's state is three things at once: on or off, configured or not
      * (every required field filled), and where it came from. All three are
      * shown, because "enabled but not configured" is the state that sends an
      * operator here in the first place.
      */
     import { base } from "$app/paths";
+    import { goto } from "$app/navigation";
     import { page } from "$app/state";
     import { can, request } from "$lib/api.js";
     import { activateNote } from "$lib/plugin-ready.js";
@@ -24,7 +31,6 @@
     import EmptyState from "$lib/components/EmptyState.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginSettingsDrawer from "$lib/components/PluginSettingsDrawer.svelte";
-    import { homeOf } from "$lib/plugin-homes.js";
     import { titled } from "$lib/brand.svelte.js";
 
     /* plugins.read lists them; plugins.write switches one on and holds its
@@ -49,11 +55,18 @@
     async function load() {
         loading = true;
         try {
-            plugins = await request("GET", "/api/admin/plugins");
+            const all = await request("GET", "/api/admin/plugins");
+            plugins = all.filter((p) => !p.home);
             // ?open=<key> opens that plugin's settings, so a screen that
-            // depends on a plugin can link straight to its form.
+            // depends on a plugin can link straight to its form. A built-in
+            // feature's link, saved before it moved, goes to its own screen.
             const wanted = page.url.searchParams.get("open");
-            const target = wanted && plugins.find((p) => p.key === wanted && !homeOf(p));
+            const moved = wanted && all.find((p) => p.key === wanted && p.home);
+            if (moved) {
+                goto(`${base}${moved.home}`, { replaceState: true });
+                return;
+            }
+            const target = wanted && plugins.find((p) => p.key === wanted);
             if (target && writable) open(target);
         } catch (err) {
             toast.error(err);
@@ -62,20 +75,17 @@
         }
     }
 
+    // Four groups an add-on falls into, and Other for the rest: an import,
+    // the AI gateway, the head scripts nothing else covers.
     const CATEGORY_LABEL = {
-        storefront: "Storefront",
-        marketing: "Marketing",
         analytics: "Analytics",
         chat: "Chat",
+        marketing: "Marketing",
         search: "Search",
-        notifications: "Email and SMS",
-        payments: "Payment methods",
-        shipping: "Shipping providers",
-        operations: "Operations",
-        integration: "Integrations",
-        ai: "AI",
+        other: "Other",
     };
-    const CATEGORY_ORDER = ["storefront", "marketing", "search", "notifications", "payments", "shipping", "integration", "ai", "analytics", "chat", "operations"];
+    const CATEGORY_ORDER = ["analytics", "chat", "marketing", "search", "other"];
+    const groupOf = (p) => (CATEGORY_LABEL[p.category] && p.category !== "other" ? p.category : "other");
 
     const shown = $derived.by(() => {
         const needle = search.trim().toLowerCase();
@@ -85,44 +95,16 @@
             return (p.title + " " + p.description + " " + p.key).toLowerCase().includes(needle);
         });
     });
-    /*
-     * Two lists, not one.
-     *
-     * Forty-six cards, of which the gateways belong on Payment methods, the
-     * carriers on Shipping providers, the mail backends under Setup Email, and
-     * a dozen more have a screen with the actual thing on it. A settings
-     * drawer here was a form with no context beside the form that has it, and
-     * the operator had no way to know which of the two was the real one.
-     *
-     * Nothing is hidden: everything with a home is still listed, still
-     * switchable, and now says where it is configured. What it loses is the
-     * second editing surface.
-     */
-    const here = $derived(shown.filter((p) => !homeOf(p)));
-    const elsewhere = $derived(shown.filter((p) => homeOf(p)));
-
     const groups = $derived.by(() => {
         const byCategory = new Map();
-        for (const p of here) {
-            const key = p.category || "integration";
+        for (const p of shown) {
+            const key = groupOf(p);
             if (!byCategory.has(key)) byCategory.set(key, []);
             byCategory.get(key).push(p);
         }
         return [...byCategory.entries()].sort(
             ([a], [b]) => CATEGORY_ORDER.indexOf(a) - CATEGORY_ORDER.indexOf(b),
         );
-    });
-
-    /* Grouped by destination, so "everything on Payment methods" is one row of
-       cards rather than eight scattered through a list. */
-    const awayGroups = $derived.by(() => {
-        const byHome = new Map();
-        for (const p of elsewhere) {
-            const home = homeOf(p);
-            if (!byHome.has(home.href)) byHome.set(home.href, { home, items: [] });
-            byHome.get(home.href).items.push(p);
-        }
-        return [...byHome.values()].sort((a, b) => a.home.label.localeCompare(b.home.label));
     });
     const enabledCount = $derived(plugins.filter((p) => p.enabled).length);
 
@@ -211,10 +193,11 @@
         {:else}
             <div class="m-b-base">
                 <div class="field-help m-b-base">
-                    Features this store can switch on without touching code: storefront extras,
-                    chat and analytics widgets, search, marketing. Everything here is already in
-                    the binary — a switch decides whether it runs, and its settings decide how. A
-                    storefront reads the enabled ones from <code>GET /api/plugins</code>.
+                    Add-ons this store can switch on without touching code: analytics and chat
+                    widgets, marketing and search integrations, imports. Everything here is already
+                    in the binary — a switch decides whether it runs, and its settings decide how.
+                    Features that are part of the store, such as menus, banners, payment methods and
+                    notifications, are set up on their own screens.
                 </div>
 
                 <div class="txt-hint txt-sm m-b-base">
@@ -288,44 +271,6 @@
                         </div>
                     {/each}
 
-                    {#if awayGroups.length}
-                        <h6 class="section-title">Configured on their own screens</h6>
-                        <p class="txt-hint txt-sm m-b-sm plugin-away-note">
-                            These are switched on here and set up where the thing itself is, so
-                            there is one form rather than two.
-                        </p>
-                        {#each awayGroups as group (group.home.href)}
-                            <div class="plugin-away">
-                                <a class="plugin-away-home" href="{base}{group.home.href}">
-                                    <i class="ri-arrow-right-up-line" aria-hidden="true"></i>
-                                    <span>{group.home.label}</span>
-                                </a>
-                                <div class="plugin-away-items">
-                                    {#each group.items as p (p.key)}
-                                        {@const st = stateOf(p)}
-                                        <div class="plugin-away-row">
-                                            <span class="plugin-away-name">
-                                                <i class="plugin-away-icon {p.icon || 'ri-plug-line'}" aria-hidden="true"></i>
-                                                {p.title}
-                                            </span>
-                                            <span class="label {st.cls}">{st.label}</span>
-                                            <button
-                                                type="button"
-                                                class="btn sm transparent secondary plugin-away-btn"
-                                                class:loading={working === p.key}
-                                                disabled={working === p.key || !writable}
-                                                onclick={() => toggle(p)}
-                                            >
-                                                <span class="txt">
-                                                    {p.enabled ? "Deactivate" : "Activate"}
-                                                </span>
-                                            </button>
-                                        </div>
-                                    {/each}
-                                </div>
-                            </div>
-                        {/each}
-                    {/if}
                 {/if}
             </div>
         {/if}
@@ -366,10 +311,6 @@
     }
     .plugin-card.active .plugin-icon {
         color: var(--successColor);
-    }
-    .plugin-away-icon {
-        margin-right: 6px;
-        color: var(--txtHintColor);
     }
     .plugin-description {
         flex: 1 1 auto;

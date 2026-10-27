@@ -20,6 +20,7 @@
     import { rise } from "$lib/motion.js";
     import Drawer from "$lib/components/Drawer.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
+    import FeatureSwitch from "$lib/components/FeatureSwitch.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import { titled } from "$lib/brand.svelte.js";
@@ -142,6 +143,11 @@
                 </div>
             {/if}
         </header>
+
+        {#if !missing && readable}
+            <!-- The feature's switch and settings live here, beside it (D132). -->
+            <FeatureSwitch pluginKey="showcases" />
+        {/if}
 
         {#if missing}
             <ModuleMissing module="showcases" what="Video showcases are kept by ext/showcases, and this binary does not have it. Start it with -showcases." />

@@ -72,8 +72,7 @@
         </p>
         {#if !plugin.enabled}
             <div class="field-help">
-                Customer accounts are switched off under
-                <a href="{base}/dash/plugins">Plugins</a>, so everybody checks out as a guest.
+                Customer accounts are switched off above, so everybody checks out as a guest.
             </div>
         {:else}
             <form

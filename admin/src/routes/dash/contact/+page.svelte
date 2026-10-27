@@ -24,6 +24,7 @@
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
+    import FeatureSwitch from "$lib/components/FeatureSwitch.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
@@ -260,6 +261,11 @@
                 </div>
             {/if}
         </header>
+
+        {#if !missing && readable}
+            <!-- The feature's switch and settings live here, beside it (D132). -->
+            <FeatureSwitch pluginKey="contact-form" />
+        {/if}
 
         {#if !readable && !missing}
             <NoAccess right="contact.read" what="the contact inbox" />

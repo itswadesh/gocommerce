@@ -8,7 +8,11 @@
      * for its picture, title and link, a switch to take it off the storefront
      * without losing it, and arrows to move it one place among its kind. The
      * arrows send the page's whole order, as the engine wants it.
+     *
+     * An element of the theme (D132), so it lives under Themes; it is part of
+     * every store and has no switch, unless this store had it off before.
      */
+    import { base } from "$app/paths";
     import { flip } from "svelte/animate";
     import { can, banners as bannersAPI } from "$lib/api.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
@@ -20,6 +24,7 @@
     import Confirm from "$lib/components/Confirm.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
     import ImageField from "$lib/components/ImageField.svelte";
+    import FeatureSwitch from "$lib/components/FeatureSwitch.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import { titled } from "$lib/brand.svelte.js";
@@ -232,7 +237,7 @@
     <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
             <nav class="breadcrumbs">
-                <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Content</div>
+                <a class="breadcrumb-item tw:text-sm" href="{base}/dash/themes">Themes</a>
                 <h1 class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">Banners</h1>
             </nav>
             {#if !missing && readable && writable}
@@ -244,6 +249,10 @@
                 </div>
             {/if}
         </header>
+
+        {#if !missing && readable}
+            <FeatureSwitch pluginKey="banners" />
+        {/if}
 
         {#if missing}
             <ModuleMissing module="banners" what="Banners are kept by ext/banners, and this binary does not have it. Start it with -banners." />
