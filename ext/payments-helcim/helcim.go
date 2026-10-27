@@ -199,6 +199,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "Helcim", Icon: "ri-bank-card-line", Category: "payments", DefaultEnabled: inCode,
+		Home:        "/dash/settings/payments",
 		Description: "Card payments through Helcim's HelcimPay.js, with the verified webhook marking orders paid.",
 		Docs:        "https://devdocs.helcim.com/",
 		Fields: []gocommerce.PluginField{

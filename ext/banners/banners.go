@@ -127,6 +127,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.db = app.DB()
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "Banners", Icon: "ri-image-2-line", Category: "storefront", DefaultEnabled: true,
+		Home: "/dash/themes/banners", AlwaysOn: true,
 		Description: "Pictures on the storefront's pages — slides across the top and grids of tiles under a heading — edited on the Banners screen and served at /x/banners.",
 	})
 

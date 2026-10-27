@@ -42,7 +42,7 @@
           "navigation"
         ],
         "summary": "One menu as a tree, every item resolved to a storefront path",
-        "description": "Items point at things by handle — a product's slug, a collection's, a category's, a page's — and `url` is that handle put through the path the Plugins screen holds for the kind, so a storefront renders the tree without knowing what each item is. `kind` and `target` travel too for one that wants to.",
+        "description": "Items point at things by handle — a product's slug, a collection's, a category's, a page's — and `url` is that handle put through the path the Menus screen holds for the kind, so a storefront renders the tree without knowing what each item is. `kind` and `target` travel too for one that wants to.",
         "parameters": [
           {
             "name": "handle",

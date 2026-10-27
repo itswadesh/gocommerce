@@ -137,6 +137,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	}
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "Resend", Icon: "ri-mail-line", Category: "notifications", DefaultEnabled: inCode,
+		Home:        "/dash/notifications/email",
 		Description: "Sends the store's emails — order confirmations, shipping notices, password resets — through Resend. Paste an API key and mail goes out; until a domain is verified it is sent from " + DefaultFrom + ". The wording of each message is edited under Notifications › Setup Email.",
 		Docs:        "https://resend.com/docs/api-reference/emails/send-email",
 		Fields: []gocommerce.PluginField{

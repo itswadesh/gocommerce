@@ -164,6 +164,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "Stripe", Icon: "ri-bank-card-line", Category: "payments", DefaultEnabled: inCode,
+		Home:        "/dash/settings/payments",
 		Description: "Cards and wallets through Stripe PaymentIntents, with the signed webhook marking orders paid.",
 		Docs:        "https://docs.stripe.com/payments",
 		Fields: []gocommerce.PluginField{

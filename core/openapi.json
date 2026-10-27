@@ -19413,7 +19413,7 @@
           },
           "configured": {
             "type": "boolean",
-            "description": "Whether the provider can be used right now. False for a module installed idle whose key has not been typed into the Plugins screen yet, or for cash on delivery switched off for this store; such a provider is listed here and offered nowhere."
+            "description": "Whether the provider can be used right now. False for a module installed idle whose key has not been typed into its provider screen yet, or for cash on delivery switched off for this store; such a provider is listed here and offered nowhere."
           },
           "plugin": {
             "type": "string",
@@ -20897,6 +20897,14 @@
           },
           "docs": {
             "type": "string"
+          },
+          "home": {
+            "type": "string",
+            "description": "The panel screen a built-in feature is set up on, a path under /dash/ (D132). Present, the feature is part of the product and the Plugins screen leaves it out; absent, it is an add-on listed there."
+          },
+          "always_on": {
+            "type": "boolean",
+            "description": "A built-in feature with no switch (D132). On with no stored state, and a PATCH may not turn it off; a store that had it off before keeps it off until it switches it on."
           },
           "enabled": {
             "type": "boolean"

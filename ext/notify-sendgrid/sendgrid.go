@@ -122,6 +122,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	}
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "SendGrid", Icon: "ri-mail-unread-line", Category: "notifications", DefaultEnabled: inCode,
+		Home:        "/dash/notifications/email",
 		Description: "Sends the store's emails — order confirmations, shipping notices, password resets — through SendGrid. The wording of each message is edited under Notifications › Setup Email.",
 		Docs:        "https://www.twilio.com/docs/sendgrid/for-developers/sending-email/api-getting-started",
 		Fields: []gocommerce.PluginField{

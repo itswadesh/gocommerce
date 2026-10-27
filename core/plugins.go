@@ -52,6 +52,18 @@ type PluginDef struct {
 	DefaultEnabled bool `json:"default_enabled"`
 	// Docs is where to read more, when there is somewhere.
 	Docs string `json:"docs,omitempty"`
+	// Home is the panel screen a built-in feature is set up on, a path
+	// under /dash/. A descriptor with a Home is part of the product rather
+	// than an add-on: the Plugins screen leaves it out, and its own screen
+	// shows its switch and its settings (D132). Nothing else changes — the
+	// row, the admin doors, GET /api/plugins and Fill treat it like any
+	// plugin, so a store's settings and its storefront are what they were.
+	Home string `json:"home,omitempty"`
+	// AlwaysOn is a built-in feature with no switch: on with no row, and a
+	// patch may not turn it off. A row stored off before the switch went
+	// still reads off, so that store's storefront does not change under it,
+	// and it can be switched on once, after which it stays on (D132).
+	AlwaysOn bool `json:"always_on,omitempty"`
 }
 
 // PluginField is one setting.
@@ -160,6 +172,17 @@ func (p *Plugins) register(def PluginDef) error {
 	}
 	if !pluginIconRE.MatchString(def.Icon) {
 		return fmt.Errorf("plugin %q: icon %q is not a Remix Icon class such as ri-plug-line", def.Key, def.Icon)
+	}
+	if def.Home != "" && !strings.HasPrefix(def.Home, "/dash/") {
+		return fmt.Errorf("plugin %q: home %q is not a panel screen; want a path under /dash/", def.Key, def.Home)
+	}
+	// A feature with no switch is still reached somewhere, and that screen is
+	// the only place it can be switched on again by a store that had it off.
+	if def.AlwaysOn && def.Home == "" {
+		return fmt.Errorf("plugin %q is always on and names no screen (Home) of its own", def.Key)
+	}
+	if def.AlwaysOn {
+		def.DefaultEnabled = true
 	}
 	seen := map[string]bool{}
 	for _, f := range def.Fields {
@@ -450,14 +473,17 @@ func (p *Plugins) Update(ctx context.Context, key string, patch PluginPatch) (*P
 		if !current.present {
 			enabled = def.DefaultEnabled
 		}
+		wasOn := current.enabled || (!current.present && def.DefaultEnabled)
 		if patch.Enabled != nil {
+			if def.AlwaysOn && wasOn && !*patch.Enabled {
+				return Validationf("%s is always on: it is part of the store, not an add-on to switch off.", def.Title)
+			}
 			enabled = *patch.Enabled
 		}
 		// A plugin that is on must have what it needs to work. Checked when
 		// it is switched on and when this patch empties a required setting —
 		// not on every save, so a plugin that was on before this rule can
 		// still have its other settings changed.
-		wasOn := current.enabled || (!current.present && def.DefaultEnabled)
 		// The secrets that would not open and stay as they are: this save
 		// neither typed a new value nor emptied the field.
 		kept := map[string]any{}

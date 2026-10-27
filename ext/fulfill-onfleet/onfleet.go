@@ -160,6 +160,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "Onfleet", Icon: "ri-route-line", Category: "shipping", DefaultEnabled: inCode,
+		Home:        "/dash/shipping-settings/providers",
 		Description: "Dispatches your own drivers through Onfleet: every shipment becomes a delivery task.",
 		Docs:        "https://docs.onfleet.com/",
 		Fields: []gocommerce.PluginField{

@@ -9,9 +9,19 @@ package gocommerce
 // A plugin with code behind it — a search index, a marketing integration —
 // is registered by its module instead, so that the list only ever shows
 // what this binary can actually do.
+//
+// Not all of them are add-ons. The storefront extras a theme draws, the
+// store's own rules and cash on delivery are part of the product, so each
+// names the screen it is set up on (Home) and the Plugins screen leaves it
+// out (D132). The analytics, chat and marketing tags stay plugins.
+const (
+	homeStorefrontExtras = "/dash/themes/extras"
+	homeStoreSettings    = "/dash/settings"
+)
+
 var builtinPlugins = []PluginDef{
 	{
-		Key: "hello-bar", Title: "Hello bar", Icon: "ri-megaphone-line", Category: "storefront",
+		Key: "hello-bar", Home: homeStorefrontExtras, Title: "Hello bar", Icon: "ri-megaphone-line", Category: "storefront",
 		Description: "A line across the top of every storefront page — a promotion, a notice, a shipping threshold.",
 		Fields: []PluginField{
 			{Key: "message", Label: "Message", Kind: "text", Public: true, Required: true},
@@ -20,14 +30,14 @@ var builtinPlugins = []PluginDef{
 		},
 	},
 	{
-		Key: "store-close", Title: "Store closed", Icon: "ri-door-closed-line", Category: "storefront",
+		Key: "store-close", Home: homeStoreSettings, Title: "Store closed", Icon: "ri-door-closed-line", Category: "storefront",
 		Description: "Close the storefront with a message — a holiday, a stock-take, a relaunch — without touching the catalogue.",
 		Fields: []PluginField{
 			{Key: "message", Label: "Message", Kind: "textarea", Public: true, Required: true, Default: "We are closed for a short while. Back soon."},
 		},
 	},
 	{
-		Key: "enquiry-mode", Title: "Enquiry mode", Icon: "ri-question-answer-line", Category: "storefront",
+		Key: "enquiry-mode", Home: homeStoreSettings, Title: "Enquiry mode", Icon: "ri-question-answer-line", Category: "storefront",
 		Description: "Shoppers enquire about a product instead of buying it: the storefront shows an enquiry form where the Add to cart button was.",
 		Fields: []PluginField{
 			{Key: "button", Label: "Button text", Kind: "text", Public: true, Default: "Enquire"},
@@ -39,11 +49,11 @@ var builtinPlugins = []PluginDef{
 	// owner says otherwise, and every store that ran before the switch existed
 	// keeps taking it.
 	{
-		Key: CODPluginKey, Title: "Cash on delivery", Icon: "ri-hand-coin-line", Category: "payments", DefaultEnabled: true,
+		Key: CODPluginKey, Home: "/dash/settings/payments", Title: "Cash on delivery", Icon: "ri-hand-coin-line", Category: "payments", DefaultEnabled: true,
 		Description: "Shoppers pay in cash when the order arrives. Off, checkout offers only the gateways that are set up.",
 	},
 	{
-		Key: "guest-checkout", Title: "Guest checkout", Icon: "ri-user-3-line", Category: "storefront", DefaultEnabled: true,
+		Key: "guest-checkout", Home: homeStoreSettings, Title: "Guest checkout", Icon: "ri-user-3-line", Category: "storefront", DefaultEnabled: true,
 		Description: "Let a shopper check out without an account. Off, the storefront asks them to sign in first.",
 	},
 	// No "wishlist" here any more. It was a switch with nothing behind it —
@@ -58,14 +68,14 @@ var builtinPlugins = []PluginDef{
 		},
 	},
 	{
-		Key: "trust-badges", Title: "Trust badges", Icon: "ri-shield-check-line", Category: "storefront",
+		Key: "trust-badges", Home: homeStorefrontExtras, Title: "Trust badges", Icon: "ri-shield-check-line", Category: "storefront",
 		Description: "Badges under the Add to cart button — secure checkout, free returns, whatever this store stands behind.",
 		Fields: []PluginField{
 			{Key: "badges", Label: "Badges", Kind: "textarea", Public: true, Required: true, Help: "One per line."},
 		},
 	},
 	{
-		Key: "social-sharing", Title: "Social sharing buttons", Icon: "ri-share-forward-line", Category: "marketing",
+		Key: "social-sharing", Home: homeStorefrontExtras, Title: "Social sharing buttons", Icon: "ri-share-forward-line", Category: "marketing",
 		Description: "Share buttons on the product page.",
 		Fields: []PluginField{
 			{Key: "networks", Label: "Networks", Kind: "text", Public: true, Default: "facebook, x, whatsapp, pinterest", Help: "Comma-separated."},
@@ -143,7 +153,7 @@ var builtinPlugins = []PluginDef{
 		},
 	},
 	{
-		Key: "news-ticker", Title: "News ticker", Icon: "ri-newspaper-line", Category: "storefront",
+		Key: "news-ticker", Home: homeStorefrontExtras, Title: "News ticker", Icon: "ri-newspaper-line", Category: "storefront",
 		Description: "A scrolling line of short notices.",
 		Fields: []PluginField{
 			{Key: "items", Label: "Notices", Kind: "textarea", Public: true, Required: true, Help: "One per line."},

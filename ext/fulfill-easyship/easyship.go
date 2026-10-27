@@ -214,6 +214,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	inCode := m.complete(&m.cfg)
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "Easyship", Icon: "ri-global-line", Category: "shipping", DefaultEnabled: inCode,
+		Home:        "/dash/shipping-settings/providers",
 		Description: "Cross-border labels and customs paperwork through Easyship, booked on a courier service you choose.",
 		Docs:        "https://developers.easyship.com/",
 		Fields: []gocommerce.PluginField{

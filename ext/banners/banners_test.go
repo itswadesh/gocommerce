@@ -156,11 +156,22 @@ func TestASaveWithoutTheSwitchKeepsItsState(t *testing.T) {
 	}
 }
 
+// Banners have no switch (D132): a store cannot turn them off, but one that
+// had the old switch off keeps its storefront as it was until it turns them
+// on again, and the gate still holds for it.
 func TestThePluginGatesTheStorefrontOnly(t *testing.T) {
 	app := gctest.New(t, New(Config{}))
 	off := false
-	if _, err := app.Plugins().Update(t.Context(), pluginKey, gocommerce.PluginPatch{Enabled: &off}); err != nil {
-		t.Fatalf("switch off: %v", err)
+	if _, err := app.Plugins().Update(t.Context(), pluginKey, gocommerce.PluginPatch{Enabled: &off}); err == nil {
+		t.Fatal("banners were switched off; they have no switch")
+	}
+	if rec := gctest.Request(t, app, http.MethodGet, "/x/banners", nil); rec.Code != http.StatusOK {
+		t.Errorf("public banners = %d, want 200", rec.Code)
+	}
+	// A row written off before the switch went.
+	if _, err := app.DB().ExecContext(t.Context(), `INSERT INTO plugins (key, enabled, settings) VALUES ($1, false, '{}')
+		ON CONFLICT (store_id, key) DO UPDATE SET enabled = false`, pluginKey); err != nil {
+		t.Fatal(err)
 	}
 	if rec := gctest.Request(t, app, http.MethodGet, "/x/banners", nil); rec.Code != http.StatusNotFound {
 		t.Errorf("public banners while off = %d, want 404", rec.Code)

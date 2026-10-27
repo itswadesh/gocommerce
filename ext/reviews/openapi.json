@@ -81,7 +81,7 @@
           "reviews"
         ],
         "summary": "Post a review",
-        "description": "A rating from 1 to 5, a name, an email and a few words, for a product that exists. It waits for moderation unless the Plugins screen approves on sight, and is marked verified when the email has bought the product; the Plugins screen can make that a condition. `website` is a honeypot — a field no person sees. 404 while the plugin is off.",
+        "description": "A rating from 1 to 5, a name, an email and a few words, for a product that exists. It waits for moderation unless the Reviews screen approves on sight, and is marked verified when the email has bought the product; the Reviews screen can make that a condition. `website` is a honeypot — a field no person sees. 404 while the plugin is off.",
         "requestBody": {
           "required": true,
           "content": {
