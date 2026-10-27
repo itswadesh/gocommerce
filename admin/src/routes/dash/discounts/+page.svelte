@@ -262,6 +262,7 @@
             ends_at: "",
             usage_limit: "",
             once_per_email: false,
+            listed: false,
             active: true,
         };
     }
@@ -295,6 +296,7 @@
             ends_at: d.ends_at ? d.ends_at.slice(0, 16) : "",
             usage_limit: d.usage_limit ? String(d.usage_limit) : "",
             once_per_email: d.once_per_email,
+            listed: !!d.listed,
             active: d.active,
         };
         targetNames = new Map();
@@ -462,6 +464,7 @@
             title: form.title.trim(),
             kind: form.kind,
             once_per_email: form.once_per_email,
+            listed: form.listed,
             active: form.active,
             value_bp: 0,
             value_minor: 0,
@@ -1095,6 +1098,16 @@
         <div class="field-help">
             A deterrent rather than a control: this shop has no customer accounts, so a second
             address defeats it.
+        </div>
+
+        <div class="field m-t-sm">
+            <input id="d-listed" type="checkbox" bind:checked={form.listed} disabled={!form.code.trim()} />
+            <label for="d-listed">Show in the basket's offers</label>
+        </div>
+        <div class="field-help">
+            Lists the code in the basket and at checkout with what it takes off, or how much more
+            the basket needs, for a shopper to apply with one tap. Leave it off for a code only
+            some people should know.
         </div>
 
         <div class="field m-t-sm">

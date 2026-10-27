@@ -47,6 +47,7 @@
     import MediaZone from "$lib/components/MediaZone.svelte";
     import SeoPanel from "$lib/components/SeoPanel.svelte";
     import VariantMatrix from "$lib/components/VariantMatrix.svelte";
+    import ProductUpsells from "$lib/components/ProductUpsells.svelte";
     import RecordHistory from "$lib/components/RecordHistory.svelte";
     import { titled } from "$lib/brand.svelte.js";
 
@@ -62,6 +63,10 @@
        navigation guard can see it — it has its own Apply, so it is not part of
        what Save writes. */
     let axesDirty = $state(false);
+    /* The upsell cards save with the page (D133): their own two lists, sent
+       by the same Save after the product's fields. */
+    let upsells = $state(null);
+    let upsellsDirty = $state(false);
     /* The matrix, so the page's Save can apply the option draft it holds. */
     let matrix = $state(null);
     let collections = $state([]);
@@ -892,6 +897,7 @@
         shownIn = form.weight_unit;
         errors = {};
         discardCount++;
+        upsells?.reset();
     }
 
     async function save() {
@@ -930,6 +936,13 @@
         }
         if (Object.keys(errors).length) {
             toast.error("Some fields still need attention.");
+            return;
+        }
+        // Refused before anything is written, so a bad offer price never
+        // leaves the product saved and its add-ons not.
+        const upsellProblem = upsells?.invalid();
+        if (upsellProblem) {
+            toast.error(upsellProblem);
             return;
         }
         // The other two money boxes, refused out loud rather than into `errors`:
@@ -1099,6 +1112,8 @@
                     });
                 }
             }
+
+            await upsells?.save();
 
             product = await api.get(`/api/admin/products/${product.id}`);
             seed(product);
@@ -1290,7 +1305,7 @@
         <!-- Nothing to save without catalog.write, so no bar and no
              Ctrl+S: a save that can only be refused is worse than no save. -->
         <SaveBar
-            dirty={(dirty || axesDirty) && writable}
+            dirty={(dirty || axesDirty || upsellsDirty) && writable}
             {saving}
             message="Unsaved changes"
             saveLabel="Save"
@@ -1724,6 +1739,17 @@
                         fields: a card that only ever says "nothing here" is a
                         card that teaches operators to scroll past it.
                     -->
+
+                    <!-- What sells beside this product (D133), in the main
+                         column: an add-on row needs room for its name, its
+                         price and the offer box side by side. -->
+                    <ProductUpsells
+                        bind:this={upsells}
+                        bind:dirty={upsellsDirty}
+                        productId={product.id}
+                        {currency}
+                        disabled={!writable}
+                    />
 
                 </div>
 
