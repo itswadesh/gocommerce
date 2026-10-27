@@ -472,12 +472,19 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		// order is paid, its payment reference is that Razorpay order. Row
 		// security keeps the lookup to this store.
 		err := m.db.QueryRowContext(ctx,
-			`SELECT id FROM orders WHERE payment_reference = $1`, entity.OrderID).Scan(&orderID)
+			`SELECT id FROM orders WHERE payment_reference = $1 ORDER BY id DESC LIMIT 1`, entity.OrderID).Scan(&orderID)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			m.log.Error("could not find the order", "razorpay_order", entity.OrderID, "error", err)
 			http.Error(w, "storage error", http.StatusInternalServerError)
 			return
 		}
+	}
+	if orderID == 0 {
+		// Left unclaimed, so a redelivery is applied once the order is found.
+		m.log.Info("acknowledged a Razorpay event that matches no order of this store",
+			"event", event.Event, "payment", entity.ID, "razorpay_order", entity.OrderID)
+		w.WriteHeader(http.StatusOK)
+		return
 	}
 	// The event name plus the payment id is the idempotency key rather than
 	// the X-Razorpay-Event-Id header: the same payment being captured is the
@@ -487,7 +494,7 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	res, err := m.db.ExecContext(r.Context(), `
 		INSERT INTO payments_razorpay_events (id, event, order_id)
-		VALUES ($1, $2, nullif($3, 0))
+		VALUES ($1, $2, $3)
 		ON CONFLICT (store_id, id) DO NOTHING`, eventKey, event.Event, orderID)
 	if err != nil {
 		http.Error(w, "storage error", http.StatusInternalServerError)
@@ -495,10 +502,6 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		w.WriteHeader(http.StatusOK) // already handled
-		return
-	}
-	if orderID == 0 {
-		w.WriteHeader(http.StatusOK)
 		return
 	}
 	// An event for another store's order: two stores on one provider account

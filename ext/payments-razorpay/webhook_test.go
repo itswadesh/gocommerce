@@ -125,3 +125,30 @@ func TestAnotherStoresRazorpayOrderIsLeftForIt(t *testing.T) {
 		t.Fatalf("store A's order is %q: its capture was swallowed by store B", got)
 	}
 }
+
+// A capture that matches no order is not claimed, so Razorpay's redelivery
+// is applied once the order can be found.
+func TestAnUnmatchedCaptureIsNotClaimed(t *testing.T) {
+	app, _ := newStatusApp(t)
+	result := gctest.PlaceOrder(t, app, "razorpay")
+	setReference := func(ref string) {
+		t.Helper()
+		if _, err := app.DB().ExecContext(context.Background(),
+			`UPDATE orders SET payment_reference = $2 WHERE id = $1`, result.Order.ID, ref); err != nil {
+			t.Fatal(err)
+		}
+	}
+	body := paymentEvent("payment.captured", "pay_LATE", `[]`)
+
+	setReference("")
+	if rec := postWebhook(t, app, body); rec.Code != http.StatusOK {
+		t.Fatalf("unmatched capture answered %d: %s", rec.Code, rec.Body)
+	}
+	setReference("order_RZP1")
+	if rec := postWebhook(t, app, body); rec.Code != http.StatusOK {
+		t.Fatalf("redelivery answered %d: %s", rec.Code, rec.Body)
+	}
+	if got := paymentStatus(t, app, result.Order.ID); got != gocommerce.PaymentPaid {
+		t.Errorf("payment status = %q after the redelivery, want paid", got)
+	}
+}
