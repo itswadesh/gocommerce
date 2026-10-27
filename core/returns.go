@@ -489,6 +489,20 @@ func orderDiscountShares(ctx context.Context, tx *sql.Tx, o *Order, discountMino
 	return allocateDiscount(lines, eligible, discountMinor), nil
 }
 
+// LineDiscountShares is each line's share of the order-level discount,
+// index-aligned with o.Lines and summing to o.Discount: what checkout taxed
+// each line against and what a return refunds against. ext/invoices prints
+// it, so there is one way to know a line's discount and not two.
+func (s *Orders) LineDiscountShares(ctx context.Context, o *Order) ([]int64, error) {
+	var shares []int64
+	err := InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		var err error
+		shares, err = orderDiscountShares(ctx, tx, o, o.Discount.AmountMinor)
+		return err
+	})
+	return shares, err
+}
+
 // lineRefundable is what these units were worth: what was charged for them, less
 // their share of the order-level discount, plus their share of the line's tax
 // when prices are exclusive — which is the fork checkout itself makes.
