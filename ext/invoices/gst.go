@@ -2,6 +2,8 @@ package invoices
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -339,7 +341,15 @@ func splitTax(tax int64, k SupplyKind) (cgst, sgst, igst int64) {
 
 // supplyOf is the place of supply of goods: where they are delivered.
 func supplyOf(a gocommerce.Address, supplier gocommerce.GSTState) (Supply, gocommerce.GSTState, error) {
-	if !strings.EqualFold(strings.TrimSpace(a.Country), "IN") {
+	country := strings.TrimSpace(a.Country)
+	if country == "" {
+		// Nothing delivered, such as a download, and no address recorded: the
+		// place of supply is the supplier's own location (IGST Act s.10(1)(ca)
+		// and s.12(2)(b)), so it is a supply within the state.
+		return Supply{Kind: SupplyIntra, PlaceOfSupplyCode: supplier.Code, PlaceOfSupply: supplier.Name,
+			StateTaxName: stateTaxName(supplier)}, supplier, nil
+	}
+	if !strings.EqualFold(country, "IN") {
 		// 96 is GST's code for a place of supply in another country.
 		abroad := gocommerce.GSTState{Code: "96", Name: "Other Countries"}
 		return Supply{Kind: SupplyExport, PlaceOfSupplyCode: abroad.Code, PlaceOfSupply: abroad.Name}, abroad, nil
@@ -350,12 +360,18 @@ func supplyOf(a gocommerce.Address, supplier gocommerce.GSTState) (Supply, gocom
 	}
 	s := Supply{Kind: SupplyInter, PlaceOfSupplyCode: place.Code, PlaceOfSupply: place.Name}
 	if place.Code == supplier.Code {
-		s.Kind, s.StateTaxName = SupplyIntra, "SGST"
-		if place.UT {
-			s.StateTaxName = "UTGST"
-		}
+		s.Kind, s.StateTaxName = SupplyIntra, stateTaxName(place)
 	}
 	return s, place, nil
+}
+
+// stateTaxName is the head that sits beside CGST: UTGST in a union territory
+// without a legislature, SGST everywhere else.
+func stateTaxName(s gocommerce.GSTState) string {
+	if s.UT {
+		return "UTGST"
+	}
+	return "SGST"
 }
 
 // recipientOf is the buyer: registered when the order carries a GSTIN under
@@ -399,20 +415,42 @@ func gstMeta(raw any) (gstin, name string) {
 
 // gstGuard is the buyer's boundary on a GST store: a GSTIN sent at checkout
 // must be one, and an Indian delivery address must name a state GST knows,
-// because the place of supply decides the tax heads. Other stores are not
-// read at all.
+// because the place of supply decides the tax heads.
+//
+// Most checkouts have nothing here to check, and those return before reading
+// anything; the rest read the profile through the checkout's own transaction,
+// so a guard never waits on a second pooled connection while the checkout
+// holds its stock locks.
 func (m *Module) gstGuard(ctx context.Context, a *gocommerce.CheckoutAttempt) error {
-	reg, err := m.regimeFor(ctx)
-	if err != nil || reg == nil {
+	raw, sentGSTIN := a.Input.Metadata["gst"]
+	inIndia := strings.EqualFold(strings.TrimSpace(a.Input.Address.Country), "IN")
+	if !sentGSTIN && !inIndia {
+		return nil
+	}
+	var country, taxID string
+	if err := a.Tx.QueryRowContext(ctx,
+		`SELECT country, tax_id FROM store_profile WHERE id = 1`).Scan(&country, &taxID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
 		return err
 	}
-	if raw, ok := a.Input.Metadata["gst"]; ok {
-		gstin, _ := gstMeta(raw)
+	// The currency is not asked: an Indian GST-registered store that sells in
+	// another currency gets no tax invoice, and checking its buyers' GSTINs
+	// and states anyway costs it nothing.
+	if _, err := gocommerce.ParseGSTIN(taxID); country != "IN" || err != nil {
+		return nil
+	}
+	if sentGSTIN {
+		gstin, name := gstMeta(raw)
 		if _, err := gocommerce.ParseGSTIN(gstin); err != nil {
 			return gocommerce.Validationf("metadata.gst.gstin: %s", err.Error())
 		}
+		if len([]rune(name)) > gocommerce.MaxProfileField {
+			return gocommerce.Validationf("metadata.gst.name is at most %d characters", gocommerce.MaxProfileField)
+		}
 	}
-	if strings.EqualFold(strings.TrimSpace(a.Input.Address.Country), "IN") {
+	if inIndia {
 		if _, ok := gocommerce.GSTStateOfAddress(a.Input.Address); !ok {
 			return gocommerce.Validationf("choose a state for the delivery address: a GST invoice needs it")
 		}
