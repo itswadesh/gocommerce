@@ -223,7 +223,7 @@ func (m *Module) issue(ctx context.Context, orderID int64) error {
 		}
 	}
 
-	return gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
 		now := m.now()
 		year := seriesYear(now, reg)
 
@@ -267,7 +267,7 @@ func (m *Module) issue(ctx context.Context, orderID int64) error {
 				return err
 			}
 		}
-		_, err = tx.ExecContext(ctx, `
+		res, err := tx.ExecContext(ctx, `
 			INSERT INTO invoices_documents (order_id, number, year, sequence, total_minor, currency, snapshot, issued_at, tax_doc)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 			ON CONFLICT (store_id, order_id) DO NOTHING`,
@@ -275,10 +275,24 @@ func (m *Module) issue(ctx context.Context, orderID int64) error {
 		if err != nil {
 			return err
 		}
+		// Another delivery issued this order's invoice after the check above.
+		// Committing would keep the number this one took and leave a hole in
+		// the series, so roll it back instead.
+		if n, err := res.RowsAffected(); err != nil {
+			return err
+		} else if n == 0 {
+			return errAlreadyIssued
+		}
 		m.log.Info("invoice issued", "invoice", number, "order", order.Number)
 		return nil
 	})
+	if errors.Is(err, errAlreadyIssued) {
+		return nil
+	}
+	return err
 }
+
+var errAlreadyIssued = errors.New("invoice already issued")
 
 // hsnFor is the HS code of each variant on the order as it stands at issue:
 // the supplier's classification for the document, read from the catalogue.
