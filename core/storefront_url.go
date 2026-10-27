@@ -45,5 +45,5 @@ func (a *App) orderTrackingURL(ctx context.Context, number string) string {
 	if base == "" || number == "" {
 		return ""
 	}
-	return base + "/order-tracking?" + url.Values{"number": {number}}.Encode()
+	return base + "/order-tracking?" + url.Values{"order": {number}}.Encode()
 }
