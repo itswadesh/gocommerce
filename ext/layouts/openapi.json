@@ -804,7 +804,7 @@
       },
       "LayoutThemeSettings": {
         "type": "object",
-        "description": "The store's design tokens (D127). Every key is optional; an unset one keeps the storefront's own look. Colours are `#rrggbb`; fonts are keys from the registry's list; `radius` is none, small, medium or large.",
+        "description": "The store's design tokens (D127). Every key is optional; an unset one keeps the storefront's own look. Colours are `#rrggbb`; fonts are keys from the registry's list; `radius` is none, small, medium or large; `product_image_ratio` square (1:1), portrait (3:4), tall (2:3) or landscape (4:3); `product_image_fit` fill (crop to the frame) or whole (fit inside it).",
         "properties": {
           "background": {
             "type": "string",
@@ -839,6 +839,22 @@
               "small",
               "medium",
               "large"
+            ]
+          },
+          "product_image_ratio": {
+            "type": "string",
+            "enum": [
+              "square",
+              "portrait",
+              "tall",
+              "landscape"
+            ]
+          },
+          "product_image_fit": {
+            "type": "string",
+            "enum": [
+              "fill",
+              "whole"
             ]
           }
         }

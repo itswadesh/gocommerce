@@ -285,6 +285,12 @@ var ThemeSettings = []SettingGroup{
 		{Key: "radius", Label: "Corner rounding", Kind: KindSelect,
 			Options: []Option{{"none", "None"}, {"small", "Small"}, {"medium", "Medium"}, {"large", "Large"}}},
 	}},
+	{Label: "Product pictures", Fields: []Field{
+		{Key: "product_image_ratio", Label: "Shape", Kind: KindSelect, Help: "On product cards and lists.",
+			Options: []Option{{"square", "Square"}, {"portrait", "Portrait (3:4)"}, {"tall", "Tall (2:3)"}, {"landscape", "Landscape (4:3)"}}},
+		{Key: "product_image_fit", Label: "Fit", Kind: KindSelect, Help: "Fill crops a picture of another shape to the frame; whole picture leaves a margin instead.",
+			Options: []Option{{"fill", "Fill the frame"}, {"whole", "Show the whole picture"}}},
+	}},
 }
 
 func themeSettingFields() []Field {

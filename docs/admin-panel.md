@@ -712,7 +712,9 @@ only when a shopper presses play.
 
 **Theme settings** are the store's colours (background, text, buttons and
 links, text on buttons, quiet backgrounds), its heading and body fonts from a
-short list the storefront can load, and its corner rounding. Each is optional:
+short list the storefront can load, its corner rounding, and the shape of
+product pictures on cards and lists (square, portrait, tall or landscape) and
+whether a picture fills that frame or shows whole. Each is optional:
 one left empty keeps the storefront's own. They open from the top of the
 section list (or from **Theme settings** on the Themes screen) in the same
 place a section's settings do, and are part of the same draft — they save by

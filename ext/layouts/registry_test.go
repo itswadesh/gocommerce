@@ -117,6 +117,13 @@ func TestThemeSettingsAreCleaned(t *testing.T) {
 	if _, ok := ts["shadow"]; ok {
 		t.Fatalf("theme settings = %v, want a setting the theme does not have dropped", ts)
 	}
+	pics, err := Validate(doc(t, `{"theme_settings":{"product_image_ratio":"square","product_image_fit":"fill"},"sections":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pics.ThemeSettings["product_image_ratio"] != "square" || pics.ThemeSettings["product_image_fit"] != "fill" {
+		t.Fatalf("theme settings = %v, want the picture shape and fit kept", pics.ThemeSettings)
+	}
 	if got, _ := Validate(doc(t, `{"sections":[]}`)); got.ThemeSettings != nil {
 		t.Fatalf("no theme settings = %v, want none stored", got.ThemeSettings)
 	}
@@ -130,6 +137,8 @@ func TestWhatThemeSettingsMayNotHold(t *testing.T) {
 		"unknown font":  {`{"theme_settings":{"body_font":"comic-sans"}}`, "one of its choices"},
 		"font family":   {`{"theme_settings":{"body_font":"Inter, sans-serif"}}`, "one of its choices"},
 		"bad rounding":  {`{"theme_settings":{"radius":"huge"}}`, "one of its choices"},
+		"ratio as css":  {`{"theme_settings":{"product_image_ratio":"1 / 1"}}`, "one of its choices"},
+		"fit as css":    {`{"theme_settings":{"product_image_fit":"cover"}}`, "one of its choices"},
 	} {
 		if _, err := Validate(doc(t, c.raw)); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: err = %v, want it to say %q", name, err, c.want)
