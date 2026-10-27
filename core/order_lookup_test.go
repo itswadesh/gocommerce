@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -165,5 +166,44 @@ func TestAPhoneIsMatchedByItsDigits(t *testing.T) {
 	}
 	if !sameContact(" A@B.co ", "a@b.co", "") {
 		t.Error("an email did not match regardless of case and spaces")
+	}
+}
+
+// A guest opens their order with its number and the email or phone on it, no
+// code (owner, 2026-10-27). A wrong contact and an unknown number get the same
+// answer, and one client gets a limited number of tries an hour, so the route
+// cannot be used to walk order numbers against a known address.
+func TestAGuestOpensAnOrderWithItsNumberAndEmail(t *testing.T) {
+	app, _, order := lookupApp(t)
+	open := func(number, contact string) *httptest.ResponseRecorder {
+		t.Helper()
+		return doBody(t, app, http.MethodPost, "/api/orders/"+number+"/open", `{"contact":"`+contact+`"}`)
+	}
+
+	rec := open(order.Number, " Shopper@Example.com ")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("open = %d %s", rec.Code, rec.Body)
+	}
+	var out struct {
+		Data OrderLookup `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Data.Order == nil || out.Data.Order.Number != order.Number || out.Data.AccessToken != order.AccessToken {
+		t.Fatalf("open answered %s", rec.Body)
+	}
+
+	wrong := open(order.Number, "someone@example.com")
+	unknown := open("NO-SUCH-1", "shopper@example.com")
+	if wrong.Code != http.StatusNotFound || unknown.Code != http.StatusNotFound || wrong.Body.String() != unknown.Body.String() {
+		t.Errorf("wrong contact = %d %s, unknown order = %d %s; want the same 404", wrong.Code, wrong.Body, unknown.Code, unknown.Body)
+	}
+
+	for i := 3; i < orderOpensPerWindow; i++ {
+		open("NO-SUCH-1", "shopper@example.com")
+	}
+	if rec := open(order.Number, "shopper@example.com"); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("past the limit = %d %s, want 429", rec.Code, rec.Body)
 	}
 }

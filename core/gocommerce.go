@@ -424,6 +424,9 @@ type App struct {
 	// storeOpens paces how fast one person opens stores where strangers can
 	// make accounts (Config.Signup; signup.go).
 	storeOpens *windowLimit
+	// orderOpens paces how often one client tries an order number and contact
+	// on the storefront (handleOpenOrder).
+	orderOpens *windowLimit
 	// defaultStore is Config.DefaultStore resolved to an id ("first" becomes
 	// the oldest store's); empty under `serve`.
 	defaultStore string
@@ -707,6 +710,7 @@ func (a *App) buildServices() {
 	a.superusers = newSuperusers(a)
 	a.stores = &Stores{app: a, db: a.db}
 	a.storeOpens = newWindowLimit(storeOpensPerDay, 24*time.Hour)
+	a.orderOpens = newWindowLimit(orderOpensPerWindow, time.Hour)
 	a.media = &Media{app: a}
 	a.discounts = &Discounts{app: a}
 	a.locations = &Locations{app: a}

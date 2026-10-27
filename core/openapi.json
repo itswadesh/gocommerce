@@ -1275,6 +1275,75 @@
         }
       }
     },
+    "/api/orders/{number}/open": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "Open your order with its number and email",
+        "description": "The storefront's way in without a code: the email or phone on the order (case, spaces and a phone's country code do not matter) answers with the order and its access token, which reads the order again through GET /api/orders/{number}. An unknown number and a wrong contact are one answer, 404. Each client (an IPv6 /64) gets 20 tries an hour, matched or not; past that, 429.",
+        "parameters": [
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "contact"
+                ],
+                "properties": {
+                  "contact": {
+                    "type": "string",
+                    "description": "The email address or phone number on the order."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The order and its access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "order": {
+                          "$ref": "#/components/schemas/Order"
+                        },
+                        "access_token": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No order has that number and contact."
+          },
+          "429": {
+            "description": "Too many tries from this client in the last hour."
+          }
+        }
+      }
+    },
     "/api/checkout/countries": {
       "get": {
         "tags": [

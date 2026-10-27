@@ -203,6 +203,7 @@ func (a *App) mountOrderRoutes() {
 	// Or with a 4-digit code sent to the order's email or phone (D115).
 	a.HandleFunc("POST /api/orders/{number}/code", a.handleRequestLookupCode)
 	a.HandleFunc("POST /api/orders/{number}/code/verify", a.handleVerifyLookupCode)
+	a.HandleFunc("POST /api/orders/{number}/open", a.handleOpenOrder)
 
 	a.HandleAdminFunc("GET /api/admin/orders", a.handleListOrders, RightOrdersRead)
 	a.HandleAdminFunc("GET /api/admin/customers", a.handleListCustomers, RightCustomersRead)
