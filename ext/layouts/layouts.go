@@ -39,11 +39,6 @@ const (
 	rightLayoutsWrite = "layouts.write"
 )
 
-// Pages is the pages a shop can arrange. The table names a page so others can
-// follow; until a storefront draws another from a document, one saved for it
-// would be a page nobody sees.
-var Pages = []string{"home"}
-
 // Config configures the module. It has nothing to set yet.
 type Config struct{}
 
@@ -52,10 +47,13 @@ type Module struct {
 	cfg Config
 	app *gocommerce.App
 	db  *sql.DB
+	// tick is how often scheduled publishes are looked for: a page goes live
+	// within this of its time.
+	tick time.Duration
 }
 
 // New constructs the module.
-func New(cfg Config) *Module { return &Module{cfg: cfg} }
+func New(cfg Config) *Module { return &Module{cfg: cfg, tick: 30 * time.Second} }
 
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "layouts" }
@@ -103,6 +101,25 @@ CREATE TABLE layout_previews (
 		// A preview key opens the unpublished page; staff may run any saved
 		// report, and a hash is all a report could do anything with.
 		gocommerce.WithholdFromReports("0003_withhold_from_reports", "layout_previews"),
+		{
+			// A page's draft, set to publish at a time (D128). The document is
+			// the draft as it was when scheduled, so what goes live is what
+			// the shop looked at, not whatever the autosave holds by then.
+			ID: "0004_schedules",
+			SQL: `
+CREATE TABLE layout_schedules (
+    id            bigserial   PRIMARY KEY,
+    page          text        NOT NULL UNIQUE,
+    document      jsonb       NOT NULL,
+    draft_version integer     NOT NULL,
+    publish_at    timestamptz NOT NULL,
+    scheduled_at  timestamptz NOT NULL DEFAULT now(),
+    scheduled_by  text        NOT NULL DEFAULT ''
+);
+ALTER TABLE layout_revisions ADD COLUMN scheduled boolean NOT NULL DEFAULT false;
+`,
+		},
+		gocommerce.ScopeMigration("0005_schedules_store_scope", "layout_schedules"),
 	}
 }
 
@@ -112,10 +129,10 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	m.db = app.DB()
 	app.RegisterPlugin(gocommerce.PluginDef{
-		Key: pluginKey, Title: "Homepage editor", Category: "storefront", DefaultEnabled: true,
-		Description: "Arrange the storefront's home page from sections — a hero, a slideshow, product grids, collections, video, questions and answers — " +
-			"in any order, set the store's colours, fonts and corner rounding, and publish it as a draft without a deployment. On by default; switched off, " +
-			"or until the first publish, the storefront shows its built-in home page and its own look.",
+		Key: pluginKey, Title: "Theme editor", Category: "storefront", DefaultEnabled: true,
+		Description: "Arrange the storefront's home page, product page and collection page from sections — a hero, a slideshow, product grids, collections, video, " +
+			"questions and answers, reviews — in any order, set the store's colours, fonts and corner rounding, and publish each page now or at a time you choose, " +
+			"without a deployment. On by default; switched off, or until a page's first publish, the storefront shows its built-in page and its own look.",
 	})
 
 	app.HandleFunc("GET /x/layouts/theme", m.handleTheme)
@@ -129,20 +146,49 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.HandleAdminFunc("POST /api/admin/x/layouts/{page}/rollback", m.handleRollback, rightLayoutsWrite)
 	app.HandleAdminFunc("POST /api/admin/x/layouts/{page}/reset", m.handleReset, rightLayoutsWrite)
 	app.HandleAdminFunc("POST /api/admin/x/layouts/{page}/preview", m.handlePreview, rightLayoutsWrite)
+	app.HandleAdminFunc("POST /api/admin/x/layouts/{page}/schedule", m.handleSchedule, rightLayoutsWrite)
+	app.HandleAdminFunc("DELETE /api/admin/x/layouts/{page}/schedule", m.handleCancelSchedule, rightLayoutsWrite)
+
+	app.OnStart(m.start)
+	return nil
+}
+
+// start publishes what is due on a ticker until shutdown, the way the other
+// modules' background passes run: once at boot, so a page whose time passed
+// while the server was down goes live at once, then every tick.
+func (m *Module) start(ctx context.Context) error {
+	go func() {
+		t := time.NewTicker(m.tick)
+		defer t.Stop()
+		for {
+			err := m.app.ForEachStore(ctx, func(ctx context.Context) error {
+				_, err := m.PublishDue(ctx)
+				return err
+			})
+			if err != nil && ctx.Err() == nil {
+				m.app.Log().Error("layouts: scheduled publish failed", "error", err)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+		}
+	}()
 	return nil
 }
 
 func (m *Module) registerRights(app *gocommerce.App) {
 	app.RegisterRight(gocommerce.RightSpec{
 		Right:   rightLayoutsRead,
-		Label:   "See the homepage editor",
-		Scope:   "The home page's sections, its draft and its published versions",
+		Label:   "See the theme editor",
+		Scope:   "The home, product and collection pages' sections, their drafts, schedules and published versions",
 		Default: []string{gocommerce.RoleManager, gocommerce.RoleStaff},
 	})
 	app.RegisterRight(gocommerce.RightSpec{
 		Right:   rightLayoutsWrite,
-		Label:   "Edit and publish the home page",
-		Scope:   "Saving the draft, resetting it, publishing it, previewing it and rolling back",
+		Label:   "Edit and publish the storefront's pages",
+		Scope:   "Saving a page's draft, resetting it, publishing or scheduling it, previewing it and rolling back",
 		Default: []string{gocommerce.RoleManager},
 	})
 }
@@ -163,6 +209,8 @@ type State struct {
 	Published *Revision  `json:"published"`
 	// Changed is whether the draft differs from what is published.
 	Changed bool `json:"changed"`
+	// Scheduled is the publish waiting for its time, or null.
+	Scheduled *Schedule `json:"scheduled"`
 }
 
 // Revision is one published document.
@@ -171,18 +219,30 @@ type Revision struct {
 	PublishedAt  time.Time `json:"published_at"`
 	PublishedBy  string    `json:"published_by"`
 	RestoredFrom *int      `json:"restored_from,omitempty"`
-	Sections     int       `json:"sections"`
-	Document     *Document `json:"document,omitempty"`
+	// Scheduled is true when it went live at a time set beforehand, and
+	// PublishedBy is then who set it.
+	Scheduled bool      `json:"scheduled,omitempty"`
+	Sections  int       `json:"sections"`
+	Document  *Document `json:"document,omitempty"`
+}
+
+// Schedule is a draft set to publish at a time.
+type Schedule struct {
+	PublishAt   time.Time `json:"publish_at"`
+	ScheduledAt time.Time `json:"scheduled_at"`
+	ScheduledBy string    `json:"scheduled_by"`
+	// Version is the draft's version that was scheduled, and Outdated
+	// whether the draft has been saved since: those edits are not in it.
+	Version  int  `json:"version"`
+	Outdated bool `json:"outdated"`
 }
 
 func pageKey(r *http.Request) (string, error) {
 	p := r.PathValue("page")
-	for _, k := range Pages {
-		if k == p {
-			return p, nil
-		}
+	if pageInfo(p) == nil {
+		return "", gocommerce.NotFoundf("there is no page %q to arrange; the home, product and collection pages can be", p)
 	}
-	return "", gocommerce.NotFoundf("there is no page %q to arrange; only the home page can be, so far", p)
+	return p, nil
 }
 
 func actor(ctx context.Context) string {
@@ -208,10 +268,16 @@ func (m *Module) state(ctx context.Context, q queryer, page string) (*State, err
 		FROM layout_pages WHERE page = $1`, page).Scan(&draft, &st.Version, &pubID, &updatedAt, &st.UpdatedBy)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		st.Document = Starter()
+		st.Document = Starter(page)
 		return st, nil
 	case err != nil:
 		return nil, gocommerce.Internalf(err, "read the page")
+	}
+	if st.Scheduled, err = m.schedule(ctx, q, page); err != nil {
+		return nil, err
+	}
+	if st.Scheduled != nil {
+		st.Scheduled.Outdated = st.Scheduled.Version != st.Version
 	}
 	st.Saved, st.UpdatedAt = true, &updatedAt
 	if err := json.Unmarshal(draft, &st.Document); err != nil {
@@ -240,8 +306,8 @@ func (m *Module) revision(ctx context.Context, q queryer, where string, arg ...a
 	var raw []byte
 	var from sql.NullInt64
 	err := q.QueryRowContext(ctx, `
-		SELECT number, document, published_at, published_by, restored_from
-		FROM layout_revisions WHERE `+where, arg...).Scan(&rev.Number, &raw, &rev.PublishedAt, &rev.PublishedBy, &from)
+		SELECT number, document, published_at, published_by, restored_from, scheduled
+		FROM layout_revisions WHERE `+where, arg...).Scan(&rev.Number, &raw, &rev.PublishedAt, &rev.PublishedBy, &from, &rev.Scheduled)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, gocommerce.NotFoundf("there is no such published version")
 	}
@@ -262,7 +328,7 @@ func (m *Module) revision(ctx context.Context, q queryer, where string, arg ...a
 
 // Save replaces the draft, when version is the one it was read at.
 func (m *Module) Save(ctx context.Context, page string, version int, doc Document) (*State, error) {
-	clean, err := Validate(doc)
+	clean, err := Validate(page, doc)
 	if err != nil {
 		return nil, err
 	}
@@ -324,7 +390,7 @@ func (m *Module) Publish(ctx context.Context, page string, version int) (*State,
 		if current != version {
 			return stale()
 		}
-		if err := m.publish(ctx, tx, page, raw, nil); err != nil {
+		if err := m.publish(ctx, tx, page, raw, publishing{by: actor(ctx)}); err != nil {
 			return err
 		}
 		out, err = m.state(ctx, tx, page)
@@ -333,15 +399,24 @@ func (m *Module) Publish(ctx context.Context, page string, version int) (*State,
 	return out, err
 }
 
+// publishing is how a revision came to be: who published it, and whether it
+// restored an earlier one or went live on a schedule.
+type publishing struct {
+	by           string
+	restoredFrom *int
+	scheduled    bool
+}
+
 // publish adds document as the page's next revision and points the page at
 // it, in the caller's transaction: the storefront swaps from one whole page
-// to the next.
-func (m *Module) publish(ctx context.Context, tx *sql.Tx, page string, document []byte, restoredFrom *int) error {
+// to the next. The button, a rollback and a schedule all publish through
+// here, so the history reads the same whichever it was.
+func (m *Module) publish(ctx context.Context, tx *sql.Tx, page string, document []byte, how publishing) error {
 	var id int64
 	err := tx.QueryRowContext(ctx, `
-		INSERT INTO layout_revisions (page, number, document, published_by, restored_from)
-		VALUES ($1, coalesce((SELECT max(number) FROM layout_revisions WHERE page = $1), 0) + 1, $2, $3, $4)
-		RETURNING id`, page, document, actor(ctx), restoredFrom).Scan(&id)
+		INSERT INTO layout_revisions (page, number, document, published_by, restored_from, scheduled)
+		VALUES ($1, coalesce((SELECT max(number) FROM layout_revisions WHERE page = $1), 0) + 1, $2, $3, $4, $5)
+		RETURNING id`, page, document, how.by, how.restoredFrom, how.scheduled).Scan(&id)
 	if err != nil {
 		return gocommerce.Internalf(err, "publish the page")
 	}
@@ -369,7 +444,7 @@ func (m *Module) Rollback(ctx context.Context, page string, number int) (*State,
 			WHERE page = $1`, page, raw, actor(ctx)); err != nil {
 			return gocommerce.Internalf(err, "restore the page")
 		}
-		if err := m.publish(ctx, tx, page, raw, &number); err != nil {
+		if err := m.publish(ctx, tx, page, raw, publishing{by: actor(ctx), restoredFrom: &number}); err != nil {
 			return err
 		}
 		out, err = m.state(ctx, tx, page)
@@ -402,7 +477,7 @@ func (m *Module) Reset(ctx context.Context, page string, version int) (*State, e
 		if current != version {
 			return stale()
 		}
-		doc := Starter()
+		doc := Starter(page)
 		if pubID.Valid {
 			_, published, err := m.revision(ctx, tx, "id = $1", pubID.Int64)
 			if err != nil {
@@ -428,7 +503,7 @@ func (m *Module) Reset(ctx context.Context, page string, version int) (*State, e
 // Revisions lists the page's published versions, newest first.
 func (m *Module) Revisions(ctx context.Context, page string) ([]Revision, error) {
 	rows, err := m.db.QueryContext(ctx, `
-		SELECT number, published_at, published_by, restored_from, jsonb_array_length(document->'sections')
+		SELECT number, published_at, published_by, restored_from, scheduled, jsonb_array_length(document->'sections')
 		FROM layout_revisions WHERE page = $1 ORDER BY number DESC LIMIT 100`, page)
 	if err != nil {
 		return nil, gocommerce.Internalf(err, "list the published versions")
@@ -438,7 +513,7 @@ func (m *Module) Revisions(ctx context.Context, page string) ([]Revision, error)
 	for rows.Next() {
 		var rev Revision
 		var from sql.NullInt64
-		if err := rows.Scan(&rev.Number, &rev.PublishedAt, &rev.PublishedBy, &from, &rev.Sections); err != nil {
+		if err := rows.Scan(&rev.Number, &rev.PublishedAt, &rev.PublishedBy, &from, &rev.Scheduled, &rev.Sections); err != nil {
 			return nil, gocommerce.Internalf(err, "list the published versions")
 		}
 		if from.Valid {
@@ -491,7 +566,7 @@ func (m *Module) draftFor(ctx context.Context, page, token string) (*Document, e
 		return nil, gocommerce.Internalf(err, "read the preview")
 	}
 	if raw == nil {
-		doc := Starter()
+		doc := Starter(page)
 		return &doc, nil
 	}
 	var doc Document
