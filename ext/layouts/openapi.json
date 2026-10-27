@@ -445,13 +445,86 @@
         }
       }
     },
+    "/api/admin/x/layouts/{page}/reset": {
+      "post": {
+        "tags": [
+          "layouts"
+        ],
+        "summary": "Reset the draft",
+        "description": "Throws the draft away: it becomes the published document again, or the starting page when nothing has been published. Names the version it was read at, like a save; a stale one is 409 `stale_draft`. The storefront is not touched.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home"
+              ]
+            },
+            "description": "The page; only `home` can be arranged so far."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "version"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The page as the editor works on it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LayoutState"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Somebody saved the page since it was read (`stale_draft`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "adminToken": []
+          }
+        ]
+      }
+    },
     "/api/admin/x/layouts/{page}/preview": {
       "post": {
         "tags": [
           "layouts"
         ],
         "summary": "A preview key",
-        "description": "A key that lets the storefront show the saved draft for 30 minutes: open the storefront with `?preview=<key>`. 409 before the first save.",
+        "description": "A key that lets the storefront show the saved draft for 30 minutes: open the storefront with `?preview=<key>` (the theme editor frames it with `&editor=<panel origin>` too). Before the first save the draft is the starting page, and the key shows that.",
         "parameters": [
           {
             "name": "page",
@@ -483,20 +556,14 @@
                         "expires_at": {
                           "type": "string",
                           "format": "date-time"
+                        },
+                        "storefront": {
+                          "type": "string",
+                          "description": "Where shoppers reach the store, as https://host: its primary verified domain, else its address under the base domain; empty when it has neither."
                         }
                       }
                     }
                   }
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Nothing saved yet.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }

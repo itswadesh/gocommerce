@@ -227,14 +227,25 @@ func TestProductGridsShowLiveProducts(t *testing.T) {
 
 // A preview key shows the saved draft, for half an hour, to whoever holds it,
 // and is never cached or indexed; without it only the published page shows.
+// Before the first save the draft is the starting page, and a key shows that:
+// the theme editor frames the page from the moment it opens, and opening it
+// writes nothing.
 func TestAPreviewShowsTheDraftToItsKey(t *testing.T) {
 	app := layoutsApp(t)
-	if rec := gctest.AdminRequest(t, app, http.MethodPost, "/api/admin/x/layouts/home/preview", nil); rec.Code != http.StatusConflict {
-		t.Fatalf("preview before a save = %d, want 409", rec.Code)
+	rec := gctest.AdminRequest(t, app, http.MethodPost, "/api/admin/x/layouts/home/preview", nil)
+	var early struct {
+		Token string `json:"token"`
+	}
+	gctest.DecodeData(t, rec, &early)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("preview before a save = %d %s, want 201", rec.Code, rec.Body)
+	}
+	if got := publicPage(t, app, "/x/layouts/home?preview="+early.Token, http.StatusOK); len(got.Sections) != len(Starter().Sections) || !got.Preview {
+		t.Fatalf("preview before a save = %+v, want the starting page", got)
 	}
 	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 0, "document": sections(hero("draft", "Draft"))}, http.StatusOK)
 
-	rec := gctest.AdminRequest(t, app, http.MethodPost, "/api/admin/x/layouts/home/preview", nil)
+	rec = gctest.AdminRequest(t, app, http.MethodPost, "/api/admin/x/layouts/home/preview", nil)
 	var key struct {
 		Token string `json:"token"`
 	}
@@ -277,4 +288,51 @@ func TestRoutesDeclareRightsAndAreDocumented(t *testing.T) {
 	app := layoutsApp(t)
 	gctest.AssertAdminRoutesDeclareRights(t, app, "layouts")
 	gctest.AssertSpecCoversModuleRoutes(t, app, "layouts")
+}
+
+// Reset throws the draft away: back to what is published, or to the starting
+// page when nothing is. It names the version it was read at, like a save, so
+// it never discards an edit made in another tab unseen.
+func TestResetPutsTheDraftBackToWhatIsPublished(t *testing.T) {
+	app := layoutsApp(t)
+
+	// Before anything is saved there is nothing to throw away.
+	st := adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/reset", map[string]any{"version": 0}, http.StatusOK)
+	if st.Saved || st.Version != 0 || len(st.Document.Sections) != len(Starter().Sections) {
+		t.Fatalf("reset of an unsaved page = %+v, want the unsaved starter", st)
+	}
+
+	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 0, "document": sections(hero("a", "Mine"))}, http.StatusOK)
+	st = adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/reset", map[string]any{"version": 1}, http.StatusOK)
+	if st.Version != 2 || !st.Changed || len(st.Document.Sections) != len(Starter().Sections) || st.Document.Sections[0].ID != Starter().Sections[0].ID {
+		t.Fatalf("reset with nothing published = %+v, want the starter as version 2", st)
+	}
+
+	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 2, "document": sections(hero("a", "Live"))}, http.StatusOK)
+	adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/publish", map[string]any{"version": 3}, http.StatusOK)
+	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 3, "document": sections(hero("a", "Edited"), hero("b", "New"))}, http.StatusOK)
+
+	if rec := gctest.AdminRequest(t, app, http.MethodPost, "/api/admin/x/layouts/home/reset", map[string]any{"version": 3}); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "stale_draft") {
+		t.Fatalf("reset at an old version = %d %s, want 409 stale_draft", rec.Code, rec.Body)
+	}
+	st = adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/reset", map[string]any{"version": 4}, http.StatusOK)
+	if st.Changed || st.Version != 5 || len(st.Document.Sections) != 1 || st.Document.Sections[0].Settings["heading"] != "Live" {
+		t.Fatalf("reset after a publish = %+v, want the published page back as the draft", st)
+	}
+	if got := publicPage(t, app, "/x/layouts/home", http.StatusOK); got.Revision != 1 || ids(got) != "a" {
+		t.Fatalf("the storefront after a reset = %s at %d, want revision 1 untouched", ids(got), got.Revision)
+	}
+}
+
+// The preview key comes back with the storefront's address, so the editor
+// can frame the store's own home page without being told where it is.
+func TestAPreviewNamesTheStorefront(t *testing.T) {
+	app := layoutsApp(t)
+	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 0, "document": sections(hero("a", "One"))}, http.StatusOK)
+	rec := gctest.AdminRequest(t, app, http.MethodPost, "/api/admin/x/layouts/home/preview", nil)
+	var key map[string]any
+	gctest.DecodeData(t, rec, &key)
+	if _, ok := key["storefront"]; !ok || key["token"] == "" {
+		t.Fatalf("preview = %s, want a token and the storefront's address", rec.Body)
+	}
 }

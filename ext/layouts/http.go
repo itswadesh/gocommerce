@@ -106,6 +106,27 @@ func (m *Module) handleRollback(w http.ResponseWriter, r *http.Request) {
 	gocommerce.Respond(w, http.StatusOK, st)
 }
 
+func (m *Module) handleReset(w http.ResponseWriter, r *http.Request) {
+	page, err := pageKey(r)
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	var in struct {
+		Version int `json:"version"`
+	}
+	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	st, err := m.Reset(r.Context(), page, in.Version)
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	gocommerce.Respond(w, http.StatusOK, st)
+}
+
 func (m *Module) handlePreview(w http.ResponseWriter, r *http.Request) {
 	page, err := pageKey(r)
 	if err != nil {
@@ -117,7 +138,11 @@ func (m *Module) handlePreview(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	gocommerce.Respond(w, http.StatusCreated, map[string]any{"token": token, "expires_at": expires.UTC()})
+	// The storefront's address comes with the key, so the editor can frame
+	// the store's own home page (D126); empty when the store has none yet.
+	gocommerce.Respond(w, http.StatusCreated, map[string]any{
+		"token": token, "expires_at": expires.UTC(), "storefront": m.app.StorefrontURL(r.Context()),
+	})
 }
 
 // PublicPage is what the storefront draws: the shown sections in order, each
