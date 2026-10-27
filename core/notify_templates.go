@@ -461,15 +461,18 @@ var orderVariables = []string{
 	"total_minor", "currency", "order_status", "payment_status", "payment_method",
 }
 
+// withVariables is what an order message may name: the flat order data, the
+// tracking page (added when the engine sends, since it needs the store's
+// address and OrderNotificationData has no store), and extra.
 func withVariables(extra ...string) []string {
-	return append(append([]string{}, orderVariables...), extra...)
+	return append(append(append([]string{}, orderVariables...), "order_tracking_url"), extra...)
 }
 
 var coreNotifyTemplates = []NotifyTemplate{
 	{
 		Channel: ChannelEmail, Event: EventOrderCreated, Title: "Order placed",
 		Description: "To the shopper when their order is placed.",
-		Variables:   orderVariables,
+		Variables:   withVariables(),
 		Subject:     "Order {{.order_number}} confirmed",
 		Body: `Hello {{.customer_name}},
 
@@ -477,12 +480,13 @@ Thanks for your order {{.order_number}}.
 
 {{.items_summary}}
 
-We'll email you again when it ships.`,
+We'll email you again when it ships.{{if .order_tracking_url}}
+See where it is at any time: {{.order_tracking_url}}{{end}}`,
 	},
 	{
 		Channel: ChannelEmail, Event: EventOrderPaid, Title: "Payment received",
 		Description: "To the shopper when their payment is confirmed.",
-		Variables:   orderVariables,
+		Variables:   withVariables(),
 		Subject:     "Payment received for order {{.order_number}}",
 		Body: `Hello {{.customer_name}},
 
@@ -504,12 +508,13 @@ Order {{.order_number}} has shipped.
 {{if .tracking}}Tracking number: {{.tracking}}{{end}}
 
 {{if .shipment_items_summary}}{{.shipment_items_summary}}{{else}}{{.items_summary}}{{end}}
-{{if .shipment_is_partial}}The rest of your order will follow separately.{{end}}`,
+{{if .shipment_is_partial}}The rest of your order will follow separately.{{end}}
+{{if .order_tracking_url}}Follow your order: {{.order_tracking_url}}{{end}}`,
 	},
 	{
 		Channel: ChannelEmail, Event: EventOrderDelivered, Title: "Order delivered",
 		Description: "To the shopper when the order is marked delivered.",
-		Variables:   orderVariables,
+		Variables:   withVariables(),
 		Subject:     "Order {{.order_number}} was delivered",
 		Body: `Hello {{.customer_name}},
 
@@ -610,19 +615,19 @@ If you are reading it, the store's email provider is set up and order emails wil
 	{
 		Channel: ChannelSMS, Event: EventOrderCreated, Title: "Order placed",
 		Description: "To the shopper's phone when their order is placed.",
-		Variables:   orderVariables,
-		Body:        `Thanks for your order {{.order_number}}. We'll text you when it ships.`,
+		Variables:   withVariables(),
+		Body:        `Thanks for your order {{.order_number}}. We'll text you when it ships.{{if .order_tracking_url}} Track it: {{.order_tracking_url}}{{end}}`,
 	},
 	{
 		Channel: ChannelSMS, Event: EventOrderShipped, Title: "Order shipped",
 		Description: "To the shopper's phone when a parcel leaves.",
 		Variables:   withVariables("tracking"),
-		Body:        `Order {{.order_number}} has shipped.{{if .tracking}} Tracking: {{.tracking}}{{end}}`,
+		Body:        `Order {{.order_number}} has shipped.{{if .tracking}} Tracking: {{.tracking}}{{end}}{{if .order_tracking_url}} {{.order_tracking_url}}{{end}}`,
 	},
 	{
 		Channel: ChannelSMS, Event: EventOrderDelivered, Title: "Order delivered",
 		Description: "To the shopper's phone when the order is marked delivered.",
-		Variables:   orderVariables,
+		Variables:   withVariables(),
 		Body:        `Order {{.order_number}} has been delivered. Thank you!`,
 	},
 	{
