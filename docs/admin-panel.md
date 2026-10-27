@@ -707,8 +707,10 @@ own add and move.
 
 On a computer the screen is a visual editor. The sections are on the left:
 drag one by its handle, or focus the handle and use the arrow keys, to move
-it; the eye hides it (its settings kept); clicking one opens its settings in
-the same column, with duplicate and remove. **Add section** at the bottom puts
+it; the eye hides it (its settings kept); clicking one opens its settings,
+with duplicate and remove — in a third column on the right when the editor is
+1,100 px wide or more, as Shopify's does, so the list stays in view, and in
+place of the list on a narrower screen. **Add section** at the bottom puts
 the chosen type after the open section, or at the end. Beside them is the
 store's real storefront in a frame, at desktop or phone width: each edit shows
 there as it is typed, before it is saved, and clicking a section in the frame
