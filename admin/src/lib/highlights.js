@@ -35,12 +35,15 @@ export function lineProblem(text) {
     return "";
 }
 
-/** Rows after typing in row i: a blank row is kept at the end while there is room. */
+/** Rows after typing in row i: one blank row is kept at the end while there is room, and only
+ *  one, so typing a line and deleting it again leaves the rows as they were. */
 export function typedRows(rows, i, value) {
     const next = [...rows];
     next[i] = value;
-    const filled = next.filter((s) => String(s).trim() !== "").length;
-    if (String(next[next.length - 1]).trim() !== "" && next.length < MAX_HIGHLIGHTS && filled < MAX_HIGHLIGHTS) {
+    while (next.length > 1 && String(next[next.length - 1]).trim() === "" && String(next[next.length - 2]).trim() === "") {
+        next.pop();
+    }
+    if (String(next[next.length - 1]).trim() !== "" && next.length < MAX_HIGHLIGHTS) {
         next.push("");
     }
     return next;

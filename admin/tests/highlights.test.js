@@ -35,6 +35,11 @@ test("typing in the last row opens another, up to the limit", () => {
     assert.equal(typedRows([...seven, ""], 7, "L7").length, MAX_HIGHLIGHTS);
 });
 
+test("emptying a row again leaves one blank row, so the form is not left looking changed", () => {
+    const typed = typedRows(["A", ""], 1, "B");
+    assert.deepEqual(typedRows(typed, 1, ""), ["A", ""]);
+});
+
 test("removing a row keeps a blank one to type into", () => {
     assert.deepEqual(removedRow(["A", ""], 0), [""]);
     assert.deepEqual(removedRow(["A", "B", ""], 1), ["A", ""]);
