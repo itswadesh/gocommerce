@@ -9,6 +9,9 @@
      * place, under the field, rather than in a drawer of its own: the field
      * usually sits in a drawer already, and a drawer over a drawer fights it
      * for the keyboard and for Escape.
+     *
+     * kind "video" picks a video from Files instead, and shows its name
+     * rather than a picture.
      */
     import { api, can, query } from "$lib/api.js";
     import { mediaQuery } from "$lib/media.js";
@@ -16,7 +19,7 @@
     import { rise } from "$lib/motion.js";
     import MediaLibrary from "$lib/components/MediaLibrary.svelte";
 
-    let { id, label, value = $bindable(""), hint = "", required = false } = $props();
+    let { id, label, value = $bindable(""), hint = "", required = false, kind = "image" } = $props();
 
     const PER_PAGE = 24;
     const pickable = $derived(can("media.read"));
@@ -26,7 +29,9 @@
     let loading = $state(false);
     let page = $state(1);
     let meta = $state(null);
-    let filters = $state({ q: "", kind: "image", usage: "", size: "", scope: "", sort: "" });
+    // A field's kind does not change, so its first value is the filter's.
+    // svelte-ignore state_referenced_locally
+    let filters = $state({ q: "", kind, usage: "", size: "", scope: "", sort: "" });
     let view = $state("grid");
     const hasMore = $derived(!!meta && items.length < meta.total);
     // A preview that failed to load says so, rather than leaving a broken box.
@@ -86,7 +91,10 @@
          and fetch a picture per keystroke. -->
     {#if value}
         <span class="image-field-preview" in:rise>
-            {#if broken}
+            {#if kind === "video"}
+                <i class="ri-movie-line" aria-hidden="true"></i>
+                <span class="txt-hint txt-sm image-field-name">{value.split("/").pop()}</span>
+            {:else if broken}
                 <i class="ri-image-line" aria-hidden="true"></i>
                 <span class="txt-hint txt-sm">This picture did not load.</span>
             {:else}
@@ -166,6 +174,9 @@
         align-items: center;
         gap: 6px;
         max-width: 100%;
+    }
+    .image-field-name {
+        overflow-wrap: anywhere;
     }
     .image-field-preview img {
         display: block;

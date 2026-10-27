@@ -3,13 +3,15 @@
      * Themes (ext/layouts, D125): the store's theme and the elements of it the
      * shop arranges. The homepage is the first element; each one opens its own
      * editor, so a page added to the engine's registry joins this list rather
-     * than the menu.
+     * than the menu. Theme settings — colours, fonts, corners (D127) — open
+     * in the same editor, since they publish with the home page.
      */
     import { base } from "$app/paths";
     import { can, layouts as api } from "$lib/api.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { toast } from "$lib/toast.svelte.js";
     import { rise } from "$lib/motion.js";
+    import { themeSettingsSummary } from "$lib/layouts.js";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import { titled } from "$lib/brand.svelte.js";
@@ -84,6 +86,16 @@
 
                     <h3 class="th-subhead txt-sm">Elements</h3>
                     <ul class="th-list">
+                        <li>
+                            <a class="th-row" href="{base}/dash/themes/homepage?panel=theme">
+                                <i class="ri-palette-line th-icon" aria-hidden="true"></i>
+                                <span class="th-row-text">
+                                    <span class="th-row-title">Theme settings</span>
+                                    <span class="txt-hint txt-sm">{themeSettingsSummary(home?.document?.theme_settings)}</span>
+                                </span>
+                                <i class="ri-arrow-right-s-line th-chevron" aria-hidden="true"></i>
+                            </a>
+                        </li>
                         <li>
                             <a class="th-row" href="{base}/dash/themes/homepage">
                                 <i class="ri-home-4-line th-icon" aria-hidden="true"></i>

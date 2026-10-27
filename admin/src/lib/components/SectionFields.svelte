@@ -6,7 +6,8 @@
      *
      * Images use the Files library (ImageField), products and collections the
      * discount screen's picker (TargetPicker); a list repeats its item fields
-     * with add, move and remove.
+     * with add, move and remove. A colour is a swatch and its #rrggbb, and an
+     * unset one says the storefront keeps its own (D127).
      */
     import Select from "$lib/components/Select.svelte";
     import ImageField from "$lib/components/ImageField.svelte";
@@ -30,6 +31,14 @@
     // replaces the one before.
     function collectionValue(key) {
         return settings[key] ? [settings[key]] : [];
+    }
+
+    const HEX = /^#[0-9a-f]{6}$/i;
+    // Only a whole colour is kept: a half-typed one stays in the box until it is.
+    function setColor(key, raw) {
+        const v = raw.trim();
+        if (v === "") set(key, null);
+        else if (HEX.test(v)) set(key, v.toLowerCase());
     }
 
     function listItems(key) {
@@ -56,8 +65,39 @@
 {#each shown as f (f.key)}
     {@const id = `${idPrefix}-${f.key}`}
     <div class="sf-field" in:rise>
-        {#if f.kind === "image"}
-            <ImageField {id} label={f.label} hint={f.help ?? ""} required={f.required} bind:value={() => settings[f.key] ?? "", (v) => set(f.key, v)} />
+        {#if f.kind === "image" || f.kind === "video"}
+            <ImageField {id} kind={f.kind} label={f.label} hint={f.help ?? ""} required={f.required} bind:value={() => settings[f.key] ?? "", (v) => set(f.key, v)} />
+        {:else if f.kind === "color"}
+            <div class="field" class:error={errorKey === f.key}>
+                <label for={id}>{f.label}</label>
+                <div class="sf-color">
+                    <input
+                        type="color"
+                        class="sf-swatch"
+                        class:unset={!settings[f.key]}
+                        aria-label="Pick {f.label}"
+                        value={settings[f.key] || "#ffffff"}
+                        oninput={(e) => setColor(f.key, e.currentTarget.value)}
+                    />
+                    <input
+                        {id}
+                        type="text"
+                        maxlength="7"
+                        autocomplete="off"
+                        spellcheck="false"
+                        placeholder="Storefront's own"
+                        value={settings[f.key] ?? ""}
+                        onchange={(e) => setColor(f.key, e.currentTarget.value)}
+                        oninput={(e) => setColor(f.key, e.currentTarget.value)}
+                    />
+                    {#if settings[f.key]}
+                        <button type="button" class="btn sm transparent secondary" onclick={() => set(f.key, null)} aria-label="Clear {f.label}" in:rise={{ y: 0, duration: 150 }}>
+                            <span class="txt">Clear</span>
+                        </button>
+                    {/if}
+                </div>
+            </div>
+            {#if f.help}<div class="field-help">{f.help}</div>{/if}
         {:else if f.kind === "bool"}
             <div class="field sf-switch">
                 <input {id} type="checkbox" class="switch" checked={!!settings[f.key]} onchange={(e) => set(f.key, e.currentTarget.checked)} />
@@ -111,6 +151,8 @@
                     />
                 {:else if f.kind === "products"}
                     <TargetPicker {id} kind="products" bind:value={() => settings[f.key] ?? [], (v) => set(f.key, v)} />
+                {:else if f.kind === "collections"}
+                    <TargetPicker {id} kind="collections" bind:value={() => settings[f.key] ?? [], (v) => set(f.key, v)} />
                 {:else if f.kind === "collection"}
                     <TargetPicker {id} kind="collections" bind:value={() => collectionValue(f.key), (v) => set(f.key, v.length ? v[v.length - 1] : null)} />
                 {:else}
@@ -140,6 +182,44 @@
         display: flex;
         align-items: center;
         gap: 8px;
+    }
+    .sf-color {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .sf-color input[type="text"] {
+        flex: 1 1 auto;
+        min-width: 0;
+        font-variant-numeric: tabular-nums;
+    }
+    .sf-swatch {
+        flex: 0 0 auto;
+        width: 40px;
+        height: 36px;
+        padding: 2px;
+        border: 1px solid var(--surfaceAlt2Color);
+        border-radius: var(--borderRadius);
+        background: var(--cardFace);
+        cursor: pointer;
+        transition:
+            transform 150ms ease-out,
+            opacity 150ms ease-out;
+    }
+    .sf-swatch:active {
+        transform: scale(0.95);
+    }
+    /* Unset: the storefront's own colour, which this panel does not know. */
+    .sf-swatch.unset {
+        opacity: 0.45;
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .sf-swatch {
+            transition: none;
+        }
+        .sf-swatch:active {
+            transform: none;
+        }
     }
     .sf-list {
         border: 1px solid var(--surfaceAlt2Color);

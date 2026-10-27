@@ -263,3 +263,68 @@ test("previewAddress opens the storefront's home page with the key and the panel
     assert.equal(previewAddress("not an address", "k", ""), "");
     assert.equal(previewAddress("javascript:alert(1)", "k", ""), "");
 });
+
+// ------------------------------------------------------------ Phase 3 (D127)
+
+import { contrastRatio, themeWarnings, absoluteMedia, themeSettingsSummary } from "../src/lib/layouts.js";
+
+test("a show_when on a switch matches its on and off", () => {
+    const fields = [
+        { key: "autoplay", kind: "bool", default: false },
+        { key: "interval", kind: "number", show_when: { autoplay: "true" } },
+    ];
+    assert.deepEqual(visibleFields(fields, {}).map((f) => f.key), ["autoplay"]);
+    assert.deepEqual(visibleFields(fields, { autoplay: true }).map((f) => f.key), ["autoplay", "interval"]);
+});
+
+test("a row summarises a list by its items' headings or questions", () => {
+    const reg = [
+        { type: "slideshow", label: "Slideshow", fields: [] },
+        { type: "faq", label: "Questions and answers", fields: [] },
+    ];
+    assert.equal(sectionSummary({ type: "slideshow", settings: { slides: [{ heading: "One" }, { image: "/x" }, { heading: "Two" }] } }, reg).text, "One · Two");
+    assert.equal(sectionSummary({ type: "faq", settings: { items: [{ question: "Why?" }] } }, reg).text, "Why?");
+});
+
+test("contrast is the WCAG ratio between two colours", () => {
+    assert.equal(contrastRatio("#000000", "#ffffff").toFixed(1), "21.0");
+    assert.equal(contrastRatio("#ffffff", "#ffffff").toFixed(1), "1.0");
+    assert.equal(contrastRatio("#777777", "#ffffff").toFixed(2), "4.48");
+    assert.equal(contrastRatio("nope", "#ffffff"), null);
+});
+
+test("a low-contrast pair is warned about, never one the storefront chose", () => {
+    assert.deepEqual(themeWarnings({}), []);
+    assert.deepEqual(themeWarnings({ background: "#ffffff", text: "#111111" }), []);
+    const w = themeWarnings({ background: "#ffffff", text: "#999999", accent: "#ffcc00" });
+    assert.deepEqual(w.map((x) => x.keys), [["text", "background"], ["accent_text", "accent"], ["text", "muted"]]);
+    assert.match(w[0].message, /2\.8:1/);
+    // An unset half is the storefront's own colour: white text on its own buttons.
+    assert.deepEqual(themeWarnings({ accent_text: "#ffffff" }), []);
+});
+
+test("Files addresses become the panel's own, for the storefront frame to load", () => {
+    const doc = {
+        theme_settings: { accent: "#112233" },
+        sections: [
+            { id: "a", type: "hero", settings: { image: "/media/a.jpg", button_link: "/products", heading: "/media/not-a-picture" } },
+            { id: "b", type: "slideshow", settings: { slides: [{ image: "/media/b.jpg", mobile_image: "https://cdn.example/m.jpg" }] } },
+            { id: "c", type: "video", settings: { video_file: "/media/c.mp4", poster: "/media/c.jpg" } },
+        ],
+    };
+    const out = absoluteMedia(doc, "https://admin.example");
+    assert.equal(out.sections[0].settings.image, "https://admin.example/media/a.jpg");
+    assert.equal(out.sections[0].settings.button_link, "/products");
+    assert.equal(out.sections[0].settings.heading, "/media/not-a-picture");
+    assert.equal(out.sections[1].settings.slides[0].image, "https://admin.example/media/b.jpg");
+    assert.equal(out.sections[1].settings.slides[0].mobile_image, "https://cdn.example/m.jpg");
+    assert.equal(out.sections[2].settings.video_file, "https://admin.example/media/c.mp4");
+    assert.equal(out.sections[2].settings.poster, "https://admin.example/media/c.jpg");
+    assert.equal(doc.sections[0].settings.image, "/media/a.jpg", "the screen's own document is left alone");
+});
+
+test("the theme settings row says what is set", () => {
+    assert.equal(themeSettingsSummary({}), "The storefront's own colours and fonts");
+    assert.equal(themeSettingsSummary({ accent: "#112233" }), "1 setting changed");
+    assert.equal(themeSettingsSummary({ accent: "#112233", radius: "large" }), "2 settings changed");
+});

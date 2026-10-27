@@ -1,5 +1,52 @@
 {
   "paths": {
+    "/x/layouts/theme": {
+      "get": {
+        "tags": [
+          "layouts"
+        ],
+        "summary": "The storefront's design tokens",
+        "description": "The theme settings published with the home page (D127), for every page of the storefront to apply, without the home page's products. Answered `Cache-Control: public, max-age=30`. With `preview=<key>` from the editor, the saved draft's instead, answered `no-store`. An empty `settings` means the storefront keeps its own look. 404 while the `layouts` plugin is off or nothing is published.",
+        "parameters": [
+          {
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "A preview key from the editor."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The tokens.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LayoutPublicTheme"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Switched off, nothing published, or an expired preview key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/x/layouts/{page}": {
       "get": {
         "tags": [
@@ -65,7 +112,7 @@
           "layouts"
         ],
         "summary": "The section library",
-        "description": "Every section type a page can hold, with the fields the editor draws its form from and the engine validates against, and the themes a page may name.",
+        "description": "Every section type a page can hold, with the fields the editor draws its form from and the engine validates against, and the themes a page may name. A type whose `requires` plugin is off or absent is left out. `theme_settings` lists the design tokens in titled groups, with the same field shapes.",
         "security": [
           {
             "adminToken": []
@@ -200,8 +247,8 @@
               }
             }
           },
-          "409": {
-            "description": "Somebody saved the page after it was read.",
+          "400": {
+            "description": "The document breaks a rule; the message names the section.",
             "content": {
               "application/json": {
                 "schema": {
@@ -210,8 +257,8 @@
               }
             }
           },
-          "400": {
-            "description": "The document breaks a rule; the message names the section.",
+          "409": {
+            "description": "Somebody saved the page after it was read.",
             "content": {
               "application/json": {
                 "schema": {
@@ -620,6 +667,9 @@
             "type": "string",
             "default": "default"
           },
+          "theme_settings": {
+            "$ref": "#/components/schemas/LayoutThemeSettings"
+          },
           "sections": {
             "type": "array",
             "maxItems": 50,
@@ -701,6 +751,9 @@
           "preview": {
             "type": "boolean"
           },
+          "theme_settings": {
+            "$ref": "#/components/schemas/LayoutThemeSettings"
+          },
           "sections": {
             "type": "array",
             "items": {
@@ -721,9 +774,86 @@
                   "items": {
                     "$ref": "#/components/schemas/Product"
                   }
+                },
+                "collections": {
+                  "type": "array",
+                  "description": "A collection list's collections, in the order picked; deleted ones left out.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "integer",
+                        "format": "int64"
+                      },
+                      "slug": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "image": {
+                        "type": "string"
+                      }
+                    }
+                  }
                 }
               }
             }
+          }
+        }
+      },
+      "LayoutThemeSettings": {
+        "type": "object",
+        "description": "The store's design tokens (D127). Every key is optional; an unset one keeps the storefront's own look. Colours are `#rrggbb`; fonts are keys from the registry's list; `radius` is none, small, medium or large.",
+        "properties": {
+          "background": {
+            "type": "string",
+            "pattern": "^#[0-9a-f]{6}$"
+          },
+          "text": {
+            "type": "string",
+            "pattern": "^#[0-9a-f]{6}$"
+          },
+          "accent": {
+            "type": "string",
+            "pattern": "^#[0-9a-f]{6}$"
+          },
+          "accent_text": {
+            "type": "string",
+            "pattern": "^#[0-9a-f]{6}$"
+          },
+          "muted": {
+            "type": "string",
+            "pattern": "^#[0-9a-f]{6}$"
+          },
+          "heading_font": {
+            "type": "string"
+          },
+          "body_font": {
+            "type": "string"
+          },
+          "radius": {
+            "type": "string",
+            "enum": [
+              "none",
+              "small",
+              "medium",
+              "large"
+            ]
+          }
+        }
+      },
+      "LayoutPublicTheme": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer"
+          },
+          "preview": {
+            "type": "boolean"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/LayoutThemeSettings"
           }
         }
       }

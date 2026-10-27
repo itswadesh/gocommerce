@@ -65,14 +65,16 @@ export function sectionSummary(section, registry) {
     const t = sectionType(section.type, registry);
     if (!t) return { label: `Unknown section (${section.type})`, text: "" };
     const s = section.settings ?? {};
-    const text = s.heading || s.text || s.body || (Array.isArray(s.items) ? s.items.map((i) => i.title).filter(Boolean).join(" · ") : "") || "";
+    const list = Array.isArray(s.items) ? s.items : Array.isArray(s.slides) ? s.slides : [];
+    const text = s.heading || s.text || s.body || list.map((i) => i?.title || i?.heading || i?.question).filter(Boolean).join(" · ") || "";
     return { label: t.label, text: String(text).slice(0, 120) };
 }
 
 /** The fields to show for settings: a field with show_when only while the other setting matches. */
 export function visibleFields(fields, settings) {
     const value = (key) => settings?.[key] ?? fields.find((f) => f.key === key)?.default;
-    return fields.filter((f) => !f.show_when || Object.entries(f.show_when).every(([k, v]) => value(k) === v));
+    // Compared as text: a switch's true is the registry's "true".
+    return fields.filter((f) => !f.show_when || Object.entries(f.show_when).every(([k, v]) => String(value(k)) === v));
 }
 
 // ------------------------------------------------------------ the theme editor (D126)
@@ -235,4 +237,77 @@ export function previewAddress(storefront, key, editorOrigin) {
     out.searchParams.set("preview", key);
     if (editorOrigin) out.searchParams.set("editor", editorOrigin);
     return out.href;
+}
+
+// ------------------------------------------------------------ theme settings (D127)
+
+/**
+ * The storefront's default theme's own colours, which an unset theme setting
+ * keeps: the stand-in for the other half of a pair when only one is set.
+ */
+const STOREFRONT_COLOURS = { background: "#ffffff", text: "#0f172a", accent: "#0f172a", accent_text: "#ffffff", muted: "#f1f5f9" };
+
+function channel(hex, at) {
+    const c = parseInt(hex.slice(at, at + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+}
+
+function luminance(hex) {
+    return 0.2126 * channel(hex, 1) + 0.7152 * channel(hex, 3) + 0.0722 * channel(hex, 5);
+}
+
+/** The WCAG contrast ratio of two #rrggbb colours, or null for anything else. */
+export function contrastRatio(a, b) {
+    const ok = (x) => typeof x === "string" && /^#[0-9a-f]{6}$/i.test(x);
+    if (!ok(a) || !ok(b)) return null;
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+}
+
+const PAIRS = [
+    { keys: ["text", "background"], what: "Text on the background" },
+    { keys: ["accent_text", "accent"], what: "Text on buttons" },
+    { keys: ["text", "muted"], what: "Text on quiet backgrounds" },
+];
+
+/**
+ * The pairs the shop set that read poorly: below 4.5:1, the WCAG AA floor for
+ * body text. A warning, never a refusal — the colours are the shop's. A pair
+ * neither half of which is set is the storefront's own and not judged here.
+ */
+export function themeWarnings(settings) {
+    const s = settings ?? {};
+    const out = [];
+    for (const { keys, what } of PAIRS) {
+        if (!s[keys[0]] && !s[keys[1]]) continue;
+        const ratio = contrastRatio(s[keys[0]] || STOREFRONT_COLOURS[keys[0]], s[keys[1]] || STOREFRONT_COLOURS[keys[1]]);
+        if (ratio !== null && ratio < 4.5) {
+            out.push({ keys, ratio, message: `${what}: ${(Math.floor(ratio * 10) / 10).toFixed(1)}:1. Below 4.5:1 is hard to read for many shoppers.` });
+        }
+    }
+    return out;
+}
+
+/** What the Themes screen says of the theme settings. */
+export function themeSettingsSummary(settings) {
+    const n = Object.keys(settings ?? {}).length;
+    if (!n) return "The storefront's own colours and fonts";
+    return n === 1 ? "1 setting changed" : `${n} settings changed`;
+}
+
+const MEDIA_KEYS = new Set(["image", "mobile_image", "poster", "video_file"]);
+
+/**
+ * A copy of doc for the storefront frame, with every picture or video from
+ * Files given the panel's origin. Files answers root-relative addresses
+ * (/media/…), which the storefront would look for on its own host.
+ */
+export function absoluteMedia(doc, origin) {
+    const fix = (v, key) => {
+        if (Array.isArray(v)) return v.map((x) => fix(x, null));
+        if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fix(x, k)]));
+        if (MEDIA_KEYS.has(key) && typeof v === "string" && v.startsWith("/") && !v.startsWith("//") && origin) return origin + v;
+        return v;
+    };
+    return { ...doc, sections: fix(JSON.parse(JSON.stringify(doc.sections ?? [])), null) };
 }
