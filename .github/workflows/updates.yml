@@ -54,6 +54,9 @@ jobs:
           repository: itswadesh/gocommerce-landing-page
           token: ${{ secrets.LANDING_PAGE_TOKEN }}
           path: landing
+          # Its build reads git history for each page's first-published date,
+          # as its own deploy does after deepening the clone.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -69,17 +72,27 @@ jobs:
       - name: publish to kitcommerce.store
         if: env.HAS_LANDING == 'true'
         working-directory: landing
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          LANDING_DIR: landing
         run: |
-          git add src/data/updates.json
-          if git diff --cached --quiet; then echo "Already on the page."; exit 0; fi
           git config user.name "gocommerce-updates"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Updates: ${GITHUB_SHA::7} from itswadesh/gocommerce"
-          # The landing page may have moved since the checkout; take its new
-          # tip and try again rather than fail the announcement.
-          for i in 1 2 3; do
+          for _ in 1 2 3; do
+            if git diff --quiet -- src/data/updates.json; then echo "Already on the page."; exit 0; fi
+            # The build dates the pages the rows changed in page-dates.json.
+            # Left uncommitted, every later deploy would date them again.
+            npm ci
+            npm run build
+            git add src/data/updates.json src/data/page-dates.json
+            git commit -m "Updates: ${GITHUB_SHA::7} from itswadesh/gocommerce"
             git push origin HEAD:main && exit 0
-            git pull --rebase origin main
+            # The landing page moved since the checkout. Its page dates must
+            # come from a build of its new tip, so record the rows there again.
+            git fetch origin main
+            git reset --hard origin/main
+            (cd .. && node .github/scripts/publish-update.mjs record)
           done
           exit 1
 
