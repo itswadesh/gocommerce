@@ -132,6 +132,25 @@ func (a *App) translateProductLinks(ctx context.Context, lang string, products [
 
 type categoryName struct{ title, fullName string }
 
+// translateCategoryFacets names a listing's category facets in the shopper's
+// language, as translateCategories does the categories themselves.
+func (a *App) translateCategoryFacets(r *http.Request, list []CategoryFacet) {
+	lang := a.translationLanguage(r)
+	if lang == "" || len(list) == 0 {
+		return
+	}
+	ids := make([]int64, len(list))
+	for i, c := range list {
+		ids[i] = c.ID
+	}
+	names := a.categoryNames(r.Context(), lang, ids)
+	for i := range list {
+		if n, ok := names[list[i].ID]; ok {
+			list[i].Title = n.title
+		}
+	}
+}
+
 // categoryNames is each category's title and full name in lang. A full name is
 // its ancestors' titles joined, so every ancestor is translated with it, in
 // the same one lookup: "Jewellery / Rings" becomes "आभूषण / अंगूठियाँ" only when

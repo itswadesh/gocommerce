@@ -118,6 +118,17 @@ same filters — a reconciliation exports the rows a screen is showing rather
 than the whole catalogue. A bad filter on the export is a 400 in the envelope,
 because it is parsed before the first CSV header is written.
 
+The public listing has its own reader, `publicProductQuery`, for a storefront's
+filter rail (D130): repeatable `tag`, `vendor` and `product_type` (several
+values widen), `attr=handle:value`, `category` as a slug, `price_min` and
+`price_max` in minor units, and `sort` over title, price and the two dates.
+`facets=1` adds `meta.facets`, counted by `Catalog.ProductFacets` over the
+whole result set, each group without its own selection:
+
+```http
+GET /api/products?category=bags&vendor=Acme&price_min=1500&facets=1
+```
+
 ### CSV in two dialects
 
 The product file is one model in two layouts (D56). The store's own is the

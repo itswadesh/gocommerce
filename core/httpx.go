@@ -115,6 +115,8 @@ type ListMeta struct {
 	Offset     int `json:"offset"`
 	Page       int `json:"page"`
 	TotalPages int `json:"total_pages"`
+	// Facets rides only on the storefront product listing, and only when asked.
+	Facets *ProductFacets `json:"facets,omitempty"`
 }
 
 // derive fills in the page view of an offset.

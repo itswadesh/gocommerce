@@ -361,8 +361,8 @@ func TestExportProductsHonoursFilters(t *testing.T) {
 	}
 	for _, q := range []ProductQuery{
 		{Status: ProductActive},
-		{Vendor: "Acme"},
-		{Tag: "summer"},
+		{Vendors: []string{"Acme"}},
+		{Tags: []string{"summer"}},
 		{CategoryID: parent.ID}, // the ancestor, proving categoryFilter still expands
 		{CollectionID: col.ID},
 		{Search: "Filtered EXP-LIVE"},

@@ -328,17 +328,23 @@ type VariantPatch struct {
 // ProductQuery filters a product listing. Every field is optional; a zero one
 // does not narrow the result.
 type ProductQuery struct {
-	Search      string
-	Status      string
-	Vendor      string
-	ProductType string
+	Search string
+	Status string
+	// Vendors, ProductTypes and Tags each match any one of their values, for
+	// the reason AttributeFilter widens within one attribute: a shopper who
+	// ticks two vendors wants either. Matching is exact.
+	Vendors      []string
+	ProductTypes []string
 	// CategoryID matches the category and everything nested under it.
 	CategoryID int64
-	// Tag matches products carrying exactly this tag. Exact rather than
-	// case-folded so the match is answered by the GIN index on products.tags;
-	// tags are de-duplicated case-insensitively on write, so one spelling of a
-	// tag is the only spelling stored.
-	Tag string
+	// Tags are exact rather than case-folded so the match is answered by the
+	// GIN index on products.tags; tags are de-duplicated case-insensitively on
+	// write, so one spelling of a tag is the only spelling stored.
+	Tags []string
+	// PriceMinMinor and PriceMaxMinor bound a product's cheapest variant, the
+	// price a listing shows as "from" and sorts by. Nil does not narrow.
+	PriceMinMinor *int64
+	PriceMaxMinor *int64
 	// CollectionID restricts the listing to one collection's members and
 	// switches the ordering to the collection's own, which is the order an
 	// operator curated by hand.
@@ -1358,17 +1364,25 @@ func productFilters(q ProductQuery, args []any) (join string, where []string, ou
 		where = append(where, fmt.Sprintf(
 			"(lower(p.title) LIKE $%d OR lower(p.description) LIKE $%d)", len(args), len(args)))
 	}
-	if s := strings.TrimSpace(q.Vendor); s != "" {
-		args = append(args, s)
-		where = append(where, fmt.Sprintf("p.vendor = $%d", len(args)))
+	if v := trimmed(q.Vendors); len(v) > 0 {
+		args = append(args, v)
+		where = append(where, fmt.Sprintf("p.vendor = ANY($%d::text[])", len(args)))
 	}
-	if s := strings.TrimSpace(q.ProductType); s != "" {
-		args = append(args, s)
-		where = append(where, fmt.Sprintf("p.product_type = $%d", len(args)))
+	if v := trimmed(q.ProductTypes); len(v) > 0 {
+		args = append(args, v)
+		where = append(where, fmt.Sprintf("p.product_type = ANY($%d::text[])", len(args)))
 	}
-	if s := strings.TrimSpace(q.Tag); s != "" {
-		args = append(args, s)
-		where = append(where, fmt.Sprintf("p.tags @> ARRAY[$%d]::text[]", len(args)))
+	if v := trimmed(q.Tags); len(v) > 0 {
+		args = append(args, v)
+		where = append(where, fmt.Sprintf("p.tags && $%d::text[]", len(args)))
+	}
+	if q.PriceMinMinor != nil {
+		args = append(args, *q.PriceMinMinor)
+		where = append(where, fmt.Sprintf("%s >= $%d", productMinPrice, len(args)))
+	}
+	if q.PriceMaxMinor != nil {
+		args = append(args, *q.PriceMaxMinor)
+		where = append(where, fmt.Sprintf("%s <= $%d", productMinPrice, len(args)))
 	}
 	if q.CategoryID > 0 {
 		args = append(args, q.CategoryID)
@@ -1408,6 +1422,18 @@ func productFilters(q ProductQuery, args []any) (join string, where []string, ou
 		}
 	}
 	return join, where, args
+}
+
+// trimmed drops blank values, so `?tag=` narrows nothing rather than to
+// products tagged with the empty string.
+func trimmed(in []string) []string {
+	var out []string
+	for _, v := range in {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // productSorts is the product listing's allow-list. Every value is a literal

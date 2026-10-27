@@ -268,7 +268,7 @@
           "catalog"
         ],
         "summary": "List active products",
-        "description": "Only active products are visible. A draft or archived product is reported as not found rather than forbidden, because its existence is not a shopper's business.",
+        "description": "Only active products are visible. A draft or archived product is reported as not found rather than forbidden, because its existence is not a shopper's business. With `facets=1` the response's `meta.facets` counts what the listing could be narrowed by, over every matching product rather than the page: tags, vendors, product types, categories, category attribute values and the price range. Each group is counted with its own selection left out and every other filter kept, so ticking one vendor still offers the others.",
         "parameters": [
           {
             "name": "q",
@@ -314,6 +314,112 @@
             },
             "example": "wholesale",
             "description": "Which storefront is asking. Absent takes the default channel; a store with no channels reads the whole catalogue, exactly as before channels existed. An unknown or inactive code is refused with a 400 rather than quietly served the default — a typo in a storefront's configuration should fail at its first request, not sell the wrong catalogue for a week."
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "explode": true,
+            "style": "form",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": "Products carrying this exact tag. Repeat the parameter for more; several tags widen the result (any of them).",
+            "example": "summer"
+          },
+          {
+            "name": "vendor",
+            "in": "query",
+            "required": false,
+            "explode": true,
+            "style": "form",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": "Exact vendor. Repeat for more; several widen the result.",
+            "example": "Acme"
+          },
+          {
+            "name": "product_type",
+            "in": "query",
+            "required": false,
+            "explode": true,
+            "style": "form",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": "Exact product type. Repeat for more; several widen the result.",
+            "example": "Bag"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "bags",
+            "description": "A category slug: the category and everything nested under it. An unknown slug is a 404, as on `GET /api/categories/{slug}`."
+          },
+          {
+            "name": "price_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "description": "Lowest cheapest-variant price, in the store currency's minor units. Anything but a whole number of 0 or more is a 400."
+          },
+          {
+            "name": "price_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "description": "Highest cheapest-variant price, in minor units."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Order the page by one of these fields; omit for newest first. `price` is the cheapest variant. Anything else is a 400.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "created_at",
+                "price",
+                "title",
+                "updated_at"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/SortOrder"
+          },
+          {
+            "name": "facets",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "`1` adds `meta.facets`. Off by default because the counts are several more queries over the whole result set."
           }
         ],
         "responses": {
@@ -16165,6 +16271,106 @@
           "total_pages": {
             "type": "integer",
             "description": "Pages at this limit. Zero when nothing matched."
+          },
+          "facets": {
+            "type": "object",
+            "description": "Present only with `facets=1` on `GET /api/products`.",
+            "properties": {
+              "price": {
+                "nullable": true,
+                "description": "The cheapest and dearest cheapest-variant price, ignoring `price_min` and `price_max`. Null when nothing matches.",
+                "type": "object",
+                "properties": {
+                  "min": {
+                    "$ref": "#/components/schemas/Money"
+                  },
+                  "max": {
+                    "$ref": "#/components/schemas/Money"
+                  }
+                }
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              },
+              "vendors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              },
+              "product_types": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              },
+              "categories": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "slug": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              },
+              "attributes": {
+                "type": "object",
+                "description": "Category attribute handle to its values, the ones `attr=handle:value` filters on.",
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "string"
+                      },
+                      "count": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },

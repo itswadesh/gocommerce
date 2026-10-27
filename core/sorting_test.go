@@ -166,6 +166,7 @@ func TestSortParametersAreDocumented(t *testing.T) {
 		"/api/admin/media":      mediaSorts,
 		"/api/admin/categories": categorySorts,
 		"/api/categories":       categorySorts,
+		"/api/products":         publicProductSorts,
 		// The low-stock report is documented once and served two ways. The
 		// per-location allow-list is checked against the same enum by
 		// TestTheTwoStockReportsOfferTheSameColumns below, which is what makes
@@ -203,14 +204,15 @@ func TestSortParametersAreDocumented(t *testing.T) {
 // is caught by the same assertions the moment it is registered here.
 func allSortSpecs() map[string]SortSpec {
 	return map[string]SortSpec{
-		"products":      productSorts,
-		"orders":        orderSorts,
-		"customers":     customerSorts,
-		"discounts":     discountSorts,
-		"media":         mediaSorts,
-		"categories":    categorySorts,
-		"lowStock":      lowStockSorts,
-		"locationStock": locationStockSorts,
+		"products":       productSorts,
+		"publicProducts": publicProductSorts,
+		"orders":         orderSorts,
+		"customers":      customerSorts,
+		"discounts":      discountSorts,
+		"media":          mediaSorts,
+		"categories":     categorySorts,
+		"lowStock":       lowStockSorts,
+		"locationStock":  locationStockSorts,
 	}
 }
 

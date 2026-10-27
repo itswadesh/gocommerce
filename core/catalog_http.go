@@ -74,25 +74,97 @@ func (a *App) handleListProducts(w http.ResponseWriter, r *http.Request) {
 	if channel != nil {
 		channelID = channel.ID
 	}
-	// The storefront gets the facet filter too, and it is the place it earns
-	// its keep: narrowing a category down to the canvas bags is a shopper's
-	// move before it is an operator's. Status stays pinned to active here —
-	// this listing has never shown a draft and an attribute must not be a way
-	// to reach one.
-	products, total, err := a.catalog.ListProducts(r.Context(), ProductQuery{
-		Search:     r.URL.Query().Get("q"),
-		Status:     ProductActive,
-		Attributes: attributeFilters(r.URL.Query()["attr"]),
-		ChannelID:  channelID,
-		Limit:      limit,
-		Offset:     offset,
-	})
+	query, err := publicProductQuery(r)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	query.ChannelID, query.Limit, query.Offset = channelID, limit, offset
+	if slug := strings.TrimSpace(r.URL.Query().Get("category")); slug != "" {
+		c, err := a.Categories().GetBySlug(r.Context(), slug)
+		if err != nil {
+			RespondError(w, r, err)
+			return
+		}
+		query.CategoryID = c.ID
+	}
+	products, total, err := a.catalog.ListProducts(r.Context(), query)
 	if err != nil {
 		RespondError(w, r, err)
 		return
 	}
 	a.translateProducts(r, products)
-	RespondList(w, products, ListMeta{Total: total, Limit: limit, Offset: offset})
+	meta := ListMeta{Total: total, Limit: limit, Offset: offset}
+	// Opt-in, because the counts are several more queries over the whole
+	// result set and only a listing page with a filter rail wants them.
+	if r.URL.Query().Get("facets") == "1" {
+		if meta.Facets, err = a.catalog.ProductFacets(r.Context(), query); err != nil {
+			RespondError(w, r, err)
+			return
+		}
+		a.translateCategoryFacets(r, meta.Facets.Categories)
+	}
+	RespondList(w, products, meta)
+}
+
+// publicProductSorts is what a shopper may order the storefront listing by: the
+// operator's allow-list without status and stock, which are not a shopper's
+// business.
+var publicProductSorts = SortSpec{
+	Tiebreak: productSorts.Tiebreak,
+	Columns: map[string]sortField{
+		"title":      productSorts.Columns["title"],
+		"created_at": productSorts.Columns["created_at"],
+		"updated_at": productSorts.Columns["updated_at"],
+		"price":      productSorts.Columns["price"],
+	},
+}
+
+// publicProductQuery reads the storefront listing's filters. Status stays
+// pinned to active: this listing has never shown a draft, and a filter must
+// not be a way to reach one.
+//
+// Tags, vendors and product types repeat the parameter rather than joining
+// values with commas, for attr's reason: a value may contain a comma.
+func publicProductQuery(r *http.Request) (ProductQuery, error) {
+	q := r.URL.Query()
+	sortBy, err := ParseSort(r, publicProductSorts)
+	if err != nil {
+		return ProductQuery{}, err
+	}
+	lo, err := queryMinor(q, "price_min")
+	if err != nil {
+		return ProductQuery{}, err
+	}
+	hi, err := queryMinor(q, "price_max")
+	if err != nil {
+		return ProductQuery{}, err
+	}
+	return ProductQuery{
+		Search:        q.Get("q"),
+		Status:        ProductActive,
+		Tags:          q["tag"],
+		Vendors:       q["vendor"],
+		ProductTypes:  q["product_type"],
+		Attributes:    attributeFilters(q["attr"]),
+		PriceMinMinor: lo,
+		PriceMaxMinor: hi,
+		Sort:          sortBy,
+	}, nil
+}
+
+// queryMinor reads an optional non-negative amount in minor units. Refused
+// rather than ignored when unparseable, for queryInt64's reason.
+func queryMinor(q url.Values, name string) (*int64, error) {
+	raw := strings.TrimSpace(q.Get(name))
+	if raw == "" {
+		return nil, nil
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n < 0 {
+		return nil, Validationf("%s must be a whole number of minor units, 0 or more", name)
+	}
+	return &n, nil
 }
 
 func (a *App) handleGetProduct(w http.ResponseWriter, r *http.Request) {
@@ -417,9 +489,9 @@ func productQueryFrom(q url.Values) (ProductQuery, error) {
 	return ProductQuery{
 		Search:       q.Get("q"),
 		Status:       status,
-		Vendor:       q.Get("vendor"),
-		ProductType:  q.Get("product_type"),
-		Tag:          q.Get("tag"),
+		Vendors:      q["vendor"],
+		ProductTypes: q["product_type"],
+		Tags:         q["tag"],
 		CategoryID:   categoryID,
 		CollectionID: collectionID,
 		Attributes:   attributeFilters(q["attr"]),
