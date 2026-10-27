@@ -102,8 +102,27 @@ func coreMigrations() []Migration {
 		ScopeMigration("0084_scope_add_ons", "product_add_ons", "product_cross_sells"),
 		{ID: "0085_product_sales_counts", SQL: migration0085ProductSalesCounts},
 		ScopeMigration("0086_scope_sales_counts", "product_sales_counts"),
+		{ID: "0087_tax_rate_product_target", SQL: migration0087TaxRateProductTarget},
 	}
 }
+
+// M83 — a tax rule may target one product (D126).
+//
+// The keys are written with store_id because tax_rates is already scoped, and
+// ScopeTables rewrites only the keys that exist when it runs. CASCADE where a
+// category's rule is RESTRICT: a category rule widens to everything when its
+// category goes, a product rule just ends with its product. The unique key
+// keeps its name so translateTaxErr still recognises it.
+const migration0087TaxRateProductTarget = `
+ALTER TABLE tax_rates ADD COLUMN product_id bigint;
+ALTER TABLE tax_rates ADD CONSTRAINT tax_rates_product_fk
+    FOREIGN KEY (store_id, product_id) REFERENCES products (store_id, id) ON DELETE CASCADE;
+ALTER TABLE tax_rates ADD CONSTRAINT tax_rates_one_target
+    CHECK (category_id IS NULL OR product_id IS NULL);
+ALTER TABLE tax_rates DROP CONSTRAINT tax_rates_unique_target;
+ALTER TABLE tax_rates ADD CONSTRAINT tax_rates_unique_target
+    UNIQUE NULLS NOT DISTINCT (store_id, country, state, category_id, product_id);
+`
 
 // M77 — the plan a store is on (D119). Free unless the install's operator says
 // otherwise; a feature on Pro reads it through App.StorePlan.

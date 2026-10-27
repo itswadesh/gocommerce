@@ -42,6 +42,12 @@ type TaxRate struct {
 	// Nil is everything.
 	CategoryID   *int64 `json:"category_id,omitempty"`
 	CategoryName string `json:"category_name,omitempty"`
+	// ProductID is one product, which outranks any category rule: the
+	// exception for the item in a category that is taxed differently, as gold
+	// jewellery at 3% is in a shop otherwise at 18%. A rule has a category or
+	// a product, never both.
+	ProductID    *int64 `json:"product_id,omitempty"`
+	ProductTitle string `json:"product_title,omitempty"`
 
 	Active    bool      `json:"active"`
 	Metadata  Metadata  `json:"metadata"`
@@ -56,6 +62,7 @@ type TaxRateInput struct {
 	Country    string   `json:"country"`
 	State      string   `json:"state"`
 	CategoryID *int64   `json:"category_id"`
+	ProductID  *int64   `json:"product_id"`
 	Active     *bool    `json:"active"`
 	Metadata   Metadata `json:"metadata"`
 }
@@ -67,6 +74,7 @@ type TaxRatePatch struct {
 	Country    *string    `json:"country"`
 	State      *string    `json:"state"`
 	CategoryID NullableID `json:"category_id"`
+	ProductID  NullableID `json:"product_id"`
 	Active     *bool      `json:"active"`
 	Metadata   *Metadata  `json:"metadata"`
 }
@@ -89,13 +97,13 @@ type TaxExemption struct {
 	GroupName string `json:"group_name"`
 }
 
-const taxRateColumns = `t.id, t.name, t.rate_bp, t.country, t.state, t.category_id,
+const taxRateColumns = `t.id, t.name, t.rate_bp, t.country, t.state, t.category_id, t.product_id,
 	t.active, t.metadata, t.created_at, t.updated_at`
 
 func scanTaxRate(row interface{ Scan(...any) error }) (*TaxRate, error) {
 	var t TaxRate
 	var meta []byte
-	if err := row.Scan(&t.ID, &t.Name, &t.RateBP, &t.Country, &t.State, &t.CategoryID,
+	if err := row.Scan(&t.ID, &t.Name, &t.RateBP, &t.Country, &t.State, &t.CategoryID, &t.ProductID,
 		&t.Active, &meta, &t.CreatedAt, &t.UpdatedAt); err != nil {
 		return nil, err
 	}
@@ -132,11 +140,11 @@ func (s *Taxes) Create(ctx context.Context, in TaxRateInput) (*TaxRate, error) {
 	err = InTx(ctx, s.app.db, func(tx *sql.Tx) error {
 		var terr error
 		t, terr = scanTaxRate(tx.QueryRowContext(ctx, `
-			INSERT INTO tax_rates (name, rate_bp, country, state, category_id, active, metadata)
-			VALUES ($1,$2,$3,$4,$5,$6,$7)
+			INSERT INTO tax_rates (name, rate_bp, country, state, category_id, product_id, active, metadata)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 			RETURNING `+strings.ReplaceAll(taxRateColumns, "t.", ""),
 			in.Name, in.RateBP, strings.ToUpper(strings.TrimSpace(in.Country)),
-			StateCode(in.Country, in.State), in.CategoryID, active, meta))
+			StateCode(in.Country, in.State), in.CategoryID, in.ProductID, active, meta))
 		if terr != nil {
 			return translateTaxErr(terr)
 		}
@@ -148,7 +156,8 @@ func (s *Taxes) Create(ctx context.Context, in TaxRateInput) (*TaxRate, error) {
 			// an answerable question.
 			After: map[string]any{
 				"name": t.Name, "rate_bp": t.RateBP, "country": t.Country,
-				"state": t.State, "category_id": t.CategoryID, "active": t.Active,
+				"state": t.State, "category_id": t.CategoryID, "product_id": t.ProductID,
+				"active": t.Active,
 			},
 		})
 	})
@@ -172,10 +181,12 @@ func (s *Taxes) Get(ctx context.Context, id int64) (*TaxRate, error) {
 // is the order they are applied in.
 func (s *Taxes) List(ctx context.Context) ([]*TaxRate, error) {
 	rows, err := s.app.db.QueryContext(ctx, `
-		SELECT `+taxRateColumns+`, coalesce(c.title, '')
+		SELECT `+taxRateColumns+`, coalesce(c.title, ''), coalesce(p.title, '')
 		FROM tax_rates t
 		LEFT JOIN categories c ON c.id = t.category_id
-		ORDER BY (t.category_id IS NOT NULL) DESC, t.country DESC, t.state DESC, t.id`)
+		LEFT JOIN products p ON p.id = t.product_id
+		ORDER BY (t.product_id IS NOT NULL) DESC, (t.category_id IS NOT NULL) DESC,
+		         t.country DESC, t.state DESC, t.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -185,8 +196,8 @@ func (s *Taxes) List(ctx context.Context) ([]*TaxRate, error) {
 	for rows.Next() {
 		var t TaxRate
 		var meta []byte
-		if err := rows.Scan(&t.ID, &t.Name, &t.RateBP, &t.Country, &t.State, &t.CategoryID,
-			&t.Active, &meta, &t.CreatedAt, &t.UpdatedAt, &t.CategoryName); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.RateBP, &t.Country, &t.State, &t.CategoryID, &t.ProductID,
+			&t.Active, &meta, &t.CreatedAt, &t.UpdatedAt, &t.CategoryName, &t.ProductTitle); err != nil {
 			return nil, err
 		}
 		if err := scanMetadata(meta, &t.Metadata); err != nil {
@@ -235,6 +246,9 @@ func (s *Taxes) Update(ctx context.Context, id int64, patch TaxRatePatch) (*TaxR
 	if patch.CategoryID.Present {
 		add("category_id", patch.CategoryID.Value)
 	}
+	if patch.ProductID.Present {
+		add("product_id", patch.ProductID.Value)
+	}
 	if patch.Active != nil {
 		add("active", *patch.Active)
 	}
@@ -272,7 +286,8 @@ func (s *Taxes) Update(ctx context.Context, id int64, patch TaxRatePatch) (*TaxR
 		before := map[string]any{}
 		for col, v := range map[string]any{
 			"name": was.Name, "rate_bp": was.RateBP, "country": was.Country,
-			"state": was.State, "category_id": was.CategoryID, "active": was.Active,
+			"state": was.State, "category_id": was.CategoryID, "product_id": was.ProductID,
+			"active": was.Active,
 		} {
 			if _, changed := after[col]; changed {
 				before[col] = v
@@ -332,9 +347,10 @@ type resolvedRate struct {
 // ratesForProducts finds, for each product, the most specific active rate that
 // fits the destination.
 //
-// Specificity is scored rather than branched: a category match is worth more
-// than a country, a country more than a state alone, and within category
-// matches the shallower ancestor loses to the deeper one. Doing it in one query
+// Specificity is scored rather than branched: a product match is worth more
+// than any category match, a category more than a country, a country more than
+// a state alone, and within category matches the shallower ancestor loses to
+// the deeper one. Doing it in one query
 // keeps a checkout at one round trip no matter how many lines it has, and keeps
 // the precedence in one readable place instead of spread across Go conditionals.
 func (s *Taxes) ratesForProducts(ctx context.Context, tx *sql.Tx, country, state string, productIDs []int64) (map[int64]resolvedRate, error) {
@@ -369,13 +385,23 @@ func (s *Taxes) ratesForProducts(ctx context.Context, tx *sql.Tx, country, state
 		      AND (t.country = '' OR t.country = $2)
 		      AND (t.state   = '' OR t.state   = ANY($3::text[]))
 		  UNION ALL
-		    -- A rule with no category applies to every product in the basket.
+		    -- 8 beats the best a category scores, 4 + 2 + 1.
+		    SELECT t.product_id, t.id, t.name, t.rate_bp, -1 AS depth,
+		           8 + (CASE WHEN t.country <> '' THEN 2 ELSE 0 END)
+		             + (CASE WHEN t.state   <> '' THEN 1 ELSE 0 END) AS score
+		    FROM tax_rates t
+		    WHERE t.product_id = ANY($1::bigint[]) AND t.active
+		      AND (t.country = '' OR t.country = $2)
+		      AND (t.state   = '' OR t.state   = ANY($3::text[]))
+		  UNION ALL
+		    -- A rule with no category or product applies to every product in
+		    -- the basket.
 		    SELECT p.id, t.id, t.name, t.rate_bp, 1000000 AS depth,
 		           (CASE WHEN t.country <> '' THEN 2 ELSE 0 END)
 		         + (CASE WHEN t.state   <> '' THEN 1 ELSE 0 END) AS score
 		    FROM products p
 		    CROSS JOIN tax_rates t
-		    WHERE p.id = ANY($1::bigint[]) AND t.category_id IS NULL AND t.active
+		    WHERE p.id = ANY($1::bigint[]) AND t.category_id IS NULL AND t.product_id IS NULL AND t.active
 		      AND (t.country = '' OR t.country = $2)
 		      AND (t.state   = '' OR t.state   = ANY($3::text[]))
 		)
@@ -596,7 +622,11 @@ func translateTaxErr(err error) error {
 	msg := err.Error()
 	switch {
 	case strings.Contains(msg, "tax_rates_unique_target"):
-		return Conflictf("a rate already covers that country, state and category")
+		return Conflictf("a rate already covers that country, state and category or product")
+	case strings.Contains(msg, "tax_rates_one_target"):
+		return Validationf("a rate applies to a category or a product, not both")
+	case strings.Contains(msg, "tax_rates_product_fk"):
+		return Validationf("that product does not exist")
 	case strings.Contains(msg, "tax_rates_category_id_fkey"):
 		return Conflictf("that category is used by a tax rate")
 	}
