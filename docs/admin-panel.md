@@ -697,13 +697,30 @@ every install has them whether or not it can store uploads. They are under the
 ## Themes and the homepage
 
 **Content → Themes** shows the store's theme and the elements of it a shop
-arranges; the first is **Homepage** (`/dash/themes/homepage`, `ext/layouts`,
-D125, D126), the storefront's home page as the shop arranges it: a list of
-sections read top to bottom — announcement bar, hero, product grid, image with
-text, text, benefits — any of them any number of times. Forms are drawn from
-each type's fields in the engine's registry: pictures from Files, products and
-collections from the same picker discounts use, lists of benefits with their
-own add and move.
+arranges: **Theme settings** and **Homepage** (`/dash/themes/homepage`,
+`ext/layouts`, D125, D126, D127). The homepage is the storefront's home page as
+the shop arranges it: a list of sections read top to bottom — announcement
+bar, hero, slideshow, product grid, collection list, image with text, text,
+columns, video, questions and answers, newsletter sign-up, benefits — any of
+them any number of times. Forms are drawn from each type's fields in the
+engine's registry: pictures and videos from Files, products and collections
+from the same picker discounts use, lists (slides, questions, columns,
+benefits) with their own add and move. The newsletter sign-up is offered only
+while the Newsletter plugin is on, and the storefront leaves it out while it
+is off. A video is a YouTube or Vimeo link or an MP4 from Files, and plays
+only when a shopper presses play.
+
+**Theme settings** are the store's colours (background, text, buttons and
+links, text on buttons, quiet backgrounds), its heading and body fonts from a
+short list the storefront can load, and its corner rounding. Each is optional:
+one left empty keeps the storefront's own. They open from the top of the
+section list (or from **Theme settings** on the Themes screen) in the same
+place a section's settings do, and are part of the same draft — they save by
+themselves, undo, show in the frame as they change, and publish with the home
+page, after which every page of the storefront uses them, not only the home
+page. A colour pair that reads poorly — text on the background, text on
+buttons, text on quiet backgrounds below 4.5:1 — is warned about above the
+form; it is not refused.
 
 On a computer the screen is a visual editor. The sections are on the left:
 drag one by its handle, or focus the handle and use the arrow keys, to move

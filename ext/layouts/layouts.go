@@ -113,11 +113,12 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.db = app.DB()
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "Homepage editor", Category: "storefront", DefaultEnabled: true,
-		Description: "Arrange the storefront's home page from sections — a hero, product grids, image and text, benefits — " +
-			"in any order, as a draft, and publish it without a deployment. On by default; switched off, or until the first publish, " +
-			"the storefront shows its built-in home page.",
+		Description: "Arrange the storefront's home page from sections — a hero, a slideshow, product grids, collections, video, questions and answers — " +
+			"in any order, set the store's colours, fonts and corner rounding, and publish it as a draft without a deployment. On by default; switched off, " +
+			"or until the first publish, the storefront shows its built-in home page and its own look.",
 	})
 
+	app.HandleFunc("GET /x/layouts/theme", m.handleTheme)
 	app.HandleFunc("GET /x/layouts/{page}", m.handlePublic)
 
 	app.HandleAdminFunc("GET /api/admin/x/layouts/sections", m.handleRegistry, rightLayoutsRead)

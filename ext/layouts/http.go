@@ -10,7 +10,26 @@ import (
 )
 
 func (m *Module) handleRegistry(w http.ResponseWriter, r *http.Request) {
-	gocommerce.Respond(w, http.StatusOK, map[string]any{"sections": Sections, "themes": Themes, "pages": Pages})
+	gocommerce.Respond(w, http.StatusOK, map[string]any{
+		"sections": m.offered(r.Context()), "themes": Themes, "pages": Pages, "theme_settings": ThemeSettings,
+	})
+}
+
+// offered is the section library: every type, less those whose plugin is off
+// or not in this binary, which a shop could add but a shopper could not use.
+func (m *Module) offered(ctx context.Context) []SectionType {
+	out := make([]SectionType, 0, len(Sections))
+	for _, s := range Sections {
+		if s.Requires == "" || m.pluginOn(ctx, s.Requires) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func (m *Module) pluginOn(ctx context.Context, key string) bool {
+	on, err := m.app.Plugins().Enabled(ctx, key)
+	return err == nil && on
 }
 
 func (m *Module) handleGet(w http.ResponseWriter, r *http.Request) {
@@ -148,19 +167,78 @@ func (m *Module) handlePreview(w http.ResponseWriter, r *http.Request) {
 // PublicPage is what the storefront draws: the shown sections in order, each
 // product grid with its products resolved.
 type PublicPage struct {
-	Page     string          `json:"page"`
-	Theme    string          `json:"theme"`
-	Revision int             `json:"revision,omitempty"`
-	Preview  bool            `json:"preview,omitempty"`
-	Sections []PublicSection `json:"sections"`
+	Page     string `json:"page"`
+	Theme    string `json:"theme"`
+	Revision int    `json:"revision,omitempty"`
+	Preview  bool   `json:"preview,omitempty"`
+	// ThemeSettings are the design tokens published with the page (D127).
+	ThemeSettings map[string]any  `json:"theme_settings,omitempty"`
+	Sections      []PublicSection `json:"sections"`
 }
 
-// PublicSection is a shown section. Products is set on a product grid.
+// PublicSection is a shown section. Products is set on a product grid,
+// Collections on a collection list.
 type PublicSection struct {
-	ID       string                `json:"id"`
-	Type     string                `json:"type"`
-	Settings map[string]any        `json:"settings"`
-	Products []*gocommerce.Product `json:"products,omitempty"`
+	ID          string                `json:"id"`
+	Type        string                `json:"type"`
+	Settings    map[string]any        `json:"settings"`
+	Products    []*gocommerce.Product `json:"products,omitempty"`
+	Collections []PublicCollection    `json:"collections,omitempty"`
+}
+
+// PublicCollection is what a collection list's card shows and links to.
+type PublicCollection struct {
+	ID    int64  `json:"id"`
+	Slug  string `json:"slug"`
+	Title string `json:"title"`
+	// Image is the collection's picture (its metadata's image), or empty.
+	Image string `json:"image,omitempty"`
+}
+
+// PublicTheme is the design tokens every page of the storefront applies:
+// the published ones, or a preview key's draft.
+type PublicTheme struct {
+	Revision int            `json:"revision,omitempty"`
+	Preview  bool           `json:"preview,omitempty"`
+	Settings map[string]any `json:"settings"`
+}
+
+// handleTheme answers the theme settings alone, so a page other than the
+// home page gets them without the home page's products. It reads one value
+// of one row; a 30-second cache keeps a busy storefront from asking on
+// every request without holding a publish back for long.
+func (m *Module) handleTheme(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if !m.pluginOn(ctx, pluginKey) {
+		gocommerce.RespondError(w, r, gocommerce.NotFoundf("the homepage editor is switched off"))
+		return
+	}
+	out := PublicTheme{}
+	var doc *Document
+	var err error
+	if token := strings.TrimSpace(r.URL.Query().Get("preview")); token != "" {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Robots-Tag", "noindex")
+		if doc, err = m.draftFor(ctx, "home", token); err != nil {
+			gocommerce.RespondError(w, r, err)
+			return
+		}
+		out.Preview = true
+	} else {
+		var rev *Revision
+		if rev, doc, err = m.published(ctx, "home"); err != nil {
+			gocommerce.RespondError(w, r, gocommerce.NotFoundf("no theme has been published"))
+			return
+		}
+		out.Revision = rev.Number
+		w.Header().Set("Cache-Control", "public, max-age=30")
+		w.Header().Add("Vary", "X-Store")
+	}
+	out.Settings = doc.ThemeSettings
+	if out.Settings == nil {
+		out.Settings = map[string]any{}
+	}
+	gocommerce.Respond(w, http.StatusOK, out)
 }
 
 func (m *Module) handlePublic(w http.ResponseWriter, r *http.Request) {
@@ -197,6 +275,7 @@ func (m *Module) handlePublic(w http.ResponseWriter, r *http.Request) {
 		out.Revision = rev.Number
 	}
 	out.Theme = doc.Theme
+	out.ThemeSettings = doc.ThemeSettings
 	out.Sections, err = m.resolve(r, doc.Sections)
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
@@ -235,7 +314,14 @@ func (m *Module) resolve(r *http.Request, sections []Section) ([]PublicSection, 
 		if !s.Enabled {
 			continue
 		}
+		// A section whose plugin is off would be a box that does nothing.
+		if st := sectionType(s.Type); st != nil && st.Requires != "" && !m.pluginOn(ctx, st.Requires) {
+			continue
+		}
 		ps := PublicSection{ID: s.ID, Type: s.Type, Settings: s.Settings}
+		if s.Type == "collection-list" {
+			ps.Collections = m.collectionCards(ctx, ints(s.Settings["collections"]))
+		}
 		if s.Type == "product-grid" {
 			limit := number(s.Settings["limit"], 8)
 			if setting(s, "source") == "products" {
@@ -260,6 +346,24 @@ func (m *Module) resolve(r *http.Request, sections []Section) ([]PublicSection, 
 	}
 	m.app.TranslateProducts(r, shown)
 	return out, nil
+}
+
+// collectionCards reads the picked collections, in the order picked; one
+// deleted since is left out rather than breaking the list.
+func (m *Module) collectionCards(ctx context.Context, ids []int64) []PublicCollection {
+	out := []PublicCollection{}
+	for _, id := range ids {
+		c, err := m.app.Collections().Get(ctx, id)
+		if err != nil {
+			continue
+		}
+		image, _ := c.Metadata["image"].(string)
+		if !safeURL(image) {
+			image = ""
+		}
+		out = append(out, PublicCollection{ID: c.ID, Slug: c.Slug, Title: c.Title, Image: image})
+	}
+	return out
 }
 
 func (m *Module) inCollection(ctx context.Context, id, channelID int64, limit int) ([]*gocommerce.Product, error) {

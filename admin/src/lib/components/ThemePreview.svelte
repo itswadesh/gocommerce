@@ -12,6 +12,7 @@
      * draft: the frame reloads after each save instead.
      */
     import { fade } from "svelte/transition";
+    import { absoluteMedia } from "$lib/layouts.js";
 
     let {
         src = "",
@@ -49,8 +50,10 @@
     let raf = 0;
     $effect(() => {
         // A JSON copy: the screen's sections are state proxies, which
-        // postMessage cannot clone.
-        const doc = document ? JSON.parse(JSON.stringify(document)) : null;
+        // postMessage cannot clone. Pictures from Files are addressed to this
+        // panel's origin, which is the engine's: the storefront would look
+        // for /media/… on its own host.
+        const doc = document ? absoluteMedia(JSON.parse(JSON.stringify(document)), location.origin) : null;
         if (!ready || !doc) return;
         queued = doc;
         if (raf) return;

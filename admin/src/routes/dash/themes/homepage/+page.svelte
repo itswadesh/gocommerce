@@ -14,8 +14,13 @@
      * frame beside them, drawing each edit as it is made; clicking a section
      * there picks it here. On a phone it is the list, with settings in a
      * drawer and the preview in a tab.
+     *
+     * Theme settings (D127) — the store's colours, fonts and corner rounding —
+     * are part of the same draft: they save, undo, preview and publish with
+     * the page, and every page of the storefront applies them once published.
      */
     import { onMount } from "svelte";
+    import { page as pageState } from "$app/state";
     import { flip } from "svelte/animate";
     import { fade } from "svelte/transition";
     import { base } from "$app/paths";
@@ -37,6 +42,7 @@
         createHistory,
         createAutosave,
         previewAddress,
+        themeWarnings,
     } from "$lib/layouts.js";
     import { toast } from "$lib/toast.svelte.js";
     import { rise, flipDuration } from "$lib/motion.js";
@@ -55,6 +61,8 @@
     const writable = $derived(can("layouts.write"));
 
     let registry = $state([]);
+    let tokenGroups = $state([]); // the theme settings' fields, in titled groups
+    let themeSettings = $state({});
     let st = $state(null); // the engine's view: version, published revision, …
     let sections = $state([]);
     let theme = $state("default");
@@ -62,8 +70,8 @@
     let loading = $state(true);
     let busy = $state(""); // "publish" | "preview" | "rollback" | "switch" | "reset"
 
-    const draftDoc = () => ({ theme, sections: JSON.parse(JSON.stringify(sections)) });
-    const docJSON = () => JSON.stringify({ theme, sections });
+    const draftDoc = () => ({ theme, theme_settings: JSON.parse(JSON.stringify(themeSettings)), sections: JSON.parse(JSON.stringify(sections)) });
+    const docJSON = () => JSON.stringify({ theme, theme_settings: themeSettings, sections });
 
     // A wide screen gets the visual editor; a phone the list.
     let narrow = $state(false);
@@ -105,9 +113,17 @@
         autosave.change(draftDoc());
     }
 
+    function editTheme(next) {
+        history.record(docJSON(), "theme-settings");
+        historyTick++;
+        themeSettings = next;
+        autosave.change(draftDoc());
+    }
+
     function restore(json) {
         const doc = JSON.parse(json);
         theme = doc.theme || "default";
+        themeSettings = doc.theme_settings ?? {};
         sections = doc.sections ?? [];
         if (selectedId && !sections.some((s) => s.id === selectedId)) selectedId = null;
         historyTick++;
@@ -143,6 +159,7 @@
     function adopt(state) {
         st = state;
         sections = JSON.parse(JSON.stringify(state.document?.sections ?? []));
+        themeSettings = JSON.parse(JSON.stringify(state.document?.theme_settings ?? {}));
         theme = state.document?.theme || "default";
         if (selectedId && !sections.some((s) => s.id === selectedId)) selectedId = null;
     }
@@ -156,6 +173,12 @@
                 api.plugin().catch(() => null),
             ]);
             registry = reg?.sections ?? [];
+            // A font or rounding left empty is the storefront's own, so each
+            // choice list starts with that.
+            tokenGroups = (reg?.theme_settings ?? []).map((g) => ({
+                ...g,
+                fields: g.fields.map((f) => (f.kind === "select" ? { ...f, options: [{ value: "", label: "Storefront's own" }, ...(f.options ?? [])] } : f)),
+            }));
             adopt(state);
             autosave.reset();
             pluginOn = plugin ? !!plugin.enabled : true;
@@ -216,9 +239,25 @@
     const selectedIndex = $derived(selectedId === null ? -1 : sections.findIndex((s) => s.id === selectedId));
     const selected = $derived(selectedIndex < 0 ? null : sections[selectedIndex]);
     const selectedType = $derived(selected ? sectionType(selected.type, registry) : null);
+    // The theme settings open in the same place as a section's, one at a time.
+    // ?panel=theme (the Themes screen's link) opens them on arrival.
+    let themeOpen = $state(pageState.url.searchParams.get("panel") === "theme");
+    const panelOpen = $derived(themeOpen || !!(selected && selectedType));
+    const warnings = $derived(themeWarnings(themeSettings));
 
     function select(id) {
+        themeOpen = false;
         selectedId = id;
+    }
+
+    function openTheme() {
+        selectedId = null;
+        themeOpen = true;
+    }
+
+    function closePanel() {
+        selectedId = null;
+        themeOpen = false;
     }
 
     let inserting = $state(null); // the index a new section goes in at
@@ -241,7 +280,7 @@
         edit(insertAt(sections, at, section));
         inserting = null;
         // Its settings open once the library has slid away, not over it.
-        setTimeout(() => (selectedId = section.id), flipDuration() ? 200 : 0);
+        setTimeout(() => select(section.id), flipDuration() ? 200 : 0);
     }
 
     function setSettings(id, settings) {
@@ -556,7 +595,7 @@
     {@const sum = sectionSummary(selected, registry)}
     <div class="hp-settings" in:rise={{ y: 0, duration: 150 }}>
         <div class="hp-settings-head">
-            <button type="button" class="btn sm circle transparent secondary" onclick={() => (selectedId = null)} aria-label={beside ? "Close the settings" : "Back to the sections"}>
+            <button type="button" class="btn sm circle transparent secondary" onclick={closePanel} aria-label={beside ? "Close the settings" : "Back to the sections"}>
                 <i class={beside ? "ri-close-line" : "ri-arrow-left-line"} aria-hidden="true"></i>
             </button>
             <h2 class="hp-settings-title">{sum.label}</h2>
@@ -576,6 +615,54 @@
             {@render settingsBody(selected, selectedType)}
         {/if}
     </div>
+{/snippet}
+
+{#snippet themePanel(beside)}
+    <div class="hp-settings" in:rise={{ y: 0, duration: 150 }}>
+        <div class="hp-settings-head">
+            <button type="button" class="btn sm circle transparent secondary" onclick={closePanel} aria-label={beside ? "Close the theme settings" : "Back to the sections"}>
+                <i class={beside ? "ri-close-line" : "ri-arrow-left-line"} aria-hidden="true"></i>
+            </button>
+            <h2 class="hp-settings-title">Theme settings</h2>
+        </div>
+        {@render themeBody()}
+    </div>
+{/snippet}
+
+{#snippet themeBody()}
+    <p class="txt-hint txt-sm m-b-sm">Colours, fonts and corners for every page of the storefront, published with the home page. Leave one empty to keep the storefront's own.</p>
+    {#if warnings.length}
+        <div class="alert warning hp-contrast" role="status" in:rise>
+            <i class="ri-contrast-2-line" aria-hidden="true"></i>
+            <div class="content">
+                {#each warnings as w (w.keys.join("-"))}<p>{w.message}</p>{/each}
+            </div>
+        </div>
+    {/if}
+    {#each tokenGroups as g, gi (g.label)}
+        <fieldset class="hp-group" disabled={!writable}>
+            <legend>{g.label}</legend>
+            <SectionFields fields={g.fields} idPrefix="hp-theme-{gi}" bind:settings={() => themeSettings, (v) => editTheme(v)} />
+        </fieldset>
+    {/each}
+{/snippet}
+
+{#snippet themeRow()}
+    <button type="button" class="hp-theme-row" class:selected={themeOpen} onclick={openTheme} aria-pressed={themeOpen}>
+        <i class="ri-palette-line hp-icon" aria-hidden="true"></i>
+        <span class="hp-rwords">
+            <span class="hp-label">Theme settings</span>
+            <span class="hp-sub txt-hint txt-sm">Colours, fonts and corners</span>
+        </span>
+        {#if Object.keys(themeSettings).length}
+            <span class="hp-swatches" aria-hidden="true">
+                {#each ["background", "text", "accent", "muted"].filter((k) => themeSettings[k]) as k (k)}
+                    <span class="hp-dot" style:background={themeSettings[k]}></span>
+                {/each}
+            </span>
+        {/if}
+        <i class="ri-arrow-right-s-line hp-chev" aria-hidden="true"></i>
+    </button>
 {/snippet}
 
 {#snippet gap(index)}
@@ -702,6 +789,7 @@
             <div class="hp-wrap" in:rise>
                 {@render statusLine()}
                 {@render alerts()}
+                {@render themeRow()}
                 {#if !sections.length}
                     <div class="hp-empty">
                         <p class="txt-hint">The page has no sections. The storefront's home page would be empty.</p>
@@ -750,13 +838,14 @@
         {:else if st}
             <!-- ------------------------------------------------ the visual editor -->
             {@render alerts()}
-            <div class="hp-editor" class:three={threeCol && !!selected} bind:clientWidth={editorWidth} in:rise>
+            <div class="hp-editor" class:three={threeCol && panelOpen} bind:clientWidth={editorWidth} in:rise>
                 <aside class="hp-rail" aria-label="Sections">
-                    {#if selected && selectedType && !threeCol}
-                        {@render settingsPanel(false)}
+                    {#if panelOpen && !threeCol}
+                        {#if themeOpen}{@render themePanel(false)}{:else}{@render settingsPanel(false)}{/if}
                     {:else}
                         <div class="hp-rail-list" in:rise={{ y: 0, duration: 150 }}>
                             {@render statusLine()}
+                            {@render themeRow()}
                             {#if !sections.length}
                                 <p class="txt-hint txt-sm">The page has no sections. The storefront's home page would be empty.</p>
                             {/if}
@@ -846,7 +935,7 @@
                         <ThemePreview
                             src={frameSrc}
                             origin={frameOrigin}
-                            document={writable ? { theme, sections } : null}
+                            document={writable ? { theme, theme_settings: themeSettings, sections } : null}
                             selected={selectedId}
                             {savedTick}
                             {device}
@@ -856,9 +945,9 @@
                     {/if}
                 </section>
 
-                {#if threeCol && selected && selectedType}
-                    <aside class="hp-inspector" aria-label="Section settings">
-                        {@render settingsPanel(true)}
+                {#if threeCol && panelOpen}
+                    <aside class="hp-inspector" aria-label={themeOpen ? "Theme settings" : "Section settings"}>
+                        {#if themeOpen}{@render themePanel(true)}{:else}{@render settingsPanel(true)}{/if}
                     </aside>
                 {/if}
             </div>
@@ -889,13 +978,15 @@
     </ul>
 </Drawer>
 
-<Drawer open={narrow && !!selected && !!selectedType} size="md" title={selectedType?.label ?? "Section"} onclose={() => (selectedId = null)}>
-    {#if narrow && selected && selectedType}
+<Drawer open={narrow && panelOpen} size="md" title={themeOpen ? "Theme settings" : (selectedType?.label ?? "Section")} onclose={closePanel}>
+    {#if narrow && themeOpen}
+        {@render themeBody()}
+    {:else if narrow && selected && selectedType}
         {@render settingsBody(selected, selectedType)}
     {/if}
     {#snippet footer()}
         <span class="txt-hint txt-sm m-r-auto">Changes save as you make them.</span>
-        <button type="button" class="btn" onclick={() => (selectedId = null)}><span class="txt">Done</span></button>
+        <button type="button" class="btn" onclick={closePanel}><span class="txt">Done</span></button>
     {/snippet}
 </Drawer>
 
@@ -1214,6 +1305,99 @@
     .hp-stage-note p {
         margin: 0;
         max-width: 60ch;
+    }
+
+    /* ---------------------------------------------- theme settings */
+    .hp-theme-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        min-height: 48px;
+        margin: 0 0 10px;
+        padding: 8px 10px;
+        border: 1px solid var(--surfaceAlt2Color);
+        border-radius: var(--borderRadius);
+        background: var(--cardFace);
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+        transition:
+            border-color 150ms ease-out,
+            background-color 150ms ease-out,
+            transform 150ms ease-out;
+    }
+    .hp-theme-row:hover {
+        background: var(--surfaceAlt1Color, rgba(0, 0, 0, 0.04));
+    }
+    .hp-theme-row:active {
+        transform: scale(0.99);
+    }
+    .hp-theme-row:focus-visible {
+        outline: 2px solid var(--markColor);
+        outline-offset: 2px;
+    }
+    .hp-theme-row.selected {
+        border-color: var(--primaryColor, var(--txtHintColor));
+        box-shadow: 0 0 0 1px var(--primaryColor, var(--txtHintColor));
+    }
+    .hp-theme-row .hp-rwords {
+        flex: 1 1 auto;
+    }
+    .hp-swatches {
+        display: inline-flex;
+        padding-left: 4px;
+    }
+    .hp-dot {
+        width: 16px;
+        height: 16px;
+        margin-left: -4px;
+        border: 2px solid var(--cardFace);
+        border-radius: 50%;
+        box-shadow: 0 0 0 1px var(--surfaceAlt2Color);
+    }
+    .hp-chev {
+        color: var(--txtHintColor);
+        transition: transform 150ms ease-out;
+    }
+    .hp-theme-row:hover .hp-chev {
+        transform: translateX(2px);
+    }
+    .hp-group {
+        margin: 0 0 14px;
+        padding: 0;
+        border: 0;
+        min-width: 0;
+    }
+    .hp-group legend {
+        margin-bottom: 8px;
+        padding: 0;
+        font-weight: 600;
+        font-size: 0.8rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--txtHintColor);
+    }
+    .hp-contrast {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+    }
+    .hp-contrast p {
+        margin: 0;
+    }
+    .hp-contrast p + p {
+        margin-top: 4px;
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .hp-theme-row,
+        .hp-chev {
+            transition: none;
+        }
+        .hp-theme-row:active,
+        .hp-theme-row:hover .hp-chev {
+            transform: none;
+        }
     }
 
     /* Read out, not shown: the panel's sheets have no such class. */

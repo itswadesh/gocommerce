@@ -96,3 +96,115 @@ func TestAPageHasAMostFiftySections(t *testing.T) {
 		t.Fatalf("51 sections: err = %v", err)
 	}
 }
+
+// ---------------------------------------------------------------- Phase 3 (D127)
+
+// Theme settings are the store's design tokens: colours as #rrggbb only,
+// fonts from the storefront's list, rounding from its steps. Unset ones are
+// left out, so the storefront keeps its own look for them.
+func TestThemeSettingsAreCleaned(t *testing.T) {
+	got, err := Validate(doc(t, `{"theme_settings":{"background":"#FFFFFF","accent":" #1a2b3c ","heading_font":"playfair-display","radius":"large","text":"","shadow":"0 0 9px red"},"sections":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := got.ThemeSettings
+	if ts["background"] != "#ffffff" || ts["accent"] != "#1a2b3c" || ts["heading_font"] != "playfair-display" || ts["radius"] != "large" {
+		t.Fatalf("theme settings = %v, want lower-case colours and the font and rounding kept", ts)
+	}
+	if _, ok := ts["text"]; ok {
+		t.Fatalf("theme settings = %v, want an empty colour left out", ts)
+	}
+	if _, ok := ts["shadow"]; ok {
+		t.Fatalf("theme settings = %v, want a setting the theme does not have dropped", ts)
+	}
+	if got, _ := Validate(doc(t, `{"sections":[]}`)); got.ThemeSettings != nil {
+		t.Fatalf("no theme settings = %v, want none stored", got.ThemeSettings)
+	}
+}
+
+func TestWhatThemeSettingsMayNotHold(t *testing.T) {
+	for name, c := range map[string]struct{ raw, want string }{
+		"named colour":  {`{"theme_settings":{"background":"red"}}`, "#rrggbb"},
+		"short hex":     {`{"theme_settings":{"text":"#fff"}}`, "#rrggbb"},
+		"css injection": {`{"theme_settings":{"accent":"#000000;}body{display:none"}}`, "#rrggbb"},
+		"unknown font":  {`{"theme_settings":{"body_font":"comic-sans"}}`, "one of its choices"},
+		"font family":   {`{"theme_settings":{"body_font":"Inter, sans-serif"}}`, "one of its choices"},
+		"bad rounding":  {`{"theme_settings":{"radius":"huge"}}`, "one of its choices"},
+	} {
+		if _, err := Validate(doc(t, c.raw)); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want it to say %q", name, err, c.want)
+		}
+	}
+}
+
+// Every new section type takes what it should and refuses what it should not.
+func TestTheNewSectionTypes(t *testing.T) {
+	got, err := Validate(doc(t, `{"sections":[
+		{"id":"s","type":"slideshow","enabled":true,"settings":{"slides":[{"image":"/media/a.jpg","heading":"One","button_link":"/products"},{"image":"https://cdn.example/b.jpg"}]}},
+		{"id":"c","type":"collection-list","enabled":true,"settings":{"collections":[4,2,4]}},
+		{"id":"v","type":"video","enabled":true,"settings":{"video_url":"https://youtu.be/dQw4w9WgXcQ"}},
+		{"id":"f","type":"video","enabled":true,"settings":{"video_file":"/media/clip.mp4","poster":"/media/clip.jpg"}},
+		{"id":"n","type":"newsletter","enabled":true,"settings":{"heading":"Letters"}},
+		{"id":"q","type":"faq","enabled":true,"settings":{"items":[{"question":"Do you ship abroad?","answer":"Yes.\n\nTo most countries."}]}},
+		{"id":"m","type":"multi-column","enabled":true,"settings":{"items":[{"heading":"Made here"},{"heading":"Kept long","link":"/about"}]}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := got.Sections
+	if s[0].Settings["autoplay"] != false || s[0].Settings["interval"] != 5 {
+		t.Errorf("slideshow = %v, want autoplay off and five seconds by default", s[0].Settings)
+	}
+	if ids := s[1].Settings["collections"].([]int64); len(ids) != 2 || ids[0] != 4 || ids[1] != 2 {
+		t.Errorf("collections = %v, want [4 2]: picked order, each once", ids)
+	}
+	if s[4].Settings["button_text"] != "Subscribe" {
+		t.Errorf("newsletter = %v, want the button's default label", s[4].Settings)
+	}
+	if s[5].Settings["items"].([]map[string]any)[0]["answer"] != "Yes.\n\nTo most countries." {
+		t.Errorf("faq = %v, want the answer's paragraphs kept", s[5].Settings)
+	}
+
+	for name, c := range map[string]struct{ raw, want string }{
+		"slide without picture": {`{"sections":[{"id":"a","type":"slideshow","settings":{"slides":[{"heading":"H"}]}}]}`, "Picture is required"},
+		"no slides":             {`{"sections":[{"id":"a","type":"slideshow","settings":{}}]}`, "needs at least one item"},
+		"too many slides":       {`{"sections":[{"id":"a","type":"slideshow","settings":{"slides":[` + strings.TrimSuffix(strings.Repeat(`{"image":"/m.jpg"},`, 9), ",") + `]}}]}`, "at most 8"},
+		"slide script link":     {`{"sections":[{"id":"a","type":"slideshow","settings":{"slides":[{"image":"/m.jpg","button_link":"javascript:x"}]}}]}`, "web address"},
+		"slow slides":           {`{"sections":[{"id":"a","type":"slideshow","settings":{"interval":60,"slides":[{"image":"/m.jpg"}]}}]}`, "between 3 and 10"},
+		"no collections":        {`{"sections":[{"id":"a","type":"collection-list","settings":{}}]}`, "needs at least one collection"},
+		"not a collection":      {`{"sections":[{"id":"a","type":"collection-list","settings":{"collections":["x"]}}]}`, "list of collections"},
+		"no video":              {`{"sections":[{"id":"a","type":"video","settings":{"heading":"H"}}]}`, "needs a YouTube or Vimeo link, or a video from Files"},
+		"other site":            {`{"sections":[{"id":"a","type":"video","settings":{"video_url":"https://example.com/v/1"}}]}`, "YouTube or Vimeo"},
+		"youtube without id":    {`{"sections":[{"id":"a","type":"video","settings":{"video_url":"https://www.youtube.com/"}}]}`, "YouTube or Vimeo"},
+		"script video file":     {`{"sections":[{"id":"a","type":"video","settings":{"video_file":"javascript:x"}}]}`, "web address"},
+		"faq without answer":    {`{"sections":[{"id":"a","type":"faq","settings":{"items":[{"question":"Q"}]}}]}`, "Answer is required"},
+		"five columns":          {`{"sections":[{"id":"a","type":"multi-column","settings":{"items":[{"heading":"1"},{"heading":"2"},{"heading":"3"},{"heading":"4"},{"heading":"5"}]}}]}`, "at most 4"},
+		"column script link":    {`{"sections":[{"id":"a","type":"multi-column","settings":{"items":[{"heading":"1","link":"javascript:x"}]}}]}`, "web address"},
+	} {
+		if _, err := Validate(doc(t, c.raw)); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want it to say %q", name, err, c.want)
+		}
+	}
+}
+
+func TestVideoLinksBecomeEmbeds(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10": "youtube:dQw4w9WgXcQ",
+		"https://youtu.be/dQw4w9WgXcQ":                     "youtube:dQw4w9WgXcQ",
+		"https://m.youtube.com/shorts/dQw4w9WgXcQ":         "youtube:dQw4w9WgXcQ",
+		"https://www.youtube.com/embed/dQw4w9WgXcQ":        "youtube:dQw4w9WgXcQ",
+		"https://vimeo.com/76979871":                       "vimeo:76979871",
+		"https://player.vimeo.com/video/76979871":          "vimeo:76979871",
+		"https://www.youtube.com/watch?v=bad id":           "",
+		"https://evil.example/youtube.com/watch?v=x":       "",
+		"http://vimeo.com/abc":                             "",
+	} {
+		p, id := VideoEmbed(in)
+		got := ""
+		if p != "" {
+			got = p + ":" + id
+		}
+		if got != want {
+			t.Errorf("VideoEmbed(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
