@@ -59,10 +59,81 @@
           "404": {"$ref": "#/components/responses/NotFound"}
         }
       }
+    },
+    "/api/admin/x/invoices/tally": {
+      "get": {
+        "tags": ["admin:invoices"],
+        "summary": "A period's GST tax invoices as TallyPrime import XML",
+        "description": "Requires invoices.read. Only on a store that issues GST tax invoices; any other store answers 404. Reads the issued documents and nothing else: no tax is recomputed. part=ledgers is the masters (each registered buyer once, named legal name plus GSTIN, and the sales, tax, delivery and unregistered-buyer ledgers the vouchers name); part=vouchers is one Sales voucher per invoice, REMOTEID gocommerce:<store>:<invoice number>, in date then number order. Import the ledgers first. Amounts are rupees with two decimals, a debit negative, and each voucher's entries sum to zero. The file is UTF-8 with every character outside ASCII written as a numeric character reference. Agent keys are refused: the file names buyers and their addresses.",
+        "security": [{"adminToken": []}],
+        "parameters": [
+          {"name": "from", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}, "description": "The first invoice date, inclusive, on the store's clock."},
+          {"name": "to", "in": "query", "required": true, "schema": {"type": "string", "format": "date"}, "description": "The last invoice date, inclusive. Less than a year after from."},
+          {"name": "part", "in": "query", "required": true, "schema": {"type": "string", "enum": ["ledgers", "vouchers"]}}
+        ],
+        "responses": {
+          "200": {
+            "description": "Tally's Import Data envelope, as an attachment named tally-<part>-<from>-<to>.xml.",
+            "content": {"application/xml": {"schema": {"type": "string"}}}
+          },
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/api/admin/x/invoices/tally/ledgers": {
+      "get": {
+        "tags": ["admin:invoices"],
+        "summary": "The ledger names the Tally export uses",
+        "description": "Requires invoices.read. Only on a store that issues GST tax invoices; any other store answers 404, which is how the panel knows to offer the export. A store that never saved names reads the defaults.",
+        "security": [{"adminToken": []}],
+        "responses": {
+          "200": {"description": "The names.", "content": {"application/json": {"schema": {
+            "type": "object", "properties": {"data": {"$ref": "#/components/schemas/InvoicesTallyLedgers"}}
+          }}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      },
+      "put": {
+        "tags": ["admin:invoices"],
+        "summary": "Set the ledger names the Tally export uses",
+        "description": "Requires invoices.configure, which by default only managers carry. The fields sent replace the saved ones and the rest are kept. Each name is trimmed, at most 100 characters, with no control characters; every one but company_name is required.",
+        "security": [{"adminToken": []}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoicesTallyLedgers"}}}},
+        "responses": {
+          "200": {"description": "The names as saved.", "content": {"application/json": {"schema": {
+            "type": "object", "properties": {"data": {"$ref": "#/components/schemas/InvoicesTallyLedgers"}}
+          }}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "InvoicesTallyLedgers": {
+        "type": "object",
+        "description": "Ledger names in the accountant's TallyPrime company. Defaults: Sales, CGST, SGST, UTGST, IGST, Delivery Charges, Cash Sales (the party for unregistered buyers, under Sundry Debtors) and the voucher type Sales.",
+        "properties": {
+          "company_name": {"type": "string", "description": "The Tally company to import into (SVCURRENTCOMPANY); empty imports into the open one."},
+          "sales_ledger": {"type": "string"},
+          "sales_per_rate": {"type": "boolean", "description": "One sales ledger per rate, the rate appended: Sales 18%."},
+          "cgst": {"type": "string"},
+          "sgst": {"type": "string"},
+          "utgst": {"type": "string"},
+          "igst": {"type": "string"},
+          "freight": {"type": "string", "description": "The delivery charge's ledger, under Sales Accounts."},
+          "unregistered_party": {"type": "string"},
+          "voucher_type": {"type": "string"}
+        }
+      },
       "InvoicesSummary": {
         "type": "object",
         "description": "A row in the invoice list. Prefixed with the module's own name, as every component a fragment owns must be: a duplicate component name is a boot failure in a store that installs two modules, not a test failure in either.",
