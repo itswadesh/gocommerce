@@ -17,7 +17,7 @@ func doc(t *testing.T, raw string) Document {
 
 // Any type, any number of times, in any order: the page is the list.
 func TestASectionTypeRepeatsAnywhere(t *testing.T) {
-	got, err := Validate(doc(t, `{"sections":[
+	got, err := Validate("home", doc(t, `{"sections":[
 		{"id":"a","type":"product-grid","enabled":true,"settings":{"source":"products","products":[3,1,3]}},
 		{"id":"b","type":"hero","enabled":true,"settings":{"heading":"  New   season  "}},
 		{"id":"c","type":"product-grid","enabled":false,"settings":{"collection":7}}]}`))
@@ -43,7 +43,7 @@ func TestASectionTypeRepeatsAnywhere(t *testing.T) {
 
 // An empty page is a page: the first section can be added to it.
 func TestAnEmptyPageIsValid(t *testing.T) {
-	got, err := Validate(doc(t, `{"sections":[]}`))
+	got, err := Validate("home", doc(t, `{"sections":[]}`))
 	if err != nil || len(got.Sections) != 0 {
 		t.Fatalf("empty page = %+v, %v", got, err)
 	}
@@ -64,7 +64,7 @@ func TestWhatAPageMayNotHold(t *testing.T) {
 		"empty list item":  {`{"sections":[{"id":"a","type":"benefits","settings":{"items":[{"title":""}]}}]}`, "Title is required"},
 		"unknown theme":    {`{"theme":"neon","sections":[]}`, `no theme "neon"`},
 	} {
-		if _, err := Validate(doc(t, c.raw)); err == nil || !strings.Contains(err.Error(), c.want) {
+		if _, err := Validate("home", doc(t, c.raw)); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: err = %v, want it to say %q", name, err, c.want)
 		}
 	}
@@ -73,7 +73,7 @@ func TestWhatAPageMayNotHold(t *testing.T) {
 // Settings the type does not have are dropped, not stored: a document holds
 // only what a section can show.
 func TestUnknownSettingsAreDropped(t *testing.T) {
-	got, err := Validate(doc(t, `{"sections":[{"id":"a","type":"rich-text","settings":{"body":"Hi","style":"color:red"}}]}`))
+	got, err := Validate("home", doc(t, `{"sections":[{"id":"a","type":"rich-text","settings":{"body":"Hi","style":"color:red"}}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestAPageHasAMostFiftySections(t *testing.T) {
 		b.WriteString(`{"id":"s` + strings.Repeat("x", i%3) + string(rune('a'+i%26)) + `","type":"rich-text"}`)
 	}
 	b.WriteString("]}")
-	if _, err := Validate(doc(t, b.String())); err == nil || !strings.Contains(err.Error(), "at most 50") {
+	if _, err := Validate("home", doc(t, b.String())); err == nil || !strings.Contains(err.Error(), "at most 50") {
 		t.Fatalf("51 sections: err = %v", err)
 	}
 }
@@ -103,7 +103,7 @@ func TestAPageHasAMostFiftySections(t *testing.T) {
 // fonts from the storefront's list, rounding from its steps. Unset ones are
 // left out, so the storefront keeps its own look for them.
 func TestThemeSettingsAreCleaned(t *testing.T) {
-	got, err := Validate(doc(t, `{"theme_settings":{"background":"#FFFFFF","accent":" #1a2b3c ","heading_font":"playfair-display","radius":"large","text":"","shadow":"0 0 9px red"},"sections":[]}`))
+	got, err := Validate("home", doc(t, `{"theme_settings":{"background":"#FFFFFF","accent":" #1a2b3c ","heading_font":"playfair-display","radius":"large","text":"","shadow":"0 0 9px red"},"sections":[]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestThemeSettingsAreCleaned(t *testing.T) {
 	if _, ok := ts["shadow"]; ok {
 		t.Fatalf("theme settings = %v, want a setting the theme does not have dropped", ts)
 	}
-	if got, _ := Validate(doc(t, `{"sections":[]}`)); got.ThemeSettings != nil {
+	if got, _ := Validate("home", doc(t, `{"sections":[]}`)); got.ThemeSettings != nil {
 		t.Fatalf("no theme settings = %v, want none stored", got.ThemeSettings)
 	}
 }
@@ -131,7 +131,7 @@ func TestWhatThemeSettingsMayNotHold(t *testing.T) {
 		"font family":   {`{"theme_settings":{"body_font":"Inter, sans-serif"}}`, "one of its choices"},
 		"bad rounding":  {`{"theme_settings":{"radius":"huge"}}`, "one of its choices"},
 	} {
-		if _, err := Validate(doc(t, c.raw)); err == nil || !strings.Contains(err.Error(), c.want) {
+		if _, err := Validate("home", doc(t, c.raw)); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: err = %v, want it to say %q", name, err, c.want)
 		}
 	}
@@ -139,7 +139,7 @@ func TestWhatThemeSettingsMayNotHold(t *testing.T) {
 
 // Every new section type takes what it should and refuses what it should not.
 func TestTheNewSectionTypes(t *testing.T) {
-	got, err := Validate(doc(t, `{"sections":[
+	got, err := Validate("home", doc(t, `{"sections":[
 		{"id":"s","type":"slideshow","enabled":true,"settings":{"slides":[{"image":"/media/a.jpg","heading":"One","button_link":"/products"},{"image":"https://cdn.example/b.jpg"}]}},
 		{"id":"c","type":"collection-list","enabled":true,"settings":{"collections":[4,2,4]}},
 		{"id":"v","type":"video","enabled":true,"settings":{"video_url":"https://youtu.be/dQw4w9WgXcQ"}},
@@ -180,7 +180,7 @@ func TestTheNewSectionTypes(t *testing.T) {
 		"five columns":          {`{"sections":[{"id":"a","type":"multi-column","settings":{"items":[{"heading":"1"},{"heading":"2"},{"heading":"3"},{"heading":"4"},{"heading":"5"}]}}]}`, "at most 4"},
 		"column script link":    {`{"sections":[{"id":"a","type":"multi-column","settings":{"items":[{"heading":"1","link":"javascript:x"}]}}]}`, "web address"},
 	} {
-		if _, err := Validate(doc(t, c.raw)); err == nil || !strings.Contains(err.Error(), c.want) {
+		if _, err := Validate("home", doc(t, c.raw)); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: err = %v, want it to say %q", name, err, c.want)
 		}
 	}

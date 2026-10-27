@@ -70,6 +70,13 @@ type SectionType struct {
 	// the section only while that plugin is on, and the storefront is not
 	// sent it otherwise; a draft that holds one still saves.
 	Requires string `json:"requires,omitempty"`
+	// Pages are the pages the type may be on; none means every page. A
+	// product's reviews mean nothing on the home page (D128).
+	Pages []string `json:"pages,omitempty"`
+	// Fixed marks a page's core: the part the catalogue draws, which the page
+	// holds exactly once and always shows. The shop moves it, and arranges
+	// the rest around it; it has no settings to change.
+	Fixed bool `json:"fixed,omitempty"`
 	// Check is a rule across fields, run on the cleaned settings.
 	Check func(settings map[string]any) error `json:"-"`
 }
@@ -247,6 +254,71 @@ var Sections = []SectionType{
 			}},
 		},
 	},
+
+	// The product page (D128). Its core is the catalogue's: the pictures, the
+	// title, the price and options, the buy button and the description. The
+	// two below it on the storefront's own page are sections, so the shop can
+	// move them, hide them, or put its own between.
+	{
+		Type: "main-product", Label: "Product", Icon: "ri-shopping-bag-3-line", Pages: []string{"product"}, Fixed: true,
+		Description: "The product's pictures, title, price, options, buy button and description, as the catalogue has them. Always on the page; move it up or down.",
+	},
+	{
+		Type: "product-reviews", Label: "Reviews", Icon: "ri-star-line", Pages: []string{"product"},
+		Description: "The product's reviews and rating, and the form a shopper writes one in.",
+	},
+	{
+		Type: "related-products", Label: "Related products", Icon: "ri-shapes-line", Pages: []string{"product"},
+		Description: "Other products from the same category, with live prices.",
+		Fields: []Field{
+			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort, Help: "Empty says \"Related products\"."},
+		},
+	},
+
+	// The collection page's core: its title, description and the grid of its
+	// products.
+	{
+		Type: "main-collection", Label: "Products", Icon: "ri-layout-grid-line", Pages: []string{"collection"}, Fixed: true,
+		Description: "The collection's title, description and its products, as the catalogue has them. Always on the page; move it up or down.",
+	},
+}
+
+// PageInfo is a page the shop can arrange.
+type PageInfo struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
+	// Core is the page's fixed section type; empty when it has none.
+	Core string `json:"core,omitempty"`
+}
+
+// Pages are the pages a shop can arrange, each drawn by the storefront from
+// its own document: the home page, and the templates every product and every
+// collection is drawn in (D128).
+var Pages = []PageInfo{
+	{Key: "home", Label: "home page"},
+	{Key: "product", Label: "product page", Core: "main-product"},
+	{Key: "collection", Label: "collection page", Core: "main-collection"},
+}
+
+func pageInfo(key string) *PageInfo {
+	for i := range Pages {
+		if Pages[i].Key == key {
+			return &Pages[i]
+		}
+	}
+	return nil
+}
+
+func (s SectionType) allowedOn(page string) bool {
+	if len(s.Pages) == 0 {
+		return true
+	}
+	for _, p := range s.Pages {
+		if p == page {
+			return true
+		}
+	}
+	return false
 }
 
 // Fonts the storefront can load, by key: the store names one and the
@@ -340,10 +412,15 @@ func sectionType(t string) *SectionType {
 	return nil
 }
 
-// Validate checks a document against the registry and returns it cleaned:
-// unknown settings dropped, text trimmed, defaults filled, numbers whole. An
-// error names the section and setting, for the editor to point at.
-func Validate(doc Document) (Document, error) {
+// Validate checks a document for page against the registry and returns it
+// cleaned: unknown settings dropped, text trimmed, defaults filled, numbers
+// whole, the core shown. An error names the section and setting, for the
+// editor to point at.
+func Validate(page string, doc Document) (Document, error) {
+	info := pageInfo(page)
+	if info == nil {
+		return doc, gocommerce.Validationf("there is no page %q", page)
+	}
 	if len(doc.Sections) > MaxSections {
 		return doc, gocommerce.Validationf("a page holds at most %d sections", MaxSections)
 	}
@@ -354,13 +431,18 @@ func Validate(doc Document) (Document, error) {
 	if !knownTheme(out.Theme) {
 		return doc, gocommerce.Validationf("there is no theme %q", out.Theme)
 	}
-	tokens, err := cleanFields("theme settings", themeSettingFields(), doc.ThemeSettings)
-	if err != nil {
-		return doc, err
+	// The design tokens publish with the home page (D127); another page's
+	// copy would be a second set that nothing reads.
+	if page == "home" {
+		tokens, err := cleanFields("theme settings", themeSettingFields(), doc.ThemeSettings)
+		if err != nil {
+			return doc, err
+		}
+		if len(tokens) > 0 {
+			out.ThemeSettings = tokens
+		}
 	}
-	if len(tokens) > 0 {
-		out.ThemeSettings = tokens
-	}
+	cores := 0
 	seen := map[string]bool{}
 	for i, s := range doc.Sections {
 		where := fmt.Sprintf("section %d", i+1)
@@ -376,6 +458,9 @@ func Validate(doc Document) (Document, error) {
 			return doc, gocommerce.Validationf("%s: there is no section type %q", where, s.Type)
 		}
 		where = fmt.Sprintf("section %d (%s)", i+1, st.Label)
+		if !st.allowedOn(page) {
+			return doc, gocommerce.Validationf("%s: it can't go on the %s", where, info.Label)
+		}
 		settings, err := cleanFields(where, st.Fields, s.Settings)
 		if err != nil {
 			return doc, err
@@ -385,7 +470,18 @@ func Validate(doc Document) (Document, error) {
 				return doc, gocommerce.Validationf("%s: %s", where, err.Error())
 			}
 		}
-		out.Sections = append(out.Sections, Section{ID: s.ID, Type: s.Type, Enabled: s.Enabled, Settings: settings})
+		enabled := s.Enabled
+		if st.Fixed {
+			if cores++; cores > 1 {
+				return doc, gocommerce.Validationf("%s: the %s holds its %s section only once", where, info.Label, st.Label)
+			}
+			// Hiding the core would leave a product page without its product.
+			enabled = true
+		}
+		out.Sections = append(out.Sections, Section{ID: s.ID, Type: s.Type, Enabled: enabled, Settings: settings})
+	}
+	if info.Core != "" && cores == 0 {
+		return doc, gocommerce.Validationf("the %s must keep its %s section", info.Label, sectionType(info.Core).Label)
 	}
 	return out, nil
 }

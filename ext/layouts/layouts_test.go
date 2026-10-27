@@ -240,7 +240,7 @@ func TestAPreviewShowsTheDraftToItsKey(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("preview before a save = %d %s, want 201", rec.Code, rec.Body)
 	}
-	if got := publicPage(t, app, "/x/layouts/home?preview="+early.Token, http.StatusOK); len(got.Sections) != len(Starter().Sections) || !got.Preview {
+	if got := publicPage(t, app, "/x/layouts/home?preview="+early.Token, http.StatusOK); len(got.Sections) != len(Starter("home").Sections) || !got.Preview {
 		t.Fatalf("preview before a save = %+v, want the starting page", got)
 	}
 	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 0, "document": sections(hero("draft", "Draft"))}, http.StatusOK)
@@ -280,7 +280,7 @@ func TestTheRegistryDescribesEverySection(t *testing.T) {
 		t.Fatalf("registry = %+v", reg)
 	}
 	// The starter is a valid page: what the editor opens with can be saved.
-	if _, err := Validate(Starter()); err != nil {
+	if _, err := Validate("home", Starter("home")); err != nil {
 		t.Fatalf("the starter page does not validate: %v", err)
 	}
 }
@@ -299,13 +299,13 @@ func TestResetPutsTheDraftBackToWhatIsPublished(t *testing.T) {
 
 	// Before anything is saved there is nothing to throw away.
 	st := adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/reset", map[string]any{"version": 0}, http.StatusOK)
-	if st.Saved || st.Version != 0 || len(st.Document.Sections) != len(Starter().Sections) {
+	if st.Saved || st.Version != 0 || len(st.Document.Sections) != len(Starter("home").Sections) {
 		t.Fatalf("reset of an unsaved page = %+v, want the unsaved starter", st)
 	}
 
 	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 0, "document": sections(hero("a", "Mine"))}, http.StatusOK)
 	st = adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/reset", map[string]any{"version": 1}, http.StatusOK)
-	if st.Version != 2 || !st.Changed || len(st.Document.Sections) != len(Starter().Sections) || st.Document.Sections[0].ID != Starter().Sections[0].ID {
+	if st.Version != 2 || !st.Changed || len(st.Document.Sections) != len(Starter("home").Sections) || st.Document.Sections[0].ID != Starter("home").Sections[0].ID {
 		t.Fatalf("reset with nothing published = %+v, want the starter as version 2", st)
 	}
 

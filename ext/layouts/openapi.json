@@ -62,7 +62,9 @@
             "schema": {
               "type": "string",
               "enum": [
-                "home"
+                "home",
+                "product",
+                "collection"
               ]
             },
             "description": "The page; only `home` can be arranged so far."
@@ -172,7 +174,9 @@
             "schema": {
               "type": "string",
               "enum": [
-                "home"
+                "home",
+                "product",
+                "collection"
               ]
             },
             "description": "The page; only `home` can be arranged so far."
@@ -225,7 +229,9 @@
             "schema": {
               "type": "string",
               "enum": [
-                "home"
+                "home",
+                "product",
+                "collection"
               ]
             },
             "description": "The page; only `home` can be arranged so far."
@@ -312,7 +318,9 @@
             "schema": {
               "type": "string",
               "enum": [
-                "home"
+                "home",
+                "product",
+                "collection"
               ]
             },
             "description": "The page; only `home` can be arranged so far."
@@ -386,7 +394,9 @@
             "schema": {
               "type": "string",
               "enum": [
-                "home"
+                "home",
+                "product",
+                "collection"
               ]
             },
             "description": "The page; only `home` can be arranged so far."
@@ -434,7 +444,9 @@
             "schema": {
               "type": "string",
               "enum": [
-                "home"
+                "home",
+                "product",
+                "collection"
               ]
             },
             "description": "The page; only `home` can be arranged so far."
@@ -507,7 +519,9 @@
             "schema": {
               "type": "string",
               "enum": [
-                "home"
+                "home",
+                "product",
+                "collection"
               ]
             },
             "description": "The page; only `home` can be arranged so far."
@@ -580,7 +594,9 @@
             "schema": {
               "type": "string",
               "enum": [
-                "home"
+                "home",
+                "product",
+                "collection"
               ]
             },
             "description": "The page; only `home` can be arranged so far."
@@ -621,6 +637,133 @@
             "adminToken": []
           }
         ]
+      }
+    },
+    "/api/admin/x/layouts/{page}/schedule": {
+      "post": {
+        "tags": [
+          "layouts"
+        ],
+        "summary": "Schedule the page's draft to publish",
+        "description": "Sets the saved draft at `version` to publish at `publish_at` (D128), within half a minute of it, through the same publish as the button: a revision marked `scheduled`, `published_by` the person who scheduled it. The draft is copied as it is now; later edits keep saving to the draft and are not in it, which the state's `scheduled.outdated` says. A page has one schedule, and scheduling again replaces it. Publishing by hand, rolling back and resetting leave it alone. Needs `layouts.write`.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home",
+                "product",
+                "collection"
+              ]
+            },
+            "description": "The page: the home page, or the template every product or every collection is drawn in."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "version",
+                  "publish_at"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "integer",
+                    "description": "The draft's version, as read."
+                  },
+                  "publish_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "When to publish: in the future, at most a year ahead."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The page's state, with its schedule.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LayoutState"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A time gone by, or more than a year ahead.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The page has not been saved, or the draft has been saved since `version` (`stale_draft`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "layouts"
+        ],
+        "summary": "Cancel the page's scheduled publish",
+        "description": "Calls off the page's scheduled publish. With none, the answer is the same. Needs `layouts.write`.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home",
+                "product",
+                "collection"
+              ]
+            },
+            "description": "The page: the home page, or the template every product or every collection is drawn in."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The page's state, without a schedule.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LayoutState"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -698,6 +841,10 @@
           },
           "sections": {
             "type": "integer"
+          },
+          "scheduled": {
+            "type": "boolean",
+            "description": "It went live at a time set beforehand; `published_by` is who set it."
           }
         }
       },
@@ -733,6 +880,15 @@
           },
           "changed": {
             "type": "boolean"
+          },
+          "scheduled": {
+            "description": "The publish waiting for its time, or null.",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LayoutSchedule"
+              }
+            ]
           }
         }
       },
@@ -854,6 +1010,31 @@
           },
           "settings": {
             "$ref": "#/components/schemas/LayoutThemeSettings"
+          }
+        }
+      },
+      "LayoutSchedule": {
+        "type": "object",
+        "description": "A draft set to publish at a time.",
+        "properties": {
+          "publish_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "scheduled_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "scheduled_by": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "description": "The draft's version that was scheduled."
+          },
+          "outdated": {
+            "type": "boolean",
+            "description": "The draft has been saved since: those edits are not in what publishes."
           }
         }
       }
