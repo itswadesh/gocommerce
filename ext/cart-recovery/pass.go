@@ -751,7 +751,7 @@ func itemLines(lines []gocommerce.CartLine) string {
 // be counted; straight to the storefront basket when it does not, because an
 // uncounted click still brings the shopper back.
 func (m *Module) link(ctx context.Context, s Settings, linkToken, cartToken string) string {
-	storefront := m.storefront(s)
+	storefront := m.storefront(ctx, s)
 	if storefront == "" {
 		return ""
 	}

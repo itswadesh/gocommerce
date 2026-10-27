@@ -37,7 +37,7 @@ func recoveryBody(intro, action string) string {
 
 Total: {{.cart_total}}
 
-{{if .recovery_url}}` + action + `: {{.recovery_url}}{{else}}Your cart reference is {{.cart_token}}.{{end}}
+{{if .recovery_url}}` + action + `: {{.recovery_url}}{{end}}
 {{if .discount_code}}
 Your code {{.discount_code}} is still applied.
 {{end}}
