@@ -375,13 +375,25 @@
 
     const ADDRESS_FIELDS = ["line1", "line2", "city", "state", "postal_code", "country"];
 
-    // The storefront page where the customer opens this order with a code
-    // (D115); the same link the order emails carry, to paste into a chat.
+    // The storefront page where the customer sees this order. Shown without
+    // its key; the copy asks the engine for the key (recorded in the audit
+    // log, orders.write) so the pasted link opens the order by itself, as the
+    // one in the order emails does.
     const trackingURL = $derived(orderTrackingURL(myStores.current, order?.number));
     let trackingCopied = $state(false);
     let trackingTimer;
     async function copyTracking() {
-        if (await copyText(trackingURL)) {
+        let link = trackingURL;
+        if (can("orders.write")) {
+            try {
+                const res = await api.post(`/api/admin/orders/${order.id}/access-token`);
+                link = orderTrackingURL(myStores.current, order.number, res?.access_token);
+            } catch (err) {
+                toast.error(err);
+                return;
+            }
+        }
+        if (await copyText(link)) {
             trackingCopied = true;
             clearTimeout(trackingTimer);
             trackingTimer = setTimeout(() => (trackingCopied = false), 2000);
@@ -1987,8 +1999,13 @@
                                             </button>
                                         </div>
                                         <div class="txt-hint txt-sm">
-                                            The customer opens it with a code sent to the email or
-                                            phone on the order.
+                                            {#if can("orders.write")}
+                                                The copied link opens the order without asking for
+                                                anything, like the one in the order emails.
+                                            {:else}
+                                                The customer opens it with the email or phone on the
+                                                order.
+                                            {/if}
                                         </div>
                                     </div>
                                 {/if}
