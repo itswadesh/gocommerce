@@ -216,10 +216,10 @@ export const NAV = [
         icon: "ri-layout-line",
         right: "catalog.read",
         accent: "blue",
-        keywords: "media files homepage pages banners menus cms feeds sitemap",
+        keywords: "media files themes homepage pages banners menus cms feeds sitemap",
         children: [
             { href: "/dash/media", label: "Files", right: "media.read", keywords: "media images pictures uploads" },
-            { href: "/dash/homepage", label: "Homepage", right: "layouts.read", module: "layouts", keywords: "home page sections hero layout theme customize composer builder publish" },
+            { href: "/dash/themes", label: "Themes", right: "layouts.read", module: "layouts", keywords: "theme homepage home page sections hero layout customize composer builder publish" },
             { href: "/dash/cms", label: "Pages", right: "pages.read", module: "cms", keywords: "content copy about" },
             { href: "/dash/banners", label: "Banners", right: "banners.read", module: "banners", keywords: "banner slider hero carousel home page pictures grid" },
             { href: "/dash/menus", label: "Menus", right: "menus.read", module: "navigation", keywords: "navigation header footer links" },
