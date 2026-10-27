@@ -714,8 +714,9 @@ saved draft, at the store's primary verified domain, or an address typed once
 and remembered by the browser. A save made over somebody else's newer one is
 refused, and the screen offers to reload.
 
-The `layouts` plugin starts off, and the screen says so: until it is switched
-on and a page published, the storefront keeps its built-in home page. Before
+The `layouts` plugin starts on, so a shop's first publish is what the
+storefront shows; until then it keeps its built-in home page. Switched off in
+Plugins, the screen says so and the storefront goes back to the built-in page. Before
 the first save the screen shows that built-in page as sections — its words,
 not its stock pictures — to start from. Seeing the screen is `layouts.read`
 (managers and staff by default), saving, publishing, previewing and rolling
