@@ -5,6 +5,11 @@
 // retention rules. Keeping them apart is why this is a module and not a column
 // on the order.
 //
+// A store in India with a GSTIN in its profile, selling in rupees, issues a
+// GST tax invoice instead: the same number series counted by financial year,
+// and a frozen document of the tax heads (gst.go). Every other store gets the
+// plain invoice it always did.
+//
 //	app, err := gocommerce.New(cfg,
 //	    invoices.New(invoices.Config{
 //	        SellerName: "Example Ltd",
@@ -40,6 +45,13 @@ type Config struct {
 	// NumberFormat builds the invoice number. {year} is the issuing year and
 	// {seq} the sequence within it; {seq:05} pads to five digits.
 	// Defaults to "INV-{year}-{seq:05}".
+	//
+	// A store issuing GST tax invoices (D126) counts in financial years,
+	// which start on 1 April: its sequence restarts then whatever the format
+	// says, {year} is the year the financial year started, and {fy} prints
+	// it as "26-27". "INV/{fy}/{seq:05}" is the usual Indian shape. GST
+	// allows at most 16 letters, digits, "/" and "-", and a number that
+	// breaks that is not issued.
 	NumberFormat string
 	// Footer is printed at the bottom of every invoice.
 	Footer string
@@ -53,6 +65,10 @@ type Module struct {
 	log    *slog.Logger
 	orders *gocommerce.Orders
 	tpl    *template.Template
+	gstTpl *template.Template
+	// now is the clock that dates and numbers an invoice; a test sets it to
+	// stand either side of 1 April.
+	now func() time.Time
 }
 
 // New constructs the module.
@@ -90,6 +106,18 @@ func (m *Module) Migrations() []gocommerce.Migration {
 			);`,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "invoices_counters", "invoices_documents"),
+		{
+			// The GST tax invoice as issued (D126), NULL for a plain
+			// invoice. invoices_counters.year is now the series year: the
+			// calendar year for a plain store, the year its financial year
+			// started for a GST one.
+			ID: "0003_tax_doc",
+			SQL: `
+				ALTER TABLE invoices_documents ADD COLUMN tax_doc jsonb;
+				-- Rule 46: a tax invoice's serial is at most 16 letters, digits, '-' and '/'.
+				ALTER TABLE invoices_documents ADD CONSTRAINT invoices_documents_gst_number
+				    CHECK (tax_doc IS NULL OR number ~ '^[A-Za-z0-9/-]{1,16}$');`,
+		},
 	}
 }
 
@@ -109,14 +137,27 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.db = app.DB()
 	m.log = app.Log()
 	m.orders = app.Order()
+	if m.now == nil {
+		m.now = time.Now
+	}
+	// A warning, not a refusal: a store outside India may number however it
+	// likes, and the issue path refuses the number on a GST store anyway.
+	if longest := formatNumber(m.cfg.NumberFormat, 2026, 999999); !gstNumber.MatchString(longest) {
+		m.log.Warn("invoices: this number format can break GST's 16-character serial, so a store issuing GST tax invoices will fail to issue one",
+			"format", m.cfg.NumberFormat, "example", longest)
+	}
 
 	tpl, err := template.New("invoice").Parse(invoiceHTML)
 	if err != nil {
 		return fmt.Errorf("invoices: parse template: %w", err)
 	}
 	m.tpl = tpl
+	if m.gstTpl, err = template.New("tax-invoice").Funcs(gstFuncs).Parse(taxInvoiceHTML); err != nil {
+		return fmt.Errorf("invoices: parse the tax invoice template: %w", err)
+	}
 
 	app.Subscribe(gocommerce.EventOrderPaid, m.onOrderPaid)
+	app.RegisterCheckoutGuard(m.gstGuard)
 
 	// An invoice is a rendering of a paid order, and its snapshot embeds the
 	// buyer's name, email and address. Whoever may read the order may read it;
@@ -167,9 +208,27 @@ func (m *Module) issue(ctx context.Context, orderID int64) error {
 	if err != nil {
 		return err
 	}
+	reg, err := m.regimeFor(ctx)
+	if err != nil {
+		return err
+	}
+	if reg != nil && order.Currency != "INR" {
+		reg = nil
+	}
+	var shares []int64
+	var hsn map[int64]string
+	if reg != nil {
+		if shares, err = m.orders.LineDiscountShares(ctx, order); err != nil {
+			return err
+		}
+		if hsn, err = m.hsnFor(ctx, orderID); err != nil {
+			return err
+		}
+	}
 
 	return gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
-		year := time.Now().UTC().Year()
+		now := m.now()
+		year := seriesYear(now, reg)
 
 		// Take the next number under a row lock. The UPDATE locks the year's
 		// counter row, so two concurrent deliveries queue rather than both
@@ -189,17 +248,61 @@ func (m *Module) issue(ctx context.Context, orderID int64) error {
 		}
 
 		number := formatNumber(m.cfg.NumberFormat, year, seq)
+		// Returning an error here rolls the number back, so a refusal leaves
+		// no gap; the paid order stays without an invoice, logged, until the
+		// cause is fixed and redelivery or the startup reconcile issues it.
+		var taxDoc []byte
+		if reg != nil {
+			if !gstNumber.MatchString(number) {
+				m.log.Error("the invoice number format breaks GST's 16-character serial; no tax invoice was issued",
+					"order_id", orderID, "number", number)
+				return fmt.Errorf("invoice number %q is not a GST serial: at most 16 letters, digits, / and -", number)
+			}
+			doc, err := buildTaxInvoice(taxInput{
+				Number: number, IssuedAt: now, Regime: *reg, Order: order,
+				DiscountShares: shares, HSN: hsn,
+			})
+			if err != nil {
+				m.log.Error("could not build the GST tax invoice; none was issued", "order_id", orderID, "error", err)
+				return err
+			}
+			if taxDoc, err = json.Marshal(doc); err != nil {
+				return err
+			}
+		}
 		_, err = tx.ExecContext(ctx, `
-			INSERT INTO invoices_documents (order_id, number, year, sequence, total_minor, currency, snapshot)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			INSERT INTO invoices_documents (order_id, number, year, sequence, total_minor, currency, snapshot, issued_at, tax_doc)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 			ON CONFLICT (store_id, order_id) DO NOTHING`,
-			orderID, number, year, seq, order.Total.AmountMinor, order.Currency, snapshot)
+			orderID, number, year, seq, order.Total.AmountMinor, order.Currency, snapshot, now, taxDoc)
 		if err != nil {
 			return err
 		}
 		m.log.Info("invoice issued", "invoice", number, "order", order.Number)
 		return nil
 	})
+}
+
+// hsnFor is the HS code of each variant on the order as it stands at issue:
+// the supplier's classification for the document, read from the catalogue.
+func (m *Module) hsnFor(ctx context.Context, orderID int64) (map[int64]string, error) {
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT v.id, v.hs_code FROM order_lines l JOIN variants v ON v.id = l.variant_id
+		WHERE l.order_id = $1`, orderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]string{}
+	for rows.Next() {
+		var id int64
+		var code string
+		if err := rows.Scan(&id, &code); err != nil {
+			return nil, err
+		}
+		out[id] = code
+	}
+	return out, rows.Err()
 }
 
 // reconcile issues invoices for paid orders that have none — the safety net
@@ -239,9 +342,10 @@ func (m *Module) reconcile(ctx context.Context) error {
 	return nil
 }
 
-// formatNumber expands {year} and {seq}, with optional zero padding.
+// formatNumber expands {year}, {fy} and {seq}, with optional zero padding.
 func formatNumber(format string, year, seq int) string {
 	out := strings.ReplaceAll(format, "{year}", strconv.Itoa(year))
+	out = strings.ReplaceAll(out, "{fy}", fmt.Sprintf("%02d-%02d", year%100, (year+1)%100))
 	if i := strings.Index(out, "{seq:"); i >= 0 {
 		if j := strings.Index(out[i:], "}"); j > 0 {
 			spec := out[i+len("{seq:") : i+j]
@@ -269,7 +373,7 @@ func (m *Module) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := m.db.QueryContext(r.Context(), `
-		SELECT id, order_id, number, issued_at, total_minor, currency
+		SELECT id, order_id, number, issued_at, total_minor, currency, tax_doc IS NOT NULL
 		FROM invoices_documents ORDER BY id DESC LIMIT $1 OFFSET $2`, limit, offset)
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
@@ -283,14 +387,19 @@ func (m *Module) handleList(w http.ResponseWriter, r *http.Request) {
 		Number   string           `json:"number"`
 		IssuedAt time.Time        `json:"issued_at"`
 		Total    gocommerce.Money `json:"total"`
+		Kind     string           `json:"kind,omitempty"`
 	}
 	list := []row{}
 	for rows.Next() {
 		var v row
+		var tax bool
 		if err := rows.Scan(&v.ID, &v.OrderID, &v.Number, &v.IssuedAt,
-			&v.Total.AmountMinor, &v.Total.Currency); err != nil {
+			&v.Total.AmountMinor, &v.Total.Currency, &tax); err != nil {
 			gocommerce.RespondError(w, r, err)
 			return
+		}
+		if tax {
+			v.Kind = "tax_invoice"
 		}
 		list = append(list, v)
 	}
@@ -306,10 +415,10 @@ func (m *Module) handleGet(w http.ResponseWriter, r *http.Request) {
 
 	var number string
 	var issuedAt time.Time
-	var snapshot []byte
+	var snapshot, taxDoc []byte
 	err = m.db.QueryRowContext(r.Context(),
-		`SELECT number, issued_at, snapshot FROM invoices_documents WHERE order_id = $1`,
-		orderID).Scan(&number, &issuedAt, &snapshot)
+		`SELECT number, issued_at, snapshot, tax_doc FROM invoices_documents WHERE order_id = $1`,
+		orderID).Scan(&number, &issuedAt, &snapshot, &taxDoc)
 	if errors.Is(err, sql.ErrNoRows) {
 		gocommerce.RespondError(w, r, gocommerce.NotFoundf("no invoice has been issued for order %d", orderID))
 		return
@@ -332,10 +441,28 @@ func (m *Module) handleGet(w http.ResponseWriter, r *http.Request) {
 
 	// JSON for a client that wants the data, HTML for a human who wants to
 	// print it.
+	// A tax invoice is printed from the document as issued, never from the
+	// order or the profile as they are now. It holds no buyer email or phone,
+	// so the mask above has nothing in it to hide.
 	if strings.Contains(r.Header.Get("Accept"), "application/json") {
-		gocommerce.Respond(w, http.StatusOK, map[string]any{
-			"number": number, "issued_at": issuedAt, "order": order,
-		})
+		body := map[string]any{"number": number, "issued_at": issuedAt, "order": order}
+		if taxDoc != nil {
+			body["tax"] = json.RawMessage(taxDoc)
+		}
+		gocommerce.Respond(w, http.StatusOK, body)
+		return
+	}
+
+	if taxDoc != nil {
+		var doc TaxInvoice
+		if err := json.Unmarshal(taxDoc, &doc); err != nil {
+			gocommerce.RespondError(w, r, err)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err := m.gstTpl.Execute(w, doc); err != nil {
+			m.log.Error("could not render the tax invoice", "order_id", orderID, "error", err)
+		}
 		return
 	}
 

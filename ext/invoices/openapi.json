@@ -4,7 +4,7 @@
       "get": {
         "tags": ["admin:invoices"],
         "summary": "The invoices issued, newest first",
-        "description": "Requires invoices.read, a right this module declares; by default the same built-in roles carry it as carry orders.read. There are no filters and no search: the query is the whole table, newest id first. An invoice is found from its order, not by its number. The seller name, address and tax ID printed on the document come from the invoices module's configuration in the store's own main() and have no API.",
+        "description": "Requires invoices.read, a right this module declares; by default the same built-in roles carry it as carry orders.read. There are no filters and no search: the query is the whole table, newest id first. An invoice is found from its order, not by its number. The seller name, address and tax ID printed on a plain invoice come from the invoices module's configuration in the store's own main() and have no API. A store in India whose profile has a GSTIN and sells in INR issues GST tax invoices instead, and their supplier comes from the store profile.",
         "security": [{"adminToken": []}],
         "parameters": [
           {"$ref": "#/components/parameters/Limit"},
@@ -46,7 +46,8 @@
                   "properties": {
                     "number": {"type": "string"},
                     "issued_at": {"type": "string", "format": "date-time"},
-                    "order": {"$ref": "#/components/schemas/Order"}
+                    "order": {"$ref": "#/components/schemas/Order"},
+                    "tax": {"$ref": "#/components/schemas/InvoicesTaxInvoice"}
                   }
                 }}
               }}
@@ -70,7 +71,104 @@
           "order_id": {"type": "integer", "format": "int64", "description": "The order this invoice was issued for — the id the document route takes."},
           "number": {"type": "string", "description": "The printed invoice number, sequential and gapless within its year."},
           "issued_at": {"type": "string", "format": "date-time"},
-          "total": {"$ref": "#/components/schemas/Money", "description": "An object, not a scalar: {amount_minor, currency}."}
+          "total": {"$ref": "#/components/schemas/Money", "description": "An object, not a scalar: {amount_minor, currency}."},
+          "kind": {"type": "string", "enum": ["tax_invoice"], "description": "Present only on a GST tax invoice."}
+        }
+      },
+      "InvoicesTaxInvoice": {
+        "type": "object",
+        "description": "A GST tax invoice (CGST Rules 2017, rule 46) as it was issued, present only for a GST store's invoices. Built once from what checkout charged and never recomputed. Every *_minor is an integer in currency. Per line, cgst + sgst + igst is the tax checkout charged and taxable + tax = total; the line totals sum to the order total. Within a state CGST is the floor of half the tax and SGST (or UTGST, when supply.state_tax_name says so) the rest; between states and for exports all of it is IGST. Delivery is an untaxed freight line with the freight_untaxed warning.",
+        "properties": {
+          "version": {"type": "integer", "description": "1. A reader branches on it."},
+          "doc_type": {"type": "string", "enum": ["INV"]},
+          "number": {"type": "string", "description": "At most 16 letters, digits, / and -."},
+          "date": {"type": "string", "format": "date", "description": "On the store's clock, India's by default."},
+          "financial_year": {"type": "string", "description": "Like 2026-27."},
+          "currency": {"type": "string", "enum": ["INR"]},
+          "supplier": {"$ref": "#/components/schemas/InvoicesParty"},
+          "recipient": {"$ref": "#/components/schemas/InvoicesParty"},
+          "supply": {
+            "type": "object",
+            "properties": {
+              "kind": {"type": "string", "enum": ["intra", "inter", "export"]},
+              "place_of_supply_code": {"type": "string", "description": "The two-digit GST state code; 96 for a delivery outside India."},
+              "place_of_supply": {"type": "string"},
+              "state_tax_name": {"type": "string", "enum": ["SGST", "UTGST", ""]},
+              "reverse_charge": {"type": "boolean"}
+            }
+          },
+          "lines": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+              "n": {"type": "integer"},
+              "kind": {"type": "string", "enum": ["goods", "freight"]},
+              "sku": {"type": "string"},
+              "description": {"type": "string"},
+              "hsn": {"type": "string", "description": "The variant's HS code at issue; empty with an hsn_missing warning."},
+              "qty": {"type": "integer"},
+              "unit": {"type": "string", "description": "NOS."},
+              "gross_minor": {"type": "integer", "format": "int64"},
+              "discount_minor": {"type": "integer", "format": "int64"},
+              "taxable_minor": {"type": "integer", "format": "int64"},
+              "rate_bp": {"type": "integer", "description": "The rate checkout charged. Half of it is the CGST and SGST rate, which may be a fraction of a basis point."},
+              "cgst_minor": {"type": "integer", "format": "int64"},
+              "sgst_minor": {"type": "integer", "format": "int64"},
+              "igst_minor": {"type": "integer", "format": "int64"},
+              "total_minor": {"type": "integer", "format": "int64"}
+            }
+          }},
+          "by_rate": {"type": "array", "description": "One row per rate, ascending.", "items": {
+            "type": "object",
+            "properties": {
+              "rate_bp": {"type": "integer"},
+              "taxable_minor": {"type": "integer", "format": "int64"},
+              "cgst_minor": {"type": "integer", "format": "int64"},
+              "sgst_minor": {"type": "integer", "format": "int64"},
+              "igst_minor": {"type": "integer", "format": "int64"}
+            }
+          }},
+          "totals": {
+            "type": "object",
+            "properties": {
+              "taxable_minor": {"type": "integer", "format": "int64"},
+              "cgst_minor": {"type": "integer", "format": "int64"},
+              "sgst_minor": {"type": "integer", "format": "int64"},
+              "igst_minor": {"type": "integer", "format": "int64"},
+              "tax_minor": {"type": "integer", "format": "int64"},
+              "round_off_minor": {"type": "integer", "format": "int64"},
+              "total_minor": {"type": "integer", "format": "int64"}
+            }
+          },
+          "warnings": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+              "code": {"type": "string", "enum": ["freight_untaxed", "hsn_missing", "buyer_gstin_ignored"]},
+              "ref": {"type": "string"}
+            }
+          }}
+        }
+      },
+      "InvoicesParty": {
+        "type": "object",
+        "properties": {
+          "legal_name": {"type": "string"},
+          "trade_name": {"type": "string"},
+          "gstin": {"type": "string", "description": "Absent for an unregistered recipient."},
+          "registered": {"type": "boolean"},
+          "state_code": {"type": "string"},
+          "state": {"type": "string"},
+          "address": {
+            "type": "object",
+            "properties": {
+              "line1": {"type": "string"},
+              "line2": {"type": "string"},
+              "city": {"type": "string"},
+              "postal_code": {"type": "string"},
+              "country": {"type": "string"}
+            }
+          },
+          "email": {"type": "string", "description": "The supplier's only."},
+          "phone": {"type": "string", "description": "The supplier's only."}
         }
       }
     }
