@@ -73,6 +73,21 @@ func (n *TallyLedgers) clean() error {
 			return gocommerce.Validationf("%s: no tabs, line breaks or other control characters", f.field)
 		}
 	}
+	// One name is one Tally ledger under one group, so a name may not be both a
+	// buyer and an income ledger, or an income and a tax ledger. Sales and
+	// delivery may share one, and so may the tax heads.
+	group := map[string]string{}
+	for _, f := range []struct{ name, group, field string }{
+		{n.UnregisteredParty, tallySundryDebtors, "unregistered_party"},
+		{n.Sales, tallySalesAccounts, "sales_ledger"}, {n.Freight, tallySalesAccounts, "freight"},
+		{n.CGST, tallyDutiesTaxes, "cgst"}, {n.SGST, tallyDutiesTaxes, "sgst"},
+		{n.UTGST, tallyDutiesTaxes, "utgst"}, {n.IGST, tallyDutiesTaxes, "igst"},
+	} {
+		if g, ok := group[f.name]; ok && g != f.group {
+			return gocommerce.Validationf("%s: %q is already a ledger under %s", f.field, f.name, g)
+		}
+		group[f.name] = f.group
+	}
 	return nil
 }
 
@@ -174,7 +189,7 @@ func tallyVoucherOf(storeID, order string, doc *TaxInvoice, n TallyLedgers) (tal
 		sum += e.Minor
 	}
 	if sum != 0 {
-		return v, nil, fmt.Errorf("invoice %s: the Tally entries miss by %d paise", doc.Number, sum)
+		return v, nil, gocommerce.Conflictf("invoice %s: its Tally entries miss by %d paise", doc.Number, sum)
 	}
 	return v, ledgers, nil
 }
@@ -224,7 +239,7 @@ func (m *Module) tallyRead(ctx context.Context, from, to string, n TallyLedgers)
 		}
 		doc := &TaxInvoice{}
 		if err := json.Unmarshal(raw, doc); err != nil {
-			return nil, nil, err
+			return nil, nil, gocommerce.Internalf(err, "read the tax invoice for order %s", order)
 		}
 		v, named, err := tallyVoucherOf(store, order, doc, n)
 		if err != nil {
@@ -286,9 +301,9 @@ func tallyEscape(s string) string {
 			b.WriteString("&quot;")
 		case r == '\'':
 			b.WriteString("&apos;")
-		case r == '\t' || r == '\n' || r == '\r' || r > '~':
+		case r == '\t' || r == '\n' || r == '\r' || (r > '~' && r != 0xFFFE && r != 0xFFFF):
 			fmt.Fprintf(&b, "&#%d;", r)
-		case r < ' ':
+		case r < ' ' || r == 0xFFFE || r == 0xFFFF:
 		default:
 			b.WriteRune(r)
 		}
@@ -393,7 +408,8 @@ func tallyVouchersXML(company, voucherType string, vouchers []tallyVoucher) []by
 			for i, e := range v.Entries {
 				x.open("ALLLEDGERENTRIES.LIST")
 				x.leaf("LEDGERNAME", e.Ledger)
-				x.leaf("ISDEEMEDPOSITIVE", yesNo(e.Minor < 0))
+				// The party is the debit even on an invoice for nothing.
+				x.leaf("ISDEEMEDPOSITIVE", yesNo(i == 0 || e.Minor < 0))
 				x.leaf("ISPARTYLEDGER", yesNo(i == 0))
 				x.leaf("AMOUNT", tallyAmount(e.Minor))
 				if i == 0 {
