@@ -213,6 +213,13 @@ func (a *App) respondPublicProduct(w http.ResponseWriter, r *http.Request, p *Pr
 		return
 	}
 	a.translateProducts(r, []*Product{p})
+	// The gallery is the product page's, so it is read here and not on every
+	// listing row.
+	var err error
+	if p.Media, err = a.catalog.productGallery(r.Context(), p.ID); err != nil {
+		RespondError(w, r, err)
+		return
+	}
 	Respond(w, http.StatusOK, p)
 }
 

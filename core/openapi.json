@@ -16997,6 +16997,13 @@
           "seo_description": {
             "type": "string"
           },
+          "media": {
+            "type": "array",
+            "description": "The product's pictures and videos in order, on the public product only (D134). 3D models are left out.",
+            "items": {
+              "$ref": "#/components/schemas/VariantImage"
+            }
+          },
           "options": {
             "type": "array",
             "items": {
@@ -17018,7 +17025,7 @@
           },
           "metadata": {
             "type": "object",
-            "description": "Where a module attaches its own data, under its own key."
+            "description": "Where a module attaches its own data, under its own key. The engine owns two keys (D134): `highlights`, up to 8 lines of plain text of at most 80 characters each, and `free_gift`, one such line; both are trimmed on write, and an empty one is removed."
           },
           "created_at": {
             "type": "string",
