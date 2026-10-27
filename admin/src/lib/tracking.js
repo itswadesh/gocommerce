@@ -8,5 +8,5 @@
 export function orderTrackingURL(store, number) {
     const host = store?.domain || store?.subdomain || "";
     if (!host || !number) return "";
-    return `https://${host}/order-tracking?${new URLSearchParams({ number })}`;
+    return `https://${host}/order-tracking?${new URLSearchParams({ order: number })}`;
 }

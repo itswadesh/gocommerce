@@ -39,7 +39,7 @@ func TestOrderMessagesLinkToTheTrackingPage(t *testing.T) {
 	}
 
 	app.cfg.BaseDomain = "shops.test"
-	if got, want := link(), "https://"+st.Slug+".shops.test/order-tracking?number=GC+64"; got != want {
+	if got, want := link(), "https://"+st.Slug+".shops.test/order-tracking?order=GC+64"; got != want {
 		t.Errorf("link = %q, want %q", got, want)
 	}
 
@@ -54,7 +54,7 @@ func TestOrderMessagesLinkToTheTrackingPage(t *testing.T) {
 		`INSERT INTO store_domains (host, store_id, verified_at, is_primary) VALUES ('shop.example.com', $1, now(), true)`, st.ID); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := link(), "https://shop.example.com/order-tracking?number=GC+64"; got != want {
+	if got, want := link(), "https://shop.example.com/order-tracking?order=GC+64"; got != want {
 		t.Errorf("with a domain the link = %q, want %q", got, want)
 	}
 }
