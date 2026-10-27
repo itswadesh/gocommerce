@@ -200,7 +200,10 @@ dealer and starts the lead again at `new`.
   `GET /api/checkout`, from the public checkout and from a phone order.
 - **`metadata.b2b` on an order is the module's,** written in the order's own
   transaction. The guard refuses it from anywhere else, which is what lets the
-  credit query read it back.
+  credit query read it back. Beside it the module writes `metadata.gst`
+  (`gstin`, `name`) when the company's tax id is a valid GSTIN, so an Indian
+  store's GST tax invoice names the buyer as registered (D126). The tax id is
+  not checked when a company is saved: a company may be foreign.
 - **What a company owes is read from the orders,** not from `b2b_orders`:
   orders on account, unpaid, not cancelled. The ledger row is written after
   the order commits and the reconciler fills a missed one in.
