@@ -63,7 +63,9 @@ async function gemini(text, image) {
 	for (let attempt = 1; ; attempt++) {
 		const res = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
 			method: 'POST',
-			headers: { 'x-goog-api-key': key, 'content-type': 'application/json' },
+			// The revision pins the request and response shape; the legacy
+			// schema without one was retired in June 2026.
+			headers: { 'x-goog-api-key': key, 'content-type': 'application/json', 'Api-Revision': '2026-05-20' },
 			body
 		})
 		if (res.ok) {

@@ -1,7 +1,7 @@
 {
   "currency": "INR",
   "tag": "fashion-sample",
-  "image_model": "gemini-nano-banana-2.1",
+  "image_model": "gemini-3.1-flash-image",
   "categories": [
     { "slug": "women", "title": "Women" },
     { "slug": "women-dresses", "title": "Dresses", "parent": "women" },
