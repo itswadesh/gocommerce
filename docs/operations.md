@@ -98,6 +98,64 @@ connections, in-flight requests finish (up to 20 seconds), `OnStop` hooks run
 in reverse order, and the database pool closes. `ListenAndServe` returns nil
 after a clean shutdown, so any non-nil error is genuinely fatal.
 
+### Deploy the whole platform
+
+[`docker-compose.yml`](../docker-compose.yml) holds every service the platform
+needs, and one command starts them all (D143):
+
+```sh
+cp .env.example .env      # then fill it in: the four required values and the addresses
+docker compose up -d
+```
+
+That starts the engine with its admin panel, PostgreSQL, Meilisearch, the
+shopper storefront ([Svelte Commerce](https://github.com/itswadesh/svelte-commerce),
+built from its `gocomm` branch, so the first start takes several minutes) and
+Caddy on ports 80 and 443. Caddy gets every certificate from Let's Encrypt by
+itself.
+
+**DNS**, before the first start, all pointing at the server:
+
+| Record | Name | For |
+|---|---|---|
+| `A` (and `AAAA`) | `ADMIN_DOMAIN`, e.g. `admin.example.com` | the admin panel and the API |
+| `A` (and `AAAA`) | `*.GOCOMMERCE_BASE_DOMAIN`, e.g. `*.shops.example.com` | every store at `<slug>.shops.example.com` |
+
+**First sign-in.** Open `https://<ADMIN_DOMAIN>` and sign in with
+`GOCOMMERCE_ADMIN_EMAIL` and `GOCOMMERCE_ADMIN_PASSWORD`. A store's shop is at
+`https://<slug>.<GOCOMMERCE_BASE_DOMAIN>`; its first visit takes a few seconds
+while Caddy fetches the certificate.
+
+**A shop's own domain.** The shop adds it under Settings › Domains, adds the
+TXT record shown there and an `A` record to the server (set
+`GOCOMMERCE_DOMAIN_TARGET` to the server's IP so the panel shows it), and
+presses Verify. Nothing on the server changes: on the domain's first visit
+Caddy asks the engine, at `GET /internal/caddy/ask?domain=`, whether the name
+is a store's, and gets its certificate only if so. The same check covers store
+addresses under the base domain, so a stranger pointing DNS at the server
+gets no certificate and cannot use up the install's Let's Encrypt allowance.
+The route is reachable only on the compose network; the panel's site answers
+`/internal/*` with 404.
+
+**Where another proxy holds 80 and 443**, as Dokploy's Traefik does, set
+`PROXY_REPLICAS=0`: Compose then starts no Caddy container. Add Dokploy domain
+entries for the panel (service `gocommerce`, port 8080) and the shops (service
+`storefront`, port 3000), and use [the Traefik provider](#a-stores-own-domain-without-touching-the-proxy)
+with `GOCOMMERCE_TRAEFIK_UPSTREAM=http://storefront:3000` for stores' own
+domains.
+
+**The storefront** reaches the engine at `http://gocommerce:8080` on the compose
+network (`STOREFRONT_ENGINE_URL`) and passes a shopper's API calls through its
+own `/backend` path, since the engine answers no CORS. `STOREFRONT_REF` picks
+the branch or tag it is built from; `STOREFRONT_STORE` makes one store answer
+on every other host, for an install with a single shop.
+
+**To try it on one machine**, with no DNS: set `ADMIN_DOMAIN=admin.localhost`,
+`GOCOMMERCE_BASE_DOMAIN=shops.localhost` and `CADDY_GLOBAL_OPTIONS=local_certs`
+(Caddy's own certificate authority, which the browser warns about), and
+`HTTP_PORT` / `HTTPS_PORT` if 80 and 443 are taken. Browsers send every
+`*.localhost` name to the machine itself.
+
 ### In a container
 
 [`Dockerfile`](../Dockerfile) builds the panel from source, then a static binary,
@@ -108,7 +166,7 @@ except `-import-amazon` — each idle until it is configured. Trim its `command:
 to drop the ones a store will never use:
 
 ```sh
-POSTGRES_PASSWORD=... GOCOMMERCE_ADMIN_TOKEN=... GOCOMMERCE_ADMIN_PASSWORD=...   docker compose up --build
+POSTGRES_PASSWORD=... GOCOMMERCE_ADMIN_TOKEN=... GOCOMMERCE_ADMIN_PASSWORD=... docker compose up -d
 ```
 
 Three things are worth knowing before it runs somewhere that matters:

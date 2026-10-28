@@ -216,6 +216,21 @@ storefront's service surface onto these routes and the storefront modules —
 catalogue, bag, checkout, orders, accounts, addresses, wishlists, reviews, pages,
 menus and FAQ — and says plainly where the two do not meet yet.
 
+## Deploy the whole platform
+
+One file, one command: [`docker-compose.yml`](docker-compose.yml) runs the
+engine with its admin panel, PostgreSQL, Meilisearch, the Svelte Commerce
+storefront and Caddy with automatic HTTPS.
+
+```sh
+cp .env.example .env   # fill in the passwords, ADMIN_DOMAIN and GOCOMMERCE_BASE_DOMAIN
+docker compose up -d
+```
+
+Point `ADMIN_DOMAIN` and `*.GOCOMMERCE_BASE_DOMAIN` at the server first. DNS
+records, first sign-in, a shop's own domain and running behind Dokploy are in
+[docs/operations.md](docs/operations.md#deploy-the-whole-platform).
+
 ## Quick start
 
 Requires Go 1.27+ and PostgreSQL 16+.
