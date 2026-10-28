@@ -838,8 +838,14 @@ The `layouts` plugin starts on, so a shop's first publish is what the
 storefront shows; until then it keeps its built-in home page. Its switch is on
 the Themes screen itself (D132); switched off, the screen says so and the
 storefront goes back to the built-in page. Before
-the first save the screen shows that built-in page as sections — its words,
-not its stock pictures — to start from. Seeing the screen is `layouts.read`
+the first save the screen shows the starting home page (D140, "Bold and
+bright"): a split hero on a colour block, four tiles leading to the shop, its
+collections, its categories and order tracking, the newest products, a
+picture beside words and the benefits strip, with violet buttons, a pale
+yellow for quiet bands and large rounding set as theme settings. Its words are true of any shop; the benefits strip's promises (free
+shipping, returns) are the shop's to edit to its own policies before
+publishing. A product grid can show a collection, products picked by hand,
+or the newest products, which is what the starting page's grid shows. Seeing the screen is `layouts.read`
 (managers and staff by default); editing, resetting, publishing, previewing
 and rolling back are `layouts.write` (managers).
 

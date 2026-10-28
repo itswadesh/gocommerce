@@ -340,15 +340,26 @@ func (m *Module) resolve(r *http.Request, sections []Section) ([]PublicSection, 
 		}
 		if s.Type == "product-grid" {
 			limit := number(s.Settings["limit"], 8)
-			if setting(s, "source") == "products" {
+			switch setting(s, "source") {
+			case "newest":
+				// What a new shop's grid shows before it has a collection:
+				// the newest on sale, by the catalogue's own channel rule.
+				if ps.Products, _, err = m.app.Products().ListProducts(ctx, gocommerce.ProductQuery{
+					Status: gocommerce.ProductActive, ChannelID: channelID, Limit: limit,
+				}); err != nil {
+					return nil, err
+				}
+			case "products":
 				for _, id := range ints(s.Settings["products"]) {
 					if p := byID[id]; p != nil && len(ps.Products) < limit {
 						ps.Products = append(ps.Products, p)
 					}
 				}
-			} else if id := number(s.Settings["collection"], 0); id > 0 {
-				if ps.Products, err = m.inCollection(ctx, int64(id), channelID, limit); err != nil {
-					return nil, err
+			default:
+				if id := number(s.Settings["collection"], 0); id > 0 {
+					if ps.Products, err = m.inCollection(ctx, int64(id), channelID, limit); err != nil {
+						return nil, err
+					}
 				}
 			}
 			if ps.Products == nil {
@@ -513,15 +524,17 @@ func int64Array(ids []int64) string {
 	return "{" + strings.Join(parts, ",") + "}"
 }
 
-// Starter is the page a shop starts from before its first save: the
-// storefront's built-in page, section for section and word for word, so
-// switching the editor on and publishing changes nothing a shopper sees until
-// the shop changes it. The home page has no pictures — the built-in page's
-// are stock photographs, and a shop's pictures are its own to choose. The
-// product page is its core with the reviews and related products under it;
-// the collection page is its grid. The header is the storefront's own strip,
-// on the home page as it is today, over the "header" menu; the footer reads
-// the "footer" menu, and leaves the rest to the storefront (D131).
+// Starter is the page a shop starts from before its first save. The
+// templates and the header and footer are the storefront's own built-in
+// pages, so publishing them unchanged changes nothing a shopper sees (D131).
+// The home page is the "Bold and bright" look (D140), under the header's own
+// announcement strip rather than a second one: a split hero on a colour
+// block, four tiles, the newest products, a picture beside words and the
+// benefits strip, with theme settings for the colours and the rounding.
+// Every word is true of any shop and every link goes to a page every
+// storefront has; the benefits are promises the shop must make its own.
+// It has no pictures yet: the default pictures are to be made with Google
+// Gemini, and until they exist a section without one draws its colour block.
 func Starter(page string) Document {
 	switch page {
 	case "header":
@@ -546,19 +559,32 @@ func Starter(page string) Document {
 			{ID: "products", Type: "main-collection", Enabled: true, Settings: map[string]any{}},
 		}}
 	}
-	return Document{SchemaVersion: schemaVersion, Theme: Themes[0].ID, Sections: []Section{
-		{ID: "announcement", Type: "announcement-bar", Enabled: true, Settings: map[string]any{
-			"text": "Free shipping on your first order · Easy 7-day returns", "link": "/products"}},
+	return Document{SchemaVersion: schemaVersion, Theme: Themes[0].ID, ThemeSettings: map[string]any{
+		// Violet carries white words at 5.7:1; the pale yellow carries the
+		// storefront's own text colour at well over 4.5:1.
+		"accent": "#7c3aed", "accent_text": "#ffffff", "muted": "#fef3c7",
+		// No heading font: a web font repainted the hero's headline seconds
+		// after the page drew on a phone, which Lighthouse counts against it;
+		// the storefront's own font at a heavy weight carries the look.
+		"radius": "large",
+	}, Sections: []Section{
 		{ID: "hero", Type: "hero", Enabled: true, Settings: map[string]any{
-			"eyebrow": "New Season", "heading": "Considered goods for modern living",
-			"body":        "A curated edit of pieces made to be kept — thoughtfully sourced, honestly priced, and ready to ship.",
-			"button_text": "Shop the collection", "button_link": "/products", "align": "left"}},
+			"eyebrow": "New in", "heading": "Find your next favourite thing",
+			"body":        "Browse the range and pick what you love.",
+			"button_text": "Shop now", "button_link": "/products", "align": "left"}},
+		{ID: "tiles", Type: "multi-column", Enabled: true, Settings: map[string]any{
+			"heading": "Start shopping", "items": []any{
+				map[string]any{"heading": "Shop all", "link_text": "See everything", "link": "/products"},
+				map[string]any{"heading": "Collections", "link_text": "See collections", "link": "/collections"},
+				map[string]any{"heading": "Categories", "link_text": "See categories", "link": "/categories"},
+				map[string]any{"heading": "Track an order", "link_text": "Find your order", "link": "/order-tracking"},
+			}}},
 		{ID: "featured", Type: "product-grid", Enabled: true, Settings: map[string]any{
-			"heading": "Featured pieces", "source": "collection", "limit": 8, "columns": 4, "view_all_link": "/products"}},
+			"heading": "New in", "source": "newest", "limit": 8, "columns": 4, "view_all_link": "/products"}},
 		{ID: "lookbook", Type: "image-with-text", Enabled: true, Settings: map[string]any{
-			"eyebrow": "The Lookbook", "heading": "Made to be lived in", "image_side": "left",
-			"body":        "Pieces designed for the everyday — versatile, durable, and quietly beautiful. Discover the season's edit.",
-			"button_text": "Discover more", "button_link": "/products"}},
+			"eyebrow": "Made for every day", "heading": "Good things, picked for you", "image_side": "right",
+			"body":        "Have a look around the shop and find what suits you.",
+			"button_text": "Explore the shop", "button_link": "/products"}},
 		{ID: "assurances", Type: "benefits", Enabled: true, Settings: map[string]any{"items": []any{
 			map[string]any{"title": "Free shipping", "body": "On your qualifying orders", "icon": "truck"},
 			map[string]any{"title": "Easy returns", "body": "7-day, hassle-free", "icon": "return"},
