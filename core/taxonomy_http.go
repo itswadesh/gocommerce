@@ -25,7 +25,7 @@ func (a *App) mountTaxonomyRoutes() {
 	a.HandleAdminFunc("PATCH /api/admin/taxonomy-attributes/{handle}", a.handleUpdateTaxonomyAttribute, RightCategoriesWrite)
 	a.HandleAdminFunc("DELETE /api/admin/taxonomy-attributes/{handle}", a.handleDeleteTaxonomyAttribute, RightCategoriesWrite)
 
-	// The master tree and a store's activations of it (D143). Activating
+	// The master tree and a store's activations of it (D146). Activating
 	// writes categories, so it takes the right that writing one does.
 	a.HandleAdminFunc("GET /api/admin/taxonomy", a.handleBrowseTaxonomy, RightCategoriesRead)
 	a.HandleAdminFunc("PUT /api/admin/taxonomy/{id}/activation", a.handleActivateTaxonomy, RightCategoriesWrite)

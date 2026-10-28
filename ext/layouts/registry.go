@@ -122,6 +122,7 @@ var Sections = []SectionType{
 			{Key: "body", Label: "Text", Kind: KindTextarea, MaxLen: 600},
 			{Key: "image", Label: "Picture", Kind: KindImage, Help: "Wide, for computers."},
 			{Key: "mobile_image", Label: "Picture on phones", Kind: KindImage, Help: "Taller crop. Empty uses the picture above."},
+			{Key: "image_alt", Label: "What the picture shows", Kind: KindText, MaxLen: 200, Help: "Read aloud to people who cannot see it. Empty uses the heading."},
 			{Key: "button_text", Label: "Button text", Kind: KindText, MaxLen: 60},
 			{Key: "button_link", Label: "Button link", Kind: KindURL},
 			{Key: "align", Label: "Text position", Kind: KindSelect, Default: "left",
@@ -147,6 +148,7 @@ var Sections = []SectionType{
 		Description: "A picture beside a heading, text and a button.",
 		Fields: []Field{
 			{Key: "image", Label: "Picture", Kind: KindImage},
+			{Key: "image_alt", Label: "What the picture shows", Kind: KindText, MaxLen: 200, Help: "Read aloud to people who cannot see it. Empty uses the heading."},
 			{Key: "image_side", Label: "Picture on the", Kind: KindSelect, Default: "left",
 				Options: []Option{{"left", "Left"}, {"right", "Right"}}},
 			{Key: "eyebrow", Label: "Small line above the heading", Kind: KindText, MaxLen: 80},

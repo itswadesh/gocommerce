@@ -221,6 +221,40 @@
         }
       }
     },
+    "/internal/caddy/ask": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "May the proxy get a certificate for this name",
+        "description": "Caddy's on-demand TLS ask endpoint (D143). 200 when the domain is a store's verified domain or <slug>.<base domain> of a store; 404 for anything else. Caddy sends no credentials, so none are wanted: the answer for one name is no more than visiting it shows.",
+        "parameters": [
+          {
+            "name": "domain",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A store answers at this name."
+          },
+          "404": {
+            "description": "No store answers at this name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/doc": {
       "get": {
         "tags": [
@@ -2773,6 +2807,28 @@
             "description": "Restrict to one collection's members, and order them the way that collection was curated rather than newest-first. An unparseable value is an error rather than a silently ignored filter. A collection nobody has is an empty page, not a 404. Sending `sort` together with it is a validation error rather than a silent override: a collection's order is the curation (D40)."
           },
           {
+            "name": "price_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "description": "Products whose cheapest variant costs at most this, in the store currency's minor units. `price_max=0` is the products with a variant at 0: those that still need a price."
+          },
+          {
+            "name": "price_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "description": "Products whose cheapest variant costs at least this, in minor units."
+          },
+          {
             "name": "sort",
             "in": "query",
             "description": "Order the page by one of these fields; omit for the listing's own order. Anything else is a 400 naming the ones that exist. Text keys are folded by PostgreSQL, and every ordering breaks ties on a key unique in the result set, so two pages of one listing never repeat or skip a row. `price` is the cheapest variant and `available` the summed availability of tracked variants; a product with no tracked variants sorts last under either, in both directions. `status` orders alphabetically (active, archived, draft), which is not the lifecycle order. Sending `sort` together with `collection_id` is a 400: a collection is shown in the order it was curated.",
@@ -3595,6 +3651,28 @@
               "format": "int64"
             },
             "description": "Restrict to a category and everything nested under it. An unparseable value is an error rather than a silently ignored filter, because a filter that quietly matches everything is how a typo turns into \"why is this showing the whole catalogue\"."
+          },
+          {
+            "name": "price_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "description": "Products whose cheapest variant costs at least this, in minor units."
+          },
+          {
+            "name": "price_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "description": "Products whose cheapest variant costs at most this, in minor units; `price_max=0` is the ones that still need a price."
           },
           {
             "$ref": "#/components/parameters/Limit"
@@ -5762,6 +5840,28 @@
             "description": "Restrict to one collection's members, and order them the way that collection was curated rather than newest-first. An unparseable value is an error rather than a silently ignored filter. A collection nobody has is an empty page, not a 404. If a sort parameter is ever added to this listing, sending it together with collection_id must be a validation error rather than a silent override: a collection's order is the curation (D40)."
           },
           {
+            "name": "price_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "description": "Products whose cheapest variant costs at least this, in minor units."
+          },
+          {
+            "name": "price_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "description": "Products whose cheapest variant costs at most this, in minor units; `price_max=0` is the ones that still need a price."
+          },
+          {
             "$ref": "#/components/parameters/Format"
           }
         ]
@@ -6893,7 +6993,7 @@
             "adminToken": []
           }
         ],
-        "description": "The master category tree every store shares: Shopify's Standard Product Taxonomy, embedded in the binary and read-only (D143). Each node says whether this store has activated it — `active`, with the store's `category_id` and its own `title`, which a store may have renamed. `?parent=` returns one level (the roots when absent or `root`); `?q=` searches every node's path, case-folded, and pages like any listing with the real `meta.total`.",
+        "description": "The master category tree every store shares: Shopify's Standard Product Taxonomy, embedded in the binary and read-only (D146). Each node says whether this store has activated it — `active`, with the store's `category_id` and its own `title`, which a store may have renamed. `?parent=` returns one level (the roots when absent or `root`); `?q=` searches every node's path, case-folded, and pages like any listing with the real `meta.total`.",
         "parameters": [
           {
             "name": "parent",

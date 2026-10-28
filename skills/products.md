@@ -111,7 +111,9 @@ GET /api/admin/products?collection_id=7
 ```
 
 The admin listing also narrows by `vendor`, `product_type`, `tag`,
-`category_id` and `collection_id`. That vocabulary is read in one place
+`category_id`, `collection_id`, and `price_min` / `price_max` in minor units
+on the cheapest variant; `price_max=0` is the products with a variant at 0,
+which the panel calls "Needs a price". That vocabulary is read in one place
 (`productQueryFrom`) and rendered into SQL in one place (`productFilters`), so
 the CSV export at `GET /api/admin/export/admin-products` takes exactly the
 same filters — a reconciliation exports the rows a screen is showing rather
@@ -380,7 +382,7 @@ create, an edit of those categories, and a delete. Deleting an entry is never
 refused: a category still asking for the field keeps it and simply offers no
 fixed list, which is a free-text field rather than a broken one.
 
-### The Shopify taxonomy as the master (D143)
+### The Shopify taxonomy as the master (D146)
 
 The embedded Shopify taxonomy is one read-only tree every store browses; a
 store's categories are the nodes it has **activated** plus its own.
@@ -499,6 +501,29 @@ Deleting cascades to options, option values and variants. Order lines survive:
 their `product_id` is `ON DELETE SET NULL`, and they keep their own snapshot of
 sku, title, label and price, so a historical order stays readable after the
 catalog moves on. See [carts](carts.md) for why cart lines cascade instead.
+
+## Products from photos
+
+`ext/photo-products` (`-photo-products`, D144) drafts products from a shop's
+own photographs, through the AI gateway's `photos.group` and
+`photos.describe` tasks. A batch is made, filled and run:
+
+```http
+POST /api/admin/x/photo-products/batches                {"sizes": ["S", "M"]}
+POST /api/admin/x/photo-products/batches/7/photos       {"media_id": 41, "thumb": "<base64 JPEG>", "image": "<base64 JPEG>"}
+POST /api/admin/x/photo-products/batches/7/start        → 202, then poll GET /api/admin/x/photo-products/batches/7
+PUT  /api/admin/x/photo-products/batches/7/items        the shop's edited proposals
+POST /api/admin/x/photo-products/batches/7/create
+```
+
+What it creates goes through `CreateProduct` like any other product: status
+`draft`, every variant at price 0 with no stock, SKUs derived by the
+catalogue, the photos on the product and each on its own variant, and
+`metadata.ai_drafted` naming the batch. Price 0 on a draft is how the
+products list's "Needs a price" filter finds them; nothing is published. A
+suggested category and an HSN code (an Indian store only) are kept in
+`ai_drafted` as suggestions and never applied. Create twice and nothing is
+made twice: a proposal's product is found by its `ai_drafted.item` mark.
 
 ## The sample shop
 

@@ -1,6 +1,6 @@
 <script>
     /**
-     * The Shopify taxonomy, browsed and switched on per node (D143).
+     * The Shopify taxonomy, browsed and switched on per node (D146).
      *
      * The master tree is the engine's, shared by every store and read-only;
      * what a store owns is which nodes it has activated, and each of those is

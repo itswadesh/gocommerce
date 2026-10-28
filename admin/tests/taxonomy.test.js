@@ -1,5 +1,5 @@
 /*
- * The taxonomy browser's rows (D143): branches open and close by depth, and a
+ * The taxonomy browser's rows (D146): branches open and close by depth, and a
  * switch redraws the ancestors an activation brought and the branch a
  * deactivation took.
  */

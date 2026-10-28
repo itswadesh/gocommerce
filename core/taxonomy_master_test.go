@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// The master tree and a store's activations of it (D143).
+// The master tree and a store's activations of it (D146).
 
 func activate(t *testing.T, app *App, ctx context.Context, id string) *TaxonomyActivation {
 	t.Helper()

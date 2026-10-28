@@ -103,7 +103,7 @@
        store.operate, which is what makes it answerable by a manager who cannot
        open the store-wide feed at all. */
     let historyOpen = $state(false);
-    /* The shared Shopify taxonomy, switched on node by node (D143). */
+    /* The shared Shopify taxonomy, switched on node by node (D146). */
     let taxonomyOpen = $state(false);
     let historyFor = $state(null);
 

@@ -133,6 +133,7 @@ Every gateway and carrier module installs idle: `-gateways` and `-carriers` put 
 | `b2b` | Companies and their buyers in roles, orders on account against a credit limit and net terms, purchase-order numbers, approval over a limit, and quotes priced for one buyer |
 | `cart-recovery` | Abandoned checkouts: records baskets left idle, sends a sequence of reminders by email with a tracked link back, and credits the order that recovers each one |
 | `import-amazon` | A product, its variations and pictures from an Amazon URL, through a real Chrome; copy rewritten by a model, through the AI gateway where the store has switched it on |
+| `photo-products` | Draft products from a batch of the shop's own photos: Claude, through the AI gateway, sorts them into products and variants and writes each listing from what is visible; created as unpriced drafts after the shop reviews them |
 | `ai-gateway` | Every model call the store makes, recorded and held to a monthly cap in the store's currency, with the owner's own provider key and a switch for each kind of data that may leave the store; idle until a key, a cap and prices are set |
 | `mcp` | The store as tools for an AI agent, with an audit trail |
 | `search-meilisearch` | A Meilisearch index kept in step with the catalogue, and the storefront's search through it |
@@ -215,6 +216,21 @@ kept in a repository of its own like every connector in that family. It maps the
 storefront's service surface onto these routes and the storefront modules —
 catalogue, bag, checkout, orders, accounts, addresses, wishlists, reviews, pages,
 menus and FAQ — and says plainly where the two do not meet yet.
+
+## Deploy the whole platform
+
+One file, one command: [`docker-compose.yml`](docker-compose.yml) runs the
+engine with its admin panel, PostgreSQL, Meilisearch, the Svelte Commerce
+storefront and Caddy with automatic HTTPS.
+
+```sh
+cp .env.example .env   # fill in the passwords, ADMIN_DOMAIN and GOCOMMERCE_BASE_DOMAIN
+docker compose up -d
+```
+
+Point `ADMIN_DOMAIN` and `*.GOCOMMERCE_BASE_DOMAIN` at the server first. DNS
+records, first sign-in, a shop's own domain and running behind Dokploy are in
+[docs/operations.md](docs/operations.md#deploy-the-whole-platform).
 
 ## Quick start
 

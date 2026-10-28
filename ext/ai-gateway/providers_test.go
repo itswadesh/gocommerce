@@ -92,10 +92,9 @@ const (
   "role": "assistant",
   "model": "claude-haiku-4-5-20251001",
   "content": [
-    {"type": "tool_use", "id": "toolu_01A09q90qw90lq917835lq9", "name": "answer",
-     "input": {"title": "Steel widget, two-pack", "tags": ["widget", "steel"]}}
+    {"type": "text", "text": "{\"title\": \"Steel widget, two-pack\", \"tags\": [\"widget\", \"steel\"]}"}
   ],
-  "stop_reason": "tool_use",
+  "stop_reason": "end_turn",
   "stop_sequence": null,
   "usage": {
     "input_tokens": 412,
@@ -116,7 +115,7 @@ const (
 	anthropicCutOff = `{
   "id": "msg_01CutOff", "type": "message", "role": "assistant",
   "model": "claude-sonnet-5-5-20260915",
-  "content": [{"type": "tool_use", "id": "toolu_01CutOff", "name": "answer", "input": {"title": "Steel widget"}}],
+  "content": [{"type": "text", "text": "{\"title\": \"Steel wid"}],
   "stop_reason": "max_tokens", "stop_sequence": null,
   "usage": {"input_tokens": 1400, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "output_tokens": 64}
 }`
@@ -213,16 +212,17 @@ func TestAnthropicAsksForTheAnswerThroughOneForcedTool(t *testing.T) {
 	if cc, _ := system["cache_control"].(map[string]any); cc["type"] != "ephemeral" {
 		t.Errorf("the instructions carry no cache_control: %v", system)
 	}
-	tool := body["tools"].([]any)[0].(map[string]any)
-	if tool["name"] != "answer" {
-		t.Errorf("tool = %v", tool["name"])
+	// Structured output, not a forced tool: Sonnet 5.5 and Opus 5.5 answer
+	// tool_choice "tool" with a 400.
+	if _, forced := body["tool_choice"]; forced {
+		t.Errorf("tool_choice = %v, which the current models refuse", body["tool_choice"])
 	}
-	if schema, _ := json.Marshal(tool["input_schema"]); string(schema) != compactJSON(t, testSchema) {
-		t.Errorf("input_schema = %s, want the task's schema", schema)
+	format := body["output_config"].(map[string]any)["format"].(map[string]any)
+	if format["type"] != "json_schema" {
+		t.Errorf("format = %v", format["type"])
 	}
-	choice := body["tool_choice"].(map[string]any)
-	if choice["type"] != "tool" || choice["name"] != "answer" {
-		t.Errorf("tool_choice = %v, want the answer tool forced", choice)
+	if schema, _ := json.Marshal(format["schema"]); string(schema) != compactJSON(t, testSchema) {
+		t.Errorf("schema = %s, want the task's schema", schema)
 	}
 	msg := body["messages"].([]any)[0].(map[string]any)
 	if msg["role"] != "user" {
@@ -230,9 +230,9 @@ func TestAnthropicAsksForTheAnswerThroughOneForcedTool(t *testing.T) {
 	}
 
 	if string(resp.JSON) != `{"title": "Steel widget, two-pack", "tags": ["widget", "steel"]}` {
-		t.Errorf("JSON = %s, want the tool's input", resp.JSON)
+		t.Errorf("JSON = %s, want the structured output", resp.JSON)
 	}
-	if resp.Model != "claude-haiku-4-5-20251001" || resp.StopReason != "tool_use" {
+	if resp.Model != "claude-haiku-4-5-20251001" || resp.StopReason != "end_turn" {
 		t.Errorf("model %q stop %q", resp.Model, resp.StopReason)
 	}
 	want := Usage{InputTokens: 412, OutputTokens: 187, CacheReadTokens: 0, CacheWriteTokens: 1536}
@@ -422,7 +422,7 @@ func TestDocumentsTravelInEachProvidersOwnShape(t *testing.T) {
 	req := testRequest("m")
 	req.Documents = []Document{
 		{Name: "po.pdf", MediaType: "application/pdf", Bytes: []byte("%PDF-1.7")},
-		{Name: "label.png", MediaType: "image/png", Bytes: []byte("\x89PNG")},
+		{Name: "label.png", MediaType: "image/png", Bytes: []byte("\x89PNG"), Caption: "Photo 2"},
 	}
 
 	s := newStandIn(t, reply(http.StatusOK, anthropicToolAnswer))
@@ -434,8 +434,9 @@ func TestDocumentsTravelInEachProvidersOwnShape(t *testing.T) {
 	for _, c := range content {
 		kinds = append(kinds, c.(map[string]any)["type"].(string))
 	}
-	if strings.Join(kinds, ",") != "document,image,text" {
-		t.Errorf("anthropic content = %v, want the files before the text", kinds)
+	// A caption is a text block just before its file.
+	if strings.Join(kinds, ",") != "document,text,image,text" || content[1].(map[string]any)["text"] != "Photo 2" {
+		t.Errorf("anthropic content = %v, want the files, each after its caption, before the text", kinds)
 	}
 
 	s = newStandIn(t, reply(http.StatusOK, openAIAnswer))
@@ -447,7 +448,7 @@ func TestDocumentsTravelInEachProvidersOwnShape(t *testing.T) {
 	for _, c := range parts {
 		kinds = append(kinds, c.(map[string]any)["type"].(string))
 	}
-	if strings.Join(kinds, ",") != "file,image_url,text" {
+	if strings.Join(kinds, ",") != "file,text,image_url,text" {
 		t.Errorf("openai content = %v", kinds)
 	}
 }

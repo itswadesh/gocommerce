@@ -184,10 +184,12 @@ REST over `net/http`, no SDK (rule 2), starting from `ext/import-amazon`'s
 client.
 
 - **Anthropic:** Messages API, `anthropic-version: 2023-06-01`. The answer is
-  forced through a single tool whose `input_schema` is the task's schema
-  (`tool_choice: {type: "tool"}`), which every current model supports. The
-  instructions and schema come first and carry `cache_control`, so they are
-  cached across stores while nothing store-specific is (D104). Usage maps
+  structured output: `output_config.format` of type `json_schema` with the
+  task's schema, read back from the reply's text block. (It was a forced tool
+  call until Claude Sonnet 5.5 and Opus 5.5, which refuse `tool_choice:
+  {type: "tool"}` with a 400.) The instructions come first and carry
+  `cache_control`, so they are cached across stores while nothing
+  store-specific is (D104). Usage maps
   `input_tokens`, `output_tokens`, `cache_read_input_tokens` and
   `cache_creation_input_tokens`.
 - **OpenAI:** Chat Completions with `response_format: {type: "json_schema",

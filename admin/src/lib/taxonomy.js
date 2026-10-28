@@ -1,5 +1,5 @@
 /**
- * The Shopify taxonomy browser's row bookkeeping (D143), kept out of the
+ * The Shopify taxonomy browser's row bookkeeping (D146), kept out of the
  * component so it can be tested.
  *
  * The rows are a flattened tree: each expanded node's children spliced in

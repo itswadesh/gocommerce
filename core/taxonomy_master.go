@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-// The Shopify taxonomy as the master tree every store browses (D143).
+// The Shopify taxonomy as the master tree every store browses (D146).
 //
 // It is read from the embedded file, once per process, and never written to a
 // table. The file is the same in every store of one install and changes only

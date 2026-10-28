@@ -51,6 +51,7 @@ import (
 	razorpay "github.com/itswadesh/gocommerce/ext/payments-razorpay"
 	revenuecat "github.com/itswadesh/gocommerce/ext/payments-revenuecat"
 	stripe "github.com/itswadesh/gocommerce/ext/payments-stripe"
+	photoproducts "github.com/itswadesh/gocommerce/ext/photo-products"
 	reviews "github.com/itswadesh/gocommerce/ext/reviews"
 	meilisearch "github.com/itswadesh/gocommerce/ext/search-meilisearch"
 	showcases "github.com/itswadesh/gocommerce/ext/showcases"
@@ -65,8 +66,10 @@ import (
 func everyModule() []gocommerce.Module {
 	// b2b needs the identity module it signs buyers in through, listed first.
 	accounts := identity.New(identity.Config{})
+	gateway := aigateway.New(aigateway.Config{})
 	return []gocommerce.Module{
-		aigateway.New(aigateway.Config{}),
+		gateway,
+		photoproducts.New(photoproducts.Config{Gateway: gateway}),
 		accounts,
 		b2b.New(b2b.Config{Accounts: accounts}),
 		cartrecovery.New(cartrecovery.Config{}),

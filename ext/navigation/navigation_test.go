@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
@@ -99,20 +100,54 @@ func TestNavigationRoutesAreDocumentedAndGated(t *testing.T) {
 	gctest.AssertSpecCoversModuleRoutes(t, app, "navigation")
 }
 
-// A store opened after the module was installed gets the same starting
-// menus the first store got from the migration.
+// A store opened after the module was installed gets a header and a footer
+// that links the six standard pages (D145); the store that was there when
+// the migration ran keeps the menus it was given.
 func TestANewStoreStartsWithTheDefaultMenus(t *testing.T) {
 	app := gctest.New(t, New(Config{}))
 	st, err := app.Stores().Create(context.Background(), "Second", "second")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var menus int
-	if err := app.DB().QueryRowContext(gocommerce.WithStore(context.Background(), st.ID),
-		`SELECT count(*) FROM navigation_menus WHERE handle IN ('header', 'footer')`).Scan(&menus); err != nil {
-		t.Fatal(err)
+	urls := func(ctx context.Context, handle string) []string {
+		t.Helper()
+		rows, err := app.DB().QueryContext(ctx, `
+			SELECT i.title || ' ' || i.target FROM navigation_items i
+			JOIN navigation_menus m ON m.id = i.menu_id
+			WHERE m.handle = $1 ORDER BY i.position`, handle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		var out []string
+		for rows.Next() {
+			var s string
+			if err := rows.Scan(&s); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, s)
+		}
+		return out
 	}
-	if menus != 2 {
-		t.Fatalf("store B has %d of the two default menus", menus)
+	second := gocommerce.WithStore(context.Background(), st.ID)
+	want := "About us /about-us|Contact us /contact-us|Privacy policy /privacy-policy|Terms and conditions /terms-and-conditions|" +
+		"Shipping policy /shipping-policy|Refund and returns policy /refund-policy"
+	if got := strings.Join(urls(second, "footer"), "|"); got != want {
+		t.Errorf("new store's footer = %s, want %s", got, want)
+	}
+	if got := strings.Join(urls(second, "header"), "|"); got != "Home |Shop /products|Contact /contact-us" {
+		t.Errorf("new store's header = %s", got)
+	}
+
+	// Without the CMS module the footer still links the six paths, which the
+	// storefront hides until a page is published, and no page is written.
+	var cms *string
+	if err := app.DB().QueryRowContext(second, `SELECT to_regclass('cms_pages')::text`).Scan(&cms); err != nil || cms != nil {
+		t.Errorf("cms_pages = %v (%v), want no table without the module", cms, err)
+	}
+
+	// Opening a store writes nothing to another one.
+	if got := strings.Join(urls(context.Background(), "footer"), "|"); got != "Search /search|Contact us /contact|Privacy policy /pages/privacy" {
+		t.Errorf("the first store's footer = %s, want the migration's", got)
 	}
 }

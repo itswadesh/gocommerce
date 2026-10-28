@@ -363,3 +363,19 @@ func TestModuleRoutesFindTheirStoreToo(t *testing.T) {
 		t.Fatalf("two stores, nothing named = %d, want 400", rec.Code)
 	}
 }
+
+// The starting home page's pictures (ext/layouts) are asked for by a
+// shopper's browser with a plain <img>, which names no store; like a store's
+// /media/ files they belong to none, so naming none is not an error.
+func TestTheStarterPicturesNeedNoStore(t *testing.T) {
+	for _, p := range []string{"/x/layouts/starter/1/hero.webp", "/x/layouts/starter/2/a.webp"} {
+		if !storeExemptPath(p) {
+			t.Errorf("%s needs a store, want none", p)
+		}
+	}
+	for _, p := range []string{"/x/layouts/home", "/x/layouts/theme", "/x/layouts/starter"} {
+		if storeExemptPath(p) {
+			t.Errorf("%s needs no store, want the store's", p)
+		}
+	}
+}
