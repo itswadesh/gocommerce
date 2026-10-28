@@ -1,0 +1,334 @@
+{
+  "currency": "INR",
+  "tag": "fashion-sample",
+  "image_model": "gemini-nano-banana-2.1",
+  "categories": [
+    { "slug": "women", "title": "Women" },
+    { "slug": "women-dresses", "title": "Dresses", "parent": "women" },
+    { "slug": "women-ethnic-wear", "title": "Ethnic wear", "parent": "women" },
+    { "slug": "women-co-ord-sets", "title": "Co-ord sets", "parent": "women" },
+    { "slug": "men", "title": "Men" },
+    { "slug": "men-kurtas", "title": "Kurtas", "parent": "men" },
+    { "slug": "men-shirts", "title": "Shirts", "parent": "men" },
+    { "slug": "men-jackets", "title": "Jackets", "parent": "men" }
+  ],
+  "collections": [
+    { "slug": "new-arrivals", "title": "New arrivals", "description": "Recently added to the catalogue." },
+    { "slug": "festive-edit", "title": "Festive edit", "description": "Ethnic and evening wear for weddings and festivals." }
+  ],
+  "style": "A professional e-commerce fashion photograph in portrait orientation. Soft, even, flattering light. The model is an adult, fully clothed, in a natural relaxed pose, looking composed. The model is a fictional person, not resembling any real person or celebrity. The garment is the subject: sharp focus on fabric, drape and stitching. No text, no logos, no brand labels, no watermark, no props that hide the outfit.",
+  "shots": [
+    { "name": "front", "prompt": "Full-length front view: the model faces the camera, standing, arms relaxed, the whole outfit visible from head to toe." },
+    { "name": "back", "prompt": "Keep the same model, the same outfit, the same backdrop and the same lighting. The model has turned around to show the back of the outfit. Full length, head to toe." },
+    { "name": "side", "prompt": "Keep the same model, the same outfit, the same backdrop and the same lighting. The model is turned three-quarters to her or his left, one foot slightly forward, showing how the garment falls from the side. Full length, head to toe." },
+    { "name": "detail", "prompt": "Keep the same outfit and the same lighting. A close-up crop of the fabric, print and finishing at the neckline and chest, filling the frame. The face is out of frame." }
+  ],
+  "recolour": "Change only the colour of the outfit to {colour}. Keep everything else exactly the same: the same model, face, hair, pose, framing, garment cut, pattern layout, embroidery placement, backdrop and lighting.",
+  "products": [
+    {
+      "slug": "cotton-anarkali-kurta-set",
+      "title": "Cotton anarkali kurta set",
+      "category": "women-ethnic-wear",
+      "collections": ["festive-edit"],
+      "description": "A flared, calf-length anarkali kurta in cotton with straight trousers and a sheer cotton-blend dupatta. The yoke has thread embroidery and the kurta closes with a short placket at the back of the neck.",
+      "highlights": ["Kurta, trousers and dupatta", "100% cotton kurta and trousers", "Calf-length, 48 inches from shoulder", "Hand wash cold, dry in shade"],
+      "hs_code": "6204",
+      "weight_grams": 650,
+      "price_minor": 349900,
+      "compare_at_minor": 429900,
+      "sku": "ANK",
+      "sizes": ["XS", "S", "M", "L", "XL"],
+      "colours": [
+        { "name": "Maroon", "code": "MRN", "describe": "deep maroon with gold-tone embroidery" },
+        { "name": "Teal", "code": "TEL", "describe": "teal green with gold-tone embroidery" },
+        { "name": "Mustard", "code": "MST", "describe": "mustard yellow with ivory embroidery" }
+      ],
+      "sold_out": ["Mustard/XL"],
+      "low": ["Teal/XS"],
+      "image": {
+        "model": "a woman in her late twenties with long dark hair in a loose braid and warm medium-brown skin",
+        "setting": "a plain warm-beige studio backdrop with a soft floor shadow",
+        "garment": "a flared calf-length cotton anarkali kurta with thread embroidery on the yoke, straight trousers and a sheer dupatta draped over one shoulder, in {colour}"
+      }
+    },
+    {
+      "slug": "floral-print-maxi-dress",
+      "title": "Floral print maxi dress",
+      "category": "women-dresses",
+      "collections": ["new-arrivals"],
+      "description": "An ankle-length dress in light viscose with a small floral print, a V-neck, flutter sleeves and a tiered skirt. Elasticated at the waist and lined to the knee.",
+      "highlights": ["100% viscose, lined to the knee", "Elasticated waist", "Tiered ankle-length skirt", "Machine wash cold, gentle cycle"],
+      "hs_code": "6204",
+      "weight_grams": 380,
+      "price_minor": 279900,
+      "sku": "FMX",
+      "sizes": ["XS", "S", "M", "L", "XL"],
+      "colours": [
+        { "name": "Ivory", "code": "IVR", "describe": "an ivory ground with a small dusty-pink and green floral print" },
+        { "name": "Navy", "code": "NVY", "describe": "a navy ground with a small white and yellow floral print" },
+        { "name": "Blush", "code": "BLS", "describe": "a blush-pink ground with a small cream and sage floral print" }
+      ],
+      "sold_out": ["Navy/XS"],
+      "low": ["Blush/L"],
+      "image": {
+        "model": "a woman in her early thirties with shoulder-length wavy black hair and light-brown skin",
+        "setting": "soft daylight on a sunlit terrace with a plain lime-washed wall behind",
+        "garment": "an ankle-length viscose maxi dress with a V-neck, flutter sleeves and a tiered skirt, printed with {colour}"
+      }
+    },
+    {
+      "slug": "linen-co-ord-set",
+      "title": "Linen shirt and trouser co-ord set",
+      "category": "women-co-ord-sets",
+      "collections": ["new-arrivals"],
+      "description": "A relaxed short-sleeved linen shirt with a camp collar, and matching wide-leg trousers with an elasticated back waist and side pockets.",
+      "highlights": ["Shirt and trousers", "100% linen", "Wide-leg trousers with side pockets", "Machine wash cold, iron while damp"],
+      "hs_code": "6204",
+      "weight_grams": 520,
+      "price_minor": 399900,
+      "sku": "LCO",
+      "sizes": ["XS", "S", "M", "L", "XL"],
+      "colours": [
+        { "name": "Sage", "code": "SGE", "describe": "sage green" },
+        { "name": "Sand", "code": "SND", "describe": "warm sand beige" },
+        { "name": "Powder blue", "code": "PBL", "describe": "powder blue" }
+      ],
+      "sold_out": [],
+      "low": ["Sand/XS", "Sage/XL"],
+      "image": {
+        "model": "a woman in her mid twenties with a short black bob and deep-brown skin",
+        "setting": "a plain light-grey studio backdrop with a soft floor shadow",
+        "garment": "a relaxed short-sleeved linen camp-collar shirt worn untucked with matching wide-leg linen trousers, both in {colour}"
+      }
+    },
+    {
+      "slug": "art-silk-saree",
+      "title": "Art silk saree with blouse piece",
+      "category": "women-ethnic-wear",
+      "collections": ["festive-edit"],
+      "description": "A 5.5 metre saree in art silk with a woven zari border and pallu, and an unstitched 0.8 metre blouse piece in a matching colour. Art silk is a synthetic fibre with a silk-like sheen.",
+      "highlights": ["Saree 5.5 m, blouse piece 0.8 m", "Art silk (polyester), woven zari border", "Blouse piece unstitched", "Dry clean only"],
+      "hs_code": "5407",
+      "weight_grams": 600,
+      "price_minor": 599900,
+      "compare_at_minor": 749900,
+      "sku": "ASS",
+      "sizes": ["Free size"],
+      "colours": [
+        { "name": "Emerald", "code": "EMR", "describe": "emerald green with a gold zari border" },
+        { "name": "Ruby", "code": "RBY", "describe": "ruby red with a gold zari border" },
+        { "name": "Royal blue", "code": "RBL", "describe": "royal blue with a silver zari border" }
+      ],
+      "sold_out": [],
+      "low": ["Ruby/Free size"],
+      "image": {
+        "model": "a woman in her early thirties with her hair in a low bun and medium-brown skin, wearing small stud earrings",
+        "setting": "a plain warm-ivory studio backdrop with a soft floor shadow",
+        "garment": "an art silk saree draped in the Nivi style with the pallu over the left shoulder and a matching short-sleeved blouse, in {colour}"
+      }
+    },
+    {
+      "slug": "embroidered-lehenga-set",
+      "title": "Embroidered lehenga set",
+      "category": "women-ethnic-wear",
+      "collections": ["festive-edit"],
+      "description": "A flared georgette lehenga skirt with sequin and thread embroidery, a matching semi-stitched blouse and a net dupatta with a scalloped edge. The skirt has a drawstring waist and a can-can lining.",
+      "highlights": ["Lehenga, blouse and dupatta", "Georgette with sequin and thread work", "Blouse semi-stitched, fits up to 42 in", "Dry clean only"],
+      "hs_code": "6204",
+      "weight_grams": 1400,
+      "price_minor": 1299900,
+      "compare_at_minor": 1599900,
+      "sku": "ELH",
+      "sizes": ["XS", "S", "M", "L", "XL"],
+      "colours": [
+        { "name": "Rose pink", "code": "RSP", "describe": "rose pink with silver sequin work" },
+        { "name": "Wine", "code": "WNE", "describe": "deep wine with gold sequin work" },
+        { "name": "Peach", "code": "PCH", "describe": "soft peach with gold sequin work" }
+      ],
+      "sold_out": ["Wine/XS", "Peach/XL"],
+      "low": ["Rose pink/M"],
+      "image": {
+        "model": "a woman in her late twenties with long loose dark hair and warm brown skin, wearing small drop earrings",
+        "setting": "a plain dusky-rose studio backdrop with a soft floor shadow",
+        "garment": "a flared georgette lehenga skirt with sequin and thread embroidery, a matching short blouse and a net dupatta with a scalloped edge over one arm, in {colour}"
+      }
+    },
+    {
+      "slug": "wrap-midi-dress",
+      "title": "Wrap midi dress",
+      "category": "women-dresses",
+      "collections": ["new-arrivals"],
+      "description": "A true wrap dress in crepe that ties at the side, with three-quarter sleeves and a mid-calf hem. It is not lined.",
+      "highlights": ["Polyester crepe, unlined", "Ties at the side", "Mid-calf length", "Machine wash cold"],
+      "hs_code": "6204",
+      "weight_grams": 340,
+      "price_minor": 249900,
+      "sku": "WMD",
+      "sizes": ["XS", "S", "M", "L", "XL"],
+      "colours": [
+        { "name": "Black", "code": "BLK", "describe": "solid black" },
+        { "name": "Emerald", "code": "EMR", "describe": "solid emerald green" },
+        { "name": "Rust", "code": "RST", "describe": "solid rust orange" }
+      ],
+      "sold_out": ["Black/M"],
+      "low": [],
+      "image": {
+        "model": "a woman in her mid thirties with long straight black hair and light-brown skin",
+        "setting": "a plain off-white studio backdrop with a soft floor shadow",
+        "garment": "a crepe wrap midi dress with three-quarter sleeves and a side tie, in {colour}"
+      }
+    },
+    {
+      "slug": "cotton-shirt-dress",
+      "title": "Cotton poplin shirt dress",
+      "category": "women-dresses",
+      "collections": [],
+      "description": "A knee-length shirt dress in cotton poplin with a full button front, a collar, roll-up sleeves and a self-fabric belt.",
+      "highlights": ["100% cotton poplin", "Full button front", "Removable self-fabric belt", "Machine wash warm"],
+      "hs_code": "6204",
+      "weight_grams": 300,
+      "price_minor": 229900,
+      "compare_at_minor": 279900,
+      "sku": "CSD",
+      "sizes": ["XS", "S", "M", "L", "XL"],
+      "colours": [
+        { "name": "White", "code": "WHT", "describe": "crisp white" },
+        { "name": "Sky blue", "code": "SKY", "describe": "pale sky blue" },
+        { "name": "Olive", "code": "OLV", "describe": "olive green" }
+      ],
+      "sold_out": [],
+      "low": ["Olive/S"],
+      "image": {
+        "model": "a woman in her late twenties with curly shoulder-length hair and deep-brown skin",
+        "setting": "soft daylight against a plain pale-blue painted wall",
+        "garment": "a knee-length cotton poplin shirt dress with a collar, full button front, sleeves rolled to the elbow and a self-fabric belt, in {colour}"
+      }
+    },
+    {
+      "slug": "printed-kurta-palazzo-set",
+      "title": "Printed kurta and palazzo set",
+      "category": "women-ethnic-wear",
+      "collections": [],
+      "description": "A straight, knee-length kurta in block-printed cotton with three-quarter sleeves, and matching flared palazzo trousers with an elasticated waist.",
+      "highlights": ["Kurta and palazzo", "100% cotton, block-printed", "Elasticated palazzo waist", "Hand wash separately; colour may bleed"],
+      "hs_code": "6204",
+      "weight_grams": 480,
+      "price_minor": 219900,
+      "sku": "KPZ",
+      "sizes": ["XS", "S", "M", "L", "XL"],
+      "colours": [
+        { "name": "Indigo", "code": "IND", "describe": "an indigo ground with a small white block print" },
+        { "name": "Coral", "code": "CRL", "describe": "a coral ground with a small ivory block print" }
+      ],
+      "sold_out": ["Coral/XS"],
+      "low": ["Indigo/XL"],
+      "image": {
+        "model": "a woman in her early twenties with long dark hair in a side plait and medium-brown skin",
+        "setting": "a plain warm-grey studio backdrop with a soft floor shadow",
+        "garment": "a straight knee-length cotton kurta with three-quarter sleeves and matching flared palazzo trousers, block-printed with {colour}"
+      }
+    },
+    {
+      "slug": "satin-evening-gown",
+      "title": "Satin evening gown",
+      "category": "women-dresses",
+      "collections": ["festive-edit"],
+      "description": "A floor-length gown in satin with a cowl neck, thin adjustable straps and a bias-cut skirt. Fully lined, with a concealed side zip.",
+      "highlights": ["Polyester satin, fully lined", "Cowl neck, adjustable straps", "Concealed side zip", "Dry clean only"],
+      "hs_code": "6204",
+      "weight_grams": 450,
+      "price_minor": 649900,
+      "sku": "SEG",
+      "sizes": ["XS", "S", "M", "L", "XL"],
+      "colours": [
+        { "name": "Champagne", "code": "CHM", "describe": "champagne gold" },
+        { "name": "Midnight blue", "code": "MDN", "describe": "midnight blue" },
+        { "name": "Burgundy", "code": "BRG", "describe": "burgundy" }
+      ],
+      "sold_out": ["Champagne/XL"],
+      "low": ["Burgundy/S"],
+      "image": {
+        "model": "a woman in her early thirties with her hair swept into a low chignon and light-brown skin",
+        "setting": "a plain charcoal studio backdrop with a soft rim light",
+        "garment": "a floor-length satin gown with a cowl neck, thin straps and a bias-cut skirt, in {colour}"
+      }
+    },
+    {
+      "slug": "mens-cotton-kurta",
+      "title": "Men's cotton kurta",
+      "category": "men-kurtas",
+      "collections": ["festive-edit"],
+      "description": "A straight, knee-length kurta in cotton slub with a mandarin collar, a half placket with fabric buttons, side slits and two side pockets.",
+      "highlights": ["100% cotton slub", "Mandarin collar, half placket", "Two side pockets", "Machine wash cold"],
+      "hs_code": "6205",
+      "weight_grams": 320,
+      "price_minor": 179900,
+      "sku": "MKT",
+      "sizes": ["S", "M", "L", "XL", "XXL"],
+      "colours": [
+        { "name": "White", "code": "WHT", "describe": "off-white" },
+        { "name": "Navy", "code": "NVY", "describe": "navy blue" },
+        { "name": "Mustard", "code": "MST", "describe": "mustard yellow" }
+      ],
+      "sold_out": ["Navy/S"],
+      "low": ["Mustard/XXL"],
+      "image": {
+        "model": "a man in his early thirties with short black hair, a neatly trimmed beard and medium-brown skin",
+        "setting": "a plain warm-beige studio backdrop with a soft floor shadow",
+        "garment": "a straight knee-length cotton slub kurta with a mandarin collar and half placket, worn with off-white churidar trousers, the kurta in {colour}"
+      }
+    },
+    {
+      "slug": "mens-nehru-jacket",
+      "title": "Men's Nehru jacket",
+      "category": "men-jackets",
+      "collections": ["festive-edit"],
+      "description": "A sleeveless Nehru jacket in a textured cotton-blend jacquard with a mandarin collar, a five-button front and two welt pockets. Lined.",
+      "highlights": ["Cotton-blend jacquard, lined", "Mandarin collar, five buttons", "Two welt pockets", "Dry clean only"],
+      "hs_code": "6203",
+      "weight_grams": 420,
+      "price_minor": 299900,
+      "compare_at_minor": 359900,
+      "sku": "NHJ",
+      "sizes": ["S", "M", "L", "XL", "XXL"],
+      "colours": [
+        { "name": "Black", "code": "BLK", "describe": "black" },
+        { "name": "Maroon", "code": "MRN", "describe": "maroon" },
+        { "name": "Beige", "code": "BGE", "describe": "beige" }
+      ],
+      "sold_out": [],
+      "low": ["Maroon/S", "Beige/XXL"],
+      "image": {
+        "model": "a man in his late twenties with short wavy hair, clean-shaven, with warm brown skin",
+        "setting": "a plain light-grey studio backdrop with a soft floor shadow",
+        "garment": "a sleeveless jacquard Nehru jacket with a mandarin collar and five buttons, worn over a plain ivory kurta and ivory trousers, the jacket in {colour}"
+      }
+    },
+    {
+      "slug": "mens-linen-shirt",
+      "title": "Men's linen shirt",
+      "category": "men-shirts",
+      "collections": ["new-arrivals"],
+      "description": "A long-sleeved shirt in washed linen with a button-down collar, a chest pocket and a curved hem, cut to a regular fit.",
+      "highlights": ["100% linen, washed for softness", "Button-down collar", "Regular fit, curved hem", "Machine wash cold"],
+      "hs_code": "6205",
+      "weight_grams": 260,
+      "price_minor": 249900,
+      "sku": "MLS",
+      "sizes": ["S", "M", "L", "XL", "XXL"],
+      "colours": [
+        { "name": "White", "code": "WHT", "describe": "white" },
+        { "name": "Sky blue", "code": "SKY", "describe": "sky blue" },
+        { "name": "Olive", "code": "OLV", "describe": "olive green" },
+        { "name": "Sand", "code": "SND", "describe": "sand beige" }
+      ],
+      "sold_out": ["White/XXL"],
+      "low": ["Olive/S"],
+      "image": {
+        "model": "a man in his mid thirties with short black hair, light stubble and light-brown skin",
+        "setting": "soft daylight against a plain lime-washed wall",
+        "garment": "a long-sleeved washed linen shirt with a button-down collar and a chest pocket, sleeves rolled once, worn untucked over stone chinos, the shirt in {colour}"
+      }
+    }
+  ]
+}

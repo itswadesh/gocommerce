@@ -92,6 +92,20 @@ which is create-only and therefore safe on every start.
 try), a single-variant mug, a gift card with `track_inventory` off, and a draft
 product. It matches on slug and skips what already exists.
 
+**`.\scripts\seed-fashion.ps1`** — a sample fashion catalogue priced in
+rupees: twelve dresses, ethnic sets and menswear, each in two to four colours
+and every size, with a few sizes sold out or running low. The products are in
+[`scripts/fashion-images/catalogue.json`](../scripts/fashion-images/catalogue.json).
+Each colour has four photographs of a model (front, back, side, fabric close-up),
+and that colour's variants nominate them, so a storefront's gallery changes when
+a shopper picks a colour. The photographs are not in the repository:
+`scripts/fashion-images/generate.mjs` makes them with Google Gemini into the
+git-ignored `scripts/fashion-images/out/`. It needs `GEMINI_API_KEY` in the
+environment and runs `npm install` in that folder first. Without the photographs
+the products are still created, and a later run adds the photographs. Pass
+`-SetCurrency` to switch a store that sells in another currency to INR, which
+works only before its first order.
+
 **`.\scripts\smoke.ps1`** — walks a running store through a complete sale,
 checking what each step should have changed: catalog, cart limits, guest
 checkout, idempotent replay, stock movement, order lookup by access token,
