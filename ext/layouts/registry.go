@@ -134,7 +134,7 @@ var Sections = []SectionType{
 		Fields: []Field{
 			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
 			{Key: "source", Label: "Products from", Kind: KindSelect, Default: "collection",
-				Options: []Option{{"collection", "A collection"}, {"products", "Products I pick"}}},
+				Options: []Option{{"collection", "A collection"}, {"products", "Products I pick"}, {"newest", "The newest products"}}},
 			{Key: "collection", Label: "Collection", Kind: KindCollection, ShowWhen: map[string]string{"source": "collection"}},
 			{Key: "products", Label: "Products", Kind: KindProducts, MaxItems: 24, ShowWhen: map[string]string{"source": "products"}},
 			{Key: "limit", Label: "How many to show", Kind: KindNumber, Default: 8, Min: 1, Max: 24},

@@ -807,6 +807,9 @@
             <span class="label warning">Not published</span> The storefront shows its built-in {meta.noun} until you publish.
         {:else if CHROME}
             <span class="label">Starting point</span> These are the settings of the storefront's own {meta.noun}. Change them, then publish to show them on every page.
+        {:else if page === "home"}
+            <!-- D140: the home page starts from its own look, not a copy of the built-in one. -->
+            <span class="label">Starting point</span> A ready-made home page to start from. Add your pictures, make the benefits match your policies, then publish.
         {:else}
             <span class="label">Starting point</span> This is the storefront's built-in {meta.noun} as sections. Change it, then publish.
         {/if}
