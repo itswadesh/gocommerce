@@ -432,6 +432,25 @@ func TestAdminProductFilters(t *testing.T) {
 		}
 	}
 
+	// price_max=0 finds the products that still need a price: any variant at
+	// 0, which is how a product drafted from photos is created.
+	zero := int64(0)
+	if _, err := app.Products().CreateProduct(context.Background(), ProductInput{
+		Title: "Unpriced", Status: ProductDraft, SKU: "SKU-F4", PriceMinor: &zero,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for query, want := range map[string]int{"?price_max=0": 1, "?price_min=1": 3, "?price_max=1000&price_min=1000": 3} {
+		var products []*Product
+		decodeData(t, do(t, app, http.MethodGet, "/api/admin/products"+query, withAdmin), &products)
+		if len(products) != want {
+			t.Errorf("GET /api/admin/products%s returned %d products, want %d", query, len(products), want)
+		}
+	}
+	if rec := do(t, app, http.MethodGet, "/api/admin/products?price_max=-1", withAdmin); rec.Code != http.StatusBadRequest {
+		t.Errorf("a negative price_max = %d, want 400", rec.Code)
+	}
+
 	// The pagination contract is unchanged by the new filters.
 	rec := do(t, app, http.MethodGet, "/api/admin/products?vendor=Acme&limit=1&page=2", withAdmin)
 	var page []*Product
