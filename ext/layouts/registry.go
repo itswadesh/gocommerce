@@ -312,8 +312,13 @@ var Sections = []SectionType{
 				ShowWhen: map[string]string{"show_announcement": "true"}},
 			{Key: "announcement_pages", Label: "Show the strip on", Kind: KindSelect, Default: "all",
 				Options: []Option{{"all", "Every page"}, {"home", "The home page only"}}, ShowWhen: map[string]string{"show_announcement": "true"}},
+			// The default false is what an older header, saved before this
+			// switch, reads as: the menu shown. The picker's ShowWhen needs it.
+			{Key: "hide_menu", Label: "Hide the header menu", Kind: KindBool, Default: false,
+				Help: "No menu across the header, and no menu button on phones. The logo, search, account and basket stay."},
 			{Key: "menu", Label: "Header menu", Kind: KindMenu, Default: "header", Requires: "navigation",
-				Help: "Its links run across the header, and fill the menu on phones. Make and edit menus in Content → Menus."},
+				Help:     "Its links run across the header, and fill the menu on phones. Make and edit menus in Content → Menus.",
+				ShowWhen: map[string]string{"hide_menu": "false"}},
 		},
 		Check: func(s map[string]any) error {
 			if on, _ := s["show_announcement"].(bool); on && s["announcement_text"] == nil {

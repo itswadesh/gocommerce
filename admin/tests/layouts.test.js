@@ -277,6 +277,16 @@ test("a show_when on a switch matches its on and off", () => {
     assert.deepEqual(visibleFields(fields, { autoplay: true }).map((f) => f.key), ["autoplay", "interval"]);
 });
 
+test("a show_when on a switch's off counts a never-set switch as off", () => {
+    // The header's menu picker: a header saved before hide_menu existed still offers it.
+    const fields = [
+        { key: "hide_menu", kind: "bool", default: false },
+        { key: "menu", kind: "menu", show_when: { hide_menu: "false" } },
+    ];
+    assert.deepEqual(visibleFields(fields, {}).map((f) => f.key), ["hide_menu", "menu"]);
+    assert.deepEqual(visibleFields(fields, { hide_menu: true }).map((f) => f.key), ["hide_menu"]);
+});
+
 test("a row summarises a list by its items' headings or questions", () => {
     const reg = [
         { type: "slideshow", label: "Slideshow", fields: [] },

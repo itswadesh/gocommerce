@@ -111,6 +111,40 @@ func TestHeaderAndFooterSettingsAreChecked(t *testing.T) {
 	}
 }
 
+// A shop can take the menu out of the header. A header saved before the
+// switch existed has no hide_menu, and reads as the menu shown.
+func TestTheHeaderMenuCanBeHidden(t *testing.T) {
+	app := layoutsApp(t)
+	header := func(s map[string]any) map[string]any { return sections(chromeSection("h", "header", s)) }
+
+	refused(t, app, "header", header(map[string]any{"hide_menu": "yes"}), "on or off")
+	st := adminState(t, app, http.MethodPut, "/api/admin/x/layouts/header", map[string]any{"version": 0, "document": header(map[string]any{
+		"hide_menu": true,
+	})}, http.StatusOK)
+	if st.Document.Sections[0].Settings["hide_menu"] != true {
+		t.Fatalf("header settings = %v, want the menu hidden", st.Document.Sections[0].Settings)
+	}
+	st = adminState(t, app, http.MethodPut, "/api/admin/x/layouts/header", map[string]any{"version": 1, "document": header(map[string]any{})}, http.StatusOK)
+	if st.Document.Sections[0].Settings["hide_menu"] != false {
+		t.Fatalf("header settings with no hide_menu = %v, want the menu shown", st.Document.Sections[0].Settings)
+	}
+
+	// The menu picker asks only while the menu shows.
+	f := fieldByKey(sectionType("header").Fields, "menu")
+	if f.ShowWhen["hide_menu"] != "false" || fieldByKey(sectionType("header").Fields, "hide_menu").Default != false {
+		t.Fatalf("menu field = %+v, want it shown while hide_menu is off, which it is by default", f)
+	}
+}
+
+func fieldByKey(fields []Field, key string) Field {
+	for _, f := range fields {
+		if f.Key == key {
+			return f
+		}
+	}
+	return Field{}
+}
+
 // A setting that works through a plugin — the footer's newsletter box, the
 // menus — is offered only while that plugin is on, and the storefront is not
 // sent it otherwise; a draft that holds one still saves.
