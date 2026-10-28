@@ -1,10 +1,14 @@
 package layouts
 
 import (
+	"bytes"
 	"context"
+	"embed"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
 )
@@ -235,7 +239,7 @@ func (m *Module) handleTheme(w http.ResponseWriter, r *http.Request) {
 		out.Preview = true
 	} else {
 		var rev *Revision
-		if rev, doc, err = m.published(ctx, "home"); err != nil {
+		if rev, doc, err = m.shown(ctx, "home"); err != nil {
 			gocommerce.RespondError(w, r, gocommerce.NotFoundf("no theme has been published"))
 			return
 		}
@@ -277,7 +281,7 @@ func (m *Module) handlePublic(w http.ResponseWriter, r *http.Request) {
 		out.Preview = true
 	} else {
 		var rev *Revision
-		if rev, doc, err = m.published(ctx, page); err != nil {
+		if rev, doc, err = m.shown(ctx, page); err != nil {
 			gocommerce.RespondError(w, r, gocommerce.NotFoundf("the %s has not been published", pageInfo(page).Label))
 			return
 		}
@@ -533,8 +537,12 @@ func int64Array(ids []int64) string {
 // benefits strip, with theme settings for the colours and the rounding.
 // Every word is true of any shop and every link goes to a page every
 // storefront has; the benefits are promises the shop must make its own.
-// It has no pictures yet: the default pictures are to be made with Google
-// Gemini, and until they exist a section without one draws its colour block.
+// Its pictures are the engine's own (starter/: Unsplash photographs for the
+// hero and the lookbook, Google Gemini pictures for the tiles; credits in
+// starter/README.md), served at a path on the engine, which every storefront
+// and the editor's preview already resolve against the engine as they do the
+// Files library's. Until a shop publishes its home page, this is what its
+// storefront shows (shown).
 func Starter(page string) Document {
 	switch page {
 	case "header":
@@ -571,18 +579,22 @@ func Starter(page string) Document {
 		{ID: "hero", Type: "hero", Enabled: true, Settings: map[string]any{
 			"eyebrow": "New in", "heading": "Find your next favourite thing",
 			"body":        "Browse the range and pick what you love.",
-			"button_text": "Shop now", "button_link": "/products", "align": "left"}},
+			"button_text": "Shop now", "button_link": "/products", "align": "left",
+			"image": starterPicturePrefix + "hero.webp", "mobile_image": starterPicturePrefix + "hero-phone.webp",
+			"image_alt": "A smiling woman in a turquoise kurta, her hand painted with henna, holding up a sheer dupatta"}},
 		{ID: "tiles", Type: "multi-column", Enabled: true, Settings: map[string]any{
 			"heading": "Start shopping", "items": []any{
-				map[string]any{"heading": "Shop all", "link_text": "See everything", "link": "/products"},
-				map[string]any{"heading": "Collections", "link_text": "See collections", "link": "/collections"},
-				map[string]any{"heading": "Categories", "link_text": "See categories", "link": "/categories"},
-				map[string]any{"heading": "Track an order", "link_text": "Find your order", "link": "/order-tracking"},
+				map[string]any{"image": starterPicturePrefix + "tile-shop-all.webp", "heading": "Shop all", "link_text": "See everything", "link": "/products"},
+				map[string]any{"image": starterPicturePrefix + "tile-collections.webp", "heading": "Collections", "link_text": "See collections", "link": "/collections"},
+				map[string]any{"image": starterPicturePrefix + "tile-categories.webp", "heading": "Categories", "link_text": "See categories", "link": "/categories"},
+				map[string]any{"image": starterPicturePrefix + "tile-track.webp", "heading": "Track an order", "link_text": "Find your order", "link": "/order-tracking"},
 			}}},
 		{ID: "featured", Type: "product-grid", Enabled: true, Settings: map[string]any{
 			"heading": "New in", "source": "newest", "limit": 8, "columns": 4, "view_all_link": "/products"}},
 		{ID: "lookbook", Type: "image-with-text", Enabled: true, Settings: map[string]any{
 			"eyebrow": "Made for every day", "heading": "Good things, picked for you", "image_side": "right",
+			"image":       starterPicturePrefix + "lookbook.webp",
+			"image_alt":   "A smiling woman in an embroidered red kurta looking into a white handbag",
 			"body":        "Have a look around the shop and find what suits you.",
 			"button_text": "Explore the shop", "button_link": "/products"}},
 		{ID: "assurances", Type: "benefits", Enabled: true, Settings: map[string]any{"items": []any{
@@ -592,4 +604,30 @@ func Starter(page string) Document {
 			map[string]any{"title": "Here to help", "body": "Support when you need it", "icon": "headset"},
 		}}},
 	}}
+}
+
+//go:embed starter/*.webp
+var starterPictures embed.FS
+
+// starterPicturePrefix is where the engine serves the starter's pictures.
+// They are cached as immutable and named in pages shops have saved, so a
+// file here never changes or goes: a changed picture is a new file name, and
+// the old file stays embedded for the pages that still name it.
+const starterPicturePrefix = "/x/layouts/starter/1/"
+
+// handleStarterPicture serves one of the starter's pictures from the binary.
+// Public, like a store's own media: a storefront shows it to anybody, and it
+// stays up while the editor is off, since a page published with it may still
+// be cached somewhere.
+func (m *Module) handleStarterPicture(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("file")
+	body, err := starterPictures.ReadFile("starter/" + name)
+	if err != nil || path.Ext(name) != ".webp" {
+		gocommerce.RespondError(w, r, gocommerce.NotFoundf("no such picture"))
+		return
+	}
+	w.Header().Set("Content-Type", "image/webp")
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(body))
 }

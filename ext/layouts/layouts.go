@@ -138,6 +138,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	})
 
 	app.HandleFunc("GET /x/layouts/theme", m.handleTheme)
+	app.HandleFunc("GET "+starterPicturePrefix+"{file}", m.handleStarterPicture)
 	app.HandleFunc("GET /x/layouts/{page}", m.handlePublic)
 
 	app.HandleAdminFunc("GET /api/admin/x/layouts/sections", m.handleRegistry, rightLayoutsRead)
@@ -581,4 +582,18 @@ func (m *Module) draftFor(ctx context.Context, page, token string) (*Document, e
 // published is the document the storefront shows, or not found.
 func (m *Module) published(ctx context.Context, page string) (*Revision, *Document, error) {
 	return m.revision(ctx, m.db, `id = (SELECT published_revision FROM layout_pages WHERE page = $1)`, page)
+}
+
+// shown is what shoppers are shown of a page: the published version, or for
+// a home page never published, the starting one at revision 0 (D140; the
+// owner, 2026-10-28: "show the bold starter to unpublished stores"). The
+// other pages' starters are the storefront's built-in ones (D131), so they
+// stay unanswered and the storefront draws its own.
+func (m *Module) shown(ctx context.Context, page string) (*Revision, *Document, error) {
+	rev, doc, err := m.published(ctx, page)
+	if page == "home" && errors.Is(err, gocommerce.ErrNotFound) {
+		start := Starter(page)
+		return &Revision{}, &start, nil
+	}
+	return rev, doc, err
 }
