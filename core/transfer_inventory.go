@@ -145,6 +145,11 @@ func optionValues(options string) []string {
 // closed location takes nothing in. A row that names a SKU or location the
 // store does not have is a row error, not a failed file.
 func (t *Transfer) ImportInventory(ctx context.Context, in io.Reader, opts ImportOptions) (*ImportResult, error) {
+	// Update only, by nature: a count is set on a SKU the store has, and a
+	// SKU it lacks is already a row error.
+	if _, err := opts.modeIn(ImportUpdate); err != nil {
+		return nil, err
+	}
 	ctx = withStockSource(ctx, sourceImport)
 	start := time.Now()
 	r := csv.NewReader(in)

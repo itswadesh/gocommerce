@@ -898,36 +898,41 @@ func (s *Categories) Reorder(ctx context.Context, parentID *int64, ids []int64) 
 }
 
 func (s *Categories) Delete(ctx context.Context, id int64) error {
-	return InTx(ctx, s.app.db, func(tx *sql.Tx) error {
-		var children, products int
-		if err := tx.QueryRowContext(ctx, `
-			SELECT (SELECT count(*) FROM categories WHERE parent_id = $1),
-			       (SELECT count(*) FROM products   WHERE category_id = $1)`,
-			id).Scan(&children, &products); err != nil {
-			return err
-		}
-		switch {
-		case children > 0:
-			return Conflictf("that category still has %s; move or delete them first",
-				plural(children, "subcategory", "subcategories"))
-		case products > 0:
-			return Conflictf("that category is still used by %s; recategorise them first",
-				plural(products, "product", "products"))
-		}
-		var slug, title string
-		err := tx.QueryRowContext(ctx,
-			`DELETE FROM categories WHERE id = $1 RETURNING slug, title`, id).Scan(&slug, &title)
-		if errors.Is(err, sql.ErrNoRows) {
-			return NotFoundf("category %d does not exist", id)
-		}
-		if err != nil {
-			return err
-		}
-		return writeAudit(ctx, tx, auditRecord{
-			Action: AuditCategoryDelete, Entity: AuditEntityCategory,
-			ID: id, Label: title, Summary: "Deleted the category " + title,
-			Before: map[string]any{"slug": slug, "title": title},
-		})
+	return InTx(ctx, s.app.db, func(tx *sql.Tx) error { return deleteCategory(ctx, tx, id) })
+}
+
+// deleteCategory is Delete inside a transaction the caller owns. Its refusals
+// come before any write, so a refused row leaves the transaction usable: the
+// category importer deletes a whole file in one.
+func deleteCategory(ctx context.Context, tx *sql.Tx, id int64) error {
+	var children, products int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT (SELECT count(*) FROM categories WHERE parent_id = $1),
+		       (SELECT count(*) FROM products   WHERE category_id = $1)`,
+		id).Scan(&children, &products); err != nil {
+		return err
+	}
+	switch {
+	case children > 0:
+		return Conflictf("that category still has %s; move or delete them first",
+			plural(children, "subcategory", "subcategories"))
+	case products > 0:
+		return Conflictf("that category is still used by %s; recategorise them first",
+			plural(products, "product", "products"))
+	}
+	var slug, title string
+	err := tx.QueryRowContext(ctx,
+		`DELETE FROM categories WHERE id = $1 RETURNING slug, title`, id).Scan(&slug, &title)
+	if errors.Is(err, sql.ErrNoRows) {
+		return NotFoundf("category %d does not exist", id)
+	}
+	if err != nil {
+		return translateCategoryErr(err)
+	}
+	return writeAudit(ctx, tx, auditRecord{
+		Action: AuditCategoryDelete, Entity: AuditEntityCategory,
+		ID: id, Label: title, Summary: "Deleted the category " + title,
+		Before: map[string]any{"slug": slug, "title": title},
 	})
 }
 
@@ -1062,6 +1067,8 @@ func translateCategoryErr(err error) error {
 		return NotFoundf("that parent category does not exist")
 	case strings.Contains(msg, "categories_not_own_parent"):
 		return Validationf("a category cannot be its own parent")
+	case strings.Contains(msg, "tax_rates_category_id_fkey"):
+		return Conflictf("that category is still named by a tax rate; change or delete the rate first")
 	}
 	return err
 }

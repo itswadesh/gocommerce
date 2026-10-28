@@ -3,6 +3,7 @@ package gocommerce
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -38,11 +39,9 @@ func ParseFormat(s string) (Format, error) {
 type ImportOptions struct {
 	// DryRun proves the file would apply and writes nothing.
 	DryRun bool
-	// Overwrite is whether a product the store already has (by slug) is
-	// updated from the file. Nil means yes — the file is the newer truth,
-	// which is what re-importing an edited export needs. False skips it,
-	// which is what loading a second catalogue beside the first needs.
-	Overwrite *bool
+	// Mode is what a row whose key the store already has, or lacks, does.
+	// Empty is the kind's own default; see modeIn.
+	Mode ImportMode
 	// Format names the dialect; empty reads it off the header.
 	Format Format
 	// FireEvents is the orders importer's: whether imported orders announce
@@ -55,7 +54,46 @@ type ImportOptions struct {
 	sample bool
 }
 
-func (o ImportOptions) overwrite() bool { return o.Overwrite == nil || *o.Overwrite }
+// ImportMode is how an import treats the records its file names by key: a
+// product's slug (its Handle, in Shopify's file), a category's path.
+type ImportMode string
+
+const (
+	// ImportUpsert creates what is new and updates what exists: the file is
+	// the newer truth, which is what re-importing an edited export needs.
+	ImportUpsert ImportMode = "upsert"
+	// ImportInsert creates what is new and leaves what exists exactly as it
+	// is, which is how a second catalogue is loaded beside the first.
+	ImportInsert ImportMode = "insert"
+	// ImportUpdate changes what exists and creates nothing; a row naming a
+	// key the store lacks is reported, because it is usually a typo.
+	ImportUpdate ImportMode = "update"
+	// ImportDelete deletes every record the file names, through the same
+	// service call the panel's delete button makes.
+	ImportDelete ImportMode = "delete"
+)
+
+// modeIn is the run's mode, from the modes the importer takes, the first of
+// them being its default. A mode it does not take is refused rather than
+// read as some other one: a delete file sent to the orders importer must
+// not insert the orders it names.
+func (o ImportOptions) modeIn(modes ...ImportMode) (ImportMode, error) {
+	if o.Mode == "" {
+		return modes[0], nil
+	}
+	if slices.Contains(modes, o.Mode) {
+		return o.Mode, nil
+	}
+	names := make([]string, len(modes))
+	for i, m := range modes {
+		names[i] = string(m)
+	}
+	return "", Validationf("mode %q is not one this import takes; it takes %s", o.Mode, strings.Join(names, ", "))
+}
+
+// allImportModes is what an importer that keys every row takes, upsert first
+// because it is what a file with no mode has always done.
+var allImportModes = []ImportMode{ImportUpsert, ImportInsert, ImportUpdate, ImportDelete}
 
 // ExportOptions is what an export is told besides the filter.
 type ExportOptions struct {

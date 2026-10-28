@@ -183,8 +183,9 @@ func (a *App) handleImportProducts(w http.ResponseWriter, r *http.Request) {
 }
 
 // importOptionsFrom reads the switches every import shares. `format` is
-// optional — the header says which dialect a file is in — and `overwrite`
-// is only ever sent to turn the default off.
+// optional — the header says which dialect a file is in. `overwrite` is the
+// switch `mode` replaced, and still read when `mode` is absent: off meant
+// insert only, and on was the default it always was.
 func importOptionsFrom(r *http.Request) (ImportOptions, error) {
 	q := r.URL.Query()
 	format, err := ParseFormat(q.Get("format"))
@@ -195,9 +196,9 @@ func importOptionsFrom(r *http.Request) (ImportOptions, error) {
 	if q.Get("format") != "" {
 		opts.Format = format
 	}
-	if q.Get("overwrite") != "" {
-		overwrite := boolParam(r, "overwrite")
-		opts.Overwrite = &overwrite
+	opts.Mode = ImportMode(q.Get("mode"))
+	if opts.Mode == "" && q.Get("overwrite") != "" && !boolParam(r, "overwrite") {
+		opts.Mode = ImportInsert
 	}
 	return opts, nil
 }

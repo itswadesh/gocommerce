@@ -9,12 +9,16 @@
      */
     import { can, request } from "$lib/api.js";
     import {
+        csvFiles,
         detectDialect,
         importBlocker,
         importKinds as kindsFor,
+        importModes,
+        importSources,
         importUrl,
         resultFor,
-        unsavedCsv,
+        runTotals,
+        unsavedImport,
     } from "$lib/importer.js";
     import { hasModule } from "$lib/modules.svelte.js";
     import { rise } from "$lib/motion.js";
@@ -30,17 +34,23 @@
        neither. Both wait while either runs, and the pressed one spins. */
     let running = $state("");
     let fireEvents = $state(false);
-    // Overwrite is Shopify's own switch, with the opposite default: a
-    // re-import of an edited export is what most files here are, and it
-    // has to update what it finds.
-    let overwrite = $state(true);
+    // Upsert by default: a re-import of an edited export is what most files
+    // here are, and it has to update what it finds.
+    let mode = $state("upsert");
     let kind = $state("products");
     let csv = $state("");
-    /* The last run and the tab it ran under; `result` is what of it belongs
-       on screen now. */
+    /* Files dropped or picked, read on arrival: { id, name, size, text }. */
+    let files = $state([]);
+    let nextFileId = 0;
+    let over = $state(false);
+    /* The last run, the tab it ran under, and a result per file; `results`
+       is what of it belongs on screen now. */
     let run = $state(null);
-    const result = $derived(resultFor(run, kind));
+    const results = $derived(resultFor(run, kind));
     let fileInput = $state(null);
+    /* The delete a dry run has counted and the operator has yet to confirm. */
+    let pendingDelete = $state(null);
+    let deleteOpen = $state(false);
 
     // Taxonomy import, the other half of this screen.
     let importingTaxonomy = $state(false);
@@ -55,7 +65,12 @@
 
     /* What stops a run, printed beside the buttons so a greyed-out one is
        never left unexplained. */
-    const blocker = $derived(importBlocker(csv));
+    const sources = $derived(importSources(files, csv));
+    const blocker = $derived(importBlocker(sources));
+
+    /* The modes this kind takes; a kind with one behaviour offers none. */
+    const modes = $derived(importModes(kind));
+    const activeMode = $derived(modes.some((m) => m.value === mode) ? mode : "upsert");
 
     /* What this store can actually be given; a module that is not installed
        contributes no tab. */
@@ -71,18 +86,100 @@
         fileInput?.click();
     }
 
-    async function onFile(event) {
-        const file = event.target.files?.[0];
-        if (!file) return;
-        csv = await file.text();
+    /* Read now rather than at run time, so a file that cannot be read is
+       said while the operator still has the folder open. */
+    async function addFiles(list) {
+        const { ok, refused } = csvFiles(list);
+        if (refused.length) toast.warning(`Not a CSV file, left out: ${refused.join(", ")}`);
+        if (!ok.length) return;
+        const read = await Promise.all(ok.map(async (f) => ({ id: ++nextFileId, name: f.name, size: f.size, text: await f.text() })));
+        files = [...files, ...read];
         run = null;
-        toast.info(`Loaded ${file.name}`);
+    }
+
+    async function onFile(event) {
+        await addFiles(event.target.files);
         event.target.value = "";
+    }
+
+    function onDragOver(event) {
+        event.preventDefault();
+        over = true;
+    }
+
+    function onDrop(event) {
+        event.preventDefault();
+        over = false;
+        addFiles(event.dataTransfer?.files);
+    }
+
+    function removeFile(index) {
+        files = files.filter((_, i) => i !== index);
+        run = null;
     }
 
     function clearCsv() {
         csv = "";
+        files = [];
         run = null;
+    }
+
+    /*
+     * Every source in turn, under the kind and mode as they were when the
+     * run began. A file the engine refuses outright is that file's result,
+     * not the run's end: the next one still goes.
+     */
+    async function runAll(dry) {
+        const ranKind = kind;
+        const ranMode = activeMode;
+        const ran = sources;
+        running = dry ? "dry" : "import";
+        run = null;
+        const out = [];
+        const applied = new Set();
+        try {
+            for (const src of ran) {
+                try {
+                    const answer = await request(
+                        "POST",
+                        importUrl(ranKind, { dryRun: dry, fireEvents, mode: ranMode }),
+                        { body: src.text, headers: { "Content-Type": "text/csv" } },
+                    );
+                    out.push({ name: src.name, result: answer });
+                    if (src.id) applied.add(src.id);
+                } catch (err) {
+                    out.push({ name: src.name, error: err?.message ?? String(err) });
+                }
+                run = { kind: ranKind, mode: ranMode, dry, results: [...out] };
+            }
+        } finally {
+            running = "";
+        }
+        // A file that went in leaves the list, and its result stays on screen.
+        // One the engine refused stays, to be fixed and run again; one
+        // dropped while this run was going was never part of it, so it stays
+        // too.
+        if (!dry) files = files.filter((f) => !applied.has(f.id));
+        return out;
+    }
+
+    function report(out, dry) {
+        const t = runTotals(out);
+        const across = t.files > 1 ? ` across ${t.files} files` : "";
+        const applied = dry
+            ? "Dry run done, nothing was written"
+            : run?.mode === "delete"
+              ? `Deleted ${t.deleted}`
+              : `Imported: ${t.created} created, ${t.updated} updated`;
+        if (t.failed) {
+            toast.error(`${t.failed} of ${t.files} file(s) could not be imported`);
+        } else if (t.attention) {
+            toast.warning(`${applied}; ${t.attention} row(s) need attention${across}`);
+        } else if (dry) {
+            toast.success("Dry run looks good — nothing was written");
+        } else {
+            toast.success(`${applied}${across}`);
+        }
     }
 
     /*
@@ -91,32 +188,38 @@
      * flag, and neither button's name depends on a switch. When the name did
      * depend on one ("Dry run", on by default), the screen never showed a
      * button called Import at all.
+     *
+     * A delete is never sent straight: it is rehearsed first, so the
+     * confirmation can name the number the engine itself counted, and only
+     * the confirmation sends it.
      */
     async function runImport(dry) {
         if (blocker || running) return;
-        running = dry ? "dry" : "import";
-        run = null;
-        // The tab as it was when the file went, not when the answer came.
-        const ranKind = kind;
-        try {
-            const answer = await request("POST", importUrl(ranKind, { dryRun: dry, fireEvents, overwrite }), {
-                body: csv,
-                headers: { "Content-Type": "text/csv" },
-            });
-            run = { kind: ranKind, result: answer };
-
-            if (answer.errors?.length) {
-                toast.warning(`${answer.errors.length} row(s) had problems`);
-            } else if (dry) {
-                toast.success("Dry run looks good — nothing was written");
-            } else {
-                toast.success(`Imported: ${answer.created} created, ${answer.updated} updated`);
+        if (!dry && activeMode === "delete") {
+            const out = await runAll(true);
+            const t = runTotals(out);
+            if (!t.deleted) {
+                toast.warning(
+                    `Nothing in ${t.files > 1 ? "these files" : "the file"} matches a record the store has, so there is nothing to delete`,
+                );
+                return;
             }
-        } catch (err) {
-            toast.error(err);
-        } finally {
-            running = "";
+            pendingDelete = { count: t.deleted, files: t.files, kind };
+            deleteOpen = true;
+            return;
         }
+        report(await runAll(dry), dry);
+    }
+
+    async function confirmDelete() {
+        report(await runAll(false), false);
+        pendingDelete = null;
+    }
+
+    /* "3 products", "1 category": what the confirmation is about to delete. */
+    function counted(n, k) {
+        const [one, many] = k === "categories" ? ["category", "categories"] : ["product", "products"];
+        return `${n} ${n === 1 ? one : many}`;
     }
 
     async function importTaxonomy() {
@@ -165,8 +268,8 @@
      reported, which is the point at which leaving is the ordinary thing to
      do. -->
 <DirtyGuard
-    dirty={unsavedCsv(csv, result)}
-    message="The CSV in the import box has not been imported. Leave and lose it?"
+    dirty={unsavedImport(sources, run)}
+    message="The CSV on this screen has not been imported. Leave and lose it?"
 />
 
 {#if !mayImport}
@@ -335,36 +438,57 @@
                 {/if}
             </div>
 
+            <!-- What a row does with its key. Offered only for a kind that
+                 takes more than one answer; the others say theirs in the
+                 sentence above. Radios rather than a select so all four
+                 are read at once, each with what it does. -->
+            {#if modes.length}
+                <fieldset class="import-modes m-t-base">
+                    <legend class="import-modes-legend">What each row does</legend>
+                    <div class="import-modes-options">
+                        {#each modes as m (m.value)}
+                            <label
+                                class="import-mode"
+                                class:is-on={activeMode === m.value}
+                                class:danger={m.value === "delete"}
+                            >
+                                <input type="radio" name="import-mode" value={m.value} bind:group={mode} />
+                                <span class="import-mode-text">
+                                    <span class="import-mode-title">{m.label}</span>
+                                    <span class="txt-hint txt-sm">{m.help}</span>
+                                </span>
+                            </label>
+                        {/each}
+                    </div>
+                </fieldset>
+            {/if}
+
             <!-- The switches that change what an import does. Dry run is not
                  one of them any more: it is a button beside Import. -->
-            {#if kind === "products" || kind === "orders"}
+            {#if kind === "orders"}
                 <div class="flex gap-20 flex-wrap m-t-base">
-                    {#if kind === "products"}
-                        <div class="field">
-                            <input type="checkbox" id="overwrite" class="switch" bind:checked={overwrite} />
-                            <label for="overwrite">Update products that already exist</label>
-                        </div>
-                    {/if}
-                    {#if kind === "orders"}
-                        <div class="field">
-                            <input
-                                type="checkbox"
-                                id="fire-events"
-                                class="switch"
-                                bind:checked={fireEvents}
-                            />
-                            <label for="fire-events">Fire events</label>
-                        </div>
-                    {/if}
+                    <div class="field">
+                        <input
+                            type="checkbox"
+                            id="fire-events"
+                            class="switch"
+                            bind:checked={fireEvents}
+                        />
+                        <label for="fire-events">Fire events</label>
+                    </div>
                 </div>
             {/if}
 
-            {#if kind === "products" && !overwrite}
-                <div class="alert info m-t-base">
+            {#if activeMode === "delete"}
+                <div class="alert danger m-t-base" in:rise>
                     <p>
-                        A product the store already has — same slug, or Handle — is left
-                        exactly as it is, and only the new ones are created. That is how a
-                        second catalogue is loaded beside the first without touching it.
+                        Import deletes what the file names, and that cannot be undone. A dry
+                        run goes first, and nothing is deleted until you confirm the number it
+                        found.
+                        {#if kind === "categories"}
+                            A category that still has subcategories or products is refused, not
+                            deleted.
+                        {/if}
                     </p>
                 </div>
             {/if}
@@ -379,13 +503,67 @@
                 </div>
             {/if}
 
+            <!-- Several files at once, imported one after another under
+                 the tab and mode above, each with a result of its own. The
+                 zone is the drop target; the button inside it is the
+                 keyboard's way in. -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+                class="media-dropzone import-drop m-t-base"
+                data-over={over}
+                ondragover={onDragOver}
+                ondragleave={() => (over = false)}
+                ondrop={onDrop}
+            >
+                <i class="ri-file-upload-line import-drop-icon" aria-hidden="true"></i>
+                <div class="txt-sm">Drop CSV files here. Each is imported in turn, with a result of its own.</div>
+                <button type="button" class="btn secondary sm" onclick={pickFile}>
+                    <i class="ri-folder-open-line" aria-hidden="true"></i>
+                    <span class="txt">Choose files…</span>
+                </button>
+            </div>
+
+            <input
+                type="file"
+                accept=".csv,text/csv"
+                multiple
+                bind:this={fileInput}
+                onchange={onFile}
+                aria-label="CSV files to import"
+                hidden
+            />
+
+            {#if files.length}
+                <ul class="import-files m-t-sm" aria-label="Files to import">
+                    {#each files as f, i (f.id)}
+                        <li class="import-file" transition:rise>
+                            <i class="ri-file-text-line" aria-hidden="true"></i>
+                            <span class="import-file-name">{f.name}</span>
+                            <span class="txt-hint txt-sm">{(f.size / 1024).toFixed(1)} KB</span>
+                            {#if detectDialect(kind, f.text) === "shopify"}
+                                <span class="label sm">Shopify</span>
+                            {/if}
+                            <button
+                                type="button"
+                                class="btn transparent sm circle secondary"
+                                aria-label="Remove {f.name}"
+                                disabled={!!running}
+                                onclick={() => removeFile(i)}
+                            >
+                                <i class="ri-close-line" aria-hidden="true"></i>
+                            </button>
+                        </li>
+                    {/each}
+                </ul>
+            {/if}
+
             <div class="field m-t-base">
-                <label for="csv">CSV</label>
+                <label for="csv">Or paste CSV</label>
                 <textarea
                     id="csv"
                     class="txt-code"
-                    rows="8"
-                    placeholder="Paste CSV here, or choose a file"
+                    rows="6"
+                    placeholder="Paste CSV here"
                     bind:value={csv}
                 ></textarea>
                 <!-- Only the three kinds that HAVE two dialects get the line
@@ -407,14 +585,6 @@
                 {/if}
             </div>
 
-            <input
-                type="file"
-                accept=".csv,text/csv"
-                bind:this={fileInput}
-                onchange={onFile}
-                hidden
-            />
-
             <!-- Choose, then run: the file on the left, the two ways to run it
                  on the right. Dry run and Import are both always here, under
                  their own names. Until there is something to run they are
@@ -422,11 +592,12 @@
                  rather than disabled, so a keyboard still reaches them and a
                  screen reader still reads the reason. -->
             <div class="import-run flex gap-10 flex-wrap m-t-base">
-                <button type="button" class="btn secondary" onclick={pickFile}>
-                    <i class="ri-folder-open-line" aria-hidden="true"></i>
-                    <span class="txt">Choose a file…</span>
-                </button>
-                {#if csv}
+                {#if sources.length > 1}
+                    <span class="import-run-count txt-hint txt-sm">
+                        {sources.length} CSVs, one after another
+                    </span>
+                {/if}
+                {#if csv || files.length}
                     <button
                         type="button"
                         class="btn transparent secondary"
@@ -461,7 +632,10 @@
                         aria-describedby={blocker ? "import-blocker" : undefined}
                         onclick={() => runImport(false)}
                     >
-                        <i class="ri-upload-2-line" aria-hidden="true"></i>
+                        <i
+                            class={activeMode === "delete" ? "ri-delete-bin-line" : "ri-upload-2-line"}
+                            aria-hidden="true"
+                        ></i>
                         <span class="txt">Import</span>
                     </button>
                 </div>
@@ -475,78 +649,97 @@
                 <em>would</em> do. Worth doing first, always.
             </div>
 
-            {#if result}
+            {#each results ?? [] as r, i (r.name + i)}
+                {@const result = r.result}
                 <div class="import-result" in:rise>
                     <h6 class="section-title">
                         <i
-                            class={result.errors?.length
-                                ? "ri-error-warning-line"
-                                : "ri-checkbox-circle-line"}
+                            class={!result
+                                ? "ri-close-circle-line txt-danger"
+                                : result.errors?.length
+                                  ? "ri-error-warning-line"
+                                  : "ri-checkbox-circle-line"}
                             aria-hidden="true"
                         ></i>
-                        {result.dry_run ? "Dry run result" : "Import result"}
-                        <span class="label">{result.duration}</span>
+                        <span class="import-file-name">{r.name}</span>
+                        <span class="label">{run.dry ? "Dry run" : "Imported"}</span>
+                        {#if result?.duration}<span class="label">{result.duration}</span>{/if}
                     </h6>
 
-                    <div class="grid">
-                        <div class="col-4">
-                            <div class="stat-card">
-                                <span class="stat-label">Created</span>
-                                <span class="stat-value txt-success">{result.created}</span>
+                    {#if !result}
+                        <div class="alert danger">
+                            <p>Not imported: {r.error}</p>
+                        </div>
+                    {:else}
+                        <div class="grid">
+                            {#if run.mode === "delete"}
+                                <div class="col-6">
+                                    <div class="stat-card">
+                                        <span class="stat-label">{run.dry ? "Would delete" : "Deleted"}</span>
+                                        <span class="stat-value txt-danger">{result.deleted ?? 0}</span>
+                                    </div>
+                                </div>
+                            {:else}
+                                <div class="col-4">
+                                    <div class="stat-card">
+                                        <span class="stat-label">Created</span>
+                                        <span class="stat-value txt-success">{result.created}</span>
+                                    </div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="stat-card">
+                                        <span class="stat-label">Updated</span>
+                                        <span class="stat-value">{result.updated}</span>
+                                    </div>
+                                </div>
+                            {/if}
+                            <div class={run.mode === "delete" ? "col-6" : "col-4"}>
+                                <div class="stat-card">
+                                    <span class="stat-label">Skipped</span>
+                                    <span class="stat-value txt-hint">{result.skipped}</span>
+                                </div>
                             </div>
                         </div>
-                        <div class="col-4">
-                            <div class="stat-card">
-                                <span class="stat-label">Updated</span>
-                                <span class="stat-value">{result.updated}</span>
-                            </div>
-                        </div>
-                        <div class="col-4">
-                            <div class="stat-card">
-                                <span class="stat-label">Skipped</span>
-                                <span class="stat-value txt-hint">{result.skipped}</span>
-                            </div>
-                        </div>
-                    </div>
 
-                    {#if result.errors?.length}
-                        <h6 class="section-title">Rows that need attention</h6>
+                        {#if result.errors?.length}
+                            <h6 class="section-title">Rows that need attention</h6>
 
-                        <table class="table responsive-table">
-                            <thead class="sticky">
-                                <tr>
-                                    <th class="col-field-type-number min-width">Line</th>
-                                    <th>Problem</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {#each result.errors as row, i (i)}
+                            <table class="table responsive-table">
+                                <thead class="sticky">
                                     <tr>
-                                        <td
-                                            class="col-field-type-number min-width txt-code"
-                                            data-name="Line"
-                                        >
-                                            {row.line}
-                                        </td>
-                                        <td class="txt-danger" data-name="Problem">{row.message}</td>
+                                        <th class="col-field-type-number min-width">Line</th>
+                                        <th>Problem</th>
                                     </tr>
-                                {/each}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    {#each result.errors as row, j (j)}
+                                        <tr>
+                                            <td
+                                                class="col-field-type-number min-width txt-code"
+                                                data-name="Line"
+                                            >
+                                                {row.line}
+                                            </td>
+                                            <td class="txt-danger" data-name="Problem">{row.message}</td>
+                                        </tr>
+                                    {/each}
+                                </tbody>
+                            </table>
 
-                        <div class="field-help">
-                            A bad row never aborts the file —
-                            {result.dry_run ? "on Import, the good rows still apply." : "the good ones still applied."}
-                        </div>
+                            <div class="field-help">
+                                A bad row never aborts the file —
+                                {run.dry ? "on Import, the good rows still apply." : "the good ones still applied."}
+                            </div>
+                        {/if}
                     {/if}
+                </div>
+            {/each}
 
-                    <!-- After a rehearsal the next step is the real thing, and
-                         the button for it is the one beside Dry run. -->
-                    {#if result.dry_run}
-                        <div class="field-help m-t-sm">
-                            A dry run writes nothing. Press Import to apply the file.
-                        </div>
-                    {/if}
+            <!-- After a rehearsal the next step is the real thing, and the
+                 button for it is the one beside Dry run. -->
+            {#if results?.length && run.dry && !running && !deleteOpen}
+                <div class="field-help m-t-sm">
+                    A dry run writes nothing. Press Import to apply {results.length > 1 ? "the files" : "the file"}.
                 </div>
             {/if}
             </section>
@@ -563,6 +756,17 @@
             message="It writes about 14,000 categories into this store. Running it again later only adds what is missing, so it is safe to repeat — but there is no one-click way to take them out."
             confirmLabel="Import"
             onconfirm={importTaxonomy}
+        />
+
+        <!-- The number is the dry run's own, counted by the engine a moment
+             ago, never a guess from the file's row count. -->
+        <Confirm
+            bind:open={deleteOpen}
+            danger
+            title="Delete {counted(pendingDelete?.count ?? 0, pendingDelete?.kind)}?"
+            message="The dry run found {counted(pendingDelete?.count ?? 0, pendingDelete?.kind)} to delete in {pendingDelete?.files === 1 ? 'the file' : `${pendingDelete?.files} files`}, and its results are on the screen. Deleting cannot be undone."
+            confirmLabel="Delete {pendingDelete?.count ?? 0}"
+            onconfirm={confirmDelete}
         />
     </div>
 </div>

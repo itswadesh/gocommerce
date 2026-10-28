@@ -215,6 +215,7 @@ type ImportResult struct {
 	Created  int        `json:"created"`
 	Updated  int        `json:"updated"`
 	Skipped  int        `json:"skipped"`
+	Deleted  int        `json:"deleted"`
 	Errors   []RowError `json:"errors"`
 	DryRun   bool       `json:"dry_run"`
 	Duration string     `json:"duration,omitempty"`
@@ -429,6 +430,11 @@ func (t *Transfer) ExportCustomers(ctx context.Context, out io.Writer, q Custome
 // — and it fires no events unless asked, because importing five thousand
 // orders must not send five thousand confirmation emails.
 func (t *Transfer) ImportOrders(ctx context.Context, in io.Reader, opts ImportOptions) (*ImportResult, error) {
+	// Insert only, by nature: an order number the store has is history
+	// already written, and an imported order is never rewritten or removed.
+	if _, err := opts.modeIn(ImportInsert); err != nil {
+		return nil, err
+	}
 	start := time.Now()
 	r := csv.NewReader(in)
 	r.FieldsPerRecord = -1

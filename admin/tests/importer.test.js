@@ -16,12 +16,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+    csvFiles,
     detectDialect,
     importBlocker,
     importKinds,
+    importModes,
+    importSources,
     importUrl,
     resultFor,
-    unsavedCsv,
+    runTotals,
+    unsavedImport,
 } from "../src/lib/importer.js";
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
@@ -107,14 +111,14 @@ test("the kind tabs wrap onto a second line rather than crush their labels", () 
 test("a result is shown only under the kind it was run for", () => {
     // A products dry run, still on screen under the Orders tab, said "Press
     // Import to apply the file" about a file that was never an orders file.
-    const run = { kind: "products", result: { created: 1, dry_run: true } };
-    assert.equal(resultFor(run, "products"), run.result);
+    const run = { kind: "products", results: [{ name: "a.csv", result: { created: 1, dry_run: true } }] };
+    assert.equal(resultFor(run, "products"), run.results);
     assert.equal(resultFor(run, "orders"), null);
     assert.equal(resultFor(null, "products"), null);
 });
 
 test("a new file or a cleared box drops the last result", () => {
-    assert.match(body("onFile"), /run = null;/);
+    assert.match(body("addFiles"), /run = null;/);
     assert.match(body("clearCsv"), /run = null;/);
     assert.match(page, /onclick=\{clearCsv\}/);
 });
@@ -122,18 +126,104 @@ test("a new file or a cleared box drops the last result", () => {
 test("a CSV that has only been dry-run is still unsaved", () => {
     // Dry run, then Import, is the path the screen asks for; leaving between
     // the two would lose a file nothing has written.
-    assert.equal(unsavedCsv("", null), false);
-    assert.equal(unsavedCsv("  ", null), false);
-    assert.equal(unsavedCsv("sku\nA", null), true);
-    assert.equal(unsavedCsv("sku\nA", { dry_run: true }), true);
-    assert.equal(unsavedCsv("sku\nA", { dry_run: false }), false);
-    assert.match(page, /<DirtyGuard\s+dirty=\{unsavedCsv\(csv, result\)\}/);
+    const one = importSources([], "sku\nA");
+    assert.equal(unsavedImport(importSources([], ""), null), false);
+    assert.equal(unsavedImport(importSources([], "  "), null), false);
+    assert.equal(unsavedImport(one, null), true);
+    assert.equal(unsavedImport(one, { dry: true }), true);
+    assert.equal(unsavedImport(one, { dry: false }), false);
+    assert.equal(unsavedImport(importSources([{ name: "a.csv", text: "sku" }], ""), null), true);
+    assert.match(page, /<DirtyGuard\s+dirty=\{unsavedImport\(sources, run\)\}/);
 });
 
-test("nothing in the box is the reason, and anything in it clears it", () => {
-    assert.equal(importBlocker(""), "Nothing to import yet: choose a file, or paste CSV into the box above.");
-    assert.equal(importBlocker("  \n\t"), importBlocker(""));
-    assert.equal(importBlocker("product_slug,title\nmug,Mug\n"), "");
+test("nothing to import is the reason, and a file or a pasted box clears it", () => {
+    assert.equal(
+        importBlocker(importSources([], "")),
+        "Nothing to import yet: drop or choose CSV files, or paste CSV into the box above.",
+    );
+    assert.equal(importBlocker(importSources([], "  \n\t")), importBlocker([]));
+    assert.equal(importBlocker(importSources([], "product_slug,title\nmug,Mug\n")), "");
+    assert.equal(importBlocker(importSources([{ name: "a.csv", text: "x" }], "")), "");
+});
+
+test("the files run first, in the order given, and the box last", () => {
+    const files = [
+        { name: "a.csv", text: "1" },
+        { name: "b.csv", text: "2" },
+    ];
+    assert.deepEqual(
+        importSources(files, "3").map((s) => s.name),
+        ["a.csv", "b.csv", "Pasted CSV"],
+    );
+    assert.deepEqual(
+        importSources(files, " ").map((s) => s.name),
+        ["a.csv", "b.csv"],
+    );
+});
+
+test("only CSV files are taken from a drop, and the rest are named", () => {
+    const { ok, refused } = csvFiles([
+        { name: "a.CSV", type: "" },
+        { name: "b.txt", type: "text/csv" },
+        { name: "photo.jpg", type: "image/jpeg" },
+    ]);
+    assert.deepEqual(
+        ok.map((f) => f.name),
+        ["a.CSV", "b.txt"],
+    );
+    assert.deepEqual(refused, ["photo.jpg"]);
+});
+
+test("a run's totals count a refused file as failed and keep going", () => {
+    assert.deepEqual(
+        runTotals([
+            { name: "a.csv", result: { created: 2, updated: 1, deleted: 0, errors: [{ line: 3 }] } },
+            { name: "b.csv", error: "validation_failed" },
+            { name: "c.csv", result: { created: 0, updated: 0, deleted: 4, errors: [] } },
+        ]),
+        { files: 3, failed: 1, created: 2, updated: 1, deleted: 4, attention: 1 },
+    );
+});
+
+test("only the keyed kinds offer modes, all four, upsert first", () => {
+    assert.deepEqual(
+        importModes("products").map((m) => m.label),
+        ["Upsert", "Insert only", "Update only", "Delete"],
+    );
+    assert.deepEqual(
+        importModes("categories").map((m) => m.value),
+        ["upsert", "insert", "update", "delete"],
+    );
+    assert.match(importModes("categories")[3].help, /by its path/);
+    for (const kind of ["inventory", "orders", "reviews", "menus"]) assert.deepEqual(importModes(kind), []);
+});
+
+test("a delete is rehearsed and confirmed before it is sent", () => {
+    // Import under Delete runs a dry run and opens the confirmation; only
+    // the confirmation runs the real thing.
+    const run = body("runImport");
+    assert.match(run, /activeMode === "delete"/);
+    assert.match(run, /await runAll\(true\)/);
+    assert.match(run, /deleteOpen = true;\s*return;/);
+    assert.match(body("confirmDelete"), /runAll\(false\)/);
+    assert.match(page, /<Confirm\s+bind:open=\{deleteOpen\}\s+danger[\s\S]*?onconfirm=\{confirmDelete\}/);
+});
+
+test("several files can be dropped or picked, and one that fails does not stop the next", () => {
+    assert.match(page, /<input\s+type="file"\s+accept="\.csv,text\/csv"\s+multiple/);
+    assert.match(page, /ondrop=\{onDrop\}/);
+    // The try/catch is inside the loop, so a refused file is that file's
+    // result rather than the end of the run.
+    assert.match(body("runAll"), /for \(const src of ran\) \{\s*try \{/);
+});
+
+test("after a real run only the files that went in leave the list", () => {
+    // A refused file stays to be fixed and run again, and a file dropped
+    // while the run was going was never part of it.
+    const all = page.slice(page.indexOf("async function runAll("), page.indexOf("function report("));
+    assert.match(all, /if \(src\.id\) applied\.add\(src\.id\);/);
+    assert.match(all, /if \(!dry\) files = files\.filter\(\(f\) => !applied\.has\(f\.id\)\);/);
+    assert.doesNotMatch(all, /files = \[\];/);
 });
 
 test("a dry run asks the engine to roll back; Import does not", () => {
@@ -142,8 +232,14 @@ test("a dry run asks the engine to roll back; Import does not", () => {
 });
 
 test("each switch reaches only the kind it belongs to", () => {
-    assert.equal(importUrl("products", { overwrite: false }), "/api/admin/import/products?overwrite=0");
-    assert.equal(importUrl("inventory", { overwrite: false }), "/api/admin/import/inventory");
+    assert.equal(importUrl("products", { mode: "insert" }), "/api/admin/import/products?mode=insert");
+    assert.equal(
+        importUrl("categories", { mode: "delete", dryRun: true }),
+        "/api/admin/import/categories?dry_run=1&mode=delete",
+    );
+    assert.equal(importUrl("products", { mode: "upsert" }), "/api/admin/import/products");
+    assert.equal(importUrl("inventory", { mode: "delete" }), "/api/admin/import/inventory");
+    assert.equal(importUrl("menus", { mode: "update" }), "/api/admin/x/navigation/import");
     assert.equal(importUrl("orders", { fireEvents: true }), "/api/admin/import/orders?fire_events=1");
     assert.equal(importUrl("products", { fireEvents: true }), "/api/admin/import/products");
     assert.equal(
