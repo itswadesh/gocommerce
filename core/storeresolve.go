@@ -25,13 +25,17 @@ var (
 // are still bound to a store when the request names one — a sign-in that
 // names its store answers with the role there — but naming none is not an
 // error. The /api/stores routes go further and are never bound
-// (personPath).
+// (personPath). An entry ending in "/" covers every path under it.
 var storeExempt = []string{
 	"/api/admin/auth-state",
 	"/api/admin/auth-with-password",
 	"/api/admin/auth-logout",
 	"/api/admin/password-reset",
 	"/api/admin/signup",
+	// The starting home page's pictures (ext/layouts): asked for by a
+	// shopper's <img> at the engine's own host, naming no store, and no
+	// store's, like the sample photographs at /sample-media/.
+	"/x/layouts/starter/",
 }
 
 func storeExemptPath(p string) bool {

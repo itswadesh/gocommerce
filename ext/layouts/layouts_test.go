@@ -322,6 +322,68 @@ func TestTheStarterBringsABoldReadableLook(t *testing.T) {
 	}
 }
 
+// The starting home page opens with its pictures: the hero (and its phone
+// crop), the four tiles and the lookbook, each one the engine itself serves,
+// so they load on every store's storefront and in the editor's preview.
+func TestTheStarterPicturesAreServedByTheEngine(t *testing.T) {
+	app := layoutsApp(t)
+	var pics []string
+	var walk func(v any, key string)
+	walk = func(v any, key string) {
+		switch x := v.(type) {
+		case map[string]any:
+			for k, y := range x {
+				walk(y, k)
+			}
+		case []any:
+			for _, y := range x {
+				walk(y, "")
+			}
+		case []map[string]any:
+			for _, y := range x {
+				walk(y, "")
+			}
+		case string:
+			if key == "image" || key == "mobile_image" {
+				pics = append(pics, x)
+			}
+		}
+	}
+	start, err := Validate("home", Starter("home"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range start.Sections {
+		walk(s.Settings, "")
+	}
+	if len(pics) != 7 {
+		t.Fatalf("starter pictures = %v, want the hero, its phone crop, four tiles and the lookbook", pics)
+	}
+	// The photographs say what they show; the tiles' pictures are decoration
+	// beside the tile's name.
+	for _, sec := range start.Sections {
+		if sec.ID == "hero" || sec.ID == "lookbook" {
+			if alt, _ := sec.Settings["image_alt"].(string); len(alt) < 20 {
+				t.Errorf("%s image_alt = %q, want a description of the photograph", sec.ID, alt)
+			}
+		}
+	}
+	for _, p := range pics {
+		rec := gctest.Request(t, app, http.MethodGet, p, nil)
+		if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/webp" || rec.Body.Len() == 0 {
+			t.Errorf("GET %s = %d %q (%d bytes), want a WebP", p, rec.Code, rec.Header().Get("Content-Type"), rec.Body.Len())
+		}
+		if !strings.Contains(rec.Header().Get("Cache-Control"), "immutable") {
+			t.Errorf("GET %s cache = %q, want immutable: a changed picture takes a new folder", p, rec.Header().Get("Cache-Control"))
+		}
+	}
+	for _, bad := range []string{starterPicturePrefix + "missing.webp", starterPicturePrefix + "..%2Flayouts.go"} {
+		if rec := gctest.Request(t, app, http.MethodGet, bad, nil); rec.Code == http.StatusOK {
+			t.Errorf("GET %s = 200, want nothing outside the pictures", bad)
+		}
+	}
+}
+
 func contrast(a, b string) float64 {
 	lum := func(hex string) float64 {
 		var out float64

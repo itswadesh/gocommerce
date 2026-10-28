@@ -1,5 +1,41 @@
 {
   "paths": {
+    "/x/layouts/starter/1/{file}": {
+      "get": {
+        "tags": [
+          "layouts"
+        ],
+        "summary": "A picture of the starting home page",
+        "description": "One of the pictures the starting home page names (D140): the hero, its phone crop and the lookbook (Unsplash photographs) and the four tiles (made with Google Gemini), credited in ext/layouts/starter/README.md, served from the engine's own binary, so every store's storefront and the editor's preview load them. No store need be named. Public, like a store's own media, and cached as immutable: a changed picture takes a new file name, and the old one stays.",
+        "parameters": [
+          {
+            "name": "file",
+            "in": "path",
+            "required": true,
+            "description": "The picture's file name, such as `hero.webp`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The picture.",
+            "content": {
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/x/layouts/theme": {
       "get": {
         "tags": [
