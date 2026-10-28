@@ -273,7 +273,7 @@ and its `frame-src` names only the two video players the showcase editor plays
 ## Exporting to TallyPrime
 
 A store that issues GST tax invoices gets an **Export for Tally** card on the
-Invoices screen (D127). Any other store does not: the ledger names route
+Invoices screen (D138). Any other store does not: the ledger names route
 answers 404 there, and that answer is what hides the card.
 
 The export reads the issued tax invoices and nothing else. No tax is worked out
