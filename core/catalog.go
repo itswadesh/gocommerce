@@ -885,32 +885,36 @@ func (c *Catalog) UpdateProduct(ctx context.Context, id int64, patch ProductPatc
 // DeleteProduct removes a product and everything hanging off it. Order lines
 // survive: they hold their own snapshot and their product reference is nulled.
 func (c *Catalog) DeleteProduct(ctx context.Context, id int64) error {
-	return InTx(ctx, c.app.db, func(tx *sql.Tx) error {
-		// RETURNING rather than RowsAffected, because the audit row needs the
-		// name: a deleted product is exactly what somebody opens the log to ask
-		// about, and after this statement nothing else can tell them.
-		var title, slug string
-		err := tx.QueryRowContext(ctx,
-			`DELETE FROM products WHERE id = $1 RETURNING title, slug`, id).Scan(&title, &slug)
-		if errors.Is(err, sql.ErrNoRows) {
-			return NotFoundf("product %d does not exist", id)
-		}
-		if err != nil {
-			return translateCatalogErr(err)
-		}
-		if err := writeAudit(ctx, tx, auditRecord{
-			Action: AuditProductDelete, Entity: AuditEntityProduct,
-			ID: id, Label: title, Summary: "Deleted the product " + title,
-			Before: map[string]any{"slug": slug, "title": title},
-		}); err != nil {
-			return err
-		}
-		// The slug is on the event for the same reason it is on the audit row:
-		// after this commit nothing can say what address just stopped
-		// existing, and that address is the only thing a consumer can act on.
-		return c.app.outbox.write(ctx, tx, EventProductDeleted, AggregateProduct, id,
-			productEvent{ID: id, Slug: slug, Title: title, Status: "deleted"})
-	})
+	return InTx(ctx, c.app.db, func(tx *sql.Tx) error { return c.deleteProduct(ctx, tx, id) })
+}
+
+// deleteProduct is DeleteProduct inside a transaction the caller owns, so an
+// import's dry run can make the same delete and roll it back.
+func (c *Catalog) deleteProduct(ctx context.Context, tx *sql.Tx, id int64) error {
+	// RETURNING rather than RowsAffected, because the audit row needs the
+	// name: a deleted product is exactly what somebody opens the log to ask
+	// about, and after this statement nothing else can tell them.
+	var title, slug string
+	err := tx.QueryRowContext(ctx,
+		`DELETE FROM products WHERE id = $1 RETURNING title, slug`, id).Scan(&title, &slug)
+	if errors.Is(err, sql.ErrNoRows) {
+		return NotFoundf("product %d does not exist", id)
+	}
+	if err != nil {
+		return translateCatalogErr(err)
+	}
+	if err := writeAudit(ctx, tx, auditRecord{
+		Action: AuditProductDelete, Entity: AuditEntityProduct,
+		ID: id, Label: title, Summary: "Deleted the product " + title,
+		Before: map[string]any{"slug": slug, "title": title},
+	}); err != nil {
+		return err
+	}
+	// The slug is on the event for the same reason it is on the audit row:
+	// after this commit nothing can say what address just stopped
+	// existing, and that address is the only thing a consumer can act on.
+	return c.app.outbox.write(ctx, tx, EventProductDeleted, AggregateProduct, id,
+		productEvent{ID: id, Slug: slug, Title: title, Status: "deleted"})
 }
 
 // AddOption adds an axis to an existing product.

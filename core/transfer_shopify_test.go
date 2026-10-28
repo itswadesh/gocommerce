@@ -272,7 +272,7 @@ func TestAnImportCanLeaveExistingProductsAlone(t *testing.T) {
 	importShopifyFixture(t, app)
 
 	renamed := strings.Replace(shopifyProductsFixture, "crew-tee,Crew Tee,", "crew-tee,Renamed Tee,", 1)
-	result, err := app.Data().ImportProducts(ctx, strings.NewReader(renamed), ImportOptions{Overwrite: new(bool)})
+	result, err := app.Data().ImportProducts(ctx, strings.NewReader(renamed), ImportOptions{Mode: ImportInsert})
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}
@@ -285,7 +285,7 @@ func TestAnImportCanLeaveExistingProductsAlone(t *testing.T) {
 	}
 	// A new handle in the same file is still created.
 	added := renamed + "hat,Hat,,,,,,TRUE,Title,Default Title,,,,,HAT,,,,,,5.00,,,,,,,,,,,,,,,active\n"
-	result, err = app.Data().ImportProducts(ctx, strings.NewReader(added), ImportOptions{Overwrite: new(bool)})
+	result, err = app.Data().ImportProducts(ctx, strings.NewReader(added), ImportOptions{Mode: ImportInsert})
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}

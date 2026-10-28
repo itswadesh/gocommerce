@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -109,6 +110,10 @@ func (t *Transfer) ImportCategories(ctx context.Context, in io.Reader, opts Impo
 	if opts.Format == FormatShopify {
 		return nil, errCategoryDialect
 	}
+	mode, err := opts.modeIn(allImportModes...)
+	if err != nil {
+		return nil, err
+	}
 	start := time.Now()
 	r, err := NewCSVReader(in)
 	if err != nil {
@@ -140,6 +145,15 @@ func (t *Transfer) ImportCategories(ctx context.Context, in io.Reader, opts Impo
 		}
 		defer insert.Close()
 
+		// A delete file is gathered first and deleted deepest first, so a
+		// file listing a branch and its leaves deletes the leaves before the
+		// branch that would otherwise refuse to go while they remain.
+		type doomed struct {
+			line, depth int
+			id          int64
+		}
+		var deletes []doomed
+
 		for {
 			row, err := r.Next()
 			if errors.Is(err, io.EOF) {
@@ -162,6 +176,15 @@ func (t *Transfer) ImportCategories(ctx context.Context, in io.Reader, opts Impo
 			}
 			if len(parts) > MaxCategoryDepth {
 				fail("that path is %d deep and the tree stops at %d", len(parts), MaxCategoryDepth)
+				continue
+			}
+			if mode == ImportDelete {
+				id, ok := byPath[categoryPathKey(parts)]
+				if !ok {
+					fail("no category is at %q, so there is nothing to delete", strings.Join(parts, " / "))
+					continue
+				}
+				deletes = append(deletes, doomed{line: row.Line(), depth: len(parts), id: id})
 				continue
 			}
 			// Read as "does this row say anything here", not "what does this
@@ -192,8 +215,12 @@ func (t *Transfer) ImportCategories(ctx context.Context, in io.Reader, opts Impo
 				continue
 			}
 
+			if !exists && mode == ImportUpdate {
+				fail("no category is at %q, and update only builds nothing", strings.Join(parts, " / "))
+				continue
+			}
 			if exists {
-				if !opts.overwrite() {
+				if mode == ImportInsert {
 					result.Skipped++
 					continue
 				}
@@ -271,6 +298,34 @@ func (t *Transfer) ImportCategories(ctx context.Context, in io.Reader, opts Impo
 				parentID = &id
 				result.Created++
 			}
+		}
+
+		sort.SliceStable(deletes, func(i, j int) bool { return deletes[i].depth > deletes[j].depth })
+		for _, d := range deletes {
+			// Each delete under its own savepoint: a refusal the database
+			// makes rather than Go — a tax rate naming the category — would
+			// otherwise abort the transaction and cost the rest of the file.
+			// A category still in use is that row's problem, not the file's.
+			if _, err := tx.ExecContext(ctx, `SAVEPOINT category_delete`); err != nil {
+				return err
+			}
+			err := deleteCategory(ctx, tx, d.id)
+			var refused *APIError
+			if errors.As(err, &refused) && (errors.Is(err, ErrConflict) || errors.Is(err, ErrNotFound)) {
+				if _, err := tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT category_delete`); err != nil {
+					return err
+				}
+				result.Errors = append(result.Errors, RowError{Line: d.line, Message: refused.Message})
+				result.Skipped++
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `RELEASE SAVEPOINT category_delete`); err != nil {
+				return err
+			}
+			result.Deleted++
 		}
 
 		if opts.DryRun {

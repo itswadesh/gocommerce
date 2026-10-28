@@ -5783,6 +5783,9 @@
           },
           {
             "$ref": "#/components/parameters/Overwrite"
+          },
+          {
+            "$ref": "#/components/parameters/ImportMode"
           }
         ],
         "requestBody": {
@@ -13169,10 +13172,13 @@
             "adminToken": []
           }
         ],
-        "description": "`path` is required and is the identity: a row whose trail already exists updates that category's position, slug and metadata, and a row whose trail does not builds every missing step on the way to it. Either separator is read, `/` or `>`. Running the same file twice therefore changes nothing the second time. The file cannot move or delete a category — a typo in a path would otherwise drag a subtree and the products under it somewhere else with no undo; moving stays on the screen that has the cycle check and the product count. A blank cell leaves a field alone, a slug another category already holds is a row error, and the whole file is one transaction, so a tree is never half built. `dry_run=1` reports what would happen and writes nothing.",
+        "description": "`path` is required and is the identity: a row whose trail already exists updates that category's position, slug and metadata, and a row whose trail does not builds every missing step on the way to it. Either separator is read, `/` or `>`. Running the same file twice therefore changes nothing the second time. The file cannot move a category — a typo in a path would otherwise drag a subtree and the products under it somewhere else with no undo; moving stays on the screen that has the cycle check and the product count. `mode` chooses insert only, update only or delete as well as the default upsert; a delete goes deepest first and refuses, as a row error, a category that still has subcategories or products. A blank cell leaves a field alone, a slug another category already holds is a row error, and the whole file is one transaction, so a tree is never half built. `dry_run=1` reports what would happen and writes nothing.",
         "parameters": [
           {
             "$ref": "#/components/parameters/DryRun"
+          },
+          {
+            "$ref": "#/components/parameters/ImportMode"
           }
         ],
         "requestBody": {
@@ -16301,10 +16307,26 @@
       "Overwrite": {
         "name": "overwrite",
         "in": "query",
-        "description": "Whether a product the store already has — by slug, or Handle in Shopify's dialect — is updated from the file. On by default, because a re-import of an edited export is the common case; send `false` to leave existing products alone and create only the new ones, which is what loading a second catalogue beside the first needs.",
+        "description": "Deprecated: send `mode` instead. `false` is read as `mode=insert` when no `mode` is sent; `true` is the default and changes nothing.",
         "schema": {
           "type": "boolean",
           "default": true
+        },
+        "deprecated": true
+      },
+      "ImportMode": {
+        "name": "mode",
+        "in": "query",
+        "description": "What a row does with its key (a product's slug or Handle, a category's path). `upsert` creates what is new and updates what exists; `insert` creates only what is new and leaves the rest exactly as it is; `update` changes only what exists and reports a row whose key the store lacks; `delete` deletes every record the file names, refusing a row whose key the store lacks, and for a category one that still has subcategories or products. A delete file needs only the key column. Every mode holds under `dry_run`, which makes the same writes and rolls them back.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "upsert",
+            "insert",
+            "update",
+            "delete"
+          ],
+          "default": "upsert"
         }
       }
     },
@@ -18429,6 +18451,10 @@
           },
           "skipped": {
             "type": "integer"
+          },
+          "deleted": {
+            "type": "integer",
+            "description": "Records the file deleted, under `mode=delete`, or would have under a dry run."
           },
           "dry_run": {
             "type": "boolean"

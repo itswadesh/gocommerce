@@ -303,6 +303,11 @@ func (t *Transfer) ImportProducts(ctx context.Context, in io.Reader, opts Import
 	// helpers below reach the ledger through importProductGroup's own InTx and
 	// have no other way to know they are an import.
 	ctx = withStockSource(ctx, sourceImport)
+	mode, err := opts.modeIn(allImportModes...)
+	if err != nil {
+		return nil, err
+	}
+	opts.Mode = mode
 
 	start := time.Now()
 	r := csv.NewReader(in)
@@ -327,7 +332,13 @@ func (t *Transfer) ImportProducts(ctx context.Context, in io.Reader, opts Import
 		// From here on the file is in the store's own columns.
 		header, cols = shopifyAsNative, translate.out
 	default:
-		for _, required := range []string{"product_slug", "sku"} {
+		// A delete file names products and nothing else, so it needs only
+		// the key.
+		required := []string{"product_slug", "sku"}
+		if mode == ImportDelete {
+			required = required[:1]
+		}
+		for _, required := range required {
 			if _, ok := cols[required]; !ok {
 				return nil, Validationf("the CSV is missing the required column %q", required)
 			}
@@ -343,11 +354,24 @@ func (t *Transfer) ImportProducts(ctx context.Context, in io.Reader, opts Import
 	var group []csvRow
 	var groupSlug string
 
+	// A slug a delete file has already named is reported, not deleted again:
+	// each product's dry run rolls back on its own, so without this a file
+	// naming one product twice would count it twice and the confirmation
+	// would promise a delete that the real run cannot make.
+	named := map[string]bool{}
 	flush := func() {
 		if len(group) == 0 {
 			return
 		}
-		t.importProductGroup(ctx, group, stockCols, opts, categories, result)
+		slug := group[0].get("product_slug")
+		if mode == ImportDelete && named[slug] {
+			result.Errors = append(result.Errors, RowError{Line: group[0].line,
+				Message: fmt.Sprintf("the product %q is named earlier in the file and is deleted once", slug)})
+			result.Skipped += len(group)
+		} else {
+			named[slug] = true
+			t.importProductGroup(ctx, group, stockCols, opts, categories, result)
+		}
 		group = nil
 	}
 
@@ -423,6 +447,30 @@ func (t *Transfer) importProductGroup(ctx context.Context, rows []csvRow, stockC
 	first := rows[0]
 	slug := first.get("product_slug")
 
+	if opts.Mode != ImportUpsert {
+		var id int64
+		err := t.app.db.QueryRowContext(ctx, `SELECT id FROM products WHERE slug = $1`, slug).Scan(&id)
+		exists := err == nil
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			result.Errors = append(result.Errors, RowError{Line: first.line, Message: err.Error()})
+			result.Skipped += len(rows)
+			return
+		}
+		switch {
+		case opts.Mode == ImportDelete:
+			t.deleteProductGroup(ctx, id, exists, rows, opts, result)
+			return
+		case opts.Mode == ImportInsert && exists:
+			result.Skipped += len(rows)
+			return
+		case opts.Mode == ImportUpdate && !exists:
+			result.Errors = append(result.Errors, RowError{Line: first.line,
+				Message: fmt.Sprintf("no product has the slug %q, and update only creates nothing", slug)})
+			result.Skipped += len(rows)
+			return
+		}
+	}
+
 	// A row with no SKU that names neither a price nor options is a picture
 	// alone (Shopify writes one per picture past the last variant); every
 	// other row is a variant. Pictures are ordered by the position the file
@@ -444,20 +492,6 @@ func (t *Transfer) importProductGroup(ctx context.Context, rows []csvRow, stockC
 		result.Errors = append(result.Errors, RowError{Line: first.line, Message: "product " + slug + " has no variant rows"})
 		result.Skipped += len(rows)
 		return
-	}
-
-	if !opts.overwrite() {
-		var exists bool
-		if err := t.app.db.QueryRowContext(ctx,
-			`SELECT EXISTS (SELECT 1 FROM products WHERE slug = $1)`, slug).Scan(&exists); err != nil {
-			result.Errors = append(result.Errors, RowError{Line: first.line, Message: err.Error()})
-			result.Skipped += len(rows)
-			return
-		}
-		if exists {
-			result.Skipped += len(rows)
-			return
-		}
 	}
 
 	var created bool
@@ -589,6 +623,34 @@ func (t *Transfer) importProductGroup(ctx context.Context, rows []csvRow, stockC
 		result.Errors = append(result.Errors, RowError{Line: first.line, Message: err.Error()})
 		result.Skipped += len(rows)
 	}
+}
+
+// deleteProductGroup deletes the product a file's rows name, all of its
+// variants with it. A dry run makes the same delete and rolls it back, so
+// what it reports is what Import would do.
+func (t *Transfer) deleteProductGroup(ctx context.Context, id int64, exists bool, rows []csvRow, opts ImportOptions, result *ImportResult) {
+	first := rows[0]
+	if !exists {
+		result.Errors = append(result.Errors, RowError{Line: first.line,
+			Message: fmt.Sprintf("no product has the slug %q, so there is nothing to delete", first.get("product_slug"))})
+		result.Skipped += len(rows)
+		return
+	}
+	err := InTx(ctx, t.app.db, func(tx *sql.Tx) error {
+		if err := t.app.catalog.deleteProduct(ctx, tx, id); err != nil {
+			return err
+		}
+		if opts.DryRun {
+			return errDryRun
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, errDryRun) {
+		result.Errors = append(result.Errors, RowError{Line: first.line, Message: err.Error()})
+		result.Skipped += len(rows)
+		return
+	}
+	result.Deleted++
 }
 
 // importVariantRow inserts a variant, or updates the one that already has

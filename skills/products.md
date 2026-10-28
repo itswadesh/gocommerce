@@ -143,7 +143,7 @@ a file goes either way between the two stores without an edit.
 ```http
 GET  /api/admin/export/admin-products?format=shopify
 POST /api/admin/import/products                 # the header says which dialect
-POST /api/admin/import/products?overwrite=false # create only what is new
+POST /api/admin/import/products?mode=insert     # create only what is new
 ```
 
 On the way in the dialect is read off the header (a Shopify file has a
@@ -171,9 +171,22 @@ order; one that names only `variant_images` adds them to it.
 Two rules make either file safe to hand-edit. **A column the file does not
 have says nothing about that field**: a price list updates prices and leaves
 barcodes, options and customs codes as they were (the variant upsert is a
-select-then-update of the columns present). And `overwrite=false` leaves a
-product the store already has — by slug or Handle — exactly as it is, which
-is how a second catalogue is loaded beside the first.
+select-then-update of the columns present). And `mode` says what a row does
+with its key — the slug, or Handle (D135):
+
+| `mode` | A key the store has | A key it lacks |
+| :-- | :-- | :-- |
+| `upsert` (default) | updated | created |
+| `insert` | left exactly as it is | created |
+| `update` | updated | a row error, nothing created |
+| `delete` | deleted, variants and all, through `Catalog.DeleteProduct`'s own transaction | a row error |
+
+`insert` is how a second catalogue is loaded beside the first. A delete file
+needs only `product_slug` (or Handle). Every mode holds under `dry_run=1`,
+which makes the same writes and rolls them back, so its counts — `deleted`
+among them — are what Import would do. `overwrite=false` is the switch `mode`
+replaced, read as `mode=insert` when no `mode` is sent. Orders take `insert`
+only and inventory `update` only; any other mode is a 400.
 
 ### The three files that are trees, not tables
 
@@ -197,9 +210,13 @@ missing step on the way to one that is not, exactly as `taxonomy import`
 does, so a second run of the same file is a no-op. The whole file is one
 transaction, and a row the file gets wrong is refused in Go before any
 statement runs, because a failed statement inside one transaction would cost
-the other 999 rows. What the file deliberately **cannot** do is move or
-delete: one typo in a path would otherwise drag a subtree and the products
-filed under it somewhere else, and a spreadsheet has no undo.
+the other 999 rows. What the file deliberately **cannot** do is move: one
+typo in a path would otherwise drag a subtree and the products filed under it
+somewhere else, and a spreadsheet has no undo. It takes the same four `mode`s
+as the product file. `mode=delete` deletes the categories the file names,
+deepest first, through the same rule the screen's delete keeps: a category
+with subcategories or products is refused as a row error, and a path the
+store lacks is one too — so a typo deletes nothing.
 
 A menu the file names is written **whole** — its items replaced by the file's
 rows, in the file's own order, which is why there is no position column — and
