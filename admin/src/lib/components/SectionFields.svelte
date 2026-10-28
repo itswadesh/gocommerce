@@ -329,6 +329,14 @@
         outline: 2px solid var(--markColor);
         outline-offset: 2px;
     }
+    /* High contrast drops the shadow and forces the colours: a real outline
+       keeps the chosen tile visible there. */
+    @media (forced-colors: active) {
+        .sf-icon.active {
+            outline: 2px solid Highlight;
+            outline-offset: -2px;
+        }
+    }
     @keyframes sf-icon-pick {
         from {
             transform: scale(0.7);

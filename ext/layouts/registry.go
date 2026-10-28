@@ -354,7 +354,8 @@ var Sections = []SectionType{
 
 // BenefitIcons are the pictures a benefit may carry (D139). A name, not a
 // picture: the storefront draws each in its own icon style, and the panel in
-// its own, so neither ships the other's artwork.
+// its own, so neither ships the other's artwork. A name added here needs its
+// picture in the storefront's map too; until then it draws no icon there.
 var BenefitIcons = []Option{
 	{"truck", "Delivery"}, {"return", "Returns"}, {"exchange", "Exchange"}, {"shield", "Protection"},
 	{"lock", "Secure payment"}, {"headset", "Support"}, {"phone", "Call us"}, {"cash", "Cash on delivery"},
