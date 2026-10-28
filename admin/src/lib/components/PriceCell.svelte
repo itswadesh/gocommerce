@@ -6,71 +6,112 @@
      * same two for each variant. A box saves when it is left or Enter is
      * pressed. The row changes at once and says it is saving; if the engine
      * refuses, it goes back to what it was and says why. Each variant is its
-     * own PATCH — the route the product editor already uses — so nothing here
+     * own PATCH â€” the route the product editor already uses â€” so nothing here
      * is a second write path.
      */
     import { api } from "$lib/api.js";
     import { toast } from "$lib/toast.svelte.js";
-    import { commonValue, mixed, needsPrice, readMRP, readPrice, withAmount } from "$lib/listprices.js";
+    import { belowMRP, commonValue, mixed, needsPrice, readMRP, readPrice, withAmount } from "$lib/listprices.js";
 
-    let { product, currency, onupdate } = $props();
+    let { product, currency: storeCurrency, onupdate } = $props();
+    // The product's own currency, which is the store's; the settings' answer
+    // is only a fallback, because it reads USD until the store has replied.
+    const currency = $derived(product.variants?.[0]?.price?.currency || storeCurrency);
 
     let open = $state(false);
     let phase = $state("idle"); // idle | saving | saved
     let error = $state("");
+    let errorAt = $state(""); // which box the error is about: price or mrp
     let price = $state("");
     let mrp = $state("");
+    let priceBox = $state(null);
+    let mrpBox = $state(null);
+    let inflight = 0;
     let timer;
 
-    // What the boxes show follows the row: after a save, after a reload.
+    // What the boxes show follows the row: after a save, after a reload. A
+    // box somebody is typing in is left alone.
     $effect(() => {
-        price = commonValue(product.variants, "price", currency);
-        mrp = commonValue(product.variants, "compare_at_price", currency);
+        const p = commonValue(product.variants, "price", currency);
+        const m = commonValue(product.variants, "compare_at_price", currency);
+        if (document.activeElement !== priceBox) price = p;
+        if (document.activeElement !== mrpBox) mrp = m;
     });
 
     const key = { price: "price_minor", compare_at_price: "compare_at_price_minor" };
 
-    /** save writes one amount to the given variants, showing it before the engine answers. */
-    async function save(variantIds, field, minor) {
-        const before = product.variants;
+    /**
+     * save writes one amount to the given variants, showing it before the
+     * engine answers. Each variant is its own request; one that fails is put
+     * back to what it was, if nothing has changed it since, and the ones that
+     * went through stay.
+     */
+    async function save(variantIds, field, minor, box) {
         const ids = new Set(variantIds);
-        const touched = before.filter((v) => ids.has(v.id) && (v[field]?.amount_minor ?? null) !== minor);
+        const touched = product.variants.filter((v) => ids.has(v.id) && (v[field]?.amount_minor ?? null) !== minor);
         if (!touched.length) return;
         error = "";
-        onupdate(before.map((v) => (ids.has(v.id) ? withAmount(v, field, minor, currency) : v)));
+        const was = new Map(touched.map((v) => [v.id, v[field] ?? null]));
+        onupdate(product.variants.map((v) => (was.has(v.id) ? withAmount(v, field, minor, currency) : v)));
+        inflight++;
         phase = "saving";
         clearTimeout(timer);
-        try {
-            await Promise.all(touched.map((v) => api.patch(`/api/admin/variants/${v.id}`, { [key[field]]: minor })));
-            phase = "saved";
-            timer = setTimeout(() => (phase = "idle"), 1400);
-        } catch (err) {
-            onupdate(before);
-            phase = "idle";
-            error = err?.message || "Not saved.";
-            toast.error(err);
+        const results = [];
+        // One after another, as runBulk does: they are rows of one product.
+        for (const v of touched) {
+            results.push(await api.patch(`/api/admin/variants/${v.id}`, { [key[field]]: minor }).then(
+                () => null,
+                (err) => ({ id: v.id, err }),
+            ));
         }
+        const failed = results.filter(Boolean);
+        if (failed.length) {
+            const back = new Set(failed.map((f) => f.id));
+            onupdate(
+                product.variants.map((v) =>
+                    back.has(v.id) && (v[field]?.amount_minor ?? null) === minor ? { ...v, [field]: was.get(v.id) } : v,
+                ),
+            );
+            error = (failed.length < touched.length ? `${touched.length - failed.length} of ${touched.length} saved. ` : "") + (failed[0].err?.message || "Not saved.");
+            errorAt = box;
+            toast.error(failed[0].err);
+        }
+        inflight--;
+        if (inflight > 0) return;
+        phase = failed.length ? "idle" : "saved";
+        if (!failed.length) timer = setTimeout(() => (phase = "idle"), 1400);
     }
 
     const all = () => product.variants.map((v) => v.id);
 
+    function fail(box, message) {
+        error = message;
+        errorAt = box;
+    }
+
     function commitPrice(text, ids) {
         const r = readPrice(text, currency);
-        if (r.empty) return;
-        if (r.error) return (error = r.error);
-        save(ids, "price", r.minor);
+        if (r.empty) {
+            // Emptied is no change: show the price it still has.
+            price = commonValue(product.variants, "price", currency);
+            return;
+        }
+        if (r.error) return fail("price", r.error);
+        const clash = belowMRP(product.variants.filter((v) => ids.includes(v.id)), r.minor);
+        if (clash) return fail("price", "That is at or above the MRP; raise or clear the MRP first.");
+        save(ids, "price", r.minor, "price");
     }
 
     function commitMRP(text, ids) {
         const prices = product.variants.filter((v) => ids.includes(v.id)).map((v) => v.price?.amount_minor ?? 0);
         const r = readMRP(text, currency, Math.max(...prices));
-        if (r.error) return (error = r.error);
-        save(ids, "compare_at_price", r.minor);
+        if (r.error) return fail("mrp", r.error);
+        save(ids, "compare_at_price", r.minor, "mrp");
     }
 
     const many = $derived(product.variants.length > 1);
     const unpriced = $derived(needsPrice(product));
-    const uid = `pc-${product.id}`;
+    const uid = $derived(`pc-${product.id}`);
 </script>
 
 <!-- The row opens the product on click; typing a price must not. -->
@@ -82,10 +123,13 @@
         <input
             id="{uid}-price"
             class="price-input"
-            class:invalid={!!error}
+            class:invalid={!!error && errorAt === "price"}
+            aria-invalid={!!error && errorAt === "price"}
+            aria-describedby={error && errorAt === "price" ? `${uid}-err` : undefined}
             inputmode="decimal"
             autocomplete="off"
             placeholder={mixed(product.variants, "price") && !unpriced ? "Mixed" : "Price"}
+            bind:this={priceBox}
             bind:value={price}
             oninput={() => (error = "")}
             onchange={(e) => commitPrice(e.currentTarget.value, all())}
@@ -95,9 +139,13 @@
         <input
             id="{uid}-mrp"
             class="price-input"
+            class:invalid={!!error && errorAt === "mrp"}
+            aria-invalid={!!error && errorAt === "mrp"}
+            aria-describedby={error && errorAt === "mrp" ? `${uid}-err` : undefined}
             inputmode="decimal"
             autocomplete="off"
             placeholder={mixed(product.variants, "compare_at_price") ? "Mixed" : "MRP"}
+            bind:this={mrpBox}
             bind:value={mrp}
             oninput={() => (error = "")}
             onchange={(e) => commitMRP(e.currentTarget.value, all())}
@@ -125,7 +173,7 @@
         {/if}
     </div>
     {#if unpriced}<span class="needs"><span class="dot" aria-hidden="true"></span>Needs a price</span>{/if}
-    {#if error}<span class="err" role="alert">{error}</span>{/if}
+    {#if error}<span class="err" id="{uid}-err" role="alert">{error}</span>{/if}
 
     {#if open}
         <ul class="variants" id="{uid}-variants">

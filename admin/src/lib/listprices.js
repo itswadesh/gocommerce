@@ -11,7 +11,7 @@
  * hold the decimal a person types, through toMinor and fromMinor.
  */
 
-import { fromMinor, toMinor } from "./format.js";
+import { fromMinor, minorDigits, parseMoney } from "./format.js";
 
 /**
  * A product needs a price while any variant is at 0. A product drafted from
@@ -47,9 +47,23 @@ export function mixed(variants, key) {
 export function readPrice(text, currency) {
     const t = String(text ?? "").trim();
     if (!t) return { empty: true };
-    const minor = toMinor(t, currency);
-    if (minor === null) return { error: "That is not a price." };
-    if (minor <= 0) return { error: "A price is more than 0." };
+    const r = exact(t, currency);
+    if (r.error) return r;
+    if (r.minor <= 0) return { error: "A price is more than 0." };
+    return r;
+}
+
+/**
+ * exact reads an amount into minor units, refusing one with more decimals
+ * than the currency has rather than rounding it: "1.299" in rupees is far
+ * more likely a mistyped 1,299 than ₹1.30, and ¥12.5 is no amount at all.
+ */
+function exact(text, currency) {
+    const amount = parseMoney(text);
+    if (amount === null || amount < 0) return { error: "That is not an amount." };
+    const scaled = amount * 10 ** minorDigits(currency);
+    const minor = Math.round(scaled);
+    if (Math.abs(scaled - minor) > 1e-6) return { error: `That has more decimals than ${currency} uses.` };
     return { minor };
 }
 
@@ -61,8 +75,10 @@ export function readPrice(text, currency) {
 export function readMRP(text, currency, priceMinor) {
     const t = String(text ?? "").trim();
     if (!t) return { minor: null };
-    const minor = toMinor(t, currency);
-    if (minor === null || minor < 0) return { error: "That is not an amount." };
+    const r = exact(t, currency);
+    if (r.error) return r;
+    const minor = r.minor;
+    if (minor === 0) return { error: "Leave the MRP empty for none." };
     if (priceMinor != null && priceMinor > 0 && minor <= priceMinor) {
         return { error: "The MRP is the higher price the sale price is shown against." };
     }
@@ -86,4 +102,13 @@ export function splitPublishable(products) {
 /** withAmount is a variant as it reads once an amount is saved, for the optimistic row. */
 export function withAmount(variant, key, minor, currency) {
     return { ...variant, [key]: minor === null ? null : { amount_minor: minor, currency } };
+}
+
+/**
+ * belowMRP is the first variant a new price would put at or above its MRP,
+ * which would strike the price through against a lower one. The MRP box
+ * refuses that; so does the price box, rather than make it by another door.
+ */
+export function belowMRP(variants, priceMinor) {
+    return (variants ?? []).find((v) => v.compare_at_price && v.compare_at_price.amount_minor <= priceMinor) ?? null;
 }
