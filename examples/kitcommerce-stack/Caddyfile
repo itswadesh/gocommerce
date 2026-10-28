@@ -31,7 +31,8 @@ http://{$SHOP_HOST} {
 	}
 	# Anything else under /backend would reach the storefront, whose own proxy
 	# forwards every path to the engine.
-	handle /backend/* {
+	@rest path /backend /backend/*
+	handle @rest {
 		respond 404
 	}
 	handle {

@@ -70,6 +70,8 @@ grep -qF "$title" "$body" || fail "the product page does not show '$title'"
 echo "ok    the product page shows '$title'"
 req GET "$API/api/admin/orders" -H "$ADMIN_AUTH"
 expect 'the admin API is not served on the shop origin' 404 "$status"
+req GET "$API"
+expect 'nor is the admin panel' 404 "$status"
 
 echo '2. A cart line is added and updated'
 json POST "$API/api/carts"
