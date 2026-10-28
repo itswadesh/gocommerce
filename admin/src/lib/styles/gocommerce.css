@@ -6255,6 +6255,132 @@ kbd + kbd {
     }
 }
 
+/* The four import modes, read at once: four across on a desktop, two on a
+   tablet, one on a phone, the whole card the target. Delete takes the danger
+   colour only once it is chosen, so the screen is not alarmed by default. */
+.import-modes {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+}
+.import-modes-legend {
+    margin-bottom: 6px;
+    padding: 0;
+    font-weight: 600;
+    color: var(--surfaceTxtColor);
+}
+.import-modes-options {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+@media (max-width: 900px) {
+    .import-modes-options {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+@media (max-width: 480px) {
+    .import-modes-options {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+.import-mode {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-height: 44px;
+    padding: 9px 12px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+    cursor: pointer;
+    transition:
+        border-color var(--animationSpeed) ease-out,
+        background-color var(--animationSpeed) ease-out,
+        transform var(--animationSpeed) ease-out;
+}
+.import-mode:hover {
+    background: var(--surfaceAlt1Color);
+}
+.import-mode:active {
+    transform: scale(0.98);
+}
+.import-mode:has(input:focus-visible) {
+    outline: 2px solid var(--accentColor);
+    outline-offset: 2px;
+}
+.import-mode.is-on {
+    border-color: var(--markColor);
+    background: color-mix(in srgb, var(--markColor) 6%, transparent);
+}
+.import-mode.danger.is-on {
+    border-color: var(--dangerColor);
+    background: color-mix(in srgb, var(--dangerColor) 6%, transparent);
+}
+.import-mode input {
+    margin: 3px 0 0;
+    accent-color: var(--markColor);
+}
+.import-mode.danger input {
+    accent-color: var(--dangerColor);
+}
+.import-mode-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.import-mode-title {
+    font-weight: 600;
+}
+
+/* The files waiting to run, one row each. The drop zone is the media
+   library's, which already says it is a target while a file is held over it. */
+.import-drop-icon {
+    font-size: 26px;
+}
+.import-files {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.import-file {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 2px 4px 2px 10px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+}
+.import-file-name {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.import-file > .btn {
+    margin-left: auto;
+}
+.import-run-count {
+    align-self: center;
+}
+/* One result per file, ruled apart so a second file's table never reads as
+   more of the first's. */
+.import-result + .import-result {
+    margin-top: var(--smSpacing);
+    padding-top: var(--smSpacing);
+    border-top: 1px solid var(--surfaceAlt2Color);
+}
+@media (prefers-reduced-motion: reduce) {
+    .import-mode:active {
+        transform: none;
+    }
+}
+
 /* Every button and tab on the Import screen sinks a little under the finger,
    as the portal's do: PocketBase's press is a 70ms colour change, which a
    quick tap on a phone never shows. With reduced motion the colour change is
