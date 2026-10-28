@@ -18,6 +18,10 @@
 // 200 KB, which is what seed-fashion.ps1 uploads. The model's own PNGs are kept
 // in out/raw/ because the edits start from them, not from the lossy WebP.
 // out/ is git-ignored: the set is around 150 files and several megabytes.
+//
+// A product's first-colour front shot is the base of all its others. Redo it
+// with --only <slug> --force, which redoes the whole product, rather than by
+// deleting that one file: the other shots would still show the old model.
 
 import { readFile, writeFile, mkdir, access } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -31,6 +35,10 @@ const catalogue = JSON.parse(await readFile(join(here, 'catalogue.json'), 'utf8'
 const args = process.argv.slice(2)
 const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : null
 const force = args.includes('--force')
+if (args.includes('--only') && !catalogue.products.some((p) => p.slug === only)) {
+	console.error(`--only needs a product slug from catalogue.json`)
+	process.exit(1)
+}
 
 const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY
 if (!key) {
@@ -77,7 +85,10 @@ function findImage(node) {
 	if (node.type === 'image' && typeof node.data === 'string') return node.data
 	if (node.inlineData?.data) return node.inlineData.data
 	if (node.inline_data?.data) return node.inline_data.data
-	for (const v of Object.values(node)) {
+	for (const [k, v] of Object.entries(node)) {
+		// A response that echoes the request would otherwise hand back the
+		// source picture of an edit as if it were the result.
+		if (k === 'input') continue
 		const found = findImage(v)
 		if (found) return found
 	}
@@ -138,14 +149,17 @@ for (const p of catalogue.products) {
 		const rawFile = raw(job.colour, job.shot)
 		const webFile = join(webDir, `${slugify(job.colour.name)}-${job.shot}.webp`)
 		try {
+			// The WebP is what a store gets, so one that exists is done; the raw
+			// alone missing (out/raw cleared to save space) is not worth a call.
+			if (!force && (await exists(webFile))) continue
 			if (force || !(await exists(rawFile))) {
-				await writeFile(rawFile, await job.make())
+				// Re-encoded as PNG whatever the model returned, because the
+				// edits send it back declared as image/png.
+				await writeFile(rawFile, await sharp(await job.make()).png().toBuffer())
 			}
-			if (force || !(await exists(webFile))) {
-				const size = await toWebp(await readFile(rawFile), webFile)
-				made++
-				console.log(`  ${p.slug}/${slugify(job.colour.name)}-${job.shot}.webp  ${Math.round(size / 1024)} KB`)
-			}
+			const size = await toWebp(await readFile(rawFile), webFile)
+			made++
+			console.log(`  ${p.slug}/${slugify(job.colour.name)}-${job.shot}.webp  ${Math.round(size / 1024)} KB`)
 		} catch (err) {
 			failed++
 			console.error(`  FAILED ${p.slug} ${job.colour.name} ${job.shot}: ${err.message}`)
