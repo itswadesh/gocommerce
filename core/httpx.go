@@ -542,6 +542,7 @@ func (a *App) mountCoreRoutes() {
 	a.mountDomainRoutes()
 	a.mountSetupRoutes()
 	a.mountMediaRoutes()
+	a.mountImageRoutes()
 	a.mountCatalogRoutes()
 	a.mountCollectionRoutes()
 	a.mountCategoryRoutes()
