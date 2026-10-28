@@ -497,15 +497,27 @@ func productQueryFrom(q url.Values) (ProductQuery, error) {
 	if err != nil {
 		return ProductQuery{}, err
 	}
+	// price_max=0 is how the panel finds the products that still need a
+	// price: a variant at 0, as a product drafted from photos is created.
+	lo, err := queryMinor(q, "price_min")
+	if err != nil {
+		return ProductQuery{}, err
+	}
+	hi, err := queryMinor(q, "price_max")
+	if err != nil {
+		return ProductQuery{}, err
+	}
 	return ProductQuery{
-		Search:       q.Get("q"),
-		Status:       status,
-		Vendors:      q["vendor"],
-		ProductTypes: q["product_type"],
-		Tags:         q["tag"],
-		CategoryID:   categoryID,
-		CollectionID: collectionID,
-		Attributes:   attributeFilters(q["attr"]),
+		PriceMinMinor: lo,
+		PriceMaxMinor: hi,
+		Search:        q.Get("q"),
+		Status:        status,
+		Vendors:       q["vendor"],
+		ProductTypes:  q["product_type"],
+		Tags:          q["tag"],
+		CategoryID:    categoryID,
+		CollectionID:  collectionID,
+		Attributes:    attributeFilters(q["attr"]),
 	}, nil
 }
 
