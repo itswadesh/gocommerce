@@ -18,9 +18,15 @@
 # gallery when a shopper picks a colour, and why every size of one colour shows
 # the same photographs without any file being uploaded twice.
 #
+# For a dev or demo store only. The prices, the struck-through MRPs and the
+# "only a few left" stock are invented to exercise the storefront, not facts
+# about any shop, so they do not belong in front of real shoppers.
+#
 # Everything goes through the API, no SQL. Safe to re-run: products are found by
 # their tag and slug, categories and collections by slug, and a product that
-# already has pictures keeps them.
+# already has pictures keeps them. An upload that fails part way leaves the
+# files it did send unattached in the media library; the next run uploads the
+# set again.
 
 param(
     [string]$BaseUrl  = $env:GC_BASE,
@@ -50,8 +56,13 @@ if ($store.currency -ne $catalogue.currency) {
     if (-not $SetCurrency) {
         throw "this store sells in $($store.currency) and the catalogue is priced in $($catalogue.currency). Run again with -SetCurrency to switch it."
     }
-    Invoke-GC PATCH '/api/admin/store' @{ currency = $catalogue.currency } -Admin | Out-Null
-    Write-Host "  switched $($store.currency) -> $($catalogue.currency)" -ForegroundColor DarkGreen
+    # The whole profile goes back, not just the currency: the save writes every
+    # address and contact field, so a body naming only the currency would
+    # blank the shop's name, address and tax number.
+    $was = $store.currency
+    $store.currency = $catalogue.currency
+    Invoke-GC PATCH '/api/admin/store' $store -Admin | Out-Null
+    Write-Host "  switched $was -> $($catalogue.currency)" -ForegroundColor DarkGreen
 } else {
     Write-Host "  $($store.currency)"
 }
@@ -80,7 +91,13 @@ foreach ($c in $catalogue.categories) {
 
 Write-GCStep 'Collections'
 $collectionIds = @{}
-foreach ($c in (Invoke-GC GET '/api/admin/collections?limit=200' -Admin)) { $collectionIds[$c.slug] = $c.id }
+# Paged, so a store with more than 200 collections does not hide one of these
+# on page two and then refuse to create it as a duplicate.
+for ($offset = 0; ; $offset += 200) {
+    $page = @(Invoke-GC GET "/api/admin/collections?limit=200&offset=$offset" -Admin)
+    foreach ($c in $page) { $collectionIds[$c.slug] = $c.id }
+    if ($page.Count -lt 200) { break }
+}
 foreach ($c in $catalogue.collections) {
     if ($collectionIds.ContainsKey($c.slug)) { Write-Host "  skip  $($c.slug)"; continue }
     $made = Invoke-GC POST '/api/admin/collections' @{ slug = $c.slug; title = $c.title; description = $c.description } -Admin
@@ -96,6 +113,15 @@ Write-GCStep 'Products'
 # thousands of products would page through for twelve slugs.
 $existing = @{}
 foreach ($p in (Invoke-GC GET "/api/admin/products?tag=$($catalogue.tag)&limit=200" -Admin)) { $existing[$p.slug] = $p }
+
+# A typo in the data file is caught before anything is written, rather than
+# sent to the engine as a null collection id.
+foreach ($p in $catalogue.products) {
+    foreach ($slug in @($p.collections)) {
+        if (-not $collectionIds.ContainsKey($slug)) { throw "$($p.slug) names an unknown collection '$slug'" }
+    }
+    if (-not $categoryIds.ContainsKey($p.category)) { throw "$($p.slug) names an unknown category '$($p.category)'" }
+}
 
 $created = 0
 $index = 0
@@ -151,11 +177,15 @@ foreach ($p in $catalogue.products) {
     $existing[$p.slug] = $made
     $created++
     Write-Host ("  new   {0}  ({1} variants)" -f $p.slug, $variants.Count) -ForegroundColor DarkGreen
+}
 
+# Apart from creation, so a product whose create succeeded and whose
+# collections did not gets them on the next run.
+foreach ($p in $catalogue.products) {
+    $have = $existing[$p.slug]
     $ids = @($p.collections | ForEach-Object { $collectionIds[$_] })
-    if ($ids.Count -gt 0) {
-        Invoke-GC PUT "/api/admin/products/$($made.id)/collections" @{ collection_ids = $ids } -Admin | Out-Null
-    }
+    if (-not $have -or $ids.Count -eq 0 -or @($have.collections).Count -gt 0) { continue }
+    Invoke-GC PUT "/api/admin/products/$($have.id)/collections" @{ collection_ids = $ids } -Admin | Out-Null
 }
 
 # ------------------------------------------------------------------ images
@@ -165,7 +195,9 @@ Write-GCStep "Photographs (from $ImageDir)"
 function Send-Media([string]$File, [string]$Alt) {
     $curlArgs = @('-s', '-X', 'POST', '-H', "Authorization: Bearer $(Get-GCToken)")
     if ($env:GC_STORE) { $curlArgs += @('-H', "x-litekart-store: $env:GC_STORE") }
-    $curlArgs += @('-F', "file=@$File;type=image/webp", '-F', "alt=$Alt", "$(Get-GCBase)/api/admin/media")
+    # --form-string for the alt text, so a title with a semicolon is not read
+    # as a curl ;type= directive.
+    $curlArgs += @('-F', "file=@$File;type=image/webp", '--form-string', "alt=$Alt", "$(Get-GCBase)/api/admin/media")
     $raw = & curl.exe @curlArgs
     try { $media = ($raw | ConvertFrom-Json).data } catch { $media = $null }
     if (-not $media) { throw "upload of $File refused: $raw" }
@@ -177,7 +209,33 @@ $waiting = @()
 foreach ($p in $catalogue.products) {
     $have = $existing[$p.slug]
     if (-not $have) { continue }
-    if ($have.media_count -gt 0) { Write-Host "  skip  $($p.slug) (has pictures)"; continue }
+    $shotCount = @($catalogue.shots).Count
+    if ($have.media_count -gt 0) {
+        # Pictures attached, but a run that stopped part way through the
+        # variants leaves some without theirs. They are re-nominated from the
+        # product's list, which was attached colour by colour, shot by shot.
+        $full = Invoke-GC GET "/api/admin/products/$($have.id)" -Admin
+        # `-not`, not a count: a variant with none has no images key at all, and
+        # @($null).Count is 1 in Windows PowerShell.
+        if (-not ($full.variants | Where-Object { -not $_.images })) {
+            Write-Host "  skip  $($p.slug) (has pictures)"; continue
+        }
+        $attached = @(Invoke-GC GET "/api/admin/products/$($have.id)/media" -Admin)
+        if ($attached.Count -ne @($p.colours).Count * $shotCount) {
+            Write-Host "  $($p.slug) has pictures this script did not attach; left alone" -ForegroundColor Yellow
+            continue
+        }
+        $i = 0
+        foreach ($colour in $p.colours) {
+            $ids = @($attached[$i..($i + $shotCount - 1)] | ForEach-Object { $_.id })
+            $i += $shotCount
+            foreach ($v in ($full.variants | Where-Object { $_.options -contains $colour.name })) {
+                Invoke-GC PUT "/api/admin/variants/$($v.id)/media" @{ media_ids = $ids } -Admin | Out-Null
+            }
+        }
+        Write-Host "  fixed $($p.slug) (variant pictures)" -ForegroundColor DarkGreen
+        continue
+    }
 
     # All of a product's files are checked before any is uploaded, so a half-
     # generated set never leaves a product showing some colours and not others.
