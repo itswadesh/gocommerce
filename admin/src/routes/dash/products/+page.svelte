@@ -1080,6 +1080,12 @@
                         <span class="txt">Import from Shopify</span>
                     </button>
                 {/if}
+                {#if writable && hasModule("photo-products")}
+                    <a class="btn secondary" href="{base}/dash/products/photos" aria-label="Create from photos" title="Create products from photos">
+                        <i class="ri-image-add-line" aria-hidden="true"></i>
+                        <span class="txt">Create from photos</span>
+                    </a>
+                {/if}
                 {#if writable && hasModule("import-amazon")}
                     <button type="button" class="btn secondary" onclick={openImport}>
                         <i class="ri-amazon-line" aria-hidden="true"></i>
