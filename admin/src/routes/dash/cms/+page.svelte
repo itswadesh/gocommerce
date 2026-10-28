@@ -29,7 +29,7 @@
     import EmptyState from "$lib/components/EmptyState.svelte";
     import { titled } from "$lib/brand.svelte.js";
     import { rise } from "$lib/motion.js";
-    import { missingStandardPages } from "$lib/standard-pages.js";
+    import { missingStandardPages, sameLinks, standardFooter } from "$lib/standard-pages.js";
 
     /* The starting page size, not the only one: `limit` is a listState key, so
        an operator can change it and the choice rides in the URL with the rest of
@@ -138,6 +138,46 @@
             if (added) toast.success(added === 1 ? "Page added as a draft" : `${added} pages added as drafts`);
             load();
             loadSlugs();
+        }
+    }
+
+    /* The footer menu, when the store has the menus module: a store opened
+       before D145 still has the old one (Search, /contact, /pages/privacy),
+       and this offers the standard links in one click. undefined until
+       known; null when the store has no footer menu yet. */
+    let footer = $state(undefined);
+    let footering = $state(false);
+    const footerChange = $derived(
+        footer === undefined ? null : standardFooter(footer?.items ?? []),
+    );
+    const footerOutdated = $derived(
+        footerChange !== null && !sameLinks(footer?.items ?? [], footerChange),
+    );
+
+    $effect(() => {
+        if (can("catalog.write") && hasModule("navigation")) loadFooter();
+    });
+
+    async function loadFooter() {
+        try {
+            const menus = await api.get("/api/admin/x/navigation/menus");
+            const found = (menus.data ?? []).find((m) => m.handle === "footer");
+            footer = found ? await api.get(`/api/admin/x/navigation/menus/${found.id}`) : null;
+        } catch {
+            footer = undefined;
+        }
+    }
+
+    async function useStandardFooter() {
+        footering = true;
+        try {
+            const menu = footer ?? (await api.post("/api/admin/x/navigation/menus", { handle: "footer", title: "Footer" }));
+            footer = await api.put(`/api/admin/x/navigation/menus/${menu.id}/items`, { items: footerChange });
+            toast.success("Footer now links the standard pages");
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            footering = false;
         }
     }
 
@@ -297,6 +337,29 @@
                                         <span class="txt">Add all {standardMissing.length}</span>
                                     </button>
                                 {/if}
+                            </div>
+                        </div>
+                    </div>
+                {/if}
+
+                {#if can("catalog.write") && footerOutdated}
+                    <div class="alert info m-b-base" transition:rise>
+                        <div class="flex-fill">
+                            <strong>Your footer does not link all the standard pages.</strong>
+                            Link all six, keeping your other footer links. The old Search
+                            link goes, since the header already searches. Shoppers see each page once
+                            it is published.
+                            <div class="flex flex-wrap gap-sm m-t-sm">
+                                <button
+                                    type="button"
+                                    class="btn sm"
+                                    class:loading={footering}
+                                    disabled={footering}
+                                    onclick={useStandardFooter}
+                                >
+                                    <span class="txt">Add the standard pages to the footer</span>
+                                </button>
+                                <a class="btn sm secondary" href="{base}/dash/menus">Edit the footer</a>
                             </div>
                         </div>
                     </div>
