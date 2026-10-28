@@ -1,0 +1,40 @@
+# Plain HTTP on two names. Browsers resolve every *.localhost name to this
+# machine and treat it as a secure origin, so no certificate is needed here.
+
+{
+	auto_https off
+}
+
+# The admin panel and the admin API. The panel claims /, so it gets a name of
+# its own.
+http://{$ADMIN_HOST} {
+	handle /internal/* {
+		respond 404
+	}
+	handle {
+		reverse_proxy gocommerce:8080
+	}
+}
+
+# The storefront, plus the shopper calls the connector makes from the browser
+# under /backend. Only the public API, module routes and pictures pass: the
+# admin API and the panel stay on the admin name.
+http://{$SHOP_HOST} {
+	@admin path /backend/api/admin /backend/api/admin/*
+	handle @admin {
+		respond 404
+	}
+	@engine path /backend/api/* /backend/x/* /backend/media/* /backend/sample-media/* /backend/images/*
+	handle @engine {
+		uri strip_prefix /backend
+		reverse_proxy gocommerce:8080
+	}
+	# Anything else under /backend would reach the storefront, whose own proxy
+	# forwards every path to the engine.
+	handle /backend/* {
+		respond 404
+	}
+	handle {
+		reverse_proxy storefront:3000
+	}
+}

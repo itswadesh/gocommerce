@@ -216,6 +216,10 @@ storefront's service surface onto these routes and the storefront modules —
 catalogue, bag, checkout, orders, accounts, addresses, wishlists, reviews, pages,
 menus and FAQ — and says plainly where the two do not meet yet.
 
+[`examples/kitcommerce-stack`](examples/kitcommerce-stack) runs the two together
+on one machine, with a smoke test that places a cash-on-delivery order through
+the storefront's routes and finds it in the admin API.
+
 ## Deploy the whole platform
 
 One file, one command: [`docker-compose.yml`](docker-compose.yml) runs the

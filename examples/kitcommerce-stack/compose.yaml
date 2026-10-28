@@ -1,0 +1,209 @@
+# A full stack you can run and test: PostgreSQL, the GoCommerce engine with its
+# admin panel, the Svelte Commerce storefront on @misiki/gocommerce-connector,
+# and Caddy in front. See README.md.
+#
+#   cp .env.example .env      # then fill in the three secrets
+#   docker compose up -d --build --wait
+#   docker compose --profile smoke run --rm smoke
+#
+# Two origins, because the panel claims / on the engine:
+#   http://shop.localhost:8000   the storefront
+#   http://admin.localhost:8000  the admin panel and the admin API
+#
+# Every image and the storefront's commit are pinned. The engine is built from
+# this checkout, so the stack tests the code beside it.
+
+name: kitcommerce-stack
+
+x-engine: &engine
+  build:
+    context: ../..
+  image: kitcommerce-stack/gocommerce:local
+  environment: &engine-env
+    # gocommerce_app, not the superuser: a superuser passes every row policy
+    # (D83). engine-login creates it.
+    DATABASE_URL: postgres://gocommerce_app:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/gocommerce?sslmode=disable
+    GOCOMMERCE_ADMIN_TOKEN: ${GOCOMMERCE_ADMIN_TOKEN:?set GOCOMMERCE_ADMIN_TOKEN in .env}
+    # 1 masks every email address and phone number on admin responses and
+    # freezes operators, keys and roles. Turn it on for a public demo.
+    GOCOMMERCE_DEMO: ${GOCOMMERCE_DEMO:-}
+
+services:
+  postgres:
+    image: postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+    environment:
+      POSTGRES_USER: gocommerce
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: gocommerce
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gocommerce -d gocommerce"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  # Creates the engine's own login and hands it the tables. Safe to run on
+  # every start.
+  engine-login:
+    image: postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ../../scripts/engine-login.sql:/opt/gocommerce/engine-login.sql:ro
+    command:
+      - psql
+      - --host=postgres
+      - --username=gocommerce
+      - --dbname=gocommerce
+      - --set=ON_ERROR_STOP=1
+      - --set=engine_password=${POSTGRES_PASSWORD}
+      - --file=/opt/gocommerce/engine-login.sql
+
+  # Migrations run here, before the server starts, so a failed migration
+  # stops the stack with its own log instead of a server that restarts.
+  # serve still checks them at boot and finds nothing to do.
+  migrate:
+    <<: *engine
+    restart: "no"
+    depends_on:
+      engine-login:
+        condition: service_completed_successfully
+    command: ["migrate"]
+
+  # No shopper module is installed: guest checkout is core. No email or SMS
+  # module is installed either, so nothing this stack does can send a message.
+  gocommerce:
+    <<: *engine
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *engine-env
+      GOCOMMERCE_ADMIN_EMAIL: ${GOCOMMERCE_ADMIN_EMAIL:-admin@example.com}
+      GOCOMMERCE_ADMIN_PASSWORD: ${GOCOMMERCE_ADMIN_PASSWORD:?set GOCOMMERCE_ADMIN_PASSWORD in .env}
+    command: ["-addr", "0.0.0.0:8080", "serve"]
+    volumes:
+      - media:/data/media
+    # The image is distroless and has no shell or HTTP client to probe with.
+    # seed waits on GET /health/ready instead, and everything after it waits
+    # on seed.
+
+  # Waits for the engine, then adds the engine's sample shop: products with
+  # photographs, categories, collections and a few orders. A second run adds
+  # nothing, so seed runs on every start.
+  seed:
+    image: curlimages/curl:8.17.0@sha256:935d9100e9ba842cdb060de42472c7ca90cfe9a7c96e4dacb55e79e560b3ff40
+    restart: "no"
+    depends_on:
+      gocommerce:
+        condition: service_started
+    environment:
+      GOCOMMERCE_ADMIN_TOKEN: ${GOCOMMERCE_ADMIN_TOKEN}
+    entrypoint: ["sh", "-ec"]
+    command:
+      - |
+        engine=http://gocommerce:8080
+        auth="Authorization: Bearer $$GOCOMMERCE_ADMIN_TOKEN"
+        curl -fsS --retry 60 --retry-delay 1 --retry-all-errors -o /dev/null $$engine/health/ready
+        curl -fsS -X POST -H "$$auth" $$engine/api/admin/sample-content
+        echo
+        # A fresh store has no name, and the storefront shows its own
+        # placeholder until it has one. A name set in the panel is kept.
+        if curl -fsS -H "$$auth" $$engine/api/admin/store | grep -q '"name":""'; then
+          curl -fsS -X PATCH -H "$$auth" -H 'Content-Type: application/json' \
+            --data '{"name":"KitCommerce demo"}' -o /dev/null $$engine/api/admin/store
+        fi
+
+  storefront:
+    build:
+      # The gocomm branch, pinned to one commit. Its bun.lock pins
+      # @misiki/gocommerce-connector; the build fails when that is not
+      # CONNECTOR_VERSION.
+      context: https://github.com/itswadesh/svelte-commerce.git#${STOREFRONT_COMMIT:-9bddb23d53fc555df58ae0378f0848c5a9578090}
+      args:
+        GIT_SHA: ${STOREFRONT_COMMIT:-9bddb23d53fc555df58ae0378f0848c5a9578090}
+        CONNECTOR_VERSION: "0.14.0"
+      # The repository's own Dockerfile installs without its lockfile and
+      # takes the newest bun and Node 24, so this one is used instead.
+      dockerfile_inline: |
+        FROM node:24.22.1-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c
+        RUN npm install -g bun@1.4.4
+        WORKDIR /app
+        COPY package.json bun.lock ./
+        RUN bun install --frozen-lockfile
+        ARG CONNECTOR_VERSION
+        RUN test "$$(node -p "require('./node_modules/@misiki/gocommerce-connector/package.json').version")" = "$$CONNECTOR_VERSION"
+        COPY . .
+        ARG GIT_SHA
+        ENV GIT_SHA=$$GIT_SHA
+        RUN bun run build
+        ENV NODE_ENV=production PORT=3000
+        USER node
+        CMD ["node", "build"]
+    image: kitcommerce-stack/storefront:local
+    restart: unless-stopped
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    environment:
+      # Server-side rendering calls the engine on this network. Connector
+      # 0.14.0 reads this URL only on the server once the proxy path is set.
+      PUBLIC_GOCOMMERCE_API_URL: http://gocommerce:8080
+      # The shopper's browser calls /backend on the shop's own origin, and
+      # Caddy sends those calls to the engine. The engine needs no CORS.
+      PUBLIC_GOCOMMERCE_PROXY_PATH: /backend
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  caddy:
+    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    restart: unless-stopped
+    depends_on:
+      storefront:
+        condition: service_healthy
+    environment:
+      SHOP_HOST: ${SHOP_HOST:-shop.localhost}
+      ADMIN_HOST: ${ADMIN_HOST:-admin.localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "${HTTP_PORT:-8000}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  # The smoke test, for a machine without curl and jq. Not started by up.
+  smoke:
+    profiles: ["smoke"]
+    build:
+      dockerfile_inline: |
+        FROM ghcr.io/jqlang/jq:1.8.1@sha256:4f34c6d23f4b1372ac789752cc955dc67c2ae177eb1b5860b75cdc5091ce6f91 AS jq
+        FROM curlimages/curl:8.17.0@sha256:935d9100e9ba842cdb060de42472c7ca90cfe9a7c96e4dacb55e79e560b3ff40
+        COPY --from=jq /jq /usr/bin/jq
+    image: kitcommerce-stack/smoke:local
+    depends_on:
+      caddy:
+        condition: service_healthy
+    environment:
+      SHOP_URL: http://${SHOP_HOST:-shop.localhost}
+      ADMIN_URL: http://${ADMIN_HOST:-admin.localhost}
+      SMOKE_CONNECT_TO: caddy:80
+      GOCOMMERCE_ADMIN_TOKEN: ${GOCOMMERCE_ADMIN_TOKEN}
+    volumes:
+      - ./scripts:/scripts:ro
+    entrypoint: ["sh", "/scripts/smoke.sh"]
+
+volumes:
+  pgdata:
+  media:
