@@ -344,7 +344,7 @@ type publicStore struct {
 	SupportURL string   `json:"support_url"`
 	Language   string   `json:"language"`
 	Languages  []string `json:"languages"`
-	// ImagesPath is where this store's pictures are served resized (D139), on
+	// ImagesPath is where this store's pictures are served resized (D142), on
 	// the engine's own origin, for a storefront to put in its image CDN setting.
 	ImagesPath string `json:"images_path"`
 }

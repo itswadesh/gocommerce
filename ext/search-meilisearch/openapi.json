@@ -4,7 +4,7 @@
       "get": {
         "tags": ["meilisearch"],
         "summary": "Search the catalogue through the store's Meilisearch index",
-        "description": "The storefront's search box. The store forwards the query to Meilisearch with its search-only key, so the storefront never holds one; a storefront that wants to talk to Meilisearch directly reads the host and search key from GET /api/plugins instead. Hits are the index's product documents: id, slug, title, description (plain text), vendor, product_type, tags, category, image, currency, price_minor, price_max_minor, in_stock, skus, options, updated_at. `filter` and `sort` are passed through in Meilisearch's own syntax (`in_stock = true`, `price_minor:asc`). 404 while the plugin is off.",
+        "description": "The storefront's search box. The store forwards the query to Meilisearch with its search-only key, so the storefront never holds one; a storefront that wants to talk to Meilisearch directly reads the host and search key from GET /api/plugins instead. Hits are the index's product documents: id, slug, title, description (plain text), vendor, product_type, tags, category, image, currency, price_minor, price_max_minor, in_stock, skus, options, updated_at. `filter` and `sort` are passed through in Meilisearch's own syntax (`in_stock = true`, `price_minor:asc`). 404 while the plugin is off. While Meilisearch cannot be reached it answers 200 with no hits and `unavailable: true`. Either way the storefront answers from GET /api/products instead.",
         "parameters": [
           {"name": "q", "in": "query", "schema": {"type": "string"}},
           {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 20, "maximum": 100}},
@@ -40,7 +40,7 @@
         "tags": ["admin:meilisearch"],
         "summary": "Rebuild the index from the catalogue",
         "security": [{"adminToken": []}],
-        "description": "Creates the index if it is missing, sets what is searched, filtered and sorted on, pushes every active product and removes every document the catalogue no longer has. The worker does the same every twenty polls; this is for right now. 409 while a sync is already running or the plugin is not configured.",
+        "description": "Creates the index if it is missing, sets what is searched, filtered and sorted on, pushes every active product and removes every document the catalogue no longer has. The worker does the same on a store's first sync and every twenty polls after; this is for right now. 409 while a sync is already running or the plugin is not configured.",
         "responses": {
           "200": {"description": "What was written and removed.", "content": {"application/json": {"schema": {
             "type": "object",
@@ -63,7 +63,8 @@
           "limit": {"type": "integer"},
           "offset": {"type": "integer"},
           "processing_ms": {"type": "integer"},
-          "configured": {"type": "boolean"}
+          "configured": {"type": "boolean"},
+          "unavailable": {"type": "boolean", "description": "Meilisearch did not answer: no hits, search the product listing instead."}
         }
       },
       "MeilisearchStatus": {
@@ -71,7 +72,7 @@
         "properties": {
           "enabled": {"type": "boolean"},
           "configured": {"type": "boolean"},
-          "host": {"type": "string"},
+          "host": {"type": "string", "description": "Only a Meilisearch the store set itself; empty when it uses the install's."},
           "index": {"type": "string"},
           "syncing": {"type": "boolean"},
           "last_sync": {"type": "string", "format": "date-time"},

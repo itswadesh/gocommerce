@@ -282,6 +282,79 @@ func TestStoresShareOneIndexEachSeeingItsOwn(t *testing.T) {
 	}
 }
 
+// An install that runs Meilisearch for its stores leaves each store to switch
+// it on: off with no row, and then the switch is the only step — no host or
+// key to type, the install's key never shown, and the first sync builds the
+// index without anyone asking for a rebuild.
+func TestAnInstallsMeilisearchIsOneSwitchAwayAndOffUntilThen(t *testing.T) {
+	fake := newFake()
+	srv := httptest.NewServer(http.HandlerFunc(fake.handler))
+	t.Cleanup(srv.Close)
+	mod := New(Config{Host: srv.URL, APIKey: "install-master-key", Poll: -1})
+	app := gctest.New(t, mod)
+	ctx := context.Background()
+	price := int64(1000)
+	if _, err := app.Products().CreateProduct(ctx, gocommerce.ProductInput{Title: "Silver bracelet", Status: "active", PriceMinor: &price}); err != nil {
+		t.Fatal(err)
+	}
+
+	if on, err := app.Plugins().Enabled(ctx, pluginKey); err != nil || on {
+		t.Fatalf("enabled with no row = %v, %v; want off until the store switches it on", on, err)
+	}
+	if rec := gctest.Request(t, app, http.MethodGet, "/x/meilisearch/search?q=bracelet", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("search while off = %d, want 404 so the storefront uses the database", rec.Code)
+	}
+
+	rec := gctest.AdminRequest(t, app, http.MethodPatch, "/api/admin/plugins/"+pluginKey, map[string]any{"enabled": true})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("switching it on = %d: %s", rec.Code, rec.Body)
+	}
+	if strings.Contains(rec.Body.String(), "install-master-key") {
+		t.Fatal("the plugin's settings show the install's key")
+	}
+	var plugin gocommerce.Plugin
+	gctest.DecodeData(t, rec, &plugin)
+	if !plugin.Enabled || !plugin.Configured {
+		t.Fatalf("after the switch: enabled %v, configured %v; want both", plugin.Enabled, plugin.Configured)
+	}
+
+	// The worker's next poll is an incremental one, but this store has never
+	// synced: it builds the index, settings and all, rather than pushing
+	// documents into an index nobody has made filterable by store.
+	if _, _, err := mod.Sync(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	if fake.created != 1 || fake.settings == nil || len(fake.docs) != 1 {
+		t.Fatalf("first sync: %d index creations, settings %v, %d documents; want a full build", fake.created, fake.settings, len(fake.docs))
+	}
+	status := gctest.AdminRequest(t, app, http.MethodGet, "/api/admin/x/meilisearch/status", nil)
+	if strings.Contains(status.Body.String(), srv.URL) {
+		t.Errorf("the status names the install's own Meilisearch address to the store: %s", status.Body)
+	}
+}
+
+// Meilisearch down is not the storefront's error: the search answers
+// "unavailable", which the storefront takes as "ask the database", and not a
+// 5xx that every shopper's browser console would log.
+func TestSearchSaysUnavailableWhenMeilisearchIsDown(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	srv.Close()
+	mod := New(Config{Host: srv.URL, APIKey: "master", Poll: -1})
+	app := gctest.New(t, mod)
+	on := true
+	if _, err := app.Plugins().Update(context.Background(), pluginKey, gocommerce.PluginPatch{Enabled: &on}); err != nil {
+		t.Fatal(err)
+	}
+	rec := gctest.Request(t, app, http.MethodGet, "/x/meilisearch/search?q=mug", nil)
+	var result searchResult
+	if rec.Code == http.StatusOK {
+		gctest.DecodeData(t, rec, &result)
+	}
+	if rec.Code != http.StatusOK || !result.Unavailable || len(result.Hits) != 0 {
+		t.Fatalf("search with Meilisearch down = %d %s; want 200 with unavailable and no hits", rec.Code, rec.Body)
+	}
+}
+
 // A deleted store's documents leave the shared index with it; the other
 // stores' stay.
 func TestDeletingAStoreTakesItsDocumentsOutOfTheIndex(t *testing.T) {

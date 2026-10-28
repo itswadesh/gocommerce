@@ -438,7 +438,7 @@ longer, longer-listed or not text is a `400` (`normalizeProductMetadata`). A
 storefront draws them as text, never as markup.
 
 A storefront shows a picture at the width it needs from
-`GET /images/{store}/cdn-cgi/image/width=320/<the picture's path>` (D139),
+`GET /images/{store}/cdn-cgi/image/width=320/<the picture's path>` (D142),
 the prefix being `images_path` from `GET /api/store`. Only a path one of the
 store's own pictures has — in the media library, or a category's
 `metadata.image` — is served; any other is a 404, and the original is fetched

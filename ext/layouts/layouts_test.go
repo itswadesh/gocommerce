@@ -2,7 +2,9 @@ package layouts
 
 import (
 	"context"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -203,13 +205,15 @@ func TestProductGridsShowLiveProducts(t *testing.T) {
 			"source": "products", "products": []int64{b.ID, c.ID, a.ID}, "limit": 1}},
 		map[string]any{"id": "featured", "type": "product-grid", "enabled": true, "settings": map[string]any{"collection": col.ID}},
 		map[string]any{"id": "gone", "type": "product-grid", "enabled": true, "settings": map[string]any{"collection": 999999}},
+		map[string]any{"id": "newest", "type": "product-grid", "enabled": true, "settings": map[string]any{"source": "newest", "limit": 2}},
+		map[string]any{"id": "unpicked", "type": "product-grid", "enabled": true, "settings": map[string]any{}},
 	)
 	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 0, "document": doc}, http.StatusOK)
 	adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/publish", map[string]any{"version": 1}, http.StatusOK)
 
 	got := publicPage(t, app, "/x/layouts/home", http.StatusOK)
-	if len(got.Sections) != 3 {
-		t.Fatalf("sections = %d, want 3", len(got.Sections))
+	if len(got.Sections) != 5 {
+		t.Fatalf("sections = %d, want 5", len(got.Sections))
 	}
 	if p := got.Sections[0].Products; len(p) != 1 || p[0].ID != c.ID {
 		t.Errorf("picked grid = %v, want only %d: the draft is skipped and the limit is one", p, c.ID)
@@ -219,6 +223,14 @@ func TestProductGridsShowLiveProducts(t *testing.T) {
 	}
 	if p := got.Sections[2].Products; len(p) != 0 {
 		t.Errorf("grid of a deleted collection = %v, want empty", p)
+	}
+	// The starting page's grid: the newest on sale, the draft skipped.
+	if p := got.Sections[3].Products; len(p) != 2 || p[0].ID != c.ID || p[1].ID != a.ID {
+		t.Errorf("newest grid = %v, want the newest active, %d then %d", p, c.ID, a.ID)
+	}
+	// A collection grid with none picked stays empty, as it always has.
+	if p := got.Sections[4].Products; len(p) != 0 {
+		t.Errorf("grid with no collection = %v, want empty", p)
 	}
 	if p := got.Sections[1].Products[0]; p.Variants[0].Price.AmountMinor != 2000 {
 		t.Errorf("price = %d, want the catalogue's 2000", p.Variants[0].Price.AmountMinor)
@@ -283,6 +295,50 @@ func TestTheRegistryDescribesEverySection(t *testing.T) {
 	if _, err := Validate("home", Starter("home")); err != nil {
 		t.Fatalf("the starter page does not validate: %v", err)
 	}
+}
+
+// The starting home page brings its look: theme settings that survive the
+// registry's checks unchanged, with words on the accent block and on the
+// quiet bands readable at 4.5:1 against the storefront's own text colour.
+func TestTheStarterBringsABoldReadableLook(t *testing.T) {
+	start := Starter("home")
+	got, err := Validate("home", start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.ThemeSettings) == 0 || len(got.ThemeSettings) != len(start.ThemeSettings) {
+		t.Fatalf("theme settings = %v, want the starter's %v kept whole", got.ThemeSettings, start.ThemeSettings)
+	}
+	ts := got.ThemeSettings
+	if r := contrast(ts["accent"].(string), ts["accent_text"].(string)); r < 4.5 {
+		t.Errorf("text on the accent block is %.2f:1, want at least 4.5", r)
+	}
+	// The storefront's own text colour, which the starter leaves alone.
+	if r := contrast(ts["muted"].(string), "#0f172a"); r < 4.5 {
+		t.Errorf("text on the quiet bands is %.2f:1, want at least 4.5", r)
+	}
+	if r := contrast(ts["accent"].(string), "#ffffff"); r < 3 {
+		t.Errorf("the accent against the page is %.2f:1, want at least 3 for buttons and links", r)
+	}
+}
+
+func contrast(a, b string) float64 {
+	lum := func(hex string) float64 {
+		var out float64
+		for i, w := range []float64{0.2126, 0.7152, 0.0722} {
+			v, _ := strconv.ParseUint(hex[1+2*i:3+2*i], 16, 8)
+			c := float64(v) / 255
+			if c <= 0.04045 {
+				c /= 12.92
+			} else {
+				c = math.Pow((c+0.055)/1.055, 2.4)
+			}
+			out += w * c
+		}
+		return out
+	}
+	x, y := lum(a)+0.05, lum(b)+0.05
+	return math.Max(x, y) / math.Min(x, y)
 }
 
 func TestRoutesDeclareRightsAndAreDocumented(t *testing.T) {

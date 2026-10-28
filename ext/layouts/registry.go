@@ -28,6 +28,7 @@ const (
 	KindColor       = "color"       // a colour as #rrggbb, nothing else
 	KindVideo       = "video"       // a video file's address, from the Files library or pasted
 	KindMenu        = "menu"        // one of the store's menus, by its handle (Content → Menus)
+	KindIcon        = "icon"        // one of Options, each a picture's name: the panel shows a grid of them (D139)
 )
 
 // Option is one choice of a select field.
@@ -133,7 +134,7 @@ var Sections = []SectionType{
 		Fields: []Field{
 			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
 			{Key: "source", Label: "Products from", Kind: KindSelect, Default: "collection",
-				Options: []Option{{"collection", "A collection"}, {"products", "Products I pick"}}},
+				Options: []Option{{"collection", "A collection"}, {"products", "Products I pick"}, {"newest", "The newest products"}}},
 			{Key: "collection", Label: "Collection", Kind: KindCollection, ShowWhen: map[string]string{"source": "collection"}},
 			{Key: "products", Label: "Products", Kind: KindProducts, MaxItems: 24, ShowWhen: map[string]string{"source": "products"}},
 			{Key: "limit", Label: "How many to show", Kind: KindNumber, Default: 8, Min: 1, Max: 24},
@@ -173,6 +174,7 @@ var Sections = []SectionType{
 			{Key: "items", Label: "Benefits", Kind: KindList, Required: true, MaxItems: 6, Fields: []Field{
 				{Key: "title", Label: "Title", Kind: KindText, Required: true, MaxLen: 80},
 				{Key: "body", Label: "Line under it", Kind: KindText, MaxLen: maxShort},
+				{Key: "icon", Label: "Icon", Kind: KindIcon, Options: BenefitIcons, Help: "Shown beside the title. None leaves it out."},
 			}},
 		},
 	},
@@ -312,8 +314,13 @@ var Sections = []SectionType{
 				ShowWhen: map[string]string{"show_announcement": "true"}},
 			{Key: "announcement_pages", Label: "Show the strip on", Kind: KindSelect, Default: "all",
 				Options: []Option{{"all", "Every page"}, {"home", "The home page only"}}, ShowWhen: map[string]string{"show_announcement": "true"}},
+			// The default false is what an older header, saved before this
+			// switch, reads as: the menu shown. The picker's ShowWhen needs it.
+			{Key: "hide_menu", Label: "Hide the header menu", Kind: KindBool, Default: false,
+				Help: "No menu across the header, and no menu button on phones. The logo, search, account and basket stay."},
 			{Key: "menu", Label: "Header menu", Kind: KindMenu, Default: "header", Requires: "navigation",
-				Help: "Its links run across the header, and fill the menu on phones. Make and edit menus in Content → Menus."},
+				Help:     "Its links run across the header, and fill the menu on phones. Make and edit menus in Content → Menus.",
+				ShowWhen: map[string]string{"hide_menu": "false"}},
 		},
 		Check: func(s map[string]any) error {
 			if on, _ := s["show_announcement"].(bool); on && s["announcement_text"] == nil {
@@ -348,6 +355,18 @@ var Sections = []SectionType{
 			return nil
 		},
 	},
+}
+
+// BenefitIcons are the pictures a benefit may carry (D139). A name, not a
+// picture: the storefront draws each in its own icon style, and the panel in
+// its own, so neither ships the other's artwork. A name added here needs its
+// picture in the storefront's map too; until then it draws no icon there.
+var BenefitIcons = []Option{
+	{"truck", "Delivery"}, {"return", "Returns"}, {"exchange", "Exchange"}, {"shield", "Protection"},
+	{"lock", "Secure payment"}, {"headset", "Support"}, {"phone", "Call us"}, {"cash", "Cash on delivery"},
+	{"wallet", "Wallet"}, {"percent", "Offers"}, {"gift", "Gift"}, {"package", "Packaging"},
+	{"clock", "Fast"}, {"star", "Quality"}, {"award", "Award"}, {"verified", "Certified"},
+	{"sparkle", "Handmade"}, {"leaf", "Natural"}, {"heart", "Made with care"}, {"map-pin", "Local"},
 }
 
 // SocialNetworks are the networks a footer links to, each drawn with its own
@@ -607,7 +626,7 @@ func cleanField(where string, f Field, v any) (any, error) {
 		v = f.Default
 	}
 	switch f.Kind {
-	case KindText, KindTextarea, KindURL, KindImage, KindVideo, KindSelect, KindColor, KindMenu:
+	case KindText, KindTextarea, KindURL, KindImage, KindVideo, KindSelect, KindIcon, KindColor, KindMenu:
 		s, ok := v.(string)
 		if v != nil && !ok {
 			return nil, bad("must be text")
@@ -644,7 +663,7 @@ func cleanField(where string, f Field, v any) (any, error) {
 			if len(s) > 2048 || !safeURL(s) {
 				return nil, bad("must be a web address (https://…) or a path on the store (/…)")
 			}
-		case KindSelect:
+		case KindSelect, KindIcon:
 			if !hasOption(f.Options, s) {
 				return nil, bad("must be one of its choices")
 			}

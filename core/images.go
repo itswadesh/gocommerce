@@ -24,7 +24,7 @@ import (
 	"time"
 )
 
-// Resized pictures for a storefront (D139).
+// Resized pictures for a storefront (D142).
 //
 // A product card 180px wide was downloading the 925px original. The storefront
 // already asks for a srcset of fixed widths when its store record turns
@@ -115,7 +115,7 @@ func (a *App) handleImage(w http.ResponseWriter, r *http.Request) {
 			var unsupported errUnsupportedImage
 			if errors.As(err, &unsupported) {
 				// WebP, AVIF and GIF are not decoded here (no dependency for them,
-				// D139). The original is still the right picture, just heavier.
+				// D142). The original is still the right picture, just heavier.
 				w.Header().Set("Cache-Control", "public, max-age=86400")
 				http.Redirect(w, r, src.url, http.StatusFound)
 				return
@@ -330,7 +330,7 @@ func resizeImage(body []byte, width int) ([]byte, error) {
 // scaleBox shrinks src to w×h by averaging the source pixels each target pixel
 // covers, fractions at the edges included. For shrinking — the only direction
 // this goes — that is as sharp as a bicubic filter without its ringing, and it
-// needs nothing outside the standard library (D139). Premultiplied RGBA
+// needs nothing outside the standard library (D142). Premultiplied RGBA
 // averages correctly across transparent edges.
 func scaleBox(src image.Image, w, h int) *image.RGBA {
 	b := src.Bounds()

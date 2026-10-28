@@ -1,0 +1,12 @@
+{
+  "name": "gocommerce-fashion-images",
+  "private": true,
+  "description": "Generates the fashion sample catalogue's photographs with Google Gemini. Dev tooling only; nothing here ships in the engine.",
+  "type": "module",
+  "scripts": {
+    "generate": "node generate.mjs"
+  },
+  "dependencies": {
+    "sharp": "0.35.5"
+  }
+}

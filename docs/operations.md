@@ -119,7 +119,7 @@ Three things are worth knowing before it runs somewhere that matters:
 - **The media volume is seeded from the image**, which is why `/data/media` is
   created in the build with the right ownership. Mount a volume there or uploads
   live only as long as the container.
-- **Resized pictures are cached in `/data/media/.cache/images`** (D139). It is
+- **Resized pictures are cached in `/data/media/.cache/images`** (D142). It is
   safe to delete: each width is made again on its next request. Leave it out of
   backups if space matters.
 - **There is no `HEALTHCHECK`**: the image has no shell to run one with. Point
@@ -156,6 +156,53 @@ Sign-up, password-reset links and the stores' own addresses are listed too:
 
 Notifications › Setup Email has a **Send test email** button: it sends one
 message now and shows the provider's answer, such as an unverified sender.
+
+### Search with Meilisearch
+
+The compose file runs a `meilisearch` service next to the engine and starts the
+engine with `-meilisearch` (D141). Meilisearch keeps an index of every store's
+catalogue and forgives typos, so "braclet" finds a bracelet; the database's own
+search does not.
+
+- **What runs.** The official `getmeili/meilisearch` image at a pinned version,
+  its data on the `meilidata` volume. No port is published: only the engine
+  reaches it, at `http://meilisearch:7700` on the compose network. All stores
+  share one index; every document carries its store, and a search sees only the
+  asking store's products.
+- **The key.** Set `MEILI_MASTER_KEY` in the host's environment tab (Dokploy:
+  the compose service's Environment) and redeploy. It must be at least 16
+  bytes; `openssl rand -base64 32` makes a good one. The engine uses it as
+  `MEILI_API_KEY` to write the index and to search. It never reaches a
+  storefront or the panel. `MEILI_SEARCH_KEY` is optional: a search-only key
+  the engine searches with instead.
+- **Without the key** Meilisearch refuses to start in production, and its
+  container keeps restarting. The engine does not wait for it, so the stores
+  stay up and every search answers from the database. The engine is given no
+  Meilisearch address either, so the plugin asks a store for a host and key of
+  its own, as on an install without one.
+- **Each store switches it on.** It is off for every store until someone
+  presses Activate on Plugins › Meilisearch. On an install with the key set,
+  that is the only step: the host and key come from the install, so the form
+  asks for neither. Within a poll (30 seconds) the worker builds the store's
+  index, and the storefront's search uses it from then on. Switched off, the
+  store searches the database again.
+- **Rebuilding.** The worker pushes changed products every 30 seconds and
+  reconciles the whole catalogue, removing what the store no longer sells,
+  every 20 polls. Plugins › Meilisearch › Settings shows the last sync, how
+  many documents it has written since the engine started (a full
+  reconciliation counts every product again) and the last error, with a
+  **Rebuild index** button for right now (`POST /api/admin/x/meilisearch/reindex`).
+- **When it is down,** or finds nothing for a shopper's words, the storefront's
+  search, type-ahead and sorted listings answer from the database; the index
+  catches up on the next poll. A store selling through a sales channel always
+  searches the database, which knows what the channel sells and at what price.
+  Each failed search is logged as a warning.
+- **Memory and disk.** Meilisearch keeps the index on disk and maps it into
+  memory: roughly the index's size plus some headroom. A few thousand products
+  across all stores fit in about 256 MB of memory and well under 1 GB of disk.
+  Indexing is the peak, so give it room when a large catalogue is first
+  switched on. Back up the volume if rebuilding from scratch would take long;
+  otherwise it can always be rebuilt from the database.
 
 ### A store's own domain, without touching the proxy
 

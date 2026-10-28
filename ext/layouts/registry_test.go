@@ -2,6 +2,7 @@ package layouts
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -214,6 +215,58 @@ func TestVideoLinksBecomeEmbeds(t *testing.T) {
 		}
 		if got != want {
 			t.Errorf("VideoEmbed(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// A benefit carries a picture from a fixed set, by a name the storefront
+// draws its own way (D139). A saved strip from before icons has none and
+// still saves; a name outside the set is refused, not drawn as nothing.
+func TestABenefitPicksItsIconFromTheSet(t *testing.T) {
+	got, err := Validate("home", doc(t, `{"sections":[{"id":"a","type":"benefits","settings":{"items":[
+		{"title":"Fast delivery","icon":"truck"},{"title":"No icon"},{"title":"Blank icon","icon":""}]}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := got.Sections[0].Settings["items"].([]map[string]any)
+	if items[0]["icon"] != "truck" {
+		t.Fatalf("item 1 = %v, want the truck kept", items[0])
+	}
+	for _, it := range items[1:] {
+		if _, ok := it["icon"]; ok {
+			t.Fatalf("item %v, want no icon stored", it)
+		}
+	}
+	_, err = Validate("home", doc(t, `{"sections":[{"id":"a","type":"benefits","settings":{"items":[{"title":"T","icon":"ri-truck-line"}]}}]}`))
+	if err == nil || !strings.Contains(err.Error(), "Icon must be one of its choices") {
+		t.Fatalf("unknown icon: err = %v, want it refused", err)
+	}
+}
+
+// The starter strip has a picture on each promise, and every icon in the set
+// has a name the panel can show.
+func TestTheStarterBenefitsHaveIcons(t *testing.T) {
+	d, err := Validate("home", Starter("home"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var icons []any
+	for _, s := range d.Sections {
+		if s.Type == "benefits" {
+			for _, it := range s.Settings["items"].([]map[string]any) {
+				icons = append(icons, it["icon"])
+			}
+		}
+	}
+	if want := []any{"truck", "return", "shield", "headset"}; fmt.Sprint(icons) != fmt.Sprint(want) {
+		t.Fatalf("starter icons = %v, want %v", icons, want)
+	}
+	if len(BenefitIcons) < 12 {
+		t.Fatalf("%d icons, want a useful set", len(BenefitIcons))
+	}
+	for _, o := range BenefitIcons {
+		if o.Value == "" || o.Label == "" || strings.ContainsAny(o.Value, " _") {
+			t.Fatalf("icon %+v, want a lowercase-dashed name and a label", o)
 		}
 	}
 }
