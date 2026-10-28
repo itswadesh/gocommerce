@@ -1,9 +1,17 @@
-# A whole store: the engine and its database.
+# The whole platform in one file (D143): the engine with its admin panel,
+# PostgreSQL, Meilisearch, the shopper storefront (Svelte Commerce) and Caddy
+# in front of them with automatic HTTPS.
 #
-#   docker compose up --build
+#   docker compose up -d
 #
-# On Dokploy this is a Compose service. Set the variables below in the panel's
-# Environment tab rather than committing them — POSTGRES_PASSWORD and
+# Every variable is listed, secrets as placeholders, in .env.example; copy it
+# to .env and fill it in, or set the same names in the host's environment tab.
+#
+# On Dokploy this is a Compose service. Dokploy runs its own Traefik on ports
+# 80 and 443, so set PROXY_REPLICAS=0 there: the caddy service then starts no
+# container, and Dokploy's domain entries route to gocommerce:8080 (the panel)
+# and storefront:3000 (the shops) by service name. Set the variables in the
+# panel's Environment tab rather than committing them — POSTGRES_PASSWORD and
 # GOCOMMERCE_ADMIN_TOKEN are secrets, and the admin password is used once.
 
 services:
@@ -173,6 +181,61 @@ services:
     ports:
       - "${PORT:-8080}:8080"
 
+  # The shopper storefront: Svelte Commerce, built from its git repository at
+  # STOREFRONT_REF (the branch wired to GoCommerce), since no image of it is
+  # published. One container serves every store: <slug>.<base domain> and
+  # every verified domain of a store.
+  storefront:
+    build:
+      context: https://github.com/itswadesh/svelte-commerce.git#${STOREFRONT_REF:-gocomm}
+    restart: unless-stopped
+    depends_on:
+      - gocommerce
+    environment:
+      PORT: "3000"
+      # The engine on this compose network, for server-side rendering and for
+      # the shopper's API calls, which reach it through the storefront's own
+      # /backend path because the engine answers no CORS. Not the public
+      # address: the storefront's server never has to leave this host.
+      PUBLIC_GOCOMMERCE_API_URL: ${STOREFRONT_ENGINE_URL:-http://gocommerce:8080}
+      PUBLIC_GOCOMMERCE_PROXY_PATH: /backend
+      # A request for acme.<base domain> sells for store acme.
+      PUBLIC_GOCOMMERCE_BASE_DOMAIN: ${GOCOMMERCE_BASE_DOMAIN:-}
+      # Optional: the store every other host sells for, on a one-shop install.
+      PUBLIC_GOCOMMERCE_STORE: ${STOREFRONT_STORE:-}
+    # No published port: the proxy reaches it at storefront:3000.
+
+  # HTTPS in front of both. The panel answers at ADMIN_DOMAIN; every other
+  # name goes to the storefront, with a certificate fetched the first time a
+  # browser asks for it, and only for a name the engine says is a store's
+  # (GET /internal/caddy/ask). See scripts/Caddyfile.
+  #
+  # PROXY_REPLICAS=0 starts no container for it, for a host whose own proxy
+  # already holds ports 80 and 443 (Dokploy).
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    deploy:
+      replicas: ${PROXY_REPLICAS:-1}
+    depends_on:
+      - gocommerce
+      - storefront
+    environment:
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-admin.localhost}
+      # Extra Caddy global options, such as `local_certs` for a trial on
+      # *.localhost with Caddy's own certificate authority. Empty in
+      # production, which gets certificates from Let's Encrypt.
+      CADDY_GLOBAL_OPTIONS: ${CADDY_GLOBAL_OPTIONS:-}
+    volumes:
+      - ./scripts/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The certificates and the account key: lose them and every name is
+      # issued again, which Let's Encrypt rate-limits.
+      - caddydata:/data
+      - caddyconfig:/config
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+
   # Makes sure the engine's own login exists and owns the tables, on every
   # start. Idempotent, so an existing volume — one made before the engine
   # stopped signing in as the superuser — is brought up to date without
@@ -252,3 +315,5 @@ volumes:
   media:
   pgdata:
   meilidata:
+  caddydata:
+  caddyconfig:
