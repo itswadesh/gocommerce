@@ -93,19 +93,26 @@ try), a single-variant mug, a gift card with `track_inventory` off, and a draft
 product. It matches on slug and skips what already exists.
 
 **`.\scripts\seed-fashion.ps1`** — a sample fashion catalogue priced in
-rupees: twelve dresses, ethnic sets and menswear, each in two to four colours
+rupees: twelve dresses, ethnic sets and menswear, each in three or four colours
 and every size, with a few sizes sold out or running low. The products are in
 [`scripts/fashion-images/catalogue.json`](../scripts/fashion-images/catalogue.json).
-Each colour has four photographs of a model (front, back, side, fabric close-up),
-and that colour's variants nominate them, so a storefront's gallery changes when
-a shopper picks a colour. The photographs are not in the repository:
-`scripts/fashion-images/generate.mjs` makes them with Google Gemini into the
-git-ignored `scripts/fashion-images/out/`. It needs `GEMINI_API_KEY` in the
-environment; run `npm install` in that folder first. Without the photographs
-the products are still created, and a later run adds the photographs. Pass
-`-SetCurrency` to switch a store that sells in another currency to INR, which
-works only before its first order. It is for dev and demo stores only: the
-struck-through MRPs and low stock are made up.
+Each colour has one to three photographs of a model, and that colour's variants
+nominate them, so a storefront's gallery changes when a shopper picks a colour.
+The photographs are not in the repository. They are free Unsplash and Pexels
+stock ([credits](../scripts/fashion-images/CREDITS.md)) of each product in its
+first colour: `node fetch-photos.mjs` in that folder (after `npm install`)
+downloads them into the git-ignored `scripts/fashion-images/out/`. The other
+colours are image edits of those, saved beside them; `recolour.json` lists
+each file to make with its prompt. A colour without its files gets no pictures,
+and a later run attaches them. Pass `-SetCurrency` to switch a store that sells
+in another currency to INR, which works only before its first order. Without
+`-Draft` it is for dev and demo stores only: the struck-through MRPs and low
+stock are made up. With `-Draft` it can go into a live store unseen: products
+are created as drafts, existing ones are never re-published, and no category or
+collection is created, because the engine has no hidden flag for them and an
+empty category still shows in a storefront's navigation. The run ends with a
+list of where each unfiled draft belongs; it is not written on the product,
+because a storefront shows a product's metadata and tags once it is published.
 
 **`.\scripts\smoke.ps1`** — walks a running store through a complete sale,
 checking what each step should have changed: catalog, cart limits, guest

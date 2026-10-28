@@ -2,31 +2,53 @@
 # menswear, photographed on models, in several colours and sizes each.
 #
 #   .\scripts\seed-fashion.ps1 -BaseUrl http://127.0.0.1:8090 -Token dev-token
+#   .\scripts\seed-fashion.ps1 -BaseUrl https://store.example -Token <token> -Draft
 #
 # The catalogue is scripts\fashion-images\catalogue.json, so what a store gets is
 # reviewable as data rather than read out of code. It is priced in Indian rupees
-# and written for an Indian store: twelve products, two to four colours each,
+# and written for an Indian store: twelve products, three or four colours each,
 # every colour in every size, one variant per colour and size.
 #
-# Photographs are not in the repository. scripts\fashion-images\generate.mjs
-# makes them with Google Gemini into scripts\fashion-images\out\ (git-ignored),
-# and this uploads them from there. Without them the products are still
-# created, and a later run attaches the pictures once they exist.
+# Photographs are not in the repository. They are free stock photographs
+# (scripts\fashion-images\CREDITS.md) of each product in its first colour, which
+# scripts\fashion-images\fetch-photos.mjs downloads into the git-ignored
+# scripts\fashion-images\out\. The other colours are edits of those, saved
+# beside them under their own colour's name (recolour.json lists them). This
+# uploads whatever is there: a colour whose files are not yet there gets no
+# pictures, and a later run attaches them once they exist.
 #
-# Pictures belong to the product and each variant nominates its colour's four
+# Pictures belong to the product and each variant nominates its colour's
 # (PUT /api/admin/variants/{id}/media), which is how a storefront swaps the
 # gallery when a shopper picks a colour, and why every size of one colour shows
 # the same photographs without any file being uploaded twice.
 #
-# For a dev or demo store only. The prices, the struck-through MRPs and the
-# "only a few left" stock are invented to exercise the storefront, not facts
-# about any shop, so they do not belong in front of real shoppers.
+# Without -Draft it is for a dev or demo store: the prices, the struck-through
+# MRPs and the "only a few left" stock are invented to exercise the storefront,
+# not facts about any shop. -Draft is for a live store, where the owner sets
+# real prices and publishes each product: shoppers see nothing new.
+#
+#   - Products are created as drafts. One that already exists is left alone,
+#     whatever its status, so a run never re-publishes or un-publishes it.
+#   - No category or collection is created. The engine has no hidden flag for
+#     either, and the public category listing returns every category whether
+#     anything is filed in it or not, so an empty one would show up in a
+#     storefront's navigation. A product is filed under its category or
+#     collections only if the store already has them (a draft in a category or
+#     collection is not shown in it), and a later run files a draft under
+#     ones created since. The rest is printed at the end as a filing list for
+#     the owner, and catalogue.json keeps it. It is not
+#     written on the product: storefronts print a product's metadata on its
+#     page and its tags as filters, so a note there would be shown to
+#     shoppers the moment the owner published it.
+#   - Every product carries the catalogue's tag, which is how a re-run finds
+#     them, and a storefront shows it once the product is published. The owner
+#     can remove it then: a later run finds the slug taken and skips it.
 #
 # Everything goes through the API, no SQL. Safe to re-run: products are found by
-# their tag and slug, categories and collections by slug, and a product that
-# already has pictures keeps them. An upload that fails part way leaves the
-# files it did send unattached in the media library; the next run uploads the
-# set again.
+# their tag and slug, categories and collections by slug, and a colour whose
+# variants already have pictures keeps them. An upload that fails part way
+# leaves the files it did send unattached in the media library; the next run
+# uploads that colour again.
 
 param(
     [string]$BaseUrl  = $env:GC_BASE,
@@ -35,7 +57,9 @@ param(
     # The catalogue is priced in rupees. A store selling in anything else is
     # refused unless this says to switch it, which the engine allows only
     # before the store's first order.
-    [switch]$SetCurrency
+    [switch]$SetCurrency,
+    # For a live store: drafts only, and nothing created that a shopper sees.
+    [switch]$Draft
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,7 +68,8 @@ if ($Token)   { $env:GC_TOKEN = $Token }
 . "$PSScriptRoot\gc.ps1"
 
 $catalogue = Get-Content (Join-Path $PSScriptRoot 'fashion-images\catalogue.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-Write-Host "Seeding the fashion catalogue into $(Get-GCBase)" -ForegroundColor Cyan
+$mode = if ($Draft) { ' as hidden drafts' } else { '' }
+Write-Host "Seeding the fashion catalogue into $(Get-GCBase)$mode" -ForegroundColor Cyan
 
 function ConvertTo-Slug([string]$Text) { ($Text.ToLower() -replace '[^a-z0-9]+', '-').Trim('-') }
 
@@ -78,9 +103,10 @@ $categoryIds = @{}
 foreach ($c in $catalogue.categories) {
     try {
         $categoryIds[$c.slug] = (Invoke-GC GET "/api/categories/$($c.slug)").id
-        Write-Host "  skip  $($c.slug)"
+        Write-Host "  have  $($c.slug)"
         continue
     } catch { }
+    if ($Draft) { Write-Host "  not created  $($c.slug)"; continue }
     $body = @{ slug = $c.slug; title = $c.title }
     if ($c.parent) { $body.parent_id = $categoryIds[$c.parent] }
     $categoryIds[$c.slug] = (Invoke-GC POST '/api/admin/categories' $body -Admin).id
@@ -99,7 +125,8 @@ for ($offset = 0; ; $offset += 200) {
     if ($page.Count -lt 200) { break }
 }
 foreach ($c in $catalogue.collections) {
-    if ($collectionIds.ContainsKey($c.slug)) { Write-Host "  skip  $($c.slug)"; continue }
+    if ($collectionIds.ContainsKey($c.slug)) { Write-Host "  have  $($c.slug)"; continue }
+    if ($Draft) { Write-Host "  not created  $($c.slug)"; continue }
     $made = Invoke-GC POST '/api/admin/collections' @{ slug = $c.slug; title = $c.title; description = $c.description } -Admin
     $collectionIds[$c.slug] = $made.id
     Write-Host "  new   $($c.slug)" -ForegroundColor DarkGreen
@@ -115,15 +142,18 @@ $existing = @{}
 foreach ($p in (Invoke-GC GET "/api/admin/products?tag=$($catalogue.tag)&limit=200" -Admin)) { $existing[$p.slug] = $p }
 
 # A typo in the data file is caught before anything is written, rather than
-# sent to the engine as a null collection id.
+# sent to the engine as a null collection id or filed under nothing.
+$knownCategories = @($catalogue.categories | ForEach-Object { $_.slug })
+$knownCollections = @($catalogue.collections | ForEach-Object { $_.slug })
 foreach ($p in $catalogue.products) {
     foreach ($slug in @($p.collections)) {
-        if (-not $collectionIds.ContainsKey($slug)) { throw "$($p.slug) names an unknown collection '$slug'" }
+        if ($knownCollections -notcontains $slug) { throw "$($p.slug) names an unknown collection '$slug'" }
     }
-    if (-not $categoryIds.ContainsKey($p.category)) { throw "$($p.slug) names an unknown category '$($p.category)'" }
+    if ($knownCategories -notcontains $p.category) { throw "$($p.slug) names an unknown category '$($p.category)'" }
 }
 
 $created = 0
+$variantsCreated = 0
 $index = 0
 foreach ($p in $catalogue.products) {
     $index++
@@ -155,9 +185,9 @@ foreach ($p in $catalogue.products) {
     }
 
     $body = @{
-        slug = $p.slug; title = $p.title; description = $p.description; status = 'active'
+        slug = $p.slug; title = $p.title; description = $p.description
+        status = if ($Draft) { 'draft' } else { 'active' }
         product_type = 'Apparel'; tags = @($catalogue.tag)
-        category_id = $categoryIds[$p.category]
         metadata = @{ highlights = @($p.highlights) }
         # Colour first: it is the choice that changes the pictures, so it is
         # the one a product page should ask about first.
@@ -167,6 +197,7 @@ foreach ($p in $catalogue.products) {
         )
         variants = $variants
     }
+    if ($categoryIds.ContainsKey($p.category)) { $body.category_id = $categoryIds[$p.category] }
     try {
         $made = Invoke-GC POST '/api/admin/products' $body -Admin
     } catch {
@@ -176,19 +207,38 @@ foreach ($p in $catalogue.products) {
     }
     $existing[$p.slug] = $made
     $created++
-    Write-Host ("  new   {0}  ({1} variants)" -f $p.slug, $variants.Count) -ForegroundColor DarkGreen
+    $variantsCreated += $variants.Count
+    Write-Host ("  new   {0}  ({1} variants, {2})" -f $p.slug, $variants.Count, $body.status) -ForegroundColor DarkGreen
 }
 
-# Apart from creation, so a product whose create succeeded and whose
-# collections did not gets them on the next run.
+# Filing, apart from creation: a product whose create succeeded and whose
+# collections did not gets them on the next run, and under -Draft a draft made
+# before its category or collections existed is filed once they do. Only what
+# is still empty is filled, so the owner's own filing stands. Under -Draft only
+# drafts are touched: filing a published product would put it on a page.
+$unfiled = @()
 foreach ($p in $catalogue.products) {
     $have = $existing[$p.slug]
-    $ids = @($p.collections | ForEach-Object { $collectionIds[$_] })
-    if (-not $have -or $ids.Count -eq 0 -or @($have.collections).Count -gt 0) { continue }
-    Invoke-GC PUT "/api/admin/products/$($have.id)/collections" @{ collection_ids = $ids } -Admin | Out-Null
+    if (-not $have -or ($Draft -and $have.status -ne 'draft')) { continue }
+    if (-not $have.category -and $categoryIds.ContainsKey($p.category)) {
+        Invoke-GC PATCH "/api/admin/products/$($have.id)" @{ category_id = $categoryIds[$p.category] } -Admin | Out-Null
+        $have | Add-Member -Force NoteProperty category @{ slug = $p.category }
+    }
+    $ids = @($p.collections | Where-Object { $collectionIds.ContainsKey($_) } | ForEach-Object { $collectionIds[$_] })
+    if ($ids.Count -gt 0 -and @($have.collections).Count -eq 0) {
+        Invoke-GC PUT "/api/admin/products/$($have.id)/collections" @{ collection_ids = $ids } -Admin | Out-Null
+        $have | Add-Member -Force NoteProperty collections @($ids)
+    }
+    if (-not $have.category -or (@($p.collections).Count -gt 0 -and @($have.collections).Count -eq 0)) { $unfiled += $p }
 }
 
 # ------------------------------------------------------------------ images
+#
+# Colour by colour: a colour whose variants all have pictures is done, and one
+# whose variants have none gets its files uploaded, if they are all there. A
+# colour's uploads are found again by their alt text, so a run that stopped
+# between attaching them to the product and nominating them for the variants
+# finishes the job instead of uploading the set twice.
 
 Write-GCStep "Photographs (from $ImageDir)"
 
@@ -204,76 +254,73 @@ function Send-Media([string]$File, [string]$Alt) {
     $media.id
 }
 
-$pictured = 0
+function Get-Alt($Product, $Colour, [string]$Shot) {
+    $view = if ($Shot -eq 'detail') { 'close-up' } else { "$Shot view" }
+    "$($Product.title) in $($Colour.name.ToLower()), $view"
+}
+
+$uploaded = 0
 $waiting = @()
 foreach ($p in $catalogue.products) {
     $have = $existing[$p.slug]
     if (-not $have) { continue }
-    $shotCount = @($catalogue.shots).Count
-    if ($have.media_count -gt 0) {
-        # Pictures attached, but a run that stopped part way through the
-        # variants leaves some without theirs. They are re-nominated from the
-        # product's list, which was attached colour by colour, shot by shot.
-        $full = Invoke-GC GET "/api/admin/products/$($have.id)" -Admin
+    $full = Invoke-GC GET "/api/admin/products/$($have.id)" -Admin
+    # Once the owner has published a product its pictures are theirs to
+    # change: a -Draft run adding a colour's photographs would change a page
+    # shoppers can see.
+    if ($Draft -and $full.status -ne 'draft') { Write-Host "  skip  $($p.slug) (not a draft)"; continue }
+    $attached = @(Invoke-GC GET "/api/admin/products/$($have.id)/media" -Admin)
+    $missingColours = @()
+    foreach ($colour in $p.colours) {
+        $mine = @($full.variants | Where-Object { $_.options -contains $colour.name })
         # `-not`, not a count: a variant with none has no images key at all, and
         # @($null).Count is 1 in Windows PowerShell.
-        if (-not ($full.variants | Where-Object { -not $_.images })) {
-            Write-Host "  skip  $($p.slug) (has pictures)"; continue
-        }
-        $attached = @(Invoke-GC GET "/api/admin/products/$($have.id)/media" -Admin)
-        if ($attached.Count -ne @($p.colours).Count * $shotCount) {
-            Write-Host "  $($p.slug) has pictures this script did not attach; left alone" -ForegroundColor Yellow
-            continue
-        }
-        $i = 0
-        foreach ($colour in $p.colours) {
-            $ids = @($attached[$i..($i + $shotCount - 1)] | ForEach-Object { $_.id })
-            $i += $shotCount
-            foreach ($v in ($full.variants | Where-Object { $_.options -contains $colour.name })) {
-                Invoke-GC PUT "/api/admin/variants/$($v.id)/media" @{ media_ids = $ids } -Admin | Out-Null
-            }
-        }
-        Write-Host "  fixed $($p.slug) (variant pictures)" -ForegroundColor DarkGreen
-        continue
-    }
+        $bare = @($mine | Where-Object { -not $_.images })
+        if ($bare.Count -eq 0) { continue }
 
-    # All of a product's files are checked before any is uploaded, so a half-
-    # generated set never leaves a product showing some colours and not others.
-    $files = @{}
-    $missing = 0
-    foreach ($colour in $p.colours) {
-        $files[$colour.name] = @(foreach ($shot in $catalogue.shots) {
-            $f = Join-Path $ImageDir ("{0}\{1}-{2}.webp" -f $p.slug, (ConvertTo-Slug $colour.name), $shot.name)
-            if (-not (Test-Path $f)) { $missing++ }
-            [pscustomobject]@{ file = $f; shot = $shot.name }
-        })
+        # One id per shot: an upload already attached under that shot's alt
+        # text, or $null for a shot still to upload.
+        $alts = @($p.photos | ForEach-Object { Get-Alt $p $colour $_.shot })
+        $ids = @(foreach ($alt in $alts) { ($attached | Where-Object { $_.alt -eq $alt } | Select-Object -First 1).id })
+        $todo = @(for ($i = 0; $i -lt $alts.Count; $i++) { if (-not $ids[$i]) { $i } })
+        if ($todo.Count -gt 0) {
+            # All of a colour's files are checked before any is uploaded, so a
+            # colour never shows some of its shots and not the others.
+            $files = @($p.photos | ForEach-Object { Join-Path $ImageDir ("{0}\{1}-{2}.webp" -f $p.slug, (ConvertTo-Slug $colour.name), $_.shot) })
+            if (@($todo | Where-Object { -not (Test-Path $files[$_]) }).Count -gt 0) { $missingColours += $colour.name; continue }
+            foreach ($i in $todo) { $ids[$i] = Send-Media $files[$i] $alts[$i] }
+            $uploaded += $todo.Count
+            $all = @($attached | ForEach-Object { $_.id }) + @($todo | ForEach-Object { $ids[$_] })
+            Invoke-GC PUT "/api/admin/products/$($have.id)/media" @{ media_ids = $all } -Admin | Out-Null
+            $attached = @(Invoke-GC GET "/api/admin/products/$($have.id)/media" -Admin)
+        }
+        foreach ($v in $bare) {
+            Invoke-GC PUT "/api/admin/variants/$($v.id)/media" @{ media_ids = $ids } -Admin | Out-Null
+        }
+        Write-Host ("  {0}  {1} ({2} pictures)" -f $p.slug, $colour.name, $ids.Count) -ForegroundColor DarkGreen
     }
-    if ($missing -gt 0) { $waiting += $p.slug; continue }
-
-    $byColour = @{}
-    $all = @()
-    foreach ($colour in $p.colours) {
-        $byColour[$colour.name] = @(foreach ($f in $files[$colour.name]) {
-            $view = if ($f.shot -eq 'detail') { 'close-up of the fabric' } else { "$($f.shot) view" }
-            Send-Media $f.file "$($p.title) in $($colour.name.ToLower()), $view"
-        })
-        $all += $byColour[$colour.name]
-    }
-    Invoke-GC PUT "/api/admin/products/$($have.id)/media" @{ media_ids = $all } -Admin | Out-Null
-
-    $full = Invoke-GC GET "/api/admin/products/$($have.id)" -Admin
-    foreach ($v in $full.variants) {
-        $colour = $p.colours | Where-Object { $v.options -contains $_.name } | Select-Object -First 1
-        if (-not $colour) { continue }
-        Invoke-GC PUT "/api/admin/variants/$($v.id)/media" @{ media_ids = $byColour[$colour.name] } -Admin | Out-Null
-    }
-    $pictured++
-    Write-Host ("  new   {0}  ({1} pictures)" -f $p.slug, $all.Count) -ForegroundColor DarkGreen
+    if ($missingColours.Count -gt 0) { $waiting += "$($p.slug) ($($missingColours -join ', '))" }
 }
 if ($waiting.Count -gt 0) {
-    Write-Host ("  {0} product(s) wait for photographs: {1}" -f $waiting.Count, ($waiting -join ', ')) -ForegroundColor Yellow
-    Write-Host '  generate them with scripts\fashion-images\generate.mjs, then run this again' -ForegroundColor Yellow
+    Write-Host ("  {0} product(s) have colours waiting for photographs:" -f $waiting.Count) -ForegroundColor Yellow
+    $waiting | ForEach-Object { Write-Host "    $_" -ForegroundColor Yellow }
+    Write-Host '  see scripts\fashion-images\fetch-photos.mjs and recolour.json, then run this again' -ForegroundColor Yellow
+}
+
+# The filing still to do, by the owner in the panel or by a later run once the
+# categories and collections exist; see the header for why it is not written
+# on the products themselves.
+if ($unfiled.Count -gt 0) {
+    Write-GCStep 'Not filed yet (create these categories and collections, or file them in the panel)'
+    foreach ($p in $unfiled) {
+        $cat = $catalogue.categories | Where-Object { $_.slug -eq $p.category }
+        $parent = $catalogue.categories | Where-Object { $_.slug -eq $cat.parent }
+        $path = if ($parent) { "$($parent.title) / $($cat.title)" } else { $cat.title }
+        $cols = if (@($p.collections).Count) { "; collections: $(@($p.collections) -join ', ')" } else { '' }
+        Write-Host "    $($p.slug)  ->  $path$cols"
+    }
 }
 
 Write-Host ''
-Write-Host ("Done: {0} product(s) created, {1} given photographs." -f $created, $pictured) -ForegroundColor Green
+$as = if ($Draft) { ' as drafts' } else { '' }
+Write-Host ("Done: {0} product(s) with {1} variants created{2}, {3} photograph(s) uploaded." -f $created, $variantsCreated, $as, $uploaded) -ForegroundColor Green
