@@ -48,6 +48,9 @@
     import Pager from "$lib/components/Pager.svelte";
     import ProductFilters from "$lib/components/ProductFilters.svelte";
     import Select from "$lib/components/Select.svelte";
+    import PriceCell from "$lib/components/PriceCell.svelte";
+    import PromptDialog from "$lib/components/PromptDialog.svelte";
+    import { belowMRP, readPrice, splitPublishable } from "$lib/listprices.js";
     import SortHeader from "$lib/components/SortHeader.svelte";
     import { titled } from "$lib/brand.svelte.js";
 
@@ -73,6 +76,9 @@
         tag: "",
         category_id: 0,
         collection_id: 0,
+        // "Needs a price" is price_max=0: a product with a variant at 0, as
+        // one drafted from photos is created. Text, so 0 is not read as unset.
+        price_max: "",
         // The category-attribute facets, as JSON in one parameter.
         //
         // The API takes them as a repeated `attr=handle:value`, which listState
@@ -700,6 +706,10 @@
         // answer null on the way to the wire.
         if (!isValidMoney(form.price)) {
             errors.price = "A price is required.";
+        } else if (form.status === "active" && toMinor(form.price, currency) <= 0) {
+            // 0 is "no price yet" on this screen; on sale at 0 is a product
+            // anybody can buy for nothing.
+            errors.price = "A product on sale needs a price above 0. Save it as a draft to price it later.";
         }
         if (Object.keys(errors).length) return;
 
@@ -769,6 +779,7 @@
         list.params.category_id;
         list.params.collection_id;
         list.params.attrs;
+        list.params.price_max;
         sel.clear();
     });
 
@@ -799,7 +810,20 @@
         // Filtered before the run, as bulk.js asks: telling an operator that
         // four products "failed" to become draft when they already were is
         // noise they could have been spared.
-        const rows = picked.filter((p) => p.status !== status);
+        let rows = picked.filter((p) => p.status !== status);
+        // A product with a variant at 0 is not published: 0 is "no price yet",
+        // and a shopper could buy it for nothing.
+        if (status === "active" && rows.length) {
+            const { ok, refused } = splitPublishable(rows);
+            if (refused.length) {
+                const names = refused.slice(0, 3).map((p) => p.title).join(", ");
+                toast.error(
+                    `${refused.length} ${pluralize(refused.length, "product needs", "products need")} a price before ${refused.length === 1 ? "it is" : "they are"} published: ${names}${refused.length > 3 ? "…" : ""}`,
+                );
+            }
+            rows = ok;
+            if (!rows.length) return;
+        }
         if (!rows.length) {
             toast.info(`Already ${status}`);
             return;
@@ -815,6 +839,42 @@
             bulkBusy = false;
         }
         sel.clear();
+        await load();
+    }
+
+    /*
+     * One price for every variant of every selected product. A variant at a
+     * different price is overwritten: that is what "set price" means, and the
+     * per-variant boxes on the row are there for the other case.
+     */
+    let bulkPriceOpen = $state(false);
+    async function bulkPrice(text) {
+        // The products' own currency: the settings read USD until the store
+        // has answered, and a price read in the wrong one is off by 100.
+        const cur = picked[0]?.variants?.[0]?.price?.currency || currency;
+        const r = readPrice(text, cur);
+        if (r.empty || r.error) {
+            toast.error(r.error || "Type a price.");
+            return;
+        }
+        const clash = picked.find((p) => belowMRP(p.variants, r.minor));
+        if (clash) {
+            toast.error(`${clash.title} has an MRP at or below that price; raise or clear its MRP first.`);
+            return;
+        }
+        bulkPriceOpen = false;
+        bulkBusy = true;
+        try {
+            await runBulk(
+                picked,
+                async (p) => {
+                    for (const v of p.variants) await api.patch(`/api/admin/variants/${v.id}`, { price_minor: r.minor });
+                },
+                { describe: "Priced", noun: "product", label: (p) => p.title },
+            );
+        } finally {
+            bulkBusy = false;
+        }
         await load();
     }
 
@@ -1031,6 +1091,17 @@
             </form>
 
             <div class="page-header-primary-btns">
+                <button
+                    type="button"
+                    class="btn secondary needs-price-toggle"
+                    aria-label="Needs a price"
+                    aria-pressed={list.params.price_max === "0"}
+                    title="Products with a variant that has no price yet"
+                    onclick={() => list.set({ price_max: list.params.price_max === "0" ? "" : "0" })}
+                >
+                    <i class={list.params.price_max === "0" ? "ri-checkbox-circle-fill" : "ri-price-tag-3-line"} aria-hidden="true"></i>
+                    <span class="txt">Needs a price</span>
+                </button>
                 <div class="field">
                     <Select
                         id="status-filter"
@@ -1079,6 +1150,12 @@
                         <i class="ri-shopping-bag-line" aria-hidden="true"></i>
                         <span class="txt">Import from Shopify</span>
                     </button>
+                {/if}
+                {#if writable && hasModule("photo-products")}
+                    <a class="btn secondary" href="{base}/dash/products/photos" aria-label="Create from photos" title="Create products from photos">
+                        <i class="ri-image-add-line" aria-hidden="true"></i>
+                        <span class="txt">Create from photos</span>
+                    </a>
                 {/if}
                 {#if writable && hasModule("import-amazon")}
                     <button type="button" class="btn secondary" onclick={openImport}>
@@ -1311,8 +1388,14 @@
                                     {pluralize(product.variants?.length ?? 0, "variant")}
                                 </span>
                             </td>
-                            <td class="col-field-type-number min-width" data-name="Price">
-                                {priceRange(product)}
+                            <!-- A click in the padding round the boxes must not open
+                                 the product either. -->
+                            <td class="col-field-type-number min-width" data-name="Price" onclick={(e) => writable && e.stopPropagation()}>
+                                {#if writable && product.variants?.length}
+                                    <PriceCell {product} {currency} onupdate={(variants) => (product.variants = variants)} />
+                                {:else}
+                                    {priceRange(product)}
+                                {/if}
                             </td>
                             <td
                                 class="col-field-type-number min-width {available === null
@@ -1363,7 +1446,7 @@
                     {#if !loading && !products.length}
                         <tr class="empty-row">
                             <td colspan={writable ? 8 : 7}>
-                                {#if search || status || filtered}
+                                {#if search || status || filtered || list.params.price_max}
                                     <EmptyState
                                         icon="ri-filter-off-line"
                                         title="No products match these filters"
@@ -1423,7 +1506,16 @@
                     onclick={() => bulkStatus("active")}
                 >
                     <i class="ri-eye-line" aria-hidden="true"></i>
-                    <span class="txt">Activate</span>
+                    <span class="txt">Publish</span>
+                </button>
+                <button
+                    type="button"
+                    class="btn sm secondary"
+                    disabled={bulkBusy}
+                    onclick={() => (bulkPriceOpen = true)}
+                >
+                    <i class="ri-price-tag-3-line" aria-hidden="true"></i>
+                    <span class="txt">Set price…</span>
                 </button>
                 <button
                     type="button"
@@ -1893,6 +1985,20 @@
     onclose={() => (filterOpen = false)}
 />
 
+<PromptDialog
+    open={bulkPriceOpen}
+    title={`Set the price of ${sel.count} ${pluralize(sel.count, "product", "products")}`}
+    label={`Price (${currency})`}
+    placeholder="499"
+    help="Every variant of each selected product gets this price. The MRP is left as it is; set it in the row."
+    confirmLabel="Set price"
+    required
+    maxlength={20}
+    busy={bulkBusy}
+    onclose={() => (bulkPriceOpen = false)}
+    onconfirm={bulkPrice}
+/>
+
 <Confirm
     bind:open={confirmOpen}
     title="Delete this product?"
@@ -1979,6 +2085,19 @@
 </Drawer>
 
 <style>
+    .needs-price-toggle {
+        transition:
+            background-color 150ms ease,
+            color 150ms ease;
+    }
+    .btn.secondary.needs-price-toggle[aria-pressed="true"] {
+        background: rgb(254 243 199);
+        color: rgb(146 64 14);
+    }
+    :global([data-color-scheme="dark"]) .btn.secondary.needs-price-toggle[aria-pressed="true"] {
+        background: rgb(120 53 15);
+        color: rgb(254 243 199);
+    }
     /* The erase button shares the line where there is room, and drops under
        the sentence on a phone rather than squeezing it. */
     .sample-banner {

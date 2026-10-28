@@ -54,6 +54,8 @@ const PROBES = {
     // Not a screen: a drawer on the products page. Probed all the same, so the
     // "Import from Amazon" button only appears in a binary that can answer it.
     "import-amazon": { path: "/api/admin/x/import-amazon/jobs", right: "catalog.write" },
+    // The products page's "Create from photos", for the same reason.
+    "photo-products": { path: "/api/admin/x/photo-products/status", right: "catalog.write" },
     navigation: { path: "/api/admin/x/navigation/menus", right: "catalog.read" },
     reviews: { path: "/api/admin/x/reviews?limit=1", right: "catalog.read" },
     // The module's own right, or the one it was lifted off (D65): in a binary

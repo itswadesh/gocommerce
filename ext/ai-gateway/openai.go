@@ -60,6 +60,9 @@ func (p *openAIProvider) Generate(ctx context.Context, req Request) (Response, e
 		}
 		var parts []map[string]any
 		for _, d := range req.Documents {
+			if d.Caption != "" {
+				parts = append(parts, map[string]any{"type": "text", "text": d.Caption})
+			}
 			data := "data:" + d.MediaType + ";base64," + base64.StdEncoding.EncodeToString(d.Bytes)
 			if d.MediaType == "application/pdf" {
 				parts = append(parts, map[string]any{"type": "file", "file": map[string]string{"filename": d.Name, "file_data": data}})

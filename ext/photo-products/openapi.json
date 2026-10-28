@@ -1,0 +1,680 @@
+{
+  "paths": {
+    "/api/admin/x/photo-products/status": {
+      "get": {
+        "tags": [
+          "admin:photo-products"
+        ],
+        "summary": "Whether photo batches can run",
+        "description": "Requires catalog.write. Answers ready, or ready false with the reason: the AI gateway switched off, missing its key or cap, or keeping pictures in the store. The screen shows the reason before anything is uploaded.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Readiness.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "ready": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "max_photos": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/photo-products/batches": {
+      "get": {
+        "tags": [
+          "admin:photo-products"
+        ],
+        "summary": "Recent photo batches",
+        "description": "Requires catalog.write. The ten newest batches, newest first, without their photos and proposals.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Batches.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PhotoProductsBatch"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin:photo-products"
+        ],
+        "summary": "Start a batch of photos",
+        "description": "Requires catalog.write. Creates an empty batch. sizes lists the sizes these products are sold in, when they come in sizes: they become a Size option on every product, because a photo does not show them.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PhotoProductsBatch"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sizes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/x/photo-products/batches/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "admin:photo-products"
+        ],
+        "summary": "A photo batch",
+        "description": "Requires catalog.write. The batch with its photos and the products proposed from them, and its progress (step_done of step_total) while it works.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PhotoProductsBatch"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/photo-products/batches/{id}/photos": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "admin:photo-products"
+        ],
+        "summary": "Add a photo to a batch",
+        "description": "Requires catalog.write. media_id is the photo as uploaded to the media library. thumb (at most 1024 px, 150 KB) and image (at most 2048 px, 600 KB) are base64 JPEG copies the model is shown: the thumbnail when sorting, the larger one when describing. At most 60 photos a batch; the same media item twice is one photo.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PhotoProductsBatch"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "media_id",
+                  "thumb",
+                  "image"
+                ],
+                "properties": {
+                  "media_id": {
+                    "type": "integer"
+                  },
+                  "thumb": {
+                    "type": "string",
+                    "format": "byte"
+                  },
+                  "image": {
+                    "type": "string",
+                    "format": "byte"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/x/photo-products/batches/{id}/start": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "admin:photo-products"
+        ],
+        "summary": "Run a batch",
+        "description": "Requires catalog.write. Answers 202 and works in the background: one AI gateway call sorts every photo into products and variants, then one call per product writes its listing. Running it again after a failure, a restart or a spent cap repeats only what did not finish. 409 when the AI gateway cannot make calls, with what to set.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "The batch, working.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PhotoProductsBatch"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/photo-products/batches/{id}/items": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "put": {
+        "tags": [
+          "admin:photo-products"
+        ],
+        "summary": "Save the reviewed proposals",
+        "description": "Requires catalog.write. Replaces the proposals with the shop's edited list while the batch is under review: items with an id are updated, items without one are added, proposals left out are dropped. A photo belongs to at most one proposal. Proposals already created are kept as they are.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PhotoProductsBatch"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "draft": {
+                          "$ref": "#/components/schemas/PhotoProductsDraft"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/x/photo-products/batches/{id}/create": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "admin:photo-products"
+        ],
+        "summary": "Create the products",
+        "description": "Requires catalog.write. Creates a draft product from every proposal that has none yet, through the catalogue service: every variant at price 0 with no stock, the photos attached to the product and each to its own variant, and ai_drafted in the metadata. Pressing it again makes only what is missing; a product a stopped run made is found by its mark and not made twice.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What was created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "created": {
+                          "type": "integer"
+                        },
+                        "failed": {
+                          "type": "integer"
+                        },
+                        "errors": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "batch": {
+                          "$ref": "#/components/schemas/PhotoProductsBatch"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "PhotoProductsDraft": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "description": "Plain text; paragraphs separated by a blank line."
+          },
+          "highlights": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "product_type": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "category_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "seo_title": {
+            "type": "string"
+          },
+          "seo_description": {
+            "type": "string"
+          },
+          "suggested_category": {
+            "type": "string",
+            "description": "A category the model suggests creating. Never created by this module."
+          },
+          "hs_code": {
+            "type": "string",
+            "description": "A suggested HSN code, for an Indian store only. Kept in the product's metadata as a suggestion, never set on a variant."
+          },
+          "option_name": {
+            "type": "string"
+          },
+          "sizes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "variants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                },
+                "photos": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "description": "Photo ids in this batch."
+                }
+              }
+            }
+          },
+          "alts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Alt text by photo id."
+          }
+        }
+      },
+      "PhotoProductsBatch": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "uploading",
+              "grouping",
+              "describing",
+              "review",
+              "creating",
+              "done",
+              "failed"
+            ]
+          },
+          "sizes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "step_done": {
+            "type": "integer"
+          },
+          "step_total": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "cost_micro_minor": {
+            "type": "integer",
+            "description": "What the model calls cost, in millionths of a minor unit of currency."
+          },
+          "currency": {
+            "type": "string"
+          },
+          "photo_count": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "photos": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "media_id": {
+                  "type": "integer"
+                },
+                "url": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "position": {
+                  "type": "integer"
+                },
+                "draft": {
+                  "$ref": "#/components/schemas/PhotoProductsDraft"
+                },
+                "described": {
+                  "type": "boolean"
+                },
+                "error": {
+                  "type": "string"
+                },
+                "product_id": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
