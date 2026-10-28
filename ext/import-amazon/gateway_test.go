@@ -56,9 +56,10 @@ func newGatewayHarness(t *testing.T) (*harness, *aigateway.Module, *providerStan
 		p.bodies = append(p.bodies, string(body))
 		p.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
+		text, _ := json.Marshal(gatewayRewrite)
 		_, _ = io.WriteString(w, `{"id":"msg_1","type":"message","role":"assistant","model":"claude-haiku-4-5-20251001",
-		  "content":[{"type":"tool_use","id":"toolu_1","name":"answer","input":`+gatewayRewrite+`}],
-		  "stop_reason":"tool_use","usage":{"input_tokens":1800,"output_tokens":240,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}`)
+		  "content":[{"type":"text","text":`+string(text)+`}],
+		  "stop_reason":"end_turn","usage":{"input_tokens":1800,"output_tokens":240,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}`)
 	}))
 	t.Cleanup(p.srv.Close)
 	gw := aigateway.New(aigateway.Config{Client: p.client(), PollInterval: time.Hour})
