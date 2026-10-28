@@ -158,9 +158,8 @@ func (m *Module) Register(app *gocommerce.App) error {
 
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "Meilisearch", Icon: "ri-search-2-line", Category: "search",
-		Description:    "Typo-tolerant product search from a Meilisearch index the store keeps up to date. The storefront searches through GET /x/meilisearch/search, or straight at Meilisearch with the search key.",
-		DefaultEnabled: m.cfg.Host != "" && m.cfg.APIKey != "",
-		Docs:           "https://www.meilisearch.com/docs",
+		Description: "Typo-tolerant product search from a Meilisearch index the store keeps up to date. The storefront searches through GET /x/meilisearch/search, or straight at Meilisearch with the search key.",
+		Docs:        "https://www.meilisearch.com/docs",
 		Fields: []gocommerce.PluginField{
 			{Key: "host", Label: "Meilisearch URL", Kind: "url", Outbound: true, Required: m.cfg.Host == "", Public: true, Help: "Its public address, such as the one Meilisearch Cloud gives. One on the server's own network is set where the server is run (MEILI_HOST)."},
 			{Key: "api_key", Label: "API key", Kind: "secret", Required: m.cfg.APIKey == "", Help: "A key that may write the index — the master key locally, an admin key in production. A Meilisearch URL of the store's own needs a key of its own here."},
@@ -366,7 +365,12 @@ func (m *Module) Sync(ctx context.Context, full bool) (indexed, removed int, err
 	if !conn.configured() {
 		return 0, 0, errors.New("meilisearch is not configured: it needs a URL and an API key")
 	}
-	if full {
+	// A store that has never synced (just switched on, or every attempt so
+	// far failed) gets the full build whatever was asked: an incremental push
+	// would let Meilisearch make the index without the store_id filter every
+	// search needs.
+	if full || since.IsZero() {
+		full = true
 		if err := m.ensureIndex(ctx, conn); err != nil {
 			return 0, 0, err
 		}
@@ -659,7 +663,7 @@ func (m *Module) handleStatus(w http.ResponseWriter, r *http.Request) {
 	m.mu.Lock()
 	state := m.stateFor(r.Context())
 	st := Status{
-		Enabled: conn.enabled, Configured: conn.configured(), Host: conn.host, Index: conn.index,
+		Enabled: conn.enabled, Configured: conn.configured(), Index: conn.index,
 		Syncing: state.syncing, Indexed: state.indexed, Removed: state.removed, LastError: state.lastErr,
 	}
 	if !state.lastSync.IsZero() {
@@ -667,6 +671,11 @@ func (m *Module) handleStatus(w http.ResponseWriter, r *http.Request) {
 		st.LastSync = &at
 	}
 	m.mu.Unlock()
+	// Only an address the store typed itself: the install's own is on the
+	// server's network, and where that is is not every store's business.
+	if conn.storeHost {
+		st.Host = conn.host
+	}
 	gocommerce.Respond(w, http.StatusOK, st)
 }
 
@@ -680,6 +689,9 @@ type searchResult struct {
 	Offset     int               `json:"offset"`
 	TimeMS     int               `json:"processing_ms"`
 	Configured bool              `json:"configured"`
+	// Unavailable is Meilisearch not answering: no hits, and the storefront
+	// should search the product listing instead.
+	Unavailable bool `json:"unavailable,omitempty"`
 }
 
 func (m *Module) handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -715,7 +727,14 @@ func (m *Module) handleSearch(w http.ResponseWriter, r *http.Request) {
 	payload, _, err := m.call(r.Context(), conn, first(conn.searchKey, conn.apiKey), http.MethodPost,
 		"/indexes/"+url.PathEscape(conn.index)+"/search", body)
 	if err != nil {
-		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "search"))
+		// Down, unreachable or refusing the key: the storefront takes
+		// "unavailable" as "ask the database instead". A 200 rather than a 5xx,
+		// because a browser logs every failed request to the shopper's console
+		// and this one is expected and handled.
+		m.log.Warn("meilisearch search failed", "error", err)
+		gocommerce.Respond(w, http.StatusOK, searchResult{
+			Hits: []json.RawMessage{}, Query: q.Get("q"), Limit: limit, Offset: offset, Configured: true, Unavailable: true,
+		})
 		return
 	}
 	var raw struct {
