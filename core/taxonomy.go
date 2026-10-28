@@ -23,7 +23,9 @@ import (
 // `gocommerce taxonomy import`, or the button that posts to
 // /api/admin/import/taxonomy. Neither is a default and no migration runs
 // either; the HTTP door exists because a Docker deployment has a browser and
-// no shell (D41).
+// no shell (D41). Since D146 the same file is also the master every store
+// browses and activates nodes from one at a time (taxonomy_master.go); this
+// import is that, for every node at once.
 
 //go:embed taxonomy/shopify-categories.txt
 var shopifyTaxonomy string

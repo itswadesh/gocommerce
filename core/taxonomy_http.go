@@ -24,6 +24,57 @@ func (a *App) mountTaxonomyRoutes() {
 	a.HandleAdminFunc("GET /api/admin/taxonomy-attributes/{handle}", a.handleGetTaxonomyAttribute, RightCategoriesRead)
 	a.HandleAdminFunc("PATCH /api/admin/taxonomy-attributes/{handle}", a.handleUpdateTaxonomyAttribute, RightCategoriesWrite)
 	a.HandleAdminFunc("DELETE /api/admin/taxonomy-attributes/{handle}", a.handleDeleteTaxonomyAttribute, RightCategoriesWrite)
+
+	// The master tree and a store's activations of it (D146). Activating
+	// writes categories, so it takes the right that writing one does.
+	a.HandleAdminFunc("GET /api/admin/taxonomy", a.handleBrowseTaxonomy, RightCategoriesRead)
+	a.HandleAdminFunc("PUT /api/admin/taxonomy/{id}/activation", a.handleActivateTaxonomy, RightCategoriesWrite)
+	a.HandleAdminFunc("DELETE /api/admin/taxonomy/{id}/activation", a.handleDeactivateTaxonomy, RightCategoriesWrite)
+}
+
+// ------------------------------------------------------------------ master
+
+// handleBrowseTaxonomy serves one level of the master (?parent=, root when
+// absent) or a search over all of it (?q=).
+func (a *App) handleBrowseTaxonomy(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	if term := strings.TrimSpace(q.Get("q")); term != "" {
+		limit, offset, err := Page(r)
+		if err != nil {
+			RespondError(w, r, err)
+			return
+		}
+		list, total, err := a.Categories().SearchTaxonomy(r.Context(), term, limit, offset)
+		if err != nil {
+			RespondError(w, r, err)
+			return
+		}
+		RespondList(w, list, ListMeta{Total: total, Limit: limit, Offset: offset})
+		return
+	}
+	list, err := a.Categories().TaxonomyChildren(r.Context(), q.Get("parent"))
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	RespondList(w, list, ListMeta{Total: len(list), Limit: len(list), Offset: 0})
+}
+
+func (a *App) handleActivateTaxonomy(w http.ResponseWriter, r *http.Request) {
+	result, err := a.Categories().ActivateTaxonomy(r.Context(), r.PathValue("id"))
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, result)
+}
+
+func (a *App) handleDeactivateTaxonomy(w http.ResponseWriter, r *http.Request) {
+	if err := a.Categories().DeactivateTaxonomy(r.Context(), r.PathValue("id")); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ------------------------------------------------------------------- imports
