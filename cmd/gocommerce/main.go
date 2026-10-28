@@ -60,6 +60,7 @@ import (
 	razorpay "github.com/itswadesh/gocommerce/ext/payments-razorpay"
 	revenuecat "github.com/itswadesh/gocommerce/ext/payments-revenuecat"
 	stripe "github.com/itswadesh/gocommerce/ext/payments-stripe"
+	photoproducts "github.com/itswadesh/gocommerce/ext/photo-products"
 	"github.com/itswadesh/gocommerce/ext/reviews"
 	meilisearch "github.com/itswadesh/gocommerce/ext/search-meilisearch"
 	"github.com/itswadesh/gocommerce/ext/showcases"
@@ -255,6 +256,7 @@ environment:
 		// The store a one-shot command works on: superuser, doctor, taxonomy,
 		// attributes. Unneeded while the install has one store.
 		storeFlag  = fs.String("store", "", "the store (id or slug) superuser, doctor, taxonomy and attributes act on; default: the only store")
+		withPhotos = fs.Bool("photo-products", false, "install the photo-products module: drop a batch of product photos on the products screen and Claude, through the AI gateway, drafts the products and their variants for review (brings -ai-gateway with it; the key, cap and prices are set under Settings › Plugins › AI gateway)")
 		withAmazon = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or IMPORT_AMAZON_LLM_URL + IMPORT_AMAZON_LLM_MODEL for a local model rewrite the copy, or the AI gateway where -ai-gateway is installed and switched on; IMPORT_AMAZON_HEADED=1 shows the browser)")
 	)
 	if err := fs.Parse(args); err != nil {
@@ -385,9 +387,12 @@ environment:
 		var modules []gocommerce.Module
 		// First, so the modules that call models can be handed it.
 		var gateway *aigateway.Module
-		if *withAI {
+		if *withAI || *withPhotos {
 			gateway = aigateway.New(aigateway.Config{})
 			modules = append(modules, gateway)
+		}
+		if *withPhotos {
+			modules = append(modules, photoproducts.New(photoproducts.Config{Gateway: gateway}))
 		}
 		// b2b's buyers are identity's accounts, so -b2b brings identity with it
 		// and is handed the same instance, listed first for its tables.

@@ -477,6 +477,29 @@ their `product_id` is `ON DELETE SET NULL`, and they keep their own snapshot of
 sku, title, label and price, so a historical order stays readable after the
 catalog moves on. See [carts](carts.md) for why cart lines cascade instead.
 
+## Products from photos
+
+`ext/photo-products` (`-photo-products`, D143) drafts products from a shop's
+own photographs, through the AI gateway's `photos.group` and
+`photos.describe` tasks. A batch is made, filled and run:
+
+```http
+POST /api/admin/x/photo-products/batches                {"sizes": ["S", "M"]}
+POST /api/admin/x/photo-products/batches/7/photos       {"media_id": 41, "thumb": "<base64 JPEG>", "image": "<base64 JPEG>"}
+POST /api/admin/x/photo-products/batches/7/start        → 202, then poll GET /api/admin/x/photo-products/batches/7
+PUT  /api/admin/x/photo-products/batches/7/items        the shop's edited proposals
+POST /api/admin/x/photo-products/batches/7/create
+```
+
+What it creates goes through `CreateProduct` like any other product: status
+`draft`, every variant at price 0 with no stock, SKUs derived by the
+catalogue, the photos on the product and each on its own variant, and
+`metadata.ai_drafted` naming the batch. Price 0 on a draft is how the
+products list's "Needs a price" filter finds them; nothing is published. A
+suggested category and an HSN code (an Indian store only) are kept in
+`ai_drafted` as suggestions and never applied. Create twice and nothing is
+made twice: a proposal's product is found by its `ai_drafted.item` mark.
+
 ## The sample shop
 
 A store can start with a sample shop (D94, D96): `POST /api/stores/create` with
