@@ -119,7 +119,7 @@ func (m *Module) Migrations() []gocommerce.Migration {
 				    CHECK (tax_doc IS NULL OR number ~ '^[A-Za-z0-9/-]{1,16}$');`,
 		},
 		{
-			// The store's Tally ledger names (D127), one row per store; no
+			// The store's Tally ledger names (D138), one row per store; no
 			// row reads as the defaults.
 			ID: "0004_tally_ledgers",
 			SQL: `

@@ -62,7 +62,7 @@
         }
     }
 
-    /* The Tally export (D127). The ledger names' 404 is how a store that
+    /* The Tally export (D138). The ledger names' 404 is how a store that
        issues no GST tax invoices says so, and then none of it is drawn. */
     const TALLY = "/api/admin/x/invoices/tally";
     const LEDGER_FIELDS = [

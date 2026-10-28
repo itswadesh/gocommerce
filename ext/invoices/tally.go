@@ -17,7 +17,7 @@ import (
 	"github.com/itswadesh/gocommerce/core"
 )
 
-// The TallyPrime export (D127): a period's GST tax invoices as Tally's
+// The TallyPrime export (D138): a period's GST tax invoices as Tally's
 // "Import Data" XML. It reads the stored documents and nothing else, so what
 // the accountant imports is what was issued, and it does no tax arithmetic:
 // every amount is a figure the document already holds, only summed.
