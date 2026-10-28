@@ -28,6 +28,8 @@
     import Select from "$lib/components/Select.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
     import { titled } from "$lib/brand.svelte.js";
+    import { rise } from "$lib/motion.js";
+    import { missingStandardPages } from "$lib/standard-pages.js";
 
     /* The starting page size, not the only one: `limit` is a listState key, so
        an operator can change it and the choice rides in the URL with the rest of
@@ -79,6 +81,63 @@
             meta = null;
         } finally {
             loading = false;
+        }
+    }
+
+    /* The slugs the store already has in its default language, which is the
+       one the storefront asks for first. Fetched apart from the table, since
+       the table is filtered and paged and this question is about every page.
+       null until known, so nothing is offered on a guess. */
+    let slugs = $state(null);
+    let adding = $state("");
+    const standardMissing = $derived(slugs ? missingStandardPages(slugs) : []);
+
+    $effect(() => {
+        if (can("catalog.write") && hasModule("cms")) loadSlugs();
+    });
+
+    async function loadSlugs() {
+        try {
+            const lang = settings.defaultLanguage;
+            // ponytail: one page of MaxLimit (200); a store past that may be
+            // offered a page it has, and the 409 below then skips it.
+            const result = await api.get(
+                "/api/admin/x/cms/pages?limit=200" + (lang ? "&language=" + encodeURIComponent(lang) : ""),
+            );
+            slugs = (result.data ?? []).map((p) => p.slug);
+        } catch {
+            slugs = null;
+        }
+    }
+
+    /** Adds the given standard pages as drafts, one request each. */
+    async function addStandard(toAdd) {
+        adding = toAdd.length === 1 ? toAdd[0].slug : "all";
+        let added = 0;
+        try {
+            for (const p of toAdd) {
+                try {
+                    await api.post("/api/admin/x/cms/pages", {
+                        title: p.title,
+                        slug: p.slug,
+                        body: p.body,
+                        language: settings.defaultLanguage,
+                        status: "draft",
+                    });
+                    added++;
+                } catch (err) {
+                    // Already there, written since the screen loaded: that is
+                    // the outcome asked for, not a failure.
+                    if (err.status !== 409) throw err;
+                }
+            }
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            adding = "";
+            if (added) toast.success(added === 1 ? "Page added as a draft" : `${added} pages added as drafts`);
+            load();
+            loadSlugs();
         }
     }
 
@@ -208,6 +267,41 @@
                     what="Content pages are served by ext/cms, and this binary does not have it."
                 />
             {:else}
+                {#if can("catalog.write") && standardMissing.length}
+                    <div class="alert info m-b-base" transition:rise>
+                        <div class="flex-fill">
+                            <strong>Your storefront links to pages this store does not have yet.</strong>
+                            Add them as drafts, write them, then publish.
+                            <div class="flex flex-wrap gap-sm m-t-sm">
+                                {#each standardMissing as p (p.slug)}
+                                    <button
+                                        type="button"
+                                        class="btn sm secondary"
+                                        class:loading={adding === p.slug}
+                                        disabled={!!adding}
+                                        aria-label="Add {p.title}"
+                                        onclick={() => addStandard([p])}
+                                    >
+                                        <i class="ri-add-line" aria-hidden="true"></i>
+                                        <span class="txt">{p.title}</span>
+                                    </button>
+                                {/each}
+                                {#if standardMissing.length > 1}
+                                    <button
+                                        type="button"
+                                        class="btn sm"
+                                        class:loading={adding === "all"}
+                                        disabled={!!adding}
+                                        onclick={() => addStandard(standardMissing)}
+                                    >
+                                        <span class="txt">Add all {standardMissing.length}</span>
+                                    </button>
+                                {/if}
+                            </div>
+                        </div>
+                    </div>
+                {/if}
+
                 <div class="page-table-wrapper tw:rounded-xl tw:border">
                     <table class="table responsive-table">
                         <thead class="sticky">
