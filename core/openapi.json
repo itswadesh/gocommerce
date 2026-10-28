@@ -3653,6 +3653,28 @@
             "description": "Restrict to a category and everything nested under it. An unparseable value is an error rather than a silently ignored filter, because a filter that quietly matches everything is how a typo turns into \"why is this showing the whole catalogue\"."
           },
           {
+            "name": "price_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "description": "Products whose cheapest variant costs at least this, in minor units."
+          },
+          {
+            "name": "price_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "description": "Products whose cheapest variant costs at most this, in minor units; `price_max=0` is the ones that still need a price."
+          },
+          {
             "$ref": "#/components/parameters/Limit"
           },
           {
@@ -5816,6 +5838,28 @@
               "format": "int64"
             },
             "description": "Restrict to one collection's members, and order them the way that collection was curated rather than newest-first. An unparseable value is an error rather than a silently ignored filter. A collection nobody has is an empty page, not a 404. If a sort parameter is ever added to this listing, sending it together with collection_id must be a validation error rather than a silent override: a collection's order is the curation (D40)."
+          },
+          {
+            "name": "price_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "description": "Products whose cheapest variant costs at least this, in minor units."
+          },
+          {
+            "name": "price_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "description": "Products whose cheapest variant costs at most this, in minor units; `price_max=0` is the ones that still need a price."
           },
           {
             "$ref": "#/components/parameters/Format"

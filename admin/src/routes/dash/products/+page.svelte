@@ -50,7 +50,7 @@
     import Select from "$lib/components/Select.svelte";
     import PriceCell from "$lib/components/PriceCell.svelte";
     import PromptDialog from "$lib/components/PromptDialog.svelte";
-    import { readPrice, splitPublishable } from "$lib/listprices.js";
+    import { belowMRP, readPrice, splitPublishable } from "$lib/listprices.js";
     import SortHeader from "$lib/components/SortHeader.svelte";
     import { titled } from "$lib/brand.svelte.js";
 
@@ -706,6 +706,10 @@
         // answer null on the way to the wire.
         if (!isValidMoney(form.price)) {
             errors.price = "A price is required.";
+        } else if (form.status === "active" && toMinor(form.price, currency) <= 0) {
+            // 0 is "no price yet" on this screen; on sale at 0 is a product
+            // anybody can buy for nothing.
+            errors.price = "A product on sale needs a price above 0. Save it as a draft to price it later.";
         }
         if (Object.keys(errors).length) return;
 
@@ -809,7 +813,7 @@
         let rows = picked.filter((p) => p.status !== status);
         // A product with a variant at 0 is not published: 0 is "no price yet",
         // and a shopper could buy it for nothing.
-        if (status === "active") {
+        if (status === "active" && rows.length) {
             const { ok, refused } = splitPublishable(rows);
             if (refused.length) {
                 const names = refused.slice(0, 3).map((p) => p.title).join(", ");
@@ -845,9 +849,17 @@
      */
     let bulkPriceOpen = $state(false);
     async function bulkPrice(text) {
-        const r = readPrice(text, currency);
+        // The products' own currency: the settings read USD until the store
+        // has answered, and a price read in the wrong one is off by 100.
+        const cur = picked[0]?.variants?.[0]?.price?.currency || currency;
+        const r = readPrice(text, cur);
         if (r.empty || r.error) {
             toast.error(r.error || "Type a price.");
+            return;
+        }
+        const clash = picked.find((p) => belowMRP(p.variants, r.minor));
+        if (clash) {
+            toast.error(`${clash.title} has an MRP at or below that price; raise or clear its MRP first.`);
             return;
         }
         bulkPriceOpen = false;
@@ -855,7 +867,9 @@
         try {
             await runBulk(
                 picked,
-                (p) => Promise.all(p.variants.map((v) => api.patch(`/api/admin/variants/${v.id}`, { price_minor: r.minor }))),
+                async (p) => {
+                    for (const v of p.variants) await api.patch(`/api/admin/variants/${v.id}`, { price_minor: r.minor });
+                },
                 { describe: "Priced", noun: "product", label: (p) => p.title },
             );
         } finally {
@@ -1374,7 +1388,9 @@
                                     {pluralize(product.variants?.length ?? 0, "variant")}
                                 </span>
                             </td>
-                            <td class="col-field-type-number min-width" data-name="Price">
+                            <!-- A click in the padding round the boxes must not open
+                                 the product either. -->
+                            <td class="col-field-type-number min-width" data-name="Price" onclick={(e) => writable && e.stopPropagation()}>
                                 {#if writable && product.variants?.length}
                                     <PriceCell {product} {currency} onupdate={(variants) => (product.variants = variants)} />
                                 {:else}
