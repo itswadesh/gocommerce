@@ -842,7 +842,12 @@ the first save the screen shows the starting home page (D140, "Bold and
 bright"): a split hero on a colour block, four tiles leading to the shop, its
 collections, its categories and order tracking, the newest products, a
 picture beside words and the benefits strip, with violet buttons, a pale
-yellow for quiet bands and large rounding set as theme settings. Its words are true of any shop; the benefits strip's promises (free
+yellow for quiet bands and large rounding set as theme settings. Its pictures
+are built into the engine and served at `/x/layouts/starter/1/`: Unsplash
+photographs for the hero and the picture beside words, Google Gemini pictures
+for the tiles (credits and prompts in `ext/layouts/starter/README.md`). A shop
+replaces them from Files like any other picture, and the hero and the picture
+beside words take a description of what the picture shows. Its words are true of any shop; the benefits strip's promises (free
 shipping, returns) are the shop's to edit to its own policies before
 publishing. A product grid can show a collection, products picked by hand,
 or the newest products, which is what the starting page's grid shows. Seeing the screen is `layouts.read`

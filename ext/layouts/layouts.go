@@ -138,6 +138,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	})
 
 	app.HandleFunc("GET /x/layouts/theme", m.handleTheme)
+	app.HandleFunc("GET "+starterPicturePrefix+"{file}", m.handleStarterPicture)
 	app.HandleFunc("GET /x/layouts/{page}", m.handlePublic)
 
 	app.HandleAdminFunc("GET /api/admin/x/layouts/sections", m.handleRegistry, rightLayoutsRead)
