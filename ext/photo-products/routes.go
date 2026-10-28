@@ -145,37 +145,48 @@ func (m *Module) handleAddPhoto(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	b, err := m.batch(ctx, id, false)
+	// Under the batch row's lock: a Start, or another upload racing for the
+	// last place, waits until this one is counted.
+	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+		if err := lockBatch(ctx, tx, id, StatusUploading, "this batch has started; photos are added before it does"); err != nil {
+			return err
+		}
+		var n int
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM photo_products_photos WHERE batch_id = $1 AND media_id <> $2`, id, media.ID).Scan(&n); err != nil {
+			return err
+		}
+		if n >= MaxPhotos {
+			return gocommerce.Validationf("a batch takes at most %d photos; start another batch for the rest", MaxPhotos)
+		}
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO photo_products_photos (batch_id, media_id, url, thumb, image) VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (store_id, batch_id, media_id) DO NOTHING`,
+			id, media.ID, media.URL, in.Thumb, in.Image)
+		return err
+	})
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	if b.Status != StatusUploading {
-		gocommerce.RespondError(w, r, gocommerce.Conflictf("this batch has started; photos are added before it does"))
-		return
-	}
-	// The count and the insert in one statement, so two uploads racing for
-	// the last place cannot both have it.
-	res, err := m.db.ExecContext(ctx, `
-		INSERT INTO photo_products_photos (batch_id, media_id, url, thumb, image)
-		SELECT $1, $2, $3, $4, $5
-		WHERE (SELECT count(*) FROM photo_products_photos WHERE batch_id = $1) < $6
-		ON CONFLICT (store_id, batch_id, media_id) DO NOTHING`,
-		id, media.ID, media.URL, in.Thumb, in.Image, MaxPhotos)
-	if err != nil {
-		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "record the photo"))
-		return
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		var dup bool
-		_ = m.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM photo_products_photos WHERE batch_id = $1 AND media_id = $2)`,
-			id, media.ID).Scan(&dup)
-		if !dup {
-			gocommerce.RespondError(w, r, gocommerce.Validationf("a batch takes at most %d photos; start another batch for the rest", MaxPhotos))
-			return
-		}
-	}
 	m.respondBatch(w, r, http.StatusOK, id)
+}
+
+// lockBatch takes the batch row's lock for the rest of tx and refuses unless
+// the batch is in the status given. Every step that moves a batch on runs
+// behind it, so two of them never interleave.
+func lockBatch(ctx context.Context, tx *sql.Tx, id int64, want, refusal string) error {
+	var status string
+	err := tx.QueryRowContext(ctx, `SELECT status FROM photo_products_batches WHERE id = $1 FOR UPDATE`, id).Scan(&status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return gocommerce.NotFoundf("no photo batch %d", id)
+	}
+	if err != nil {
+		return err
+	}
+	if status != want {
+		return gocommerce.Conflictf("%s", refusal)
+	}
+	return nil
 }
 
 // checkPicture holds a copy to the bounds the model calls were sized for.
@@ -266,10 +277,6 @@ func (m *Module) handleSetItems(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	if b.Status != StatusReview {
-		gocommerce.RespondError(w, r, gocommerce.Conflictf("proposals are edited while the batch is under review; it is %s", b.Status))
-		return
-	}
 	known := map[int64]bool{}
 	for _, p := range b.Photos {
 		known[p.ID] = true
@@ -307,12 +314,14 @@ func (m *Module) handleSetItems(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+		// Checked under the lock, so a Create or a Start cannot be reading
+		// the proposals this replaces.
+		if err := lockBatch(ctx, tx, id, StatusReview, "proposals are edited while the batch is under review"); err != nil {
+			return err
+		}
 		keep := map[int64]bool{}
 		for i, it := range in.Items {
-			d := it.Draft
-			if d.Alts == nil {
-				d.Alts = map[string]string{}
-			}
+			d := tidyDraft(it.Draft)
 			encoded, err := json.Marshal(d)
 			if err != nil {
 				return err
@@ -327,8 +336,12 @@ func (m *Module) handleSetItems(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			keep[*it.ID] = true
-			if _, err := tx.ExecContext(ctx, `UPDATE photo_products_items SET position = $3, draft = $4
-				WHERE batch_id = $1 AND id = $2 AND product_id IS NULL`, id, *it.ID, i, encoded); err != nil {
+			// Words the shop wrote are the shop's: an item it retitled or
+			// described is not written over by running the batch again.
+			was := current[*it.ID].Draft
+			edited := d.Title != was.Title || d.Description != was.Description
+			if _, err := tx.ExecContext(ctx, `UPDATE photo_products_items SET position = $3, draft = $4, described = described OR $5
+				WHERE batch_id = $1 AND id = $2 AND product_id IS NULL`, id, *it.ID, i, encoded, edited); err != nil {
 				return err
 			}
 		}
@@ -342,7 +355,11 @@ func (m *Module) handleSetItems(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	if err != nil {
-		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "save the proposals"))
+		var apiErr *gocommerce.APIError
+		if !errors.As(err, &apiErr) {
+			err = gocommerce.Internalf(err, "save the proposals")
+		}
+		gocommerce.RespondError(w, r, err)
 		return
 	}
 	m.respondBatch(w, r, http.StatusOK, id)
