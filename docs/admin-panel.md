@@ -835,7 +835,9 @@ answers the editor; an older one shows the saved draft and reloads after each
 save.
 
 The `layouts` plugin starts on, so a shop's first publish is what the
-storefront shows; until then it keeps its built-in home page. Its switch is on
+storefront shows; until then it shows the starting home page described below
+(the product and collection pages, header and footer stay the storefront's
+own until published). Its switch is on
 the Themes screen itself (D132); switched off, the screen says so and the
 storefront goes back to the built-in page. Before
 the first save the screen shows the starting home page (D140, "Bold and

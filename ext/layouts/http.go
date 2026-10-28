@@ -239,7 +239,7 @@ func (m *Module) handleTheme(w http.ResponseWriter, r *http.Request) {
 		out.Preview = true
 	} else {
 		var rev *Revision
-		if rev, doc, err = m.published(ctx, "home"); err != nil {
+		if rev, doc, err = m.shown(ctx, "home"); err != nil {
 			gocommerce.RespondError(w, r, gocommerce.NotFoundf("no theme has been published"))
 			return
 		}
@@ -281,7 +281,7 @@ func (m *Module) handlePublic(w http.ResponseWriter, r *http.Request) {
 		out.Preview = true
 	} else {
 		var rev *Revision
-		if rev, doc, err = m.published(ctx, page); err != nil {
+		if rev, doc, err = m.shown(ctx, page); err != nil {
 			gocommerce.RespondError(w, r, gocommerce.NotFoundf("the %s has not been published", pageInfo(page).Label))
 			return
 		}
@@ -541,7 +541,8 @@ func int64Array(ids []int64) string {
 // hero and the lookbook, Google Gemini pictures for the tiles; credits in
 // starter/README.md), served at a path on the engine, which every storefront
 // and the editor's preview already resolve against the engine as they do the
-// Files library's.
+// Files library's. Until a shop publishes its home page, this is what its
+// storefront shows (shown).
 func Starter(page string) Document {
 	switch page {
 	case "header":

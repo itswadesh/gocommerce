@@ -76,7 +76,7 @@ func TestAPageIsDraftedPublishedAndRolledBack(t *testing.T) {
 	if st.Saved || st.Version != 0 || len(st.Document.Sections) == 0 || st.Published != nil {
 		t.Fatalf("before any save = %+v, want the unsaved starter", st)
 	}
-	publicPage(t, app, "/x/layouts/home", http.StatusNotFound)
+	wantStarter(t, publicPage(t, app, "/x/layouts/home", http.StatusOK))
 
 	first := sections(hero("a", "One"), hero("b", "Two"),
 		map[string]any{"id": "c", "type": "rich-text", "enabled": false, "settings": map[string]any{"body": "Hidden"}})
@@ -84,7 +84,8 @@ func TestAPageIsDraftedPublishedAndRolledBack(t *testing.T) {
 	if !st.Saved || st.Version != 1 || !st.Changed {
 		t.Fatalf("after the first save = %+v", st)
 	}
-	publicPage(t, app, "/x/layouts/home", http.StatusNotFound)
+	// A saved draft is not shown: until a publish, shoppers see the starter.
+	wantStarter(t, publicPage(t, app, "/x/layouts/home", http.StatusOK))
 
 	st = adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/publish", map[string]any{"version": 1}, http.StatusOK)
 	if st.Published == nil || st.Published.Number != 1 || st.Changed {
@@ -158,11 +159,11 @@ func TestABadPageIsRefusedWithItsReason(t *testing.T) {
 }
 
 // On by default: a shop that publishes a page sees it on the storefront
-// without first finding a switch, and until it publishes the storefront still
-// draws its built-in home page.
+// without first finding a switch, and until it publishes the storefront draws
+// the starting home page.
 func TestTheEditorIsOnUntilSwitchedOff(t *testing.T) {
 	app := gctest.New(t, New(Config{}))
-	publicPage(t, app, "/x/layouts/home", http.StatusNotFound)
+	wantStarter(t, publicPage(t, app, "/x/layouts/home", http.StatusOK))
 	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 0, "document": sections(hero("a", "One"))}, http.StatusOK)
 	adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/publish", map[string]any{"version": 1}, http.StatusOK)
 	publicPage(t, app, "/x/layouts/home", http.StatusOK)
@@ -276,7 +277,7 @@ func TestAPreviewShowsTheDraftToItsKey(t *testing.T) {
 		t.Fatalf("preview = %+v, want the draft", p)
 	}
 	publicPage(t, app, "/x/layouts/home?preview=not-a-key", http.StatusNotFound)
-	publicPage(t, app, "/x/layouts/home", http.StatusNotFound)
+	wantStarter(t, publicPage(t, app, "/x/layouts/home", http.StatusOK))
 }
 
 func TestTheRegistryDescribesEverySection(t *testing.T) {
@@ -382,6 +383,51 @@ func TestTheStarterPicturesAreServedByTheEngine(t *testing.T) {
 			t.Errorf("GET %s = 200, want nothing outside the pictures", bad)
 		}
 	}
+}
+
+// wantStarter fails unless p is the starting home page as the storefront gets
+// it before a first publish: its shown sections, no revision, no preview.
+func wantStarter(t *testing.T, p PublicPage) {
+	t.Helper()
+	want := PublicPage{}
+	for _, s := range Starter("home").Sections {
+		if s.Enabled {
+			want.Sections = append(want.Sections, PublicSection{ID: s.ID})
+		}
+	}
+	if p.Revision != 0 || p.Preview || ids(p) != ids(want) || p.ThemeSettings["accent"] != Starter("home").ThemeSettings["accent"] {
+		t.Fatalf("home = %s (revision %d, preview %v, theme %v), want the starter %s", ids(p), p.Revision, p.Preview, p.ThemeSettings, ids(want))
+	}
+}
+
+// The owner, 2026-10-28: "show the bold starter to unpublished stores". A
+// store that has published nothing shows the starting home page and its look
+// rather than the storefront's built-in page; the header, footer and
+// templates still answer 404, so the storefront keeps its own; a published
+// page replaces the starter; and the switch still turns it all off.
+func TestAnUnpublishedHomeShowsTheStarter(t *testing.T) {
+	app := layoutsApp(t)
+	wantStarter(t, publicPage(t, app, "/x/layouts/home", http.StatusOK))
+	theme, _ := publicTheme(t, app, "/x/layouts/theme", http.StatusOK)
+	if theme.Revision != 0 || theme.Settings["accent"] != Starter("home").ThemeSettings["accent"] {
+		t.Fatalf("theme before a publish = %+v, want the starter's", theme)
+	}
+	for _, page := range []string{"header", "footer", "product", "collection"} {
+		publicPage(t, app, "/x/layouts/"+page, http.StatusNotFound)
+	}
+
+	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 0, "document": sections(hero("a", "One"))}, http.StatusOK)
+	adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/publish", map[string]any{"version": 1}, http.StatusOK)
+	if got := publicPage(t, app, "/x/layouts/home", http.StatusOK); ids(got) != "a" || got.Revision != 1 {
+		t.Fatalf("published home = %s (revision %d), want the shop's own", ids(got), got.Revision)
+	}
+	if theme, _ := publicTheme(t, app, "/x/layouts/theme", http.StatusOK); len(theme.Settings) != 0 {
+		t.Fatalf("theme after publishing a page without settings = %v, want the shop's (none)", theme.Settings)
+	}
+
+	switchOn(t, app, false)
+	publicPage(t, app, "/x/layouts/home", http.StatusNotFound)
+	publicTheme(t, app, "/x/layouts/theme", http.StatusNotFound)
 }
 
 func contrast(a, b string) float64 {
