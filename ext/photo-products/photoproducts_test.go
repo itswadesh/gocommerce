@@ -312,6 +312,11 @@ func TestCreatingAgainNeverDuplicatesAProduct(t *testing.T) {
 	h.wait(t, b.ID)
 	h.do(t, "POST", fmt.Sprintf("/batches/%d/create", b.ID), nil, http.StatusOK)
 	h.do(t, "POST", fmt.Sprintf("/batches/%d/create", b.ID), nil, http.StatusConflict)
+	// Nor can the proposals of a finished batch be edited, or photos added.
+	h.do(t, "PUT", fmt.Sprintf("/batches/%d/items", b.ID), map[string]any{"items": []any{}}, http.StatusConflict)
+	h.do(t, "POST", fmt.Sprintf("/batches/%d/photos", b.ID), map[string]any{
+		"media_id": b.Photos[0].MediaID, "thumb": picture(t, 32), "image": picture(t, 64),
+	}, http.StatusConflict)
 
 	ctx := context.Background()
 	if _, err := h.app.DB().ExecContext(ctx, `UPDATE photo_products_items SET product_id = NULL`); err != nil {
@@ -320,9 +325,14 @@ func TestCreatingAgainNeverDuplicatesAProduct(t *testing.T) {
 	if _, err := h.app.DB().ExecContext(ctx, `UPDATE photo_products_batches SET status = 'review'`); err != nil {
 		t.Fatal(err)
 	}
+	// The run that made the product stopped before its pictures, too.
+	p := h.products(t)[0]
+	if err := h.app.MediaLibrary().SetProductMedia(ctx, p.ID, nil); err != nil {
+		t.Fatal(err)
+	}
 	h.do(t, "POST", fmt.Sprintf("/batches/%d/create", b.ID), nil, http.StatusOK)
-	if n := len(h.products(t)); n != 1 {
-		t.Errorf("%d products after creating twice", n)
+	if ps := h.products(t); len(ps) != 1 || ps[0].MediaCount != 1 {
+		t.Errorf("after creating again: %d products, %d pictures", len(ps), ps[0].MediaCount)
 	}
 	// And running the batch again repeats no model call.
 	h.do(t, "POST", fmt.Sprintf("/batches/%d/start", b.ID), nil, http.StatusConflict)
@@ -426,6 +436,20 @@ func TestTheShopsEditsAreWhatIsCreated(t *testing.T) {
 	}}, http.StatusOK)
 	if len(b.Items) != 2 || b.Items[0].Draft.Title != "Renamed" {
 		t.Fatalf("items = %+v", b.Items)
+	}
+	// What the shop wrote is the shop's: a retitled item counts as written,
+	// and an over-long highlight is cut to the catalogue's limit, not refused.
+	if !b.Items[0].Described {
+		t.Error("an edited item would be written over by running the batch again")
+	}
+	keep = b.Items[0]
+	keep.Draft.Highlights = []string{strings.Repeat("long ", 30)}
+	b = h.do(t, "PUT", path, map[string]any{"items": []any{
+		map[string]any{"id": keep.ID, "draft": keep.Draft},
+		map[string]any{"id": b.Items[1].ID, "draft": b.Items[1].Draft},
+	}}, http.StatusOK)
+	if hl := b.Items[0].Draft.Highlights; len(hl) != 1 || len([]rune(hl[0])) > 80 {
+		t.Errorf("highlights = %q", hl)
 	}
 	h.do(t, "POST", fmt.Sprintf("/batches/%d/create", b.ID), nil, http.StatusOK)
 	titles := map[string]bool{}

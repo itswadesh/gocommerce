@@ -57,8 +57,8 @@ services:
       # answers from the database.
       - -meilisearch
       # The AI gateway installs idle: nothing is called until a store sets a
-      # key, a cap and prices under Plugins. -photo-products is its first
-      # screen, "Create from photos" on the products page.
+      # key, a cap and prices under Plugins. -photo-products runs through
+      # it: "Create from photos" on the products page.
       - -ai-gateway
       - -photo-products
       - serve

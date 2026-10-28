@@ -67,6 +67,9 @@
 
     let busy = $state(false);
     let timer = null;
+    // The batch this screen's photos went into, kept so that a Start that
+    // failed is retried on it rather than on a new, empty one.
+    let pending = null;
 
     $effect(() => {
         if (writable && hasModule("photo-products")) load(batchID);
@@ -111,7 +114,7 @@
         batch = b;
         items = (b.items ?? []).map((it) => ({ ...it, draft: { ...it.draft, highlights: it.draft.highlights ?? [], tags: it.draft.tags ?? [] } }));
         clearTimeout(timer);
-        if (b.status === "grouping" || b.status === "describing") {
+        if (b.status === "grouping" || b.status === "describing" || b.status === "creating") {
             timer = setTimeout(async () => {
                 try {
                     take(await api.get(`${API}/batches/${b.id}`));
@@ -141,7 +144,8 @@
         uploading = true;
         try {
             const sizes = hasSizes ? sizesFrom(sizesText) : [];
-            const b = await api.post(`${API}/batches`, { sizes });
+            const b = pending ?? (await api.post(`${API}/batches`, { sizes }));
+            pending = b;
             // Three at a time: enough to keep a phone's upload busy, few
             // enough that one slow photo does not hold the rest.
             let next = 0;
@@ -168,6 +172,7 @@
                 return;
             }
             take(await api.post(`${API}/batches/${b.id}/start`));
+            pending = null;
             await goto(`${base}/dash/products/photos?batch=${b.id}`, { replaceState: true, noScroll: true });
         } catch (err) {
             toast.error(err);
@@ -198,11 +203,14 @@
 
     /** Every place a photo can go, as the Move menu lists them. */
     const destinations = $derived([
+        // Only where it can land: a created or left-out product is not saved.
         ...items.flatMap((it, i) =>
-            it.draft.variants.map((v, j) => ({
-                value: `${i}:${j}`,
-                label: (it.draft.title || `Product ${i + 1}`) + (it.draft.variants.length > 1 ? ` · ${v.value || `variant ${j + 1}`}` : ""),
-            })),
+            it.product_id != null || it.skip
+                ? []
+                : it.draft.variants.map((v, j) => ({
+                      value: `${i}:${j}`,
+                      label: (it.draft.title || `Product ${i + 1}`) + (it.draft.variants.length > 1 ? ` · ${v.value || `variant ${j + 1}`}` : ""),
+                  })),
         ),
         { value: "new", label: "A new product of its own" },
     ]);
@@ -232,7 +240,7 @@
     }
 
     const lines = (list) => (list ?? []).join("\n");
-    const unlines = (text) => text.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, 8);
+    const unlines = (text) => text.split("\n").map((s) => s.trim().slice(0, 80)).filter(Boolean).slice(0, 8);
     const created = $derived(items.filter((it) => it.product_id != null).length);
     const spent = $derived(batch && batch.cost_micro_minor ? formatMoney({ amount_minor: costMinor(batch), currency: batch.currency }) : "");
 </script>
@@ -369,6 +377,14 @@
                         {/if}
                     </div>
                 </section>
+            {:else if batch.status === "uploading"}
+                <section class="tw:rounded-xl tw:border tw:bg-card tw:p-5 m-b-base" in:rise>
+                    <h2 class="tw:text-sm tw:font-semibold tw:mb-1">{batch.photo_count} {pluralize(batch.photo_count, "photo", "photos")} uploaded, not started yet</h2>
+                    {#if status && !status.ready}<p class="tw:text-sm tw:text-muted-foreground tw:mb-3">{sentence(status.reason)}</p>{/if}
+                    <button type="button" class="btn" disabled={busy || !batch.photo_count || !status?.ready} onclick={runAgain}>
+                        <i class="ri-sparkling-line" aria-hidden="true"></i><span class="txt">Draft products</span>
+                    </button>
+                </section>
             {:else if batch.status === "failed"}
                 <section class="tw:rounded-xl tw:border tw:bg-card tw:p-5 m-b-base" role="alert" in:rise>
                     <h2 class="tw:text-sm tw:font-semibold tw:mb-1"><span class="dot bad"></span> This batch stopped</h2>
@@ -382,7 +398,7 @@
                     <section class="tw:rounded-xl tw:border tw:bg-card tw:p-5 m-b-base" role="status" in:rise>
                         <h2 class="tw:text-sm tw:font-semibold tw:mb-1"><span class="dot ok"></span> {batch.message}</h2>
                         <p class="tw:text-sm tw:text-muted-foreground tw:mb-3">They are drafts at price 0: set their prices, then publish them.</p>
-                        <a class="btn" href="{base}/dash/products?status=draft">
+                        <a class="btn" href="{base}/dash/products?status=draft&price_max=0">
                             <i class="ri-price-tag-3-line" aria-hidden="true"></i><span class="txt">Set prices</span>
                         </a>
                     </section>
@@ -501,7 +517,7 @@
                                                 ariaLabel="Merge into another product"
                                                 placeholder="Merge into…"
                                                 value={null}
-                                                options={items.map((o, k) => ({ value: String(k), label: o.draft.title || `Product ${k + 1}` })).filter((o, k) => k !== i && items[k].product_id == null)}
+                                                options={items.map((o, k) => ({ value: String(k), label: o.draft.title || `Product ${k + 1}` })).filter((o, k) => k !== i && items[k].product_id == null && !items[k].skip)}
                                                 onchange={(to) => merge(i, to)}
                                             />
                                         </div>

@@ -43,15 +43,22 @@ func (m *Module) create(ctx context.Context, id int64) (*CreateResult, error) {
 		return nil, gocommerce.Conflictf("this batch is %s, and products are created from a batch under review", b.Status)
 	}
 
+	// Whatever stops this early hands the batch back for review, rather
+	// than leaving it creating until the next restart.
+	finished := false
+	defer func() {
+		if !finished {
+			m.setStatus(ctx, id, StatusReview, "Ready to review")
+		}
+	}()
+
 	out := &CreateResult{Errors: []string{}}
 	items, err := m.items(ctx, id)
 	if err != nil {
-		m.setStatus(ctx, id, StatusReview, "Ready to review")
 		return nil, err
 	}
 	photos, err := m.batch(ctx, id, true)
 	if err != nil {
-		m.setStatus(ctx, id, StatusReview, "Ready to review")
 		return nil, err
 	}
 	mediaOf := map[int64]int64{}
@@ -71,10 +78,15 @@ func (m *Module) create(ctx context.Context, id int64) (*CreateResult, error) {
 			continue
 		}
 		out.Created++
-		if _, err := m.db.ExecContext(ctx, `UPDATE photo_products_items SET product_id = $2, error = '' WHERE id = $1`, it.ID, pid); err != nil {
+		res, err := m.db.ExecContext(ctx, `UPDATE photo_products_items SET product_id = $2, error = '' WHERE id = $1`, it.ID, pid)
+		if err != nil {
 			return nil, err
 		}
+		if n, _ := res.RowsAffected(); n != 1 {
+			return nil, fmt.Errorf("proposal %d went while its product %d was being made", it.ID, pid)
+		}
 	}
+	finished = true
 
 	if out.Failed == 0 {
 		// Every product exists and holds its own pictures in the media
@@ -101,11 +113,16 @@ func (m *Module) createOne(ctx context.Context, batchID int64, it Item, mediaOf 
 	// was created by a run that stopped before it could record it, and is
 	// recorded now rather than made twice.
 	var existing int64
+	var product *gocommerce.Product
 	err := m.db.QueryRowContext(ctx, `SELECT id FROM products WHERE metadata -> $1 ->> 'item' = $2 LIMIT 1`, MetaKey, marker).Scan(&existing)
-	if err == nil {
-		return existing, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	switch {
+	case err == nil:
+		// Its pictures are set again below: the run that made it may have
+		// stopped before it got to them.
+		if product, err = m.app.Products().GetProduct(ctx, existing); err != nil {
+			return 0, err
+		}
+	case !errors.Is(err, sql.ErrNoRows):
 		return 0, err
 	}
 
@@ -113,8 +130,7 @@ func (m *Module) createOne(ctx context.Context, batchID int64, it Item, mediaOf 
 	if err != nil {
 		return 0, err
 	}
-	var product *gocommerce.Product
-	for attempt := 1; ; attempt++ {
+	for attempt := 1; product == nil; attempt++ {
 		product, err = m.app.Products().CreateProduct(ctx, in)
 		if err == nil {
 			break
@@ -141,7 +157,8 @@ func (m *Module) createOne(ctx context.Context, batchID int64, it Item, mediaOf 
 		for _, pid := range v.Photos {
 			if media, ok := mediaOf[pid]; ok {
 				all = append(all, media)
-				byValue[strings.ToLower(v.Value)] = append(byValue[strings.ToLower(v.Value)], media)
+				key := strings.ToLower(strings.TrimSpace(v.Value))
+				byValue[key] = append(byValue[key], media)
 				if alt := d.Alts[strconv.FormatInt(pid, 10)]; alt != "" {
 					if _, err := m.app.MediaLibrary().SetAlt(ctx, media, alt); err != nil {
 						m.log.Warn("could not set a photo's alt text", "media", media, "error", err)
@@ -160,7 +177,7 @@ func (m *Module) createOne(ctx context.Context, batchID int64, it Item, mediaOf 
 			if len(v.Options) == 0 {
 				continue
 			}
-			if ids := byValue[strings.ToLower(v.Options[0])]; len(ids) > 0 {
+			if ids := byValue[strings.ToLower(strings.TrimSpace(v.Options[0]))]; len(ids) > 0 {
 				if err := m.app.MediaLibrary().SetVariantMedia(ctx, v.ID, ids); err != nil {
 					m.log.Warn("could not set a variant's pictures", "variant", v.ID, "error", err)
 				}
@@ -291,4 +308,35 @@ func slugify(s string) string {
 		return out
 	}
 	return "product"
+}
+
+// tidyDraft holds a draft the shop edited to the limits the catalogue
+// enforces, as applyDescription holds the model's, so a long line typed in
+// review is cut rather than failing the product at Create.
+func tidyDraft(d Draft) Draft {
+	d.Title = clip(oneLine(d.Title), 120)
+	d.Description = clip(d.Description, 4000)
+	d.ProductType = clip(oneLine(d.ProductType), 60)
+	d.SEOTitle = clip(oneLine(d.SEOTitle), 70)
+	d.SEODescription = clip(oneLine(d.SEODescription), 160)
+	d.OptionName = clip(oneLine(d.OptionName), 40)
+	var highlights, tags []string
+	for _, h := range d.Highlights {
+		if h = clip(oneLine(h), 80); h != "" && len(highlights) < 8 {
+			highlights = append(highlights, h)
+		}
+	}
+	for _, t := range distinct(d.Tags) {
+		if t = clip(strings.ToLower(oneLine(t)), 40); t != "" && len(tags) < 8 {
+			tags = append(tags, t)
+		}
+	}
+	d.Highlights, d.Tags, d.Sizes = highlights, tags, distinct(d.Sizes)
+	for i := range d.Variants {
+		d.Variants[i].Value = clip(oneLine(d.Variants[i].Value), 60)
+	}
+	if d.Alts == nil {
+		d.Alts = map[string]string{}
+	}
+	return d
 }
