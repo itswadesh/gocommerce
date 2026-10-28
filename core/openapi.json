@@ -6882,6 +6882,164 @@
         }
       }
     },
+    "/api/admin/taxonomy": {
+      "get": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Browse the Shopify taxonomy",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "The master category tree every store shares: Shopify's Standard Product Taxonomy, embedded in the binary and read-only (D143). Each node says whether this store has activated it — `active`, with the store's `category_id` and its own `title`, which a store may have renamed. `?parent=` returns one level (the roots when absent or `root`); `?q=` searches every node's path, case-folded, and pages like any listing with the real `meta.total`.",
+        "parameters": [
+          {
+            "name": "parent",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "A node id, or `root`."
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Matches anywhere in the node's path, e.g. `shirts` or `apparel / shirts`."
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One level, or a page of matches.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TaxonomyNode"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/taxonomy/{id}/activation": {
+      "put": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Activate a taxonomy category",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Makes the node one of this store's categories, with every ancestor it is missing, so the tree stays whole. Each node in the chain reuses the store's category already linked to it, else adopts a category of the store's own with the same name in the same place (writing `metadata.taxonomy_gid` onto it), else creates one with the master's name and a slug unique in the store. The fields the taxonomy asks of a product follow, as the attribute import does, except onto an adopted category that already declares its own. Idempotent: activating an active node creates nothing.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The node's short id, the last segment of its gid (`aa-1-1` for `gid://shopify/TaxonomyCategory/aa-1-1`). The full gid is accepted too, URL-encoded."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The store's category for the node, and how many categories were created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaxonomyActivation"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Deactivate a taxonomy category",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Removes the store's category for the node and every category beneath it, deepest first, so the storefront no longer lists them. Refused with a 409, before anything is written, while products are filed anywhere in that branch or while it holds a category the store made itself — deactivating never takes a product's category or a merchant's own work with it. A node that is not active is a no-op. Activating it again restores the master's name and slug; a rename does not survive.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The node's short id, the last segment of its gid (`aa-1-1` for `gid://shopify/TaxonomyCategory/aa-1-1`). The full gid is accepted too, URL-encoded."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deactivated, or already inactive."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
     "/api/admin/variants/{id}/media": {
       "put": {
         "tags": [
@@ -22665,6 +22823,63 @@
           "state_code": {
             "type": "string",
             "description": "The state as tax rates and shipping zones store it (D72); empty when the engine has no code for it."
+          }
+        }
+      },
+      "TaxonomyNode": {
+        "type": "object",
+        "description": "A node of the master taxonomy, with whether this store has it.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The gid's last segment, e.g. `aa-1-1`."
+          },
+          "gid": {
+            "type": "string",
+            "description": "e.g. `gid://shopify/TaxonomyCategory/aa-1-1`; what a linked category's `metadata.taxonomy_gid` holds."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Empty for a root."
+          },
+          "name": {
+            "type": "string",
+            "description": "The master's name."
+          },
+          "full_name": {
+            "type": "string",
+            "description": "The master's path, `A / B / C`."
+          },
+          "depth": {
+            "type": "integer"
+          },
+          "child_count": {
+            "type": "integer",
+            "description": "The master's children, not the store's."
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "category_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "The store's category for this node; null while inactive."
+          },
+          "title": {
+            "type": "string",
+            "description": "The store's own name for it, when active."
+          }
+        }
+      },
+      "TaxonomyActivation": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/Category"
+          },
+          "created": {
+            "type": "integer",
+            "description": "Categories written, missing ancestors included; 0 when it was already active."
           }
         }
       }

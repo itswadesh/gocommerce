@@ -380,6 +380,29 @@ create, an edit of those categories, and a delete. Deleting an entry is never
 refused: a category still asking for the field keeps it and simply offers no
 fixed list, which is a free-text field rather than a broken one.
 
+### The Shopify taxonomy as the master (D143)
+
+The embedded Shopify taxonomy is one read-only tree every store browses; a
+store's categories are the nodes it has **activated** plus its own.
+
+```http
+GET    /api/admin/taxonomy                    (?parent={id}|root one level, ?q= search)
+PUT    /api/admin/taxonomy/{id}/activation    (activates the node and its missing ancestors)
+DELETE /api/admin/taxonomy/{id}/activation    (removes it and its branch)
+```
+
+`{id}` is the gid's last segment (`aa-1-1`). Each node says `active`, with the
+store's `category_id` and `title`. Activating links by `metadata.taxonomy_gid`,
+adopts a same-named unlinked category in the same place, or creates one with
+the master's name and a store-unique slug, and brings the taxonomy's fields.
+Deactivating is refused while products are filed anywhere in the branch or the
+branch holds a category the store made itself. Both are idempotent. A renamed
+activated category stays linked; the storefront lists exactly the store's
+categories, so it never sees the master.
+
+The whole-tree import below is "activate everything", and the way in for an
+operator's own file.
+
 Both halves have an import, and the order matters — the tree first, the fields
 second, because the fields attach by the taxonomy id the tree import writes:
 
