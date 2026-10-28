@@ -255,7 +255,7 @@ cross-link, because an order joins an account by its own access token and never
 by the address on it. The drawer's one link is labelled as what it is: orders
 placed with the same email. **A GST tax invoice is marked GST in the list**
 from the row's `kind`, never from the store's country, and opens like any other
-(D126). It prints what checkout charged: within a state CGST is half of each
+(D137). It prints what checkout charged: within a state CGST is half of each
 line's tax rounded down and SGST or UTGST the rest, so an odd paisa goes to the
 state and the heads add up to what was paid; between states all of it is IGST.
 Delivery is an untaxed line, flagged `freight_untaxed`. **The Taxes screen can

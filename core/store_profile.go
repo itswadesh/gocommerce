@@ -149,7 +149,7 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 		return nil, Validationf("that does not look like an email address")
 	}
 	// An Indian store's tax id is its GSTIN, printed on every tax invoice
-	// (D126), so a mistyped one is refused as it is typed. Only a changed one
+	// (D137), so a mistyped one is refused as it is typed. Only a changed one
 	// is refused: an old value nobody is editing must not block an edit to
 	// the phone number.
 	if in.Country == "IN" && in.TaxID != "" {

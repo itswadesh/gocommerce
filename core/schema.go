@@ -107,15 +107,15 @@ func coreMigrations() []Migration {
 	}
 }
 
-// M84 — an HS code may be 4 digits, the HSN an Indian business under ₹5 crore
-// turnover prints on a GST invoice (D126).
+// M88 — an HS code may be 4 digits, the HSN an Indian business under ₹5 crore
+// turnover prints on a GST invoice (D137).
 const migration0088FourDigitHSCode = `
 ALTER TABLE variants DROP CONSTRAINT variants_hs_code_check;
 ALTER TABLE variants ADD CONSTRAINT variants_hs_code_check
     CHECK (hs_code = '' OR hs_code ~ '^[0-9]{4,10}$');
 `
 
-// M83 — a tax rule may target one product (D126).
+// M87 — a tax rule may target one product (D137).
 //
 // The keys are written with store_id because tax_rates is already scoped, and
 // ScopeTables rewrites only the keys that exist when it runs. CASCADE where a

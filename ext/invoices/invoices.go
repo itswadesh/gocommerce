@@ -46,7 +46,7 @@ type Config struct {
 	// {seq} the sequence within it; {seq:05} pads to five digits.
 	// Defaults to "INV-{year}-{seq:05}".
 	//
-	// A store issuing GST tax invoices (D126) counts in financial years,
+	// A store issuing GST tax invoices (D137) counts in financial years,
 	// which start on 1 April: its sequence restarts then whatever the format
 	// says, {year} is the year the financial year started, and {fy} prints
 	// it as "26-27". "INV/{fy}/{seq:05}" is the usual Indian shape. GST
@@ -107,7 +107,7 @@ func (m *Module) Migrations() []gocommerce.Migration {
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "invoices_counters", "invoices_documents"),
 		{
-			// The GST tax invoice as issued (D126), NULL for a plain
+			// The GST tax invoice as issued (D137), NULL for a plain
 			// invoice. invoices_counters.year is now the series year: the
 			// calendar year for a plain store, the year its financial year
 			// started for a GST one.
