@@ -382,6 +382,17 @@ func (m *Module) Ready(ctx context.Context) error {
 	return s.ready()
 }
 
+// Allows says whether ctx's store lets a class of data leave it, so a module
+// whose work cannot be done without that class can say so before a person
+// spends ten minutes on the screen that starts it.
+func (m *Module) Allows(ctx context.Context, c DataClass) (bool, error) {
+	s, err := m.settings(ctx)
+	if err != nil {
+		return false, err
+	}
+	return s.policy.Allows(c), nil
+}
+
 // Migrations implements gocommerce.Module.
 //
 // Five tables, all the store's (D104), each put behind the row policy by the

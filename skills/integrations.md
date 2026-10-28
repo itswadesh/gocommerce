@@ -386,6 +386,8 @@ holds no transaction, runs it now (`Run`). The gateway reserves against the
 store's monthly cap, leaves out the data the owner has not let go, records
 every call with its tokens and cost, and retries only what is worth retrying.
 `ext/import-amazon`'s `product.rewrite` is the worked example, and
+`ext/photo-products` shows a task with pictures (`Document.Caption` labels
+each one so the answer can name it), and
 [the design](../docs/ai-b2b/m1-ai-gateway.md) has the whole contract.
 
 ## MCP: the same state machine, a different door
