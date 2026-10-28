@@ -111,7 +111,9 @@ GET /api/admin/products?collection_id=7
 ```
 
 The admin listing also narrows by `vendor`, `product_type`, `tag`,
-`category_id` and `collection_id`. That vocabulary is read in one place
+`category_id`, `collection_id`, and `price_min` / `price_max` in minor units
+on the cheapest variant; `price_max=0` is the products with a variant at 0,
+which the panel calls "Needs a price". That vocabulary is read in one place
 (`productQueryFrom`) and rendered into SQL in one place (`productFilters`), so
 the CSV export at `GET /api/admin/export/admin-products` takes exactly the
 same filters — a reconciliation exports the rows a screen is showing rather
