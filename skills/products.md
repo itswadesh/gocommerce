@@ -479,7 +479,7 @@ catalog moves on. See [carts](carts.md) for why cart lines cascade instead.
 
 ## Products from photos
 
-`ext/photo-products` (`-photo-products`, D143) drafts products from a shop's
+`ext/photo-products` (`-photo-products`, D144) drafts products from a shop's
 own photographs, through the AI gateway's `photos.group` and
 `photos.describe` tasks. A batch is made, filled and run:
 
