@@ -23,3 +23,7 @@ coverage.*
 .idea/
 *.swp
 .DS_Store
+
+# Generated photographs for scripts/seed-fashion.ps1, and the tool that makes them.
+/scripts/fashion-images/out/
+/scripts/fashion-images/node_modules/
