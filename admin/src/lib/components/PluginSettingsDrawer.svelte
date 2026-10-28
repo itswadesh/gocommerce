@@ -16,6 +16,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import Drawer from "$lib/components/Drawer.svelte";
     import PluginFields from "$lib/components/PluginFields.svelte";
+    import MeilisearchStatus from "$lib/components/MeilisearchStatus.svelte";
 
     let { plugin = null, onclose, onsaved } = $props();
 
@@ -57,6 +58,10 @@
 <Drawer open={!!plugin} title={plugin ? `${plugin.title} settings` : "Settings"} size="sm" {onclose}>
     {#if plugin}
         <div class="field-help m-b-base">{plugin.description}</div>
+        <!-- The one plugin with a running job of its own to report on. -->
+        {#if plugin.key === "meilisearch"}
+            <MeilisearchStatus enabled={plugin.enabled} />
+        {/if}
         <form id="plugin-settings-form" onsubmit={(e) => (e.preventDefault(), saving || save())}>
             <PluginFields fields={plugin.fields} unopened={plugin.unopened} bind:form />
         </form>
