@@ -560,10 +560,10 @@ func Starter(page string) Document {
 			"body":        "Pieces designed for the everyday — versatile, durable, and quietly beautiful. Discover the season's edit.",
 			"button_text": "Discover more", "button_link": "/products"}},
 		{ID: "assurances", Type: "benefits", Enabled: true, Settings: map[string]any{"items": []any{
-			map[string]any{"title": "Free shipping", "body": "On your qualifying orders"},
-			map[string]any{"title": "Easy returns", "body": "7-day, hassle-free"},
-			map[string]any{"title": "Secure checkout", "body": "Encrypted & protected"},
-			map[string]any{"title": "Here to help", "body": "Support when you need it"},
+			map[string]any{"title": "Free shipping", "body": "On your qualifying orders", "icon": "truck"},
+			map[string]any{"title": "Easy returns", "body": "7-day, hassle-free", "icon": "return"},
+			map[string]any{"title": "Secure checkout", "body": "Encrypted & protected", "icon": "shield"},
+			map[string]any{"title": "Here to help", "body": "Support when you need it", "icon": "headset"},
 		}}},
 	}}
 }

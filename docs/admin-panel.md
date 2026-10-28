@@ -780,7 +780,8 @@ columns, video, questions and answers, newsletter sign-up, benefits — any of
 them any number of times. Forms are drawn from each type's fields in the
 engine's registry: pictures and videos from Files, products and collections
 from the same picker discounts use, lists (slides, questions, columns,
-benefits) with their own add and move. The newsletter sign-up is offered only
+benefits) with their own add and move. Each benefit may carry an icon,
+picked from a grid of twenty (D139). The newsletter sign-up is offered only
 while the Newsletter plugin is on, and the storefront leaves it out while it
 is off. A video is a YouTube or Vimeo link or an MP4 from Files, and plays
 only when a shopper presses play.
