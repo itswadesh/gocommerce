@@ -405,3 +405,34 @@ export function menuOptions(menus, current) {
     if (current && !out.some((o) => o.value === current)) out.push({ value: current, label: `${current} (not found in Menus)` });
     return out;
 }
+
+// The panel's picture for each benefit icon the engine offers (D139). The
+// engine sends names, not pictures; the storefront draws the same names in
+// its own style, so the two need not look identical, only mean the same.
+export const ICON_GLYPHS = {
+    truck: "ri-truck-line",
+    return: "ri-arrow-go-back-line",
+    exchange: "ri-refresh-line",
+    shield: "ri-shield-check-line",
+    lock: "ri-lock-line",
+    headset: "ri-customer-service-2-line",
+    phone: "ri-phone-line",
+    cash: "ri-hand-coin-line",
+    wallet: "ri-wallet-3-line",
+    percent: "ri-percent-line",
+    gift: "ri-gift-line",
+    package: "ri-box-3-line",
+    clock: "ri-time-line",
+    star: "ri-star-line",
+    award: "ri-award-line",
+    verified: "ri-verified-badge-line",
+    sparkle: "ri-sparkling-line",
+    leaf: "ri-leaf-line",
+    heart: "ri-heart-line",
+    "map-pin": "ri-map-pin-line",
+};
+
+/** An icon field's choices for the picker: None first, then the engine's. */
+export function iconChoices(options) {
+    return [{ value: "", label: "None", glyph: "ri-close-line" }, ...(options ?? []).map((o) => ({ ...o, glyph: ICON_GLYPHS[o.value] }))];
+}

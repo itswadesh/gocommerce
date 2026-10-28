@@ -447,3 +447,32 @@ test("the menu choice lists the store's menus, and keeps one it cannot find", ()
     ]);
     assert.deepEqual(menuOptions(null, ""), []);
 });
+
+// ---------------------------------------------------------------- Benefit icons (D139)
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { ICON_GLYPHS, iconChoices } from "../src/lib/layouts.js";
+
+test("every icon the engine offers has a glyph the panel's font draws", () => {
+    const go = readFileSync(fileURLToPath(new URL("../../ext/layouts/registry.go", import.meta.url)), "utf8");
+    const block = go.match(/var BenefitIcons = \[\]Option\{([\s\S]*?)\n\}/)[1];
+    const keys = [...block.matchAll(/\{"([^"]+)", "[^"]+"\}/g)].map((m) => m[1]);
+    assert.ok(keys.length >= 12, `${keys.length} keys read from the engine`);
+    const css = readFileSync(fileURLToPath(new URL("../src/lib/remixicon.css", import.meta.url)), "utf8");
+    for (const k of keys) {
+        assert.ok(ICON_GLYPHS[k], `no glyph for ${k}`);
+        assert.ok(css.includes(`.${ICON_GLYPHS[k]}:before`), ICON_GLYPHS[k]);
+    }
+});
+
+test("the icon picker starts with None, then the engine's choices with their glyphs", () => {
+    const choices = iconChoices([
+        { value: "truck", label: "Delivery" },
+        { value: "lock", label: "Secure payment" },
+    ]);
+    assert.deepEqual(choices, [
+        { value: "", label: "None", glyph: "ri-close-line" },
+        { value: "truck", label: "Delivery", glyph: "ri-truck-line" },
+        { value: "lock", label: "Secure payment", glyph: "ri-lock-line" },
+    ]);
+});
