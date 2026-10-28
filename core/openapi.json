@@ -221,6 +221,40 @@
         }
       }
     },
+    "/internal/caddy/ask": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "May the proxy get a certificate for this name",
+        "description": "Caddy's on-demand TLS ask endpoint (D143). 200 when the domain is a store's verified domain or <slug>.<base domain> of a store; 404 for anything else. Caddy sends no credentials, so none are wanted: the answer for one name is no more than visiting it shows.",
+        "parameters": [
+          {
+            "name": "domain",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A store answers at this name."
+          },
+          "404": {
+            "description": "No store answers at this name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/doc": {
       "get": {
         "tags": [

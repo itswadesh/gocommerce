@@ -189,3 +189,35 @@ func TestDomainRoutingConfigIsChecked(t *testing.T) {
 		}
 	}
 }
+
+// Caddy asks before getting a certificate for a name (D143): yes for a
+// verified domain and a store's address under the base domain, no for an
+// unproven domain, an unknown slug, a stranger's name or nothing at all.
+func TestCaddyAsksOnlyForStoreDomains(t *testing.T) {
+	app := newTestApp(t)
+	app.cfg.BaseDomain = "shops.test"
+	records := map[string][]string{}
+	fakeTXT(app, records)
+	verifyDomain(t, app, records, "shop.example.com")
+	if code, _ := addDomain(t, app, "unproven.example.com"); code != http.StatusCreated {
+		t.Fatalf("add unproven = %d", code)
+	}
+	st, err := app.Stores().Get(context.Background(), app.defaultStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for domain, want := range map[string]int{
+		"shop.example.com":        http.StatusOK,
+		"SHOP.example.com.":       http.StatusOK,
+		st.Slug + ".shops.test":   http.StatusOK,
+		"unproven.example.com":    http.StatusNotFound,
+		"no-such-shop.shops.test": http.StatusNotFound,
+		"stranger.example.org":    http.StatusNotFound,
+		"127.0.0.1":               http.StatusNotFound,
+		"":                        http.StatusNotFound,
+	} {
+		if rec := do(t, app, http.MethodGet, CaddyAskPath+"?domain="+domain); rec.Code != want {
+			t.Errorf("ask %q = %d, want %d", domain, rec.Code, want)
+		}
+	}
+}
