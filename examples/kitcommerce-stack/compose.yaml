@@ -38,7 +38,9 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gocommerce -d gocommerce"]
+      # Over TCP: on a fresh volume the image first runs a server that listens
+      # only on its socket, and engine-login connects over TCP.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U gocommerce -d gocommerce"]
       interval: 2s
       timeout: 5s
       retries: 30

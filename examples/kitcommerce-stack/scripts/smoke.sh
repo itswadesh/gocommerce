@@ -12,7 +12,7 @@ set -eu
 
 SHOP_URL=${SHOP_URL:-http://shop.localhost:8000}
 ADMIN_URL=${ADMIN_URL:-http://admin.localhost:8000}
-TOKEN=${GOCOMMERCE_ADMIN_TOKEN:?set GOCOMMERCE_ADMIN_TOKEN}
+ADMIN_AUTH="Authorization: Bearer ${GOCOMMERCE_ADMIN_TOKEN:?set GOCOMMERCE_ADMIN_TOKEN}"
 # The engine as the shopper's browser reaches it: the shop's own origin.
 API=$SHOP_URL/backend
 # A product of the engine's sample shop, which the seed service adds.
@@ -56,8 +56,6 @@ json() {
 # field [jq args...] FILTER reads one value from $body.
 field() { jq -er "$@" "$body" || fail "no $* in: $(cat "$body")"; }
 
-admin() { printf 'Authorization: Bearer %s' "$TOKEN"; }
-
 echo "Smoke test: shop $SHOP_URL, admin $ADMIN_URL"
 
 echo '1. The storefront renders a seeded product'
@@ -70,7 +68,7 @@ req GET "$SHOP_URL/products/$SLUG"
 expect 'the product page answers 200' 200 "$status"
 grep -qF "$title" "$body" || fail "the product page does not show '$title'"
 echo "ok    the product page shows '$title'"
-req GET "$API/api/admin/orders" -H "$(admin)"
+req GET "$API/api/admin/orders" -H "$ADMIN_AUTH"
 expect 'the admin API is not served on the shop origin' 404 "$status"
 
 echo '2. A cart line is added and updated'
@@ -108,21 +106,21 @@ req GET "$API/api/orders/$number?token=not-the-token"
 expect 'a wrong token reads nothing' 404 "$status"
 
 echo '5. The order appears through the admin API'
-json GET "$ADMIN_URL/api/admin/orders/$order_id" -H "$(admin)"
+json GET "$ADMIN_URL/api/admin/orders/$order_id" -H "$ADMIN_AUTH"
 expect 'the admin sees the same order' "$number" "$(field .data.number)"
 expect 'with its two units' 2 "$(field '[.data.line_items[].quantity] | add')"
 # The engine records the order's messages. With no email or SMS module
 # installed it has nothing to send them with, so each stays "logged".
-json GET "$ADMIN_URL/api/admin/notifications?limit=50" -H "$(admin)"
+json GET "$ADMIN_URL/api/admin/notifications?limit=50" -H "$ADMIN_AUTH"
 expect 'its messages were recorded and none was sent' logged \
 	"$(field --arg n "$number" '[.data[] | select(.order_number == $n) | .status] | unique | join(",")')"
-json GET "$ADMIN_URL/api/admin/orders?limit=1" -H "$(admin)"
+json GET "$ADMIN_URL/api/admin/orders?limit=1" -H "$ADMIN_AUTH"
 orders=$(field .meta.total)
 
 echo '6. A repeated Idempotency-Key places no second order'
 json POST "$API/api/checkout/cod" -d "$order_body" -H "Idempotency-Key: $key"
 expect 'the replay answers the same order' "$order_id" "$(field .data.order.id)"
-json GET "$ADMIN_URL/api/admin/orders?limit=1" -H "$(admin)"
+json GET "$ADMIN_URL/api/admin/orders?limit=1" -H "$ADMIN_AUTH"
 expect 'the admin order count is unchanged' "$orders" "$(field .meta.total)"
 
 echo "PASS  order $number"
