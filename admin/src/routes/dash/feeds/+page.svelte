@@ -29,6 +29,8 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginFields from "$lib/components/PluginFields.svelte";
     import { titled } from "$lib/brand.svelte.js";
+    import { base } from "$app/paths";
+    import { myStores } from "$lib/stores.svelte.js";
 
     const PLUGIN = "product-feeds";
 
@@ -46,6 +48,17 @@
     let tab = $state("google");
 
     const origin = $derived(typeof window === "undefined" ? "" : window.location.origin);
+
+    /*
+     * An unset storefront URL starts as the store's own address: `domain` is
+     * its primary verified domain, else its first verified one, else its
+     * subdomain (MyStore.Domain). It is only a draft until Save, and the
+     * merchant can type over it.
+     */
+    const shopURL = $derived(myStores.current?.domain ? `https://${myStores.current.domain}` : "");
+    // Not required means the install configured one, which an unsaved field
+    // already falls back to; prefilling would override it on Save.
+    const needsURL = $derived(!!plugin?.fields?.find((f) => f.key === "storefront_url")?.required);
 
     $effect(() => {
         if (allowed && hasModule("feeds")) load();
@@ -71,6 +84,7 @@
             const v = plugin.settings?.[f.key];
             draft[f.key] = f.kind === "bool" ? !!v : (v ?? f.default ?? "");
         }
+        if (needsURL && !filled(draft.storefront_url)) draft.storefront_url = shopURL;
         form = draft;
     }
 
@@ -542,6 +556,14 @@
                     <form id="feed-settings" class="feed-form" onsubmit={submit}>
                         <PluginFields fields={plugin.fields} unopened={plugin.unopened} bind:form idPrefix="feed" />
                     </form>
+                    {#if needsURL && !shopURL && !filled(form.storefront_url)}
+                        <p class="txt-hint txt-sm m-t-sm">
+                            This store has no domain yet. <a href="{base}/dash/settings/domains">Add one in Domains</a>
+                            and it fills in here, or type the address the shop is on.
+                        </p>
+                    {:else if needsURL && !filled(plugin.settings?.storefront_url) && form.storefront_url === shopURL}
+                        <p class="txt-hint txt-sm m-t-sm">Filled in from the store's domain. Save to use it.</p>
+                    {/if}
                     {#if writable}
                         <div class="feed-form-actions">
                             <button
