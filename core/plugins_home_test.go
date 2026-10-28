@@ -33,10 +33,12 @@ func TestCoreSaysWhereEachBuiltInFeatureIsSetUp(t *testing.T) {
 	}
 	want := map[string]string{
 		// Storefront extras, under Themes.
-		"hello-bar":      "/dash/themes/extras",
-		"news-ticker":    "/dash/themes/extras",
-		"trust-badges":   "/dash/themes/extras",
-		"social-sharing": "/dash/themes/extras",
+		"hello-bar":        "/dash/themes/extras",
+		"news-ticker":      "/dash/themes/extras",
+		"trust-badges":     "/dash/themes/extras",
+		"social-sharing":   "/dash/themes/extras",
+		"sold-count":       "/dash/themes/extras",
+		"cart-suggestions": "/dash/themes/extras",
 		// The store's own rules, on its settings page.
 		"store-close":    "/dash/settings",
 		"enquiry-mode":   "/dash/settings",
