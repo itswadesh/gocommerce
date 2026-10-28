@@ -109,6 +109,7 @@
 
     async function load() {
         loading = true;
+        trackingKey = "";
         try {
             order = await api.get(`/api/admin/orders/${orderId}`);
             loadTimeline(orderId);
@@ -376,22 +377,46 @@
     const ADDRESS_FIELDS = ["line1", "line2", "city", "state", "postal_code", "country"];
 
     // The storefront page where the customer sees this order. Shown without
-    // its key; the copy asks the engine for the key (recorded in the audit
-    // log, orders.write) so the pasted link opens the order by itself, as the
-    // one in the order emails does.
+    // its key; opening or copying it asks the engine for the key once
+    // (recorded in the audit log, orders.write) so the link opens the order by
+    // itself, as the one in the order emails does. Not fetched on load: every
+    // look at an order would be an audit entry.
     const trackingURL = $derived(orderTrackingURL(myStores.current, order?.number));
+    let trackingKey = $state("");
     let trackingCopied = $state(false);
     let trackingTimer;
+    async function keyedTracking() {
+        if (!can("orders.write")) return trackingURL;
+        if (!trackingKey) {
+            const res = await api.post(`/api/admin/orders/${order.id}/access-token`);
+            trackingKey = res?.access_token ?? "";
+        }
+        return orderTrackingURL(myStores.current, order.number, trackingKey);
+    }
+    async function openTracking(e) {
+        if (!can("orders.write")) return;
+        e.preventDefault();
+        // Opened inside the click, then pointed at the keyed link: a window
+        // opened after an await is a popup the browser blocks.
+        const tab = window.open("", "_blank");
+        try {
+            const link = await keyedTracking();
+            if (tab) {
+                tab.opener = null;
+                tab.location.href = link;
+            } else window.location.href = link;
+        } catch (err) {
+            tab?.close();
+            toast.error(err);
+        }
+    }
     async function copyTracking() {
-        let link = trackingURL;
-        if (can("orders.write")) {
-            try {
-                const res = await api.post(`/api/admin/orders/${order.id}/access-token`);
-                link = orderTrackingURL(myStores.current, order.number, res?.access_token);
-            } catch (err) {
-                toast.error(err);
-                return;
-            }
+        let link;
+        try {
+            link = await keyedTracking();
+        } catch (err) {
+            toast.error(err);
+            return;
         }
         if (await copyText(link)) {
             trackingCopied = true;
@@ -1984,6 +2009,7 @@
                                                 href={trackingURL}
                                                 target="_blank"
                                                 rel="noreferrer"
+                                                onclick={openTracking}
                                             >
                                                 {trackingURL.replace(/^https:\/\//, "")}
                                             </a>
@@ -2000,8 +2026,8 @@
                                         </div>
                                         <div class="txt-hint txt-sm">
                                             {#if can("orders.write")}
-                                                The copied link opens the order without asking for
-                                                anything, like the one in the order emails.
+                                                Opened or copied, the link opens the order without
+                                                asking for anything, like the one in the order emails.
                                             {:else}
                                                 The customer opens it with the email or phone on the
                                                 order.
