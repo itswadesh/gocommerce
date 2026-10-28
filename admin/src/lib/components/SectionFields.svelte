@@ -139,6 +139,7 @@
                 <input {id} type="checkbox" class="switch" checked={!!settings[f.key]} onchange={(e) => set(f.key, e.currentTarget.checked)} />
                 <label for={id}>{f.label}</label>
             </div>
+            {#if f.help}<div class="field-help">{f.help}</div>{/if}
         {:else if f.kind === "list"}
             <fieldset class="sf-list">
                 <legend>{f.label}{#if f.required}<span class="sf-req" aria-hidden="true"> *</span>{/if}</legend>
