@@ -119,9 +119,9 @@ services:
       # "reserved", "logo_url"}. Unset, the install is one brand made of the
       # two settings above.
       GOCOMMERCE_BRANDS: ${GOCOMMERCE_BRANDS:-}
-      # India Post's PIN code directory (the CSV data.gov.in publishes),
-      # mounted into the container: with it a checkout fills the city and
-      # state from a PIN code. Unset, the shopper types both.
+      # A checkout fills the city and state from a PIN code, from India
+      # Post's directory built into the engine. Set this only to mount a newer
+      # copy of the CSV data.gov.in publishes, or to "off".
       GOCOMMERCE_POSTCODES_FILE: ${GOCOMMERCE_POSTCODES_FILE:-}
       # Email and SMS delivery, every one optional: a backend without its key
       # installs idle and waits for Notifications › Setup Email / Setup SMS.

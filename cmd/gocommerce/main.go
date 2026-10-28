@@ -148,9 +148,10 @@ environment:
                     not given; leaving it unset disables uploads and the media
                     library records files by URL only
   GOCOMMERCE_POSTCODES_FILE
-                    India Post's PIN code directory, the CSV data.gov.in
-                    publishes; with it a checkout fills the city and state
-                    from a PIN code (GET /api/postcodes/IN/{pin})
+                    a newer copy of India Post's PIN code directory, the CSV
+                    data.gov.in publishes, in place of the one built in that a
+                    checkout fills the city and state from
+                    (GET /api/postcodes/IN/{pin}); "off" turns it off
   GOCOMMERCE_IDENTITY_RESET_URL
                     with -identity, the storefront page a password-reset email
                     links to, with {token} where the token goes

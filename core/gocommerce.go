@@ -153,13 +153,13 @@ type Config struct {
 	// MediaURLPrefix is the path MediaDir is served at. Defaults to "/media".
 	MediaURLPrefix string
 
-	// PostcodesFile is India's post office directory as a CSV, the file
-	// data.gov.in publishes ("All India Pincode Directory", under the
-	// Government Open Data Licence), read once at start. With it a checkout
-	// fills the city and state from a six-digit PIN code
-	// (GET /api/postcodes/IN/{pin}); without it that route answers 404 and the
-	// shopper types both, as before (D134). Install-wide, not per store: the
-	// post office's map is the same for every shop.
+	// PostcodesFile replaces the PIN code directory a checkout fills the city
+	// and state from (GET /api/postcodes/IN/{pin}). Empty uses the one built
+	// into the engine (D135); a path reads India Post's "All India Pincode
+	// Directory" CSV from data.gov.in (or its .gz compact form) once at start,
+	// for a copy newer than this release's; "off" turns the lookup off, and
+	// that route answers 404. Install-wide, not per store: the post office's
+	// map is the same for every shop.
 	PostcodesFile string
 
 	// PanelURL is where this store's admin panel is reached —
@@ -442,9 +442,9 @@ type App struct {
 	media        *Media
 	discounts    *Discounts
 	upsells      *Upsells
-	// postcodes is the PIN code directory, nil when Config.PostcodesFile is
-	// unset.
-	postcodes   *Postcodes
+	// postcodes answers the PIN code directory: the built-in one, the
+	// install's file, or nil when Config.PostcodesFile is "off".
+	postcodes   func() *Postcodes
 	locations   *Locations
 	invitations *Invitations
 	taxes       *Taxes
@@ -558,12 +558,17 @@ func New(cfg Config, mods ...Module) (*App, error) {
 	}
 	// Read before anything is opened, so a wrong path stops the start rather
 	// than leaving a checkout that quietly never fills a city.
-	var postcodes *Postcodes
-	if cfg.PostcodesFile != "" {
-		var err error
-		if postcodes, err = LoadPostcodes(cfg.PostcodesFile); err != nil {
+	postcodes := BuiltinPostcodes
+	switch cfg.PostcodesFile {
+	case "":
+	case "off":
+		postcodes = func() *Postcodes { return nil }
+	default:
+		file, err := LoadPostcodes(cfg.PostcodesFile)
+		if err != nil {
 			return nil, fmt.Errorf("gocommerce: postcodes file: %w", err)
 		}
+		postcodes = func() *Postcodes { return file }
 	}
 	for _, w := range cfg.brandWarnings {
 		cfg.Logger.Warn("gocommerce: "+w, "fix", "the entry in "+BrandsEnv)
