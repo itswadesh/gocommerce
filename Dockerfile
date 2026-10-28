@@ -10,7 +10,7 @@
 # the source beside it.
 
 # ------------------------------------------------------------------- panel
-FROM node:22-alpine AS panel
+FROM node:22.23.2-alpine@sha256:b6f26b36c8ff49624cfdac716b8ea1138d606df02586a77d364bb5536a634f85 AS panel
 WORKDIR /src/admin
 
 # The manifest alone first, so a change to a Svelte file does not re-resolve
@@ -22,7 +22,7 @@ COPY admin/ ./
 RUN npm run build
 
 # ------------------------------------------------------------------ binary
-FROM golang:1.27-alpine AS build
+FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS build
 WORKDIR /src
 
 COPY go.mod go.sum ./
@@ -47,7 +47,7 @@ RUN go build -trimpath -ldflags "-s -w" -o /out/gocommerce ./cmd/gocommerce
 RUN mkdir -p /out/media
 
 # ------------------------------------------------------------------- image
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 
 COPY --from=build /out/gocommerce /gocommerce
 COPY --from=build --chown=nonroot:nonroot /out/media /data/media
