@@ -117,6 +117,7 @@ func (a *App) underBaseDomain(ctx context.Context, host string) *APIError {
 
 func (a *App) mountDomainRoutes() {
 	a.HandleFunc("GET "+TraefikConfigPath, a.handleTraefikConfig)
+	a.HandleFunc("GET "+CaddyAskPath, a.handleCaddyAsk)
 	a.HandleAdminFunc("GET /api/admin/domains", a.handleListDomains)
 	a.HandleAdminFunc("POST /api/admin/domains", a.handleAddDomain, RightStoreWrite)
 	a.HandleAdminFunc("POST /api/admin/domains/{host}/verify", a.handleVerifyDomain, RightStoreWrite)

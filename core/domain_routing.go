@@ -200,3 +200,33 @@ func (a *App) handleTraefikConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(a.traefikConfig(hosts))
 }
+
+// CaddyAskPath is Caddy's on-demand TLS "ask" endpoint, for the proxy the
+// full compose stack runs (D143). Caddy gets a certificate the first time a
+// visitor's browser asks for a name, but only after this answers 200 for it:
+// a store's verified domain or <slug>.<base domain> of a store. Anything else
+// is a 404, so somebody pointing their own DNS at the server cannot spend the
+// install's certificate allowance, as with the Traefik routes above.
+//
+// No token: Caddy's ask sends none, and the answer for one name is no more
+// than visiting that name shows. The compose Caddyfile still keeps /internal/
+// off the public sites.
+const CaddyAskPath = "/internal/caddy/ask"
+
+func (a *App) handleCaddyAsk(w http.ResponseWriter, r *http.Request) {
+	host, err := a.normalizeHost(r.URL.Query().Get("domain"))
+	if err != nil {
+		RespondError(w, r, NotFoundf("not a store's domain"))
+		return
+	}
+	if _, err := a.stores.ByHost(r.Context(), host); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			RespondError(w, r, NotFoundf("not a store's domain"))
+		} else {
+			RespondError(w, r, Internalf(err, "look up a store's domain"))
+		}
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+}
