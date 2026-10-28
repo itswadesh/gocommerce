@@ -119,6 +119,9 @@ Three things are worth knowing before it runs somewhere that matters:
 - **The media volume is seeded from the image**, which is why `/data/media` is
   created in the build with the right ownership. Mount a volume there or uploads
   live only as long as the container.
+- **Resized pictures are cached in `/data/media/.cache/images`** (D142). It is
+  safe to delete: each width is made again on its next request. Leave it out of
+  backups if space matters.
 - **There is no `HEALTHCHECK`**: the image has no shell to run one with. Point
   the proxy at `GET /health`, as below.
 

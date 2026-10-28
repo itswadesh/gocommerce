@@ -1078,6 +1078,11 @@
                           "items": {
                             "type": "string"
                           }
+                        },
+                        "images_path": {
+                          "type": "string",
+                          "description": "Where this store's pictures are served resized (D142), as a path on the engine's origin. A storefront that builds Cloudflare-shaped image URLs puts it before `/cdn-cgi/image/width=…/…`; see GET /images/{store}/cdn-cgi/image/{options}/{path}.",
+                          "example": "/images/store_01J8Z3"
                         }
                       }
                     }
@@ -16097,6 +16102,83 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/images/{store}/cdn-cgi/image/{options}/{path...}": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "A store's picture, resized",
+        "description": "Serves one of the store's own pictures scaled down to a fixed width, in the URL shape Cloudflare Image Resizing uses, so a storefront's srcset can point here (D142). `path` (and the query string, if any) is the original's path without its host; it must match an image in the store's media library or a category picture, or the answer is 404 — this is not a proxy for arbitrary addresses. Remote originals are fetched through the outbound guard (D109): an address inside the server's network is refused unless the install allows private URLs.\n\nOnly `width=` is read from `options`, rounded up to one of 160, 240, 320, 480, 640, 768, 1024, 1280; the aspect ratio is kept and a picture is never enlarged (an original already that narrow is served as it is). JPEG and PNG originals are resized — a PNG with transparency stays PNG, everything else becomes a JPEG at quality 80. A WebP, AVIF or GIF original is answered with a 302 to the original. Originals over 20 MB or 40 megapixels are refused with 422.\n\nEach rendition is made once and cached on disk; responses carry `Cache-Control: public, max-age=31536000, immutable` and an `ETag`, and answer `If-None-Match` with 304.",
+        "parameters": [
+          {
+            "name": "store",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The store's id (as `images_path` in GET /api/store names it), slug or verified domain."
+          },
+          {
+            "name": "options",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "width=320,quality=80,format=auto",
+            "description": "Comma-separated Cloudflare options. Only width is read."
+          },
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "photos/necklace_925x.jpg",
+            "description": "The original picture's path, without its leading slash."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The resized picture.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "302": {
+            "description": "The original is in a format this engine does not resize; it is the Location."
+          },
+          "304": {
+            "description": "The ETag sent in If-None-Match still matches."
+          },
+          "403": {
+            "description": "The original's address is not a public one."
+          },
+          "404": {
+            "description": "No such store, or the store shows no picture at that path."
+          },
+          "422": {
+            "description": "The original is too large to resize."
+          },
+          "502": {
+            "description": "The original could not be fetched."
           }
         }
       }

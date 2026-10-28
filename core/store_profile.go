@@ -344,6 +344,9 @@ type publicStore struct {
 	SupportURL string   `json:"support_url"`
 	Language   string   `json:"language"`
 	Languages  []string `json:"languages"`
+	// ImagesPath is where this store's pictures are served resized (D142), on
+	// the engine's own origin, for a storefront to put in its image CDN setting.
+	ImagesPath string `json:"images_path"`
 }
 
 func (a *App) handlePublicStore(w http.ResponseWriter, r *http.Request) {
@@ -353,7 +356,7 @@ func (a *App) handlePublicStore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	Respond(w, http.StatusOK, publicStore{Name: p.Name, Email: p.Email, Phone: p.Phone, SupportURL: p.SupportURL,
-		Language: p.Language, Languages: p.Languages})
+		Language: p.Language, Languages: p.Languages, ImagesPath: ImagesPath(a.storeOf(r.Context()))})
 }
 
 func (a *App) handleGetStoreProfile(w http.ResponseWriter, r *http.Request) {
