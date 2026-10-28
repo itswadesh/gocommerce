@@ -44,6 +44,10 @@ services:
       - -sitemaps
       - -b2b
       - -recovery
+      # Search through the meilisearch service below. Each store switches it
+      # on from Plugins; until then, and whenever Meilisearch is down, search
+      # answers from the database.
+      - -meilisearch
       - serve
     depends_on:
       postgres:
@@ -155,6 +159,15 @@ services:
       SMS_OTP_TEMPLATE_ID: ${SMS_OTP_TEMPLATE_ID:-}
       # The DLT sender id every text goes from, such as MISIKI.
       SMS_SENDER_ID: ${SMS_SENDER_ID:-}
+      # The install's Meilisearch, which every store that switches the plugin
+      # on uses without typing a host or key. The master key writes the
+      # index; a search-only key is optional (the engine searches with the
+      # master key when there is none) and never leaves the server either way.
+      # The host is left empty until the key is set, so a store cannot point
+      # a key of its own at the install's Meilisearch in the meantime.
+      MEILI_HOST: ${MEILI_MASTER_KEY:+http://meilisearch:7700}
+      MEILI_API_KEY: ${MEILI_MASTER_KEY:-}
+      MEILI_SEARCH_KEY: ${MEILI_SEARCH_KEY:-}
     volumes:
       - media:/data/media
     ports:
@@ -209,6 +222,33 @@ services:
       timeout: 5s
       retries: 20
 
+  # The search index, reachable only on this compose network: no port is
+  # published, and the engine is the only thing that talks to it.
+  #
+  # In production Meilisearch will not start without MEILI_MASTER_KEY of at
+  # least 16 bytes (openssl rand -base64 32). That is deliberate here: the
+  # engine does not wait for this service, so a deploy without the key still
+  # brings the store up, with this container restarting and every store's
+  # search answering from the database. Set the key and redeploy to turn it on.
+  #
+  # Memory: about the size of the index on disk plus some headroom; a few
+  # thousand products across all stores fits in 256 MB. Indexing is the peak.
+  meilisearch:
+    image: getmeili/meilisearch:v1.55.0
+    restart: unless-stopped
+    environment:
+      MEILI_ENV: production
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-}
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - meilidata:/meili_data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   media:
   pgdata:
+  meilidata:
