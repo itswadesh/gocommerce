@@ -25,12 +25,13 @@
      * discount screen's picker (TargetPicker); a list repeats its item fields
      * with add, move and remove. A colour is a swatch and its #rrggbb, and an
      * unset one says the storefront keeps its own (D127). A menu is chosen
-     * from the store's menus by its handle (D131).
+     * from the store's menus by its handle (D131). An icon is picked from a
+     * grid of the engine's fixed set, each shown as itself (D139).
      */
     import Select from "$lib/components/Select.svelte";
     import ImageField from "$lib/components/ImageField.svelte";
     import TargetPicker from "$lib/components/TargetPicker.svelte";
-    import { visibleFields, menuOptions } from "$lib/layouts.js";
+    import { visibleFields, menuOptions, iconChoices } from "$lib/layouts.js";
     import { rise } from "$lib/motion.js";
     import Self from "./SectionFields.svelte";
 
@@ -118,6 +119,20 @@
                     {/if}
                 </div>
             </div>
+            {#if f.help}<div class="field-help">{f.help}</div>{/if}
+        {:else if f.kind === "icon"}
+            {@const current = settings[f.key] ?? ""}
+            <fieldset class="sf-icons">
+                <legend>{f.label}</legend>
+                <div class="sf-icon-grid">
+                    {#each iconChoices(f.options) as o (o.value)}
+                        <label class="sf-icon" class:active={current === o.value} title={o.label}>
+                            <input type="radio" class="sf-icon-input" name={id} value={o.value} checked={current === o.value} aria-label={o.label} onchange={() => set(f.key, o.value)} />
+                            <i class={o.glyph} aria-hidden="true"></i>
+                        </label>
+                    {/each}
+                </div>
+            </fieldset>
             {#if f.help}<div class="field-help">{f.help}</div>{/if}
         {:else if f.kind === "bool"}
             <div class="field sf-switch">
@@ -250,6 +265,85 @@
         }
         .sf-swatch:active {
             transform: none;
+        }
+    }
+    .sf-icons {
+        border: 0;
+        margin: 0;
+        padding: 0;
+        min-width: 0;
+    }
+    .sf-icons legend {
+        font-weight: 600;
+        padding: 0;
+        margin-bottom: 6px;
+    }
+    .sf-icon-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+        gap: 6px;
+    }
+    .sf-icon {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 40px;
+        border: 1px solid var(--surfaceAlt2Color);
+        border-radius: var(--borderRadius);
+        background: var(--cardFace);
+        color: var(--surfaceTxtHintColor);
+        font-size: 1.25rem;
+        cursor: pointer;
+        transition:
+            transform 150ms ease-out,
+            opacity 150ms ease-out;
+    }
+    /* The radio stays in the page for the keyboard and screen readers; the
+       tile is what is seen. */
+    .sf-icon-input {
+        position: absolute;
+        inset: 0;
+        margin: 0;
+        opacity: 0;
+        cursor: pointer;
+    }
+    .sf-icon:hover {
+        background: var(--surfaceAlt1Color);
+        color: var(--surfaceTxtColor);
+        transform: translateY(-1px);
+    }
+    .sf-icon:active {
+        transform: scale(0.94);
+    }
+    .sf-icon.active {
+        border-color: var(--markColor);
+        background: var(--surfaceAlt1Color);
+        color: var(--markColor);
+        box-shadow: inset 0 0 0 1px var(--markColor);
+    }
+    .sf-icon.active i {
+        animation: sf-icon-pick 220ms ease-out;
+    }
+    .sf-icon:has(.sf-icon-input:focus-visible) {
+        outline: 2px solid var(--markColor);
+        outline-offset: 2px;
+    }
+    @keyframes sf-icon-pick {
+        from {
+            transform: scale(0.7);
+            opacity: 0.4;
+        }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .sf-icon,
+        .sf-icon:hover,
+        .sf-icon:active {
+            transition: none;
+            transform: none;
+        }
+        .sf-icon.active i {
+            animation: none;
         }
     }
     .sf-list {
