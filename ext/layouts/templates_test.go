@@ -70,7 +70,7 @@ func TestTheProductPageIsArrangedAroundItsCore(t *testing.T) {
 	}
 	// Each page is its own document: publishing the product page publishes
 	// nothing else.
-	publicPage(t, app, "/x/layouts/home", http.StatusNotFound)
+	wantStarter(t, publicPage(t, app, "/x/layouts/home", http.StatusOK))
 	publicPage(t, app, "/x/layouts/collection", http.StatusNotFound)
 }
 
@@ -236,7 +236,7 @@ func TestAScheduleCanBeCancelledAndIsChecked(t *testing.T) {
 	if n := publishDue(t, app, m); n != 0 {
 		t.Fatalf("a cancelled schedule published %d", n)
 	}
-	publicPage(t, app, "/x/layouts/home", http.StatusNotFound)
+	wantStarter(t, publicPage(t, app, "/x/layouts/home", http.StatusOK))
 	// Cancelling what is not there is already done.
 	adminState(t, app, http.MethodDelete, "/api/admin/x/layouts/home/schedule", nil, http.StatusOK)
 }

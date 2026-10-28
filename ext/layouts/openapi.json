@@ -42,7 +42,7 @@
           "layouts"
         ],
         "summary": "The storefront's design tokens",
-        "description": "The theme settings published with the home page (D127), for every page of the storefront to apply, without the home page's products. Answered `Cache-Control: public, max-age=30`. With `preview=<key>` from the editor, the saved draft's instead, answered `no-store`. An empty `settings` means the storefront keeps its own look. 404 while the `layouts` plugin is off or nothing is published.",
+        "description": "The theme settings published with the home page (D127), for every page of the storefront to apply, without the home page's products. Answered `Cache-Control: public, max-age=30`. With `preview=<key>` from the editor, the saved draft's instead, answered `no-store`. An empty `settings` means the storefront keeps its own look. Before the home page's first publish, the starting home page's settings, with no `revision`. 404 while the `layouts` plugin is off.",
         "parameters": [
           {
             "name": "preview",
@@ -89,7 +89,7 @@
           "layouts"
         ],
         "summary": "A storefront page as the shop arranged it",
-        "description": "The published page (D125): its shown sections in order, each `{id, type, settings}`, and each product grid's `products` resolved live — active, on the request's channel, translated. Hidden sections are left out, and so are settings whose plugin is off. The published `header` and `footer` are answered `Cache-Control: public, max-age=30`. With `preview=<key>` from the editor, the saved draft instead, answered `Cache-Control: no-store` and `X-Robots-Tag: noindex`. 404 while the `layouts` plugin is off or nothing is published: the storefront then draws its built-in page.",
+        "description": "The published page (D125): its shown sections in order, each `{id, type, settings}`, and each product grid's `products` resolved live — active, on the request's channel, translated. Hidden sections are left out, and so are settings whose plugin is off. The published `header` and `footer` are answered `Cache-Control: public, max-age=30`. With `preview=<key>` from the editor, the saved draft instead, answered `Cache-Control: no-store` and `X-Robots-Tag: noindex`. 404 while the `layouts` plugin is off, or for any page but `home` while nothing is published: the storefront then draws its built-in page. A `home` never published is answered as the starting home page (D140), with no `revision`.",
         "parameters": [
           {
             "name": "page",

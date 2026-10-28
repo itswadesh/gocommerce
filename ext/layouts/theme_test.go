@@ -25,10 +25,13 @@ func publicTheme(t *testing.T, app *gocommerce.App, target string, want int) (Pu
 
 // The theme settings publish with the page, and every page of the storefront
 // reads them from a small route of their own; a preview key reads the
-// draft's, and nothing is answered until something is published.
+// draft's, and until something is published the starter's are answered.
 func TestThemeSettingsPublishWithThePage(t *testing.T) {
 	app := layoutsApp(t)
-	publicTheme(t, app, "/x/layouts/theme", http.StatusNotFound)
+	starter := Starter("home").ThemeSettings["accent"]
+	if got, _ := publicTheme(t, app, "/x/layouts/theme", http.StatusOK); got.Settings["accent"] != starter {
+		t.Fatalf("theme before a save = %+v, want the starter's", got)
+	}
 
 	doc := sections(hero("a", "One"))
 	doc["theme_settings"] = map[string]any{"accent": "#AA3300", "body_font": "lora"}
@@ -36,7 +39,9 @@ func TestThemeSettingsPublishWithThePage(t *testing.T) {
 	if st.Document.ThemeSettings["accent"] != "#aa3300" {
 		t.Fatalf("saved theme settings = %v", st.Document.ThemeSettings)
 	}
-	publicTheme(t, app, "/x/layouts/theme", http.StatusNotFound)
+	if got, _ := publicTheme(t, app, "/x/layouts/theme", http.StatusOK); got.Settings["accent"] != starter {
+		t.Fatalf("theme with only a draft = %+v, want the starter's", got)
+	}
 
 	adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/publish", map[string]any{"version": 1}, http.StatusOK)
 	got, h := publicTheme(t, app, "/x/layouts/theme", http.StatusOK)
