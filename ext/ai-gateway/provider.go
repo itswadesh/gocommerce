@@ -76,6 +76,9 @@ type Document struct {
 	Name      string
 	MediaType string // application/pdf, image/png, image/jpeg, image/gif, image/webp
 	Bytes     []byte
+	// Caption is the task's own words sent just before the file, "Photo 3",
+	// so an answer about many files can say which one it means.
+	Caption string
 }
 
 // Response is a model's answer. JSON is never trusted as it stands: the
