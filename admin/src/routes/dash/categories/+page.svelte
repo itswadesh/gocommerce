@@ -29,6 +29,7 @@
     import Confirm from "$lib/components/Confirm.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import CategoryPicker from "$lib/components/CategoryPicker.svelte";
+    import TaxonomyBrowser from "$lib/components/TaxonomyBrowser.svelte";
     import { fieldText } from "$lib/fieldtext.js";
     import CategoryMove from "$lib/components/CategoryMove.svelte";
     import RecordHistory from "$lib/components/RecordHistory.svelte";
@@ -102,6 +103,8 @@
        store.operate, which is what makes it answerable by a manager who cannot
        open the store-wide feed at all. */
     let historyOpen = $state(false);
+    /* The shared Shopify taxonomy, switched on node by node (D143). */
+    let taxonomyOpen = $state(false);
     let historyFor = $state(null);
 
     function openHistory(category, event) {
@@ -837,6 +840,18 @@
             </form>
 
             <div class="page-header-primary-btns">
+                <!-- Labelled on the element: on a phone the header hides `.txt`
+                     and the icon alone would leave the button unnamed. -->
+                <button
+                    type="button"
+                    class="btn secondary"
+                    aria-label="Browse the Shopify taxonomy"
+                    title="Browse the Shopify taxonomy"
+                    onclick={() => (taxonomyOpen = true)}
+                >
+                    <i class="ri-node-tree" aria-hidden="true"></i>
+                    <span class="txt">Browse the Shopify taxonomy</span>
+                </button>
                 {#if writable}
                     <button type="button" class="btn" onclick={() => openCreate(null)}>
                         <i class="ri-add-line" aria-hidden="true"></i>
@@ -1098,10 +1113,14 @@
                                     <EmptyState
                                         icon="ri-node-tree"
                                         title="No categories yet"
-                                        text="A category is where a product sits in your taxonomy — one place, with a parent. Build the tree here, or import one."
+                                        text="A category is where a product sits in your taxonomy — one place, with a parent. Switch on the ones you sell from the Shopify taxonomy, or build your own."
                                     >
+                                        <button type="button" class="btn" onclick={() => (taxonomyOpen = true)}>
+                                            <i class="ri-node-tree" aria-hidden="true"></i>
+                                            <span class="txt">Browse the Shopify taxonomy</span>
+                                        </button>
                                         {#if writable}
-                                            <button type="button" class="btn" onclick={() => openCreate(null)}>
+                                            <button type="button" class="btn secondary" onclick={() => openCreate(null)}>
                                                 <i class="ri-add-line" aria-hidden="true"></i>
                                                 <span class="txt">New category</span>
                                             </button>
@@ -1371,6 +1390,13 @@
     remote={parentRemote}
     onclose={() => (moveOpen = false)}
     ondone={() => (sel.clear(), refresh())}
+/>
+
+<TaxonomyBrowser
+    open={taxonomyOpen}
+    {writable}
+    onclose={() => (taxonomyOpen = false)}
+    onchange={refresh}
 />
 
 <RecordHistory
