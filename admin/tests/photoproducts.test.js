@@ -91,3 +91,11 @@ test("progress is a fraction once the count is known, and cost is whole minor un
     assert.equal(costMinor({ cost_micro_minor: 2_800_000 }), 3);
     assert.equal(costMinor(null), 0);
 });
+
+test("a photo's alt text goes with it when it moves or its product is merged", () => {
+    const items = proposals();
+    items[0].draft.alts = { 12: "Silver hoops" };
+    items[1].draft.alts = { 13: "A beaded bracelet" };
+    assert.equal(movePhoto(items, 12, [1, 0])[1].draft.alts[12], "Silver hoops");
+    assert.equal(mergeInto(items, 1, 0)[0].draft.alts[13], "A beaded bracelet");
+});

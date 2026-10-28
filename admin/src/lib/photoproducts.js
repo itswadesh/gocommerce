@@ -46,6 +46,9 @@ export function movePhoto(items, photoId, to) {
     } else {
         const [ti, tv] = to;
         out[ti].draft.variants[tv].photos.push(photoId);
+        // Alt text is kept by photo id in each draft, so it travels with the photo.
+        const alt = out[i].draft.alts?.[photoId];
+        if (alt) out[ti].draft.alts = { ...(out[ti].draft.alts ?? {}), [photoId]: alt };
     }
     return tidy(out);
 }
@@ -64,6 +67,7 @@ export function mergeInto(items, from, into) {
         target.variants.push({ value: v.value || source.title, photos: [...v.photos] });
     }
     if (!target.option_name) target.option_name = "Style";
+    target.alts = { ...(source.alts ?? {}), ...(target.alts ?? {}) };
     out.splice(from, 1);
     return tidy(out);
 }

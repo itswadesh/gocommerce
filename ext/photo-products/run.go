@@ -34,7 +34,12 @@ func (m *Module) notReady(ctx context.Context) error {
 
 // launch runs a batch in the background, once per process however many
 // times it is asked.
-func (m *Module) launch(store string, id int64) {
+func (m *Module) launch(store string, id int64) { m.spawn(store, id, true) }
+
+// spawn is launch; again allows one more run for a Start that arrived while
+// this one was finishing, and only one, so a status that cannot be written
+// does not set the batch running for ever.
+func (m *Module) spawn(store string, id int64, again bool) {
 	m.mu.Lock()
 	if m.running[id] {
 		m.mu.Unlock()
@@ -45,16 +50,21 @@ func (m *Module) launch(store string, id int64) {
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
-		defer func() {
-			m.mu.Lock()
-			delete(m.running, id)
-			m.mu.Unlock()
-		}()
 		ctx := m.ctx
 		if store != "" {
 			ctx = gocommerce.WithStore(ctx, store)
 		}
 		m.work(ctx, id)
+		m.mu.Lock()
+		delete(m.running, id)
+		m.mu.Unlock()
+		// A Start that came while this run was writing its last status was
+		// refused a second worker; it is honoured now.
+		var status string
+		if again && ctx.Err() == nil && m.db.QueryRowContext(ctx, `SELECT status FROM photo_products_batches WHERE id = $1`, id).Scan(&status) == nil &&
+			(status == StatusGrouping || status == StatusDescribing) {
+			m.spawn(store, id, false)
+		}
 	}()
 }
 
