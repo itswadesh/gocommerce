@@ -10,16 +10,16 @@ import (
 
 // Anthropic's Messages API, over net/http (rule 2).
 //
-// The answer is forced through a single tool whose input_schema is the
-// task's schema, which every current Claude model supports and which gives a
-// JSON object back rather than prose to be parsed. The instructions carry
-// cache_control: tools and system come before the messages in Anthropic's
-// cache order, so one breakpoint on the system block caches the schema and
-// the instructions together, and both are the same for every store.
+// The answer is asked for as structured output: output_config.format with
+// the task's schema, so the reply is one text block holding a JSON object
+// that matches it. A forced tool call did the same job until Sonnet 5.5 and
+// Opus 5.5, which refuse tool_choice "tool" with a 400; structured output is
+// accepted by every current model. The instructions carry cache_control, so
+// the system block, which is the same for every store, is cached across them.
 const (
 	anthropicHost    = "https://api.anthropic.com"
 	anthropicVersion = "2023-06-01"
-	// answerTool is the one tool every request offers and forces.
+	// answerTool names the answer's schema to OpenAI's response_format.
 	answerTool = "answer"
 )
 
@@ -76,6 +76,9 @@ func (p *anthropicProvider) Generate(ctx context.Context, req Request) (Response
 		// and the one a question about a file reads naturally in.
 		if i == 0 {
 			for _, d := range req.Documents {
+				if d.Caption != "" {
+					content = append(content, anthropicBlock{Type: "text", Text: d.Caption})
+				}
 				kind := "image"
 				if d.MediaType == "application/pdf" {
 					kind = "document"
@@ -94,22 +97,17 @@ func (p *anthropicProvider) Generate(ctx context.Context, req Request) (Response
 		"system": []anthropicBlock{{
 			Type: "text", Text: req.System, Cache: &anthropicCache{Type: "ephemeral"},
 		}},
-		"tools": []map[string]any{{
-			"name":         answerTool,
-			"description":  "Give the answer. Call this exactly once, with every field the schema asks for.",
-			"input_schema": req.Schema,
-		}},
-		"tool_choice": map[string]string{"type": "tool", "name": answerTool},
-		"messages":    messages,
+		"output_config": map[string]any{
+			"format": map[string]any{"type": "json_schema", "schema": req.Schema},
+		},
+		"messages": messages,
 	}
 
 	var out struct {
 		Model   string `json:"model"`
 		Content []struct {
-			Type  string          `json:"type"`
-			Name  string          `json:"name"`
-			Text  string          `json:"text"`
-			Input json.RawMessage `json:"input"`
+			Type string `json:"type"`
+			Text string `json:"text"`
 		} `json:"content"`
 		StopReason string `json:"stop_reason"`
 		Usage      struct {
@@ -136,15 +134,17 @@ func (p *anthropicProvider) Generate(ctx context.Context, req Request) (Response
 	}
 	var said []string
 	for _, c := range out.Content {
-		switch {
-		case c.Type == "tool_use" && c.Name == answerTool && resp.JSON == nil:
-			resp.JSON = c.Input
-		case c.Type == "text" && strings.TrimSpace(c.Text) != "":
+		if c.Type == "text" && strings.TrimSpace(c.Text) != "" {
 			said = append(said, strings.TrimSpace(c.Text))
 		}
 	}
-	if resp.JSON == nil {
-		resp.Refusal = strings.Join(said, " ")
+	text := strings.Join(said, " ")
+	// A refusal may say its piece in words that happen to be JSON; only an
+	// answer the model finished is one.
+	if out.StopReason != "refusal" && json.Valid([]byte(text)) && strings.HasPrefix(text, "{") {
+		resp.JSON = json.RawMessage(text)
+	} else {
+		resp.Refusal = text
 	}
 	return resp, nil
 }

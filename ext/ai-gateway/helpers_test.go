@@ -60,15 +60,16 @@ func configure(t *testing.T, app *gocommerce.App, ctx context.Context, extra map
 	}
 }
 
-// answer is an Anthropic reply in the recorded shape, forcing input through
-// the answer tool and reporting usage.
+// answer is an Anthropic reply in the recorded shape: the structured output
+// as one text block, and usage.
 func answer(model, input string, u Usage) string {
+	text, _ := json.Marshal(input)
 	return fmt.Sprintf(`{
   "id": "msg_test", "type": "message", "role": "assistant", "model": %q,
-  "content": [{"type": "tool_use", "id": "toolu_test", "name": "answer", "input": %s}],
-  "stop_reason": "tool_use", "stop_sequence": null,
+  "content": [{"type": "text", "text": %s}],
+  "stop_reason": "end_turn", "stop_sequence": null,
   "usage": {"input_tokens": %d, "cache_creation_input_tokens": %d, "cache_read_input_tokens": %d, "output_tokens": %d, "service_tier": "standard"}
-}`, model, input, u.InputTokens, u.CacheWriteTokens, u.CacheReadTokens, u.OutputTokens)
+}`, model, text, u.InputTokens, u.CacheWriteTokens, u.CacheReadTokens, u.OutputTokens)
 }
 
 // byModel answers each model with its own reply: the ladder's two rungs are
