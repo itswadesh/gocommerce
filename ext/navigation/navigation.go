@@ -119,7 +119,7 @@ CREATE INDEX navigation_items_menu_idx ON navigation_items (menu_id, parent_id, 
 		// handle before anyone has opened the Menus screen. Only where none
 		// exist — a store that already built its own keeps them.
 		ID:  "0002_default_menus",
-		SQL: defaultMenusSQL,
+		SQL: migration0002Menus,
 	},
 		gocommerce.ScopeMigration("0003_store_scope", "navigation_menus", "navigation_items"),
 		{ID: "0004_sample", SQL: migrationSample},
@@ -631,10 +631,10 @@ func (m *Module) registerRights(app *gocommerce.App) {
 	})
 }
 
-// defaultMenusSQL gives a store its header and footer menus where it has none.
-// The 0002 migration ran it for the stores that existed then; SeedStore runs
-// it for each store opened after.
-const defaultMenusSQL = `
+// migration0002Menus is what the 0002 migration gave the stores that existed
+// when it ran. It is frozen with the migration; a store opened since starts
+// from defaultMenusSQL instead.
+const migration0002Menus = `
 INSERT INTO navigation_menus (handle, title)
 SELECT 'header', 'Header'
 WHERE NOT EXISTS (SELECT 1 FROM navigation_menus WHERE handle = 'header');
@@ -652,6 +652,37 @@ SELECT m.id, v.title, v.kind, v.target, v.position
 FROM navigation_menus m
 JOIN (VALUES ('Search', 'url', '/search', 0), ('Contact us', 'url', '/contact', 1), ('Privacy policy', 'url', '/pages/privacy', 2))
     AS v (title, kind, target, position) ON true
+WHERE m.handle = 'footer' AND NOT EXISTS (SELECT 1 FROM navigation_items i WHERE i.menu_id = m.id);
+`
+
+// defaultMenusSQL gives a newly opened store its header and footer menus
+// where it has none (D145). The footer links the six standard pages the CMS
+// module drafts for the same store, at the storefront's own paths: url items
+// rather than page items, because a page item's address is the Plugins
+// screen's page path (/pages/{slug} by default), which Svelte Commerce only
+// redirects, while it hides a link to one of these six paths until the store
+// publishes that page. There is no Search link: the storefront's header
+// already searches, and /search only redirects to the catalogue.
+const defaultMenusSQL = `
+INSERT INTO navigation_menus (handle, title)
+SELECT 'header', 'Header'
+WHERE NOT EXISTS (SELECT 1 FROM navigation_menus WHERE handle = 'header');
+INSERT INTO navigation_menus (handle, title)
+SELECT 'footer', 'Footer'
+WHERE NOT EXISTS (SELECT 1 FROM navigation_menus WHERE handle = 'footer');
+INSERT INTO navigation_items (menu_id, title, kind, target, position)
+SELECT m.id, v.title, v.kind, v.target, v.position
+FROM navigation_menus m
+JOIN (VALUES ('Home', 'home', '', 0), ('Shop', 'url', '/products', 1), ('Contact', 'url', '/contact-us', 2))
+    AS v (title, kind, target, position) ON true
+WHERE m.handle = 'header' AND NOT EXISTS (SELECT 1 FROM navigation_items i WHERE i.menu_id = m.id);
+INSERT INTO navigation_items (menu_id, title, kind, target, position)
+SELECT m.id, v.title, 'url', v.target, v.position
+FROM navigation_menus m
+JOIN (VALUES ('About us', '/about-us', 0), ('Contact us', '/contact-us', 1), ('Privacy policy', '/privacy-policy', 2),
+             ('Terms and conditions', '/terms-and-conditions', 3), ('Shipping policy', '/shipping-policy', 4),
+             ('Refund and returns policy', '/refund-policy', 5))
+    AS v (title, target, position) ON true
 WHERE m.handle = 'footer' AND NOT EXISTS (SELECT 1 FROM navigation_items i WHERE i.menu_id = m.id);
 `
 
