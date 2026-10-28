@@ -271,7 +271,7 @@ func orderMeta(p *placement, netDays int) gocommerce.Metadata {
 		b["quote_id"] = p.quoteID
 	}
 	meta := gocommerce.Metadata{metaKey: b}
-	// The buyer's GSTIN for a GST tax invoice (D126), under the key any
+	// The buyer's GSTIN for a GST tax invoice (D137), under the key any
 	// checkout uses, snapshotted so editing the company later cannot change
 	// last month's invoice. A tax id that is not a GSTIN, such as a UK VAT
 	// number, is not one to print.

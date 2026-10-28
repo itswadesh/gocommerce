@@ -202,7 +202,7 @@ dealer and starts the lead again at `new`.
   transaction. The guard refuses it from anywhere else, which is what lets the
   credit query read it back. Beside it the module writes `metadata.gst`
   (`gstin`, `name`) when the company's tax id is a valid GSTIN, so an Indian
-  store's GST tax invoice names the buyer as registered (D126). The tax id is
+  store's GST tax invoice names the buyer as registered (D137). The tax id is
   not checked when a company is saved: a company may be foreign.
 - **What a company owes is read from the orders,** not from `b2b_orders`:
   orders on account, unpaid, not cancelled. The ledger row is written after

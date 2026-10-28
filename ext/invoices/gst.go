@@ -13,7 +13,7 @@ import (
 	"github.com/itswadesh/gocommerce/core"
 )
 
-// India's GST tax invoice (CGST Rules 2017, rule 46; D126).
+// India's GST tax invoice (CGST Rules 2017, rule 46; D137).
 //
 // It is a re-presentation of what checkout charged, never a second
 // calculation. The rate on each line is the rate core charged, the tax is the

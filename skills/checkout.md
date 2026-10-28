@@ -139,12 +139,12 @@ chooses its delivery.
 
 **Each line is taxed by the most specific active rate for the delivery
 address,** and what it was charged is stored on the line. A rate on one
-product beats any rate on a category (D126), a category reaches everything
+product beats any rate on a category (D137), a category reaches everything
 beneath it and the deeper category wins, and within either a country beats a
 bare fallback and a state beats its country. Shipping is never taxed.
 
 **`metadata.gst` is the buyer's GST registration,** `{"gstin": "...", "name":
-"..."}`, for an Indian store's tax invoice (D126). Any checkout may send it, and
+"..."}`, for an Indian store's tax invoice (D137). Any checkout may send it, and
 `ext/b2b` writes it for a company whose tax id is a valid GSTIN. On a store
 issuing GST invoices (`ext/invoices`, profile in India with a GSTIN, selling in
 INR) a guard refuses a GSTIN that fails its check, naming what is wrong, and an
