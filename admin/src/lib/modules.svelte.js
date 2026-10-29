@@ -56,6 +56,8 @@ const PROBES = {
     "import-amazon": { path: "/api/admin/x/import-amazon/jobs", right: "catalog.write" },
     // The products page's "Create from photos", for the same reason.
     "photo-products": { path: "/api/admin/x/photo-products/status", right: "catalog.write" },
+    // The product page's "Improve with AI", likewise.
+    "catalog-ai": { path: "/api/admin/x/catalog-ai/status", right: "catalog.write" },
     navigation: { path: "/api/admin/x/navigation/menus", right: "catalog.read" },
     reviews: { path: "/api/admin/x/reviews?limit=1", right: "catalog.read" },
     // The module's own right, or the one it was lifted off (D65): in a binary
