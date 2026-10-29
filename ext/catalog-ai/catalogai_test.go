@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	small  = "claude-haiku-4-5"
+	small  = "claude-haiku-5-5"
 	strong = "claude-sonnet-5-5"
 )
 
