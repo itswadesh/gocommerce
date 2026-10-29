@@ -3,6 +3,7 @@ package gocommerce
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -242,12 +243,21 @@ func TestTheStoresPublicFaceIsItsNameAndContactsOnly(t *testing.T) {
 		t.Errorf("public languages = %v, want [en]", body.Data["languages"])
 	}
 	delete(body.Data, "languages")
+	if hours, _ := body.Data["opening_hours"].([]any); hours == nil || len(hours) != 0 {
+		t.Errorf("public opening hours = %v, want an empty list", body.Data["opening_hours"])
+	}
+	delete(body.Data, "opening_hours")
 	want := map[string]any{
 		"name": "The Corner Shop", "email": "hello@corner.example",
 		"phone": "+44 20 7946 0000", "support_url": "https://corner.example/help",
 		"language": "en", "images_path": ImagesPath(app.defaultStore),
 		// Its logo and icon (D148), empty until it chooses them.
 		"logo_url": "", "logo_dark_url": "", "icon_url": "",
+		// The address only once the store says to show it (D156).
+		"address": nil, "map_location": "",
+		// The country on its own, so a storefront can write the phone number
+		// in full; empty until the store chooses one.
+		"country": "",
 	}
 	if len(body.Data) != len(want) {
 		t.Errorf("public fields = %v, want exactly %v", body.Data, want)
@@ -296,5 +306,164 @@ func TestAGBVATNumberOnAGBStoreStillSaves(t *testing.T) {
 	}
 	if saved.TaxID != "GB123456789" {
 		t.Errorf("tax id stored as %q, want it as typed", saved.TaxID)
+	}
+}
+
+// A storefront's contact page shows where the shop is, when it is open and a
+// map (D156). The address is the one an invoice prints, which for a shop run
+// from home is somebody's front door, so it is public only once the store
+// says to show it; a map location and opening hours exist only for that page,
+// so setting one is the decision to publish it.
+func TestTheContactPageShowsOnlyWhatTheStoreChoseToPublish(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	hidden, shown := false, true
+	pin := " 20.2961 , 85.8245 "
+
+	saved, err := app.Profile().Set(ctx, StoreProfile{
+		Name: "The Corner Shop", AddressLine1: "14 Bridge Street", City: "Bath", PostalCode: "BA1 1AA",
+		Country: "GB", ShowAddress: &hidden, MapLocation: &pin,
+		OpeningHours: []OpeningHours{
+			{Day: " SAT ", Opens: "10:00", Closes: "16:00"},
+			{Day: "mon", Opens: "9:30", Closes: "18:00"},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if saved.MapLocation == nil || *saved.MapLocation != "20.2961,85.8245" {
+		t.Errorf("map location = %v, want the pair without spaces", saved.MapLocation)
+	}
+	// Folded, padded and in the week's order, so every reader can print them
+	// without parsing a second time.
+	wantHours := []OpeningHours{{Day: "mon", Opens: "09:30", Closes: "18:00"}, {Day: "sat", Opens: "10:00", Closes: "16:00"}}
+	if !slices.Equal(saved.OpeningHours, wantHours) {
+		t.Errorf("opening hours = %+v, want %+v", saved.OpeningHours, wantHours)
+	}
+
+	public := publicStoreOf(t, app)
+	// The country is public on its own: a storefront needs it to write the
+	// phone number with its country code, and it says nothing about the door.
+	if public.Country != "GB" {
+		t.Errorf("public country = %q, want GB", public.Country)
+	}
+	if public.Address != nil {
+		t.Errorf("an address the store keeps to itself was published: %+v", public.Address)
+	}
+	if public.MapLocation != "20.2961,85.8245" || !slices.Equal(public.OpeningHours, wantHours) {
+		t.Errorf("public map and hours = %q %+v", public.MapLocation, public.OpeningHours)
+	}
+
+	// Shown on purpose. The rest of the profile is left out, so absent fields
+	// keep what they held: a script that predates them cannot wipe them.
+	if _, err := app.Profile().Set(ctx, StoreProfile{
+		Name: "The Corner Shop", AddressLine1: "14 Bridge Street", City: "Bath", PostalCode: "BA1 1AA",
+		Country: "GB", ShowAddress: &shown,
+	}, nil); err != nil {
+		t.Fatalf("show the address: %v", err)
+	}
+	public = publicStoreOf(t, app)
+	want := publicAddress{Line1: "14 Bridge Street", City: "Bath", PostalCode: "BA1 1AA", Country: "GB"}
+	if public.Address == nil || *public.Address != want {
+		t.Errorf("public address = %+v, want %+v", public.Address, want)
+	}
+	if public.MapLocation != "20.2961,85.8245" || len(public.OpeningHours) != 2 {
+		t.Errorf("a save that did not send the map or the hours changed them: %q %+v", public.MapLocation, public.OpeningHours)
+	}
+
+	// Empty clears: no hours, no map, and an address switched on with nothing
+	// in it is no address.
+	blank := ""
+	if _, err := app.Profile().Set(ctx, StoreProfile{
+		Name: "The Corner Shop", ShowAddress: &shown, MapLocation: &blank, OpeningHours: []OpeningHours{},
+	}, nil); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	public = publicStoreOf(t, app)
+	if public.Address != nil || public.MapLocation != "" || len(public.OpeningHours) != 0 {
+		t.Errorf("after clearing = %+v", public)
+	}
+
+	// Through the route, as the panel saves it.
+	rec := do(t, app, http.MethodPatch, "/api/admin/store", withAdmin, jsonBody(t, map[string]any{
+		"name": "The Corner Shop", "city": "Bath", "show_address": true,
+		"map_location":  "https://maps.app.goo.gl/AbCdEf123",
+		"opening_hours": []map[string]string{{"day": "sun", "opens": "11:00", "closes": "15:00"}},
+	}))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch = %d: %s", rec.Code, rec.Body)
+	}
+	public = publicStoreOf(t, app)
+	if public.Address == nil || public.Address.City != "Bath" || public.MapLocation != "https://maps.app.goo.gl/AbCdEf123" ||
+		len(public.OpeningHours) != 1 || public.OpeningHours[0].Day != "sun" {
+		t.Errorf("after the route = %+v", public)
+	}
+}
+
+// A storefront frames the map location and prints the hours, so what cannot
+// be either is refused as it is typed, naming the field.
+func TestAMapLocationOrOpeningHoursThatCannotBeShownIsRefused(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	at := func(s string) *string { return &s }
+
+	for _, ok := range []string{
+		"-33.8688,151.2093",
+		"https://www.google.com/maps/place/Bath/@51.38,-2.36,14z",
+		"https://www.google.co.in/maps/embed?pb=!1m18!1m12",
+		"https://maps.google.com/?q=Bath",
+		"https://goo.gl/maps/AbCdEf",
+		// A Business Profile's "Share profile" links.
+		"https://g.page/r/CabcDEF123",
+		"https://g.co/kgs/AbC123",
+	} {
+		if _, err := app.Profile().Set(ctx, StoreProfile{MapLocation: at(ok)}, nil); err != nil {
+			t.Errorf("%q was refused: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{
+		"the shop by the river",
+		"91.0, 10.0",
+		"10.0, 181",
+		"http://www.google.com/maps/place/Bath",
+		"https://www.google.com/search?q=bath",
+		"https://evil.example/maps/embed",
+		"https://www.google.com.evil.example/maps",
+		"https://maps.app.goo.gl.evil.example/x",
+		"javascript:alert(1)",
+		"https://g.co/other/AbC123",
+		`<iframe src="https://evil.example/maps/embed?pb=x"></iframe>`,
+		"https://www.google.com/maps/" + strings.Repeat("x", MaxMapLocation),
+	} {
+		_, err := app.Profile().Set(ctx, StoreProfile{MapLocation: at(bad)}, nil)
+		if err == nil || !strings.Contains(err.Error(), "map location") {
+			t.Errorf("%q = %v, want it refused naming the map location", bad, err)
+		}
+	}
+
+	snippet := `<iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12!3d18.52!2d73.85" width="600" height="450" style="border:0;" allowfullscreen="" loading="lazy"></iframe>`
+	saved, err := app.Profile().Set(ctx, StoreProfile{MapLocation: at(snippet)}, nil)
+	if err != nil || *saved.MapLocation != "https://www.google.com/maps/embed?pb=!1m18!1m12!3d18.52!2d73.85" {
+		t.Errorf("a pasted embed snippet = %v, %v; want its src kept", saved.MapLocation, err)
+	}
+
+	for name, hours := range map[string][]OpeningHours{
+		"a day that is not one":   {{Day: "funday", Opens: "09:00", Closes: "17:00"}},
+		"a time past midnight":    {{Day: "mon", Opens: "09:00", Closes: "25:00"}},
+		"no time at all":          {{Day: "mon"}},
+		"closing before opening":  {{Day: "mon", Opens: "18:00", Closes: "09:00"}},
+		"the same day twice":      {{Day: "mon", Opens: "09:00", Closes: "12:00"}, {Day: "MON", Opens: "13:00", Closes: "17:00"}},
+		"a time with seconds too": {{Day: "mon", Opens: "09:00:00", Closes: "17:00"}},
+	} {
+		_, err := app.Profile().Set(ctx, StoreProfile{OpeningHours: hours}, nil)
+		if err == nil || !strings.Contains(err.Error(), "opening hours") {
+			t.Errorf("%s = %v, want it refused naming the opening hours", name, err)
+		}
+	}
+
+	rec := do(t, app, http.MethodPatch, "/api/admin/store", withAdmin,
+		jsonBody(t, map[string]any{"map_location": "the shop by the river"}))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("a map location nothing can show = %d, want 400: %s", rec.Code, rec.Body)
 	}
 }

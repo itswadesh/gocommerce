@@ -476,6 +476,18 @@ are media library pictures too: `logo_media_id`, `logo_dark_media_id` and
 one as it is and `0` removes it; a video, another store's file or one over
 2 MiB is a `400`, and each change is audited as `store.set_images`. A picture the store shows counts as used in the media library, and deleting it is a `409`.
 
+A storefront's contact page reads three more profile fields (D156), set under
+Settings › Store › Contact page. `show_address` puts the address on
+`GET /api/store` as `address` (`line1` … `country`); off, the default, it is
+`null`, because the address is the one an invoice prints. `map_location` (a
+Google Maps or Business Profile link, a pasted "Embed a map" snippet, kept as
+its `src`, or `lat,long`) and `opening_hours` (one `{day, opens, closes}` per
+open day, `mon` first, 24-hour times) are public whenever set, and `country`
+always is, for writing the phone number in full.
+Each is absent-leaves-it on `PATCH /api/admin/store`; a location that is not a
+Google Maps link or a pair of coordinates, or hours that close before they
+open, are a `400` (`normalizeMapLocation`, `normalizeOpeningHours`).
+
 The public product (`GET /api/products/{id}`, `/slug/{slug}`, `/sku/{sku}`)
 carries two fields no listing does:
 

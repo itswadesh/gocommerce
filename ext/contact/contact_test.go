@@ -11,6 +11,25 @@ import (
 	"github.com/itswadesh/gocommerce/gctest"
 )
 
+// The limits are characters, as the form counts them: a letter in Hindi or
+// Odia is three bytes, and a message well inside the limit was refused as
+// too long when they were counted in bytes.
+func TestALongMessageInAnIndianScriptIsCountedInCharacters(t *testing.T) {
+	app := gctest.New(t, New(Config{NotifyEmail: "owner@example.com"}))
+
+	hindi := strings.Repeat("नमस्ते", 300) // 1,800 characters, 5,400 bytes
+	if rec := gctest.Request(t, app, http.MethodPost, "/x/contact/messages", MessageInput{
+		Name: "Asha", Email: "asha@example.com", Subject: strings.Repeat("ऑर्डर", 40), Body: hindi,
+	}); rec.Code != http.StatusCreated {
+		t.Fatalf("a 1,800-character message = %d: %s", rec.Code, rec.Body)
+	}
+	if rec := gctest.Request(t, app, http.MethodPost, "/x/contact/messages", MessageInput{
+		Name: "Asha", Email: "asha@example.com", Body: strings.Repeat("न", maxBody+1),
+	}); rec.Code != http.StatusBadRequest {
+		t.Errorf("one character over the limit = %d, want 400", rec.Code)
+	}
+}
+
 func TestAMessageArrivesIsAnnouncedAndIsHandled(t *testing.T) {
 	app := gctest.New(t, New(Config{NotifyEmail: "owner@example.com"}))
 	ctx := context.Background()

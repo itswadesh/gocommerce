@@ -341,7 +341,7 @@ func checkSender(name, email, phone, body string) (sender, error) {
 	if s.body == "" {
 		return s, gocommerce.Validationf("the message is empty")
 	}
-	if len(s.body) > maxBody {
+	if utf8.RuneCountInString(s.body) > maxBody {
 		return s, gocommerce.Validationf("the message is too long: %d characters at most", maxBody)
 	}
 	return s, nil
@@ -399,7 +399,7 @@ func (m *Module) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	subject, order := strings.TrimSpace(in.Subject), strings.TrimSpace(in.OrderNumber)
-	if len(subject) > maxSubject {
+	if utf8.RuneCountInString(subject) > maxSubject {
 		gocommerce.RespondError(w, r, gocommerce.Validationf("the subject is too long: %d characters at most", maxSubject))
 		return
 	}
