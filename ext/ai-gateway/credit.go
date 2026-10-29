@@ -115,7 +115,9 @@ func (m *Module) Credit(ctx context.Context) (*Credit, error) {
 	// Consumption draws the free allowance first, then the balance; the split
 	// is arithmetic over one consumed counter.
 	c.FreeRemainingMicroMinor = max(0, c.FreeAllowanceMicroMinor-c.ConsumedMicroMinor)
-	c.BalanceRemainingMicroMinor = c.GrantedMicroMinor - max(0, c.ConsumedMicroMinor-c.FreeAllowanceMicroMinor)
+	// Floored at zero: an operator may lower the free allowance below what a
+	// store has already spent, which would otherwise show a negative balance.
+	c.BalanceRemainingMicroMinor = max(0, c.GrantedMicroMinor-max(0, c.ConsumedMicroMinor-c.FreeAllowanceMicroMinor))
 	c.AvailableMicroMinor = c.FreeAllowanceMicroMinor + c.GrantedMicroMinor - c.ConsumedMicroMinor - c.ReservedMicroMinor
 	c.Exhausted = c.AvailableMicroMinor <= 0
 	return c, nil
