@@ -84,6 +84,12 @@ type StoreProfile struct {
 	LogoURL     string `json:"logo_url"`
 	LogoDarkURL string `json:"logo_dark_url"`
 	IconURL     string `json:"icon_url"`
+
+	// Plan is the store's plan, PlanFree or PlanPro (D119). Read only: a plan
+	// is set by the install's operator, not this form, so Set never reads it.
+	// The panel gates Pro-only features, such as matching the theme to the
+	// logo (D149), on it.
+	Plan string `json:"plan"`
 }
 
 // MaxProfileField bounds every text field. One limit rather than a different
@@ -136,6 +142,7 @@ func (p *StoreProfiles) Get(ctx context.Context) (*StoreProfile, error) {
 	if out.CurrencyLocked, err = p.app.hasOrders(ctx, p.app.db); err != nil {
 		return nil, Internalf(err, "read whether the store has orders")
 	}
+	out.Plan = p.app.StorePlan(ctx)
 	return &out, nil
 }
 
