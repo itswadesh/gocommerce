@@ -845,12 +845,12 @@
                 <button
                     type="button"
                     class="btn secondary"
-                    aria-label="Browse the Shopify taxonomy"
-                    title="Browse the Shopify taxonomy"
+                    aria-label="Browse taxonomy"
+                    title="Browse taxonomy"
                     onclick={() => (taxonomyOpen = true)}
                 >
                     <i class="ri-node-tree" aria-hidden="true"></i>
-                    <span class="txt">Browse the Shopify taxonomy</span>
+                    <span class="txt">Browse taxonomy</span>
                 </button>
                 {#if writable}
                     <button type="button" class="btn" onclick={() => openCreate(null)}>
@@ -1113,11 +1113,11 @@
                                     <EmptyState
                                         icon="ri-node-tree"
                                         title="No categories yet"
-                                        text="A category is where a product sits in your taxonomy — one place, with a parent. Switch on the ones you sell from the Shopify taxonomy, or build your own."
+                                        text="A category is where a product sits in your taxonomy — one place, with a parent. Switch on the ones you sell from the taxonomy, or build your own."
                                     >
                                         <button type="button" class="btn" onclick={() => (taxonomyOpen = true)}>
                                             <i class="ri-node-tree" aria-hidden="true"></i>
-                                            <span class="txt">Browse the Shopify taxonomy</span>
+                                            <span class="txt">Browse taxonomy</span>
                                         </button>
                                         {#if writable}
                                             <button type="button" class="btn secondary" onclick={() => openCreate(null)}>
