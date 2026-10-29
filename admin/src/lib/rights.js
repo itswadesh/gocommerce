@@ -225,6 +225,14 @@ const MODULE_RIGHTS = {
         label: "Reply to contact messages",
         scope: "Answering a message or an enquiry by email from the store's address",
     },
+    "layouts.read": {
+        label: "See the theme editor",
+        scope: "The home, product and collection pages' sections, the header and footer, their drafts, schedules and published versions",
+    },
+    "layouts.write": {
+        label: "Edit and publish the storefront's pages",
+        scope: "Saving a page's draft, resetting it, publishing or scheduling it, previewing it and rolling back",
+    },
     "banners.read": {
         label: "See the banners",
         scope: "The pictures on the storefront's pages",

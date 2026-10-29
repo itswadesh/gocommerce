@@ -36,7 +36,8 @@
     import { fade } from "svelte/transition";
     import { base } from "$app/paths";
     import { beforeNavigate } from "$app/navigation";
-    import { can, layouts as api, storeProfile } from "$lib/api.js";
+    import { can, layouts as api, session, storeProfile } from "$lib/api.js";
+    import { rightLabel } from "$lib/rights.js";
     import { candidatesFromLogo } from "$lib/logo-palette.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { getStore } from "$lib/store-scope.js";
@@ -75,7 +76,6 @@
     import ThemePreview from "$lib/components/ThemePreview.svelte";
     import PreviewSubject from "$lib/components/PreviewSubject.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
-    import NoAccess from "$lib/components/NoAccess.svelte";
     import { titled } from "$lib/brand.svelte.js";
 
     /** @type {{ page: "home" | "product" | "collection" | "header" | "footer" }} */
@@ -91,6 +91,12 @@
     const missing = $derived(modulesKnown() && !hasModule("layouts"));
     const readable = $derived(can("layouts.read"));
     const writable = $derived(can("layouts.write"));
+    // Named in the notes below: an editor with nothing to edit, in the other
+    // of two stores with one name, read as a broken editor until it said
+    // which store and which role it was drawn for.
+    const storeName = $derived(myStores.current?.name || "this store");
+    const role = $derived(session.record?.role || "");
+    const asRole = $derived(role ? ` as ${role[0].toUpperCase()}${role.slice(1)}` : "");
 
     let registry = $state([]);
     let pageInfos = $state([]); // the engine's pages: which have a core, which are only that
@@ -266,7 +272,9 @@
             const [reg, state, plugin] = await Promise.all([
                 api.registry(),
                 api.get(PAGE),
-                api.plugin().catch(() => null),
+                // Behind plugins.read, which staff do not hold by default; a
+                // refusal there was a console error on every theme page.
+                can("plugins.read") ? api.plugin().catch(() => null) : null,
             ]);
             registry = reg?.sections ?? [];
             pageInfos = reg?.pages ?? [];
@@ -292,7 +300,9 @@
     }
 
     $effect(() => {
-        if (!missing && readable) load();
+        // Untracked: what load reads (a right, say) must not reload the page
+        // whenever the session's record is replaced, as it is on every boot.
+        if (!missing && readable) untrack(load);
     });
 
     // Leaving the screen saves what is waiting. Within the panel an ordinary
@@ -946,7 +956,26 @@
     {/if}
 {/snippet}
 
+{#snippet turnOn()}
+    {#if can("roles.write")}
+        You can turn it on in <a href="{base}/dash/settings/roles{role ? `/${encodeURIComponent(role)}` : ''}">Settings › Roles</a>.
+    {:else}
+        The store's owner can turn it on in Settings › Roles.
+    {/if}
+{/snippet}
+
 {#snippet alerts()}
+    {#if !writable}
+        <div class="alert info hp-alert" role="status" in:rise>
+            <i class="ri-eye-line" aria-hidden="true"></i>
+            <div class="content">
+                <p>
+                    <strong>View only.</strong> You're viewing {storeName}{asRole}, and your role doesn't include
+                    <strong>{rightLabel("layouts.write")}</strong>. {@render turnOn()}
+                </p>
+            </div>
+        </div>
+    {/if}
     {#if !pluginOn}
         <div class="alert warning hp-alert" role="status">
             <i class="ri-information-line" aria-hidden="true"></i>
@@ -1033,7 +1062,14 @@
         {#if missing}
             <ModuleMissing module="layouts" what="The theme editor is ext/layouts, and this binary does not have it. Start it with -layouts." />
         {:else if !readable}
-            <NoAccess right="layouts.read" what="the theme editor" />
+            <div class="hp-noaccess" in:rise>
+                <i class="ri-lock-2-line" aria-hidden="true"></i>
+                <h2>You can't open the theme editor in {storeName}</h2>
+                <p>
+                    You're signed in to {storeName}{asRole}, and your role doesn't include
+                    <strong>{rightLabel("layouts.read")}</strong>. {@render turnOn()}
+                </p>
+            </div>
         {:else if loading && !st}
             <div class="hp-wrap"><span class="skeleton-loader"></span></div>
         {:else if st && narrow}

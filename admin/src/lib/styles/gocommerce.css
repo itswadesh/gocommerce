@@ -12577,3 +12577,21 @@ html .tw\:rounded-2xl {
 @media (prefers-reduced-motion: reduce) {
     .store-images-slot, .store-images-upload:active { transition: none; transform: none; }
 }
+
+/* Themes › a page, for a role without "See the theme editor": the reason, in
+   the editor's own page rather than a second page nested inside it. */
+.hp-noaccess {
+    max-width: 480px;
+    margin: 32px auto 0;
+    text-align: center;
+}
+.hp-noaccess > i {
+    font-size: 2.5rem;
+    color: var(--surfaceTxtHintColor);
+}
+.hp-noaccess h2 {
+    margin: 8px 0 6px;
+    font-size: 18px;
+    line-height: 24px;
+    font-weight: 600;
+}
