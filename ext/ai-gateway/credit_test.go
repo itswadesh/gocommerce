@@ -85,6 +85,32 @@ func TestACallDrawsTheBalanceWhenTheFreeTrialIsGone(t *testing.T) {
 	}
 }
 
+// Lowering the free allowance below what a store has already spent never
+// shows a negative balance: the figures floor at zero, and the store is
+// simply out of credit.
+func TestLoweringTheFreeAllowanceBelowSpendDoesNotGoNegative(t *testing.T) {
+	app, m, _ := newGateway(t, reply(http.StatusOK, "{}"))
+	ctx := context.Background()
+	configure(t, app, ctx, nil)
+	// Spend part of the trial without a model call, then cut the trial below it.
+	if _, err := m.SetFreeAllowance(ctx, 5, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.settleCredit(ctx, 0, 3*microPerMinor); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.SetFreeAllowance(ctx, 1, ""); err != nil { // below the 3 spent
+		t.Fatal(err)
+	}
+	c := mustCredit(t, m, ctx)
+	if c.FreeRemainingMicroMinor != 0 || c.BalanceRemainingMicroMinor != 0 {
+		t.Errorf("credit = %+v, want both remaining figures floored at zero", c)
+	}
+	if !c.Exhausted {
+		t.Errorf("available %d, want the store exhausted", c.AvailableMicroMinor)
+	}
+}
+
 // A call with nothing left is refused before the model is asked, and the
 // record says the free trial is spent.
 func TestACallWithNoCreditIsRefusedAndNeverCallsTheModel(t *testing.T) {
