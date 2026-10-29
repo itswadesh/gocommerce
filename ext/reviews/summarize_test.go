@@ -320,7 +320,9 @@ func TestAnUnchangedSetOfReviewsIsAnsweredFromTheCache(t *testing.T) {
 		t.Errorf("cached complaints = %+v, want %+v", again.Complaints, first.Complaints)
 	}
 
-	if _, err := gw.SetFreeAllowance(ctx, 5, ""); err != nil {
+	// Enough to reserve a summary's ceiling again: 30,000 tokens in and
+	// 8,192 out at these prices is just over 7 minor units.
+	if _, err := gw.SetFreeAllowance(ctx, 10, ""); err != nil {
 		t.Fatal(err)
 	}
 	addReviews(t, app, ctx, product.ID, approved(1, "Fell apart."))

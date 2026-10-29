@@ -145,12 +145,14 @@ type sentKey struct{}
 
 func summarizeTaskDef() aigateway.Task {
 	return aigateway.Task{
-		Name:            summarizeTask,
-		Version:         1,
-		System:          summarizeInstructions,
-		Schema:          summarizeSchema,
-		MaxInputTokens:  30000,
-		MaxOutputTokens: 3000,
+		Name:           summarizeTask,
+		Version:        1,
+		System:         summarizeInstructions,
+		Schema:         summarizeSchema,
+		MaxInputTokens: 30000,
+		// Claude Haiku 5.5 and Sonnet 5.5 think before answering, and the
+		// thinking counts toward this as well as the themes.
+		MaxOutputTokens: 8192,
 		Ladder:          []aigateway.Tier{aigateway.TierSmall, aigateway.TierStrong},
 		// The answer stands until a review is added, edited, published or
 		// withdrawn, each of which changes the input.
