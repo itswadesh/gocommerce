@@ -12316,3 +12316,126 @@ html .tw\:rounded-2xl {
         transition: none;
     }
 }
+
+/*
+ * Settings › Store › Logo and icon (D148). The preview strips are a light and
+ * a dark storefront header, drawn in fixed colours on purpose: they stand for
+ * the shop's site, not for this panel's theme, so they do not flip with it.
+ */
+.store-images-preview {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+    margin-bottom: 14px;
+}
+.store-images-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+    height: 56px;
+    padding: 0 14px;
+    border-radius: var(--borderRadius);
+    border: 1px solid var(--surfaceAlt2Color);
+}
+.store-images-strip.light { background: #ffffff; color: #16181d; }
+.store-images-strip.dark { background: #16181d; color: #f4f4f5; border-color: #16181d; }
+.store-images-strip img {
+    display: block;
+    height: 32px;
+    width: auto;
+    max-width: 70%;
+    object-fit: contain;
+}
+.store-images-name {
+    overflow: hidden;
+    font-weight: 700;
+    font-size: 1.05rem;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.store-images-menu { display: inline-flex; flex-direction: column; gap: 3px; flex: none; }
+.store-images-menu i { display: block; width: 16px; height: 2px; border-radius: 1px; background: currentColor; opacity: 0.6; }
+.store-images-tab {
+    grid-column: 1 / -1;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    justify-self: start;
+    max-width: 100%;
+    padding: 7px 14px;
+    border-radius: 10px 10px 0 0;
+    background: var(--surfaceAlt2Color);
+    font-size: 0.85rem;
+}
+.store-images-tab img { width: 16px; height: 16px; object-fit: cover; border-radius: 2px; }
+.store-images-tab-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.store-images-slots { display: flex; flex-direction: column; gap: 4px; }
+.store-images-slot {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 0;
+    border-top: 1px solid var(--surfaceAlt2Color);
+    transition: opacity 200ms ease;
+}
+.store-images-slot.busy { opacity: 0.75; }
+.store-images-thumb {
+    position: relative;
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 112px;
+    height: 56px;
+    border-radius: var(--borderRadius);
+    border: 1px solid var(--surfaceAlt2Color);
+    /* A light page, as the strip above: the logo is drawn for the shop's
+       site, and on this panel's dark surface a dark logo would vanish. */
+    background: #ffffff;
+    color: #9ca3af;
+    font-size: 1.3rem;
+    overflow: hidden;
+}
+.store-images-thumb.dark { background: #16181d; }
+.store-images .field-help { padding: 0; margin: 0; }
+.store-images-thumb img { position: absolute; inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); object-fit: contain; }
+.store-images-done {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--successColor);
+    color: #fff;
+    font-size: 1rem;
+}
+.store-images-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.store-images-label { font-weight: 600; }
+.store-images-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.store-images-progress { display: inline-flex; align-items: center; gap: 8px; margin-top: 4px; }
+/* The file input sits inside its label, invisible but focusable, so the
+   button is keyboard-reachable without a script. */
+.store-images-upload { position: relative; overflow: hidden; cursor: pointer; }
+.store-images-upload input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+.store-images-upload:focus-within { outline: 2px solid var(--primaryColor); outline-offset: 2px; }
+.store-images-upload:active { transform: scale(0.97); transition: transform 150ms ease; }
+.store-images-library {
+    padding: 10px;
+    border: 1px solid var(--surfaceAlt2Color);
+    border-radius: var(--borderRadius);
+}
+.hp-logo-note { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+@media (max-width: 600px) {
+    .store-images-preview { grid-template-columns: minmax(0, 1fr); }
+    .store-images-slot { flex-direction: column; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .store-images-slot, .store-images-upload:active { transition: none; transform: none; }
+}

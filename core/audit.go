@@ -225,6 +225,9 @@ const (
 	// owner (D114), which moves its address with it. Recorded in the store,
 	// where its own team can read it.
 	AuditStoreSetBrand = "store.set_brand"
+	// AuditStoreSetImages is the store's logo, dark logo or icon changed
+	// (D148): the face every storefront page shows.
+	AuditStoreSetImages = "store.set_images"
 
 	AuditLocationCreate     = "location.create"
 	AuditLocationUpdate     = "location.update"
@@ -299,7 +302,7 @@ var AllAuditActions = []string{
 
 	AuditCustomerGroupTaxExemption,
 
-	AuditStoreSetBrand,
+	AuditStoreSetBrand, AuditStoreSetImages,
 }
 
 // AuditChanges is what a row says actually moved.

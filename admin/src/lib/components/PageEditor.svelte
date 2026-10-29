@@ -815,6 +815,13 @@
             <span class="label">Starting point</span> This is the storefront's built-in {meta.noun} as sections. Change it, then publish.
         {/if}
     </p>
+    {#if page === "header" || page === "footer"}
+        <!-- D148: the logo is the store's, set once for every theme. -->
+        <p class="hp-logo-note txt-sm">
+            <i class="ri-image-line" aria-hidden="true"></i>
+            <a href="{base}/dash/settings#logo">Change the logo in Settings › Store</a>
+        </p>
+    {/if}
     {#if st.scheduled}
         <div class="hp-scheduled txt-sm" class:outdated={st.scheduled.outdated} role="status" in:rise>
             <i class="ri-calendar-schedule-line" aria-hidden="true"></i>

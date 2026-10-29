@@ -469,6 +469,13 @@ store's own pictures has — in the media library, or a category's
 `metadata.image` — is served; any other is a 404, and the original is fetched
 through the outbound guard. Widths round up to 160–1280 and nothing is enlarged.
 
+The store's logo, its logo for dark backgrounds and its square icon (D148)
+are media library pictures too: `logo_media_id`, `logo_dark_media_id` and
+`icon_media_id` on `PATCH /api/admin/store` (Settings › Store), served as
+`logo_url`, `logo_dark_url` and `icon_url` on `GET /api/store`. Absent leaves
+one as it is and `0` removes it; a video, another store's file or one over
+2 MiB is a `400`, and each change is audited as `store.set_images`.
+
 The public product (`GET /api/products/{id}`, `/slug/{slug}`, `/sku/{sku}`)
 carries two fields no listing does:
 
