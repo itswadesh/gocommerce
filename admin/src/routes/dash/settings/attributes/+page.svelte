@@ -283,7 +283,7 @@
                                         <EmptyState
                                             icon="ri-list-settings-line"
                                             title="No fields yet"
-                                            text="The dictionary holds the fields a product can be described by. Add one, or import Shopify's taxonomy, which brings hundreds of them with it."
+                                            text="The dictionary holds the fields a product can be described by. Add one, or import the taxonomy, which brings hundreds of them with it."
                                         >
                                             {#if can("catalog.write")}
                                                 <button type="button" class="btn" onclick={openNew}>

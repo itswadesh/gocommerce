@@ -536,7 +536,7 @@ CREATE INDEX approval_requests_status ON approval_requests (store_id, status, id
 		{
 			ID: "0005_credits",
 			SQL: `
--- A store's prepaid AI credit (D149). AI features draw it down; every other
+-- A store's prepaid AI credit (D153). AI features draw it down; every other
 -- feature is free. One row per store. Amounts are micro-minor, the millionths
 -- of a minor unit the gateway already records cost in, so a run's cost
 -- subtracts without converting.
