@@ -580,7 +580,7 @@ func Starter(page string) Document {
 		// storefront's white; this is the nearest of its hue at 4.5:1.
 		"sale":       "#198837",
 		"type_scale": "standard", "heading_weight": "extrabold", "density": "compact",
-		"card_badge": "first_tag", "card_vendor": true, "card_title_lines": "one", "card_rating": true,
+		"card_badge": "product_badge", "card_vendor": true, "card_title_lines": "one", "card_rating": true,
 		"card_discount": true, "card_wishlist": true, "card_add_to_cart": false, "card_second_image": true,
 		"list_columns_mobile": "two", "list_columns_desktop": "five", "list_subcategories": true,
 		"list_quick_filters": true, "list_filters_desktop": "sidebar", "list_mobile_bar": true,

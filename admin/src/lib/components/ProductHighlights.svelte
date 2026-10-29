@@ -1,26 +1,27 @@
 <script>
     /**
      * The product editor's Highlights card (D134): up to eight short lines
-     * the storefront draws as a ticked list beside the buy box, and a free
-     * gift note shown on the product page. Plain text only; the storefront
-     * never reads either as markup.
+     * the storefront draws as a ticked list beside the buy box, a free gift
+     * note shown on the product page, and the badge on the product's picture
+     * (D157). Plain text only; the storefront never reads any as markup.
      *
      * The page owns the values and saves them with the rest of the product's
      * metadata, so this card has no Save of its own.
      */
     import { flip } from "svelte/animate";
     import { rise, flipDuration } from "$lib/motion.js";
-    import { MAX_HIGHLIGHTS, MAX_LINE, lineProblem, removedRow, typedRows } from "$lib/highlights.js";
+    import { MAX_BADGE, MAX_HIGHLIGHTS, MAX_LINE, lineLength, lineProblem, removedRow, typedRows } from "$lib/highlights.js";
 
-    let { rows = $bindable(), freeGift = $bindable(), disabled = false } = $props();
+    let { rows = $bindable(), freeGift = $bindable(), badge = $bindable(), disabled = false } = $props();
 
     // Keyed by position: a highlight has no identity of its own, and a key
     // made from its text would remount the input on every keystroke.
     const keyed = $derived(rows.map((text, i) => ({ text, i })));
     const giftProblem = $derived(lineProblem(freeGift));
+    const badgeProblem = $derived(lineProblem(badge, MAX_BADGE));
 </script>
 
-<section class="card">
+<section class="card hl-card">
     <h6 class="section-title">
         <i class="ri-list-check-3" aria-hidden="true"></i>
         Highlights
@@ -82,6 +83,28 @@
             {giftProblem || "Shown as a badge on the product page. Leave it empty when nothing comes free."}
         </div>
     </div>
+
+    <div class="field m-t-sm">
+        <label for="product-badge">Badge</label>
+        <input
+            id="product-badge"
+            type="text"
+            bind:value={badge}
+            maxlength={MAX_BADGE + 20}
+            placeholder="e.g. Oversized fit"
+            aria-invalid={badgeProblem ? "true" : undefined}
+            aria-describedby="product-badge-help"
+            {disabled}
+        />
+        <div class="field-help hl-help-count" id="product-badge-help" class:error={badgeProblem}>
+            <span>
+                {badgeProblem || "A short label on the product's picture, such as New or Oversized fit. Leave it empty for none."}
+            </span>
+            {#if !badgeProblem}
+                <span class="hl-count">{lineLength(badge)} of {MAX_BADGE}</span>
+            {/if}
+        </div>
+    </div>
 </section>
 
 <style>
@@ -119,6 +142,22 @@
     .hl-help {
         grid-column: 2 / -1;
         margin-top: 0;
+    }
+    .hl-help-count {
+        display: flex;
+        gap: 12px;
+        justify-content: space-between;
+    }
+    .hl-count {
+        flex-shrink: 0;
+        font-variant-numeric: tabular-nums;
+    }
+    /* 16px text so iOS Safari does not zoom on focus. */
+    @media (max-width: 599px) {
+        .hl-card input[type="text"] {
+            min-height: 44px;
+            font-size: 16px;
+        }
     }
     @media (prefers-reduced-motion: reduce) {
         .hl-input,

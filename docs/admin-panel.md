@@ -793,7 +793,7 @@ storefront can load, its text size and heading weight, how roomy the pages
 are, its corner rounding, and the shape of product pictures on cards and lists
 (square, portrait, tall or landscape) and whether a picture fills that frame
 or shows whole (D127, D128). Since D155 they also set out the product cards
-(a badge from the product's first tag or highlight, the brand line, one or two
+(a badge from the product's own Badge field or its first tag or highlight, the brand line, one or two
 title lines, the star rating, "% off", the wishlist button, quick add, a
 second picture on hover), the product lists (how many across on a phone and a
 computer, sub-category pictures, quick filter chips, filters beside the list or

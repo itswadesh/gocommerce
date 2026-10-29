@@ -7,8 +7,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+    MAX_BADGE,
     MAX_HIGHLIGHTS,
+    badgeOf,
     freeGiftOf,
+    lineLength,
     highlightLines,
     highlightRows,
     lineProblem,
@@ -55,4 +58,17 @@ test("the free gift note reads as text or not at all", () => {
     assert.equal(freeGiftOf({ free_gift: "A screen guard" }), "A screen guard");
     assert.equal(freeGiftOf({ free_gift: 3 }), "");
     assert.equal(freeGiftOf(undefined), "");
+});
+
+test("a badge is held to 24 characters, counted as the engine counts them", () => {
+    assert.equal(MAX_BADGE, 24);
+    assert.equal(badgeOf({ badge: "Oversized fit" }), "Oversized fit");
+    assert.equal(badgeOf({ badge: ["New"] }), "");
+    assert.equal(badgeOf(null), "");
+    assert.equal(lineLength("  Hand block print "), 16);
+    assert.equal(lineLength("क".repeat(24)), 24, "a Devanagari letter is one character");
+    assert.equal(lineProblem("क".repeat(24), MAX_BADGE), "");
+    assert.equal(lineProblem("Handwoven Banarasi silk!!", MAX_BADGE), "25 of 24 characters: shorten it.");
+    assert.equal(lineProblem("New\tIn", MAX_BADGE), "One line only.");
+    assert.equal(lineProblem("x".repeat(25)), "", "the 80-character limit still holds for other lines");
 });

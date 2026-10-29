@@ -1,12 +1,14 @@
 /*
- * A product's highlights and free gift note (D134): short lines of the shop's
- * own words the storefront draws beside the buy box. The engine keeps them in
- * the product's metadata and holds them to the same limits; these are here so
- * the editor can say so while the line is being typed, not after Save.
+ * A product's highlights and free gift note (D134), short lines of the shop's
+ * own words the storefront draws beside the buy box, and its badge (D157), the
+ * label on its picture. The engine keeps them in the product's metadata and
+ * holds them to the same limits; these are here so the editor can say so
+ * while the line is being typed, not after Save.
  */
 
 export const MAX_HIGHLIGHTS = 8;
 export const MAX_LINE = 80;
+export const MAX_BADGE = 24;
 
 /** The saved lines as the editor's rows, with one blank to type into. */
 export function highlightRows(metadata) {
@@ -26,10 +28,19 @@ export function freeGiftOf(metadata) {
     return typeof metadata?.free_gift === "string" ? metadata.free_gift : "";
 }
 
+export function badgeOf(metadata) {
+    return typeof metadata?.badge === "string" ? metadata.badge : "";
+}
+
+/** Code points after trimming, as the engine's utf8.RuneCountInString counts them, so both agree on a limit. */
+export function lineLength(text) {
+    return [...String(text ?? "").trim()].length;
+}
+
 /** Why a line would be refused, or "" when it will save. */
-export function lineProblem(text) {
+export function lineProblem(text, max = MAX_LINE) {
     const s = String(text ?? "").trim();
-    if ([...s].length > MAX_LINE) return `${[...s].length} of ${MAX_LINE} characters: shorten it.`;
+    if (lineLength(s) > max) return `${lineLength(s)} of ${max} characters: shorten it.`;
     // eslint-disable-next-line no-control-regex
     if (/[\u0000-\u001f\u007f]/.test(s)) return "One line only.";
     return "";

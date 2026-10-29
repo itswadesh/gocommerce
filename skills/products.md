@@ -451,16 +451,20 @@ a shell.
   that PUT replaces the whole membership**, including rows the caller never
   fetched, so a client pages the lot before it saves.
 
-## Highlights, a free gift note, videos and the sold count
+## Highlights, a free gift note, a badge, videos and the sold count
 
-Two keys at the top of a product's `metadata` are the engine's own (D134):
+Three keys at the top of a product's `metadata` are the engine's own:
 
-- `highlights`, up to 8 lines of plain text, 80 characters each;
-- `free_gift`, one such line ("Free screen guard with every case").
+- `highlights` (D134), up to 8 lines of plain text, 80 characters each;
+- `free_gift` (D134), one such line ("Free screen guard with every case");
+- `badge` (D157), the label on the product's picture ("Oversized fit"), one
+  line of at most 24 characters (`MaxProductBadge`). A storefront draws it on
+  a card when the theme's `card_badge` is `product_badge`.
 
-Both are trimmed on create and update, an empty one is removed, and anything
+Each is trimmed on create and update, an empty one is removed, and anything
 longer, longer-listed or not text is a `400` (`normalizeProductMetadata`). A
-storefront draws them as text, never as markup.
+storefront draws them as text, never as markup. The product CSV does not carry
+them: its `metadata` column is the variant's.
 
 A storefront shows a picture at the width it needs from
 `GET /images/{store}/cdn-cgi/image/width=320/<the picture's path>` (D142),

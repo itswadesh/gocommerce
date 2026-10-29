@@ -326,7 +326,7 @@ func TestTheStarterBringsABoldReadableLook(t *testing.T) {
 	}
 	// A new store opens on the storefront's own look, set out for it to change (D155).
 	for k, want := range map[string]any{"type_scale": "standard", "heading_weight": "extrabold", "density": "compact",
-		"card_badge": "first_tag", "card_vendor": true, "card_title_lines": "one", "card_rating": true, "card_discount": true,
+		"card_badge": "product_badge", "card_vendor": true, "card_title_lines": "one", "card_rating": true, "card_discount": true,
 		"card_wishlist": true, "card_add_to_cart": false, "card_second_image": true, "list_columns_mobile": "two",
 		"list_columns_desktop": "five", "list_subcategories": true, "list_quick_filters": true, "list_filters_desktop": "sidebar",
 		"list_mobile_bar": true, "pdp_sticky_buy": true, "pdp_gallery": "carousel", "pdp_highlights_grid": true,

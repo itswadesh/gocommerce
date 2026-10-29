@@ -478,8 +478,8 @@ var ThemeSettings = []SettingGroup{
 			Options: []Option{{"fill", "Fill the frame"}, {"whole", "Show the whole picture"}}},
 	}},
 	{Label: "Product cards", Fields: []Field{
-		{Key: "card_badge", Label: "Badge on the picture", Kind: KindSelect, Help: "The label shown on the picture, from the product's own tags or highlights.",
-			Options: []Option{{"none", "None"}, {"first_tag", "First tag"}, {"first_highlight", "First highlight"}}},
+		{Key: "card_badge", Label: "Badge on the picture", Kind: KindSelect, Help: "The label shown on the picture: the badge set on the product, or its first tag or highlight.",
+			Options: []Option{{"none", "None"}, {"product_badge", "Product badge"}, {"first_tag", "First tag"}, {"first_highlight", "First highlight"}}},
 		{Key: "card_vendor", Label: "Brand line", Kind: KindBool},
 		{Key: "card_title_lines", Label: "Title", Kind: KindSelect,
 			Options: []Option{{"one", "One line"}, {"two", "Two lines"}}},
