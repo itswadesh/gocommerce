@@ -1461,8 +1461,9 @@ type SettingsView struct {
 	UpdatedBy   string           `json:"updated_by,omitempty"`
 	Actions     []Action         `json:"actions"`
 	Templates   []TemplateOption `json:"templates"`
-	// StorefrontFallback is Config.StorefrontURL — what applies when the
-	// screen leaves the address empty.
+	// StorefrontFallback is what applies when the screen leaves the address
+	// empty: Config.StorefrontURL, else the store's own address (its domain,
+	// or its address under the base domain) — the base every link uses.
 	StorefrontFallback string `json:"storefront_fallback,omitempty"`
 	// EmailDelivers is false when no email provider is set up, which is the
 	// one thing that makes every step on this screen a no-op.
@@ -1494,7 +1495,7 @@ func (m *Module) settingsView(ctx context.Context) (*SettingsView, error) {
 		Settings: set.Settings, Customized: set.Customized, Defaults: DefaultSettings(),
 		InstalledAt: set.InstalledAt, UpdatedAt: set.UpdatedAt, UpdatedBy: set.UpdatedBy,
 		Actions: actions, Templates: m.templateOptions(ctx),
-		StorefrontFallback: m.cfg.StorefrontURL, EmailDelivers: m.emailDelivers(ctx),
+		StorefrontFallback: m.storefront(ctx, Settings{}), EmailDelivers: m.emailDelivers(ctx),
 		Tracked: m.app.Config().PanelURL != "", Guards: guards,
 	}, nil
 }
