@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
+	catalogai "github.com/itswadesh/gocommerce/ext/catalog-ai"
 )
 
 // The two gateway tasks. Both run on the gateway's strong model, which a
@@ -18,14 +19,6 @@ const (
 	groupTaskName    = "photos.group"
 	describeTaskName = "photos.describe"
 )
-
-// honesty is shared by both tasks' instructions. A product page is a claim
-// the shop makes to a customer, so the model says only what a photo shows.
-const honesty = `Say only what the photos show. Never state a material, metal purity, gemstone, ` +
-	`origin, brand, weight, size, dimension, certification, warranty, rating, review, sales figure or ` +
-	`"bestseller" unless it is plainly visible, such as printed on the item or its label. ` +
-	`When the material is not evident, describe what is visible instead: the colour, the finish ` +
-	`(shiny, matte, textured), the shape and the pattern. No superlatives and no claims about quality.`
 
 // ---------------------------------------------------------------- grouping
 
@@ -67,7 +60,7 @@ var groupSchema = json.RawMessage(`{
 func groupTask(m *Module) aigateway.Task {
 	return aigateway.Task{
 		Name:    groupTaskName,
-		Version: 1,
+		Version: 2,
 		System: `You sort a shop's product photos into the products it sells. Each photo is labelled "Photo N".
 
 - Photos of the same item from different angles, or worn, or close up, belong to one variant.
@@ -77,7 +70,7 @@ func groupTask(m *Module) aigateway.Task {
 - Put every photo in exactly one variant. When unsure whether two photos show the same item, keep them apart: the shop can merge two products more easily than notice a wrong merge.
 - The name is a short working name a shop would recognise, from what is visible.
 
-` + honesty,
+` + catalogai.Honesty,
 		Schema: groupSchema,
 		// Thumbnails are counted at the gateway's flat estimate per picture,
 		// well above what a 512 px picture costs, so the bound is generous.
@@ -169,14 +162,14 @@ var describeSchema = json.RawMessage(`{
 func describeTask(m *Module) aigateway.Task {
 	return aigateway.Task{
 		Name:    describeTaskName,
-		Version: 1,
+		Version: 2,
 		System: `You write a draft product listing for a shop from its own photos of one product. The shop reviews every word before anything is published.
 
 Write for a shopper: a plain, specific title of a few words; a short description; highlights that each name one visible feature; a product type; search tags; an SEO title and description; and alt text for each photo saying what it shows.
 
 Choose category_id only from the categories listed in the data; if none fits, give null and suggest a name in suggested_category. Give hs_code only when the request asks for it, otherwise null. Keep the variants in the order given, one value each.
 
-` + honesty,
+` + catalogai.Honesty,
 		Schema:          describeSchema,
 		MaxInputTokens:  photosPerProduct*1700 + 12000,
 		MaxOutputTokens: 3000,
