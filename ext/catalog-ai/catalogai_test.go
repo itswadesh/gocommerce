@@ -28,16 +28,14 @@ const (
 	strong = "claude-sonnet-5-5"
 )
 
-// claude answers in Anthropic's place, each model with what the test set,
-// and keeps every request it was sent.
-type claude struct {
+type fakeClaude struct {
 	mu       sync.Mutex
 	answers  map[string]string
 	status   int
 	requests []map[string]any
 }
 
-func (c *claude) serve(w http.ResponseWriter, r *http.Request) {
+func (c *fakeClaude) serve(w http.ResponseWriter, r *http.Request) {
 	var body map[string]any
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	c.mu.Lock()
@@ -57,7 +55,7 @@ func (c *claude) serve(w http.ResponseWriter, r *http.Request) {
 	  "usage":{"input_tokens":3000,"output_tokens":400,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}`, model, text)
 }
 
-func (c *claude) calls() []map[string]any {
+func (c *fakeClaude) calls() []map[string]any {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return append([]map[string]any(nil), c.requests...)
@@ -65,7 +63,7 @@ func (c *claude) calls() []map[string]any {
 
 type harness struct {
 	app    *gocommerce.App
-	claude *claude
+	claude *fakeClaude
 	mod    *Module
 }
 
@@ -75,7 +73,7 @@ func (f roundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	c := &claude{answers: map[string]string{}}
+	c := &fakeClaude{answers: map[string]string{}}
 	srv := httptest.NewServer(http.HandlerFunc(c.serve))
 	t.Cleanup(srv.Close)
 	to, _ := url.Parse(srv.URL)
@@ -90,7 +88,6 @@ func newHarness(t *testing.T) *harness {
 	return &harness{app: app, claude: c, mod: mod}
 }
 
-// switchOn sets the gateway up for ctx's store, changed by extra.
 func (h *harness) switchOn(t *testing.T, ctx context.Context, extra map[string]any) {
 	t.Helper()
 	settings := map[string]any{
@@ -117,7 +114,6 @@ func (h *harness) category(t *testing.T, ctx context.Context, title string) *goc
 	return c
 }
 
-// mug is a product with something to improve and one picture 2000 px wide.
 func (h *harness) mug(t *testing.T, ctx context.Context, category *gocommerce.Category) (*gocommerce.Product, int64) {
 	t.Helper()
 	price, stock := int64(49900), 5
@@ -150,8 +146,6 @@ func (h *harness) mug(t *testing.T, ctx context.Context, category *gocommerce.Ca
 	return p, item.ID
 }
 
-// improve posts for product id as store (empty for the default store) and
-// decodes the envelope.
 func (h *harness) improve(t *testing.T, id int64, store string) (int, Proposal, string) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/admin/x/catalog-ai/products/%d/improve", id), nil)
@@ -173,7 +167,6 @@ func (h *harness) improve(t *testing.T, id int64, store string) (int, Proposal, 
 	return rec.Code, env.Data, env.Error.Code
 }
 
-// answer is a whole answer with every field kept, changed by fields.
 func answer(fields map[string]any) string {
 	a := map[string]any{
 		"title": nil, "description": nil, "highlights": nil, "tags": nil, "product_type": nil,
@@ -257,8 +250,6 @@ func TestAProposalIsEachChangeBesideTheCurrentValue(t *testing.T) {
 		t.Errorf("run = %d %q %d %q", prop.ExecutionID, prop.Model, prop.CostMicroMinor, prop.Currency)
 	}
 
-	// What the model was shown: the product's words, the store's categories,
-	// and the picture scaled to 1024 px.
 	calls := h.claude.calls()
 	if len(calls) != 1 {
 		t.Fatalf("%d calls, want 1", len(calls))
@@ -281,7 +272,6 @@ func TestAProposalIsEachChangeBesideTheCurrentValue(t *testing.T) {
 		t.Errorf("picture sent = %s %dx%d %v, want a 1024 px JPEG", format, cfg.Width, cfg.Height, err)
 	}
 
-	// Nothing is saved by asking.
 	after, err := h.app.Products().GetProduct(ctx, p.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -291,7 +281,6 @@ func TestAProposalIsEachChangeBesideTheCurrentValue(t *testing.T) {
 	}
 }
 
-// images is the pictures an Anthropic request carries, decoded.
 func images(req map[string]any) [][]byte {
 	var out [][]byte
 	messages, _ := req["messages"].([]any)
@@ -317,8 +306,6 @@ func TestAnAnswerOutsideTheRulesGoesUpTheLadder(t *testing.T) {
 	drinkware := h.category(t, ctx, "Drinkware")
 	p, _ := h.mug(t, ctx, nil)
 
-	// A category the store does not have: refused by the small model's check,
-	// and the strong model's choice is what is offered.
 	h.claude.answers[small] = answer(map[string]any{"category_id": drinkware.ID + 1000, "reasons": reasons("category")})
 	h.claude.answers[strong] = answer(map[string]any{"category_id": drinkware.ID, "reasons": reasons("category")})
 	code, prop, _ := h.improve(t, p.ID, "")
@@ -332,9 +319,8 @@ func TestAnAnswerOutsideTheRulesGoesUpTheLadder(t *testing.T) {
 		t.Errorf("%d calls, want the small model then the strong one", n)
 	}
 
-	// Neither rung answers within the rules: no proposal, and why.
 	h.claude.answers[small] = answer(map[string]any{"seo_title": strings.Repeat("Blue mug ", 10), "reasons": reasons("seo_title")})
-	h.claude.answers[strong] = answer(map[string]any{"title": "Bestseller blue mug", "reasons": reasons("title")})
+	h.claude.answers[strong] = answer(map[string]any{"title": strings.Repeat("Blue mug ", 20), "reasons": reasons("title")})
 	if code, _, errCode := h.improve(t, p.ID, ""); code != http.StatusBadGateway || errCode != codeNoAnswer {
 		t.Errorf("improve = %d %s, want 502 %s", code, errCode, codeNoAnswer)
 	}
@@ -370,12 +356,6 @@ func TestTheChecksHoldEachLimit(t *testing.T) {
 		{"a made-up category", map[string]any{"category_id": cat.ID + 1000, "reasons": reasons("category")}, false},
 		{"a category and a suggestion", map[string]any{"category_id": cat.ID, "suggested_category": "Mugs", "reasons": reasons("category")}, false},
 		{"a suggestion alone", map[string]any{"suggested_category": "Mugs"}, true},
-		{"a price", map[string]any{"description": "Only ₹499 today.", "reasons": reasons("description")}, false},
-		{"a discount", map[string]any{"highlights": []string{"20% off this week"}, "reasons": reasons("highlights")}, false},
-		{"a rating", map[string]any{"seo_description": strings.Repeat("Loved by all, ", 3) + "rated 4.8 stars by our customers.", "reasons": reasons("seo_description")}, false},
-		{"bestseller", map[string]any{"tags": []string{"best-seller"}, "reasons": reasons("tags")}, false},
-		{"stock", map[string]any{"title": "Blue mug, in stock", "reasons": reasons("title")}, false},
-		{"a material is not a claim the check refuses", map[string]any{"title": "100% cotton tote", "reasons": reasons("title")}, true},
 		{"confidence over 100", map[string]any{"confidence": 101}, false},
 		{"thirteen things to verify", map[string]any{"verify": strings.Split("a b c d e f g h i j k l m", " ")}, false},
 	}
@@ -387,6 +367,62 @@ func TestTheChecksHoldEachLimit(t *testing.T) {
 	}
 	if conf, err := h.mod.checkImprove(ctx, json.RawMessage(answer(map[string]any{"confidence": 40}))); err != nil || conf != 40 {
 		t.Errorf("confidence = %d %v: the model's own figure is what the ladder climbs on", conf, err)
+	}
+}
+
+func TestClaimsAreFoundWithoutCatchingOrdinaryCopy(t *testing.T) {
+	for _, s := range []string{"Only ₹499 today", "Now $20", "Rs. 499", "20% off this week", "rated 4.8 stars",
+		"4.5 out of 5", "Our best-seller", "Top-rated mug", "In stock and ready to ship", "Read the reviews", "Discounted"} {
+		if !forbiddenClaimRE.MatchString(s) {
+			t.Errorf("%q is a claim the AI step never writes, and was not caught", s)
+		}
+	}
+	for _, s := range []string{"USB to RS232 adapter", "RS485 module", "Audi RS 3 floor mats", "Sizes EUR 38 to EUR 42",
+		"Set of 2 star stud earrings", "Necklace with 5 stars", "100% cotton tote", "Holds 350 ml"} {
+		if forbiddenClaimRE.MatchString(s) {
+			t.Errorf("%q is ordinary product copy, and was taken for a claim", s)
+		}
+	}
+}
+
+func TestAClaimLeavesItsFieldOutAndTheRestStands(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.switchOn(t, ctx, nil)
+	p, mediaID := h.mug(t, ctx, nil)
+	h.claude.answers[small] = answer(map[string]any{
+		"title":       "Bestseller blue mug",
+		"description": "Only ₹499 today.",
+		"highlights":  []string{"Wide handle", "20% off this week"},
+		"tags":        []string{"blue", "best-seller"},
+		"alt_texts":   []any{map[string]any{"picture": 1, "alt": "Blue mug, side view"}, map[string]any{"picture": 1, "alt": "Blue mug again"}},
+		"reasons":     reasons("title", "description", "highlights", "tags", "alt_text"),
+	})
+	code, prop, errCode := h.improve(t, p.ID, "")
+	if code != http.StatusOK {
+		t.Fatalf("improve = %d %s: a claim must not sink the whole answer", code, errCode)
+	}
+	got := map[string]Change{}
+	for _, c := range prop.Changes {
+		got[c.Field] = c
+	}
+	if _, ok := got["title"]; ok {
+		t.Error("a title calling it a bestseller was offered")
+	}
+	if _, ok := got["description"]; ok {
+		t.Error("a description naming a price was offered")
+	}
+	if c := got["highlights"]; fmt.Sprint(c.Proposed) != "[Wide handle]" {
+		t.Errorf("highlights = %v, want the discount line left out", c.Proposed)
+	}
+	if c := got["tags"]; fmt.Sprint(c.Proposed) != "[blue]" {
+		t.Errorf("tags = %v", c.Proposed)
+	}
+	if c := got["alt"]; c.MediaID != mediaID || c.Proposed != "Blue mug, side view" || len(prop.Changes) != 3 {
+		t.Errorf("changes = %+v: one alt text per picture, the first", prop.Changes)
+	}
+	if n := len(h.claude.calls()); n != 1 {
+		t.Errorf("%d calls, want 1", n)
 	}
 }
 
@@ -466,7 +502,6 @@ func TestAnotherStoresProductAndCategoriesAreNotReached(t *testing.T) {
 	if _, err := h.mod.checkImprove(a, json.RawMessage(answer(map[string]any{"category_id": theirs.ID, "reasons": reasons("category")}))); err == nil {
 		t.Error("store B's category was accepted for store A's product")
 	}
-	// B's own product reads B's categories only.
 	mine, _ := h.mug(t, b, nil)
 	if code, _, errCode := h.improve(t, mine.ID, second.ID); code != http.StatusOK {
 		t.Fatalf("store B improving its own = %d %s", code, errCode)
@@ -483,7 +518,6 @@ func TestEachRefusalHasItsOwnCode(t *testing.T) {
 	p, _ := h.mug(t, ctx, nil)
 	h.claude.answers[small] = answer(nil)
 
-	// Switched off: the status says why, and the button leads to settings.
 	status := gctest.AdminRequest(t, h.app, http.MethodGet, "/api/admin/x/catalog-ai/status", nil)
 	if !strings.Contains(status.Body.String(), `"ready":false`) || !strings.Contains(status.Body.String(), "switched off") {
 		t.Errorf("status = %s", status.Body.String())
@@ -492,7 +526,6 @@ func TestEachRefusalHasItsOwnCode(t *testing.T) {
 		t.Errorf("switched off = %d %s", code, errCode)
 	}
 
-	// A cap that cannot cover one call.
 	h.switchOn(t, ctx, map[string]any{"monthly_cap": 1})
 	if code, _, errCode := h.improve(t, p.ID, ""); code != http.StatusConflict || errCode != codeBudget {
 		t.Errorf("over the cap = %d %s", code, errCode)
@@ -501,13 +534,11 @@ func TestEachRefusalHasItsOwnCode(t *testing.T) {
 		t.Errorf("%d calls past the cap", n)
 	}
 
-	// The catalogue kept in: nothing can be sent.
 	h.switchOn(t, ctx, map[string]any{"share_catalogue": false})
 	if code, _, errCode := h.improve(t, p.ID, ""); code != http.StatusConflict || errCode != codePolicy {
 		t.Errorf("catalogue kept in = %d %s", code, errCode)
 	}
 
-	// The provider down: worth another try.
 	h.switchOn(t, ctx, nil)
 	h.claude.status = http.StatusInternalServerError
 	if code, _, errCode := h.improve(t, p.ID, ""); code != http.StatusBadGateway || errCode != codeProvider {
@@ -515,7 +546,6 @@ func TestEachRefusalHasItsOwnCode(t *testing.T) {
 	}
 	h.claude.status = 0
 
-	// The free trial spent and nothing topped up: refused before any call.
 	calls := len(h.claude.calls())
 	if _, err := h.mod.cfg.Gateway.SetFreeAllowance(ctx, 0, ""); err != nil {
 		t.Fatal(err)

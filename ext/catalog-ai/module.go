@@ -1,6 +1,6 @@
 // Package catalogai is the catalogue's AI work, every model call made through
 // the store's AI gateway. Its first piece is "Improve with AI" on a product's
-// page (D152); bulk enrichment and quality checks belong here too.
+// page (D152).
 //
 // The panel asks for a proposal for one product. This module reads the
 // product's own words and up to six of its pictures, and asks the gateway's
@@ -33,10 +33,8 @@ type Config struct {
 
 // Module is the catalogue's AI work.
 type Module struct {
-	cfg Config
-	app *gocommerce.App
-	// tasks registers the gateway task once: a test boots the same module
-	// twice, once to migrate the template database.
+	cfg   Config
+	app   *gocommerce.App
 	tasks sync.Once
 }
 
@@ -46,15 +44,13 @@ func New(cfg Config) *Module { return &Module{cfg: cfg} }
 // Name implements gocommerce.Module.
 func (m *Module) Name() string { return "catalog-ai" }
 
-// Migrations implements gocommerce.Module. A proposal is answered, not kept:
-// the gateway's own record of the run is the trace of it.
+// Migrations implements gocommerce.Module.
 func (m *Module) Migrations() []gocommerce.Migration { return nil }
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	if m.cfg.Gateway == nil {
-		// The screen says so instead of the binary refusing to start.
 		app.Log().Warn("catalog-ai is installed without the AI gateway, so nothing can be improved")
 	} else {
 		var err error
@@ -69,9 +65,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	return nil
 }
 
-// Honesty is the rule every task that writes a product's words follows. A
-// product page is a claim the shop makes to a customer, so a model says only
-// what the shop's own words or its photos show.
+// Honesty is the rule every task that writes a product's words follows.
 const Honesty = `Say only what the shop's own words or the photos show. Never write a price, discount, stock level, ` +
 	`delivery promise, rating, review, sales figure or "bestseller". Never state a material, metal purity, gemstone, ` +
 	`origin, brand, weight, size, dimension, fit, care instruction, certification, warranty, or health or performance ` +
@@ -80,7 +74,7 @@ const Honesty = `Say only what the shop's own words or the photos show. Never wr
 	`textured), the shape and the pattern. No superlatives and no claims about quality.`
 
 // Paragraphs turns plain text into the HTML a product description is, every
-// character escaped: the words are a model's, and a model's words are data.
+// character escaped.
 func Paragraphs(text string) string {
 	var b strings.Builder
 	for _, p := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n\n") {

@@ -46,7 +46,6 @@ type Change struct {
 	Reason   string `json:"reason"`
 }
 
-// The codes a refusal carries, which the panel picks its state by.
 const (
 	codeNotReady = "ai_not_ready"
 	codeBudget   = "ai_budget_exhausted"
@@ -56,12 +55,8 @@ const (
 	codeNoAnswer = "ai_no_proposal"
 )
 
-// improveBudget is how long one improve request may take: two model calls
-// and six pictures can outlast the server's write timeout.
-const improveBudget = 4 * time.Minute
+const writeDeadline = 4 * time.Minute
 
-// refusals is what a run that ended without an answer becomes for the
-// screen, by the gateway's outcome. Anything else is codeNoAnswer.
 var refusals = map[string]struct {
 	status int
 	code   string
@@ -88,7 +83,6 @@ func refusal(err error) error {
 	return &gocommerce.APIError{Status: r.status, Code: r.code, Message: re.Reason}
 }
 
-// ready says what the store must set before a product can be improved.
 func (m *Module) ready(ctx context.Context) error {
 	if m.cfg.Gateway == nil {
 		return &gocommerce.APIError{Status: http.StatusConflict, Code: codeNotReady,
@@ -97,8 +91,6 @@ func (m *Module) ready(ctx context.Context) error {
 	return refusal(m.cfg.Gateway.Ready(ctx))
 }
 
-// handleStatus says whether a product can be improved here, and whether its
-// pictures would be sent, before anybody presses the button.
 func (m *Module) handleStatus(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"ready": true, "pictures": false}
 	if err := m.ready(r.Context()); err != nil {
@@ -135,7 +127,7 @@ func (m *Module) handleImprove(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(improveBudget)); err != nil {
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(writeDeadline)); err != nil {
 		m.app.Log().Warn("could not extend the write deadline for an improve run", "error", err)
 	}
 	in, note, err := m.subject(ctx, p)
@@ -143,7 +135,11 @@ func (m *Module) handleImprove(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	res, err := m.cfg.Gateway.Run(ctx, improveTaskName, in)
+	// Detached from the request, so a closed tab still leaves the run's
+	// record and its true cost.
+	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), writeDeadline)
+	defer cancel()
+	res, err := m.cfg.Gateway.Run(runCtx, improveTaskName, in)
 	if err != nil {
 		gocommerce.RespondError(w, r, refusal(err))
 		return
@@ -164,8 +160,6 @@ func (m *Module) handleImprove(w http.ResponseWriter, r *http.Request) {
 	gocommerce.Respond(w, http.StatusOK, prop)
 }
 
-// subject is the product as the model is shown it, and a note when it is
-// shown fewer pictures than the product has.
 func (m *Module) subject(ctx context.Context, p *gocommerce.Product) (improveInput, string, error) {
 	in := improveInput{ProductID: p.ID, Product: listingOf(p)}
 	cats, err := m.app.Categories().List(ctx)
@@ -242,9 +236,6 @@ func highlightsOf(p *gocommerce.Product) []string {
 	return out
 }
 
-// propose lays the answer beside the product: only what would change, held
-// once more to what the catalogue takes, so a value the model repeated or a
-// picture it made up never reaches the screen.
 func (m *Module) propose(ctx context.Context, p *gocommerce.Product, in improveInput, o improveOutput) (*Proposal, error) {
 	why := map[string]string{}
 	for _, r := range o.Reasons {
@@ -255,12 +246,12 @@ func (m *Module) propose(ctx context.Context, p *gocommerce.Product, in improveI
 		prop.Changes = append(prop.Changes, Change{Field: field, Current: current, Proposed: proposed, Reason: why[field]})
 	}
 	text := func(field, current string, proposed *string) {
-		if proposed != nil && oneLine(*proposed) != oneLine(current) {
+		if proposed != nil && oneLine(*proposed) != oneLine(current) && !forbiddenClaimRE.MatchString(*proposed) {
 			add(field, current, oneLine(*proposed))
 		}
 	}
 	text("title", p.Title, o.Title)
-	if o.Description != nil {
+	if o.Description != nil && !forbiddenClaimRE.MatchString(*o.Description) {
 		if html := Paragraphs(*o.Description); html != p.Description {
 			add("description", p.Description, html)
 		}
@@ -283,15 +274,17 @@ func (m *Module) propose(ctx context.Context, p *gocommerce.Product, in improveI
 		}
 		add("category", current, categoryRef{c.ID, c.FullName})
 	}
-	if o.CategoryID == nil && o.SuggestedCategory != nil && p.Category == nil {
+	if o.CategoryID == nil && o.SuggestedCategory != nil && p.Category == nil && !forbiddenClaimRE.MatchString(*o.SuggestedCategory) {
 		prop.SuggestedCategory = oneLine(*o.SuggestedCategory)
 	}
 	text("seo_title", p.SEOTitle, o.SEOTitle)
 	text("seo_description", p.SEODescription, o.SEODescription)
+	seen := map[int]bool{}
 	for _, a := range o.AltTexts {
-		if a.Picture < 1 || a.Picture > len(in.Pictures) {
+		if a.Picture < 1 || a.Picture > len(in.Pictures) || seen[a.Picture] || forbiddenClaimRE.MatchString(a.Alt) {
 			continue
 		}
+		seen[a.Picture] = true
 		pic := in.Pictures[a.Picture-1]
 		if alt := oneLine(a.Alt); alt != oneLine(pic.Alt) {
 			prop.Changes = append(prop.Changes, Change{Field: "alt", MediaID: pic.MediaID, Current: pic.Alt, Proposed: alt, Reason: why["alt_text"]})
@@ -310,24 +303,13 @@ func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 func trimmed(list []string) []string {
 	out := []string{}
 	for _, s := range list {
-		if s = oneLine(s); s != "" {
+		if s = oneLine(s); s != "" && !forbiddenClaimRE.MatchString(s) {
 			out = append(out, s)
 		}
 	}
 	return out
 }
 
-// sameTags compares as the catalogue stores tags: a set, case folded.
 func sameTags(a, b []string) bool {
-	fold := func(list []string) []string {
-		out := make([]string, 0, len(list))
-		for _, s := range list {
-			if s = strings.ToLower(strings.TrimSpace(s)); s != "" && !slices.Contains(out, s) {
-				out = append(out, s)
-			}
-		}
-		slices.Sort(out)
-		return out
-	}
-	return slices.Equal(fold(a), fold(b))
+	return slices.EqualFunc(gocommerce.NormalizeTags(a), gocommerce.NormalizeTags(b), strings.EqualFold)
 }
