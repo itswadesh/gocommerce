@@ -229,7 +229,7 @@ environment:
 		withFeeds    = fs.Bool("feeds", false, "install the feeds module: Google Merchant and Meta catalogue feeds at /x/feeds/ (STOREFRONT_URL, or its screen in the panel)")
 		withSitemaps = fs.Bool("sitemaps", false, "install the sitemaps module: the storefront's sitemap at /x/sitemaps/sitemap.xml (STOREFRONT_URL, or its screen in the panel)")
 		withMenus    = fs.Bool("menus", false, "install the navigation module: the storefront's menus, edited from the Menus screen")
-		withReviews  = fs.Bool("reviews", false, "install the reviews module: product ratings and reviews, moderated from the Reviews screen")
+		withReviews  = fs.Bool("reviews", false, "install the reviews module: product ratings and reviews, moderated from the Reviews screen; with -ai-gateway it also summarizes what shoppers praise and complain about in a product's reviews")
 		withContact  = fs.Bool("contact", false, "install the contact module: the storefront's contact form and its inbox (CONTACT_EMAIL, or the Contact messages screen)")
 		withNews     = fs.Bool("newsletter", false, "install the newsletter module: the storefront's signup box and its list")
 		withRecovery = fs.Bool("recovery", false, "install the cart-recovery module: abandoned checkouts, a reminder sequence by email, and the recovery figures (STOREFRONT_URL, or the automation screen)")
@@ -435,7 +435,7 @@ environment:
 			modules = append(modules, navigation.New(navigation.Config{}))
 		}
 		if *withReviews {
-			modules = append(modules, reviews.New(reviews.Config{}))
+			modules = append(modules, reviews.New(reviews.Config{Gateway: gateway}))
 		}
 		if *withContact {
 			modules = append(modules, contact.New(contact.Config{NotifyEmail: os.Getenv("CONTACT_EMAIL")}))

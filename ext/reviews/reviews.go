@@ -7,6 +7,13 @@
 // review is marked verified when its email has bought the product, which
 // the store can tell from its own orders — and its screen in the panel can make
 // that a condition of posting at all.
+//
+// With the AI gateway the Reviews screen also summarizes a product's
+// published reviews: what shoppers praise and what they complain about, each
+// theme citing its reviews (summarize.go).
+//
+//	gw := aigateway.New(aigateway.Config{})
+//	app, err := gocommerce.New(cfg, gw, reviews.New(reviews.Config{Gateway: gw}))
 package reviews
 
 import (
@@ -17,9 +24,11 @@ import (
 	"net/mail"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
+	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
 )
 
 const (
@@ -42,6 +51,10 @@ type Config struct {
 	// RequirePurchase refuses a review from an email that has not bought
 	// the product.
 	RequirePurchase bool
+	// Gateway is the store's AI gateway, which summaries run through. Nil
+	// leaves reviews as they were, and a summary answers that the store has
+	// no gateway.
+	Gateway *aigateway.Module
 }
 
 // Review is one review.
@@ -93,6 +106,8 @@ type Module struct {
 	cfg Config
 	app *gocommerce.App
 	db  *sql.DB
+
+	tasks sync.Once
 }
 
 // New constructs the module.
@@ -133,6 +148,13 @@ CREATE INDEX reviews_status_idx  ON reviews (status, id DESC);
 
 // Register implements gocommerce.Module.
 func (m *Module) Register(app *gocommerce.App) error {
+	if m.cfg.Gateway != nil {
+		var err error
+		m.tasks.Do(func() { err = m.cfg.Gateway.RegisterTask(summarizeTaskDef()) })
+		if err != nil {
+			return err
+		}
+	}
 	m.registerRights(app)
 	m.app = app
 	m.db = app.DB()
@@ -155,6 +177,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.HandleAdminFunc("GET /api/admin/x/reviews", m.handleList, rightReviewsRead)
 	app.HandleAdminFunc("PATCH /api/admin/x/reviews/{id}", m.handleUpdate, rightReviewsModerate)
 	app.HandleAdminFunc("DELETE /api/admin/x/reviews/{id}", m.handleDelete, rightReviewsModerate)
+	app.HandleAdminFunc("POST /api/admin/x/reviews/products/{id}/summarize", m.handleSummarize, rightReviewsRead)
 	m.mountTransferRoutes(app)
 	return nil
 }

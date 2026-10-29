@@ -104,7 +104,7 @@ func main() {
 		// The storefront's own content: its menus, its reviews, its contact
 		// form and its newsletter list, each with a screen in the panel.
 		navigation.New(navigation.Config{}),
-		reviews.New(reviews.Config{}),
+		reviews.New(reviews.Config{Gateway: gateway}),
 		contact.New(contact.Config{NotifyEmail: os.Getenv("CONTACT_EMAIL")}),
 		newsletter.New(newsletter.Config{}),
 		faq.New(faq.Config{}),
