@@ -200,6 +200,13 @@ func TestTheLookSettingsAreKeptAsSent(t *testing.T) {
 		t.Fatalf("theme settings = %v\nwant %v", got.ThemeSettings, want)
 	}
 
+	for _, v := range []string{"none", "product_badge", "first_tag", "first_highlight"} {
+		got, err := Validate("home", Document{ThemeSettings: map[string]any{"card_badge": v}})
+		if err != nil || got.ThemeSettings["card_badge"] != v {
+			t.Errorf("card_badge %q: kept %v, err %v", v, got.ThemeSettings, err)
+		}
+	}
+
 	one, err := Validate("home", doc(t, `{"theme_settings":{"card_vendor":true},"sections":[]}`))
 	if err != nil {
 		t.Fatal(err)

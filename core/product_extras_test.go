@@ -107,6 +107,65 @@ func TestHighlightsAndFreeGiftAreShortPlainLines(t *testing.T) {
 	}
 }
 
+func TestABadgeIsOneShortLine(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	p := simpleProduct(t, app, "BDG-1", 19900, 5)
+
+	set := func(meta Metadata) error {
+		_, err := app.Products().UpdateProduct(ctx, p.ID, ProductPatch{Metadata: &meta})
+		return err
+	}
+
+	if err := set(Metadata{"badge": "  Oversized fit ", "care": "wipe clean"}); err != nil {
+		t.Fatalf("save badge: %v", err)
+	}
+	if got := getPublicProduct(t, app, p.ID).Metadata; got["badge"] != "Oversized fit" || got["care"] != "wipe clean" {
+		t.Errorf("public product metadata = %#v, want the badge trimmed and care kept", got)
+	}
+	rec := do(t, app, http.MethodGet, "/api/products")
+	var list struct {
+		Data []publicProduct `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil || len(list.Data) != 1 {
+		t.Fatalf("GET /api/products: %d %s", rec.Code, rec.Body)
+	}
+	if list.Data[0].Metadata["badge"] != "Oversized fit" {
+		t.Errorf("listed metadata = %#v, want the badge a card draws", list.Data[0].Metadata)
+	}
+
+	devanagari24 := strings.Repeat("क", MaxProductBadge)
+	if err := set(Metadata{"badge": devanagari24}); err != nil {
+		t.Errorf("a 24-character badge: %v", err)
+	}
+	for name, badge := range map[string]any{
+		"25 characters":    devanagari24 + "क",
+		"on two lines":     "New\nIn",
+		"with a tab":       "New\tIn",
+		"a number":         7,
+		"a list of badges": []any{"New"},
+		"a nested object":  map[string]any{"text": "New"},
+	} {
+		if err := set(Metadata{"badge": badge}); !isValidation(err) {
+			t.Errorf("%s: err = %v, want a validation error", name, err)
+		}
+	}
+
+	if err := set(Metadata{"badge": "   "}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := app.Products().GetProduct(ctx, p.ID)
+	if _, ok := got.Metadata["badge"]; ok {
+		t.Errorf("an empty badge was kept: %#v", got.Metadata)
+	}
+
+	in := ProductInput{Title: "Too long", Metadata: Metadata{"badge": devanagari24 + "क"},
+		Variants: []VariantInput{{SKU: "BDG-2", PriceMinor: 100}}}
+	if _, err := app.Products().CreateProduct(ctx, in); !isValidation(err) {
+		t.Errorf("create with a 25-character badge: err = %v, want a validation error", err)
+	}
+}
+
 func TestPublicProductCarriesItsVideos(t *testing.T) {
 	app := newTestApp(t)
 	ctx := context.Background()

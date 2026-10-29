@@ -51,7 +51,7 @@
     import ProductHighlights from "$lib/components/ProductHighlights.svelte";
     import ProductImprove from "$lib/components/ProductImprove.svelte";
     import { hasModule } from "$lib/modules.svelte.js";
-    import { freeGiftOf, highlightLines, highlightRows, lineProblem } from "$lib/highlights.js";
+    import { MAX_BADGE, badgeOf, freeGiftOf, highlightLines, highlightRows, lineProblem } from "$lib/highlights.js";
     import RecordHistory from "$lib/components/RecordHistory.svelte";
     import { titled } from "$lib/brand.svelte.js";
 
@@ -442,6 +442,7 @@
             metafields: [],
             highlights: [""],
             free_gift: "",
+            badge: "",
             unsavedAlts: {},
             // Values for the fields the chosen category defines. Keyed by the
             // attribute key, so a renamed label keeps the answers under it.
@@ -526,11 +527,13 @@
             category_id: p.category?.id ?? null,
             collection_ids: (p.collections ?? []).map((c) => c.id),
             category_meta: categoryMetaOf(p),
-            // Highlights and the free gift note (D134), the engine's own keys
-            // at the top of metadata. Rows include the blank one being typed
-            // into, so the comparison at Save is on the lines, not the rows.
+            // Highlights, the free gift note (D134) and the badge (D157), the
+            // engine's own keys at the top of metadata. Rows include the
+            // blank one being typed into, so the comparison at Save is on the
+            // lines, not the rows.
             highlights: highlightRows(p.metadata),
             free_gift: freeGiftOf(p.metadata),
+            badge: badgeOf(p.metadata),
             unsavedAlts: {},
             metafields: Object.entries(p.metadata?.custom ?? {}).map(([key, value]) => ({
                 key,
@@ -967,9 +970,14 @@
             toast.error(upsellProblem);
             return;
         }
-        const highlightProblem = [...form.highlights, form.free_gift].map(lineProblem).find(Boolean);
+        const highlightProblem = [...form.highlights, form.free_gift].map((s) => lineProblem(s)).find(Boolean);
         if (highlightProblem) {
             toast.error(`A highlight or the free gift note: ${highlightProblem}`);
+            return;
+        }
+        const badgeProblem = lineProblem(form.badge, MAX_BADGE);
+        if (badgeProblem) {
+            toast.error(`The badge: ${badgeProblem}`);
             return;
         }
         // The other two money boxes, refused out loud rather than into `errors`:
@@ -1028,7 +1036,8 @@
                 form.focus_keyword !== snapshot.focus_keyword ||
                 JSON.stringify(highlightLines(form.highlights)) !==
                     JSON.stringify(highlightLines(snapshot.highlights)) ||
-                form.free_gift.trim() !== snapshot.free_gift.trim()
+                form.free_gift.trim() !== snapshot.free_gift.trim() ||
+                form.badge.trim() !== snapshot.badge.trim()
             ) {
                 // The patch replaces `metadata` whole, so the rest of it has to
                 // be carried across: writing only `{custom: …}` would delete
@@ -1039,6 +1048,7 @@
                     category: categoryMetaObject(),
                     highlights: highlightLines(form.highlights),
                     free_gift: form.free_gift.trim(),
+                    badge: form.badge.trim(),
                     // Merged rather than replaced: metadata.seo is this panel's
                     // namespace but not necessarily only this field's, and a
                     // future key under it should survive a keyword edit.
@@ -1524,6 +1534,7 @@
                     <ProductHighlights
                         bind:rows={form.highlights}
                         bind:freeGift={form.free_gift}
+                        bind:badge={form.badge}
                         disabled={!writable}
                     />
                     <section class="card">

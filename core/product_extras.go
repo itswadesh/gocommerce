@@ -7,22 +7,35 @@ import (
 	"unicode/utf8"
 )
 
-// What a product page says beside the buy box (D134): a few short highlight
-// lines and a free gift note. Both are plain text a shop types, kept in the
-// product's metadata under keys the engine owns, so they cost no column and
-// travel on every read the product already has.
+// What a product says beside the buy box (D134) and on its picture (D157): a
+// few short highlight lines, a free gift note and a badge. All are plain text
+// a shop types, kept in the product's metadata under keys the engine owns, so
+// they cost no column and travel on every read the product already has.
 const (
 	MetaHighlights = "highlights"
 	MetaFreeGift   = "free_gift"
+	MetaBadge      = "badge"
 
 	MaxHighlights   = 8
 	MaxProductBlurb = 80
+	// A badge sits on a card's picture, which a listing draws 150 to 200px
+	// wide. 24 characters holds a label such as "Hand block print" with room
+	// to spare; a longer one covers the picture instead of labelling it.
+	MaxProductBadge = 24
 )
+
+var productLineKeys = []struct {
+	key, what string
+	limit     int
+}{
+	{MetaFreeGift, "the free gift note", MaxProductBlurb},
+	{MetaBadge, "the badge", MaxProductBadge},
+}
 
 // normalizeProductMetadata checks and tidies the keys above, leaving every
 // other key as the caller sent it. A highlight list is trimmed and its empty
 // lines dropped, so the panel's blank last row is not stored as a line, and an
-// empty list or note is removed rather than kept as an empty value a
+// empty list or line is removed rather than kept as an empty value a
 // storefront would have to know to ignore.
 func normalizeProductMetadata(m Metadata) error {
 	if m == nil {
@@ -39,19 +52,23 @@ func normalizeProductMetadata(m Metadata) error {
 			m[MetaHighlights] = lines
 		}
 	}
-	if raw, ok := m[MetaFreeGift]; ok {
+	for _, k := range productLineKeys {
+		raw, ok := m[k.key]
+		if !ok {
+			continue
+		}
 		s, isString := raw.(string)
 		if raw != nil && !isString {
-			return Validationf("metadata.%s must be text", MetaFreeGift)
+			return Validationf("metadata.%s must be text", k.key)
 		}
-		s, err := plainLine(s, "the free gift note")
+		s, err := plainLine(s, k.what, k.limit)
 		if err != nil {
 			return err
 		}
 		if s == "" {
-			delete(m, MetaFreeGift)
+			delete(m, k.key)
 		} else {
-			m[MetaFreeGift] = s
+			m[k.key] = s
 		}
 	}
 	return nil
@@ -78,7 +95,7 @@ func highlightLines(raw any) ([]string, error) {
 		if !ok {
 			return nil, Validationf("metadata.%s must be a list of lines", MetaHighlights)
 		}
-		s, err := plainLine(s, "a highlight")
+		s, err := plainLine(s, "a highlight", MaxProductBlurb)
 		if err != nil {
 			return nil, err
 		}
@@ -92,14 +109,13 @@ func highlightLines(raw any) ([]string, error) {
 	return out, nil
 }
 
-// plainLine is one line of a shop's own words: trimmed, at most
-// MaxProductBlurb characters, and with no line breaks or control characters,
-// which a buy box drawing one line per entry would show as nothing or as a
-// broken layout.
-func plainLine(s, what string) (string, error) {
+// plainLine is one line of a shop's own words: trimmed, at most limit
+// characters, and with no line breaks or control characters, which a buy box
+// drawing one line per entry would show as nothing or as a broken layout.
+func plainLine(s, what string, limit int) (string, error) {
 	s = strings.TrimSpace(s)
-	if utf8.RuneCountInString(s) > MaxProductBlurb {
-		return "", Validationf("%s is limited to %d characters", what, MaxProductBlurb)
+	if utf8.RuneCountInString(s) > limit {
+		return "", Validationf("%s is limited to %d characters", what, limit)
 	}
 	for _, r := range s {
 		if unicode.IsControl(r) {

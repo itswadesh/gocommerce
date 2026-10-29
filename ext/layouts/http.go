@@ -569,9 +569,10 @@ func Starter(page string) Document {
 		}}
 	}
 	return Document{SchemaVersion: schemaVersion, Theme: Themes[0].ID, ThemeSettings: map[string]any{
-		// Violet carries white words at 5.7:1; the pale yellow carries the
-		// storefront's own text colour at well over 4.5:1.
-		"accent": "#7c3aed", "accent_text": "#ffffff", "muted": "#fef3c7",
+		// Yellow with near-black words (D158), 13:1 on the button. Yellow reads
+		// at 1.45:1 on white, so it is a fill only: a storefront must not draw
+		// it as text.
+		"accent": "#ffd232", "accent_text": "#111111", "muted": "#fef3c7",
 		// No heading font: a web font repainted the hero's headline seconds
 		// after the page drew on a phone, which Lighthouse counts against it;
 		// the storefront's own font at a heavy weight carries the look.
@@ -580,7 +581,7 @@ func Starter(page string) Document {
 		// storefront's white; this is the nearest of its hue at 4.5:1.
 		"sale":       "#198837",
 		"type_scale": "standard", "heading_weight": "extrabold", "density": "compact",
-		"card_badge": "first_tag", "card_vendor": true, "card_title_lines": "one", "card_rating": true,
+		"card_badge": "product_badge", "card_vendor": true, "card_title_lines": "one", "card_rating": true,
 		"card_discount": true, "card_wishlist": true, "card_add_to_cart": false, "card_second_image": true,
 		"list_columns_mobile": "two", "list_columns_desktop": "five", "list_subcategories": true,
 		"list_quick_filters": true, "list_filters_desktop": "sidebar", "list_mobile_bar": true,

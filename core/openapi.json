@@ -17741,7 +17741,7 @@
           },
           "metadata": {
             "type": "object",
-            "description": "Where a module attaches its own data, under its own key. The engine owns two keys (D134): `highlights`, up to 8 lines of plain text of at most 80 characters each, and `free_gift`, one such line; both are trimmed on write, and an empty one is removed."
+            "description": "Where a module attaches its own data, under its own key. The engine owns three keys: `highlights` (D134), up to 8 lines of plain text of at most 80 characters each; `free_gift` (D134), one such line; and `badge` (D157), the label on the product's picture, one line of at most 24 characters. All are trimmed on write, and an empty one is removed."
           },
           "created_at": {
             "type": "string",

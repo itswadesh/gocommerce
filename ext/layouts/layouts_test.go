@@ -299,8 +299,10 @@ func TestTheRegistryDescribesEverySection(t *testing.T) {
 }
 
 // The starting home page brings its look: theme settings that survive the
-// registry's checks unchanged, with words on the accent block and on the
-// quiet bands readable at 4.5:1 against the storefront's own text colour.
+// registry's checks unchanged, and every pair the theme editor warns about
+// readable at 4.5:1. Those four pairs are every text-on-colour pair the
+// starter's sections draw (the hero, tiles, product grid, picture beside
+// words and the benefits band).
 func TestTheStarterBringsABoldReadableLook(t *testing.T) {
 	start := Starter("home")
 	got, err := Validate("home", start)
@@ -311,22 +313,24 @@ func TestTheStarterBringsABoldReadableLook(t *testing.T) {
 		t.Fatalf("theme settings = %v, want the starter's %v kept whole", got.ThemeSettings, start.ThemeSettings)
 	}
 	ts := got.ThemeSettings
-	if r := contrast(ts["accent"].(string), ts["accent_text"].(string)); r < 4.5 {
-		t.Errorf("text on the accent block is %.2f:1, want at least 4.5", r)
+	// The storefront's own colours for what the starter leaves unset, and the
+	// pairs, as admin/src/lib/layouts.js has them (STOREFRONT_COLOURS, PAIRS).
+	own := map[string]string{"background": "#ffffff", "text": "#0f172a"}
+	colour := func(key string) string {
+		if v, ok := ts[key].(string); ok {
+			return v
+		}
+		return own[key]
 	}
-	// The storefront's own text colour, which the starter leaves alone.
-	if r := contrast(ts["muted"].(string), "#0f172a"); r < 4.5 {
-		t.Errorf("text on the quiet bands is %.2f:1, want at least 4.5", r)
+	for _, pair := range [][2]string{{"text", "background"}, {"accent_text", "accent"}, {"text", "muted"}, {"sale", "background"}} {
+		if r := contrast(colour(pair[0]), colour(pair[1])); r < 4.5 {
+			t.Errorf("%s on %s is %.2f:1, want at least 4.5", pair[0], pair[1], r)
+		}
 	}
-	if r := contrast(ts["accent"].(string), "#ffffff"); r < 3 {
-		t.Errorf("the accent against the page is %.2f:1, want at least 3 for buttons and links", r)
-	}
-	if r := contrast(ts["sale"].(string), "#ffffff"); r < 4.5 {
-		t.Errorf("the \"%% off\" lines on the page are %.2f:1, want at least 4.5", r)
-	}
-	// A new store opens on the storefront's own look, set out for it to change (D155).
-	for k, want := range map[string]any{"type_scale": "standard", "heading_weight": "extrabold", "density": "compact",
-		"card_badge": "first_tag", "card_vendor": true, "card_title_lines": "one", "card_rating": true, "card_discount": true,
+	// The yellow is not checked against the page: it is a fill, never text.
+	for k, want := range map[string]any{"accent": "#ffd232", "accent_text": "#111111", "muted": "#fef3c7",
+		"sale": "#198837", "radius": "large", "type_scale": "standard", "heading_weight": "extrabold", "density": "compact",
+		"card_badge": "product_badge", "card_vendor": true, "card_title_lines": "one", "card_rating": true, "card_discount": true,
 		"card_wishlist": true, "card_add_to_cart": false, "card_second_image": true, "list_columns_mobile": "two",
 		"list_columns_desktop": "five", "list_subcategories": true, "list_quick_filters": true, "list_filters_desktop": "sidebar",
 		"list_mobile_bar": true, "pdp_sticky_buy": true, "pdp_gallery": "carousel", "pdp_highlights_grid": true,

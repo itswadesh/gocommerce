@@ -793,7 +793,7 @@ storefront can load, its text size and heading weight, how roomy the pages
 are, its corner rounding, and the shape of product pictures on cards and lists
 (square, portrait, tall or landscape) and whether a picture fills that frame
 or shows whole (D127, D128). Since D155 they also set out the product cards
-(a badge from the product's first tag or highlight, the brand line, one or two
+(a badge from the product's own Badge field or its first tag or highlight, the brand line, one or two
 title lines, the star rating, "% off", the wishlist button, quick add, a
 second picture on hover), the product lists (how many across on a phone and a
 computer, sub-category pictures, quick filter chips, filters beside the list or
@@ -858,8 +858,9 @@ storefront goes back to the built-in page. Before
 the first save the screen shows the starting home page (D140, "Bold and
 bright"): a split hero on a colour block, four tiles leading to the shop, its
 collections, its categories and order tracking, the newest products, a
-picture beside words and the benefits strip, with violet buttons, a pale
-yellow for quiet bands and large rounding set as theme settings. Its pictures
+picture beside words and the benefits strip, with yellow buttons with
+near-black words (D158), a pale yellow for quiet bands and large rounding set
+as theme settings. Its pictures
 are built into the engine and served at `/x/layouts/starter/1/`: Unsplash
 photographs for the hero and the picture beside words, Google Gemini pictures
 for the tiles (credits and prompts in `ext/layouts/starter/README.md`). A shop
