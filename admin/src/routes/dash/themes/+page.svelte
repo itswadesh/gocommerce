@@ -19,6 +19,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import { rise } from "$lib/motion.js";
     import { themeSettingsSummary, PAGES } from "$lib/layouts.js";
+    import { rightLabel } from "$lib/rights.js";
     import FeatureSwitch from "$lib/components/FeatureSwitch.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
@@ -105,6 +106,13 @@
                                 The theme editor is switched off, so the storefront shows its built-in pages.
                             </p>
                         {/if}
+                    {/if}
+
+                    {#if !editor && !missing}
+                        <p class="txt-hint txt-sm th-off">
+                            The homepage, header, footer and page templates aren't listed: your role doesn't include
+                            <strong>{rightLabel("layouts.read")}</strong>.
+                        </p>
                     {/if}
 
                     <h3 class="th-subhead txt-sm">Elements</h3>

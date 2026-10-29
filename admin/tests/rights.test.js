@@ -45,6 +45,22 @@ test("no label is the bare identifier", () => {
     }
 });
 
+test("the theme editor's rights read as the module words them", async () => {
+    // The theme editor names them when a role lacks one, before the Roles
+    // screen has fetched the server's words — it used to say "layouts.read".
+    const { readFileSync } = await import("node:fs");
+    const go = readFileSync(new URL("../../ext/layouts/layouts.go", import.meta.url), "utf8");
+    for (const [name, right] of [
+        ["rightLayoutsRead", "layouts.read"],
+        ["rightLayoutsWrite", "layouts.write"],
+    ]) {
+        const spec = go.match(new RegExp(`Right:\\s+${name},\\s+Label:\\s+"([^"]+)",\\s+Scope:\\s+"([^"]+)"`));
+        assert.ok(spec, `${name}'s RegisterRight was not found in ext/layouts/layouts.go`);
+        assert.equal(rightLabel(right), spec[1]);
+        assert.equal(rightScope(right), spec[2]);
+    }
+});
+
 test("an unknown right falls back to its identifier", () => {
     // Never to an empty string: a checkbox with no question attached to it is
     // worse than a dotted name.
