@@ -40,6 +40,47 @@ test("a new tab opens in the store used last", () => {
     assert.equal(getStore(), "store_B");
 });
 
+/*
+ * A link names its store (?store=) and a tab remembers one; the link wins when
+ * it is one of the person's stores. It used to lose: a tab opened on
+ * /dash/themes/footer?store=<their store> worked in whichever store the browser
+ * chose last — another store of the same name, as staff — and showed a theme
+ * editor with nothing to edit.
+ */
+const mine = [
+    { id: "store_A", slug: "corner-shop" },
+    { id: "store_B", slug: "corner-shop-954" },
+];
+
+test("a link naming one of the person's stores opens it, by id or by slug", async () => {
+    const { pickStore } = await import("../src/lib/store-scope.js");
+    assert.equal(pickStore(mine, "store_B", "store_A")?.id, "store_B");
+    assert.equal(pickStore(mine, "corner-shop-954", "store_A")?.id, "store_B");
+});
+
+test("a link naming a store that is not theirs is passed over, not refused", async () => {
+    const { pickStore } = await import("../src/lib/store-scope.js");
+    assert.equal(pickStore(mine, "store_Z", "store_A")?.id, "store_A");
+    assert.equal(pickStore(mine, "store_Z", ""), null);
+});
+
+test("with no link, the remembered store, if it is still theirs", async () => {
+    const { pickStore } = await import("../src/lib/store-scope.js");
+    assert.equal(pickStore(mine, "", "store_A")?.id, "store_A");
+    assert.equal(pickStore(mine, "", "corner-shop")?.id, "store_A");
+    assert.equal(pickStore(mine, "", "store_Z"), null);
+    assert.equal(pickStore([], "store_A", "store_A"), null);
+});
+
+test("the store a link names, also through the sign-in page it was sent to", async () => {
+    const { storeNamedBy } = await import("../src/lib/store-scope.js");
+    const at = (href) => storeNamedBy(new URL(href, "http://panel.test"));
+    assert.equal(at("/dash/themes/footer?store=store_B"), "store_B");
+    assert.equal(at("/?next=" + encodeURIComponent("/dash/themes/footer?store=store_B")), "store_B");
+    assert.equal(at("/select-store?next=%2Fdash"), "");
+    assert.equal(at("/dash/themes/footer"), "");
+});
+
 test("forgetting the store forgets it in this tab and for new ones", async () => {
     const { forgetStore } = await import("../src/lib/store-scope.js");
     setStore("store_C");

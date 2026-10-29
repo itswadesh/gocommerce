@@ -11,8 +11,11 @@
  * the nav.
  */
 
-/** Paging parameters point into the old store's list; filters do not. */
-const PAGING = new Set(["page", "cursor", "after", "before"]);
+/**
+ * Paging parameters point into the old store's list; filters do not. ?store=
+ * names the old store itself, and a link's store wins when the panel opens.
+ */
+const OLD_STORE_PARAMS = new Set(["page", "cursor", "after", "before", "store"]);
 
 /**
  * Dynamic segments that name a screen rather than a row. A plugin's screen is
@@ -44,7 +47,7 @@ export function switchTarget(routeId, url) {
     }
     const params = new URLSearchParams(url.search);
     for (const key of [...params.keys()]) {
-        if (PAGING.has(key)) params.delete(key);
+        if (OLD_STORE_PARAMS.has(key)) params.delete(key);
     }
     const search = params.toString();
     const path = `/${kept.join("/")}`;

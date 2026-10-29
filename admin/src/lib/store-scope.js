@@ -53,6 +53,37 @@ export function forgetStore() {
     }
 }
 
+/**
+ * pickStore is the store a tab opens in, of the person's active stores: the
+ * one a link names, else the one remembered, matched by id or slug. A link to
+ * a store that is not theirs is passed over rather than refused — the engine
+ * would refuse every request in it.
+ *
+ * The link wins because it is the only one of the two the person can see. A
+ * remembered store is whatever any tab chose last, and with two stores of one
+ * name it put a tab opened on their own store's address in the other one.
+ */
+export function pickStore(active, linked, remembered) {
+    const find = (name) => (name ? active.find((st) => st.id === name || st.slug === name) : undefined);
+    return find(linked) ?? find(remembered) ?? null;
+}
+
+/**
+ * storeNamedBy is the store an address names: its ?store=, or that of the
+ * page the sign-in form was sent from, which opens once the person is in.
+ */
+export function storeNamedBy(url) {
+    const named = url.searchParams.get("store");
+    if (named) return named;
+    const next = url.searchParams.get("next");
+    if (!next) return "";
+    try {
+        return new URL(next, url.origin).searchParams.get("store") ?? "";
+    } catch {
+        return "";
+    }
+}
+
 /** storeHeaders is the header naming this tab's store, if it has one. */
 export function storeHeaders() {
     const store = getStore();
