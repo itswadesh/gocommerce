@@ -80,6 +80,12 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	return newHarnessOn(t, aigateway.Config{})
+}
+
+// newHarnessOn is newHarness with the gateway configured by gw.
+func newHarnessOn(t *testing.T, gw aigateway.Config) *harness {
+	t.Helper()
 	c := &claude{calls: map[string]int{}, describe: func(int) (int, string) { return http.StatusOK, listing }}
 	c.srv = httptest.NewServer(http.HandlerFunc(c.serve))
 	t.Cleanup(c.srv.Close)
@@ -89,9 +95,10 @@ func newHarness(t *testing.T) *harness {
 		out.URL.Scheme, out.URL.Host, out.Host = to.Scheme, to.Host, to.Host
 		return http.DefaultTransport.RoundTrip(out)
 	})}
-	gw := aigateway.New(aigateway.Config{Client: client, PollInterval: time.Hour})
-	mod := New(Config{Gateway: gw})
-	app := gctest.NewWithConfig(t, gocommerce.Config{Currency: "INR", MediaDir: t.TempDir()}, gw, mod)
+	gw.Client, gw.PollInterval = client, time.Hour
+	gateway := aigateway.New(gw)
+	mod := New(Config{Gateway: gateway})
+	app := gctest.NewWithConfig(t, gocommerce.Config{Currency: "INR", MediaDir: t.TempDir()}, gateway, mod)
 	t.Cleanup(func() { mod.cancel(); mod.wg.Wait() })
 	return &harness{app: app, claude: c, mod: mod}
 }
@@ -407,6 +414,32 @@ func TestABatchSaysWhatToSetBeforeItCanRun(t *testing.T) {
 	}
 	if h.claude.count("group")+h.claude.count("describe") != 0 {
 		t.Errorf("a call was made: %v", h.claude.calls)
+	}
+}
+
+// On an install with a key of its own, a shop that has set nothing up drafts
+// products from photos with nothing but AI credit: the gateway is on, pictures
+// may leave, and the calls are paid from the credit at the platform's prices.
+func TestPhotosNeedOnlyCreditOnThePlatformKey(t *testing.T) {
+	h := newHarnessOn(t, aigateway.Config{PlatformAnthropicKey: "sk-ant-platform", PlatformUSDRates: "INR=88.50"})
+	ctx := context.Background()
+	// An operator's top-up of ₹100: one grouping call's ceiling on Claude
+	// Sonnet 5.5 is about ₹30.53, past the placeholder free trial.
+	if _, err := h.mod.cfg.Gateway.Grant(ctx, 10000, ""); err != nil {
+		t.Fatal(err)
+	}
+	h.claude.group = grouping
+	b := h.upload(t, 5)
+	h.do(t, "POST", fmt.Sprintf("/batches/%d/start", b.ID), nil, http.StatusAccepted)
+	if b = h.wait(t, b.ID); b.Status != StatusReview || len(b.Items) != 3 {
+		t.Fatalf("status %s with %d items: %s", b.Status, len(b.Items), b.Message)
+	}
+	credit, err := h.mod.cfg.Gateway.Credit(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credit.ConsumedMicroMinor == 0 || credit.ConsumedMicroMinor != b.CostMicroMinor || credit.ReservedMicroMinor != 0 {
+		t.Errorf("credit consumed %d, held %d; the batch cost %d", credit.ConsumedMicroMinor, credit.ReservedMicroMinor, b.CostMicroMinor)
 	}
 }
 

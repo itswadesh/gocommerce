@@ -125,7 +125,7 @@ func (t *Transfer) ExportProducts(ctx context.Context, out io.Writer, q ProductQ
 	var writer productWriter
 	switch opts.Format {
 	case FormatShopify:
-		writer = shopifyProductWriter{exp: currencyExponent(t.app.Currency(ctx)), opts: opts}
+		writer = shopifyProductWriter{exp: CurrencyExponent(t.app.Currency(ctx)), opts: opts}
 	default:
 		writer = nativeProductWriter{stockCols: stockCols, opts: opts}
 	}

@@ -462,6 +462,6 @@ The panel:
 ## Not in this step
 
 - Custom provider hosts (after D109's guard has merged).
-- A platform-wide key (D107: off by default; a later step).
+- A platform-wide key (D107: off by default; a later step, built 2026-10-29 under D151).
 - Embeddings and vector search (D104: when semantic search is built).
 - Any action in the approval queue (step 5 registers MCP's).

@@ -259,7 +259,8 @@
                                 <span class="txt">Settings</span>
                             </a>
                         {/if}
-                        {#if can("ai.configure")}
+                        <!-- The platform's key is the install's to check, not a store's. -->
+                        {#if can("ai.configure") && budget?.key_source !== "platform"}
                             <button
                                 type="button"
                                 class="btn"
@@ -332,6 +333,9 @@
                             {formatMicro(credit.available_micro_minor, currency)}
                             <span class="ai-tile-of">left to spend on AI</span>
                         </div>
+                        {#if budget?.key_source === "own"}
+                            <p class="ai-tile-hint">This store uses its own key, so its AI is billed by its provider and draws no credit.</p>
+                        {/if}
 
                         <div
                             class="ai-meter ai-credit-meter"
@@ -465,6 +469,11 @@
                     <section class="ai-tile">
                         <div class="ai-tile-label">Models</div>
                         {#if budget}
+                            {#if budget.key_source === "platform"}
+                                <p class="ai-key-source"><i class="ri-cloud-line" aria-hidden="true"></i> Using the platform's AI, paid from AI credit</p>
+                            {:else if budget.key_source === "own"}
+                                <p class="ai-key-source"><i class="ri-key-2-line" aria-hidden="true"></i> Using your own key, billed by your provider</p>
+                            {/if}
                             <dl class="ai-models">
                                 <dt>Provider</dt>
                                 <dd>{budget.provider === "openai" ? "OpenAI" : "Anthropic"}</dd>

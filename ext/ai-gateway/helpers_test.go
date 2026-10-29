@@ -18,8 +18,15 @@ import (
 // stand-in, and the given tasks registered.
 func newGateway(t *testing.T, handler http.HandlerFunc, tasks ...Task) (*gocommerce.App, *Module, *standIn) {
 	t.Helper()
+	return newGatewayWith(t, Config{}, handler, tasks...)
+}
+
+// newGatewayWith is newGateway on an install configured by cfg.
+func newGatewayWith(t *testing.T, cfg Config, handler http.HandlerFunc, tasks ...Task) (*gocommerce.App, *Module, *standIn) {
+	t.Helper()
 	s := newStandIn(t, handler)
-	m := New(Config{Client: s.client(), CallTimeout: 2 * time.Second, PollInterval: time.Hour})
+	cfg.Client, cfg.CallTimeout, cfg.PollInterval = s.client(), 2*time.Second, time.Hour
+	m := New(cfg)
 	for _, task := range tasks {
 		if err := m.RegisterTask(task); err != nil {
 			t.Fatalf("register %s: %v", task.Name, err)

@@ -250,7 +250,7 @@ environment:
 		withTransl   = fs.Bool("translations", false, "install the translations module: products, categories and collections in each of a store's languages, written on the Translations screen")
 		withWishlist = fs.Bool("wishlist", false, "install the wishlist module: shoppers save products, and the Wishlists screen shows what is wanted most")
 		withB2B      = fs.Bool("b2b", false, "install the b2b module: companies, buyer roles, orders on account against a credit limit, approvals and quotes (implies -identity)")
-		withAI       = fs.Bool("ai-gateway", false, "install the AI gateway module: every model call recorded, held to a monthly cap and limited to the data the owner lets leave, and the queue where a person approves what an agent proposes; switched on with a key, a cap and prices under Settings › Plugins")
+		withAI       = fs.Bool("ai-gateway", false, "install the AI gateway module: every model call recorded, held to a monthly cap and limited to the data the owner lets leave, and the queue where a person approves what an agent proposes; with ANTHROPIC_API_KEY every store runs on the platform's key, paid from its AI credit (AI_PLATFORM_* set the models, prices and rates), otherwise a store sets a key, a cap and prices under Settings › Plugins")
 		// A store is found by host as well as by header and cookie: a request
 		// to <slug>.<base-domain> is that store's (D83).
 		baseDomain = fs.String("base-domain", "", "every store also answers at <slug>.<base-domain> (default $GOCOMMERCE_BASE_DOMAIN)")
@@ -390,7 +390,17 @@ environment:
 		// First, so the modules that call models can be handed it.
 		var gateway *aigateway.Module
 		if *withAI || *withPhotos || *withCatAI {
-			gateway = aigateway.New(aigateway.Config{})
+			// The platform's own Anthropic key and what its calls cost (D151):
+			// a store with no key of its own runs on it, paid from its AI
+			// credit. ANTHROPIC_API_KEY is also the Amazon importer's, below.
+			gateway = aigateway.New(aigateway.Config{
+				PlatformAnthropicKey: os.Getenv("ANTHROPIC_API_KEY"),
+				PlatformSmallModel:   os.Getenv("AI_PLATFORM_SMALL_MODEL"),
+				PlatformSmallPrices:  os.Getenv("AI_PLATFORM_SMALL_PRICES"),
+				PlatformStrongModel:  os.Getenv("AI_PLATFORM_STRONG_MODEL"),
+				PlatformStrongPrices: os.Getenv("AI_PLATFORM_STRONG_PRICES"),
+				PlatformUSDRates:     os.Getenv("AI_PLATFORM_USD_RATES"),
+			})
 			modules = append(modules, gateway)
 		}
 		if *withPhotos {

@@ -50,7 +50,9 @@ each recommendation as proposed:
    order machine ([gap analysis §5](gap-analysis.md#5-ai-order-desk-5), D108).
 6. **On a hosted install, a platform-wide model key is off by default** and,
    when switched on, metered against each store's cap
-   ([ADR 0005](adr/0005-model-providers.md), D107).
+   ([ADR 0005](adr/0005-model-providers.md), D107). Since 2026-10-29 (D151)
+   the install's owner switches it on by setting `ANTHROPIC_API_KEY`; every
+   store with no key of its own then uses it, paid from its AI credit.
 
 Two more rows came out of the same answer. D109 makes addresses that a store
 operator chooses for the server to call (webhook endpoints, provider base

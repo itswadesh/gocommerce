@@ -72,9 +72,13 @@ type Budget struct {
 	SpentMicroMinor    int64  `json:"spent_micro_minor"`
 	ReservedMicroMinor int64  `json:"reserved_micro_minor"`
 	// Ready is whether a call could be made now; Reason says why not.
-	Ready       bool   `json:"ready"`
-	Reason      string `json:"reason,omitempty"`
-	Enabled     bool   `json:"enabled"`
+	Ready   bool   `json:"ready"`
+	Reason  string `json:"reason,omitempty"`
+	Enabled bool   `json:"enabled"`
+	// KeySource is whose key the store's calls go out on: platform (the
+	// install's, paid from AI credit), own (the store's, billed by its
+	// provider) or none. Never the key itself.
+	KeySource   string `json:"key_source"`
 	Provider    string `json:"provider"`
 	SmallModel  string `json:"small_model"`
 	StrongModel string `json:"strong_model"`
@@ -94,7 +98,7 @@ func (m *Module) Budget(ctx context.Context) (*Budget, error) {
 	month := monthOf(time.Now())
 	b := &Budget{
 		Month: month.Format(time.DateOnly), Currency: m.app.Currency(ctx),
-		CapMinor: st.capMinor, Enabled: st.enabled, Provider: st.provider,
+		CapMinor: st.capMinor, Enabled: st.enabled, KeySource: st.keySource(), Provider: st.provider,
 		SmallModel: st.models[TierSmall], StrongModel: st.models[TierStrong],
 		SmallPriced: st.prices[TierSmall].complete, StrongPriced: st.prices[TierStrong].complete,
 		Policy: st.policy,

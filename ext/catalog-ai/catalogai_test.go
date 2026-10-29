@@ -82,7 +82,11 @@ func newHarness(t *testing.T) *harness {
 		out.URL.Scheme, out.URL.Host, out.Host = to.Scheme, to.Host, to.Host
 		return http.DefaultTransport.RoundTrip(out)
 	})}
-	gw := aigateway.New(aigateway.Config{Client: client, CallTimeout: 5 * time.Second, PollInterval: time.Hour})
+	// The install has a key of its own, priced so its calls cost what the
+	// store's own prices below would: a rupee to the dollar, so $1 is 100 paise.
+	gw := aigateway.New(aigateway.Config{Client: client, CallTimeout: 5 * time.Second, PollInterval: time.Hour,
+		PlatformAnthropicKey: "sk-ant-platform", PlatformUSDRates: "INR=1",
+		PlatformSmallPrices: "1,5,1,1", PlatformStrongPrices: "3,15,3,3"})
 	mod := New(Config{Gateway: gw})
 	app := gctest.NewWithConfig(t, gocommerce.Config{Currency: "INR", MediaDir: t.TempDir()}, gw, mod)
 	return &harness{app: app, claude: c, mod: mod}
@@ -517,6 +521,11 @@ func TestEachRefusalHasItsOwnCode(t *testing.T) {
 	ctx := context.Background()
 	p, _ := h.mug(t, ctx, nil)
 	h.claude.answers[small] = answer(nil)
+	// On an install with a key the gateway starts on; the store switches it off.
+	off := false
+	if _, err := h.app.Plugins().Update(ctx, aigateway.PluginKey, gocommerce.PluginPatch{Enabled: &off}); err != nil {
+		t.Fatal(err)
+	}
 
 	status := gctest.AdminRequest(t, h.app, http.MethodGet, "/api/admin/x/catalog-ai/status", nil)
 	if !strings.Contains(status.Body.String(), `"ready":false`) || !strings.Contains(status.Body.String(), "switched off") {
@@ -546,6 +555,9 @@ func TestEachRefusalHasItsOwnCode(t *testing.T) {
 	}
 	h.claude.status = 0
 
+	// Credit is drawn on the platform's key, the one a store with no key of
+	// its own uses.
+	h.switchOn(t, ctx, map[string]any{"api_key": nil})
 	calls := len(h.claude.calls())
 	if _, err := h.mod.cfg.Gateway.SetFreeAllowance(ctx, 0, ""); err != nil {
 		t.Fatal(err)

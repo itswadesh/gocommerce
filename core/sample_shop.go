@@ -449,7 +449,7 @@ func csvField(s string) string {
 // currencyScale is how many minor units make one major unit.
 func currencyScale(currency string) int64 {
 	scale := int64(1)
-	for range currencyExponent(currency) {
+	for range CurrencyExponent(currency) {
 		scale *= 10
 	}
 	return scale

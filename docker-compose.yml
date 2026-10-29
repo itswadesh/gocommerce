@@ -56,10 +56,11 @@ services:
       # on from Plugins; until then, and whenever Meilisearch is down, search
       # answers from the database.
       - -meilisearch
-      # The AI gateway installs idle: nothing is called until a store sets a
-      # key, a cap and prices under Plugins. -photo-products runs through
-      # it: "Create from photos" on the products page. So do the Reviews
-      # screen's summaries, which -reviews above brings.
+      # The AI gateway: with ANTHROPIC_API_KEY below, every store's AI runs on
+      # the platform's key and is paid from its AI credit; without it, nothing
+      # is called until a store sets a key, a cap and prices under Plugins.
+      # -photo-products runs through it: "Create from photos" on the products
+      # page. So do the Reviews screen's summaries, which -reviews above brings.
       - -ai-gateway
       - -photo-products
       - -catalog-ai
@@ -183,6 +184,24 @@ services:
       MEILI_HOST: ${MEILI_MASTER_KEY:+http://meilisearch:7700}
       MEILI_API_KEY: ${MEILI_MASTER_KEY:-}
       MEILI_SEARCH_KEY: ${MEILI_SEARCH_KEY:-}
+      # The platform's own Anthropic key. Every store's AI runs on it — Create
+      # from photos, Improve with AI, review summaries — with nothing to set
+      # up, and each call is paid from that store's AI credit. A store that
+      # enters a key of its own under Plugins › AI gateway uses that instead
+      # and draws no credit. Empty: AI works only for stores with their own key.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # What platform calls use and cost. Empty is Claude Haiku 5.5 and
+      # Claude Sonnet 5.5 at Anthropic's published prices. Prices are US
+      # dollars per million tokens, "input,output,cache read,cache write"; a
+      # model named here needs its prices too, or it is not called.
+      AI_PLATFORM_SMALL_MODEL: ${AI_PLATFORM_SMALL_MODEL:-}
+      AI_PLATFORM_SMALL_PRICES: ${AI_PLATFORM_SMALL_PRICES:-}
+      AI_PLATFORM_STRONG_MODEL: ${AI_PLATFORM_STRONG_MODEL:-}
+      AI_PLATFORM_STRONG_PRICES: ${AI_PLATFORM_STRONG_PRICES:-}
+      # Anthropic bills in dollars; a store's credit is in its own currency.
+      # Units of each currency to one US dollar, e.g. INR=88.50,EUR=0.92. A
+      # store in a currency with no rate here cannot use the platform's key.
+      AI_PLATFORM_USD_RATES: ${AI_PLATFORM_USD_RATES:-}
     volumes:
       - media:/data/media
     ports:

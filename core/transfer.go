@@ -313,7 +313,7 @@ func (t *Transfer) ExportOrders(ctx context.Context, out io.Writer, q OrderQuery
 
 		var record []string
 		if opts.Format == FormatShopify {
-			record = shopifyOrderRow(l, first, currencyExponent(l.currency))
+			record = shopifyOrderRow(l, first, CurrencyExponent(l.currency))
 		} else {
 			record = []string{
 				l.number, l.createdAt.UTC().Format(time.RFC3339), l.status, l.payStatus, l.provider,
@@ -400,7 +400,7 @@ func (t *Transfer) ExportCustomers(ctx context.Context, out io.Writer, q Custome
 
 		var record []string
 		if opts.Format == FormatShopify {
-			record = shopifyCustomerRow(c, currencyExponent(currency))
+			record = shopifyCustomerRow(c, CurrencyExponent(currency))
 		} else {
 			record = []string{
 				c.email, c.name, c.phone,

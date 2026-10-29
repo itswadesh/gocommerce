@@ -16,7 +16,7 @@ import (
 // here is written with its code in front.
 func FormatMoney(minor int64, currency string) string {
 	code := strings.ToUpper(strings.TrimSpace(currency))
-	exp := currencyExponent(code)
+	exp := CurrencyExponent(code)
 	sign := ""
 	if minor < 0 {
 		sign, minor = "-", -minor
