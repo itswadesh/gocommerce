@@ -569,9 +569,10 @@ func Starter(page string) Document {
 		}}
 	}
 	return Document{SchemaVersion: schemaVersion, Theme: Themes[0].ID, ThemeSettings: map[string]any{
-		// Violet carries white words at 5.7:1; the pale yellow carries the
-		// storefront's own text colour at well over 4.5:1.
-		"accent": "#7c3aed", "accent_text": "#ffffff", "muted": "#fef3c7",
+		// Yellow with near-black words (D158), 13:1 on the button. Yellow reads
+		// at 1.45:1 on white, so it is a fill only: a storefront must not draw
+		// it as text.
+		"accent": "#ffd232", "accent_text": "#111111", "muted": "#fef3c7",
 		// No heading font: a web font repainted the hero's headline seconds
 		// after the page drew on a phone, which Lighthouse counts against it;
 		// the storefront's own font at a heavy weight carries the look.
