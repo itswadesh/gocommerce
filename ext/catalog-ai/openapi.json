@@ -1,0 +1,193 @@
+{
+  "paths": {
+    "/api/admin/x/catalog-ai/status": {
+      "get": {
+        "tags": [
+          "admin:catalog-ai"
+        ],
+        "summary": "Whether products can be improved",
+        "description": "Requires catalog.write. Answers ready, or ready false with the reason: the AI gateway switched off, or missing its key or cap. pictures says whether the store lets the gateway send pictures, so a proposal would see them.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Readiness.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "ready": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "pictures": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/catalog-ai/products/{id}/improve": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "admin:catalog-ai"
+        ],
+        "summary": "Propose improvements to a product",
+        "description": "Requires catalog.write. No body. Reads the product's current title, description, highlights, tags, type, category and SEO copy, and up to six of its pictures scaled to 1024 px when the store shares documents, and runs the AI gateway's catalog.improve task. Answers only the fields that would change, each beside its current value with a reason, and the statements the shop must check. Nothing is saved: the shop applies what it keeps through the product's own update. 409 with code ai_not_ready (the gateway is off, or has no key, cap or prices), ai_budget_exhausted or ai_policy_blocked; 502 with ai_provider_failed or ai_no_proposal when no usable answer came back.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The proposal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CatalogAIProposal"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "502": {
+            "description": "The model gave no usable answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CatalogAIProposal": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "enum": [
+                    "title",
+                    "description",
+                    "highlights",
+                    "tags",
+                    "product_type",
+                    "category",
+                    "seo_title",
+                    "seo_description",
+                    "alt"
+                  ]
+                },
+                "media_id": {
+                  "type": "integer",
+                  "description": "The picture an alt change is for."
+                },
+                "current": {
+                  "description": "What the product holds now: a string, a list of lines, or for the category {id, name} or null. A description is HTML."
+                },
+                "proposed": {
+                  "description": "The proposed value, in the same shape."
+                },
+                "reason": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "suggested_category": {
+            "type": "string",
+            "description": "A category the store does not have that would fit an uncategorised product. Never created."
+          },
+          "verify": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Statements in the proposal that were inferred, for the shop to check."
+          },
+          "pictures": {
+            "type": "integer",
+            "description": "How many pictures the model saw."
+          },
+          "pictures_note": {
+            "type": "string",
+            "description": "Why it saw fewer than the product has, or none."
+          },
+          "execution_id": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "cost_micro_minor": {
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
