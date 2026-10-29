@@ -141,7 +141,7 @@ Every gateway and carrier module installs idle: `-gateways` and `-carriers` put 
 | `feeds` | Google Merchant Center and Meta catalogue feeds, generated from the live catalogue |
 | `sitemaps` | The storefront's sitemap: products, collections and content pages |
 | `navigation` | The storefront's menus — trees of links to products, collections, categories and pages — edited from the panel |
-| `reviews` | Product ratings and reviews, verified against the store's own orders, moderated from the panel |
+| `reviews` | Product ratings and reviews, verified against the store's own orders, moderated from the panel; with the AI gateway, a summary of what shoppers praise and complain about in a product's reviews, each theme citing its reviews |
 | `contact` | The storefront's contact form and product enquiries, and the inbox behind both, where an operator replies by email from the panel |
 | `newsletter` | The storefront's signup box, its list, and its unsubscribe link |
 | `faq` | The questions a shop is asked often, grouped and ordered by hand, served at `/x/faq` |
