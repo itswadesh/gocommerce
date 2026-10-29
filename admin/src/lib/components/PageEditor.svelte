@@ -36,7 +36,8 @@
     import { fade } from "svelte/transition";
     import { base } from "$app/paths";
     import { beforeNavigate } from "$app/navigation";
-    import { can, layouts as api } from "$lib/api.js";
+    import { can, layouts as api, storeProfile } from "$lib/api.js";
+    import { candidatesFromLogo } from "$lib/logo-palette.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { getStore } from "$lib/store-scope.js";
     import {
@@ -100,6 +101,15 @@
     let loading = $state(true);
     let busy = $state(""); // "publish" | "preview" | "rollback" | "switch" | "reset"
 
+    // Match to logo (D149): the store's own logo, read once on the home page
+    // where the theme settings live.
+    let storeInfo = $state(null); // { logo_url, … } from GET /api/admin/store
+    const logoURL = $derived(storeInfo?.logo_url || "");
+    let matchBusy = $state(false);
+    let matchError = $state("");
+    let matchCandidates = $state([]); // [{ accent, accent_text, muted }]
+    let matchChosen = $state(-1);
+
     const draftDoc = () =>
         HOME
             ? { theme, theme_settings: JSON.parse(JSON.stringify(themeSettings)), sections: JSON.parse(JSON.stringify(sections)) }
@@ -151,6 +161,57 @@
         historyTick++;
         themeSettings = next;
         autosave.change(draftDoc());
+    }
+
+    // Read the store's logo into a small canvas and hand its pixels to the
+    // palette. Same origin as the panel, so the read is clean; a cross-origin
+    // taint or a logo that will not load throws, and is shown as a message.
+    function logoPixels(url) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+                try {
+                    const size = 64;
+                    const canvas = document.createElement("canvas");
+                    canvas.width = canvas.height = size;
+                    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+                    ctx.drawImage(img, 0, 0, size, size);
+                    resolve(ctx.getImageData(0, 0, size, size).data);
+                } catch (err) {
+                    reject(err);
+                }
+            };
+            img.onerror = () => reject(new Error("the logo could not be loaded"));
+            img.src = url;
+        });
+    }
+
+    async function matchToLogo() {
+        if (!logoURL || matchBusy) return;
+        matchBusy = true;
+        matchError = "";
+        try {
+            const candidates = candidatesFromLogo(await logoPixels(logoURL));
+            if (!candidates.length) {
+                matchError = "That logo had no colour to read. A logo with a brand colour in it works best.";
+                return;
+            }
+            matchCandidates = candidates;
+            applyCandidate(0);
+        } catch {
+            matchError = "The logo couldn't be read here. Check that it opens in Settings › Store, then try again.";
+        } finally {
+            matchBusy = false;
+        }
+    }
+
+    // Applying a candidate is an ordinary theme edit: it previews live, undoes,
+    // and saves with the draft — nothing is published until Publish.
+    function applyCandidate(i) {
+        const c = matchCandidates[i];
+        if (!c) return;
+        matchChosen = i;
+        editTheme({ ...themeSettings, accent: c.accent, accent_text: c.accent_text, muted: c.muted });
     }
 
     function restore(json) {
@@ -218,6 +279,9 @@
             // There is nothing to choose between: open its settings.
             if (CHROME && sections.length) selectedId = sections[0].id;
             pluginOn = plugin ? !!plugin.enabled : true;
+            // The theme settings — and so Match to logo — live on the home page
+            // alone (D127), so only it needs the store's logo.
+            if (HOME) storeProfile.get().then((p) => (storeInfo = p)).catch(() => {});
         } catch (err) {
             toast.error(err);
         } finally {
@@ -737,6 +801,50 @@
 
 {#snippet themeBody()}
     <p class="txt-hint txt-sm m-b-sm">Colours, fonts and corners for every page of the storefront, published with the home page. Leave one empty to keep the storefront's own.</p>
+    {#if writable}
+        <div class="hp-match">
+            <div class="hp-match-head">
+                <button
+                    type="button"
+                    class="btn sm hp-match-btn"
+                    class:loading={matchBusy}
+                    disabled={!logoURL || matchBusy}
+                    onclick={matchToLogo}
+                >
+                    <i class="ri-palette-line" aria-hidden="true"></i>
+                    <span class="txt">Match to logo</span>
+                </button>
+                {#if logoURL}
+                    <img class="hp-match-logo" src={logoURL} alt="" aria-hidden="true" />
+                {/if}
+            </div>
+            {#if !logoURL}
+                <p class="hp-match-hint txt-hint txt-sm">Add a logo in <a href="{base}/dash/settings#logo">Settings › Store</a> to use this.</p>
+            {:else}
+                <p class="hp-match-hint txt-hint txt-sm">Sets the buttons, text on buttons and quiet backgrounds from your logo's colours. Preview it here, then publish.</p>
+            {/if}
+            {#if matchError}
+                <p class="hp-match-err danger txt-sm" role="status" in:rise><i class="ri-error-warning-line" aria-hidden="true"></i>{matchError}</p>
+            {/if}
+            {#if matchCandidates.length > 1}
+                <div class="hp-match-choices" role="group" aria-label="Palettes from your logo" in:rise>
+                    {#each matchCandidates as c, i (c.accent + i)}
+                        <button
+                            type="button"
+                            class="hp-match-choice"
+                            class:selected={matchChosen === i}
+                            aria-pressed={matchChosen === i}
+                            title="Buttons {c.accent}"
+                            onclick={() => applyCandidate(i)}
+                        >
+                            <span class="hp-match-sw" style:background={c.accent}><span class="hp-match-sw-t" style:background={c.accent_text}></span></span>
+                            <span class="hp-match-sw" style:background={c.muted}></span>
+                        </button>
+                    {/each}
+                </div>
+            {/if}
+        </div>
+    {/if}
     {#if warnings.length}
         <div class="alert warning hp-contrast" role="status" in:rise>
             <i class="ri-contrast-2-line" aria-hidden="true"></i>
@@ -1589,6 +1697,84 @@
     .hp-contrast p + p {
         margin-top: 4px;
     }
+    .hp-match {
+        margin-bottom: 16px;
+        padding: 12px;
+        border: 1px solid var(--surfaceAlt2Color);
+        border-radius: var(--borderRadius);
+        background: var(--surfaceAlt1Color);
+    }
+    .hp-match-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .hp-match-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .hp-match-btn:not(:disabled):active {
+        transform: scale(0.97);
+    }
+    .hp-match-logo {
+        height: 28px;
+        max-width: 90px;
+        object-fit: contain;
+    }
+    .hp-match-hint {
+        margin: 8px 0 0;
+    }
+    .hp-match-err {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 8px 0 0;
+    }
+    .hp-match-choices {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+    }
+    .hp-match-choice {
+        display: inline-flex;
+        gap: 4px;
+        padding: 4px;
+        border: 2px solid var(--surfaceAlt2Color);
+        border-radius: var(--borderRadius);
+        background: var(--cardFace);
+        cursor: pointer;
+        transition:
+            border-color 150ms ease,
+            transform 150ms ease;
+    }
+    .hp-match-choice:hover {
+        transform: translateY(-1px);
+    }
+    .hp-match-choice:focus-visible {
+        outline: 2px solid var(--primaryColor);
+        outline-offset: 2px;
+    }
+    .hp-match-choice.selected {
+        border-color: var(--primaryColor);
+    }
+    .hp-match-sw {
+        position: relative;
+        width: 26px;
+        height: 26px;
+        border-radius: 6px;
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+    }
+    .hp-match-sw-t {
+        position: absolute;
+        right: 3px;
+        bottom: 3px;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+    }
     @media (prefers-reduced-motion: reduce) {
         .hp-theme-row,
         .hp-chev {
@@ -1596,6 +1782,14 @@
         }
         .hp-theme-row:active,
         .hp-theme-row:hover .hp-chev {
+            transform: none;
+        }
+        .hp-match-btn:active,
+        .hp-match-choice {
+            transition: none;
+        }
+        .hp-match-btn:not(:disabled):active,
+        .hp-match-choice:hover {
             transform: none;
         }
     }
