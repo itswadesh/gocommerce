@@ -105,8 +105,20 @@ func coreMigrations() []Migration {
 		{ID: "0087_tax_rate_product_target", SQL: migration0087TaxRateProductTarget},
 		{ID: "0088_four_digit_hs_code", SQL: migration0088FourDigitHSCode},
 		{ID: "0089_store_images", SQL: migration0089StoreImages},
+		{ID: "0090_store_contact_page", SQL: migration0090StoreContactPage},
 	}
 }
+
+// M90 — what a storefront's contact page shows (D156): whether the address
+// is public, a map location for when the address puts the pin in the wrong
+// place, and the opening hours. All three start empty, so a store that never
+// opens the screen publishes exactly what it did before.
+const migration0090StoreContactPage = `
+ALTER TABLE store_profile
+    ADD COLUMN show_address boolean NOT NULL DEFAULT false,
+    ADD COLUMN map_location text NOT NULL DEFAULT '',
+    ADD COLUMN opening_hours jsonb NOT NULL DEFAULT '[]'::jsonb;
+`
 
 // M89 — a store's logo, its logo for dark backgrounds and its icon (D148).
 //

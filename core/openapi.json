@@ -1072,7 +1072,7 @@
           "system"
         ],
         "summary": "The store's name, and how a buyer reaches it",
-        "description": "What anyone may read about the shop: its trading name, the contact details it gives buyers — the fields at the foot of every email it sends — and the languages it sells in. For a page a buyer opens before signing in, like the trade portal's sign-in (D77) or a storefront's footer. The address, legal name and tax number stay behind GET /api/admin/store. Every field is a string and may be empty; a store that has filled nothing in answers blanks.",
+        "description": "What anyone may read about the shop: its trading name, the contact details it gives buyers — the fields at the foot of every email it sends — and the languages it sells in. For a page a buyer opens before signing in, like the trade portal's sign-in (D77) or a storefront's footer. The legal name and tax number stay behind GET /api/admin/store, and so does the address until the store shows it (D156). A store that has filled nothing in answers blanks: an empty string, a null address and an empty list of opening hours.",
         "responses": {
           "200": {
             "description": "The store's public face.",
@@ -1130,6 +1130,72 @@
                         "icon_url": {
                           "type": "string",
                           "description": "The store's square icon, for the browser tab, a phone's home screen and an installed app. Empty when the store has none."
+                        },
+                        "address": {
+                          "type": "object",
+                          "nullable": true,
+                          "description": "The shop's address, only while the store shows it (show_address on PATCH /api/admin/store, D156); null otherwise.",
+                          "properties": {
+                            "line1": {
+                              "type": "string"
+                            },
+                            "line2": {
+                              "type": "string"
+                            },
+                            "city": {
+                              "type": "string"
+                            },
+                            "state": {
+                              "type": "string"
+                            },
+                            "postal_code": {
+                              "type": "string"
+                            },
+                            "country": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "map_location": {
+                          "type": "string",
+                          "description": "A Google Maps link or \"latitude,longitude\" for a storefront's map (D156). Empty when the store has set none; a storefront may then map the address, if it has one."
+                        },
+                        "opening_hours": {
+                          "type": "array",
+                          "description": "When the shop is open (D156): one range per open day, Monday first, on the store's own clock. A day not listed is closed; an empty list says nothing. One range per day, closing the same day.",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "day": {
+                                "type": "string",
+                                "enum": [
+                                  "mon",
+                                  "tue",
+                                  "wed",
+                                  "thu",
+                                  "fri",
+                                  "sat",
+                                  "sun"
+                                ]
+                              },
+                              "opens": {
+                                "type": "string",
+                                "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+                                "example": "09:30"
+                              },
+                              "closes": {
+                                "type": "string",
+                                "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+                                "description": "Later than opens.",
+                                "example": "18:00"
+                              }
+                            }
+                          }
+                        },
+                        "country": {
+                          "type": "string",
+                          "description": "The store's country, an ISO 3166-1 alpha-2 code, on its own (D156): enough for a storefront to write the phone number with its country code. Empty until the store sets one.",
+                          "example": "IN"
                         }
                       }
                     }
@@ -13618,6 +13684,48 @@
                           "type": "string",
                           "description": "The store's square icon, for the browser tab, a phone's home screen and an installed app. Empty when the store has none.",
                           "readOnly": true
+                        },
+                        "show_address": {
+                          "type": "boolean",
+                          "description": "Publish the address on GET /api/store, for a storefront's contact page and its map (D156). Off by default: it is the address an invoice prints. Absent leaves it as it is."
+                        },
+                        "map_location": {
+                          "type": "string",
+                          "maxLength": 2000,
+                          "description": "Where a storefront's map puts the pin when the address alone would put it somewhere else: an https Google Maps link (a place link from the address bar, a share link, or the src of an \"Embed a map\" snippet, which is taken out of the pasted <iframe>), a Business Profile link (g.page, g.co/kgs), or a latitude and longitude such as 20.2961,85.8245. A share or Business Profile link opens the right place but a storefront cannot draw a map from it. Public whenever it is set. Absent leaves it as it is; empty clears it.",
+                          "example": "20.2961,85.8245"
+                        },
+                        "opening_hours": {
+                          "type": "array",
+                          "description": "When the shop is open (D156): one range per open day, Monday first, on the store's own clock. A day not listed is closed; an empty list says nothing. One range per day, closing the same day. Null or absent leaves them as they are; [] clears them.",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "day": {
+                                "type": "string",
+                                "enum": [
+                                  "mon",
+                                  "tue",
+                                  "wed",
+                                  "thu",
+                                  "fri",
+                                  "sat",
+                                  "sun"
+                                ]
+                              },
+                              "opens": {
+                                "type": "string",
+                                "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+                                "example": "09:30"
+                              },
+                              "closes": {
+                                "type": "string",
+                                "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+                                "description": "Later than opens.",
+                                "example": "18:00"
+                              }
+                            }
+                          }
                         }
                       }
                     }
@@ -13754,6 +13862,48 @@
                     "type": "string",
                     "description": "The store's square icon, for the browser tab, a phone's home screen and an installed app. Empty when the store has none.",
                     "readOnly": true
+                  },
+                  "show_address": {
+                    "type": "boolean",
+                    "description": "Publish the address on GET /api/store, for a storefront's contact page and its map (D156). Off by default: it is the address an invoice prints. Absent leaves it as it is."
+                  },
+                  "map_location": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "description": "Where a storefront's map puts the pin when the address alone would put it somewhere else: an https Google Maps link (a place link from the address bar, a share link, or the src of an \"Embed a map\" snippet, which is taken out of the pasted <iframe>), a Business Profile link (g.page, g.co/kgs), or a latitude and longitude such as 20.2961,85.8245. A share or Business Profile link opens the right place but a storefront cannot draw a map from it. Public whenever it is set. Absent leaves it as it is; empty clears it.",
+                    "example": "20.2961,85.8245"
+                  },
+                  "opening_hours": {
+                    "type": "array",
+                    "description": "When the shop is open (D156): one range per open day, Monday first, on the store's own clock. A day not listed is closed; an empty list says nothing. One range per day, closing the same day. Null or absent leaves them as they are; [] clears them.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "day": {
+                          "type": "string",
+                          "enum": [
+                            "mon",
+                            "tue",
+                            "wed",
+                            "thu",
+                            "fri",
+                            "sat",
+                            "sun"
+                          ]
+                        },
+                        "opens": {
+                          "type": "string",
+                          "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+                          "example": "09:30"
+                        },
+                        "closes": {
+                          "type": "string",
+                          "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+                          "description": "Later than opens.",
+                          "example": "18:00"
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -13854,6 +14004,48 @@
                           "type": "string",
                           "description": "The store's square icon, for the browser tab, a phone's home screen and an installed app. Empty when the store has none.",
                           "readOnly": true
+                        },
+                        "show_address": {
+                          "type": "boolean",
+                          "description": "Publish the address on GET /api/store, for a storefront's contact page and its map (D156). Off by default: it is the address an invoice prints. Absent leaves it as it is."
+                        },
+                        "map_location": {
+                          "type": "string",
+                          "maxLength": 2000,
+                          "description": "Where a storefront's map puts the pin when the address alone would put it somewhere else: an https Google Maps link (a place link from the address bar, a share link, or the src of an \"Embed a map\" snippet, which is taken out of the pasted <iframe>), a Business Profile link (g.page, g.co/kgs), or a latitude and longitude such as 20.2961,85.8245. A share or Business Profile link opens the right place but a storefront cannot draw a map from it. Public whenever it is set. Absent leaves it as it is; empty clears it.",
+                          "example": "20.2961,85.8245"
+                        },
+                        "opening_hours": {
+                          "type": "array",
+                          "description": "When the shop is open (D156): one range per open day, Monday first, on the store's own clock. A day not listed is closed; an empty list says nothing. One range per day, closing the same day. Null or absent leaves them as they are; [] clears them.",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "day": {
+                                "type": "string",
+                                "enum": [
+                                  "mon",
+                                  "tue",
+                                  "wed",
+                                  "thu",
+                                  "fri",
+                                  "sat",
+                                  "sun"
+                                ]
+                              },
+                              "opens": {
+                                "type": "string",
+                                "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+                                "example": "09:30"
+                              },
+                              "closes": {
+                                "type": "string",
+                                "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+                                "description": "Later than opens.",
+                                "example": "18:00"
+                              }
+                            }
+                          }
                         }
                       }
                     }

@@ -3,9 +3,14 @@ package gocommerce
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"html"
 	"net/http"
+	"net/url"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -84,6 +89,123 @@ type StoreProfile struct {
 	LogoURL     string `json:"logo_url"`
 	LogoDarkURL string `json:"logo_dark_url"`
 	IconURL     string `json:"icon_url"`
+
+	// What a storefront's contact page shows (D156). Each is absent-leaves-it
+	// like the pictures, so a script that predates them cannot wipe them.
+	//
+	// ShowAddress publishes the address on GET /api/store. Off by default: it
+	// is the address an invoice prints, and for a shop run from home that is
+	// somebody's front door.
+	ShowAddress *bool `json:"show_address"`
+	// MapLocation pins the shop when the address alone would put the pin in
+	// the wrong place: a Google Maps link, or "latitude,longitude". It exists
+	// only for the storefront, so it is public whenever it is set.
+	MapLocation *string `json:"map_location"`
+	// OpeningHours is one range per open day, Monday first, on the store's
+	// own clock. A day not listed is closed, and an empty list says nothing.
+	// Null leaves them as they are; [] clears them.
+	OpeningHours []OpeningHours `json:"opening_hours"`
+}
+
+// OpeningHours is when the shop is open on one day of the week.
+//
+// ponytail: one range per day, closing the same day. A lunch break or a shop
+// open past midnight needs a list per day; add it when a shop asks.
+type OpeningHours struct {
+	// Day is mon, tue, wed, thu, fri, sat or sun.
+	Day string `json:"day"`
+	// Opens and Closes are 24-hour HH:MM; Closes is the later.
+	Opens  string `json:"opens"`
+	Closes string `json:"closes"`
+}
+
+// weekdays is the order opening hours are kept and shown in.
+var weekdays = []string{"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+
+// MaxMapLocation bounds a map location. Longer than the other fields: a
+// Google Maps place link carries its coordinates and a good deal else.
+const MaxMapLocation = 2000
+
+// googleMapsHost is a Google host that serves maps under /maps: google.com,
+// a country's google.co.in or google.de, with or without www.
+var googleMapsHost = regexp.MustCompile(`^(www\.)?google\.(com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$`)
+
+// latLong is "latitude,longitude" in decimal degrees, spaces allowed.
+var latLong = regexp.MustCompile(`^(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)$`)
+
+// iframeSrc is the address in the snippet Google's "Embed a map" hands out,
+// which is what an owner copies.
+var iframeSrc = regexp.MustCompile(`(?i)^<iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["']`)
+
+// normalizeMapLocation keeps a location a storefront can draw a map from or
+// link to, and nothing else, because it puts it in a frame on its contact
+// page: a pair of coordinates, or an https link to Google Maps or to a
+// Business Profile.
+func normalizeMapLocation(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", nil
+	}
+	if m := iframeSrc.FindStringSubmatch(s); m != nil {
+		s = html.UnescapeString(m[1])
+	}
+	bad := Validationf("the map location is a Google Maps link or a latitude and longitude, such as %q", "20.2961, 85.8245")
+	if len(s) > MaxMapLocation {
+		return "", Validationf("the map location is at most %d characters", MaxMapLocation)
+	}
+	if m := latLong.FindStringSubmatch(s); m != nil {
+		lat, _ := strconv.ParseFloat(m[1], 64)
+		lng, _ := strconv.ParseFloat(m[2], 64)
+		if lat < -90 || lat > 90 || lng < -180 || lng > 180 {
+			return "", bad
+		}
+		return m[1] + "," + m[2], nil
+	}
+	u, err := url.Parse(s)
+	if err != nil || u.Scheme != "https" {
+		return "", bad
+	}
+	host := strings.ToLower(u.Hostname())
+	switch {
+	case host == "maps.app.goo.gl", host == "g.page":
+	case host == "goo.gl" && strings.HasPrefix(u.Path, "/maps"):
+	case host == "g.co" && strings.HasPrefix(u.Path, "/kgs/"):
+	case strings.HasPrefix(host, "maps.") && googleMapsHost.MatchString(strings.TrimPrefix(host, "maps.")):
+	case googleMapsHost.MatchString(host) && strings.HasPrefix(u.Path, "/maps"):
+	default:
+		return "", bad
+	}
+	return s, nil
+}
+
+// normalizeOpeningHours folds the days, pads the times and sorts the week, so
+// every reader can print the list as it comes.
+func normalizeOpeningHours(in []OpeningHours) ([]OpeningHours, error) {
+	out := make([]OpeningHours, 0, len(in))
+	seen := map[string]bool{}
+	for _, h := range in {
+		day := strings.ToLower(strings.TrimSpace(h.Day))
+		if !slices.Contains(weekdays, day) {
+			return nil, Validationf("opening hours: %q is not a day; use mon, tue, wed, thu, fri, sat or sun", h.Day)
+		}
+		if seen[day] {
+			return nil, Validationf("opening hours: %s is listed twice; give each day one range", day)
+		}
+		seen[day] = true
+		opens, err1 := time.Parse("15:04", strings.TrimSpace(h.Opens))
+		closes, err2 := time.Parse("15:04", strings.TrimSpace(h.Closes))
+		if err1 != nil || err2 != nil {
+			return nil, Validationf("opening hours: %s needs an opening and a closing time, such as 09:30 and 18:00", day)
+		}
+		if !closes.After(opens) {
+			return nil, Validationf("opening hours: on %s the shop closes before it opens", day)
+		}
+		out = append(out, OpeningHours{Day: day, Opens: opens.Format("15:04"), Closes: closes.Format("15:04")})
+	}
+	slices.SortFunc(out, func(a, b OpeningHours) int {
+		return slices.Index(weekdays, a.Day) - slices.Index(weekdays, b.Day)
+	})
+	return out, nil
 }
 
 // MaxProfileField bounds every text field. One limit rather than a different
@@ -104,13 +226,19 @@ func (a *App) Profile() *StoreProfiles { return a.profile }
 // Get reads the shop's details. The row is created by the migration, so a
 // store that has never filled anything in gets blanks rather than an error.
 func (p *StoreProfiles) Get(ctx context.Context) (*StoreProfile, error) {
-	var out StoreProfile
+	var (
+		out         StoreProfile
+		showAddress bool
+		mapLocation string
+		hours       []byte
+	)
 	err := p.app.db.QueryRowContext(ctx, `
 		SELECT p.name, p.legal_name, p.email, p.phone,
 		       p.address_line1, p.address_line2, p.city, p.state, p.postal_code, p.country,
 		       p.tax_id, p.support_url, p.timezone,
 		       p.logo_media_id, p.logo_dark_media_id, p.icon_media_id,
-		       coalesce(l.url, ''), coalesce(d.url, ''), coalesce(i.url, '')
+		       coalesce(l.url, ''), coalesce(d.url, ''), coalesce(i.url, ''),
+		       p.show_address, p.map_location, p.opening_hours
 		FROM store_profile p
 		LEFT JOIN media l ON l.id = p.logo_media_id
 		LEFT JOIN media d ON d.id = p.logo_dark_media_id
@@ -121,14 +249,22 @@ func (p *StoreProfiles) Get(ctx context.Context) (*StoreProfile, error) {
 		&out.PostalCode, &out.Country, &out.TaxID, &out.SupportURL,
 		&out.Timezone,
 		&out.LogoMediaID, &out.LogoDarkMediaID, &out.IconMediaID,
-		&out.LogoURL, &out.LogoDarkURL, &out.IconURL)
+		&out.LogoURL, &out.LogoDarkURL, &out.IconURL,
+		&showAddress, &mapLocation, &hours)
 	if err == sql.ErrNoRows {
 		// Unreachable while the migration's INSERT stands, and harmless if a
 		// later one ever changes that: an empty shop is a real answer.
-		return &StoreProfile{}, nil
+		return &StoreProfile{ShowAddress: new(bool), MapLocation: new(string), OpeningHours: []OpeningHours{}}, nil
 	}
 	if err != nil {
 		return nil, Internalf(err, "read the store profile")
+	}
+	out.ShowAddress, out.MapLocation = &showAddress, &mapLocation
+	if err := json.Unmarshal(hours, &out.OpeningHours); err != nil {
+		return nil, Internalf(err, "read the store's opening hours")
+	}
+	if out.OpeningHours == nil {
+		out.OpeningHours = []OpeningHours{}
 	}
 	out.Languages = p.app.Languages(ctx)
 	out.Language = out.Languages[0]
@@ -173,6 +309,28 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 	}
 	if in.Email != "" && !strings.Contains(in.Email, "@") {
 		return nil, Validationf("that does not look like an email address")
+	}
+	// Nil leaves each as it is, which the UPDATE's coalesce does; so the
+	// hours travel as JSON only when they were sent.
+	if in.MapLocation != nil {
+		loc, err := normalizeMapLocation(*in.MapLocation)
+		if err != nil {
+			return nil, err
+		}
+		in.MapLocation = &loc
+	}
+	var hours *string
+	if in.OpeningHours != nil {
+		list, err := normalizeOpeningHours(in.OpeningHours)
+		if err != nil {
+			return nil, err
+		}
+		b, err := json.Marshal(list)
+		if err != nil {
+			return nil, Internalf(err, "write the store's opening hours")
+		}
+		h := string(b)
+		hours = &h
 	}
 	// An Indian store's tax id is its GSTIN, printed on every tax invoice
 	// (D137), so a mistyped one is refused as it is typed. Only a changed one
@@ -301,12 +459,16 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 		    name = $1, legal_name = $2, email = $3, phone = $4,
 		    address_line1 = $5, address_line2 = $6, city = $7, state = $8,
 		    postal_code = $9, country = $10, tax_id = $11, support_url = $12,
-		    timezone = $13, updated_at = now(), updated_by = $14
+		    timezone = $13, updated_at = now(), updated_by = $14,
+		    show_address = coalesce($15, show_address),
+		    map_location = coalesce($16, map_location),
+		    opening_hours = coalesce($17::jsonb, opening_hours)
 		WHERE id = 1`,
 			in.Name, in.LegalName, in.Email, in.Phone,
 			in.AddressLine1, in.AddressLine2, in.City, in.State,
 			in.PostalCode, in.Country, in.TaxID, in.SupportURL,
-			in.Timezone, updatedBy); err != nil {
+			in.Timezone, updatedBy,
+			in.ShowAddress, in.MapLocation, hours); err != nil {
 			return err
 		}
 		// A store has one name: this one, which is what the store list and
@@ -425,8 +587,10 @@ func (a *App) mountStoreProfileRoutes() {
 
 // publicStore is what anyone may read about the shop: what it is called and
 // how a buyer reaches it, which is what the foot of every email it sends
-// already says. The address, legal name and tax number stay behind the admin
-// route: a page that names a shop has no need to publish where it is.
+// already says. The legal name and tax number stay behind the admin route, and
+// so does the address until the store says to show it (D156): a page that
+// names a shop has no need to publish where it is, and a shop with a door to
+// walk through says so.
 //
 // Its languages are public too, so a storefront can offer the ones it sells in.
 type publicStore struct {
@@ -445,6 +609,24 @@ type publicStore struct {
 	LogoURL     string `json:"logo_url"`
 	LogoDarkURL string `json:"logo_dark_url"`
 	IconURL     string `json:"icon_url"`
+	// For a contact page (D156): the address only while the store shows it,
+	// else null; the map location and the opening hours whenever they are set.
+	// The country is public on its own, so a storefront can write the phone
+	// number with its country code rather than guess one; it is not a door.
+	Country      string         `json:"country"`
+	Address      *publicAddress `json:"address"`
+	MapLocation  string         `json:"map_location"`
+	OpeningHours []OpeningHours `json:"opening_hours"`
+}
+
+// publicAddress is the shape a vendor's address has on the wire.
+type publicAddress struct {
+	Line1      string `json:"line1"`
+	Line2      string `json:"line2"`
+	City       string `json:"city"`
+	State      string `json:"state"`
+	PostalCode string `json:"postal_code"`
+	Country    string `json:"country"`
 }
 
 func (a *App) handlePublicStore(w http.ResponseWriter, r *http.Request) {
@@ -453,9 +635,16 @@ func (a *App) handlePublicStore(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	Respond(w, http.StatusOK, publicStore{Name: p.Name, Email: p.Email, Phone: p.Phone, SupportURL: p.SupportURL,
+	out := publicStore{Name: p.Name, Email: p.Email, Phone: p.Phone, SupportURL: p.SupportURL,
 		Language: p.Language, Languages: p.Languages, ImagesPath: ImagesPath(a.storeOf(r.Context())),
-		LogoURL: p.LogoURL, LogoDarkURL: p.LogoDarkURL, IconURL: p.IconURL})
+		LogoURL: p.LogoURL, LogoDarkURL: p.LogoDarkURL, IconURL: p.IconURL,
+		Country: p.Country, MapLocation: *p.MapLocation, OpeningHours: p.OpeningHours}
+	// A country on its own is no address to show.
+	if *p.ShowAddress && p.AddressLine1+p.AddressLine2+p.City+p.State+p.PostalCode != "" {
+		out.Address = &publicAddress{Line1: p.AddressLine1, Line2: p.AddressLine2, City: p.City,
+			State: p.State, PostalCode: p.PostalCode, Country: p.Country}
+	}
+	Respond(w, http.StatusOK, out)
 }
 
 func (a *App) handleGetStoreProfile(w http.ResponseWriter, r *http.Request) {

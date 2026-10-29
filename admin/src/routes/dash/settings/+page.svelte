@@ -171,11 +171,43 @@
     const languagesChanged = $derived(
         !!profile && !!draft && (draft.languages ?? []).join() !== (profile.languages ?? []).join(),
     );
+    // What the storefront's contact page shows (D156).
+    const contactChanged = $derived(
+        !!profile &&
+            !!draft &&
+            (!!draft.show_address !== !!profile.show_address ||
+                (draft.map_location ?? "") !== (profile.map_location ?? "") ||
+                JSON.stringify(draft.opening_hours ?? []) !== JSON.stringify(profile.opening_hours ?? [])),
+    );
     const dirty = $derived(
         !!profile &&
             !!draft &&
-            (languagesChanged || FIELDS.some((f) => (draft[f.key] ?? "") !== (profile[f.key] ?? ""))),
+            (languagesChanged || contactChanged || FIELDS.some((f) => (draft[f.key] ?? "") !== (profile[f.key] ?? ""))),
     );
+
+    /*
+     * Opening hours, one row a day. A day switched on starts from the hours
+     * of the open day before it, which is usually the answer; the first one
+     * starts empty rather than with hours nobody chose. Replaced rather than
+     * mutated, because the draft's list starts as the profile's own.
+     */
+    const WEEK = [
+        ["mon", "Monday"], ["tue", "Tuesday"], ["wed", "Wednesday"], ["thu", "Thursday"],
+        ["fri", "Friday"], ["sat", "Saturday"], ["sun", "Sunday"],
+    ];
+    const hoursOf = (day) => (draft?.opening_hours ?? []).find((h) => h.day === day);
+    function setOpen(day, open) {
+        const list = (draft.opening_hours ?? []).filter((h) => h.day !== day);
+        if (open) {
+            const i = WEEK.findIndex(([d]) => d === day);
+            const before = WEEK.slice(0, i).reverse().map(([d]) => hoursOf(d)).find(Boolean);
+            list.push({ day, opens: before?.opens ?? "", closes: before?.closes ?? "" });
+        }
+        draft.opening_hours = WEEK.map(([d]) => list.find((h) => h.day === d)).filter(Boolean);
+    }
+    function setTime(day, key, value) {
+        draft.opening_hours = draft.opening_hours.map((h) => (h.day === day ? { ...h, [key]: value } : h));
+    }
 
     /*
      * The store's languages (D87), main first. One list rather than a list and
@@ -373,6 +405,84 @@
                                     </div>
                                 </div>
                             {/each}
+                            <div class="col-12">
+                                <fieldset class="contact-page" disabled={!editable}>
+                                    <legend class="langs-title">Contact page</legend>
+                                    <p class="field-help">
+                                        The storefront's contact page shows the email and phone above, and
+                                        these when they are set. Nothing here is shown until it is filled in.
+                                    </p>
+                                    <div class="field">
+                                        <input type="checkbox" class="switch" id="sp-show-address" bind:checked={draft.show_address} />
+                                        <label for="sp-show-address">Show the address on the storefront</label>
+                                    </div>
+                                    <div class="field-help">
+                                        Off, the address stays on invoices and this screen. On, the contact page
+                                        shows it with a map.
+                                    </div>
+                                    <div class="field">
+                                        <label for="sp-map-location">Map location</label>
+                                        <input
+                                            id="sp-map-location"
+                                            type="text"
+                                            inputmode="url"
+                                            maxlength="2000"
+                                            autocomplete="off"
+                                            spellcheck="false"
+                                            placeholder="20.2961, 85.8245"
+                                            bind:value={draft.map_location}
+                                        />
+                                        <div class="field-help">
+                                            Optional, for when the address alone puts the pin in the wrong place.
+                                            Paste the shop's latitude and longitude (press and hold the shop in
+                                            Google Maps and copy the numbers it shows), or Google Maps' "Embed a
+                                            map" code. A share link opens the right place but draws no map.
+                                            Shown even with the address off.
+                                        </div>
+                                    </div>
+                                    <div class="hours" role="group" aria-labelledby="sp-hours">
+                                        <span id="sp-hours" class="langs-title">Opening hours</span>
+                                        <span class="field-help">
+                                            Switch on the days the shop is open, in the store's timezone. With
+                                            none on, the contact page shows no hours.
+                                        </span>
+                                        {#each WEEK as [day, label] (day)}
+                                            {@const h = hoursOf(day)}
+                                            <div class="hours-row">
+                                                <div class="field">
+                                                    <input
+                                                        type="checkbox"
+                                                        class="switch sm"
+                                                        id="sp-open-{day}"
+                                                        checked={!!h}
+                                                        onchange={(e) => setOpen(day, e.currentTarget.checked)}
+                                                    />
+                                                    <label for="sp-open-{day}">{label}</label>
+                                                </div>
+                                                {#if h}
+                                                    <span class="hours-times">
+                                                        <input
+                                                            type="time"
+                                                            aria-label="{label} opens"
+                                                            value={h.opens}
+                                                            onchange={(e) => setTime(day, "opens", e.currentTarget.value)}
+                                                        />
+                                                        <span class="txt-hint" aria-hidden="true">to</span>
+                                                        <input
+                                                            type="time"
+                                                            aria-label="{label} closes"
+                                                            value={h.closes}
+                                                            onchange={(e) => setTime(day, "closes", e.currentTarget.value)}
+                                                        />
+                                                    </span>
+                                                {:else}
+                                                    <span class="txt-hint txt-sm">Closed</span>
+                                                {/if}
+                                            </div>
+                                        {/each}
+                                    </div>
+                                </fieldset>
+                            </div>
                             <div class="col-12">
                                 <div class="langs" role="group" aria-labelledby="sp-languages">
                                     <div class="langs-head">
@@ -798,6 +908,64 @@
     .langs-add .field {
         flex: 1 1 auto;
         min-width: 0;
+    }
+    .contact-page {
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+        margin: 0;
+        padding: 0;
+        border: 0;
+    }
+    .contact-page legend {
+        padding: 0;
+    }
+    .contact-page .field,
+    .hours {
+        max-width: 640px;
+    }
+    .hours {
+        display: grid;
+        gap: 4px;
+    }
+    .hours-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 12px;
+        min-height: 44px;
+    }
+    .hours-row .field {
+        flex: 0 0 150px;
+        margin: 0;
+    }
+    .hours-times {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    /* Outside a .field, so form.css does not draw them: the same surface, border and corner as
+       the fields around them, and the native clock picker in the panel's scheme. */
+    .hours-times input {
+        width: 9.5em;
+        min-height: 40px;
+        padding: 0 8px;
+        border: 1px solid var(--surfaceAlt3Color);
+        border-radius: var(--borderRadius);
+        background: var(--surfaceAlt1Color);
+        color: var(--surfaceTxtColor);
+        font: inherit;
+        transition: border-color var(--animationSpeed);
+    }
+    .hours-times input:hover {
+        border-color: var(--surfaceAlt5Color);
+    }
+    .hours-times input:focus-visible {
+        outline: 2px solid var(--markColor);
+        outline-offset: 1px;
+    }
+    :global([data-color-scheme="dark"]) .hours-times input {
+        color-scheme: dark;
     }
     @media (prefers-reduced-motion: reduce) {
         .langs-item {
