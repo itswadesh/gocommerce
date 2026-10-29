@@ -311,7 +311,7 @@
                         onclick={() => (confirmOpen = true)}
                     >
                         <i class="ri-download-cloud-2-line" aria-hidden="true"></i>
-                        <span class="txt">Import the Shopify taxonomy</span>
+                        <span class="txt">Import the taxonomy</span>
                     </button>
                     <button
                         type="button"
@@ -752,7 +752,7 @@
 
         <Confirm
             bind:open={confirmOpen}
-            title="Import the Shopify taxonomy?"
+            title="Import the taxonomy?"
             message="It writes about 14,000 categories into this store. Running it again later only adds what is missing, so it is safe to repeat — but there is no one-click way to take them out."
             confirmLabel="Import"
             onconfirm={importTaxonomy}
