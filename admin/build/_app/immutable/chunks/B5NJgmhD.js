@@ -1,0 +1,1 @@
+function r(a,i){const t=a==null?void 0:a.form;return t!=null&&t.delete?i(a.right)&&(!t.delete_right||i(t.delete_right)):!1}function f(a){return Array.isArray(a)?a:Array.isArray(a==null?void 0:a.data)?a.data:[]}export{f as l,r as m};
