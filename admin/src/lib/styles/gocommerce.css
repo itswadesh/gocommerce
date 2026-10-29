@@ -11949,6 +11949,126 @@ html .tw\:rounded-2xl {
     opacity: 0.7;
 }
 
+/* AI credit: the prepaid balance AI features draw down. The card's border
+   warms when the store is out of credit; the fill and the forms animate on
+   transform and opacity only, and the reduced-motion block below stills them. */
+.ai-credit {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 18px;
+    border: 1px solid var(--border);
+    border-radius: var(--borderRadius);
+    background: var(--card);
+    transition: border-color 200ms ease;
+}
+.ai-credit.is-exhausted {
+    border-color: var(--warningColor);
+}
+.ai-credit-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smSpacing);
+}
+.ai-credit-msg {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-weight: 600;
+    color: var(--txtPrimaryColor);
+}
+.ai-credit-msg i {
+    color: var(--warningColor);
+    animation: ai-credit-spark 1.8s ease-in-out infinite;
+}
+@keyframes ai-credit-spark {
+    0%, 100% { opacity: 0.55; transform: scale(0.92); }
+    50% { opacity: 1; transform: scale(1.08); }
+}
+.ai-credit-value {
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+.ai-credit-meter {
+    height: 12px;
+}
+.ai-credit-figures {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px 18px;
+    margin: 0;
+}
+@media (min-width: 560px) {
+    .ai-credit-figures {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+.ai-credit-figures dt {
+    font-size: var(--smFontSize);
+    color: var(--surfaceTxtHintColor);
+}
+.ai-credit-figures dd {
+    margin: 2px 0 0;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+.ai-credit-ops {
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+}
+.ai-credit-forms {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 10px;
+}
+.ai-credit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.ai-credit-form .txt-input {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+.ai-credit-log {
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.ai-credit-log li {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    font-size: var(--smFontSize);
+}
+.ai-credit-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.ai-credit-line.exhausted {
+    font-weight: 600;
+    color: var(--txtPrimaryColor);
+}
+.ai-credit-line.exhausted i {
+    color: var(--warningColor);
+}
+@media (prefers-reduced-motion: reduce) {
+    .ai-credit-msg i {
+        animation: none;
+    }
+}
+
 .ai-models {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);

@@ -46,6 +46,9 @@
 
     const API = "/api/admin/x/ai-gateway";
     const readable = $derived(can("ai.read"));
+    // Granting AI credit and setting the free trial are the platform operator's,
+    // gated on the operator-level right store owners hold but managers do not.
+    const operator = $derived(can("store.operate"));
     const missing = $derived(modulesKnown() && !hasModule("ai-gateway"));
     const ready = $derived(readable && modulesKnown() && hasModule("ai-gateway"));
 
@@ -57,6 +60,12 @@
     const perPage = $derived(list.params.limit);
 
     let budget = $state(null);
+    let credit = $state(null);
+    let ledger = $state(null);
+    let ops = $state(false); // the operator's grant / free-trial panel is open
+    let grantMinor = $state("");
+    let freeMinor = $state("");
+    let saving = $state("");
     let days = $state(null);
     let byTask = $state(null);
     let byModel = $state(null);
@@ -81,13 +90,15 @@
     async function loadSummary() {
         summaryLoading = true;
         try {
-            const [b, d, t, m] = await Promise.all([
+            const [b, c, d, t, m] = await Promise.all([
                 api.get(`${API}/budget`),
+                api.get(`${API}/credit`),
                 api.get(`${API}/usage?by=day`),
                 api.get(`${API}/usage?by=task`),
                 api.get(`${API}/usage?by=model`),
             ]);
             budget = b;
+            credit = c;
             days = d;
             byTask = t;
             byModel = m;
@@ -95,6 +106,38 @@
             toast.error(err);
         } finally {
             summaryLoading = false;
+        }
+        if (operator) loadLedger();
+    }
+
+    async function loadLedger() {
+        try {
+            const res = await api.get(`${API}/credit/ledger?limit=5`);
+            ledger = res.data ?? [];
+        } catch {
+            // The ledger is the operator's extra; a store admin reading this
+            // screen without the right simply does not see it.
+            ledger = null;
+        }
+    }
+
+    async function changeCredit(path, minor, what) {
+        const amount = Math.round(Number(minor));
+        if (!Number.isFinite(amount) || amount < 0 || (path === "grant" && amount <= 0)) {
+            toast.error("Type the amount in minor units, a whole number.");
+            return;
+        }
+        saving = path;
+        try {
+            credit = await api.post(`${API}/credit/${path}`, { amount_minor: amount });
+            grantMinor = "";
+            freeMinor = "";
+            toast.success(what);
+            loadLedger();
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            saving = "";
         }
     }
 
@@ -151,6 +194,14 @@
         spentShare > 0 && spentShare < 0.01 ? "Under 1%" : `${Math.round(spentShare * 100)}%`,
     );
     const peak = $derived((days?.rows ?? []).reduce((top, r) => Math.max(top, r.cost_micro_minor), 0));
+
+    // The credit meter: how much of the free trial plus the topped-up balance
+    // has been spent, drawn from the left like the cap's.
+    const creditTotal = $derived((credit?.free_allowance_micro_minor ?? 0) + (credit?.granted_micro_minor ?? 0));
+    const consumedShare = $derived(creditTotal ? Math.min(1, (credit?.consumed_micro_minor ?? 0) / creditTotal) : 0);
+    const creditHeldShare = $derived(
+        creditTotal ? Math.min(1 - consumedShare, (credit?.reserved_micro_minor ?? 0) / creditTotal) : 0,
+    );
 
     function monthName(iso) {
         if (!iso) return "";
@@ -257,6 +308,110 @@
                             {budget.reason.charAt(0).toUpperCase() + budget.reason.slice(1)}.
                         </div>
                     </div>
+                {/if}
+
+                {#if credit}
+                    <section class="ai-credit m-b-base" class:is-exhausted={credit.exhausted} transition:rise>
+                        <div class="ai-credit-head">
+                            <div class="ai-tile-label">AI credit</div>
+                            {#if credit.exhausted}
+                                <span class="label label-warning sm">Out of credit</span>
+                            {/if}
+                        </div>
+
+                        {#if credit.exhausted}
+                            <p class="ai-credit-msg" aria-live="polite">
+                                <i class="ri-sparkling-2-line" aria-hidden="true"></i>
+                                {credit.granted_micro_minor > 0
+                                    ? "You're out of AI credit — top up to keep using AI."
+                                    : "You've used your free AI trial — top up to keep using AI."}
+                            </p>
+                        {/if}
+
+                        <div class="ai-credit-value">
+                            {formatMicro(credit.available_micro_minor, currency)}
+                            <span class="ai-tile-of">left to spend on AI</span>
+                        </div>
+
+                        <div
+                            class="ai-meter ai-credit-meter"
+                            role="meter"
+                            aria-label="AI credit spent"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            aria-valuenow={Math.round(consumedShare * 100)}
+                        >
+                            <span class="ai-meter-spent" style="transform: scaleX({consumedShare})"></span>
+                            <span class="ai-meter-held" style="transform: translateX({consumedShare * 100}%) scaleX({creditHeldShare})"></span>
+                        </div>
+
+                        <dl class="ai-credit-figures">
+                            <div>
+                                <dt>Free trial left</dt>
+                                <dd>{formatMicro(credit.free_remaining_micro_minor, currency)}</dd>
+                            </div>
+                            <div>
+                                <dt>Topped-up balance</dt>
+                                <dd>{formatMicro(credit.balance_remaining_micro_minor, currency)}</dd>
+                            </div>
+                            <div>
+                                <dt>Spent so far</dt>
+                                <dd>{formatMicro(credit.consumed_micro_minor, currency)}</dd>
+                            </div>
+                        </dl>
+
+                        {#if operator}
+                            <div class="ai-credit-ops">
+                                <button
+                                    type="button"
+                                    class="btn sm secondary"
+                                    aria-expanded={ops}
+                                    onclick={() => (ops = !ops)}
+                                >
+                                    <i class={ops ? "ri-arrow-up-s-line" : "ri-add-line"} aria-hidden="true"></i>
+                                    <span class="txt">{ops ? "Close" : "Top up or set the free trial"}</span>
+                                </button>
+
+                                {#if ops}
+                                    <div class="ai-credit-forms" transition:rise>
+                                        <form class="ai-credit-form" onsubmit={(e) => { e.preventDefault(); changeCredit("grant", grantMinor, "Credit topped up"); }}>
+                                            <label class="ai-tile-label" for="ai-grant">Top up the balance</label>
+                                            <div class="inline-flex gap-sm">
+                                                <input id="ai-grant" class="txt-input" type="number" min="1" step="1" inputmode="numeric"
+                                                    placeholder="Minor units, e.g. 2500 = {formatMoney({ amount_minor: 2500, currency })}"
+                                                    bind:value={grantMinor} />
+                                                <button type="submit" class="btn sm" class:loading={saving === "grant"} disabled={saving === "grant" || !grantMinor}>
+                                                    <span class="txt">Add</span>
+                                                </button>
+                                            </div>
+                                        </form>
+                                        <form class="ai-credit-form" onsubmit={(e) => { e.preventDefault(); changeCredit("free-allowance", freeMinor, "Free trial set"); }}>
+                                            <label class="ai-tile-label" for="ai-free">Set the free trial</label>
+                                            <div class="inline-flex gap-sm">
+                                                <input id="ai-free" class="txt-input" type="number" min="0" step="1" inputmode="numeric"
+                                                    placeholder="Minor units ({formatMicro(credit.free_allowance_micro_minor, currency)} now)"
+                                                    bind:value={freeMinor} />
+                                                <button type="submit" class="btn sm secondary" class:loading={saving === "free-allowance"} disabled={saving === "free-allowance" || freeMinor === ""}>
+                                                    <span class="txt">Set</span>
+                                                </button>
+                                            </div>
+                                        </form>
+                                        <p class="ai-tile-hint">The real figures are yours to set; there is no pricing or self-serve purchase yet. Amounts are minor units of the store's currency.</p>
+                                        {#if ledger && ledger.length}
+                                            <ul class="ai-credit-log">
+                                                {#each ledger as e (e.id)}
+                                                    <li>
+                                                        <span>{e.kind === "grant" ? "Topped up" : "Free trial set to"} {formatMoney({ amount_minor: e.amount_minor, currency })}</span>
+                                                        <span class="txt-hint txt-sm">{e.actor_email || "an operator"} · {relativeTime(e.created_at)}</span>
+                                                    </li>
+                                                {/each}
+                                            </ul>
+                                        {/if}
+                                    </div>
+                                {/if}
+                            </div>
+                        {/if}
+                    </section>
                 {/if}
 
                 <div class="ai-tiles m-b-base">

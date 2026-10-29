@@ -27,6 +27,9 @@ const (
 	OutcomeRefused         = "refused"
 	OutcomeProviderError   = "provider_error"
 	OutcomeBudgetExhausted = "budget_exhausted"
+	// OutcomeCreditExhausted is a store with no AI credit left: the free trial
+	// is spent and nothing is topped up. No model is called.
+	OutcomeCreditExhausted = "credit_exhausted"
 	OutcomeNoPrice         = "no_price"
 	// OutcomeTaskError is a task whose own code panicked: its Build, Check
 	// or deterministic step. It is never tried again.
@@ -208,6 +211,12 @@ func (m *Module) call(ctx context.Context, t *Task, job *claimedJob, provider Pr
 		if err := m.settle(context.WithoutCancel(ctx), month, ceiling, cr.cost); err != nil {
 			m.log.Error("ai budget could not be settled", "task", t.Name, "error", err)
 		}
+		// The same cost comes off the credit, and the hold is released. A call
+		// that brought nothing back costs nothing here too (cr.cost is 0), so a
+		// failed model call never draws credit.
+		if err := m.settleCredit(context.WithoutCancel(ctx), ceiling, cr.cost); err != nil {
+			m.log.Error("ai credit could not be settled", "task", t.Name, "error", err)
+		}
 	}()
 	if job != nil {
 		m.renew(ctx, job)
@@ -330,11 +339,29 @@ func (m *Module) ladder(ctx context.Context, t *Task, input json.RawMessage, st 
 
 		ceiling := p.ceiling(t.MaxInputTokens, t.MaxOutputTokens)
 		month := monthOf(time.Now())
+
+		// Credit first: a store with nothing left is refused before the model
+		// is called, and no budget reservation is taken that would then have to
+		// be unwound. Only a model call draws credit — a deterministic answer
+		// or a cache hit, handled above, has already returned.
+		okCredit, err := m.reserveCredit(ctx, ceiling)
+		if err != nil {
+			return Result{}, nil, fmt.Errorf("reserve against the ai credit: %w", err)
+		}
+		if !okCredit {
+			step.Outcome = "credit_exhausted"
+			step.Reason = m.creditReason(ctx)
+			rec.Steps = append(rec.Steps, step)
+			return fail(OutcomeCreditExhausted, step.Reason, false)
+		}
+
 		ok, err := m.reserve(ctx, month, *st.capMinor, ceiling)
 		if err != nil {
+			m.releaseCredit(ctx, ceiling)
 			return Result{}, nil, fmt.Errorf("reserve against the ai budget: %w", err)
 		}
 		if !ok {
+			m.releaseCredit(ctx, ceiling)
 			step.Outcome = "budget_exhausted"
 			step.Reason = "this month's cap cannot cover the most this call could cost"
 			rec.Steps = append(rec.Steps, step)
