@@ -1,0 +1,596 @@
+[
+	{
+		"product": "printed-anarkali-kurta",
+		"colour": "Indigo",
+		"hex": "#2e3a6e",
+		"shot": "front",
+		"source": "out/printed-anarkali-kurta/rose-front.webp",
+		"target": "out/printed-anarkali-kurta/indigo-front.webp",
+		"prompt": "Change only the colour of the printed anarkali kurta to indigo (#2e3a6e); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "printed-anarkali-kurta",
+		"colour": "Indigo",
+		"hex": "#2e3a6e",
+		"shot": "detail",
+		"source": "out/printed-anarkali-kurta/rose-detail.webp",
+		"target": "out/printed-anarkali-kurta/indigo-detail.webp",
+		"prompt": "Change only the colour of the printed anarkali kurta to indigo (#2e3a6e); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "printed-anarkali-kurta",
+		"colour": "Mustard",
+		"hex": "#c9952b",
+		"shot": "front",
+		"source": "out/printed-anarkali-kurta/rose-front.webp",
+		"target": "out/printed-anarkali-kurta/mustard-front.webp",
+		"prompt": "Change only the colour of the printed anarkali kurta to mustard (#c9952b); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "printed-anarkali-kurta",
+		"colour": "Mustard",
+		"hex": "#c9952b",
+		"shot": "detail",
+		"source": "out/printed-anarkali-kurta/rose-detail.webp",
+		"target": "out/printed-anarkali-kurta/mustard-detail.webp",
+		"prompt": "Change only the colour of the printed anarkali kurta to mustard (#c9952b); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "printed-yoke-kurta",
+		"colour": "Bottle green",
+		"hex": "#1f4d3a",
+		"shot": "front",
+		"source": "out/printed-yoke-kurta/maroon-front.webp",
+		"target": "out/printed-yoke-kurta/bottle-green-front.webp",
+		"prompt": "Change only the colour of the printed kurta (leave the jeans as they are) to bottle green (#1f4d3a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "printed-yoke-kurta",
+		"colour": "Bottle green",
+		"hex": "#1f4d3a",
+		"shot": "side",
+		"source": "out/printed-yoke-kurta/maroon-side.webp",
+		"target": "out/printed-yoke-kurta/bottle-green-side.webp",
+		"prompt": "Change only the colour of the printed kurta (leave the jeans as they are) to bottle green (#1f4d3a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "printed-yoke-kurta",
+		"colour": "Bottle green",
+		"hex": "#1f4d3a",
+		"shot": "detail",
+		"source": "out/printed-yoke-kurta/maroon-detail.webp",
+		"target": "out/printed-yoke-kurta/bottle-green-detail.webp",
+		"prompt": "Change only the colour of the printed kurta (leave the jeans as they are) to bottle green (#1f4d3a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "printed-yoke-kurta",
+		"colour": "Navy",
+		"hex": "#1f2a4d",
+		"shot": "front",
+		"source": "out/printed-yoke-kurta/maroon-front.webp",
+		"target": "out/printed-yoke-kurta/navy-front.webp",
+		"prompt": "Change only the colour of the printed kurta (leave the jeans as they are) to navy (#1f2a4d); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "printed-yoke-kurta",
+		"colour": "Navy",
+		"hex": "#1f2a4d",
+		"shot": "side",
+		"source": "out/printed-yoke-kurta/maroon-side.webp",
+		"target": "out/printed-yoke-kurta/navy-side.webp",
+		"prompt": "Change only the colour of the printed kurta (leave the jeans as they are) to navy (#1f2a4d); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "printed-yoke-kurta",
+		"colour": "Navy",
+		"hex": "#1f2a4d",
+		"shot": "detail",
+		"source": "out/printed-yoke-kurta/maroon-detail.webp",
+		"target": "out/printed-yoke-kurta/navy-detail.webp",
+		"prompt": "Change only the colour of the printed kurta (leave the jeans as they are) to navy (#1f2a4d); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "floral-co-ord-set",
+		"colour": "Sage",
+		"hex": "#8fa58a",
+		"shot": "front",
+		"source": "out/floral-co-ord-set/orchid-front.webp",
+		"target": "out/floral-co-ord-set/sage-front.webp",
+		"prompt": "Change only the colour of the floral print top and trousers to sage (#8fa58a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "floral-co-ord-set",
+		"colour": "Sage",
+		"hex": "#8fa58a",
+		"shot": "side",
+		"source": "out/floral-co-ord-set/orchid-side.webp",
+		"target": "out/floral-co-ord-set/sage-side.webp",
+		"prompt": "Change only the colour of the floral print top and trousers to sage (#8fa58a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "floral-co-ord-set",
+		"colour": "Sage",
+		"hex": "#8fa58a",
+		"shot": "seated",
+		"source": "out/floral-co-ord-set/orchid-seated.webp",
+		"target": "out/floral-co-ord-set/sage-seated.webp",
+		"prompt": "Change only the colour of the floral print top and trousers to sage (#8fa58a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "floral-co-ord-set",
+		"colour": "Powder blue",
+		"hex": "#a9c4dc",
+		"shot": "front",
+		"source": "out/floral-co-ord-set/orchid-front.webp",
+		"target": "out/floral-co-ord-set/powder-blue-front.webp",
+		"prompt": "Change only the colour of the floral print top and trousers to powder blue (#a9c4dc); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "floral-co-ord-set",
+		"colour": "Powder blue",
+		"hex": "#a9c4dc",
+		"shot": "side",
+		"source": "out/floral-co-ord-set/orchid-side.webp",
+		"target": "out/floral-co-ord-set/powder-blue-side.webp",
+		"prompt": "Change only the colour of the floral print top and trousers to powder blue (#a9c4dc); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "floral-co-ord-set",
+		"colour": "Powder blue",
+		"hex": "#a9c4dc",
+		"shot": "seated",
+		"source": "out/floral-co-ord-set/orchid-seated.webp",
+		"target": "out/floral-co-ord-set/powder-blue-seated.webp",
+		"prompt": "Change only the colour of the floral print top and trousers to powder blue (#a9c4dc); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "ikat-print-co-ord-set",
+		"colour": "Indigo",
+		"hex": "#33407a",
+		"shot": "front",
+		"source": "out/ikat-print-co-ord-set/aqua-front.webp",
+		"target": "out/ikat-print-co-ord-set/indigo-front.webp",
+		"prompt": "Change only the colour of the ikat print tunic and trousers to indigo (#33407a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "ikat-print-co-ord-set",
+		"colour": "Indigo",
+		"hex": "#33407a",
+		"shot": "side",
+		"source": "out/ikat-print-co-ord-set/aqua-side.webp",
+		"target": "out/ikat-print-co-ord-set/indigo-side.webp",
+		"prompt": "Change only the colour of the ikat print tunic and trousers to indigo (#33407a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "ikat-print-co-ord-set",
+		"colour": "Indigo",
+		"hex": "#33407a",
+		"shot": "detail",
+		"source": "out/ikat-print-co-ord-set/aqua-detail.webp",
+		"target": "out/ikat-print-co-ord-set/indigo-detail.webp",
+		"prompt": "Change only the colour of the ikat print tunic and trousers to indigo (#33407a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "ikat-print-co-ord-set",
+		"colour": "Rose",
+		"hex": "#d9849a",
+		"shot": "front",
+		"source": "out/ikat-print-co-ord-set/aqua-front.webp",
+		"target": "out/ikat-print-co-ord-set/rose-front.webp",
+		"prompt": "Change only the colour of the ikat print tunic and trousers to rose (#d9849a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "ikat-print-co-ord-set",
+		"colour": "Rose",
+		"hex": "#d9849a",
+		"shot": "side",
+		"source": "out/ikat-print-co-ord-set/aqua-side.webp",
+		"target": "out/ikat-print-co-ord-set/rose-side.webp",
+		"prompt": "Change only the colour of the ikat print tunic and trousers to rose (#d9849a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "ikat-print-co-ord-set",
+		"colour": "Rose",
+		"hex": "#d9849a",
+		"shot": "detail",
+		"source": "out/ikat-print-co-ord-set/aqua-detail.webp",
+		"target": "out/ikat-print-co-ord-set/rose-detail.webp",
+		"prompt": "Change only the colour of the ikat print tunic and trousers to rose (#d9849a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "paisley-print-jumpsuit",
+		"colour": "Navy",
+		"hex": "#1f2a4d",
+		"shot": "front",
+		"source": "out/paisley-print-jumpsuit/black-front.webp",
+		"target": "out/paisley-print-jumpsuit/navy-front.webp",
+		"prompt": "Change only the colour of the paisley print jumpsuit to navy (#1f2a4d); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "paisley-print-jumpsuit",
+		"colour": "Navy",
+		"hex": "#1f2a4d",
+		"shot": "side",
+		"source": "out/paisley-print-jumpsuit/black-side.webp",
+		"target": "out/paisley-print-jumpsuit/navy-side.webp",
+		"prompt": "Change only the colour of the paisley print jumpsuit to navy (#1f2a4d); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "paisley-print-jumpsuit",
+		"colour": "Navy",
+		"hex": "#1f2a4d",
+		"shot": "back",
+		"source": "out/paisley-print-jumpsuit/black-back.webp",
+		"target": "out/paisley-print-jumpsuit/navy-back.webp",
+		"prompt": "Change only the colour of the paisley print jumpsuit to navy (#1f2a4d); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "paisley-print-jumpsuit",
+		"colour": "Rust",
+		"hex": "#a3471f",
+		"shot": "front",
+		"source": "out/paisley-print-jumpsuit/black-front.webp",
+		"target": "out/paisley-print-jumpsuit/rust-front.webp",
+		"prompt": "Change only the colour of the paisley print jumpsuit to rust (#a3471f); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "paisley-print-jumpsuit",
+		"colour": "Rust",
+		"hex": "#a3471f",
+		"shot": "side",
+		"source": "out/paisley-print-jumpsuit/black-side.webp",
+		"target": "out/paisley-print-jumpsuit/rust-side.webp",
+		"prompt": "Change only the colour of the paisley print jumpsuit to rust (#a3471f); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "paisley-print-jumpsuit",
+		"colour": "Rust",
+		"hex": "#a3471f",
+		"shot": "back",
+		"source": "out/paisley-print-jumpsuit/black-back.webp",
+		"target": "out/paisley-print-jumpsuit/rust-back.webp",
+		"prompt": "Change only the colour of the paisley print jumpsuit to rust (#a3471f); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "satin-saree",
+		"colour": "Emerald",
+		"hex": "#0f6b4a",
+		"shot": "front",
+		"source": "out/satin-saree/magenta-front.webp",
+		"target": "out/satin-saree/emerald-front.webp",
+		"prompt": "Change only the colour of the satin saree (keep the gold border gold) to emerald (#0f6b4a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "satin-saree",
+		"colour": "Emerald",
+		"hex": "#0f6b4a",
+		"shot": "side",
+		"source": "out/satin-saree/magenta-side.webp",
+		"target": "out/satin-saree/emerald-side.webp",
+		"prompt": "Change only the colour of the satin saree (keep the gold border gold) to emerald (#0f6b4a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "satin-saree",
+		"colour": "Royal blue",
+		"hex": "#23439c",
+		"shot": "front",
+		"source": "out/satin-saree/magenta-front.webp",
+		"target": "out/satin-saree/royal-blue-front.webp",
+		"prompt": "Change only the colour of the satin saree (keep the gold border gold) to royal blue (#23439c); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "satin-saree",
+		"colour": "Royal blue",
+		"hex": "#23439c",
+		"shot": "side",
+		"source": "out/satin-saree/magenta-side.webp",
+		"target": "out/satin-saree/royal-blue-side.webp",
+		"prompt": "Change only the colour of the satin saree (keep the gold border gold) to royal blue (#23439c); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "embroidered-lehenga-set",
+		"colour": "Wine",
+		"hex": "#6d1530",
+		"shot": "front",
+		"source": "out/embroidered-lehenga-set/rani-pink-front.webp",
+		"target": "out/embroidered-lehenga-set/wine-front.webp",
+		"prompt": "Change only the colour of the lehenga, blouse and dupatta (keep the silver embroidery silver) to wine (#6d1530); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "embroidered-lehenga-set",
+		"colour": "Wine",
+		"hex": "#6d1530",
+		"shot": "side",
+		"source": "out/embroidered-lehenga-set/rani-pink-side.webp",
+		"target": "out/embroidered-lehenga-set/wine-side.webp",
+		"prompt": "Change only the colour of the lehenga, blouse and dupatta (keep the silver embroidery silver) to wine (#6d1530); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "embroidered-lehenga-set",
+		"colour": "Wine",
+		"hex": "#6d1530",
+		"shot": "detail",
+		"source": "out/embroidered-lehenga-set/rani-pink-detail.webp",
+		"target": "out/embroidered-lehenga-set/wine-detail.webp",
+		"prompt": "Change only the colour of the lehenga, blouse and dupatta (keep the silver embroidery silver) to wine (#6d1530); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "embroidered-lehenga-set",
+		"colour": "Peach",
+		"hex": "#f0a98a",
+		"shot": "front",
+		"source": "out/embroidered-lehenga-set/rani-pink-front.webp",
+		"target": "out/embroidered-lehenga-set/peach-front.webp",
+		"prompt": "Change only the colour of the lehenga, blouse and dupatta (keep the silver embroidery silver) to peach (#f0a98a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "embroidered-lehenga-set",
+		"colour": "Peach",
+		"hex": "#f0a98a",
+		"shot": "side",
+		"source": "out/embroidered-lehenga-set/rani-pink-side.webp",
+		"target": "out/embroidered-lehenga-set/peach-side.webp",
+		"prompt": "Change only the colour of the lehenga, blouse and dupatta (keep the silver embroidery silver) to peach (#f0a98a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "embroidered-lehenga-set",
+		"colour": "Peach",
+		"hex": "#f0a98a",
+		"shot": "detail",
+		"source": "out/embroidered-lehenga-set/rani-pink-detail.webp",
+		"target": "out/embroidered-lehenga-set/peach-detail.webp",
+		"prompt": "Change only the colour of the lehenga, blouse and dupatta (keep the silver embroidery silver) to peach (#f0a98a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "floral-tiered-maxi-dress",
+		"colour": "Navy",
+		"hex": "#1f2a4d",
+		"shot": "front",
+		"source": "out/floral-tiered-maxi-dress/blush-front.webp",
+		"target": "out/floral-tiered-maxi-dress/navy-front.webp",
+		"prompt": "Change only the colour of the floral maxi dress to navy (#1f2a4d); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "floral-tiered-maxi-dress",
+		"colour": "Sage",
+		"hex": "#8fa58a",
+		"shot": "front",
+		"source": "out/floral-tiered-maxi-dress/blush-front.webp",
+		"target": "out/floral-tiered-maxi-dress/sage-front.webp",
+		"prompt": "Change only the colour of the floral maxi dress to sage (#8fa58a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-embroidered-kurta",
+		"colour": "White",
+		"hex": "#f4f1e8",
+		"shot": "front",
+		"source": "out/mens-embroidered-kurta/yellow-front.webp",
+		"target": "out/mens-embroidered-kurta/white-front.webp",
+		"prompt": "Change only the colour of the kurta (leave the white trousers white) to white (#f4f1e8); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-embroidered-kurta",
+		"colour": "White",
+		"hex": "#f4f1e8",
+		"shot": "standing",
+		"source": "out/mens-embroidered-kurta/yellow-standing.webp",
+		"target": "out/mens-embroidered-kurta/white-standing.webp",
+		"prompt": "Change only the colour of the kurta (leave the white trousers white) to white (#f4f1e8); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-embroidered-kurta",
+		"colour": "White",
+		"hex": "#f4f1e8",
+		"shot": "seated",
+		"source": "out/mens-embroidered-kurta/yellow-seated.webp",
+		"target": "out/mens-embroidered-kurta/white-seated.webp",
+		"prompt": "Change only the colour of the kurta (leave the white trousers white) to white (#f4f1e8); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-embroidered-kurta",
+		"colour": "Navy",
+		"hex": "#1f2a4d",
+		"shot": "front",
+		"source": "out/mens-embroidered-kurta/yellow-front.webp",
+		"target": "out/mens-embroidered-kurta/navy-front.webp",
+		"prompt": "Change only the colour of the kurta (leave the white trousers white) to navy (#1f2a4d); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-embroidered-kurta",
+		"colour": "Navy",
+		"hex": "#1f2a4d",
+		"shot": "standing",
+		"source": "out/mens-embroidered-kurta/yellow-standing.webp",
+		"target": "out/mens-embroidered-kurta/navy-standing.webp",
+		"prompt": "Change only the colour of the kurta (leave the white trousers white) to navy (#1f2a4d); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-embroidered-kurta",
+		"colour": "Navy",
+		"hex": "#1f2a4d",
+		"shot": "seated",
+		"source": "out/mens-embroidered-kurta/yellow-seated.webp",
+		"target": "out/mens-embroidered-kurta/navy-seated.webp",
+		"prompt": "Change only the colour of the kurta (leave the white trousers white) to navy (#1f2a4d); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-embroidered-kurta",
+		"colour": "Maroon",
+		"hex": "#6b1f2a",
+		"shot": "front",
+		"source": "out/mens-embroidered-kurta/yellow-front.webp",
+		"target": "out/mens-embroidered-kurta/maroon-front.webp",
+		"prompt": "Change only the colour of the kurta (leave the white trousers white) to maroon (#6b1f2a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-embroidered-kurta",
+		"colour": "Maroon",
+		"hex": "#6b1f2a",
+		"shot": "standing",
+		"source": "out/mens-embroidered-kurta/yellow-standing.webp",
+		"target": "out/mens-embroidered-kurta/maroon-standing.webp",
+		"prompt": "Change only the colour of the kurta (leave the white trousers white) to maroon (#6b1f2a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-embroidered-kurta",
+		"colour": "Maroon",
+		"hex": "#6b1f2a",
+		"shot": "seated",
+		"source": "out/mens-embroidered-kurta/yellow-seated.webp",
+		"target": "out/mens-embroidered-kurta/maroon-seated.webp",
+		"prompt": "Change only the colour of the kurta (leave the white trousers white) to maroon (#6b1f2a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-nehru-jacket",
+		"colour": "Black",
+		"hex": "#1a1a1a",
+		"shot": "front",
+		"source": "out/mens-nehru-jacket/silver-front.webp",
+		"target": "out/mens-nehru-jacket/black-front.webp",
+		"prompt": "Change only the colour of the Nehru jacket (leave the lilac kurta and trousers as they are) to black (#1a1a1a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-nehru-jacket",
+		"colour": "Black",
+		"hex": "#1a1a1a",
+		"shot": "standing",
+		"source": "out/mens-nehru-jacket/silver-standing.webp",
+		"target": "out/mens-nehru-jacket/black-standing.webp",
+		"prompt": "Change only the colour of the Nehru jacket (leave the lilac kurta and trousers as they are) to black (#1a1a1a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-nehru-jacket",
+		"colour": "Maroon",
+		"hex": "#6b1f2a",
+		"shot": "front",
+		"source": "out/mens-nehru-jacket/silver-front.webp",
+		"target": "out/mens-nehru-jacket/maroon-front.webp",
+		"prompt": "Change only the colour of the Nehru jacket (leave the lilac kurta and trousers as they are) to maroon (#6b1f2a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-nehru-jacket",
+		"colour": "Maroon",
+		"hex": "#6b1f2a",
+		"shot": "standing",
+		"source": "out/mens-nehru-jacket/silver-standing.webp",
+		"target": "out/mens-nehru-jacket/maroon-standing.webp",
+		"prompt": "Change only the colour of the Nehru jacket (leave the lilac kurta and trousers as they are) to maroon (#6b1f2a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-nehru-jacket",
+		"colour": "Beige",
+		"hex": "#d8c7a5",
+		"shot": "front",
+		"source": "out/mens-nehru-jacket/silver-front.webp",
+		"target": "out/mens-nehru-jacket/beige-front.webp",
+		"prompt": "Change only the colour of the Nehru jacket (leave the lilac kurta and trousers as they are) to beige (#d8c7a5); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-nehru-jacket",
+		"colour": "Beige",
+		"hex": "#d8c7a5",
+		"shot": "standing",
+		"source": "out/mens-nehru-jacket/silver-standing.webp",
+		"target": "out/mens-nehru-jacket/beige-standing.webp",
+		"prompt": "Change only the colour of the Nehru jacket (leave the lilac kurta and trousers as they are) to beige (#d8c7a5); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-kurta-pyjama-set",
+		"colour": "Black",
+		"hex": "#1a1a1a",
+		"shot": "front",
+		"source": "out/mens-kurta-pyjama-set/royal-blue-front.webp",
+		"target": "out/mens-kurta-pyjama-set/black-front.webp",
+		"prompt": "Change only the colour of the kurta and pyjama to black (#1a1a1a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-kurta-pyjama-set",
+		"colour": "Olive",
+		"hex": "#5b6236",
+		"shot": "front",
+		"source": "out/mens-kurta-pyjama-set/royal-blue-front.webp",
+		"target": "out/mens-kurta-pyjama-set/olive-front.webp",
+		"prompt": "Change only the colour of the kurta and pyjama to olive (#5b6236); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-cotton-shirt",
+		"colour": "Sky blue",
+		"hex": "#a8c8e8",
+		"shot": "front",
+		"source": "out/mens-cotton-shirt/white-front.webp",
+		"target": "out/mens-cotton-shirt/sky-blue-front.webp",
+		"prompt": "Change only the colour of the shirt (leave the black trousers black) to sky blue (#a8c8e8); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-cotton-shirt",
+		"colour": "Sky blue",
+		"hex": "#a8c8e8",
+		"shot": "standing",
+		"source": "out/mens-cotton-shirt/white-standing.webp",
+		"target": "out/mens-cotton-shirt/sky-blue-standing.webp",
+		"prompt": "Change only the colour of the shirt (leave the black trousers black) to sky blue (#a8c8e8); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-cotton-shirt",
+		"colour": "Sky blue",
+		"hex": "#a8c8e8",
+		"shot": "leaning",
+		"source": "out/mens-cotton-shirt/white-leaning.webp",
+		"target": "out/mens-cotton-shirt/sky-blue-leaning.webp",
+		"prompt": "Change only the colour of the shirt (leave the black trousers black) to sky blue (#a8c8e8); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-cotton-shirt",
+		"colour": "Olive",
+		"hex": "#6b6b3a",
+		"shot": "front",
+		"source": "out/mens-cotton-shirt/white-front.webp",
+		"target": "out/mens-cotton-shirt/olive-front.webp",
+		"prompt": "Change only the colour of the shirt (leave the black trousers black) to olive (#6b6b3a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-cotton-shirt",
+		"colour": "Olive",
+		"hex": "#6b6b3a",
+		"shot": "standing",
+		"source": "out/mens-cotton-shirt/white-standing.webp",
+		"target": "out/mens-cotton-shirt/olive-standing.webp",
+		"prompt": "Change only the colour of the shirt (leave the black trousers black) to olive (#6b6b3a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-cotton-shirt",
+		"colour": "Olive",
+		"hex": "#6b6b3a",
+		"shot": "leaning",
+		"source": "out/mens-cotton-shirt/white-leaning.webp",
+		"target": "out/mens-cotton-shirt/olive-leaning.webp",
+		"prompt": "Change only the colour of the shirt (leave the black trousers black) to olive (#6b6b3a); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-cotton-shirt",
+		"colour": "Sand",
+		"hex": "#d6c3a0",
+		"shot": "front",
+		"source": "out/mens-cotton-shirt/white-front.webp",
+		"target": "out/mens-cotton-shirt/sand-front.webp",
+		"prompt": "Change only the colour of the shirt (leave the black trousers black) to sand (#d6c3a0); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-cotton-shirt",
+		"colour": "Sand",
+		"hex": "#d6c3a0",
+		"shot": "standing",
+		"source": "out/mens-cotton-shirt/white-standing.webp",
+		"target": "out/mens-cotton-shirt/sand-standing.webp",
+		"prompt": "Change only the colour of the shirt (leave the black trousers black) to sand (#d6c3a0); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	},
+	{
+		"product": "mens-cotton-shirt",
+		"colour": "Sand",
+		"hex": "#d6c3a0",
+		"shot": "leaning",
+		"source": "out/mens-cotton-shirt/white-leaning.webp",
+		"target": "out/mens-cotton-shirt/sand-leaning.webp",
+		"prompt": "Change only the colour of the shirt (leave the black trousers black) to sand (#d6c3a0); keep the model, face, hair, pose, background, lighting, fabric texture, print pattern and embroidery exactly the same, and leave every other garment and accessory as it is."
+	}
+]

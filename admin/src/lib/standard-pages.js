@@ -51,3 +51,55 @@ export function missingStandardPages(slugs) {
     const have = new Set(slugs);
     return STANDARD_PAGES.filter((p) => !have.has(p.slug));
 }
+
+/* The other names a storefront answers for a standard page: Svelte Commerce
+   redirects /contact, /pages/privacy and the like to these slugs, and a store
+   opened before D145 has its footer pointing at them. */
+const SLUG_BY_NAME = new Map(
+    STANDARD_PAGES.map((p) => [p.slug, p.slug]).concat([
+        ["about", "about-us"],
+        ["contact", "contact-us"],
+        ["privacy", "privacy-policy"],
+        ["terms", "terms-and-conditions"],
+        ["shipping", "shipping-policy"],
+        ["returns", "refund-policy"],
+        ["refunds", "refund-policy"],
+    ]),
+);
+
+/** The standard page a menu item links to, under any of its names. */
+function standardSlugOf(item) {
+    if (item.children?.length) return undefined;
+    const target = item.target ?? "";
+    const name = item.kind === "page" ? target : item.kind === "url" ? /^\/(?:pages\/|p\/)?([a-z-]+)\/?$/.exec(target)?.[1] : undefined;
+    return name && SLUG_BY_NAME.get(name);
+}
+
+const isSearch = (item) => item.kind === "url" && /^\/search\/?$/.test(item.target ?? "") && !item.children?.length;
+
+/**
+ * The footer a new store starts with (D145), made from a store's own: the
+ * six standard pages at their storefront paths, keeping the title the store
+ * gave any it already linked, then the store's other links as they were.
+ * The Search link the old footer had goes, since the header searches.
+ */
+export function standardFooter(items) {
+    const titles = new Map();
+    const others = [];
+    for (const item of items) {
+        const slug = standardSlugOf(item);
+        if (slug) {
+            if (!titles.has(slug)) titles.set(slug, item.title);
+        } else if (!isSearch(item)) others.push(item);
+    }
+    return [
+        ...STANDARD_PAGES.map((p) => ({ title: titles.get(p.slug) ?? p.title, kind: "url", target: "/" + p.slug, children: [] })),
+        ...others,
+    ];
+}
+
+/** Whether two menus link the same things, in the same order, by the same names. */
+export function sameLinks(a, b) {
+    const key = (list) => JSON.stringify(list.map((it) => [it.title, it.kind, it.target ?? "", it.children?.length ?? 0]));
+    return key(a) === key(b);
+}

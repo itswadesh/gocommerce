@@ -1,10 +1,10 @@
 {
   "currency": "INR",
   "tag": "fashion-sample",
-  "image_model": "gemini-3.1-flash-image",
   "categories": [
     { "slug": "women", "title": "Women" },
     { "slug": "women-dresses", "title": "Dresses", "parent": "women" },
+    { "slug": "women-jumpsuits", "title": "Jumpsuits", "parent": "women" },
     { "slug": "women-ethnic-wear", "title": "Ethnic wear", "parent": "women" },
     { "slug": "women-co-ord-sets", "title": "Co-ord sets", "parent": "women" },
     { "slug": "men", "title": "Men" },
@@ -16,319 +16,323 @@
     { "slug": "new-arrivals", "title": "New arrivals", "description": "Recently added to the catalogue." },
     { "slug": "festive-edit", "title": "Festive edit", "description": "Ethnic and evening wear for weddings and festivals." }
   ],
-  "style": "A professional e-commerce fashion photograph in portrait orientation. Soft, even, flattering light. The model is an adult, fully clothed, in a natural relaxed pose, looking composed. The model is a fictional person, not resembling any real person or celebrity. The garment is the subject: sharp focus on fabric, drape and stitching. No text, no logos, no brand labels, no watermark, no props that hide the outfit.",
-  "shots": [
-    { "name": "front", "prompt": "Full-length front view: the model faces the camera, standing, arms relaxed, the whole outfit visible from head to toe." },
-    { "name": "back", "prompt": "Keep the same model, the same outfit, the same backdrop and the same lighting. The model has turned around to show the back of the outfit. Full length, head to toe." },
-    { "name": "side", "prompt": "Keep the same model, the same outfit, the same backdrop and the same lighting. The model is turned three-quarters to her or his left, one foot slightly forward, showing how the garment falls from the side. Full length, head to toe." },
-    { "name": "detail", "prompt": "Keep the same outfit and the same lighting. A close-up crop of the fabric, print and finishing at the neckline and chest, filling the frame. The face is out of frame." }
-  ],
-  "recolour": "Change only the colour of the outfit to {colour}. Keep everything else exactly the same: the same model, face, hair, pose, framing, garment cut, pattern layout, embroidery placement, backdrop and lighting.",
+  "licences": {
+    "Unsplash License": "https://unsplash.com/license",
+    "Pexels License": "https://www.pexels.com/license/"
+  },
   "products": [
     {
-      "slug": "cotton-anarkali-kurta-set",
-      "title": "Cotton anarkali kurta set",
+      "slug": "printed-anarkali-kurta",
+      "title": "Printed anarkali kurta",
       "category": "women-ethnic-wear",
       "collections": ["festive-edit"],
-      "description": "A flared, calf-length anarkali kurta in cotton with straight trousers and a sheer cotton-blend dupatta. The yoke has thread embroidery and the kurta closes with a short placket at the back of the neck.",
-      "highlights": ["Kurta, trousers and dupatta", "100% cotton kurta and trousers", "Calf-length, 48 inches from shoulder", "Hand wash cold, dry in shade"],
+      "description": "A floor-length, fully flared anarkali kurta in a floral block print, cut in the angrakha style with an overlapping V-neck that ties at the side with tasselled cords. Three-quarter sleeves and the hem finish in a printed border.",
+      "highlights": ["Angrakha wrap front with tasselled ties", "Floor-length flared skirt", "Printed border at sleeves and hem", "Hand wash cold, dry in shade"],
       "hs_code": "6204",
-      "weight_grams": 650,
+      "weight_grams": 520,
       "price_minor": 349900,
       "compare_at_minor": 429900,
       "sku": "ANK",
       "sizes": ["XS", "S", "M", "L", "XL"],
+      "garment": "printed anarkali kurta",
       "colours": [
-        { "name": "Maroon", "code": "MRN", "describe": "deep maroon with gold-tone embroidery" },
-        { "name": "Teal", "code": "TEL", "describe": "teal green with gold-tone embroidery" },
-        { "name": "Mustard", "code": "MST", "describe": "mustard yellow with ivory embroidery" }
+        { "name": "Rose", "code": "RSE", "hex": "#c9566b" },
+        { "name": "Indigo", "code": "IND", "hex": "#2e3a6e" },
+        { "name": "Mustard", "code": "MST", "hex": "#c9952b" }
       ],
       "sold_out": ["Mustard/XL"],
-      "low": ["Teal/XS"],
-      "image": {
-        "model": "a woman in her late twenties with long dark hair in a loose braid and warm medium-brown skin",
-        "setting": "a plain warm-beige studio backdrop with a soft floor shadow",
-        "garment": "a flared calf-length cotton anarkali kurta with thread embroidery on the yoke, straight trousers and a sheer dupatta draped over one shoulder, in {colour}"
-      }
+      "low": ["Indigo/XS"],
+      "photos": [
+        { "shot": "front", "page": "https://unsplash.com/photos/a-woman-standing-in-a-long-dress-xbew54fDolA", "image": "https://images.unsplash.com/photo-1678534958069-bccca3b01b8e", "photographer": "nikhil uttam", "profile": "https://unsplash.com/@nikutm", "licence": "Unsplash License" },
+        { "shot": "detail", "page": "https://unsplash.com/photos/a-close-up-of-a-woman-wearing-a-red-and-blue-dress-RjoGIGrQcLU", "image": "https://images.unsplash.com/photo-1678534958115-fbe346489240", "photographer": "nikhil uttam", "profile": "https://unsplash.com/@nikutm", "licence": "Unsplash License" }
+      ]
     },
     {
-      "slug": "floral-print-maxi-dress",
-      "title": "Floral print maxi dress",
-      "category": "women-dresses",
-      "collections": ["new-arrivals"],
-      "description": "An ankle-length dress in light viscose with a small floral print, a V-neck, flutter sleeves and a tiered skirt. Elasticated at the waist and lined to the knee.",
-      "highlights": ["100% viscose, lined to the knee", "Elasticated waist", "Tiered ankle-length skirt", "Machine wash cold, gentle cycle"],
+      "slug": "printed-yoke-kurta",
+      "title": "Printed kurta with embroidered yoke",
+      "category": "women-ethnic-wear",
+      "collections": [],
+      "description": "A calf-length A-line kurta in a printed fabric with foil highlights, gathered under an embroidered yoke with a short button placket. Round neck and three-quarter sleeves with embroidered cuffs. Wear it with jeans or straight trousers.",
+      "highlights": ["Embroidered yoke and cuffs", "Gathered A-line cut, calf length", "Three-quarter sleeves", "Hand wash cold"],
       "hs_code": "6204",
       "weight_grams": 380,
-      "price_minor": 279900,
-      "sku": "FMX",
+      "price_minor": 219900,
+      "sku": "KYK",
       "sizes": ["XS", "S", "M", "L", "XL"],
+      "garment": "printed kurta (leave the jeans as they are)",
       "colours": [
-        { "name": "Ivory", "code": "IVR", "describe": "an ivory ground with a small dusty-pink and green floral print" },
-        { "name": "Navy", "code": "NVY", "describe": "a navy ground with a small white and yellow floral print" },
-        { "name": "Blush", "code": "BLS", "describe": "a blush-pink ground with a small cream and sage floral print" }
+        { "name": "Maroon", "code": "MRN", "hex": "#6b1f1f" },
+        { "name": "Bottle green", "code": "BGR", "hex": "#1f4d3a" },
+        { "name": "Navy", "code": "NVY", "hex": "#1f2a4d" }
       ],
       "sold_out": ["Navy/XS"],
-      "low": ["Blush/L"],
-      "image": {
-        "model": "a woman in her early thirties with shoulder-length wavy black hair and light-brown skin",
-        "setting": "soft daylight on a sunlit terrace with a plain lime-washed wall behind",
-        "garment": "an ankle-length viscose maxi dress with a V-neck, flutter sleeves and a tiered skirt, printed with {colour}"
-      }
+      "low": ["Maroon/XL"],
+      "photos": [
+        { "shot": "front", "page": "https://unsplash.com/photos/a-woman-poses-in-a-traditional-outfit-SmEZ0H1M_Ic", "image": "https://images.unsplash.com/photo-1740992557238-525b2114b20c", "photographer": "Anil Sharma", "profile": "https://unsplash.com/@anil_sharma_india", "licence": "Unsplash License" },
+        { "shot": "side", "page": "https://unsplash.com/photos/woman-poses-in-a-patterned-dress-with-jewelry-lxG61EjYfcU", "image": "https://images.unsplash.com/photo-1740992557019-6fe67248b746", "photographer": "Anil Sharma", "profile": "https://unsplash.com/@anil_sharma_india", "licence": "Unsplash License" },
+        { "shot": "detail", "page": "https://unsplash.com/photos/woman-wears-a-patterned-dress-and-jewelry-Tf-asLC3iG0", "image": "https://images.unsplash.com/photo-1740992555572-2e757f7143d8", "photographer": "Anil Sharma", "profile": "https://unsplash.com/@anil_sharma_india", "licence": "Unsplash License" }
+      ]
     },
     {
-      "slug": "linen-co-ord-set",
-      "title": "Linen shirt and trouser co-ord set",
+      "slug": "floral-co-ord-set",
+      "title": "Floral print co-ord set",
       "category": "women-co-ord-sets",
       "collections": ["new-arrivals"],
-      "description": "A relaxed short-sleeved linen shirt with a camp collar, and matching wide-leg trousers with an elasticated back waist and side pockets.",
-      "highlights": ["Shirt and trousers", "100% linen", "Wide-leg trousers with side pockets", "Machine wash cold, iron while damp"],
+      "description": "A relaxed tunic top with a notched V-neck, a lace-trimmed placket and three-quarter sleeves with frilled cuffs, and matching straight trousers, both in a large floral print.",
+      "highlights": ["Top and trousers", "Lace-trimmed placket, frilled cuffs", "Straight-leg trousers with an elasticated waist", "Machine wash cold, gentle cycle"],
       "hs_code": "6204",
-      "weight_grams": 520,
-      "price_minor": 399900,
-      "sku": "LCO",
+      "weight_grams": 480,
+      "price_minor": 279900,
+      "sku": "FCO",
       "sizes": ["XS", "S", "M", "L", "XL"],
+      "garment": "floral print top and trousers",
       "colours": [
-        { "name": "Sage", "code": "SGE", "describe": "sage green" },
-        { "name": "Sand", "code": "SND", "describe": "warm sand beige" },
-        { "name": "Powder blue", "code": "PBL", "describe": "powder blue" }
+        { "name": "Orchid", "code": "ORC", "hex": "#b56bb0" },
+        { "name": "Sage", "code": "SGE", "hex": "#8fa58a" },
+        { "name": "Powder blue", "code": "PBL", "hex": "#a9c4dc" }
       ],
       "sold_out": [],
-      "low": ["Sand/XS", "Sage/XL"],
-      "image": {
-        "model": "a woman in her mid twenties with a short black bob and deep-brown skin",
-        "setting": "a plain light-grey studio backdrop with a soft floor shadow",
-        "garment": "a relaxed short-sleeved linen camp-collar shirt worn untucked with matching wide-leg linen trousers, both in {colour}"
-      }
+      "low": ["Sage/XS", "Orchid/XL"],
+      "photos": [
+        { "shot": "front", "page": "https://unsplash.com/photos/young-woman-in-a-floral-print-pink-outfit--gDDIFVWtZg", "image": "https://images.unsplash.com/photo-1763719161844-2552a01d929f", "photographer": "IMANA", "profile": "https://unsplash.com/@imanaindia", "licence": "Unsplash License" },
+        { "shot": "side", "page": "https://unsplash.com/photos/woman-wearing-a-pink-floral-print-outfit-yDbsPQzIWyw", "image": "https://images.unsplash.com/photo-1763719161838-da20920db2de", "photographer": "IMANA", "profile": "https://unsplash.com/@imanaindia", "licence": "Unsplash License" },
+        { "shot": "seated", "page": "https://unsplash.com/photos/woman-wearing-a-floral-pajama-set-OZD8LweOvJ0", "image": "https://images.unsplash.com/photo-1763719161781-6891b6fb0574", "photographer": "IMANA", "profile": "https://unsplash.com/@imanaindia", "licence": "Unsplash License" }
+      ]
     },
     {
-      "slug": "art-silk-saree",
-      "title": "Art silk saree with blouse piece",
+      "slug": "ikat-print-co-ord-set",
+      "title": "Ikat print tunic and trouser set",
+      "category": "women-co-ord-sets",
+      "collections": ["new-arrivals"],
+      "description": "A hip-length tunic with a mandarin collar, a half button placket and gathered three-quarter sleeves, and matching wide-leg trousers, both in a bold ikat-style print.",
+      "highlights": ["Tunic and trousers", "Mandarin collar, half placket", "Wide-leg cropped trousers", "Machine wash cold"],
+      "hs_code": "6204",
+      "weight_grams": 500,
+      "price_minor": 299900,
+      "sku": "ICO",
+      "sizes": ["XS", "S", "M", "L", "XL"],
+      "garment": "ikat print tunic and trousers",
+      "colours": [
+        { "name": "Aqua", "code": "AQA", "hex": "#5fc4b8" },
+        { "name": "Indigo", "code": "IND", "hex": "#33407a" },
+        { "name": "Rose", "code": "RSE", "hex": "#d9849a" }
+      ],
+      "sold_out": ["Rose/XS"],
+      "low": ["Indigo/XL"],
+      "photos": [
+        { "shot": "front", "page": "https://unsplash.com/photos/woman-in-patterned-tunic-and-wide-leg-pants-8G-IqIGkMTc", "image": "https://images.unsplash.com/photo-1769063382663-ec2414702d3a", "photographer": "IMANA", "profile": "https://unsplash.com/@imanaindia", "licence": "Unsplash License" },
+        { "shot": "side", "page": "https://unsplash.com/photos/a-woman-wearing-a-colorful-patterned-outfit-21v7vavMCS0", "image": "https://images.unsplash.com/photo-1769063382684-28aa7d4d72a7", "photographer": "IMANA", "profile": "https://unsplash.com/@imanaindia", "licence": "Unsplash License" },
+        { "shot": "detail", "page": "https://unsplash.com/photos/a-woman-in-a-colorful-patterned-kurta-P9g4Wb6z5ZE", "image": "https://images.unsplash.com/photo-1769063382706-8156b3b33eac", "photographer": "IMANA", "profile": "https://unsplash.com/@imanaindia", "licence": "Unsplash License" }
+      ]
+    },
+    {
+      "slug": "paisley-print-jumpsuit",
+      "title": "Paisley print jumpsuit",
+      "category": "women-jumpsuits",
+      "collections": ["new-arrivals"],
+      "description": "A short-sleeved jumpsuit in an all-over paisley print, with a shirt collar, a button front, a tie belt at the waist and relaxed wide legs.",
+      "highlights": ["Shirt collar, button front", "Self-fabric tie belt", "Relaxed wide legs", "Machine wash cold"],
+      "hs_code": "6204",
+      "weight_grams": 420,
+      "price_minor": 289900,
+      "compare_at_minor": 339900,
+      "sku": "PJS",
+      "sizes": ["XS", "S", "M", "L", "XL"],
+      "garment": "paisley print jumpsuit",
+      "colours": [
+        { "name": "Black", "code": "BLK", "hex": "#1d1a1a" },
+        { "name": "Navy", "code": "NVY", "hex": "#1f2a4d" },
+        { "name": "Rust", "code": "RST", "hex": "#a3471f" }
+      ],
+      "sold_out": ["Black/M"],
+      "low": [],
+      "photos": [
+        { "shot": "front", "page": "https://unsplash.com/photos/woman-in-a-floral-print-dress-stands-by-plants-2BZs-NKM4ww", "image": "https://images.unsplash.com/photo-1768982597225-9dadb37f3db7", "photographer": "IMANA", "profile": "https://unsplash.com/@imanaindia", "licence": "Unsplash License" },
+        { "shot": "side", "page": "https://unsplash.com/photos/a-woman-in-a-floral-jumpsuit-stands-in-a-room-ggd4ejHJ4qg", "image": "https://images.unsplash.com/photo-1768982596794-b9907071b35e", "photographer": "IMANA", "profile": "https://unsplash.com/@imanaindia", "licence": "Unsplash License" },
+        { "shot": "back", "page": "https://unsplash.com/photos/woman-in-patterned-jumpsuit-stands-with-hands-behind-back-nV8C4JgAV-0", "image": "https://images.unsplash.com/photo-1768982596871-5311709d750b", "photographer": "IMANA", "profile": "https://unsplash.com/@imanaindia", "licence": "Unsplash License" }
+      ]
+    },
+    {
+      "slug": "satin-saree",
+      "title": "Satin saree with embellished border",
       "category": "women-ethnic-wear",
       "collections": ["festive-edit"],
-      "description": "A 5.5 metre saree in art silk with a woven zari border and pallu, and an unstitched 0.8 metre blouse piece in a matching colour. Art silk is a synthetic fibre with a silk-like sheen.",
-      "highlights": ["Saree 5.5 m, blouse piece 0.8 m", "Art silk (polyester), woven zari border", "Blouse piece unstitched", "Dry clean only"],
+      "description": "A 5.5 metre saree in satin with a soft sheen and a narrow embellished border along its length and pallu, with a matching 0.8 metre unstitched blouse piece.",
+      "highlights": ["Saree 5.5 m, blouse piece 0.8 m", "Satin with an embellished border", "Blouse piece unstitched", "Dry clean only"],
       "hs_code": "5407",
       "weight_grams": 600,
       "price_minor": 599900,
       "compare_at_minor": 749900,
-      "sku": "ASS",
+      "sku": "SSR",
       "sizes": ["Free size"],
+      "garment": "satin saree (keep the gold border gold)",
       "colours": [
-        { "name": "Emerald", "code": "EMR", "describe": "emerald green with a gold zari border" },
-        { "name": "Ruby", "code": "RBY", "describe": "ruby red with a gold zari border" },
-        { "name": "Royal blue", "code": "RBL", "describe": "royal blue with a silver zari border" }
+        { "name": "Magenta", "code": "MGT", "hex": "#b0175f" },
+        { "name": "Emerald", "code": "EMR", "hex": "#0f6b4a" },
+        { "name": "Royal blue", "code": "RBL", "hex": "#23439c" }
       ],
       "sold_out": [],
-      "low": ["Ruby/Free size"],
-      "image": {
-        "model": "a woman in her early thirties with her hair in a low bun and medium-brown skin, wearing small stud earrings",
-        "setting": "a plain warm-ivory studio backdrop with a soft floor shadow",
-        "garment": "an art silk saree draped in the Nivi style with the pallu over the left shoulder and a matching short-sleeved blouse, in {colour}"
-      }
+      "low": ["Emerald/Free size"],
+      "photos": [
+        { "shot": "front", "page": "https://www.pexels.com/photo/4048041/", "image": "https://images.pexels.com/photos/4048041/pexels-photo-4048041.jpeg", "photographer": "Prajakt Rebeloma", "profile": "https://www.pexels.com/@prajakt-rebeloma-1604474/", "licence": "Pexels License" },
+        { "shot": "side", "page": "https://www.pexels.com/photo/4048042/", "image": "https://images.pexels.com/photos/4048042/pexels-photo-4048042.jpeg", "photographer": "Prajakt Rebeloma", "profile": "https://www.pexels.com/@prajakt-rebeloma-1604474/", "licence": "Pexels License" }
+      ]
     },
     {
       "slug": "embroidered-lehenga-set",
       "title": "Embroidered lehenga set",
       "category": "women-ethnic-wear",
       "collections": ["festive-edit"],
-      "description": "A flared georgette lehenga skirt with sequin and thread embroidery, a matching semi-stitched blouse and a net dupatta with a scalloped edge. The skirt has a drawstring waist and a can-can lining.",
-      "highlights": ["Lehenga, blouse and dupatta", "Georgette with sequin and thread work", "Blouse semi-stitched, fits up to 42 in", "Dry clean only"],
+      "description": "A flared lehenga skirt covered in scalloped sequin and thread embroidery, a matching embroidered blouse with a beaded hem, and a sheer net dupatta with an embroidered edge.",
+      "highlights": ["Lehenga, blouse and dupatta", "Sequin and thread embroidery", "Blouse semi-stitched, fits up to 42 in", "Dry clean only"],
       "hs_code": "6204",
       "weight_grams": 1400,
       "price_minor": 1299900,
       "compare_at_minor": 1599900,
       "sku": "ELH",
       "sizes": ["XS", "S", "M", "L", "XL"],
+      "garment": "lehenga, blouse and dupatta (keep the silver embroidery silver)",
       "colours": [
-        { "name": "Rose pink", "code": "RSP", "describe": "rose pink with silver sequin work" },
-        { "name": "Wine", "code": "WNE", "describe": "deep wine with gold sequin work" },
-        { "name": "Peach", "code": "PCH", "describe": "soft peach with gold sequin work" }
+        { "name": "Rani pink", "code": "RNP", "hex": "#d6185f" },
+        { "name": "Wine", "code": "WNE", "hex": "#6d1530" },
+        { "name": "Peach", "code": "PCH", "hex": "#f0a98a" }
       ],
       "sold_out": ["Wine/XS", "Peach/XL"],
-      "low": ["Rose pink/M"],
-      "image": {
-        "model": "a woman in her late twenties with long loose dark hair and warm brown skin, wearing small drop earrings",
-        "setting": "a plain dusky-rose studio backdrop with a soft floor shadow",
-        "garment": "a flared georgette lehenga skirt with sequin and thread embroidery, a matching short blouse and a net dupatta with a scalloped edge over one arm, in {colour}"
-      }
+      "low": ["Rani pink/M"],
+      "photos": [
+        { "shot": "front", "page": "https://www.pexels.com/photo/37628610/", "image": "https://images.pexels.com/photos/37628610/pexels-photo-37628610.jpeg", "photographer": "aksinfo7 universe", "profile": "https://www.pexels.com/@aksinfo7/", "licence": "Pexels License" },
+        { "shot": "side", "page": "https://www.pexels.com/photo/37628618/", "image": "https://images.pexels.com/photos/37628618/pexels-photo-37628618.jpeg", "photographer": "aksinfo7 universe", "profile": "https://www.pexels.com/@aksinfo7/", "licence": "Pexels License" },
+        { "shot": "detail", "page": "https://www.pexels.com/photo/37628609/", "image": "https://images.pexels.com/photos/37628609/pexels-photo-37628609.jpeg", "photographer": "aksinfo7 universe", "profile": "https://www.pexels.com/@aksinfo7/", "licence": "Pexels License" }
+      ]
     },
     {
-      "slug": "wrap-midi-dress",
-      "title": "Wrap midi dress",
+      "slug": "floral-tiered-maxi-dress",
+      "title": "Floral tiered maxi dress",
       "category": "women-dresses",
       "collections": ["new-arrivals"],
-      "description": "A true wrap dress in crepe that ties at the side, with three-quarter sleeves and a mid-calf hem. It is not lined.",
-      "highlights": ["Polyester crepe, unlined", "Ties at the side", "Mid-calf length", "Machine wash cold"],
+      "description": "An ankle-length dress in a small all-over floral print, with a tie neck, three-quarter sleeves and a full tiered skirt.",
+      "highlights": ["Tie neck", "Three-quarter sleeves", "Tiered ankle-length skirt", "Machine wash cold, gentle cycle"],
       "hs_code": "6204",
-      "weight_grams": 340,
-      "price_minor": 249900,
-      "sku": "WMD",
+      "weight_grams": 380,
+      "price_minor": 279900,
+      "sku": "FMX",
       "sizes": ["XS", "S", "M", "L", "XL"],
+      "garment": "floral maxi dress",
       "colours": [
-        { "name": "Black", "code": "BLK", "describe": "solid black" },
-        { "name": "Emerald", "code": "EMR", "describe": "solid emerald green" },
-        { "name": "Rust", "code": "RST", "describe": "solid rust orange" }
+        { "name": "Blush", "code": "BLS", "hex": "#e8b7a8" },
+        { "name": "Navy", "code": "NVY", "hex": "#1f2a4d" },
+        { "name": "Sage", "code": "SGE", "hex": "#8fa58a" }
       ],
-      "sold_out": ["Black/M"],
-      "low": [],
-      "image": {
-        "model": "a woman in her mid thirties with long straight black hair and light-brown skin",
-        "setting": "a plain off-white studio backdrop with a soft floor shadow",
-        "garment": "a crepe wrap midi dress with three-quarter sleeves and a side tie, in {colour}"
-      }
+      "sold_out": ["Navy/XS"],
+      "low": ["Blush/L"],
+      "photos": [
+        { "shot": "front", "page": "https://unsplash.com/photos/woman-in-pink-and-white-floral-dress--FVDX_HjTy0", "image": "https://images.unsplash.com/photo-1630579588100-af5d652c7e07", "photographer": "nikhil uttam", "profile": "https://unsplash.com/@nikutm", "licence": "Unsplash License" }
+      ]
     },
     {
-      "slug": "cotton-shirt-dress",
-      "title": "Cotton poplin shirt dress",
-      "category": "women-dresses",
-      "collections": [],
-      "description": "A knee-length shirt dress in cotton poplin with a full button front, a collar, roll-up sleeves and a self-fabric belt.",
-      "highlights": ["100% cotton poplin", "Full button front", "Removable self-fabric belt", "Machine wash warm"],
-      "hs_code": "6204",
-      "weight_grams": 300,
-      "price_minor": 229900,
-      "compare_at_minor": 279900,
-      "sku": "CSD",
-      "sizes": ["XS", "S", "M", "L", "XL"],
-      "colours": [
-        { "name": "White", "code": "WHT", "describe": "crisp white" },
-        { "name": "Sky blue", "code": "SKY", "describe": "pale sky blue" },
-        { "name": "Olive", "code": "OLV", "describe": "olive green" }
-      ],
-      "sold_out": [],
-      "low": ["Olive/S"],
-      "image": {
-        "model": "a woman in her late twenties with curly shoulder-length hair and deep-brown skin",
-        "setting": "soft daylight against a plain pale-blue painted wall",
-        "garment": "a knee-length cotton poplin shirt dress with a collar, full button front, sleeves rolled to the elbow and a self-fabric belt, in {colour}"
-      }
-    },
-    {
-      "slug": "printed-kurta-palazzo-set",
-      "title": "Printed kurta and palazzo set",
-      "category": "women-ethnic-wear",
-      "collections": [],
-      "description": "A straight, knee-length kurta in block-printed cotton with three-quarter sleeves, and matching flared palazzo trousers with an elasticated waist.",
-      "highlights": ["Kurta and palazzo", "100% cotton, block-printed", "Elasticated palazzo waist", "Hand wash separately; colour may bleed"],
-      "hs_code": "6204",
-      "weight_grams": 480,
-      "price_minor": 219900,
-      "sku": "KPZ",
-      "sizes": ["XS", "S", "M", "L", "XL"],
-      "colours": [
-        { "name": "Indigo", "code": "IND", "describe": "an indigo ground with a small white block print" },
-        { "name": "Coral", "code": "CRL", "describe": "a coral ground with a small ivory block print" }
-      ],
-      "sold_out": ["Coral/XS"],
-      "low": ["Indigo/XL"],
-      "image": {
-        "model": "a woman in her early twenties with long dark hair in a side plait and medium-brown skin",
-        "setting": "a plain warm-grey studio backdrop with a soft floor shadow",
-        "garment": "a straight knee-length cotton kurta with three-quarter sleeves and matching flared palazzo trousers, block-printed with {colour}"
-      }
-    },
-    {
-      "slug": "satin-evening-gown",
-      "title": "Satin evening gown",
-      "category": "women-dresses",
-      "collections": ["festive-edit"],
-      "description": "A floor-length gown in satin with a cowl neck, thin adjustable straps and a bias-cut skirt. Fully lined, with a concealed side zip.",
-      "highlights": ["Polyester satin, fully lined", "Cowl neck, adjustable straps", "Concealed side zip", "Dry clean only"],
-      "hs_code": "6204",
-      "weight_grams": 450,
-      "price_minor": 649900,
-      "sku": "SEG",
-      "sizes": ["XS", "S", "M", "L", "XL"],
-      "colours": [
-        { "name": "Champagne", "code": "CHM", "describe": "champagne gold" },
-        { "name": "Midnight blue", "code": "MDN", "describe": "midnight blue" },
-        { "name": "Burgundy", "code": "BRG", "describe": "burgundy" }
-      ],
-      "sold_out": ["Champagne/XL"],
-      "low": ["Burgundy/S"],
-      "image": {
-        "model": "a woman in her early thirties with her hair swept into a low chignon and light-brown skin",
-        "setting": "a plain charcoal studio backdrop with a soft rim light",
-        "garment": "a floor-length satin gown with a cowl neck, thin straps and a bias-cut skirt, in {colour}"
-      }
-    },
-    {
-      "slug": "mens-cotton-kurta",
-      "title": "Men's cotton kurta",
+      "slug": "mens-embroidered-kurta",
+      "title": "Men's embroidered kurta",
       "category": "men-kurtas",
       "collections": ["festive-edit"],
-      "description": "A straight, knee-length kurta in cotton slub with a mandarin collar, a half placket with fabric buttons, side slits and two side pockets.",
-      "highlights": ["100% cotton slub", "Mandarin collar, half placket", "Two side pockets", "Machine wash cold"],
+      "description": "A straight, knee-length kurta with all-over tonal thread embroidery, a mandarin collar, a concealed button placket and side slits. Shown with white churidar trousers, which are not included.",
+      "highlights": ["All-over tonal thread embroidery", "Mandarin collar, concealed placket", "Knee length with side slits", "Machine wash cold, inside out"],
       "hs_code": "6205",
-      "weight_grams": 320,
-      "price_minor": 179900,
+      "weight_grams": 340,
+      "price_minor": 199900,
       "sku": "MKT",
       "sizes": ["S", "M", "L", "XL", "XXL"],
+      "garment": "kurta (leave the white trousers white)",
       "colours": [
-        { "name": "White", "code": "WHT", "describe": "off-white" },
-        { "name": "Navy", "code": "NVY", "describe": "navy blue" },
-        { "name": "Mustard", "code": "MST", "describe": "mustard yellow" }
+        { "name": "Yellow", "code": "YLW", "hex": "#f2c814" },
+        { "name": "White", "code": "WHT", "hex": "#f4f1e8" },
+        { "name": "Navy", "code": "NVY", "hex": "#1f2a4d" },
+        { "name": "Maroon", "code": "MRN", "hex": "#6b1f2a" }
       ],
       "sold_out": ["Navy/S"],
-      "low": ["Mustard/XXL"],
-      "image": {
-        "model": "a man in his early thirties with short black hair, a neatly trimmed beard and medium-brown skin",
-        "setting": "a plain warm-beige studio backdrop with a soft floor shadow",
-        "garment": "a straight knee-length cotton slub kurta with a mandarin collar and half placket, worn with off-white churidar trousers, the kurta in {colour}"
-      }
+      "low": ["Maroon/XXL"],
+      "photos": [
+        { "shot": "front", "page": "https://unsplash.com/photos/man-in-yellow-kurta-and-white-pants-smiles-fI8QI03I3Og", "image": "https://images.unsplash.com/photo-1768807478287-9e7953cfdca3", "photographer": "Noor Alam", "profile": "https://unsplash.com/@itsmenoor2022", "licence": "Unsplash License" },
+        { "shot": "standing", "page": "https://unsplash.com/photos/gDY1O5S7GtY", "image": "https://images.unsplash.com/photo-1768807478244-0a3cdff25a57", "photographer": "Noor Alam", "profile": "https://unsplash.com/@itsmenoor2022", "licence": "Unsplash License" },
+        { "shot": "seated", "page": "https://unsplash.com/photos/a-man-in-a-yellow-kurta-and-white-pants-sits-KbYXDew9uNk", "image": "https://images.unsplash.com/photo-1768807478320-fcfd3929acb2", "photographer": "Noor Alam", "profile": "https://unsplash.com/@itsmenoor2022", "licence": "Unsplash License" }
+      ]
     },
     {
       "slug": "mens-nehru-jacket",
-      "title": "Men's Nehru jacket",
+      "title": "Men's embroidered Nehru jacket",
       "category": "men-jackets",
       "collections": ["festive-edit"],
-      "description": "A sleeveless Nehru jacket in a textured cotton-blend jacquard with a mandarin collar, a five-button front and two welt pockets. Lined.",
-      "highlights": ["Cotton-blend jacquard, lined", "Mandarin collar, five buttons", "Two welt pockets", "Dry clean only"],
+      "description": "A sleeveless Nehru jacket with all-over thread and sequin embroidery, a mandarin collar and a button front. Shown over a lilac kurta and trousers, which are not included.",
+      "highlights": ["All-over thread and sequin embroidery", "Mandarin collar, button front", "Lined", "Dry clean only"],
       "hs_code": "6203",
       "weight_grams": 420,
       "price_minor": 299900,
       "compare_at_minor": 359900,
       "sku": "NHJ",
       "sizes": ["S", "M", "L", "XL", "XXL"],
+      "garment": "Nehru jacket (leave the lilac kurta and trousers as they are)",
       "colours": [
-        { "name": "Black", "code": "BLK", "describe": "black" },
-        { "name": "Maroon", "code": "MRN", "describe": "maroon" },
-        { "name": "Beige", "code": "BGE", "describe": "beige" }
+        { "name": "Silver", "code": "SLV", "hex": "#c9c7cf" },
+        { "name": "Black", "code": "BLK", "hex": "#1a1a1a" },
+        { "name": "Maroon", "code": "MRN", "hex": "#6b1f2a" },
+        { "name": "Beige", "code": "BGE", "hex": "#d8c7a5" }
       ],
       "sold_out": [],
       "low": ["Maroon/S", "Beige/XXL"],
-      "image": {
-        "model": "a man in his late twenties with short wavy hair, clean-shaven, with warm brown skin",
-        "setting": "a plain light-grey studio backdrop with a soft floor shadow",
-        "garment": "a sleeveless jacquard Nehru jacket with a mandarin collar and five buttons, worn over a plain ivory kurta and ivory trousers, the jacket in {colour}"
-      }
+      "photos": [
+        { "shot": "front", "page": "https://unsplash.com/photos/man-in-light-purple-kurta-and-embellished-vest-01dr7FTdJ6c", "image": "https://images.unsplash.com/photo-1774267230662-575d1f4ec1bd", "photographer": "Noor Alam", "profile": "https://unsplash.com/@itsmenoor2022", "licence": "Unsplash License" },
+        { "shot": "standing", "page": "https://unsplash.com/photos/a-man-in-a-pink-kurta-and-jacket-smiles-Xgip1NPJ_b4", "image": "https://images.unsplash.com/photo-1774267230654-ad5335ecd6f0", "photographer": "Noor Alam", "profile": "https://unsplash.com/@itsmenoor2022", "licence": "Unsplash License" }
+      ]
     },
     {
-      "slug": "mens-linen-shirt",
-      "title": "Men's linen shirt",
+      "slug": "mens-kurta-pyjama-set",
+      "title": "Men's kurta pyjama set",
+      "category": "men-kurtas",
+      "collections": [],
+      "description": "A plain knee-length kurta with a shirt collar, a half button placket and side slits, with matching pyjama trousers.",
+      "highlights": ["Kurta and pyjama", "Shirt collar, half placket", "Elasticated pyjama waist", "Machine wash cold"],
+      "hs_code": "6203",
+      "weight_grams": 520,
+      "price_minor": 229900,
+      "sku": "MKP",
+      "sizes": ["S", "M", "L", "XL", "XXL"],
+      "garment": "kurta and pyjama",
+      "colours": [
+        { "name": "Royal blue", "code": "RBL", "hex": "#1f4fa3" },
+        { "name": "Black", "code": "BLK", "hex": "#1a1a1a" },
+        { "name": "Olive", "code": "OLV", "hex": "#5b6236" }
+      ],
+      "sold_out": ["Black/XXL"],
+      "low": ["Olive/S"],
+      "photos": [
+        { "shot": "front", "page": "https://unsplash.com/photos/a-man-in-a-blue-kurta-and-pants-smiles-sLRFg-VC2FY", "image": "https://images.unsplash.com/photo-1770359993283-a2c2f386584e", "photographer": "Noor Alam", "profile": "https://unsplash.com/@itsmenoor2022", "licence": "Unsplash License" }
+      ]
+    },
+    {
+      "slug": "mens-cotton-shirt",
+      "title": "Men's cotton shirt",
       "category": "men-shirts",
       "collections": ["new-arrivals"],
-      "description": "A long-sleeved shirt in washed linen with a button-down collar, a chest pocket and a curved hem, cut to a regular fit.",
-      "highlights": ["100% linen, washed for softness", "Button-down collar", "Regular fit, curved hem", "Machine wash cold"],
+      "description": "A long-sleeved shirt in plain cotton with a classic collar, a full button front and a curved hem, cut to a relaxed fit and worn untucked.",
+      "highlights": ["Plain cotton", "Classic collar, full button front", "Relaxed fit, curved hem", "Machine wash cold"],
       "hs_code": "6205",
       "weight_grams": 260,
-      "price_minor": 249900,
-      "sku": "MLS",
+      "price_minor": 199900,
+      "sku": "MCS",
       "sizes": ["S", "M", "L", "XL", "XXL"],
+      "garment": "shirt (leave the black trousers black)",
       "colours": [
-        { "name": "White", "code": "WHT", "describe": "white" },
-        { "name": "Sky blue", "code": "SKY", "describe": "sky blue" },
-        { "name": "Olive", "code": "OLV", "describe": "olive green" },
-        { "name": "Sand", "code": "SND", "describe": "sand beige" }
+        { "name": "White", "code": "WHT", "hex": "#f5f5f2" },
+        { "name": "Sky blue", "code": "SKY", "hex": "#a8c8e8" },
+        { "name": "Olive", "code": "OLV", "hex": "#6b6b3a" },
+        { "name": "Sand", "code": "SND", "hex": "#d6c3a0" }
       ],
       "sold_out": ["White/XXL"],
       "low": ["Olive/S"],
-      "image": {
-        "model": "a man in his mid thirties with short black hair, light stubble and light-brown skin",
-        "setting": "soft daylight against a plain lime-washed wall",
-        "garment": "a long-sleeved washed linen shirt with a button-down collar and a chest pocket, sleeves rolled once, worn untucked over stone chinos, the shirt in {colour}"
-      }
+      "photos": [
+        { "shot": "front", "page": "https://www.pexels.com/photo/38947237/", "image": "https://images.pexels.com/photos/38947237/pexels-photo-38947237.jpeg", "photographer": "Jibin Yesudasan", "profile": "https://www.pexels.com/@jibin-yesudasan-2153859944/", "licence": "Pexels License", "crop": { "left": 0.17, "top": 0.2, "size": 0.72 } },
+        { "shot": "standing", "page": "https://www.pexels.com/photo/38947236/", "image": "https://images.pexels.com/photos/38947236/pexels-photo-38947236.jpeg", "photographer": "Jibin Yesudasan", "profile": "https://www.pexels.com/@jibin-yesudasan-2153859944/", "licence": "Pexels License", "crop": { "left": 0.2, "top": 0.2, "size": 0.72 } },
+        { "shot": "leaning", "page": "https://www.pexels.com/photo/38947235/", "image": "https://images.pexels.com/photos/38947235/pexels-photo-38947235.jpeg", "photographer": "Jibin Yesudasan", "profile": "https://www.pexels.com/@jibin-yesudasan-2153859944/", "licence": "Pexels License", "crop": { "left": 0.22, "top": 0.18, "size": 0.72 } }
+      ]
     }
   ]
 }
