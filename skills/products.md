@@ -532,6 +532,26 @@ suggested category and an HSN code (an Indian store only) are kept in
 `ai_drafted` as suggestions and never applied. Create twice and nothing is
 made twice: a proposal's product is found by its `ai_drafted.item` mark.
 
+## Improving a product with AI
+
+`ext/catalog-ai` (`-catalog-ai`, D152) proposes a better listing for a product
+the shop already has, through the AI gateway's `catalog.improve` task:
+
+```http
+GET  /api/admin/x/catalog-ai/status                   {"ready": true, "pictures": true}
+POST /api/admin/x/catalog-ai/products/42/improve      → {"changes": [{"field": "title", "current": "…", "proposed": "…", "reason": "…"}, …], "verify": ["The strap is leather"]}
+```
+
+Only the fields that would change come back, each beside its current value:
+`title`, `description` (HTML on both sides), `highlights`, `tags`,
+`product_type`, `category` (`{id, name}`, always one of the store's),
+`seo_title`, `seo_description`, and `alt` with its `media_id`. `verify` is what
+the model inferred and the shop must check. Nothing is written: the panel copies
+the chosen fields into the product form, and the product's own `PATCH` (and the
+media route, for an alt text) saves them. A refusal names its cause in
+`error.code`: `ai_not_ready`, `ai_budget_exhausted`, `ai_credit_exhausted`,
+`ai_policy_blocked` (409), `ai_provider_failed` or `ai_no_proposal` (502).
+
 ## The sample shop
 
 A store can start with a sample shop (D94, D96): `POST /api/stores/create` with

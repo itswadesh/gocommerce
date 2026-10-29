@@ -387,7 +387,9 @@ store's monthly cap, leaves out the data the owner has not let go, records
 every call with its tokens and cost, and retries only what is worth retrying.
 `ext/import-amazon`'s `product.rewrite` is the worked example, and
 `ext/photo-products` shows a task with pictures (`Document.Caption` labels
-each one so the answer can name it), and
+each one so the answer can name it), `ext/catalog-ai`'s `catalog.improve`
+shows a two-rung ladder that climbs on the model's own confidence and on a
+`Check` that reads the store (the category must be one it has), and
 [the design](../docs/ai-b2b/m1-ai-gateway.md) has the whole contract.
 
 ## MCP: the same state machine, a different door
