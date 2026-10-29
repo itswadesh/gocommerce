@@ -7,8 +7,8 @@
  * as the switch, not on the next read of storage.
  */
 import { stores as storesAPI } from "$lib/api.js";
-import { setRecord } from "$lib/session.svelte.js";
-import { forgetStore, getStore, pickStore, setStore } from "$lib/store-scope.js";
+import { getRecord, recordStore, setRecord } from "$lib/session.svelte.js";
+import { forgetStore, getStore, openStore, setStore } from "$lib/store-scope.js";
 
 /*
  * `state` is where the tab stands: "unknown" until asked, "pending" while
@@ -95,20 +95,16 @@ export async function ensureStore(linked = "") {
     const list = await loadStores();
     const want = getStore();
     const active = list.filter((st) => st.status === "active");
-    const kept = pickStore(active, linked, want);
-    if (kept && kept !== pickStore(active, "", want)) {
-        // Entered, as a switch is, so the screen draws with this store's
-        // rights from the start: the stored record is the remembered store's,
-        // and a theme editor drawn with an owner's record in a store where
-        // the person is staff asked for a preview key and was refused.
-        const entry = await storesAPI.enter(kept.id);
+    const open = openStore(active, linked, want, getRecord() ? recordStore() : null);
+    if (open?.enter) {
+        const entry = await storesAPI.enter(open.store.id);
         stillCurrent(mine);
         applyEntry(entry);
         return "ok";
     }
-    if (kept) {
-        if (kept.id !== want) setStore(kept.id);
-        s.current = kept.id;
+    if (open) {
+        if (open.store.id !== want) setStore(open.store.id);
+        s.current = open.store.id;
         s.state = "ok";
         return "ok";
     }
