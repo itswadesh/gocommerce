@@ -72,7 +72,7 @@ const PluginKey = "ai-gateway"
 
 // The defaults ADR 0005 names: current models, on the Anthropic provider.
 const (
-	defaultSmallModel  = "claude-haiku-4-5"
+	defaultSmallModel  = "claude-haiku-5-5"
 	defaultStrongModel = "claude-sonnet-5-5"
 )
 
