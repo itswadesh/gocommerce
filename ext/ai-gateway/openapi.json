@@ -104,6 +104,177 @@
         }
       }
     },
+    "/api/admin/x/ai-gateway/credit": {
+      "get": {
+        "tags": [
+          "ai-gateway"
+        ],
+        "summary": "This store's AI credit",
+        "description": "The free AI trial and the topped-up balance, what is spent and held, and what is left. AI features draw this down; every non-AI feature is free. Needs `ai.read`.",
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AICredit"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/ai-gateway/credit/ledger": {
+      "get": {
+        "tags": [
+          "ai-gateway"
+        ],
+        "summary": "AI credit changes",
+        "description": "Every grant and free-allowance change an operator made to this store's AI credit, newest first, with who made it. Needs `store.operate`.",
+        "responses": {
+          "200": {
+            "description": "A page of credit changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AICreditEntry"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ]
+      }
+    },
+    "/api/admin/x/ai-gateway/credit/grant": {
+      "post": {
+        "tags": [
+          "ai-gateway"
+        ],
+        "summary": "Top up this store's AI credit",
+        "description": "Add to the store's balance by hand (there is no payment gateway yet). The amount is minor units of the store's currency. The change is recorded with who made it. Needs `store.operate`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AICreditChange"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The credit after the top-up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AICredit"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/ai-gateway/credit/free-allowance": {
+      "post": {
+        "tags": [
+          "ai-gateway"
+        ],
+        "summary": "Set this store's free AI trial",
+        "description": "Set the size of the free AI trial, in minor units of the store's currency. It is the trial's size, not an addition; what the store has already spent stays spent. The change is recorded with who made it. Needs `store.operate`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AICreditChange"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The credit after the change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AICredit"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
     "/api/admin/x/ai-gateway/executions": {
       "get": {
         "tags": [
@@ -174,6 +345,7 @@
                 "refused",
                 "provider_error",
                 "budget_exhausted",
+                "credit_exhausted",
                 "no_price",
                 "task_error",
                 "policy_blocked"
@@ -783,6 +955,98 @@
           }
         }
       },
+      "AICredit": {
+        "type": "object",
+        "description": "A store's AI credit. Amounts are micro-minor (millionths of a minor unit), the unit the gateway records cost in; the client formats them.",
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "free_allowance_micro_minor": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The free trial's size."
+          },
+          "granted_micro_minor": {
+            "type": "integer",
+            "format": "int64",
+            "description": "What an operator has topped up by hand."
+          },
+          "consumed_micro_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reserved_micro_minor": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Held for calls in flight."
+          },
+          "free_remaining_micro_minor": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The free trial not yet spent; a call draws it before the balance."
+          },
+          "balance_remaining_micro_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "available_micro_minor": {
+            "type": "integer",
+            "format": "int64",
+            "description": "What a call could draw now."
+          },
+          "exhausted": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AICreditChange": {
+        "type": "object",
+        "required": [
+          "amount_minor"
+        ],
+        "properties": {
+          "amount_minor": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Minor units of the store's currency."
+          },
+          "note": {
+            "type": "string",
+            "description": "An optional reason, kept with the change."
+          }
+        }
+      },
+      "AICreditEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "grant",
+              "free_allowance"
+            ]
+          },
+          "amount_minor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "actor_email": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "AIStep": {
         "type": "object",
         "properties": {
@@ -797,7 +1061,7 @@
           },
           "outcome": {
             "type": "string",
-            "description": "hit or miss; for a model ok, invalid, low_confidence, refused, provider_error, budget_exhausted or no_price."
+            "description": "hit or miss; for a model ok, invalid, low_confidence, refused, provider_error, budget_exhausted, credit_exhausted or no_price."
           },
           "reason": {
             "type": "string"
@@ -924,6 +1188,7 @@
               "refused",
               "provider_error",
               "budget_exhausted",
+              "credit_exhausted",
               "no_price",
               "task_error",
               "policy_blocked"

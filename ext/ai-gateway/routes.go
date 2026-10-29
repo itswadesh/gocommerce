@@ -17,6 +17,10 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	const base = "/api/admin/x/ai-gateway/"
 	app.HandleAdminFunc("GET "+base+"usage", m.handleUsage, RightRead)
 	app.HandleAdminFunc("GET "+base+"budget", m.handleBudget, RightRead)
+	app.HandleAdminFunc("GET "+base+"credit", m.handleCredit, RightRead)
+	app.HandleAdminFunc("GET "+base+"credit/ledger", m.handleCreditLedger, gocommerce.RightStoreOperate)
+	app.HandleAdminFunc("POST "+base+"credit/grant", m.handleGrant, gocommerce.RightStoreOperate)
+	app.HandleAdminFunc("POST "+base+"credit/free-allowance", m.handleFreeAllowance, gocommerce.RightStoreOperate)
 	app.HandleAdminFunc("GET "+base+"executions", m.handleExecutions, RightRead)
 	app.HandleAdminFunc("GET "+base+"executions/{id}", m.handleExecution, RightRead)
 	app.HandleAdminFunc("GET "+base+"jobs", m.handleJobs, RightRead)
@@ -40,6 +44,58 @@ func (m *Module) handleBudget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	gocommerce.Respond(w, http.StatusOK, b)
+}
+
+func (m *Module) handleCredit(w http.ResponseWriter, r *http.Request) {
+	c, err := m.Credit(r.Context())
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	gocommerce.Respond(w, http.StatusOK, c)
+}
+
+func (m *Module) handleCreditLedger(w http.ResponseWriter, r *http.Request) {
+	limit, offset, err := gocommerce.Page(r)
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	list, total, err := m.CreditLedger(r.Context(), limit, offset)
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	gocommerce.RespondList(w, list, gocommerce.ListMeta{Total: total, Limit: limit, Offset: offset})
+}
+
+// creditChange is a grant or a new free allowance, in minor units of the
+// store's currency.
+type creditChange struct {
+	AmountMinor int64  `json:"amount_minor"`
+	Note        string `json:"note"`
+}
+
+func (m *Module) handleGrant(w http.ResponseWriter, r *http.Request) {
+	m.creditWrite(w, r, m.Grant)
+}
+
+func (m *Module) handleFreeAllowance(w http.ResponseWriter, r *http.Request) {
+	m.creditWrite(w, r, m.SetFreeAllowance)
+}
+
+func (m *Module) creditWrite(w http.ResponseWriter, r *http.Request, apply func(context.Context, int64, string) (*Credit, error)) {
+	var in creditChange
+	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	c, err := apply(r.Context(), in.AmountMinor, strings.TrimSpace(in.Note))
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	gocommerce.Respond(w, http.StatusOK, c)
 }
 
 func (m *Module) handleExecutions(w http.ResponseWriter, r *http.Request) {
