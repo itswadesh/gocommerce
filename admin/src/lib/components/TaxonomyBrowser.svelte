@@ -133,7 +133,7 @@
     }
 </script>
 
-<Drawer {open} title="Shopify taxonomy" size="md" {onclose}>
+<Drawer {open} title="Browse taxonomy" size="md" {onclose}>
     <p class="txt-hint txt-sm m-b-sm">
         Switch on the categories your store uses. Switching one on adds the categories above
         it too, with their product fields. Switching one off removes it and everything under
