@@ -94,7 +94,12 @@
     // Named in the notes below: an editor with nothing to edit, in the other
     // of two stores with one name, read as a broken editor until it said
     // which store and which role it was drawn for.
-    const storeName = $derived(myStores.current?.name || "this store");
+    const storeName = $derived.by(() => {
+        const here = myStores.current;
+        if (!here) return "this store";
+        const twin = myStores.list.some((st) => st.id !== here.id && st.name === here.name);
+        return twin ? `${here.name} (${here.domain || here.slug})` : here.name;
+    });
     const role = $derived(session.record?.role || "");
     const asRole = $derived(role ? ` as ${role[0].toUpperCase()}${role.slice(1)}` : "");
 
@@ -286,8 +291,11 @@
             }));
             adopt(state);
             autosave.reset();
-            // There is nothing to choose between: open its settings.
-            if (CHROME && sections.length) selectedId = sections[0].id;
+            // There is nothing to choose between: open its settings — for a
+            // role that may change them. Opened for one that may not, they
+            // were an empty panel, or on a phone a drawer of fields whose
+            // saves the engine refused.
+            if (CHROME && sections.length && writable) selectedId = sections[0].id;
             pluginOn = plugin ? !!plugin.enabled : true;
             // The theme settings — and so Match to logo — live on the home page
             // alone (D127), so only it needs the store's logo.

@@ -110,7 +110,7 @@
 
                     {#if !editor && !missing}
                         <p class="txt-hint txt-sm th-off">
-                            The homepage, header, footer and page templates aren't listed: your role doesn't include
+                            The theme editor isn't listed: your role doesn't include
                             <strong>{rightLabel("layouts.read")}</strong>.
                         </p>
                     {/if}
