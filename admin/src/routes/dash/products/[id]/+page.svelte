@@ -442,10 +442,7 @@
             metafields: [],
             highlights: [""],
             free_gift: "",
-            // Alt texts "Improve with AI" proposed, by picture, for Save to
-            // write. A picture's alt is the media library's, with its own
-            // route, so the form holds only what has not been saved yet.
-            alts: {},
+            unsavedAlts: {},
             // Values for the fields the chosen category defines. Keyed by the
             // attribute key, so a renamed label keeps the answers under it.
             category_meta: {},
@@ -534,7 +531,7 @@
             // into, so the comparison at Save is on the lines, not the rows.
             highlights: highlightRows(p.metadata),
             free_gift: freeGiftOf(p.metadata),
-            alts: {},
+            unsavedAlts: {},
             metafields: Object.entries(p.metadata?.custom ?? {}).map(([key, value]) => ({
                 key,
                 // Anything a module wrote as a number or an object is shown as
@@ -621,6 +618,8 @@
             return;
         }
         loading = true;
+        // A proposal belongs to the product it was asked for.
+        improveOpen = false;
         try {
             /*
              * Three requests, and two of them are vocabularies rather than the
@@ -1053,9 +1052,16 @@
                 await api.patch(`/api/admin/products/${product.id}`, patch);
             }
 
-            for (const [id, alt] of Object.entries(form.alts)) {
-                await api.patch(`/api/admin/media/${id}`, { alt });
-                media = media.map((m) => (String(m.id) === id ? { ...m, alt } : m));
+            // One refused alt text must not stop the rest of the product saving.
+            let altRefused = null;
+            for (const [id, alt] of Object.entries(form.unsavedAlts)) {
+                if (!media.some((m) => String(m.id) === id)) continue;
+                try {
+                    await api.patch(`/api/admin/media/${id}`, { alt });
+                    media = media.map((m) => (String(m.id) === id ? { ...m, alt } : m));
+                } catch (err) {
+                    altRefused = err;
+                }
             }
 
             if (
@@ -1156,6 +1162,7 @@
             product = await api.get(`/api/admin/products/${product.id}`);
             seed(product);
             toast.success("Product saved");
+            if (altRefused) toast.error(altRefused);
         } catch (err) {
             toast.error(err);
         } finally {
@@ -1362,7 +1369,6 @@
                     <span class="label status-chip {statusLabel[product.status] ?? ''}">{product.status}</span>
 
                     {#if writable && hasModule("catalog-ai")}
-                        <!-- Named on the button itself: on a phone the header shows its icon alone. -->
                         <button
                             type="button"
                             class="btn sm secondary"
@@ -2519,7 +2525,7 @@
         {form}
         {media}
         {categories}
-        canAlt={can("media.write")}
+        canWriteMedia={can("media.write")}
         {dirty}
         onapply={applyImprove}
         onclose={() => (improveOpen = false)}

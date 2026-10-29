@@ -1,13 +1,4 @@
 <script>
-    /**
-     * "Improve with AI" on the product editor (D152): the catalog-ai module's
-     * proposal for this product, field by field, beside what the form holds.
-     *
-     * Applying copies the chosen fields into the form and closes. Nothing is
-     * saved here: the editor's own Save writes them, through the product's
-     * update, so the rights, the checks and the audit are the ones every edit
-     * goes through.
-     */
     import { base } from "$app/paths";
     import { api, can } from "$lib/api.js";
     import { formatMicro } from "$lib/ai.js";
@@ -22,24 +13,18 @@
         form,
         media = [],
         categories = [],
-        /** media.write, which saving an alt text needs. */
-        canAlt = false,
-        /** Unsaved edits: the proposal is made from the saved product. */
+        canWriteMedia = false,
         dirty = false,
         onapply,
         onclose,
     } = $props();
 
-    /* loading, refused (with the refusal's title, message and fix) or ready
-       (with the proposal). */
     let view = $state({ kind: "loading" });
     let chosen = $state(new Set());
-    // A run's answer is dropped when the drawer was closed, or asked again,
-    // while it was out.
-    let run = 0;
+    let generation = 0;
 
     const rows = $derived(
-        view.kind === "ready" ? rowsFor(view.proposal, { form, media, categories, canAlt }) : [],
+        view.kind === "ready" ? rowsFor(view.proposal, { form, media, categories, canWriteMedia }) : [],
     );
 
     $effect(() => {
@@ -47,26 +32,26 @@
     });
 
     async function ask() {
-        const mine = ++run;
+        const mine = ++generation;
         view = { kind: "loading" };
         try {
             const status = await api.get("/api/admin/x/catalog-ai/status");
-            if (mine !== run) return;
+            if (mine !== generation) return;
             if (!status.ready) {
                 view = { kind: "refused", ...refusal({ code: "ai_not_ready", message: status.reason }) };
                 return;
             }
             const proposal = await api.post(`/api/admin/x/catalog-ai/products/${productId}/improve`);
-            if (mine !== run) return;
+            if (mine !== generation || proposal.product_id !== productId) return;
             view = { kind: "ready", proposal };
-            chosen = new Set(rowsFor(proposal, { form, media, categories, canAlt }).map((r) => r.key));
+            chosen = new Set(rowsFor(proposal, { form, media, categories, canWriteMedia }).map((r) => r.key));
         } catch (err) {
-            if (mine === run) view = { kind: "refused", ...refusal(err) };
+            if (mine === generation) view = { kind: "refused", ...refusal(err) };
         }
     }
 
     function close() {
-        run++;
+        generation++;
         onclose?.();
     }
 
@@ -79,7 +64,7 @@
 
     function apply() {
         const keys = new Set(rows.map((r) => r.key).filter((k) => chosen.has(k)));
-        run++;
+        generation++;
         onapply?.(applied(form, view.proposal.changes, keys), keys.size);
     }
 
@@ -292,7 +277,6 @@
     .improve-pick {
         justify-content: space-between;
     }
-    /* The whole label row is the target, 44px tall, with the box at its middle. */
     .improve-pick label {
         flex: 1;
         min-height: 44px;

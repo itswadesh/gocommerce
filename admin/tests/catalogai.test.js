@@ -1,8 +1,3 @@
-/*
- * "Improve with AI" on the product editor (D152): the proposal beside the
- * form, and only the chosen changes copied into it.
- */
-
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -27,7 +22,7 @@ const form = {
     tags: ["mug"],
     category_id: 3,
     seo_title: "",
-    alts: {},
+    unsavedAlts: {},
 };
 const media = [{ id: 41, alt: "", url: "/media/mug.jpg" }];
 const categories = [
@@ -36,7 +31,7 @@ const categories = [
 ];
 
 test("each row puts what the form holds now beside the proposal", () => {
-    const rows = rowsFor(proposal, { form, media, categories, canAlt: true });
+    const rows = rowsFor(proposal, { form, media, categories, canWriteMedia: true });
     assert.deepEqual(
         rows.map((r) => r.key),
         ["title", "description", "highlights", "tags", "category", "alt:41"],
@@ -54,7 +49,7 @@ test("each row puts what the form holds now beside the proposal", () => {
 });
 
 test("alt texts need media.write, which saving them takes", () => {
-    const rows = rowsFor(proposal, { form, media, categories, canAlt: false });
+    const rows = rowsFor(proposal, { form, media, categories, canWriteMedia: false });
     assert.equal(rows.some((r) => r.field === "alt"), false);
 });
 
@@ -67,9 +62,9 @@ test("applying copies only the chosen changes into a new form", () => {
     assert.deepEqual(next.tags, ["mug"]);
     assert.deepEqual(next.highlights, ["Wide handle", "Glossy glaze", ""], "one blank row to type into, as the editor keeps");
     assert.equal(next.category_id, 7);
-    assert.deepEqual(next.alts, { 41: "Blue mug, side view" });
+    assert.deepEqual(next.unsavedAlts, { 41: "Blue mug, side view" });
     assert.equal(form.title, "blue mug, typed", "the form passed in is left as it was");
-    assert.deepEqual(form.alts, {});
+    assert.deepEqual(form.unsavedAlts, {});
 });
 
 test("nothing chosen is the same form", () => {

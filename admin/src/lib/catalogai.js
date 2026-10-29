@@ -1,12 +1,3 @@
-/*
- * "Improve with AI" on the product editor (D152): the catalog-ai module's
- * proposal laid beside the form, and the chosen changes copied into it.
- *
- * Nothing here saves. Applying writes into the form the editor already has,
- * so the shop's own Save sends it through the product's update like any edit
- * it typed. "Now" is the form, not the saved product: it is what the shop
- * sees on the screen and what applying replaces.
- */
 import { highlightLines, MAX_HIGHLIGHTS } from "./highlights.js";
 
 export const FIELD_LABELS = {
@@ -21,10 +12,8 @@ export const FIELD_LABELS = {
     alt: "Alt text",
 };
 
-/** A change's key: its field, or the picture for an alt text. */
 export const keyOf = (change) => (change.field === "alt" ? `alt:${change.media_id}` : change.field);
 
-/** The words of a description's HTML, a paragraph a line, for reading beside another. */
 export function textOf(html) {
     return String(html ?? "")
         .replace(/<br\s*\/?>/gi, "\n")
@@ -40,7 +29,6 @@ export function textOf(html) {
         .trim();
 }
 
-/** What the form holds now for a change's field, shown the way the proposal is. */
 function nowOf(change, form, media, categories) {
     switch (change.field) {
         case "description":
@@ -50,13 +38,12 @@ function nowOf(change, form, media, categories) {
         case "tags":
             return [...(form.tags ?? [])];
         case "category":
-            // The editor's list stops at 500 categories; the proposal names the saved one itself.
             return (
                 categories.find((c) => c.id === form.category_id)?.full_name ??
                 (change.current?.id === form.category_id ? change.current.name : "")
             );
         case "alt":
-            return form.alts?.[change.media_id] ?? media.find((m) => m.id === change.media_id)?.alt ?? "";
+            return form.unsavedAlts?.[change.media_id] ?? media.find((m) => m.id === change.media_id)?.alt ?? "";
         default:
             return form[change.field] ?? "";
     }
@@ -68,14 +55,9 @@ function shown(change) {
     return change.proposed;
 }
 
-/**
- * The rows the drawer draws, one a change. An alt text is left out without
- * media.write, which its Save needs, and for a picture no longer on the
- * product.
- */
-export function rowsFor(proposal, { form, media = [], categories = [], canAlt = false }) {
+export function rowsFor(proposal, { form, media = [], categories = [], canWriteMedia = false }) {
     return (proposal?.changes ?? [])
-        .filter((c) => c.field !== "alt" || (canAlt && media.some((m) => m.id === c.media_id)))
+        .filter((c) => c.field !== "alt" || (canWriteMedia && media.some((m) => m.id === c.media_id)))
         .map((c) => ({
             key: keyOf(c),
             field: c.field,
@@ -87,11 +69,6 @@ export function rowsFor(proposal, { form, media = [], categories = [], canAlt = 
         }));
 }
 
-/**
- * The form with the chosen changes copied in: a new object, so the editor's
- * comparison with its snapshot sees what moved. Alt texts go into
- * `form.alts`, by picture, for Save to write.
- */
 export function applied(form, changes, chosen) {
     const next = JSON.parse(JSON.stringify(form));
     for (const c of changes ?? []) {
@@ -107,7 +84,7 @@ export function applied(form, changes, chosen) {
                 next.category_id = c.proposed.id;
                 break;
             case "alt":
-                next.alts = { ...(next.alts ?? {}), [c.media_id]: c.proposed };
+                next.unsavedAlts = { ...(next.unsavedAlts ?? {}), [c.media_id]: c.proposed };
                 break;
             default:
                 next[c.field] = c.proposed;
@@ -116,11 +93,6 @@ export function applied(form, changes, chosen) {
     return next;
 }
 
-/**
- * What a refused proposal shows, by the module's error code: the gateway's
- * settings for what only they can fix, the AI credit for a spent trial or
- * balance, and a retry for what may pass.
- */
 export function refusal(err) {
     const message = err?.message || "Something went wrong.";
     switch (err?.code) {
