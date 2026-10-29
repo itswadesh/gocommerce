@@ -31,6 +31,7 @@
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
     import CustomerSignInCard from "$lib/components/CustomerSignInCard.svelte";
     import FeatureSwitch from "$lib/components/FeatureSwitch.svelte";
+    import StoreImages from "$lib/components/StoreImages.svelte";
     import Select from "$lib/components/Select.svelte";
     import { countryOptions } from "$lib/countries.js";
     import { currencyOptions } from "$lib/currencies.js";
@@ -443,6 +444,19 @@
                             </div>
                         </form>
                     </section>
+                    <!-- Saved as each is picked; only the pictures are taken
+                         from the answer, so the form above keeps its edits. -->
+                    <StoreImages
+                        {profile}
+                        {editable}
+                        onsaved={(saved) => {
+                            profile = saved;
+                            for (const k of ["logo", "logo_dark", "icon"]) {
+                                draft[`${k}_media_id`] = saved[`${k}_media_id`];
+                                draft[`${k}_url`] = saved[`${k}_url`];
+                            }
+                        }}
+                    />
                 {/if}
 
                 <!-- How shoppers get in and check out, and whether the shop is

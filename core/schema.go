@@ -104,8 +104,28 @@ func coreMigrations() []Migration {
 		ScopeMigration("0086_scope_sales_counts", "product_sales_counts"),
 		{ID: "0087_tax_rate_product_target", SQL: migration0087TaxRateProductTarget},
 		{ID: "0088_four_digit_hs_code", SQL: migration0088FourDigitHSCode},
+		{ID: "0089_store_images", SQL: migration0089StoreImages},
 	}
 }
+
+// M89 — a store's logo, its logo for dark backgrounds and its icon (D148).
+//
+// Media ids, as a vendor's logo is, so the picture is the library's and its
+// address follows the file. SET NULL only the picture's own column: deleting
+// the file leaves the store without that picture, which a storefront answers
+// with its own fallback, not without its store.
+const migration0089StoreImages = `
+ALTER TABLE store_profile
+    ADD COLUMN logo_media_id bigint,
+    ADD COLUMN logo_dark_media_id bigint,
+    ADD COLUMN icon_media_id bigint,
+    ADD CONSTRAINT store_profile_logo_fkey FOREIGN KEY (store_id, logo_media_id)
+        REFERENCES media (store_id, id) ON DELETE SET NULL (logo_media_id),
+    ADD CONSTRAINT store_profile_logo_dark_fkey FOREIGN KEY (store_id, logo_dark_media_id)
+        REFERENCES media (store_id, id) ON DELETE SET NULL (logo_dark_media_id),
+    ADD CONSTRAINT store_profile_icon_fkey FOREIGN KEY (store_id, icon_media_id)
+        REFERENCES media (store_id, id) ON DELETE SET NULL (icon_media_id);
+`
 
 // M88 — an HS code may be 4 digits, the HSN an Indian business under ₹5 crore
 // turnover prints on a GST invoice (D137).

@@ -1117,6 +1117,19 @@
                           "type": "string",
                           "description": "Where this store's pictures are served resized (D142), as a path on the engine's origin. A storefront that builds Cloudflare-shaped image URLs puts it before `/cdn-cgi/image/width=…/…`; see GET /images/{store}/cdn-cgi/image/{options}/{path}.",
                           "example": "/images/store_01J8Z3"
+                        },
+                        "logo_url": {
+                          "type": "string",
+                          "description": "The store's logo (D148), as the media library serves it: a path on the engine's origin for an uploaded file, or the file's own address. Empty when the store has none, and a storefront keeps its own.",
+                          "example": "/media/stores/store_01J8Z3/5f2c.png"
+                        },
+                        "logo_dark_url": {
+                          "type": "string",
+                          "description": "The logo for dark backgrounds, for a header or footer drawn on a dark surface. Empty when the store has none; the logo is the fallback."
+                        },
+                        "icon_url": {
+                          "type": "string",
+                          "description": "The store's square icon, for the browser tab, a phone's home screen and an installed app. Empty when the store has none."
                         }
                       }
                     }
@@ -13574,6 +13587,37 @@
                           "type": "boolean",
                           "readOnly": true,
                           "description": "True once the store has an order, which fixes its currency."
+                        },
+                        "logo_media_id": {
+                          "type": "integer",
+                          "nullable": true,
+                          "description": "The media library image shown as the store's logo (D148). An image of at most 2 MiB. Absent or null leaves it as it is; 0 removes it."
+                        },
+                        "logo_dark_media_id": {
+                          "type": "integer",
+                          "nullable": true,
+                          "description": "The image shown where the logo sits on a dark background. Same rules as logo_media_id."
+                        },
+                        "icon_media_id": {
+                          "type": "integer",
+                          "nullable": true,
+                          "description": "The store's square icon (favicon and app icon). Same rules as logo_media_id; the panel asks for a square image at least 192 pixels wide."
+                        },
+                        "logo_url": {
+                          "type": "string",
+                          "description": "The store's logo (D148), as the media library serves it: a path on the engine's origin for an uploaded file, or the file's own address. Empty when the store has none, and a storefront keeps its own.",
+                          "example": "/media/stores/store_01J8Z3/5f2c.png",
+                          "readOnly": true
+                        },
+                        "logo_dark_url": {
+                          "type": "string",
+                          "description": "The logo for dark backgrounds, for a header or footer drawn on a dark surface. Empty when the store has none; the logo is the fallback.",
+                          "readOnly": true
+                        },
+                        "icon_url": {
+                          "type": "string",
+                          "description": "The store's square icon, for the browser tab, a phone's home screen and an installed app. Empty when the store has none.",
+                          "readOnly": true
                         }
                       }
                     }
@@ -13679,6 +13723,37 @@
                     "type": "boolean",
                     "readOnly": true,
                     "description": "True once the store has an order, which fixes its currency."
+                  },
+                  "logo_media_id": {
+                    "type": "integer",
+                    "nullable": true,
+                    "description": "The media library image shown as the store's logo (D148). An image of at most 2 MiB. Absent or null leaves it as it is; 0 removes it."
+                  },
+                  "logo_dark_media_id": {
+                    "type": "integer",
+                    "nullable": true,
+                    "description": "The image shown where the logo sits on a dark background. Same rules as logo_media_id."
+                  },
+                  "icon_media_id": {
+                    "type": "integer",
+                    "nullable": true,
+                    "description": "The store's square icon (favicon and app icon). Same rules as logo_media_id; the panel asks for a square image at least 192 pixels wide."
+                  },
+                  "logo_url": {
+                    "type": "string",
+                    "description": "The store's logo (D148), as the media library serves it: a path on the engine's origin for an uploaded file, or the file's own address. Empty when the store has none, and a storefront keeps its own.",
+                    "example": "/media/stores/store_01J8Z3/5f2c.png",
+                    "readOnly": true
+                  },
+                  "logo_dark_url": {
+                    "type": "string",
+                    "description": "The logo for dark backgrounds, for a header or footer drawn on a dark surface. Empty when the store has none; the logo is the fallback.",
+                    "readOnly": true
+                  },
+                  "icon_url": {
+                    "type": "string",
+                    "description": "The store's square icon, for the browser tab, a phone's home screen and an installed app. Empty when the store has none.",
+                    "readOnly": true
                   }
                 }
               }
@@ -13748,6 +13823,37 @@
                           "type": "string",
                           "format": "date-time",
                           "description": "When the profile was last changed."
+                        },
+                        "logo_media_id": {
+                          "type": "integer",
+                          "nullable": true,
+                          "description": "The media library image shown as the store's logo (D148). An image of at most 2 MiB. Absent or null leaves it as it is; 0 removes it."
+                        },
+                        "logo_dark_media_id": {
+                          "type": "integer",
+                          "nullable": true,
+                          "description": "The image shown where the logo sits on a dark background. Same rules as logo_media_id."
+                        },
+                        "icon_media_id": {
+                          "type": "integer",
+                          "nullable": true,
+                          "description": "The store's square icon (favicon and app icon). Same rules as logo_media_id; the panel asks for a square image at least 192 pixels wide."
+                        },
+                        "logo_url": {
+                          "type": "string",
+                          "description": "The store's logo (D148), as the media library serves it: a path on the engine's origin for an uploaded file, or the file's own address. Empty when the store has none, and a storefront keeps its own.",
+                          "example": "/media/stores/store_01J8Z3/5f2c.png",
+                          "readOnly": true
+                        },
+                        "logo_dark_url": {
+                          "type": "string",
+                          "description": "The logo for dark backgrounds, for a header or footer drawn on a dark surface. Empty when the store has none; the logo is the fallback.",
+                          "readOnly": true
+                        },
+                        "icon_url": {
+                          "type": "string",
+                          "description": "The store's square icon, for the browser tab, a phone's home screen and an installed app. Empty when the store has none.",
+                          "readOnly": true
                         }
                       }
                     }
@@ -21310,18 +21416,14 @@
             "description": "Added to the price; the shopper pays the sum."
           },
           "min_days": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
+            "nullable": true,
             "minimum": 0,
             "description": "Delivery estimate, fewest days."
           },
           "max_days": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
+            "nullable": true,
             "minimum": 0,
             "description": "Delivery estimate, most days."
           },
@@ -21338,10 +21440,8 @@
             "minimum": 0
           },
           "max_weight_grams": {
-            "type": [
-              "integer",
-              "null"
-            ]
+            "type": "integer",
+            "nullable": true
           }
         }
       },
@@ -21400,18 +21500,14 @@
             "description": "Added to the price; the shopper pays the sum."
           },
           "min_days": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
+            "nullable": true,
             "minimum": 0,
             "description": "Delivery estimate, fewest days."
           },
           "max_days": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
+            "nullable": true,
             "minimum": 0,
             "description": "Delivery estimate, most days."
           },
@@ -21428,10 +21524,8 @@
             "minimum": 0
           },
           "max_weight_grams": {
-            "type": [
-              "integer",
-              "null"
-            ]
+            "type": "integer",
+            "nullable": true
           }
         }
       },
@@ -21458,16 +21552,12 @@
             "type": "string"
           },
           "min_days": {
-            "type": [
-              "integer",
-              "null"
-            ]
+            "type": "integer",
+            "nullable": true
           },
           "max_days": {
-            "type": [
-              "integer",
-              "null"
-            ]
+            "type": "integer",
+            "nullable": true
           }
         }
       },

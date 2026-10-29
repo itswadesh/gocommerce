@@ -246,6 +246,8 @@ func TestTheStoresPublicFaceIsItsNameAndContactsOnly(t *testing.T) {
 		"name": "The Corner Shop", "email": "hello@corner.example",
 		"phone": "+44 20 7946 0000", "support_url": "https://corner.example/help",
 		"language": "en", "images_path": ImagesPath(app.defaultStore),
+		// Its logo and icon (D148), empty until it chooses them.
+		"logo_url": "", "logo_dark_url": "", "icon_url": "",
 	}
 	if len(body.Data) != len(want) {
 		t.Errorf("public fields = %v, want exactly %v", body.Data, want)

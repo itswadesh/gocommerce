@@ -70,12 +70,30 @@ type StoreProfile struct {
 	Currency string `json:"currency"`
 	// CurrencyLocked is true once the store has an order. Read only.
 	CurrencyLocked bool `json:"currency_locked"`
+
+	// The store's pictures (D148), each an image from its own media library,
+	// held by id as a vendor's logo is: the logo a storefront's header shows,
+	// one for where the logo sits on a dark background, and a square icon for
+	// the browser tab and a phone's home screen. Absent leaves one as it is,
+	// as the currency does, so the details form and a script that predates
+	// them cannot wipe a logo; 0 removes it.
+	LogoMediaID     *int64 `json:"logo_media_id"`
+	LogoDarkMediaID *int64 `json:"logo_dark_media_id"`
+	IconMediaID     *int64 `json:"icon_media_id"`
+	// Their addresses, as the media library serves them. Read only.
+	LogoURL     string `json:"logo_url"`
+	LogoDarkURL string `json:"logo_dark_url"`
+	IconURL     string `json:"icon_url"`
 }
 
 // MaxProfileField bounds every text field. One limit rather than a different
 // one per field: none of these is prose, and a shop that needs more than this
 // for its address is describing something else.
 const MaxProfileField = 200
+
+// MaxStoreImageBytes bounds a logo or icon. Every page of the storefront
+// loads it, on a phone, so a photograph-sized file there is a slow shop.
+const MaxStoreImageBytes = 2 << 20
 
 // StoreProfiles reads and writes the shop's details.
 type StoreProfiles struct{ app *App }
@@ -88,14 +106,22 @@ func (a *App) Profile() *StoreProfiles { return a.profile }
 func (p *StoreProfiles) Get(ctx context.Context) (*StoreProfile, error) {
 	var out StoreProfile
 	err := p.app.db.QueryRowContext(ctx, `
-		SELECT name, legal_name, email, phone,
-		       address_line1, address_line2, city, state, postal_code, country,
-		       tax_id, support_url, timezone
-		FROM store_profile WHERE id = 1`).Scan(
+		SELECT p.name, p.legal_name, p.email, p.phone,
+		       p.address_line1, p.address_line2, p.city, p.state, p.postal_code, p.country,
+		       p.tax_id, p.support_url, p.timezone,
+		       p.logo_media_id, p.logo_dark_media_id, p.icon_media_id,
+		       coalesce(l.url, ''), coalesce(d.url, ''), coalesce(i.url, '')
+		FROM store_profile p
+		LEFT JOIN media l ON l.id = p.logo_media_id
+		LEFT JOIN media d ON d.id = p.logo_dark_media_id
+		LEFT JOIN media i ON i.id = p.icon_media_id
+		WHERE p.id = 1`).Scan(
 		&out.Name, &out.LegalName, &out.Email, &out.Phone,
 		&out.AddressLine1, &out.AddressLine2, &out.City, &out.State,
 		&out.PostalCode, &out.Country, &out.TaxID, &out.SupportURL,
-		&out.Timezone)
+		&out.Timezone,
+		&out.LogoMediaID, &out.LogoDarkMediaID, &out.IconMediaID,
+		&out.LogoURL, &out.LogoDarkURL, &out.IconURL)
 	if err == sql.ErrNoRows {
 		// Unreachable while the migration's INSERT stands, and harmless if a
 		// later one ever changes that: an empty shop is a real answer.
@@ -214,11 +240,39 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 		}
 	}
 
+	images := []struct {
+		column, name string
+		id           *int64
+	}{
+		{"logo_media_id", "logo", in.LogoMediaID},
+		{"logo_dark_media_id", "logo for dark backgrounds", in.LogoDarkMediaID},
+		{"icon_media_id", "icon", in.IconMediaID},
+	}
+	for _, img := range images {
+		if img.id == nil || *img.id == 0 {
+			continue
+		}
+		item, err := p.app.MediaLibrary().Get(ctx, *img.id)
+		if err != nil {
+			return nil, Validationf("the %s is not a file in this store's media library", img.name)
+		}
+		if item.Kind != MediaImage {
+			return nil, Validationf("the %s has to be a picture; %s is not one", img.name, mediaAuditLabel(item))
+		}
+		if item.SizeBytes > MaxStoreImageBytes {
+			return nil, Validationf("the %s is %s; every page loads it, so the limit is %s",
+				img.name, humanBytes(item.SizeBytes), humanBytes(MaxStoreImageBytes))
+		}
+	}
+
 	var updatedBy *int64
 	if by != nil {
 		updatedBy = &by.ID
 	}
 	err := InTx(ctx, p.app.db, func(tx *sql.Tx) error {
+		if err := p.setImages(ctx, tx, images[0].id, images[1].id, images[2].id); err != nil {
+			return err
+		}
 		if currency != "" {
 			locked, err := p.app.hasOrders(ctx, tx)
 			if err != nil {
@@ -279,6 +333,44 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 		ctx = withStoreLanguages(ctx, languages)
 	}
 	return p.Get(ctx)
+}
+
+// setImages writes the pictures a save names and audits the change. Nil
+// leaves one as it is and 0 removes it.
+func (p *StoreProfiles) setImages(ctx context.Context, tx *sql.Tx, logo, dark, icon *int64) error {
+	var was [3]*int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT logo_media_id, logo_dark_media_id, icon_media_id
+		FROM store_profile WHERE id = 1 FOR UPDATE`).Scan(&was[0], &was[1], &was[2]); err != nil {
+		return err
+	}
+	now := was
+	for i, in := range []*int64{logo, dark, icon} {
+		switch {
+		case in == nil:
+		case *in == 0:
+			now[i] = nil
+		default:
+			now[i] = in
+		}
+	}
+	same := func(a, b *int64) bool { return (a == nil) == (b == nil) && (a == nil || *a == *b) }
+	if same(was[0], now[0]) && same(was[1], now[1]) && same(was[2], now[2]) {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE store_profile SET logo_media_id = $1, logo_dark_media_id = $2, icon_media_id = $3
+		WHERE id = 1`, now[0], now[1], now[2]); err != nil {
+		return err
+	}
+	fields := func(v [3]*int64) map[string]any {
+		return map[string]any{"logo_media_id": v[0], "logo_dark_media_id": v[1], "icon_media_id": v[2]}
+	}
+	return writeAudit(ctx, tx, auditRecord{
+		Action: AuditStoreSetImages, Entity: AuditEntityStore, Key: p.app.storeOf(ctx),
+		Summary: "Changed the store's logo or icon",
+		Before:  fields(was), After: fields(now),
+	})
 }
 
 // LocationOf is the store's clock, or UTC.
@@ -347,6 +439,12 @@ type publicStore struct {
 	// ImagesPath is where this store's pictures are served resized (D142), on
 	// the engine's own origin, for a storefront to put in its image CDN setting.
 	ImagesPath string `json:"images_path"`
+	// The store's logo, its logo for dark backgrounds and its square icon
+	// (D148), as the media library serves them; empty when it has none, so a
+	// storefront keeps its own.
+	LogoURL     string `json:"logo_url"`
+	LogoDarkURL string `json:"logo_dark_url"`
+	IconURL     string `json:"icon_url"`
 }
 
 func (a *App) handlePublicStore(w http.ResponseWriter, r *http.Request) {
@@ -356,7 +454,8 @@ func (a *App) handlePublicStore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	Respond(w, http.StatusOK, publicStore{Name: p.Name, Email: p.Email, Phone: p.Phone, SupportURL: p.SupportURL,
-		Language: p.Language, Languages: p.Languages, ImagesPath: ImagesPath(a.storeOf(r.Context()))})
+		Language: p.Language, Languages: p.Languages, ImagesPath: ImagesPath(a.storeOf(r.Context())),
+		LogoURL: p.LogoURL, LogoDarkURL: p.LogoDarkURL, IconURL: p.IconURL})
 }
 
 func (a *App) handleGetStoreProfile(w http.ResponseWriter, r *http.Request) {
