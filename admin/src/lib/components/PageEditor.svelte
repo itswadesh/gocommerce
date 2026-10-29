@@ -1093,7 +1093,7 @@
                         </div>
                     {:else if !address && (previewKey || !writable)}
                         <div class="hp-stage-note" in:rise>
-                            <p>This store has no web address yet, so there is nothing to show beside the sections. Type the storefront's address to preview it here.</p>
+                            <p>This store's address isn't ready to preview yet: add a verified domain in Settings › Domains, or type the storefront's address to preview it here.</p>
                             <button type="button" class="btn sm" onclick={() => (askAddress = true)}><span class="txt">Set the address</span></button>
                         </div>
                     {:else}
