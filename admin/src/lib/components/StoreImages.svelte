@@ -6,7 +6,8 @@
      * Each one saves the moment it is chosen, uploaded or removed, rather than
      * waiting for the details form's button: a picture is one decision, and
      * the preview above it already shows what the storefront will. The save
-     * sends the profile as last read plus the one picture, so a half-typed
+     * sends the profile as last read plus the one picture, the others as
+     * null ("keep"), so a half-typed
      * address in the form below is neither saved nor lost.
      */
     import { api, can, query, storeProfile } from "$lib/api.js";
@@ -57,7 +58,15 @@
     async function save(key, id) {
         status[key] = "saving";
         try {
-            const saved = await storeProfile.save({ ...profile, [`${key}_media_id`]: id });
+            // The other pictures go as null, which keeps them: their ids as last
+            // read would undo a save another slot made in the meantime.
+            const saved = await storeProfile.save({
+                ...profile,
+                logo_media_id: null,
+                logo_dark_media_id: null,
+                icon_media_id: null,
+                [`${key}_media_id`]: id,
+            });
             onsaved?.(saved);
             status[key] = "saved";
             toast.success(id ? "Picture saved" : "Picture removed");

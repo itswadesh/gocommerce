@@ -42,6 +42,20 @@ func TestAStoreShowsItsOwnLogo(t *testing.T) {
 	if saved.LogoURL != logo.URL || saved.IconURL != icon.URL || saved.LogoDarkURL != "" {
 		t.Errorf("saved = logo %q icon %q dark %q, want %q and %q", saved.LogoURL, saved.IconURL, saved.LogoDarkURL, logo.URL, icon.URL)
 	}
+	// The store's pictures are in use: not offered as unused files, and not
+	// deleted out from under every storefront page.
+	unused, _, err := app.MediaLibrary().List(ctx, MediaQuery{Usage: UsedNowhere})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range unused {
+		if it.ID == logo.ID || it.ID == icon.ID {
+			t.Errorf("the store's %s is listed as unused", it.Filename)
+		}
+	}
+	if err := app.MediaLibrary().Delete(ctx, logo.ID); err == nil {
+		t.Error("the store's logo was deleted")
+	}
 	pub := publicStoreOf(t, app)
 	if pub.LogoURL != logo.URL || pub.IconURL != icon.URL {
 		t.Errorf("public store = %+v, want the logo and icon", pub)

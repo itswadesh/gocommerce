@@ -410,7 +410,7 @@ func (m *Media) insert(ctx context.Context, in *MediaItem) (*MediaItem, error) {
 
 // Usage filters a listing by whether anything is displaying the file.
 const (
-	// UsedAnywhere matches media attached to at least one product.
+	// UsedAnywhere matches media attached to at least one product, or shown as the store's logo or icon.
 	UsedAnywhere = "used"
 	// UsedNowhere matches media nothing displays — the orphans worth tidying,
 	// and the reason this filter exists at all.
@@ -487,11 +487,14 @@ func (m *Media) List(ctx context.Context, q MediaQuery) ([]*MediaItem, int, erro
 		add("EXISTS (SELECT 1 FROM product_media pm"+
 			" WHERE pm.media_id = media.id AND pm.product_id = $%d)", q.ProductID)
 	}
+	// The store's logo, dark logo and icon (D148) are in use too.
+	const inUse = "(EXISTS (SELECT 1 FROM product_media pm WHERE pm.media_id = media.id)" +
+		" OR EXISTS (SELECT 1 FROM store_profile s WHERE media.id IN (s.logo_media_id, s.logo_dark_media_id, s.icon_media_id)))"
 	switch q.Usage {
 	case UsedAnywhere:
-		where = append(where, "EXISTS (SELECT 1 FROM product_media pm WHERE pm.media_id = media.id)")
+		where = append(where, inUse)
 	case UsedNowhere:
-		where = append(where, "NOT EXISTS (SELECT 1 FROM product_media pm WHERE pm.media_id = media.id)")
+		where = append(where, "NOT "+inUse)
 	}
 	clause := " WHERE " + strings.Join(where, " AND ")
 
@@ -622,6 +625,16 @@ func (m *Media) Delete(ctx context.Context, id int64) error {
 	if used > 0 {
 		return Conflictf("that media is still on %d %s; remove it from them first",
 			used, pluralWord(used, "product"))
+	}
+	// Its foreign key would clear the setting quietly, and every storefront
+	// page would lose the store's logo with nothing saying why (D148).
+	var storeImage bool
+	if err := m.app.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM store_profile
+		WHERE $1 IN (logo_media_id, logo_dark_media_id, icon_media_id))`, id).Scan(&storeImage); err != nil {
+		return Internalf(err, "check whether the store shows the media")
+	}
+	if storeImage {
+		return Conflictf("that is the store's logo or icon; change it in Settings › Store first")
 	}
 
 	if _, err := m.app.db.ExecContext(ctx, `DELETE FROM media WHERE id = $1`, id); err != nil {

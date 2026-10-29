@@ -202,7 +202,10 @@
         try {
             const before = profile?.currency;
             const languagesBefore = (profile?.languages ?? []).join();
-            profile = await storeProfile.save({ ...draft, language: draft.languages?.[0] ?? "" });
+            // Without the pictures, which the Logo and icon card saves: ids
+            // read when the page opened would put back one changed since.
+            const { logo_media_id, logo_dark_media_id, icon_media_id, ...details } = draft;
+            profile = await storeProfile.save({ ...details, language: draft.languages?.[0] ?? "" });
             draft = { ...profile };
             toast.success("Store details saved");
             // Every price on every screen is formatted in the store's currency,
@@ -444,19 +447,8 @@
                             </div>
                         </form>
                     </section>
-                    <!-- Saved as each is picked; only the pictures are taken
-                         from the answer, so the form above keeps its edits. -->
-                    <StoreImages
-                        {profile}
-                        {editable}
-                        onsaved={(saved) => {
-                            profile = saved;
-                            for (const k of ["logo", "logo_dark", "icon"]) {
-                                draft[`${k}_media_id`] = saved[`${k}_media_id`];
-                                draft[`${k}_url`] = saved[`${k}_url`];
-                            }
-                        }}
-                    />
+                    <!-- Saved as each is picked; the form above keeps its edits. -->
+                    <StoreImages {profile} {editable} onsaved={(saved) => (profile = saved)} />
                 {/if}
 
                 <!-- How shoppers get in and check out, and whether the shop is
