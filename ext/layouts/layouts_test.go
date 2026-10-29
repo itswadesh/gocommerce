@@ -321,6 +321,23 @@ func TestTheStarterBringsABoldReadableLook(t *testing.T) {
 	if r := contrast(ts["accent"].(string), "#ffffff"); r < 3 {
 		t.Errorf("the accent against the page is %.2f:1, want at least 3 for buttons and links", r)
 	}
+	if r := contrast(ts["sale"].(string), "#ffffff"); r < 4.5 {
+		t.Errorf("the \"%% off\" lines on the page are %.2f:1, want at least 4.5", r)
+	}
+	// A new store opens on the storefront's own look, set out for it to change (D155).
+	for k, want := range map[string]any{"type_scale": "standard", "heading_weight": "extrabold", "density": "compact",
+		"card_badge": "first_tag", "card_vendor": true, "card_title_lines": "one", "card_rating": true, "card_discount": true,
+		"card_wishlist": true, "card_add_to_cart": false, "card_second_image": true, "list_columns_mobile": "two",
+		"list_columns_desktop": "five", "list_subcategories": true, "list_quick_filters": true, "list_filters_desktop": "sidebar",
+		"list_mobile_bar": true, "pdp_sticky_buy": true, "pdp_gallery": "carousel", "pdp_highlights_grid": true,
+		"pdp_delivery_check": true, "pdp_low_stock_at": 5} {
+		if ts[k] != want {
+			t.Errorf("starter %s = %v, want %v", k, ts[k], want)
+		}
+	}
+	if _, ok := ts["pdp_size_guide"]; ok {
+		t.Errorf("starter size guide = %v, want none: a new store has no such page", ts["pdp_size_guide"])
+	}
 }
 
 // The starting home page opens with its pictures: the hero (and its phone

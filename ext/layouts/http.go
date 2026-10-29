@@ -534,7 +534,8 @@ func int64Array(ids []int64) string {
 // The home page is the "Bold and bright" look (D140), under the header's own
 // announcement strip rather than a second one: a split hero on a colour
 // block, four tiles, the newest products, a picture beside words and the
-// benefits strip, with theme settings for the colours and the rounding.
+// benefits strip, with theme settings for the colours and the rounding, and
+// explicit values for the type, spacing, cards, lists and product page (D155).
 // Every word is true of any shop and every link goes to a page every
 // storefront has; the benefits are promises the shop must make its own.
 // Its pictures are the engine's own (starter/: Unsplash photographs for the
@@ -575,6 +576,16 @@ func Starter(page string) Document {
 		// after the page drew on a phone, which Lighthouse counts against it;
 		// the storefront's own font at a heavy weight carries the look.
 		"radius": "large",
+		// The Bewakoof-style green, #1a8f3a, reads at 4.2:1 on the
+		// storefront's white; this is the nearest of its hue at 4.5:1.
+		"sale":       "#198837",
+		"type_scale": "standard", "heading_weight": "extrabold", "density": "compact",
+		"card_badge": "first_tag", "card_vendor": true, "card_title_lines": "one", "card_rating": true,
+		"card_discount": true, "card_wishlist": true, "card_add_to_cart": false, "card_second_image": true,
+		"list_columns_mobile": "two", "list_columns_desktop": "five", "list_subcategories": true,
+		"list_quick_filters": true, "list_filters_desktop": "sidebar", "list_mobile_bar": true,
+		"pdp_sticky_buy": true, "pdp_gallery": "carousel", "pdp_highlights_grid": true,
+		"pdp_delivery_check": true, "pdp_low_stock_at": 5,
 	}, Sections: []Section{
 		{ID: "hero", Type: "hero", Enabled: true, Settings: map[string]any{
 			"eyebrow": "New in", "heading": "Find your next favourite thing",

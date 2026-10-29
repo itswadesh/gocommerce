@@ -1016,7 +1016,7 @@
       },
       "LayoutThemeSettings": {
         "type": "object",
-        "description": "The store's design tokens (D127). Every key is optional; an unset one keeps the storefront's own look. Colours are `#rrggbb`; fonts are keys from the registry's list; `radius` is none, small, medium or large; `product_image_ratio` square (1:1), portrait (3:4), tall (2:3) or landscape (4:3); `product_image_fit` fill (crop to the frame) or whole (fit inside it).",
+        "description": "The store's design tokens (D127, D128, D155). Every key is optional; an unset one keeps the storefront's own value, and a new store starts with the starter's (`sale`, the type, spacing, card, list and product page keys, all but `pdp_size_guide`). Colours are `#rrggbb`: `sale` colours the \"% off\" and offer lines. Fonts are keys from the registry's list; `radius` is none, small, medium or large; `product_image_ratio` square (1:1), portrait (3:4), tall (2:3) or landscape (4:3); `product_image_fit` fill (crop to the frame) or whole (fit inside it). `type_scale` sets the body text at 14, 16 or 18px. `card_badge` labels a card's picture with the product's first tag or first highlight. `pdp_low_stock_at` shows \"only N left\" at or below N, and never at 0; `pdp_size_guide` is a path on the storefront.",
         "properties": {
           "background": {
             "type": "string",
@@ -1038,11 +1038,40 @@
             "type": "string",
             "pattern": "^#[0-9a-f]{6}$"
           },
+          "sale": {
+            "type": "string",
+            "pattern": "^#[0-9a-f]{6}$"
+          },
           "heading_font": {
             "type": "string"
           },
           "body_font": {
             "type": "string"
+          },
+          "type_scale": {
+            "type": "string",
+            "enum": [
+              "compact",
+              "standard",
+              "large"
+            ]
+          },
+          "heading_weight": {
+            "type": "string",
+            "enum": [
+              "medium",
+              "semibold",
+              "bold",
+              "extrabold"
+            ]
+          },
+          "density": {
+            "type": "string",
+            "enum": [
+              "compact",
+              "comfortable",
+              "spacious"
+            ]
           },
           "radius": {
             "type": "string",
@@ -1068,6 +1097,96 @@
               "fill",
               "whole"
             ]
+          },
+          "card_badge": {
+            "type": "string",
+            "enum": [
+              "none",
+              "first_tag",
+              "first_highlight"
+            ]
+          },
+          "card_vendor": {
+            "type": "boolean"
+          },
+          "card_title_lines": {
+            "type": "string",
+            "enum": [
+              "one",
+              "two"
+            ]
+          },
+          "card_rating": {
+            "type": "boolean"
+          },
+          "card_discount": {
+            "type": "boolean"
+          },
+          "card_wishlist": {
+            "type": "boolean"
+          },
+          "card_add_to_cart": {
+            "type": "boolean"
+          },
+          "card_second_image": {
+            "type": "boolean"
+          },
+          "list_columns_mobile": {
+            "type": "string",
+            "enum": [
+              "one",
+              "two"
+            ]
+          },
+          "list_columns_desktop": {
+            "type": "string",
+            "enum": [
+              "three",
+              "four",
+              "five"
+            ]
+          },
+          "list_subcategories": {
+            "type": "boolean"
+          },
+          "list_quick_filters": {
+            "type": "boolean"
+          },
+          "list_filters_desktop": {
+            "type": "string",
+            "enum": [
+              "sidebar",
+              "drawer"
+            ]
+          },
+          "list_mobile_bar": {
+            "type": "boolean"
+          },
+          "pdp_sticky_buy": {
+            "type": "boolean"
+          },
+          "pdp_gallery": {
+            "type": "string",
+            "enum": [
+              "carousel",
+              "grid"
+            ]
+          },
+          "pdp_highlights_grid": {
+            "type": "boolean"
+          },
+          "pdp_delivery_check": {
+            "type": "boolean"
+          },
+          "pdp_low_stock_at": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20
+          },
+          "pdp_size_guide": {
+            "type": "string",
+            "pattern": "^/",
+            "maxLength": 200
           }
         }
       },

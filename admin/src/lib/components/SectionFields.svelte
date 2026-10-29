@@ -26,7 +26,9 @@
      * with add, move and remove. A colour is a swatch and its #rrggbb, and an
      * unset one says the storefront keeps its own (D127). A menu is chosen
      * from the store's menus by its handle (D131). An icon is picked from a
-     * grid of the engine's fixed set, each shown as itself (D139).
+     * grid of the engine's fixed set, each shown as itself (D139). A note is
+     * a warning shown beside the colour it names (key), such as a pair that
+     * reads poorly (D155); it never stops the edit.
      */
     import Select from "$lib/components/Select.svelte";
     import ImageField from "$lib/components/ImageField.svelte";
@@ -35,7 +37,7 @@
     import { rise } from "$lib/motion.js";
     import Self from "./SectionFields.svelte";
 
-    let { fields = [], settings = $bindable({}), idPrefix = "sf", errorKey = "" } = $props();
+    let { fields = [], settings = $bindable({}), idPrefix = "sf", errorKey = "", notes = [] } = $props();
 
     const shown = $derived(visibleFields(fields, settings));
     $effect(() => {
@@ -90,6 +92,7 @@
         {#if f.kind === "image" || f.kind === "video"}
             <ImageField {id} kind={f.kind} label={f.label} hint={f.help ?? ""} required={f.required} bind:value={() => settings[f.key] ?? "", (v) => set(f.key, v)} />
         {:else if f.kind === "color"}
+            {@const fieldNotes = notes.filter((n) => n.key === f.key)}
             <div class="field" class:error={errorKey === f.key}>
                 <label for={id}>{f.label}</label>
                 <div class="sf-color">
@@ -108,6 +111,7 @@
                         autocomplete="off"
                         spellcheck="false"
                         placeholder="Storefront's own"
+                        aria-describedby={fieldNotes.length ? `${id}-notes` : undefined}
                         value={settings[f.key] ?? ""}
                         onchange={(e) => setColor(f.key, e.currentTarget.value)}
                         oninput={(e) => setColor(f.key, e.currentTarget.value)}
@@ -120,6 +124,12 @@
                 </div>
             </div>
             {#if f.help}<div class="field-help">{f.help}</div>{/if}
+            <!-- In the page before a note arrives, so a screen reader announces it. -->
+            <div id="{id}-notes" role="status">
+                {#each fieldNotes as n (n.message)}
+                    <p class="alert warning sf-note" in:rise={{ y: 0, duration: 150 }}><i class="ri-contrast-2-line" aria-hidden="true"></i>{n.message}</p>
+                {/each}
+            </div>
         {:else if f.kind === "icon"}
             {@const current = settings[f.key] ?? ""}
             <fieldset class="sf-icons">
@@ -169,7 +179,9 @@
                 {/if}
             </fieldset>
         {:else}
-            <div class="field" class:required={f.required} class:error={errorKey === f.key}>
+            <!-- The engine refuses it too; saying why here beats a bare "Couldn't save". -->
+            {@const offStore = f.kind === "path" && !!settings[f.key] && !String(settings[f.key]).trim().startsWith("/")}
+            <div class="field" class:required={f.required} class:error={errorKey === f.key || offStore}>
                 <label for={id}>{f.label}</label>
                 {#if f.kind === "textarea"}
                     <textarea {id} rows="4" maxlength={f.max_length || undefined} value={settings[f.key] ?? ""} oninput={(e) => set(f.key, e.currentTarget.value)}></textarea>
@@ -203,21 +215,37 @@
                         {id}
                         type="text"
                         maxlength={f.max_length || undefined}
-                        inputmode={f.kind === "url" ? "url" : undefined}
+                        inputmode={f.kind === "url" || f.kind === "path" ? "url" : undefined}
                         autocomplete="off"
-                        spellcheck={f.kind === "url" ? "false" : undefined}
+                        spellcheck={f.kind === "url" || f.kind === "path" ? "false" : undefined}
                         placeholder={f.kind === "url" ? "/collections/new-in" : ""}
+                        aria-invalid={offStore || undefined}
+                        aria-describedby={offStore ? `${id}-error` : undefined}
                         value={settings[f.key] ?? ""}
                         oninput={(e) => set(f.key, e.currentTarget.value)}
                     />
                 {/if}
             </div>
+            {#if offStore}<div class="field-help txt-danger" id="{id}-error" in:rise={{ y: 0, duration: 150 }}>Must be a page on your store, starting with /.</div>{/if}
             {#if f.help}<div class="field-help">{f.help}</div>{/if}
         {/if}
     </div>
 {/each}
 
 <style>
+    .sf-note {
+        display: flex;
+        gap: 6px;
+        min-height: 0;
+        margin: 6px 0 0;
+        padding: 6px 8px;
+        border-width: 1px;
+        font-size: var(--smFontSize);
+        line-height: 1.4;
+    }
+    .sf-note i {
+        color: var(--warningColor);
+    }
     .sf-menu-wait {
         display: block;
         height: 36px;

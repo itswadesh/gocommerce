@@ -58,6 +58,7 @@
         previewAddress,
         storefrontAddress,
         themeWarnings,
+        themeSettingGroups,
         pageMeta,
         libraryFor,
         isFixed,
@@ -283,12 +284,7 @@
             ]);
             registry = reg?.sections ?? [];
             pageInfos = reg?.pages ?? [];
-            // A font or rounding left empty is the storefront's own, so each
-            // choice list starts with that.
-            tokenGroups = (reg?.theme_settings ?? []).map((g) => ({
-                ...g,
-                fields: g.fields.map((f) => (f.kind === "select" ? { ...f, options: [{ value: "", label: "Storefront's own" }, ...(f.options ?? [])] } : f)),
-            }));
+            tokenGroups = themeSettingGroups(reg?.theme_settings);
             adopt(state);
             autosave.reset();
             // There is nothing to choose between: open its settings — for a
@@ -820,7 +816,7 @@
 {/snippet}
 
 {#snippet themeBody()}
-    <p class="txt-hint txt-sm m-b-sm">Colours, fonts and corners for every page of the storefront, published with the home page. Leave one empty to keep the storefront's own.</p>
+    <p class="txt-hint txt-sm m-b-sm">Colours, type, spacing, product cards, lists and the product page, for every page of the storefront, published with the home page. Anything empty or on "Storefront's own" keeps the storefront's look.</p>
     {#if writable}
         <div class="hp-match">
             <div class="hp-match-head">
@@ -865,18 +861,10 @@
             {/if}
         </div>
     {/if}
-    {#if warnings.length}
-        <div class="alert warning hp-contrast" role="status" in:rise>
-            <i class="ri-contrast-2-line" aria-hidden="true"></i>
-            <div class="content">
-                {#each warnings as w (w.keys.join("-"))}<p>{w.message}</p>{/each}
-            </div>
-        </div>
-    {/if}
     {#each tokenGroups as g, gi (g.label)}
         <fieldset class="hp-group" disabled={!writable}>
             <legend>{g.label}</legend>
-            <SectionFields fields={g.fields} idPrefix="hp-theme-{gi}" bind:settings={() => themeSettings, (v) => editTheme(v)} />
+            <SectionFields fields={g.fields} idPrefix="hp-theme-{gi}" notes={warnings} bind:settings={() => themeSettings, (v) => editTheme(v)} />
         </fieldset>
     {/each}
 {/snippet}
@@ -886,7 +874,7 @@
         <i class="ri-palette-line hp-icon" aria-hidden="true"></i>
         <span class="hp-rwords">
             <span class="hp-label">Theme settings</span>
-            <span class="hp-sub txt-hint txt-sm">Colours, fonts and corners</span>
+            <span class="hp-sub txt-hint txt-sm">Colours, type, cards and lists</span>
         </span>
         {#if Object.keys(themeSettings).length}
             <span class="hp-swatches" aria-hidden="true">
@@ -1735,17 +1723,6 @@
         letter-spacing: 0.04em;
         text-transform: uppercase;
         color: var(--txtHintColor);
-    }
-    .hp-contrast {
-        display: flex;
-        gap: 8px;
-        margin-bottom: 12px;
-    }
-    .hp-contrast p {
-        margin: 0;
-    }
-    .hp-contrast p + p {
-        margin-top: 4px;
     }
     .hp-match {
         margin-bottom: 16px;

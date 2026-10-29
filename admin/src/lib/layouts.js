@@ -256,7 +256,8 @@ export function previewAddress(storefront, key, editorOrigin, path = "/", part =
 
 /**
  * The storefront's default theme's own colours, which an unset theme setting
- * keeps: the stand-in for the other half of a pair when only one is set.
+ * keeps: the stand-in for the other half of a pair when only one is set. Its
+ * savings colour is not known here, so that pair waits for the shop to set it.
  */
 const STOREFRONT_COLOURS = { background: "#ffffff", text: "#0f172a", accent: "#0f172a", accent_text: "#ffffff", muted: "#f1f5f9" };
 
@@ -281,12 +282,14 @@ const PAIRS = [
     { keys: ["text", "background"], what: "Text on the background" },
     { keys: ["accent_text", "accent"], what: "Text on buttons" },
     { keys: ["text", "muted"], what: "Text on quiet backgrounds" },
+    { keys: ["sale", "background"], what: "Savings and offers on the background" },
 ];
 
 /**
  * The pairs the shop set that read poorly: below 4.5:1, the WCAG AA floor for
  * body text. A warning, never a refusal — the colours are the shop's. A pair
  * neither half of which is set is the storefront's own and not judged here.
+ * key is the field the warning is shown beside: the text colour of the pair.
  */
 export function themeWarnings(settings) {
     const s = settings ?? {};
@@ -295,16 +298,37 @@ export function themeWarnings(settings) {
         if (!s[keys[0]] && !s[keys[1]]) continue;
         const ratio = contrastRatio(s[keys[0]] || STOREFRONT_COLOURS[keys[0]], s[keys[1]] || STOREFRONT_COLOURS[keys[1]]);
         if (ratio !== null && ratio < 4.5) {
-            out.push({ keys, ratio, message: `${what}: ${(Math.floor(ratio * 10) / 10).toFixed(1)}:1. Below 4.5:1 is hard to read for many shoppers.` });
+            out.push({ key: keys[0], keys, ratio, message: `${what}: ${(Math.floor(ratio * 10) / 10).toFixed(1)}:1. Below 4.5:1 is hard to read for many shoppers.` });
         }
     }
     return out;
 }
 
+const OWN = { value: "", label: "Storefront's own" };
+
+/**
+ * The registry's theme setting groups as the editor draws them. Every setting
+ * is optional and an unset one keeps the storefront's own (D127), so a choice
+ * list starts with that, and a switch becomes one — a switch has no third
+ * position, and its "off" would claim a choice the shop never made (D155).
+ */
+export function themeSettingGroups(groups) {
+    return (groups ?? []).map((g) => ({
+        ...g,
+        fields: g.fields.map((f) =>
+            f.kind === "select"
+                ? { ...f, options: [OWN, ...(f.options ?? [])] }
+                : f.kind === "bool"
+                  ? { ...f, kind: "select", options: [OWN, { value: true, label: "On" }, { value: false, label: "Off" }] }
+                  : f,
+        ),
+    }));
+}
+
 /** What the Themes screen says of the theme settings. */
 export function themeSettingsSummary(settings) {
     const n = Object.keys(settings ?? {}).length;
-    if (!n) return "The storefront's own colours and fonts";
+    if (!n) return "The storefront's own look";
     return n === 1 ? "1 setting changed" : `${n} settings changed`;
 }
 

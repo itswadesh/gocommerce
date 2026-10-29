@@ -2,7 +2,9 @@ package layouts
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"reflect"
 	"testing"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
@@ -82,6 +84,43 @@ func TestThemeSettingsPublishWithThePage(t *testing.T) {
 
 	switchOn(t, app, false)
 	publicTheme(t, app, "/x/layouts/theme", http.StatusNotFound)
+}
+
+// The look beyond colours (D155) reaches the storefront as the shop set it:
+// the starter's values before a save, then only the keys the published
+// revision holds, through publish and rollback alike.
+func TestTheLookSettingsPublishAndRollBack(t *testing.T) {
+	app := layoutsApp(t)
+	raw, _ := json.Marshal(Starter("home").ThemeSettings)
+	var starter map[string]any
+	if err := json.Unmarshal(raw, &starter); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := publicTheme(t, app, "/x/layouts/theme", http.StatusOK); !reflect.DeepEqual(got.Settings, starter) {
+		t.Fatalf("theme before a save = %v\nwant the starter's %v", got.Settings, starter)
+	}
+
+	first := map[string]any{"card_vendor": false, "pdp_low_stock_at": float64(0), "list_columns_desktop": "four"}
+	doc := sections(hero("a", "One"))
+	doc["theme_settings"] = first
+	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 0, "document": doc}, http.StatusOK)
+	adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/publish", map[string]any{"version": 1}, http.StatusOK)
+	if got, _ := publicTheme(t, app, "/x/layouts/theme", http.StatusOK); got.Revision != 1 || !reflect.DeepEqual(got.Settings, first) {
+		t.Fatalf("published theme = %+v, want exactly %v: nothing unset sent", got, first)
+	}
+
+	second := map[string]any{"type_scale": "large", "pdp_size_guide": "/size-guide"}
+	doc["theme_settings"] = second
+	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 1, "document": doc}, http.StatusOK)
+	adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/publish", map[string]any{"version": 2}, http.StatusOK)
+	if got, _ := publicTheme(t, app, "/x/layouts/theme", http.StatusOK); got.Revision != 2 || !reflect.DeepEqual(got.Settings, second) {
+		t.Fatalf("second published theme = %+v, want exactly %v: the brand line unset again", got, second)
+	}
+
+	adminState(t, app, http.MethodPost, "/api/admin/x/layouts/home/rollback", map[string]any{"revision": 1}, http.StatusOK)
+	if got, _ := publicTheme(t, app, "/x/layouts/theme", http.StatusOK); got.Revision != 3 || !reflect.DeepEqual(got.Settings, first) {
+		t.Fatalf("theme after rolling back = %+v, want revision 3 with %v", got, first)
+	}
 }
 
 // A collection list shows the collections still there, in the order picked,
