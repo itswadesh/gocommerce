@@ -110,8 +110,8 @@ every provider here is REST over `net/http`, with no SDK.
    default, metered per store against the store's cap, and switched on by the
    install's owner, not by a store.
 
-6. **Defaults name current models and stay configurable:** Claude Haiku 4.5
-   as the small model and Claude Sonnet 5.5 as the strong one, on the
+6. **Defaults name current models and stay configurable:** Claude Haiku 5.5
+   (Claude Haiku 4.5 until D154) as the small model and Claude Sonnet 5.5 as the strong one, on the
    Anthropic provider. A store may choose another provider or model; the
    execution record keeps what actually ran.
 

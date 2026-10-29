@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -71,6 +72,12 @@ type SourceRef struct {
 	ID   string `json:"id"`
 }
 
+// maxSmallPrompt bounds a prompt the small model may be sent. Claude Haiku
+// 5.5, the default, charges five times as much for a prompt over 100,000
+// tokens, and a store enters one flat price per model, so a longer prompt
+// would cost more than the cap was told.
+const maxSmallPrompt = 100_000
+
 var taskNameRE = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+(-[a-z0-9]+)*)+$`)
 
 // RegisterTask makes a task available to Run and Enqueue. It is refused,
@@ -98,6 +105,9 @@ func (m *Module) RegisterTask(t Task) error {
 		}
 		if t.MaxInputTokens <= 0 || t.MaxOutputTokens <= 0 {
 			return fmt.Errorf("ai task %s: MaxInputTokens and MaxOutputTokens set the ceiling the cap is held to, and both are needed", t.Name)
+		}
+		if slices.Contains(t.Ladder, TierSmall) && t.MaxInputTokens > maxSmallPrompt {
+			return fmt.Errorf("ai task %s: a prompt for the small model stays within %d tokens", t.Name, maxSmallPrompt)
 		}
 		if strings.TrimSpace(t.System) == "" {
 			return fmt.Errorf("ai task %s: no instructions", t.Name)
