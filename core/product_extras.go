@@ -15,8 +15,8 @@ const (
 	MetaHighlights = "highlights"
 	MetaFreeGift   = "free_gift"
 
-	maxHighlights   = 8
-	maxProductBlurb = 80
+	MaxHighlights   = 8
+	MaxProductBlurb = 80
 )
 
 // normalizeProductMetadata checks and tidies the keys above, leaving every
@@ -86,20 +86,20 @@ func highlightLines(raw any) ([]string, error) {
 			out = append(out, s)
 		}
 	}
-	if len(out) > maxHighlights {
-		return nil, Validationf("a product can have at most %d highlights", maxHighlights)
+	if len(out) > MaxHighlights {
+		return nil, Validationf("a product can have at most %d highlights", MaxHighlights)
 	}
 	return out, nil
 }
 
 // plainLine is one line of a shop's own words: trimmed, at most
-// maxProductBlurb characters, and with no line breaks or control characters,
+// MaxProductBlurb characters, and with no line breaks or control characters,
 // which a buy box drawing one line per entry would show as nothing or as a
 // broken layout.
 func plainLine(s, what string) (string, error) {
 	s = strings.TrimSpace(s)
-	if utf8.RuneCountInString(s) > maxProductBlurb {
-		return "", Validationf("%s is limited to %d characters", what, maxProductBlurb)
+	if utf8.RuneCountInString(s) > MaxProductBlurb {
+		return "", Validationf("%s is limited to %d characters", what, MaxProductBlurb)
 	}
 	for _, r := range s {
 		if unicode.IsControl(r) {

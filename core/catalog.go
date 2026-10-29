@@ -33,7 +33,7 @@ type Product struct {
 	Sample bool `json:"sample"`
 
 	// Organisation. ProductType and Vendor are free text an operator groups
-	// and filters by; Tags is a set, normalised on write (see normalizeTags).
+	// and filters by; Tags is a set, normalised on write (see NormalizeTags).
 	ProductType string   `json:"product_type"`
 	Vendor      string   `json:"vendor"`
 	Tags        []string `json:"tags"`
@@ -550,7 +550,7 @@ func (c *Catalog) normalizeInput(in *ProductInput) error {
 	in.Vendor = strings.TrimSpace(in.Vendor)
 	in.SEOTitle = strings.TrimSpace(in.SEOTitle)
 	in.SEODescription = strings.TrimSpace(in.SEODescription)
-	in.Tags = normalizeTags(in.Tags)
+	in.Tags = NormalizeTags(in.Tags)
 	if err := normalizeProductMetadata(in.Metadata); err != nil {
 		return err
 	}
@@ -1890,7 +1890,7 @@ func validProductStatus(s string) bool {
 	return s == ProductDraft || s == ProductActive || s == ProductArchived
 }
 
-// normalizeTags trims, drops empties, de-duplicates case-insensitively and
+// NormalizeTags trims, drops empties, de-duplicates case-insensitively and
 // sorts.
 //
 // Sorting is the point: a tag list stored in the order somebody typed it makes
@@ -1898,7 +1898,7 @@ func validProductStatus(s string) bool {
 // that noise lands in exports, diffs and the panel's dirty-form check. Case is
 // preserved because "T-Shirt" is what an operator wants to read back, but two
 // spellings of one tag are one tag.
-func normalizeTags(in []string) []string {
+func NormalizeTags(in []string) []string {
 	out := make([]string, 0, len(in))
 	seen := make(map[string]bool, len(in))
 	for _, raw := range in {
@@ -1922,7 +1922,7 @@ func normalizeTags(in []string) []string {
 
 // tagsExpr is the SQL that turns the JSON array bound at position n back into
 // a text[]. ARRAY(subquery) preserves the subquery's row order, and
-// jsonb_array_elements_text emits in array order, so the sort normalizeTags
+// jsonb_array_elements_text emits in array order, so the sort NormalizeTags
 // applied survives the round trip.
 func tagsExpr(n int) string {
 	return fmt.Sprintf("ARRAY(SELECT jsonb_array_elements_text($%d::jsonb))", n)
@@ -1931,7 +1931,7 @@ func tagsExpr(n int) string {
 // tagsValue renders tags for tagsExpr. JSON in both directions means no
 // hand-written PostgreSQL array-literal quoting exists to get wrong.
 func tagsValue(tags []string) ([]byte, error) {
-	encoded, err := json.Marshal(normalizeTags(tags))
+	encoded, err := json.Marshal(NormalizeTags(tags))
 	if err != nil {
 		return nil, Internalf(err, "encode tags")
 	}

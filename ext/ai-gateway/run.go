@@ -475,7 +475,7 @@ const requestOverhead = 512
 // reserve less than the call costs.
 const (
 	tokensPerPage  = 3000
-	tokensPerImage = 1600
+	TokensPerImage = 1600
 )
 
 func estimateTokens(req Request) int {
@@ -500,7 +500,7 @@ func estimateTokens(req Request) int {
 		case d.MediaType == "application/pdf":
 			n += max(1, pdfPages(d.Bytes)) * tokensPerPage
 		case strings.HasPrefix(d.MediaType, "image/"):
-			n += tokensPerImage
+			n += TokensPerImage
 		default:
 			n += len(d.Bytes) / 3
 		}
