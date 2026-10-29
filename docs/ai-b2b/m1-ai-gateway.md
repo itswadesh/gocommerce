@@ -43,7 +43,7 @@ staff and vendor get none.
 |---|---|---|---|
 | `provider` | select: `anthropic`, `openai` | `anthropic` | Each provider's own API host, fixed in code. A custom host (an OpenAI-compatible server) waits for D109's outbound guard |
 | `api_key` | secret | none, required | Sealed at rest once D110 lands; nothing in this module changes for that |
-| `small_model` | text | `claude-haiku-4-5` | |
+| `small_model` | text | `claude-haiku-5-5` | `claude-haiku-4-5` until D154; a store that saved its settings keeps the model it saved |
 | `strong_model` | text | `claude-sonnet-5-5` | |
 | `monthly_cap` | number | none, required | In minor units of the store's currency (`app.Currency(ctx)`). No cap, no calls |
 | `small_price_input`, `small_price_output`, `small_price_cache_read`, `small_price_cache_write` | number | none | Minor units per million tokens. A model with no input or output price is not called, because the cap could not be enforced; cache prices default to the input price when empty |

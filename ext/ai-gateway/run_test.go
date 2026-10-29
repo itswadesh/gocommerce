@@ -494,6 +494,7 @@ func TestATaskIsRegisteredOnlyWhenItCanBeKept(t *testing.T) {
 		"no input limit":        func(t *Task) { t.MaxInputTokens = 0 },
 		"no build":              func(t *Task) { t.Build = nil },
 		"an unknown tier":       func(t *Task) { t.Ladder = []Tier{"huge"} },
+		"a long small prompt":   func(t *Task) { t.MaxInputTokens = maxSmallPrompt + 1 },
 		"an open object": func(t *Task) {
 			t.Schema = json.RawMessage(`{"type":"object","properties":{"a":{"type":"string"}},"required":["a"]}`)
 		},

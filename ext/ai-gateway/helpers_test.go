@@ -95,7 +95,7 @@ const (
 	goodAnswer = `{"title": "Steel widget, two-pack", "tags": ["widget", "steel"]}`
 	// No tags: the schema requires them.
 	badAnswer = `{"title": "Steel widget"}`
-	smallID   = "claude-haiku-4-5"
+	smallID   = "claude-haiku-5-5"
 	strongID  = "claude-sonnet-5-5"
 )
 
