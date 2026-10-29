@@ -191,7 +191,7 @@
           "ai-gateway"
         ],
         "summary": "Top up this store's AI credit",
-        "description": "Add to the store's balance by hand (there is no payment gateway yet). The amount is minor units of the store's currency. The change is recorded with who made it. Needs `store.operate`.",
+        "description": "Add to the store's balance by hand (there is no payment gateway yet). The amount is minor units of the store's currency. The change is recorded with who made it. Only the install's static admin token (`GOCOMMERCE_ADMIN_TOKEN`) may make it: credit is what the platform's AI key spends, so a store's own staff and API keys get 403 whatever their rights.",
         "requestBody": {
           "required": true,
           "content": {
@@ -236,7 +236,7 @@
           "ai-gateway"
         ],
         "summary": "Set this store's free AI trial",
-        "description": "Set the size of the free AI trial, in minor units of the store's currency. It is the trial's size, not an addition; what the store has already spent stays spent. The change is recorded with who made it. Needs `store.operate`.",
+        "description": "Set the size of the free AI trial, in minor units of the store's currency. It is the trial's size, not an addition; what the store has already spent stays spent. The change is recorded with who made it. Only the install's static admin token (`GOCOMMERCE_ADMIN_TOKEN`) may make it: credit is what the platform's AI key spends, so a store's own staff and API keys get 403 whatever their rights.",
         "requestBody": {
           "required": true,
           "content": {

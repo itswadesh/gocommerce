@@ -19,18 +19,19 @@ import (
 // with the platform's: a store could otherwise price the platform's calls at
 // nothing, or name a dearer model than the one it is charged for.
 
-// defaultPlatformPrices are the published prices of the default models, in US
-// dollars per million tokens: input, output, cache read, five-minute cache
-// write (the gateway's cache_control is the five-minute kind). From
-// platform.claude.com/docs/en/about-claude/pricing, read 2026-10-29. Claude
-// Haiku 5.5's are for prompts up to 100,000 tokens, which RegisterTask holds
-// every small-model task to (D154). A model not listed has no default: the
-// install names its prices, or the platform's key is not used for it. Keyed by
-// the model's own name rather than the default constants, so moving a default
-// to a new model cannot carry the old model's price with it.
-var defaultPlatformPrices = map[string]string{
-	"claude-haiku-5-5":  "0.10,0.50,0.01,0.125",
-	"claude-sonnet-5-5": "2,10,0.10,2.50",
+// defaultPlatformPrices are each tier's default model and its published
+// prices, in US dollars per million tokens: input, output, cache read,
+// five-minute cache write (the gateway's cache_control is the five-minute
+// kind). From platform.claude.com/docs/en/about-claude/pricing, read
+// 2026-10-29. A price applies only to its own tier running its own model:
+// Claude Haiku 5.5's is for prompts up to 100,000 tokens, which RegisterTask
+// holds the small tier to (D154) and nothing holds the strong tier to. Any
+// other model or tier has no default, so the install names its prices or the
+// platform's key is not used for it. The model is named here rather than taken
+// from the default constants, so moving a default cannot carry a price with it.
+var defaultPlatformPrices = map[Tier]struct{ model, prices string }{
+	TierSmall:  {"claude-haiku-5-5", "0.10,0.50,0.01,0.125"},
+	TierStrong: {"claude-sonnet-5-5", "2,10,0.10,2.50"},
 }
 
 // platform is the install's key, models and prices, read once at Register.
@@ -70,7 +71,10 @@ func newPlatform(cfg Config, log *slog.Logger) *platform {
 	} {
 		model := cmp.Or(strings.TrimSpace(t.model), t.fallback)
 		p.models[t.tier] = model
-		text := cmp.Or(strings.TrimSpace(t.prices), defaultPlatformPrices[model])
+		text := strings.TrimSpace(t.prices)
+		if d := defaultPlatformPrices[t.tier]; text == "" && d.model == model {
+			text = d.prices
+		}
 		if text == "" {
 			log.Error("ai gateway: the platform's model has no price, so it is not called on the platform's key", "tier", t.tier, "model", model)
 			continue
@@ -82,6 +86,8 @@ func newPlatform(cfg Config, log *slog.Logger) *platform {
 		}
 		p.usd[t.tier] = usd
 	}
+	// One rate that does not read drops them all: "INR=88,50", written with a
+	// decimal comma, would otherwise charge at 88 with nothing said about it.
 	for _, pair := range strings.Split(cfg.PlatformUSDRates, ",") {
 		if strings.TrimSpace(pair) == "" {
 			continue
@@ -90,8 +96,10 @@ func newPlatform(cfg Config, log *slog.Logger) *platform {
 		code = strings.ToUpper(strings.TrimSpace(code))
 		rate, ok := new(big.Rat).SetString(strings.TrimSpace(value))
 		if len(code) != 3 || code == "USD" || !ok || rate.Sign() <= 0 {
-			log.Error("ai gateway: a rate to the US dollar does not read; stores in that currency cannot use the platform's key", "rate", strings.TrimSpace(pair))
-			continue
+			log.Error("ai gateway: the rates to the US dollar do not read, so only stores in US dollars can use the platform's key",
+				"rates", cfg.PlatformUSDRates, "first_bad", strings.TrimSpace(pair))
+			p.rates = map[string]*big.Rat{"USD": big.NewRat(1, 1)}
+			break
 		}
 		p.rates[code] = rate
 	}
@@ -146,7 +154,7 @@ func (p *platform) prices(currency string) (out map[Tier]prices, ok bool) {
 }
 
 // ceilRat rounds a positive r up to a whole number, false when it is past what
-// a price may be (number's bound, so tokens times price cannot overflow).
+// a price may be: the bound a store's own prices are held to (number).
 func ceilRat(r *big.Rat) (int64, bool) {
 	q, rem := new(big.Int).QuoRem(r.Num(), r.Denom(), new(big.Int))
 	if rem.Sign() > 0 {

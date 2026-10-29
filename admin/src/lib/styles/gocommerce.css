@@ -12039,21 +12039,6 @@ html .tw\:rounded-2xl {
     border-top: 1px solid var(--border);
     padding-top: 10px;
 }
-.ai-credit-forms {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    margin-top: 10px;
-}
-.ai-credit-form {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-.ai-credit-form .txt-input {
-    min-width: 0;
-    flex: 1 1 auto;
-}
 .ai-credit-log {
     list-style: none;
     margin: 4px 0 0;

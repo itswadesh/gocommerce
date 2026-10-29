@@ -1129,7 +1129,11 @@ func withAdminToken(r *http.Request) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), ctxKeyAdminToken, true))
 }
 
-func adminTokenFrom(ctx context.Context) bool {
+// AdminTokenFrom is whether the request came with the install's static admin
+// token: the install owner's credential, which no store's own staff or API
+// keys hold. A module gates an install-level act on it, such as granting a
+// store credit the platform pays for.
+func AdminTokenFrom(ctx context.Context) bool {
 	marked, _ := ctx.Value(ctxKeyAdminToken).(bool)
 	return marked
 }

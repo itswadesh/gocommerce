@@ -293,8 +293,10 @@ call goes through the gateway, which records it and charges it (D107, D151).
   To change them, set `AI_PLATFORM_SMALL_MODEL` / `AI_PLATFORM_STRONG_MODEL`
   and `AI_PLATFORM_SMALL_PRICES` / `AI_PLATFORM_STRONG_PRICES`. A price is US
   dollars per million tokens in the form `input,output,cache read,cache write`,
-  for example `0.10,0.50,0.01,0.125`. A model you name with no price, or with
-  a price that does not read, is not called on the platform's key, and the
+  for example `0.10,0.50,0.01,0.125`. A default price belongs to its own tier
+  and model: Claude Haiku 5.5's is for prompts up to 100,000 tokens, which
+  only the small tier is held to. A model you name with no price, or with a
+  price that does not read, is not called on the platform's key, and the
   engine logs why as it starts.
 - **Currency.** Anthropic bills in US dollars; a store's credit is in its own
   currency. `AI_PLATFORM_USD_RATES` says how many units of each currency make
@@ -302,13 +304,34 @@ call goes through the gateway, which records it and charges it (D107, D151).
   converted at that rate and rounded up to whole minor units per million
   tokens. A store in US dollars needs no rate. A store in a currency with no
   rate cannot use the platform's key, and its AI usage screen says so; no rate
-  is assumed. The rate is yours to keep current.
-- **Credit.** A store starts with the free trial and runs on what an operator
-  tops up on its AI usage screen (D151). A call reserves the most it could cost
-  before it is sent, so the credit must cover that. One "Create from photos"
-  grouping call on Claude Sonnet 5.5 reserves about $0.35, or ₹30.53 at 88.50.
-  That is more than the default free trial in rupees (500 minor units, ₹5),
-  so top up an Indian store before it uses photos.
+  is assumed. One rate that does not read, such as `INR=88,50` with a decimal
+  comma, drops them all, and the engine logs it. The rates are yours to keep
+  current.
+- **Credit.** A store starts with the free trial and runs on what you top up
+  (D151). Credit is what the platform's key spends, so only the install's admin
+  token grants it. No store's staff can, not even its owner. Top up a store by
+  its slug, in minor units of its currency:
+
+  ```sh
+  curl -X POST https://<panel host>/api/admin/x/ai-gateway/credit/grant \
+    -H "Authorization: Bearer $GOCOMMERCE_ADMIN_TOKEN" -H "X-Store: <slug>" \
+    -H "Content-Type: application/json" -d '{"amount_minor": 10000, "note": "October"}'
+  ```
+
+  `credit/free-allowance` with the same body sets the size of a store's free
+  trial instead. The store's AI usage screen lists each top-up. Credit is held
+  in the currency it was granted in. A store that changes its currency
+  afterwards draws none until you move it.
+- **How much a call holds.** A call reserves the most it could cost before it
+  is sent, so the credit must cover that. One "Create from photos" grouping
+  call on Claude Sonnet 5.5 reserves about $0.35, or ₹30.53 at 88.50. That is
+  more than the default free trial in rupees (500 minor units, ₹5), so top up
+  an Indian store before it uses photos.
+- **When Anthropic refuses.** If Anthropic refuses a platform call, for a rate
+  limit, a spent balance or a bad key, the store sees only the status and the
+  kind of failure. The engine logs Anthropic's own words as `ai call on the
+  platform's key failed`. They describe the platform's account, so look there
+  first when every store's AI fails at once.
 
 ### A store's own domain, without touching the proxy
 

@@ -84,7 +84,16 @@ func (m *Module) handleFreeAllowance(w http.ResponseWriter, r *http.Request) {
 	m.creditWrite(w, r, m.SetFreeAllowance)
 }
 
+// creditWrite is a grant or a free trial, which only the install's own admin
+// token may make. Credit is what the platform's key spends, so a store whose
+// owner could grant it, and every owner holds store.operate, could spend the
+// platform's money as it liked; this is the install owner's act, as a store's
+// plan is (D119).
 func (m *Module) creditWrite(w http.ResponseWriter, r *http.Request, apply func(context.Context, int64, string) (*Credit, error)) {
+	if !gocommerce.AdminTokenFrom(r.Context()) {
+		gocommerce.RespondError(w, r, gocommerce.Forbiddenf("AI credit is granted by the platform's operator with the install's admin token, not from a store's own panel"))
+		return
+	}
 	var in creditChange
 	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
 		gocommerce.RespondError(w, r, err)

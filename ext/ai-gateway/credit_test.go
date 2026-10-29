@@ -262,28 +262,32 @@ func TestConcurrentRunsCannotOverspendCredit(t *testing.T) {
 	}
 }
 
-// An operator's grant increases the balance and is recorded with who did it,
-// and the grant route is gated on an operator-level right, not on seeing usage.
-func TestOperatorGrantIsRecordedAndGated(t *testing.T) {
+// Credit is what the platform's key spends, so only the install's own admin
+// token grants it or sets a free trial: no store's staff, its owner included,
+// can give their store the platform's money. A grant is recorded.
+func TestOnlyTheInstallGrantsCredit(t *testing.T) {
 	app, m, _ := newGateway(t, reply(http.StatusOK, "{}"))
 	ctx := context.Background()
-	configure(t, app, ctx, nil)
 
-	// A manager may read the balance but not grant.
-	manager := gctest.OperatorToken(t, app, "manager@example.com", gocommerce.RoleManager)
-	if rec := gctest.SessionRequest(t, app, manager, http.MethodGet, "/api/admin/x/ai-gateway/credit", nil); rec.Code != http.StatusOK {
-		t.Errorf("manager reading credit = %d, want 200", rec.Code)
+	// An owner holds every right of the store, and may read the balance, but
+	// may not grant or set a free trial.
+	owner := gctest.OperatorToken(t, app, "owner@example.com", gocommerce.RoleOwner)
+	if rec := gctest.SessionRequest(t, app, owner, http.MethodGet, "/api/admin/x/ai-gateway/credit", nil); rec.Code != http.StatusOK {
+		t.Errorf("owner reading credit = %d, want 200", rec.Code)
 	}
 	grant := map[string]any{"amount_minor": 2500, "note": "welcome"}
-	if rec := gctest.SessionRequest(t, app, manager, http.MethodPost, "/api/admin/x/ai-gateway/credit/grant", grant); rec.Code != http.StatusForbidden {
-		t.Errorf("manager granting credit = %d, want 403", rec.Code)
+	for _, path := range []string{"/api/admin/x/ai-gateway/credit/grant", "/api/admin/x/ai-gateway/credit/free-allowance"} {
+		if rec := gctest.SessionRequest(t, app, owner, http.MethodPost, path, grant); rec.Code != http.StatusForbidden {
+			t.Errorf("owner POST %s = %d, want 403", path, rec.Code)
+		}
+	}
+	if c := mustCredit(t, m, ctx); c.GrantedMicroMinor != 0 || c.FreeAllowanceMicroMinor != freeTrialMicro {
+		t.Fatalf("credit = %+v after refused grants", c)
 	}
 
-	// An owner holds the operator right and may grant.
-	owner := gctest.OperatorToken(t, app, "owner@example.com", gocommerce.RoleOwner)
-	rec := gctest.SessionRequest(t, app, owner, http.MethodPost, "/api/admin/x/ai-gateway/credit/grant", grant)
+	rec := gctest.AdminRequest(t, app, http.MethodPost, "/api/admin/x/ai-gateway/credit/grant", grant)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("owner granting credit = %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("admin token granting credit = %d: %s", rec.Code, rec.Body.String())
 	}
 	var env struct {
 		Data Credit `json:"data"`
@@ -291,20 +295,33 @@ func TestOperatorGrantIsRecordedAndGated(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
 		t.Fatal(err)
 	}
-	c := env.Data
-	if c.GrantedMicroMinor != 2500*microPerMinor {
-		t.Errorf("granted %d, want %d", c.GrantedMicroMinor, 2500*microPerMinor)
+	if env.Data.GrantedMicroMinor != 2500*microPerMinor {
+		t.Errorf("granted %d, want %d", env.Data.GrantedMicroMinor, 2500*microPerMinor)
 	}
-
 	entries, total, err := m.CreditLedger(ctx, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total != 1 || len(entries) != 1 {
-		t.Fatalf("%d ledger entries, want 1", total)
+	if total != 1 || len(entries) != 1 || entries[0].Kind != "grant" || entries[0].AmountMinor != 2500 || entries[0].Note != "welcome" {
+		t.Errorf("ledger = %+v (%d)", entries, total)
 	}
-	e := entries[0]
-	if e.Kind != "grant" || e.AmountMinor != 2500 || e.ActorEmail != "owner@example.com" || e.Note != "welcome" {
-		t.Errorf("ledger entry = %+v", e)
+}
+
+// Credit is held in the currency it was granted in. A store that changes its
+// currency afterwards cannot spend ₹10,000 of credit as $10,000: nothing is
+// drawn until the platform moves it.
+func TestCreditInAnotherCurrencyIsNotSpent(t *testing.T) {
+	_, m, s := newGatewayWith(t, platformConfig(), reply(http.StatusOK, answer(smallID, goodAnswer, Usage{InputTokens: 3000})), rewriteTask())
+	ctx := context.Background()
+	if _, err := m.Grant(ctx, 1_000_000, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.db.ExecContext(ctx, `UPDATE ai_credits SET currency = 'INR'`); err != nil {
+		t.Fatal(err)
+	}
+	_, err := m.Run(ctx, "test.rewrite", listing{Title: "x"})
+	re := runErr(t, err)
+	if re.Outcome != OutcomeCreditExhausted || !strings.Contains(re.Reason, "INR") || s.count() != 0 {
+		t.Errorf("run = %v with %d requests, want refused naming the credit's currency", err, s.count())
 	}
 }

@@ -292,6 +292,9 @@ func (m *Module) ladder(ctx context.Context, t *Task, input json.RawMessage, st 
 		p := st.prices[tier]
 		if !p.complete {
 			step.Outcome, step.Reason = "no_price", fmt.Sprintf("the %s model has no input or output price, so the cap could not be kept", tier)
+			if st.platform {
+				step.Reason = fmt.Sprintf("the platform has no price for its %s model, so it is not called on the platform's key", tier)
+			}
 			rec.Steps = append(rec.Steps, step)
 			return fail(OutcomeNoPrice, step.Reason, false)
 		}
@@ -411,6 +414,14 @@ func (m *Module) ladder(ctx context.Context, t *Task, input json.RawMessage, st 
 				transient = pe.Transient
 			}
 			step.Reason = callErr.Error()
+			// What Anthropic says back about the platform's own account — its
+			// organisation, its rate limits, its balance — is the operator's to
+			// read, in the log. The record, the job and the store's screen get
+			// the status and the kind of failure.
+			if st.platform && pe != nil && pe.Status >= 300 && pe.Message != "" {
+				m.log.Warn("ai call on the platform's key failed", "task", t.Name, "error", step.Reason)
+				step.Reason = (&ProviderError{Provider: pe.Provider, Status: pe.Status, Kind: pe.Kind}).Error()
+			}
 			// A transport that panicked, or a 200 that could not be read:
 			// the provider's side failed, and asking again would pay again.
 			if pe != nil && (pe.panicked || pe.Status == http.StatusOK) {
