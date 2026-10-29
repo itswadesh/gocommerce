@@ -45,8 +45,8 @@ puts module routes under `/api/admin/x/<module>/`, so there is no general
 
 | ID | Status | Base | Next |
 |---|---|---|---|
-| CAT-01 | Built for new products | `ext/photo-products` (D144): up to 60 photos become draft products and variants, described from what the photos show, unpriced. | The edit path, "Improve with AI" on an existing product, is being built as D151. |
-| CAT-02 | Missing | `ai_jobs`; the products list's bulk bar. | A batch on the D151 task with per-row results and a cost estimate. |
+| CAT-01 | Built for new products | `ext/photo-products` (D144): up to 60 photos become draft products and variants, described from what the photos show, unpriced. | The edit path, "Improve with AI" on an existing product, is being built as D152. |
+| CAT-02 | Missing | `ai_jobs`; the products list's bulk bar. | A batch on the D152 task with per-row results and a cost estimate. |
 | CAT-03 | Partial | The Shopify taxonomy is the master and a store activates nodes (D146); photo-products picks a store category. | A task that proposes a taxonomy node and its attributes. |
 | CAT-04 | Partial | The SEO panel; photo-products writes SEO copy and alt text for new products. | Existing products in D151; collections and pages after. |
 | CAT-05 | Partial | `ext/translations` stores a translation per language and serves it. | A task that drafts translations into it for review. |
@@ -104,8 +104,8 @@ reach the deployed binary with writes filed as proposals first.
 
 ### Theme colours from the logo (owner's addition)
 
-In review as #169 (D149). It reads the logo's colours in the browser with no
-model call, so it spends no AI credit.
+Merged as #169 (D149), free on every store. It reads the logo's colours in
+the browser with no model call, so it spends no AI credit.
 
 ## Decisions taken in this audit
 
@@ -119,7 +119,7 @@ model call, so it spends no AI credit.
    recommendations are SQL; a model writes words and reads pictures.
 4. **Order of work**, adapting the plan's §15:
    1. this audit;
-   2. "Improve with AI" on an existing product (CAT-01 edit, CAT-04), D151;
+   2. "Improve with AI" on an existing product (CAT-01 edit, CAT-04), D152;
    3. bulk enrichment and media alt text on the same task (CAT-02);
    4. review summaries (BI-03);
    5. recovery and campaign copy inside the existing send steps (MKT-01,
@@ -131,15 +131,14 @@ model call, so it spends no AI credit.
 
 ## What only the owner can decide
 
-- **AI credits.** The owner said on 29 October 2026 that AI features are the
-  paid part and consume AI credit. Today each store brings its own model key
-  and sets its own monthly cap; a platform-wide key is off by default and,
-  switched on, metered against each store's cap (D107). Credits need a price
-  per credit, who holds the provider key, and how a store tops up.
+- **AI credits: the figures.** D151 built the mechanism: a free trial, then a
+  prepaid balance the platform operator tops up by hand. The price of a credit,
+  the size of the free trial and self-serve top-up are still the owner's.
 - **Image generation.** Which provider makes and edits pictures (CAT-07,
   CAT-08). The owner's standing rule is Google Gemini; the owner allowed
   ChatGPT for the sample catalogue's colour edits on 28 October 2026.
 - **Support channels.** Whether the inbox starts with contact messages and
   email only, or with WhatsApp, which needs a Meta business account per store.
-- **The small model.** Moving the default from `claude-haiku-4-5` to Haiku 5.5
-  changes every store's cost per run.
+
+The owner settled the default small model on 29 October 2026: Claude Haiku
+5.5 (D154).

@@ -122,9 +122,9 @@ const (
 	anthropicModels = `{
   "data": [
     {"type": "model", "id": "claude-sonnet-5-5", "display_name": "Claude Sonnet 5.5", "created_at": "2026-09-15T00:00:00Z"},
-    {"type": "model", "id": "claude-haiku-4-5", "display_name": "Claude Haiku 4.5", "created_at": "2025-10-01T00:00:00Z"}
+    {"type": "model", "id": "claude-haiku-5-5", "display_name": "Claude Haiku 5.5", "created_at": "2026-10-01T00:00:00Z"}
   ],
-  "has_more": false, "first_id": "claude-sonnet-5-5", "last_id": "claude-haiku-4-5"
+  "has_more": false, "first_id": "claude-sonnet-5-5", "last_id": "claude-haiku-5-5"
 }`
 
 	openAIAnswer = `{
@@ -459,7 +459,7 @@ func TestEachProviderListsItsModelsWithoutSpendingTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(ids, ",") != "claude-sonnet-5-5,claude-haiku-4-5" {
+	if strings.Join(ids, ",") != "claude-sonnet-5-5,claude-haiku-5-5" {
 		t.Errorf("models = %v", ids)
 	}
 	if req := s.last(t); !strings.HasPrefix(req.URL, "https://api.anthropic.com/v1/models") || req.Header.Get("x-api-key") != "sk-ant-k" {

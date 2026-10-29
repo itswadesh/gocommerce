@@ -66,8 +66,10 @@ func rewriteTask() aigateway.Task {
 		// bullets and specifications; this holds the longest one seen with
 		// room to spare, and refuses one that would cost more than a rewrite
 		// is worth.
-		MaxInputTokens:  8000,
-		MaxOutputTokens: 2048,
+		MaxInputTokens: 8000,
+		// Claude Haiku 5.5 and Sonnet 5.5 think before answering, and the
+		// thinking counts toward this: 2048 held the rewrite alone.
+		MaxOutputTokens: 8192,
 		Ladder:          []aigateway.Tier{aigateway.TierSmall, aigateway.TierStrong},
 		Build: func(ctx context.Context, input json.RawMessage, p aigateway.Policy) (aigateway.Request, []aigateway.SourceRef, error) {
 			var in rewriteInput

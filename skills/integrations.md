@@ -389,7 +389,9 @@ every call with its tokens and cost, and retries only what is worth retrying.
 `ext/photo-products` shows a task with pictures (`Document.Caption` labels
 each one so the answer can name it), `ext/catalog-ai`'s `catalog.improve`
 shows a two-rung ladder that climbs on the model's own confidence and on a
-`Check` that reads the store (the category must be one it has), and
+`Check` that reads the store (the category must be one it has),
+`ext/reviews`' `reviews.summarize` shows one whose answer must cite only what
+it was sent, with a `Deterministic` step that answers without a model, and
 [the design](../docs/ai-b2b/m1-ai-gateway.md) has the whole contract.
 
 ## MCP: the same state machine, a different door
