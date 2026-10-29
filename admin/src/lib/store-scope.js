@@ -54,18 +54,30 @@ export function forgetStore() {
 }
 
 /**
- * pickStore is the store a tab opens in, of the person's active stores: the
- * one a link names, else the one remembered, matched by id or slug. A link to
- * a store that is not theirs is passed over rather than refused — the engine
- * would refuse every request in it.
+ * openStore is the store a tab opens in, of the person's active stores, and
+ * whether it has to be entered before anything draws — or null for none.
  *
- * The link wins because it is the only one of the two the person can see. A
+ * The store is the one a link names, else the one remembered, by id or slug.
+ * The link wins because it is the only one of the two the person can see: the
  * remembered store is whatever any tab chose last, and with two stores of one
- * name it put a tab opened on their own store's address in the other one.
+ * name it put a tab opened on their own store's address in the other one. A
+ * link to a store that is not theirs is passed over rather than refused.
+ *
+ * It is entered, as a switch is, when the signed-in record is not this
+ * store's (recordFor is the store it was issued for; null with no record, as
+ * for a static admin token). The record is shared by every tab, so it is the
+ * store some tab used last; a screen drawn with an owner's record in a store
+ * where they were staff offered edits the engine refused.
+ *
+ * @returns {{ store: any, enter: boolean } | null}
  */
-export function pickStore(active, linked, remembered) {
-    const find = (name) => (name ? active.find((st) => st.id === name || st.slug === name) : undefined);
-    return find(linked) ?? find(remembered) ?? null;
+export function openStore(active, linked, remembered, recordFor) {
+    const find = (name) => {
+        const key = name?.toLowerCase();
+        return key ? active.find((st) => st.id.toLowerCase() === key || st.slug === key) : undefined;
+    };
+    const store = find(linked) ?? find(remembered);
+    return store ? { store, enter: recordFor != null && recordFor !== store.id } : null;
 }
 
 /**

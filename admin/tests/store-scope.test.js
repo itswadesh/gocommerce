@@ -52,24 +52,48 @@ const mine = [
     { id: "store_B", slug: "corner-shop-954" },
 ];
 
-test("a link naming one of the person's stores opens it, by id or by slug", async () => {
-    const { pickStore } = await import("../src/lib/store-scope.js");
-    assert.equal(pickStore(mine, "store_B", "store_A")?.id, "store_B");
-    assert.equal(pickStore(mine, "corner-shop-954", "store_A")?.id, "store_B");
+// openStore(active, linked, remembered, recordFor): recordFor is the store the
+// signed-in record was issued for, null when there is no record.
+const open = async (...args) => {
+    const { openStore } = await import("../src/lib/store-scope.js");
+    const got = openStore(mine, ...args);
+    return got && { id: got.store.id, enter: got.enter };
+};
+
+test("a link naming one of the person's stores opens it, by id or by slug, and enters it", async () => {
+    assert.deepEqual(await open("store_B", "store_A", "store_A"), { id: "store_B", enter: true });
+    assert.deepEqual(await open("corner-shop-954", "store_A", "store_A"), { id: "store_B", enter: true });
+    // The engine reads a slug lower-cased, and an id whatever its case.
+    assert.deepEqual(await open("Corner-Shop-954", "store_A", "store_A"), { id: "store_B", enter: true });
+    assert.deepEqual(await open("STORE_B", "store_A", "store_A"), { id: "store_B", enter: true });
+});
+
+test("a link to the store the tab is already in enters nothing", async () => {
+    assert.deepEqual(await open("store_A", "store_A", "store_A"), { id: "store_A", enter: false });
+    assert.deepEqual(await open("corner-shop", "store_A", "store_A"), { id: "store_A", enter: false });
 });
 
 test("a link naming a store that is not theirs is passed over, not refused", async () => {
-    const { pickStore } = await import("../src/lib/store-scope.js");
-    assert.equal(pickStore(mine, "store_Z", "store_A")?.id, "store_A");
-    assert.equal(pickStore(mine, "store_Z", ""), null);
+    assert.deepEqual(await open("store_Z", "store_A", "store_A"), { id: "store_A", enter: false });
+    assert.equal(await open("store_Z", "", "store_A"), null);
 });
 
 test("with no link, the remembered store, if it is still theirs", async () => {
-    const { pickStore } = await import("../src/lib/store-scope.js");
-    assert.equal(pickStore(mine, "", "store_A")?.id, "store_A");
-    assert.equal(pickStore(mine, "", "corner-shop")?.id, "store_A");
-    assert.equal(pickStore(mine, "", "store_Z"), null);
-    assert.equal(pickStore([], "store_A", "store_A"), null);
+    assert.deepEqual(await open("", "store_A", "store_A"), { id: "store_A", enter: false });
+    assert.deepEqual(await open("", "corner-shop", "store_A"), { id: "store_A", enter: false });
+    assert.equal(await open("", "store_Z", "store_A"), null);
+    const { openStore } = await import("../src/lib/store-scope.js");
+    assert.equal(openStore([], "store_A", "store_A", "store_A"), null);
+});
+
+test("a record another store issued is replaced before anything draws", async () => {
+    // Another tab switched to B as staff, and this tab, in A, is reloaded: the
+    // record it finds is B's.
+    assert.deepEqual(await open("", "store_A", "store_B"), { id: "store_A", enter: true });
+    // A record from before records said which store they were for.
+    assert.deepEqual(await open("", "store_A", ""), { id: "store_A", enter: true });
+    // A static admin token has no record to be wrong.
+    assert.deepEqual(await open("store_B", "store_A", null), { id: "store_B", enter: false });
 });
 
 test("the store a link names, also through the sign-in page it was sent to", async () => {
@@ -79,6 +103,7 @@ test("the store a link names, also through the sign-in page it was sent to", asy
     assert.equal(at("/?next=" + encodeURIComponent("/dash/themes/footer?store=store_B")), "store_B");
     assert.equal(at("/select-store?next=%2Fdash"), "");
     assert.equal(at("/dash/themes/footer"), "");
+    assert.equal(at("/?next=" + encodeURIComponent("http://[")), "");
 });
 
 test("forgetting the store forgets it in this tab and for new ones", async () => {

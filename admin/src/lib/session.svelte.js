@@ -19,6 +19,7 @@
 
 import { browser } from "$app/environment";
 import { untrack } from "svelte";
+import { getStore } from "$lib/store-scope.js";
 
 const TOKEN_KEY = "gocommerce_admin_token";
 const RECORD_KEY = "gocommerce_admin_record";
@@ -28,6 +29,13 @@ const RECORD_KEY = "gocommerce_admin_record";
  * showing a login form with no explanation of why it is back.
  */
 const EXPIRES_KEY = "gocommerce_admin_expires";
+/*
+ * The store the record was issued for. The record's rights are one store's,
+ * and every tab shares it while each keeps its own store, so a tab opening
+ * has to know whether the rights it finds are its store's (openStore).
+ */
+const RECORD_STORE_KEY = "gocommerce_admin_record_store";
+let recordFor = read(RECORD_STORE_KEY);
 
 function read(key) {
     if (!browser) return "";
@@ -122,6 +130,16 @@ export function setToken(token, expiresAt) {
 export function setRecord(record) {
     s.record = record ?? null;
     write(RECORD_KEY, record ? JSON.stringify(record) : "");
+    // The request that brought it named this tab's store — all but signing up
+    // and accepting an invitation, where a wrong guess costs one more entry,
+    // or leaves the rights to the boot's refresh as before.
+    recordFor = record ? getStore() : "";
+    write(RECORD_STORE_KEY, recordFor);
+}
+
+/** recordStore is the store the signed-in record was issued for, if known. */
+export function recordStore() {
+    return recordFor;
 }
 
 export function clearToken() {
