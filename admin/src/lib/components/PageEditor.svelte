@@ -1199,7 +1199,11 @@
                     {:else if frameBlocked}
                         <div class="hp-stage-note" in:rise>
                             <p>This panel cannot show {frameOrigin} in a frame: it is not one of this store's addresses. Add it as a domain of the store, or open the preview in a tab.</p>
-                            <button type="button" class="btn sm" onclick={openTab}><span class="txt">Open preview</span></button>
+                            {#if writable}
+                                <button type="button" class="btn sm" onclick={openTab}><span class="txt">Open preview</span></button>
+                            {:else}
+                                <a class="btn sm" href={frameSrc} target="_blank" rel="noreferrer"><span class="txt">Open the storefront</span></a>
+                            {/if}
                         </div>
                     {:else if !address && (previewKey || !writable)}
                         <div class="hp-stage-note" in:rise>
