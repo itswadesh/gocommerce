@@ -5147,6 +5147,24 @@ button.media-check {
 }
 
 /*
+ * On a phone the sticky top bar (z-index 30) covered the save bar, so Save
+ * could not be tapped. `.page-content`'s z-index 0 makes it a stacking
+ * context, which caps everything inside it, the bar included, below the top
+ * bar whatever their own z-index; on a phone it is dropped. The bar then goes
+ * over the top bar and under the navigation drawer's backdrop (40), and Save
+ * and Discard are a thumb's size.
+ */
+@media (max-width: 768px) {
+    .page-content {
+        z-index: auto;
+    }
+    .save-bar {
+        z-index: 31;
+        --smBtnHeight: 44px;
+    }
+}
+
+/*
  * PocketBase's `.list` carries `overflow: auto`. Upstream it only ever appears
  * inside a container that has already given it a height, so nothing there
  * exposes what happens otherwise: as a direct child of a page's flex column it
