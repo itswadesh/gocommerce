@@ -20,6 +20,7 @@
     import { forgetScreens } from "$lib/screens.svelte.js";
     import { applyEntry, ensureStore, forgetStores, isSuperseded, markStores, myStores } from "$lib/stores.svelte.js";
     import { reloadStoreData } from "$lib/store-data.js";
+    import { storeNamedBy } from "$lib/store-scope.js";
     import { forgetSetup, loadSetup, setup } from "$lib/setup.svelte.js";
     import { copyText } from "$lib/clipboard.js";
     import { droppedNote, sectionFor, switchTarget } from "$lib/store-switch.js";
@@ -273,7 +274,7 @@
         try {
             // Also the stored token's check: a 401 here has already ended the
             // session in api.js, before the operator meant to do anything.
-            where = await ensureStore();
+            where = await ensureStore(storeNamedBy(page.url));
         } catch (err) {
             // Signed out while asking: the answer was the last person's.
             if (isSuperseded(err)) return;

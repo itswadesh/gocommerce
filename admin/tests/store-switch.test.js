@@ -22,6 +22,13 @@ test("a list stays the same list, filters and all", () => {
     });
 });
 
+test("the old store's ?store= does not follow a switch", () => {
+    // A link's store wins when the panel opens, so one left in the address
+    // would send the next reload back to the store just left.
+    assert.equal(at("/dash/themes/footer", "/dash/themes/footer?store=store_A").href, "/dash/themes/footer");
+    assert.equal(at("/dash/orders", "/dash/orders?status=paid&store=store_A").href, "/dash/orders?status=paid");
+});
+
 test("a page of the old store's list is not a page of the new one's", () => {
     assert.equal(at("/dash/orders", "/dash/orders?page=4").href, "/dash/orders");
     assert.equal(

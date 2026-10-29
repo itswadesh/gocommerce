@@ -8,7 +8,7 @@
  */
 import { stores as storesAPI } from "$lib/api.js";
 import { setRecord } from "$lib/session.svelte.js";
-import { forgetStore, getStore, setStore } from "$lib/store-scope.js";
+import { forgetStore, getStore, pickStore, setStore } from "$lib/store-scope.js";
 
 /*
  * `state` is where the tab stands: "unknown" until asked, "pending" while
@@ -83,17 +83,29 @@ export function applyEntry(entry) {
 
 /**
  * ensureStore settles which store this tab is in before anything that needs
- * one is asked: the remembered one if it is still theirs, their only one if
- * they have one, else nothing — and the shell sends them to /select-store.
+ * one is asked: the one the address names (linked) if it is theirs, else the
+ * remembered one if it is still theirs, their only one if they have one, else
+ * nothing — and the shell sends them to /select-store.
  *
+ * @param {string} [linked] the store the address names (storeNamedBy)
  * @returns {Promise<"ok" | "choose" | "none">}
  */
-export async function ensureStore() {
+export async function ensureStore(linked = "") {
     const mine = generation;
     const list = await loadStores();
     const want = getStore();
     const active = list.filter((st) => st.status === "active");
-    const kept = active.find((st) => st.id === want || st.slug === want);
+    const kept = pickStore(active, linked, want);
+    if (kept && kept !== pickStore(active, "", want)) {
+        // Entered, as a switch is, so the screen draws with this store's
+        // rights from the start: the stored record is the remembered store's,
+        // and a theme editor drawn with an owner's record in a store where
+        // the person is staff asked for a preview key and was refused.
+        const entry = await storesAPI.enter(kept.id);
+        stillCurrent(mine);
+        applyEntry(entry);
+        return "ok";
+    }
     if (kept) {
         if (kept.id !== want) setStore(kept.id);
         s.current = kept.id;
