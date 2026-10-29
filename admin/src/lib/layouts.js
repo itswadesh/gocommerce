@@ -221,6 +221,16 @@ export function createAutosave({ save, delay = 800, setTimer = setTimeout, clear
 }
 
 /**
+ * Where the preview finds the storefront: the address typed for this store,
+ * else the one the engine sent with a preview key, else the store's own
+ * domain. A person who may not publish gets no key, so the domain is all
+ * that says where the store is for them; "" only when it has none.
+ */
+export function storefrontAddress(typed, minted, domain) {
+    return typed || minted || (domain ? "https://" + domain : "");
+}
+
+/**
  * The storefront's page at path with a preview key, and — for the frame — the
  * panel's origin, which the storefront then accepts messages from and lets
  * frame it. Only an http(s) address makes one; anything else is "".
