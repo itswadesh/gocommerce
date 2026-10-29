@@ -268,7 +268,7 @@ test("a store with a domain has an address to preview without a preview key", ()
     // Somebody who may see the theme editor but not publish gets no key, and
     // so no address from it: the store's own domain is still where it is.
     assert.equal(storefrontAddress("", "", "shop.example.com"), "https://shop.example.com");
-    assert.equal(storefrontAddress("", "https://shop.example.com", "shop.example.com"), "https://shop.example.com");
+    assert.equal(storefrontAddress("", "https://minted.example.com", "shop.example.com"), "https://minted.example.com");
     assert.equal(storefrontAddress("https://typed.example.com", "https://shop.example.com", "shop.example.com"), "https://typed.example.com");
     assert.equal(storefrontAddress("", "", ""), "");
     assert.equal(storefrontAddress("", "", undefined), "");
