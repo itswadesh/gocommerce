@@ -117,7 +117,7 @@ test("a duplicate copies a proxied section, as the screen's state is", () => {
 
 // ------------------------------------------------------------ phase 2 (D126)
 
-import { moveTo, dropIndex, createHistory, createAutosave, previewAddress } from "../src/lib/layouts.js";
+import { moveTo, dropIndex, createHistory, createAutosave, previewAddress, storefrontAddress } from "../src/lib/layouts.js";
 
 test("moveTo moves one section to any position, and leaves the list alone for a no-op", () => {
     const list = ["a", "b", "c", "d"].map((id) => ({ id }));
@@ -262,6 +262,16 @@ test("previewAddress opens the storefront's home page with the key and the panel
     assert.equal(previewAddress("https://shop.example.com/some/page", "k", ""), "https://shop.example.com/?preview=k");
     assert.equal(previewAddress("not an address", "k", ""), "");
     assert.equal(previewAddress("javascript:alert(1)", "k", ""), "");
+});
+
+test("a store with a domain has an address to preview without a preview key", () => {
+    // Somebody who may see the theme editor but not publish gets no key, and
+    // so no address from it: the store's own domain is still where it is.
+    assert.equal(storefrontAddress("", "", "shop.example.com"), "https://shop.example.com");
+    assert.equal(storefrontAddress("", "https://shop.example.com", "shop.example.com"), "https://shop.example.com");
+    assert.equal(storefrontAddress("https://typed.example.com", "https://shop.example.com", "shop.example.com"), "https://typed.example.com");
+    assert.equal(storefrontAddress("", "", ""), "");
+    assert.equal(storefrontAddress("", "", undefined), "");
 });
 
 // ------------------------------------------------------------ Phase 3 (D127)
