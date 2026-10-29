@@ -241,6 +241,40 @@ func (a *App) makeImage(ctx context.Context, src *imageSource, width int, dst st
 	return nil
 }
 
+// Picture is a library picture at most width pixels wide, through the same
+// resizer the storefront's pictures go through: a JPEG, or a PNG where the
+// original has transparency. It is for a module that sends a picture on
+// rather than serving it, such as to a model. WebP, AVIF and GIF are not
+// decoded here (D142), and come back as an error.
+func (m *Media) Picture(ctx context.Context, id int64, width int) ([]byte, error) {
+	item, err := m.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if item.Kind != "image" {
+		return nil, Validationf("media %d is a %s, not a picture", id, item.Kind)
+	}
+	src := &imageSource{url: item.URL}
+	if local, ok := m.app.mediaStore.(*LocalMediaStore); ok && item.storageKey != "" {
+		if src.file, ok = local.pathOf(item.storageKey); !ok {
+			return nil, NotFoundf("no such media")
+		}
+	} else if u, err := url.Parse(item.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return nil, NotFoundf("media %d has no address this engine can read", id)
+	}
+	select {
+	case imageSlots <- struct{}{}:
+		defer func() { <-imageSlots }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	body, err := m.app.readImageSource(ctx, src)
+	if err != nil {
+		return nil, err
+	}
+	return resizeImage(body, width)
+}
+
 var errImageTooLarge = &APIError{Status: http.StatusUnprocessableEntity, Code: "image_too_large",
 	Message: fmt.Sprintf("the original is over %d MB or %d megapixels", maxImageSourceBytes>>20, maxImagePixels/1_000_000)}
 
