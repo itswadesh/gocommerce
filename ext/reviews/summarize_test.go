@@ -19,9 +19,11 @@ import (
 	"github.com/itswadesh/gocommerce/gctest"
 )
 
+// The models the tests name, so a change to the gateway's defaults does not
+// change which answer a test gets.
 const (
-	smallModel  = "claude-haiku-4-5"
-	strongModel = "claude-sonnet-5-5"
+	smallModel  = "test-small"
+	strongModel = "test-strong"
 )
 
 // claude answers in Anthropic's place. The gateway's hosts are constants, so
@@ -88,6 +90,7 @@ func switchOn(t *testing.T, app *gocommerce.App, ctx context.Context, extra map[
 	t.Helper()
 	settings := map[string]any{
 		"api_key": "sk-ant-test", "monthly_cap": 100000,
+		"small_model": smallModel, "strong_model": strongModel,
 		"small_price_input": 100, "small_price_output": 500,
 		"strong_price_input": 300, "strong_price_output": 1500,
 		"share_message_bodies": true,
