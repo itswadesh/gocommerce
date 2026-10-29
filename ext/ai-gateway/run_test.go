@@ -577,8 +577,8 @@ func TestDocumentsAreCountedAtAFloorPerPage(t *testing.T) {
 		t.Errorf("a ten-page PDF estimated at %d tokens, want at least %d", got, 10*tokensPerPage)
 	}
 	img := Request{Documents: []Document{{Name: "label.png", MediaType: "image/png", Bytes: []byte("\x89PNG tiny")}}}
-	if got := estimateTokens(img); got < tokensPerImage {
-		t.Errorf("an image estimated at %d tokens, want at least %d", got, tokensPerImage)
+	if got := estimateTokens(img); got < TokensPerImage {
+		t.Errorf("an image estimated at %d tokens, want at least %d", got, TokensPerImage)
 	}
 }
 

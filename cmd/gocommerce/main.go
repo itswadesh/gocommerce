@@ -23,6 +23,7 @@ import (
 	"github.com/itswadesh/gocommerce/ext/b2b"
 	"github.com/itswadesh/gocommerce/ext/banners"
 	cartrecovery "github.com/itswadesh/gocommerce/ext/cart-recovery"
+	catalogai "github.com/itswadesh/gocommerce/ext/catalog-ai"
 	"github.com/itswadesh/gocommerce/ext/cms"
 	"github.com/itswadesh/gocommerce/ext/contact"
 	"github.com/itswadesh/gocommerce/ext/faq"
@@ -257,6 +258,7 @@ environment:
 		// attributes. Unneeded while the install has one store.
 		storeFlag  = fs.String("store", "", "the store (id or slug) superuser, doctor, taxonomy and attributes act on; default: the only store")
 		withPhotos = fs.Bool("photo-products", false, "install the photo-products module: drop a batch of product photos on the products screen and Claude, through the AI gateway, drafts the products and their variants for review (brings -ai-gateway with it; the key, cap and prices are set under Settings › Plugins › AI gateway)")
+		withCatAI  = fs.Bool("catalog-ai", false, "install the catalog-ai module: \"Improve with AI\" on a product's page proposes a better title, description, highlights, tags, category, SEO copy and alt text, field by field, for the shop to apply and save (brings -ai-gateway with it; the key, cap and prices are set under Settings › Plugins › AI gateway)")
 		withAmazon = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or IMPORT_AMAZON_LLM_URL + IMPORT_AMAZON_LLM_MODEL for a local model rewrite the copy, or the AI gateway where -ai-gateway is installed and switched on; IMPORT_AMAZON_HEADED=1 shows the browser)")
 	)
 	if err := fs.Parse(args); err != nil {
@@ -387,12 +389,15 @@ environment:
 		var modules []gocommerce.Module
 		// First, so the modules that call models can be handed it.
 		var gateway *aigateway.Module
-		if *withAI || *withPhotos {
+		if *withAI || *withPhotos || *withCatAI {
 			gateway = aigateway.New(aigateway.Config{})
 			modules = append(modules, gateway)
 		}
 		if *withPhotos {
 			modules = append(modules, photoproducts.New(photoproducts.Config{Gateway: gateway}))
+		}
+		if *withCatAI {
+			modules = append(modules, catalogai.New(catalogai.Config{Gateway: gateway}))
 		}
 		// b2b's buyers are identity's accounts, so -b2b brings identity with it
 		// and is handed the same instance, listed first for its tables.

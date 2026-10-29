@@ -62,6 +62,7 @@ services:
       # screen's summaries, which -reviews above brings.
       - -ai-gateway
       - -photo-products
+      - -catalog-ai
       - serve
     depends_on:
       postgres:

@@ -11,6 +11,7 @@ import (
 	b2b "github.com/itswadesh/gocommerce/ext/b2b"
 	banners "github.com/itswadesh/gocommerce/ext/banners"
 	cartrecovery "github.com/itswadesh/gocommerce/ext/cart-recovery"
+	catalogai "github.com/itswadesh/gocommerce/ext/catalog-ai"
 	cms "github.com/itswadesh/gocommerce/ext/cms"
 	contact "github.com/itswadesh/gocommerce/ext/contact"
 	faq "github.com/itswadesh/gocommerce/ext/faq"
@@ -70,6 +71,7 @@ func everyModule() []gocommerce.Module {
 	return []gocommerce.Module{
 		gateway,
 		photoproducts.New(photoproducts.Config{Gateway: gateway}),
+		catalogai.New(catalogai.Config{Gateway: gateway}),
 		accounts,
 		b2b.New(b2b.Config{Accounts: accounts}),
 		cartrecovery.New(cartrecovery.Config{}),

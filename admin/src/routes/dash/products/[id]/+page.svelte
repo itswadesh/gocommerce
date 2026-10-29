@@ -49,6 +49,8 @@
     import VariantMatrix from "$lib/components/VariantMatrix.svelte";
     import ProductUpsells from "$lib/components/ProductUpsells.svelte";
     import ProductHighlights from "$lib/components/ProductHighlights.svelte";
+    import ProductImprove from "$lib/components/ProductImprove.svelte";
+    import { hasModule } from "$lib/modules.svelte.js";
     import { freeGiftOf, highlightLines, highlightRows, lineProblem } from "$lib/highlights.js";
     import RecordHistory from "$lib/components/RecordHistory.svelte";
     import { titled } from "$lib/brand.svelte.js";
@@ -95,6 +97,7 @@
     let duplicating = $state(false);
     let archiving = $state(false);
     let historyOpen = $state(false);
+    let improveOpen = $state(false);
     // The search listing shows its preview and keeps the three fields behind an
     // Edit button, as Shopify does: most visits to that card are to check how
     // the result reads, not to rewrite it.
@@ -439,6 +442,7 @@
             metafields: [],
             highlights: [""],
             free_gift: "",
+            unsavedAlts: {},
             // Values for the fields the chosen category defines. Keyed by the
             // attribute key, so a renamed label keeps the answers under it.
             category_meta: {},
@@ -527,6 +531,7 @@
             // into, so the comparison at Save is on the lines, not the rows.
             highlights: highlightRows(p.metadata),
             free_gift: freeGiftOf(p.metadata),
+            unsavedAlts: {},
             metafields: Object.entries(p.metadata?.custom ?? {}).map(([key, value]) => ({
                 key,
                 // Anything a module wrote as a number or an object is shown as
@@ -613,6 +618,8 @@
             return;
         }
         loading = true;
+        // A proposal belongs to the product it was asked for.
+        improveOpen = false;
         try {
             /*
              * Three requests, and two of them are vocabularies rather than the
@@ -909,6 +916,12 @@
         upsells?.reset();
     }
 
+    function applyImprove(next, count) {
+        form = next;
+        improveOpen = false;
+        toast.success(`${count} ${count === 1 ? "change" : "changes"} applied. Review, then save.`);
+    }
+
     async function save() {
         if (saving || !product) return;
 
@@ -1039,6 +1052,18 @@
                 await api.patch(`/api/admin/products/${product.id}`, patch);
             }
 
+            // One refused alt text must not stop the rest of the product saving.
+            let altRefused = null;
+            for (const [id, alt] of Object.entries(form.unsavedAlts)) {
+                if (!media.some((m) => String(m.id) === id)) continue;
+                try {
+                    await api.patch(`/api/admin/media/${id}`, { alt });
+                    media = media.map((m) => (String(m.id) === id ? { ...m, alt } : m));
+                } catch (err) {
+                    altRefused = err;
+                }
+            }
+
             if (
                 JSON.stringify(form.collection_ids) !== JSON.stringify(snapshot.collection_ids)
             ) {
@@ -1137,6 +1162,7 @@
             product = await api.get(`/api/admin/products/${product.id}`);
             seed(product);
             toast.success("Product saved");
+            if (altRefused) toast.error(altRefused);
         } catch (err) {
             toast.error(err);
         } finally {
@@ -1341,6 +1367,19 @@
             <div class="page-header-primary-btns">
                 {#if product}
                     <span class="label status-chip {statusLabel[product.status] ?? ''}">{product.status}</span>
+
+                    {#if writable && hasModule("catalog-ai")}
+                        <button
+                            type="button"
+                            class="btn sm secondary"
+                            aria-label="Improve with AI"
+                            title="Propose a better title, description, highlights, tags, category, SEO copy and alt text"
+                            onclick={() => (improveOpen = true)}
+                        >
+                            <i class="ri-sparkling-2-line" aria-hidden="true"></i>
+                            <span class="txt">Improve with AI</span>
+                        </button>
+                    {/if}
 
                     <!--
                         Shopify's header actions. Preview and Share both point at
@@ -2478,6 +2517,20 @@
     danger
     onconfirm={doDelete}
 />
+
+{#if product && writable && hasModule("catalog-ai")}
+    <ProductImprove
+        open={improveOpen}
+        productId={product.id}
+        {form}
+        {media}
+        {categories}
+        canWriteMedia={can("media.write")}
+        {dirty}
+        onapply={applyImprove}
+        onclose={() => (improveOpen = false)}
+    />
+{/if}
 
 <RecordHistory
     open={historyOpen}

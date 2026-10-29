@@ -5,11 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"html"
 	"strconv"
 	"strings"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
+	catalogai "github.com/itswadesh/gocommerce/ext/catalog-ai"
 )
 
 // MetaKey is the product metadata a drafted product carries: which batch and
@@ -210,7 +210,7 @@ func productInput(d Draft, marker string, batchID int64) (gocommerce.ProductInpu
 		metadata[gocommerce.MetaHighlights] = d.Highlights
 	}
 	in := gocommerce.ProductInput{
-		Title: strings.TrimSpace(d.Title), Description: paragraphs(d.Description), Status: gocommerce.ProductDraft,
+		Title: strings.TrimSpace(d.Title), Description: catalogai.Paragraphs(d.Description), Status: gocommerce.ProductDraft,
 		ProductType: d.ProductType, Tags: d.Tags, CategoryID: d.CategoryID,
 		SEOTitle: d.SEOTitle, SEODescription: d.SEODescription, Metadata: metadata,
 	}
@@ -277,18 +277,6 @@ func distinct(in []string) []string {
 		}
 	}
 	return out
-}
-
-// paragraphs turns plain text into the HTML a product description is, every
-// character escaped: the words are a model's, and a model's words are data.
-func paragraphs(text string) string {
-	var b strings.Builder
-	for _, p := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n\n") {
-		if p = strings.TrimSpace(p); p != "" {
-			b.WriteString("<p>" + strings.ReplaceAll(html.EscapeString(p), "\n", "<br>") + "</p>")
-		}
-	}
-	return b.String()
 }
 
 func slugify(s string) string {
