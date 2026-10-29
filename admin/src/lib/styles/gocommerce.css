@@ -12087,6 +12087,17 @@ html .tw\:rounded-2xl {
     }
 }
 
+/* Whose key the store's calls go out on: the platform's or its own. */
+.ai-key-source {
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+    margin: 0;
+    font-size: var(--smFontSize);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
 .ai-models {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);

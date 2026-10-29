@@ -200,7 +200,7 @@ type callResult struct {
 // rest of the month. A transport that panics is caught here, where the
 // reservation is, and charged at the ceiling: whether the request left is
 // not known, and the cap errs towards spending less.
-func (m *Module) call(ctx context.Context, t *Task, job *claimedJob, provider Provider, req Request, month time.Time, ceiling int64, p prices) (cr callResult) {
+func (m *Module) call(ctx context.Context, t *Task, job *claimedJob, provider Provider, req Request, month time.Time, ceiling int64, p prices, credit bool) (cr callResult) {
 	cr.cost, cr.estimated = ceiling, true
 	defer func() {
 		if r := recover(); r != nil {
@@ -211,11 +211,13 @@ func (m *Module) call(ctx context.Context, t *Task, job *claimedJob, provider Pr
 		if err := m.settle(context.WithoutCancel(ctx), month, ceiling, cr.cost); err != nil {
 			m.log.Error("ai budget could not be settled", "task", t.Name, "error", err)
 		}
-		// The same cost comes off the credit, and the hold is released. A call
-		// that brought nothing back costs nothing here too (cr.cost is 0), so a
-		// failed model call never draws credit.
-		if err := m.settleCredit(context.WithoutCancel(ctx), ceiling, cr.cost); err != nil {
-			m.log.Error("ai credit could not be settled", "task", t.Name, "error", err)
+		// On the platform's key the same cost comes off the credit, and the
+		// hold is released. A call that brought nothing back costs nothing here
+		// too (cr.cost is 0), so a failed model call never draws credit.
+		if credit {
+			if err := m.settleCredit(context.WithoutCancel(ctx), ceiling, cr.cost); err != nil {
+				m.log.Error("ai credit could not be settled", "task", t.Name, "error", err)
+			}
 		}
 	}()
 	if job != nil {
@@ -342,26 +344,40 @@ func (m *Module) ladder(ctx context.Context, t *Task, input json.RawMessage, st 
 
 		// Credit first: a store with nothing left is refused before the model
 		// is called, and no budget reservation is taken that would then have to
-		// be unwound. Only a model call draws credit — a deterministic answer
-		// or a cache hit, handled above, has already returned.
-		okCredit, err := m.reserveCredit(ctx, ceiling)
-		if err != nil {
-			return Result{}, nil, fmt.Errorf("reserve against the ai credit: %w", err)
-		}
-		if !okCredit {
-			step.Outcome = "credit_exhausted"
-			step.Reason = m.creditReason(ctx)
-			rec.Steps = append(rec.Steps, step)
-			return fail(OutcomeCreditExhausted, step.Reason, false)
+		// be unwound. Only a model call on the platform's key draws credit — a
+		// deterministic answer or a cache hit, handled above, has already
+		// returned, and a store's own key is billed by its provider. held is
+		// what the credit holds for this call, released on every way out that
+		// does not reach the call.
+		var held int64
+		if st.platform {
+			okCredit, err := m.reserveCredit(ctx, ceiling)
+			if err != nil {
+				return Result{}, nil, fmt.Errorf("reserve against the ai credit: %w", err)
+			}
+			if !okCredit {
+				step.Outcome = "credit_exhausted"
+				step.Reason = m.creditReason(ctx)
+				rec.Steps = append(rec.Steps, step)
+				return fail(OutcomeCreditExhausted, step.Reason, false)
+			}
+			held = ceiling
 		}
 
-		ok, err := m.reserve(ctx, month, *st.capMinor, ceiling)
+		// On the platform's key a cap is the store's choice: without one, the
+		// credit is the limit and the month's spend is still counted, against
+		// the largest cap reserve can multiply out without overflowing.
+		capMinor := int64(maxGrantMinor)
+		if st.capMinor != nil {
+			capMinor = *st.capMinor
+		}
+		ok, err := m.reserve(ctx, month, capMinor, ceiling)
 		if err != nil {
-			m.releaseCredit(ctx, ceiling)
+			m.releaseCredit(ctx, held)
 			return Result{}, nil, fmt.Errorf("reserve against the ai budget: %w", err)
 		}
 		if !ok {
-			m.releaseCredit(ctx, ceiling)
+			m.releaseCredit(ctx, held)
 			step.Outcome = "budget_exhausted"
 			step.Reason = "this month's cap cannot cover the most this call could cost"
 			rec.Steps = append(rec.Steps, step)
@@ -370,7 +386,7 @@ func (m *Module) ladder(ctx context.Context, t *Task, input json.RawMessage, st 
 
 		req := built.req
 		req.Model = model
-		cr := m.call(ctx, t, job, provider, req, month, ceiling, p)
+		cr := m.call(ctx, t, job, provider, req, month, ceiling, p, st.platform)
 		resp, callErr := cr.resp, cr.err
 		step.LatencyMS = cr.latency.Milliseconds()
 		rec.LatencyMS += step.LatencyMS

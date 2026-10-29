@@ -383,7 +383,8 @@ answer, a ladder of models, a `Build` that tags each piece of store content
 with its class, and a `Check` in its own Go types — and either enqueues it in
 the transaction that caused it (`Enqueue`) or, from a worker of its own that
 holds no transaction, runs it now (`Run`). The gateway reserves against the
-store's monthly cap, leaves out the data the owner has not let go, records
+store's monthly cap and, on the platform's key, its AI credit, leaves out the
+data the owner has not let go, records
 every call with its tokens and cost, and retries only what is worth retrying.
 `ext/import-amazon`'s `product.rewrite` is the worked example, and
 `ext/photo-products` shows a task with pictures (`Document.Caption` labels

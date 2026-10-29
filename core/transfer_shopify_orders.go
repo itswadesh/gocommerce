@@ -101,7 +101,7 @@ func (s *shopifyOrderReader) row(line int, record []string) (csvRow, error) {
 			currency = s.currency
 		}
 		set("currency", currency)
-		exp := currencyExponent(currency)
+		exp := CurrencyExponent(currency)
 
 		switch {
 		case in.get("cancelled at") != "":
@@ -160,7 +160,7 @@ func (s *shopifyOrderReader) row(line int, record []string) (csvRow, error) {
 	if raw := in.get("lineitem price"); raw != "" {
 		// The currency is on the first line; a later line of the same order
 		// has the same one, and the group importer only reads it from there.
-		exp := currencyExponent(firstNonEmpty(in.get("currency"), s.currency))
+		exp := CurrencyExponent(firstNonEmpty(in.get("currency"), s.currency))
 		minor, err := parseMoney(raw, exp)
 		if err != nil {
 			return csvRow{}, fmt.Errorf("lineitem price: %v", err)

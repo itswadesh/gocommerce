@@ -3,10 +3,15 @@
 //	gw := aigateway.New(aigateway.Config{})
 //	app, err := gocommerce.New(cfg, gw, amazon.New(amazon.Config{Gateway: gw}))
 //
-// It installs idle. A store sees nothing until its owner switches the plugin
-// on under Settings › Plugins and gives it three things: a provider key, a
-// monthly cap in the store's currency, and the price of each model. Without
-// all three no call is made, because without them the cap could not be kept.
+// On an install with a key of its own (Config.PlatformAnthropicKey) every
+// store has AI with nothing to set up: its calls go out on the platform's
+// key, at the platform's models and prices, paid from its AI credit (D151).
+// A store may enter a key of its own instead, and then pays its provider
+// directly. Without a platform key the gateway installs idle: a store sees
+// nothing until its owner switches the plugin on under Settings › Plugins and
+// gives it three things: a provider key, a monthly cap in the store's
+// currency, and the price of each model. Without all three no call is made,
+// because without them the cap could not be kept.
 //
 // # Tasks, not prompts
 //
@@ -48,9 +53,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -110,6 +118,27 @@ type Config struct {
 	// less uses DefaultFreeTrialMinor. This is the platform operator's knob;
 	// the figure shipped is a placeholder (see DefaultFreeTrialMinor).
 	FreeTrialMinor int64
+
+	// PlatformAnthropicKey is the install's own Anthropic key
+	// (ANTHROPIC_API_KEY). A store that has entered no key of its own makes
+	// its calls on it, at the platform's models and prices below, paid from its
+	// AI credit; the store never sees it. Empty: only a store with a key of its
+	// own has AI.
+	PlatformAnthropicKey string
+	// PlatformSmallModel and PlatformStrongModel are the models platform calls
+	// use. Empty is the gateway's default for the tier.
+	PlatformSmallModel, PlatformStrongModel string
+	// PlatformSmallPrices and PlatformStrongPrices are what Anthropic charges
+	// for each model, in US dollars per million tokens: "input,output,cache
+	// read,cache write", such as "0.10,0.50,0.01,0.125". Empty is Anthropic's
+	// published price for a default model; a model with none is not called on
+	// the platform's key.
+	PlatformSmallPrices, PlatformStrongPrices string
+	// PlatformUSDRates turns those dollars into a store's currency: units of
+	// each currency to one US dollar, "INR=88.50,EUR=0.92". A store in US
+	// dollars needs none; a store in a currency with no rate cannot use the
+	// platform's key, because no rate is assumed.
+	PlatformUSDRates string
 }
 
 // Module is the AI gateway.
@@ -119,6 +148,8 @@ type Module struct {
 	db     *sql.DB
 	log    *slog.Logger
 	client *http.Client
+	// platform is the install's own key, models and prices; nil without a key.
+	platform *platform
 
 	mu      sync.RWMutex
 	tasks   map[string]*Task
@@ -158,6 +189,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		}
 	}
+	m.platform = newPlatform(m.cfg, m.log)
 
 	m.registerRights(app)
 	m.registerPlugin(app)
@@ -168,24 +200,41 @@ func (m *Module) Register(app *gocommerce.App) error {
 }
 
 func (m *Module) registerPlugin(app *gocommerce.App) {
+	// On an install with a key of its own, a store needs nothing but credit:
+	// the gateway is on until the store switches it off, its own key and cap
+	// are optional, and pictures may be sent, so "Create from photos" works as
+	// it is. Every call is still started by a person pressing an AI button;
+	// contact details and message bodies stay in until the owner says.
+	platform := m.platform != nil
+	own, capNote, keyLabel, keyHelp := "", "", "API key",
+		"This store's own key, from console.anthropic.com or platform.openai.com. Calls are billed to it."
+	description := "Every model call this store makes, recorded and capped: your own provider key, a monthly cap in the store's currency, " +
+		"the price of each model, and which kinds of data may leave the store. Nothing is called until a key, a cap and prices are set."
+	if platform {
+		own, keyLabel = " Used only with your own key.", "Use your own key instead"
+		capNote = " Optional on the platform's AI, where the store's AI credit is the limit."
+		keyHelp = "Leave empty to use the platform's AI; your use is paid from AI credits. A key of your own, from console.anthropic.com " +
+			"or platform.openai.com, is billed by your provider instead and draws no credit; the cap, models and prices below are then yours to set."
+		description = "Every model call this store makes, recorded and capped. AI runs on the platform's key and is paid from the store's AI credit, " +
+			"with nothing to set up; or enter a key of your own and pay your provider directly. Choose here which kinds of data may leave the store."
+	}
 	price := func(key, label, help string) gocommerce.PluginField {
-		return gocommerce.PluginField{Key: key, Label: label, Kind: "number", Help: help}
+		return gocommerce.PluginField{Key: key, Label: label, Kind: "number", Help: help + own}
 	}
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "AI gateway", Icon: "ri-robot-2-line", Category: "ai",
-		Description: "Every model call this store makes, recorded and capped: your own provider key, a monthly cap in the store's currency, " +
-			"the price of each model, and which kinds of data may leave the store. Nothing is called until a key, a cap and prices are set.",
+		Description:    description,
+		DefaultEnabled: platform,
 		Fields: []gocommerce.PluginField{
 			{Key: "provider", Label: "Provider", Kind: "select", Options: []string{ProviderAnthropic, ProviderOpenAI}, Default: ProviderAnthropic,
-				Help: "Whose models answer. Each provider's own API address is used; there is no custom address in this version."},
-			{Key: "api_key", Label: "API key", Kind: "secret", Required: true,
-				Help: "This store's own key, from console.anthropic.com or platform.openai.com. Calls are billed to it."},
+				Help: "Whose models answer. Each provider's own API address is used; there is no custom address in this version." + own},
+			{Key: "api_key", Label: keyLabel, Kind: "secret", Required: !platform, Help: keyHelp},
 			{Key: "small_model", Label: "Small model", Kind: "text", Default: defaultSmallModel,
-				Help: "Tried first. Name a model your provider offers; Check connection on the AI usage screen says whether it does."},
+				Help: "Tried first. Name a model your provider offers; Check connection on the AI usage screen says whether it does." + own},
 			{Key: "strong_model", Label: "Strong model", Kind: "text", Default: defaultStrongModel,
-				Help: "Asked when the small model's answer fails its checks."},
-			{Key: "monthly_cap", Label: "Monthly cap", Kind: "number", Required: true,
-				Help: "The most this store spends on models in a calendar month, in minor units of its currency: 5000 is 50.00 in a two-decimal currency. Work that would pass it waits for a person."},
+				Help: "Asked when the small model's answer fails its checks." + own},
+			{Key: "monthly_cap", Label: "Monthly cap", Kind: "number", Required: !platform,
+				Help: "The most this store spends on models in a calendar month, in minor units of its currency: 5000 is 50.00 in a two-decimal currency. Work that would pass it waits for a person." + capNote},
 			price("small_price_input", "Small model: input price", "Minor units per million input tokens, from your provider's price list: $1.00 per million is 100. A model with no input or output price, or a price of 0, is never called: what costs nothing could not be held to the cap."),
 			price("small_price_output", "Small model: output price", "Minor units per million output tokens."),
 			price("small_price_cache_read", "Small model: cache read price", "Minor units per million tokens read from the provider's cache. Empty or 0 means the input price."),
@@ -202,7 +251,7 @@ func (m *Module) registerPlugin(app *gocommerce.App) {
 				Help: "Customers' names, emails, phone numbers and addresses."},
 			{Key: "share_message_bodies", Label: "Share message bodies", Kind: "bool", Default: false,
 				Help: "The text of customers' messages."},
-			{Key: "share_documents", Label: "Share documents", Kind: "bool", Default: false,
+			{Key: "share_documents", Label: "Share documents", Kind: "bool", Default: platform,
 				Help: "PDFs and images, sent to the provider as files."},
 		},
 	})
@@ -271,13 +320,37 @@ func (p prices) cost(u Usage) int64 {
 
 // settings is one store's gateway as its owner configured it.
 type settings struct {
-	enabled  bool
+	enabled bool
+	// platform is a store with no key of its own on an install with one: the
+	// provider, key, models and prices are the platform's, and its calls draw
+	// the store's AI credit. A store's own key draws none, because the store
+	// pays its provider itself (D151, 2026-10-29; the owner's to flip).
+	platform bool
+	// unpriced is the store's currency when the platform has no rate for it.
+	unpriced string
 	provider string
 	apiKey   string
 	models   map[Tier]string
 	prices   map[Tier]prices
 	capMinor *int64
 	policy   Policy
+}
+
+// Where a store's calls are billed, as the usage screen shows it.
+const (
+	KeyPlatform = "platform"
+	KeyOwn      = "own"
+	KeyNone     = "none"
+)
+
+func (s *settings) keySource() string {
+	switch {
+	case s.platform:
+		return KeyPlatform
+	case s.apiKey != "":
+		return KeyOwn
+	}
+	return KeyNone
 }
 
 // ErrNotReady is a store whose gateway cannot make calls: switched off, or
@@ -295,8 +368,11 @@ func (s *settings) ready() error {
 	case !s.enabled:
 		return &notReady{"the AI gateway is switched off for this store: switch it on under Settings › Plugins"}
 	case s.apiKey == "":
-		return &notReady{"the AI gateway has no API key: add one under Settings › Plugins › AI gateway"}
-	case s.capMinor == nil:
+		return &notReady{"AI isn't set up for this store: add an API key under Settings › Plugins › AI gateway"}
+	case s.unpriced != "":
+		return &notReady{fmt.Sprintf("the platform's AI is not priced in %s yet: ask whoever runs this platform, "+
+			"or enter a key of your own under Settings › Plugins › AI gateway", s.unpriced)}
+	case s.capMinor == nil && !s.platform:
 		return &notReady{"the AI gateway has no monthly cap: set one under Settings › Plugins › AI gateway"}
 	}
 	return nil
@@ -363,6 +439,27 @@ func (m *Module) settings(ctx context.Context) (*settings, error) {
 			p.cacheWrite = v
 		}
 		s.prices[tier] = p
+	}
+	// A key of the store's own that will not open, sealed under a secrets key
+	// this install no longer has, is still the store's choice: it is not
+	// quietly swapped for the platform's and charged to the store's credit.
+	unopened := []string{}
+	if s.apiKey == "" && m.platform != nil {
+		if unopened, err = m.app.Plugins().Unopened(ctx, PluginKey); err != nil {
+			return nil, err
+		}
+	}
+	// No key of the store's own: the platform's, with everything that decides
+	// what a call costs taken from the platform too. Only the cap and the data
+	// policy stay the store's.
+	if s.apiKey == "" && m.platform != nil && !slices.Contains(unopened, "api_key") {
+		s.platform, s.provider, s.apiKey = true, ProviderAnthropic, m.platform.key
+		s.models = maps.Clone(m.platform.models)
+		currency := m.app.Currency(ctx)
+		var ok bool
+		if s.prices, ok = m.platform.prices(currency); !ok {
+			s.prices, s.unpriced = map[Tier]prices{}, currency
+		}
 	}
 	return s, nil
 }

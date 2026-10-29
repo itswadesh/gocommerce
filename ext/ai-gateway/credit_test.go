@@ -45,11 +45,11 @@ func TestFreshStoreHasItsFreeTrial(t *testing.T) {
 	}
 }
 
-// An AI call draws the free trial down by what it cost.
+// An AI call on the platform's key draws the free trial down by what it cost;
+// a store with nothing set up is on the platform's key.
 func TestACallDrawsTheFreeTrial(t *testing.T) {
-	app, m, _ := newGateway(t, reply(http.StatusOK, answer(smallID, goodAnswer, Usage{InputTokens: 3000})), rewriteTask())
+	_, m, _ := newGatewayWith(t, platformConfig(), reply(http.StatusOK, answer(smallID, goodAnswer, Usage{InputTokens: 3000})), rewriteTask())
 	ctx := context.Background()
-	configure(t, app, ctx, nil)
 
 	if _, err := m.Run(ctx, "test.rewrite", listing{Title: "x"}); err != nil {
 		t.Fatal(err)
@@ -66,9 +66,8 @@ func TestACallDrawsTheFreeTrial(t *testing.T) {
 
 // With no free trial and a topped-up balance, a call draws the balance.
 func TestACallDrawsTheBalanceWhenTheFreeTrialIsGone(t *testing.T) {
-	app, m, _ := newGateway(t, reply(http.StatusOK, answer(smallID, goodAnswer, Usage{InputTokens: 3000})), rewriteTask())
+	_, m, _ := newGatewayWith(t, platformConfig(), reply(http.StatusOK, answer(smallID, goodAnswer, Usage{InputTokens: 3000})), rewriteTask())
 	ctx := context.Background()
-	configure(t, app, ctx, nil)
 	if _, err := m.SetFreeAllowance(ctx, 0, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -115,12 +114,11 @@ func TestLoweringTheFreeAllowanceBelowSpendDoesNotGoNegative(t *testing.T) {
 // record says the free trial is spent.
 func TestACallWithNoCreditIsRefusedAndNeverCallsTheModel(t *testing.T) {
 	var calls atomic.Int32
-	app, m, _ := newGateway(t, func(w http.ResponseWriter, r *http.Request) {
+	_, m, _ := newGatewayWith(t, platformConfig(), func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		reply(http.StatusOK, answer(smallID, goodAnswer, Usage{InputTokens: 3000}))(w, r)
 	}, rewriteTask())
 	ctx := context.Background()
-	configure(t, app, ctx, nil)
 	if _, err := m.SetFreeAllowance(ctx, 0, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -217,12 +215,12 @@ func TestConcurrentRunsCannotOverspendCredit(t *testing.T) {
 	// Each ceiling is 1,000,000 micro; each real call costs 300,000. A free
 	// trial of 3 minor units (3,000,000 micro) reserves three ceilings at once.
 	var calls atomic.Int32
-	app, m, _ := newGateway(t, func(w http.ResponseWriter, r *http.Request) {
+	app, m, _ := newGatewayWith(t, platformConfig(), func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		reply(http.StatusOK, answer(smallID, goodAnswer, Usage{InputTokens: 3000}))(w, r)
 	}, rewriteTask())
 	ctx := context.Background()
-	configure(t, app, ctx, map[string]any{"monthly_cap": 1000000}) // the cap is not the limiter here
+	configure(t, app, ctx, map[string]any{"api_key": nil, "monthly_cap": 1000000}) // the cap is not the limiter here
 	if _, err := m.SetFreeAllowance(ctx, 3, ""); err != nil {
 		t.Fatal(err)
 	}

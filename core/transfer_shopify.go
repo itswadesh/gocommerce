@@ -114,11 +114,11 @@ func (o ExportOptions) absolute(url string) string {
 
 // ------------------------------------------------------------------- money
 
-// currencyExponent is how many decimals a currency writes: two for most, none
+// CurrencyExponent is how many decimals a currency writes: two for most, none
 // for the yen, three for the dinar. Shopify's dialect writes "19.99", so the
-// file needs it; the API never does (rule 6), which is why this lives here
-// and not beside Money.
-func currencyExponent(code string) int {
+// file needs it; the API never does (rule 6). The AI gateway needs it too, to
+// turn a rate quoted per US dollar into a currency's minor units.
+func CurrencyExponent(code string) int {
 	switch strings.ToUpper(code) {
 	case "BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW", "PYG", "RWF",
 		"UGX", "VND", "VUV", "XAF", "XOF", "XPF":
@@ -232,7 +232,7 @@ type shopifyProductReader struct {
 }
 
 func newShopifyProductReader(cols map[string]int, currency string) *shopifyProductReader {
-	return &shopifyProductReader{cols: cols, out: indexColumns(shopifyAsNative), exp: currencyExponent(currency)}
+	return &shopifyProductReader{cols: cols, out: indexColumns(shopifyAsNative), exp: CurrencyExponent(currency)}
 }
 
 func (s *shopifyProductReader) row(line int, record []string) (csvRow, error) {

@@ -566,7 +566,7 @@
           "ai-gateway"
         ],
         "summary": "Check the provider connection",
-        "description": "Asks the provider which models the store's key reaches, which spends no tokens. Always 200: `ok` false with `message` is the finding when the key is missing, of the wrong shape (caught before anything leaves the store) or refused. Needs `ai.configure`.",
+        "description": "Asks the provider which models the store's key reaches, which spends no tokens. Always 200: `ok` false with `message` is the finding when the key is missing, of the wrong shape (caught before anything leaves the store) or refused. A store on the platform's key gets `ok` true and asks the provider nothing: the platform's key is not the store's to test. Needs `ai.configure`.",
         "responses": {
           "200": {
             "description": "OK.",
@@ -912,6 +912,15 @@
           },
           "enabled": {
             "type": "boolean"
+          },
+          "key_source": {
+            "type": "string",
+            "enum": [
+              "platform",
+              "own",
+              "none"
+            ],
+            "description": "Whose key the store's calls go out on: the platform's (paid from AI credit), the store's own (billed by its provider, no credit drawn), or none. Never the key itself."
           },
           "provider": {
             "type": "string",

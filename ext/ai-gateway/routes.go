@@ -339,6 +339,12 @@ func (m *Module) handleCheck(w http.ResponseWriter, r *http.Request) {
 		Small: modelCheck{Model: st.models[TierSmall]}, Strong: modelCheck{Model: st.models[TierStrong]}}
 	shape := keyShapes[st.provider]
 	switch {
+	// The platform's key is the install's to check: asking about it from a
+	// store would tell the store what Anthropic says about the platform's
+	// account.
+	case st.platform:
+		out.OK = true
+		out.Message = "This store uses the platform's AI, paid from its AI credit; there is no key of its own to check."
 	case st.apiKey == "":
 		out.Message = "No API key is set. Add one under Settings › Plugins › AI gateway."
 	case !strings.HasPrefix(st.apiKey, shape.prefix):

@@ -262,6 +262,54 @@ search does not.
   switched on. Back up the volume if rebuilding from scratch would take long;
   otherwise it can always be rebuilt from the database.
 
+### AI on the platform's key
+
+The engine runs with `-ai-gateway` (and the modules built on it). Every model
+call goes through the gateway, which records it and charges it (D107, D151).
+
+- **The key.** Set `ANTHROPIC_API_KEY` in the host's environment tab (Dokploy:
+  the compose service's Environment) and redeploy. It is the platform's own
+  Anthropic key: every store's AI runs on it, and each call is paid from that
+  store's AI credit. A store needs nothing else: the AI gateway is on for every
+  store that has not switched it off, and photos may be sent, so "Create from
+  photos" works for a store with credit. The engine sees the key only because
+  `docker-compose.yml` lists it under the engine's `environment`. A variable
+  set in the host's tab and missing from that list never reaches the engine.
+- **It stays on the server.** The key goes to `api.anthropic.com` and nowhere
+  else. No store sees it: not on the Plugins screen, the AI usage screen, a
+  run's record, the audit feed or a log line. Check connection on a store's AI
+  usage screen does not test it. The usage screen says "Using the platform's
+  AI" or "Using your own key".
+- **A store's own key.** A store may enter a key of its own under Plugins › AI
+  gateway. Its calls then go out on that key at its own models, prices and
+  monthly cap, are billed by its provider, and draw no AI credit. A store that
+  clears its key is back on the platform's.
+- **What a call costs.** The platform's models and prices decide what a
+  platform call costs, never the store's settings, so a store cannot price its
+  calls at nothing or pick a dearer model. With nothing set, the small model is
+  Claude Haiku 5.5 at $0.10 in and $0.50 out per million tokens ($0.01 cache
+  read, $0.125 cache write), and the strong model is Claude Sonnet 5.5 at $2
+  and $10 ($0.10, $2.50): Anthropic's published prices, checked on 2026-10-29.
+  To change them, set `AI_PLATFORM_SMALL_MODEL` / `AI_PLATFORM_STRONG_MODEL`
+  and `AI_PLATFORM_SMALL_PRICES` / `AI_PLATFORM_STRONG_PRICES`. A price is US
+  dollars per million tokens in the form `input,output,cache read,cache write`,
+  for example `0.10,0.50,0.01,0.125`. A model you name with no price, or with
+  a price that does not read, is not called on the platform's key, and the
+  engine logs why as it starts.
+- **Currency.** Anthropic bills in US dollars; a store's credit is in its own
+  currency. `AI_PLATFORM_USD_RATES` says how many units of each currency make
+  one US dollar, for example `INR=88.50,EUR=0.92`. The platform's prices are
+  converted at that rate and rounded up to whole minor units per million
+  tokens. A store in US dollars needs no rate. A store in a currency with no
+  rate cannot use the platform's key, and its AI usage screen says so; no rate
+  is assumed. The rate is yours to keep current.
+- **Credit.** A store starts with the free trial and runs on what an operator
+  tops up on its AI usage screen (D151). A call reserves the most it could cost
+  before it is sent, so the credit must cover that. One "Create from photos"
+  grouping call on Claude Sonnet 5.5 reserves about $0.35, or ₹30.53 at 88.50.
+  That is more than the default free trial in rupees (500 minor units, ₹5),
+  so top up an Indian store before it uses photos.
+
 ### A store's own domain, without touching the proxy
 
 A store adds its own domain under Settings › Domains, adds the TXT record the

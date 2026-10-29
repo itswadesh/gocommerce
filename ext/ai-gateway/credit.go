@@ -76,6 +76,9 @@ func (m *Module) settleCredit(ctx context.Context, reserved, cost int64) error {
 // releaseCredit gives back a hold that was never spent, on a context of its
 // own so a cancelled run still frees what it reserved.
 func (m *Module) releaseCredit(ctx context.Context, reserved int64) {
+	if reserved == 0 {
+		return
+	}
 	if err := m.settleCredit(context.WithoutCancel(ctx), reserved, 0); err != nil {
 		m.log.Error("ai credit hold could not be released", "error", err)
 	}

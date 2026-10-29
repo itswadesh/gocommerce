@@ -79,7 +79,11 @@ func newSummaries(t *testing.T) (*gocommerce.App, *aigateway.Module, *claude) {
 		out.URL.Scheme, out.URL.Host, out.Host = to.Scheme, to.Host, to.Host
 		return http.DefaultTransport.RoundTrip(out)
 	})}
-	gw := aigateway.New(aigateway.Config{Client: client, CallTimeout: 2 * time.Second, PollInterval: time.Hour})
+	// The install has a key of its own, at the test models and priced as the
+	// store's own prices below, for a USD store.
+	gw := aigateway.New(aigateway.Config{Client: client, CallTimeout: 2 * time.Second, PollInterval: time.Hour,
+		PlatformAnthropicKey: "sk-ant-platform", PlatformSmallModel: smallModel, PlatformStrongModel: strongModel,
+		PlatformSmallPrices: "1,5,1,1", PlatformStrongPrices: "3,15,3,3"})
 	app := gctest.New(t, gw, New(Config{Gateway: gw}))
 	return app, gw, c
 }
@@ -280,7 +284,8 @@ func TestTooFewReviewsCallNoModel(t *testing.T) {
 func TestAnUnchangedSetOfReviewsIsAnsweredFromTheCache(t *testing.T) {
 	app, gw, c := newSummaries(t)
 	ctx := context.Background()
-	switchOn(t, app, ctx, nil)
+	// On the platform's key, which draws credit.
+	switchOn(t, app, ctx, map[string]any{"api_key": nil})
 	product := gctest.CreateProduct(t, app, "RV-CACHE", 900, 10)
 	ids := addReviews(t, app, ctx, product.ID, approved(5, "Good."), approved(4, "Nice."), approved(2, "Small."))
 	c.answers[smallModel] = answerCiting([]int64{ids[0], ids[1]}, []int64{ids[2]})
@@ -347,7 +352,7 @@ func TestASummarySaysWhatStopsIt(t *testing.T) {
 		{name: "gateway off", off: true, wantStatus: http.StatusConflict, wantCode: CodeAINotReady},
 		{name: "message bodies kept in", settings: map[string]any{"share_message_bodies": false}, wantStatus: http.StatusConflict, wantCode: CodeAIDataKeptIn},
 		{name: "cap used up", settings: map[string]any{"monthly_cap": 1}, wantStatus: http.StatusConflict, wantCode: CodeAIBudgetExceeded},
-		{name: "no credit left", noCredit: true, wantStatus: http.StatusConflict, wantCode: CodeAICreditExceeded},
+		{name: "no credit left", settings: map[string]any{"api_key": nil}, noCredit: true, wantStatus: http.StatusConflict, wantCode: CodeAICreditExceeded},
 		{name: "no price", settings: map[string]any{"small_price_output": nil}, wantStatus: http.StatusConflict, wantCode: CodeAINotReady},
 		{name: "provider fails", failing: true, wantStatus: http.StatusBadGateway, wantCode: CodeAIFailed, wantCalls: 1},
 	} {
@@ -356,6 +361,12 @@ func TestASummarySaysWhatStopsIt(t *testing.T) {
 			ctx := context.Background()
 			if !tc.off {
 				switchOn(t, app, ctx, tc.settings)
+			} else {
+				// On an install with a key the gateway starts on; the store switches it off.
+				off := false
+				if _, err := app.Plugins().Update(ctx, aigateway.PluginKey, gocommerce.PluginPatch{Enabled: &off}); err != nil {
+					t.Fatal(err)
+				}
 			}
 			if tc.noCredit {
 				if _, err := gw.SetFreeAllowance(ctx, 0, ""); err != nil {
