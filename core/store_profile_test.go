@@ -68,42 +68,6 @@ func TestAStoreDescribesItself(t *testing.T) {
 	}
 }
 
-// The profile carries the store's plan, read only (D119, D149): the panel
-// gates Pro-only features on it, and a Set never sets it.
-func TestTheProfileReportsThePlan(t *testing.T) {
-	app := newTestApp(t)
-	ctx := context.Background()
-
-	got, err := app.Profile().Get(ctx)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if got.Plan != PlanFree {
-		t.Errorf("a new store's plan = %q, want %q", got.Plan, PlanFree)
-	}
-
-	// A PATCH that tries to set it cannot: Set never reads the field.
-	saved, err := app.Profile().Set(ctx, StoreProfile{Name: "Shop", Plan: PlanPro}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if saved.Plan != PlanFree {
-		t.Errorf("plan after a Set that asked for Pro = %q, want it unchanged %q", saved.Plan, PlanFree)
-	}
-
-	// The operator moves the store; the profile then reports it.
-	if err := app.Stores().SetPlan(ctx, app.defaultStore, PlanPro); err != nil {
-		t.Fatal(err)
-	}
-	again, err := app.Profile().Get(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if again.Plan != PlanPro {
-		t.Errorf("plan after the operator set Pro = %q, want %q", again.Plan, PlanPro)
-	}
-}
-
 func TestTheStoreProfileRefusesWhatItCannotStore(t *testing.T) {
 	app := newTestApp(t)
 	ctx := context.Background()

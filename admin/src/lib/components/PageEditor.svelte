@@ -101,11 +101,9 @@
     let loading = $state(true);
     let busy = $state(""); // "publish" | "preview" | "rollback" | "switch" | "reset"
 
-    // Match to logo (D149): the store's own logo and plan, read once on the
-    // home page where the theme settings live. The feature is on the Pro plan;
-    // `premium` is the one gate — swap what it reads to re-tier the feature.
-    let storeInfo = $state(null); // { logo_url, plan, … } from GET /api/admin/store
-    const premium = $derived((storeInfo?.plan ?? "free") === "pro");
+    // Match to logo (D149): the store's own logo, read once on the home page
+    // where the theme settings live.
+    let storeInfo = $state(null); // { logo_url, … } from GET /api/admin/store
     const logoURL = $derived(storeInfo?.logo_url || "");
     let matchBusy = $state(false);
     let matchError = $state("");
@@ -189,7 +187,7 @@
     }
 
     async function matchToLogo() {
-        if (!premium || !logoURL || matchBusy) return;
+        if (!logoURL || matchBusy) return;
         matchBusy = true;
         matchError = "";
         try {
@@ -282,7 +280,7 @@
             if (CHROME && sections.length) selectedId = sections[0].id;
             pluginOn = plugin ? !!plugin.enabled : true;
             // The theme settings — and so Match to logo — live on the home page
-            // alone (D127), so only it needs the store's logo and plan.
+            // alone (D127), so only it needs the store's logo.
             if (HOME) storeProfile.get().then((p) => (storeInfo = p)).catch(() => {});
         } catch (err) {
             toast.error(err);
@@ -810,20 +808,17 @@
                     type="button"
                     class="btn sm hp-match-btn"
                     class:loading={matchBusy}
-                    disabled={!premium || !logoURL || matchBusy}
+                    disabled={!logoURL || matchBusy}
                     onclick={matchToLogo}
                 >
                     <i class="ri-palette-line" aria-hidden="true"></i>
                     <span class="txt">Match to logo</span>
-                    {#if !premium}<span class="hp-pro" aria-hidden="true">Pro</span>{/if}
                 </button>
-                {#if premium && logoURL}
+                {#if logoURL}
                     <img class="hp-match-logo" src={logoURL} alt="" aria-hidden="true" />
                 {/if}
             </div>
-            {#if !premium}
-                <p class="hp-match-hint txt-hint txt-sm">Matching the colours to your logo is on the Pro plan.</p>
-            {:else if !logoURL}
+            {#if !logoURL}
                 <p class="hp-match-hint txt-hint txt-sm">Add a logo in <a href="{base}/dash/settings#logo">Settings › Store</a> to use this.</p>
             {:else}
                 <p class="hp-match-hint txt-hint txt-sm">Sets the buttons, text on buttons and quiet backgrounds from your logo's colours. Preview it here, then publish.</p>
@@ -1721,15 +1716,6 @@
     }
     .hp-match-btn:not(:disabled):active {
         transform: scale(0.97);
-    }
-    .hp-pro {
-        padding: 1px 6px;
-        border-radius: 999px;
-        font-size: 0.7rem;
-        font-weight: 600;
-        letter-spacing: 0.04em;
-        background: var(--primaryColor);
-        color: var(--primaryTxtColor, #fff);
     }
     .hp-match-logo {
         height: 28px;
