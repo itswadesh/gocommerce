@@ -106,6 +106,9 @@
     function onload() {
         loaded = true;
         clearTimeout(legacyTimer);
+        // Only an editor waits on the storefront's answer; someone who may
+        // only look is shown the live page, which never gives one.
+        if (!document) return;
         legacyTimer = setTimeout(() => {
             if (!ready) legacy = true;
         }, 4000);

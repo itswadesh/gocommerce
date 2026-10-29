@@ -40,6 +40,7 @@
     import { candidatesFromLogo } from "$lib/logo-palette.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { getStore } from "$lib/store-scope.js";
+    import { myStores } from "$lib/stores.svelte.js";
     import {
         blankSection,
         insertAt,
@@ -54,6 +55,7 @@
         createHistory,
         createAutosave,
         previewAddress,
+        storefrontAddress,
         themeWarnings,
         pageMeta,
         libraryFor,
@@ -611,7 +613,7 @@
     let frameBlocked = $state(false);
     let device = $state("desktop");
 
-    const address = $derived(typedAddress || storefront);
+    const address = $derived(storefrontAddress(typedAddress, storefront, myStores.current?.domain));
     const frameOrigin = $derived.by(() => {
         try {
             return address ? new URL(address).origin : "";
@@ -1197,7 +1199,11 @@
                     {:else if frameBlocked}
                         <div class="hp-stage-note" in:rise>
                             <p>This panel cannot show {frameOrigin} in a frame: it is not one of this store's addresses. Add it as a domain of the store, or open the preview in a tab.</p>
-                            <button type="button" class="btn sm" onclick={openTab}><span class="txt">Open preview</span></button>
+                            {#if writable}
+                                <button type="button" class="btn sm" onclick={openTab}><span class="txt">Open preview</span></button>
+                            {:else}
+                                <a class="btn sm" href={frameSrc} target="_blank" rel="noreferrer"><span class="txt">Open the storefront</span></a>
+                            {/if}
                         </div>
                     {:else if !address && (previewKey || !writable)}
                         <div class="hp-stage-note" in:rise>
@@ -1355,7 +1361,7 @@
     message="The preview shows your storefront. Type its address once; this browser remembers it for this store. Leave it empty to use the store's own address."
     label="Storefront address"
     placeholder="https://shop.example.com"
-    initial={typedAddress || storefront}
+    initial={address}
     confirmLabel="Use this address"
     onclose={() => (askAddress = false)}
     onconfirm={useAddress}
