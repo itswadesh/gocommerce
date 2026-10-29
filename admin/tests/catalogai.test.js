@@ -92,5 +92,6 @@ test("a refusal says where it is fixed", () => {
     assert.equal(refusal({ code: "ai_policy_blocked", message: "x" }).fix, "settings");
     assert.equal(refusal({ code: "ai_budget_exhausted", message: "x" }).title, "This month's AI budget is used up");
     assert.equal(refusal({ code: "ai_provider_failed", message: "x" }).fix, "retry");
+    assert.equal(refusal({ code: "ai_credit_exhausted", message: "You've used your free AI trial" }).fix, "credit");
     assert.equal(refusal({ code: "network_error", message: "Could not reach the store." }).message, "Could not reach the store.");
 });

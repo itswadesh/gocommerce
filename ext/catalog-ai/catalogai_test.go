@@ -514,6 +514,18 @@ func TestEachRefusalHasItsOwnCode(t *testing.T) {
 		t.Errorf("provider down = %d %s", code, errCode)
 	}
 	h.claude.status = 0
+
+	// The free trial spent and nothing topped up: refused before any call.
+	calls := len(h.claude.calls())
+	if _, err := h.mod.cfg.Gateway.SetFreeAllowance(ctx, 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errCode := h.improve(t, p.ID, ""); code != http.StatusConflict || errCode != codeCredit {
+		t.Errorf("out of credit = %d %s", code, errCode)
+	}
+	if n := len(h.claude.calls()) - calls; n != 0 {
+		t.Errorf("%d calls with no AI credit left", n)
+	}
 	if code, _, _ := h.improve(t, 999999, ""); code != http.StatusNotFound {
 		t.Errorf("no such product = %d", code)
 	}

@@ -64,7 +64,7 @@
           "admin:catalog-ai"
         ],
         "summary": "Propose improvements to a product",
-        "description": "Requires catalog.write. No body. Reads the product's current title, description, highlights, tags, type, category and SEO copy, and up to six of its pictures scaled to 1024 px when the store shares documents, and runs the AI gateway's catalog.improve task. Answers only the fields that would change, each beside its current value with a reason, and the statements the shop must check. Nothing is saved: the shop applies what it keeps through the product's own update. 409 with code ai_not_ready (the gateway is off, or has no key, cap or prices), ai_budget_exhausted or ai_policy_blocked; 502 with ai_provider_failed or ai_no_proposal when no usable answer came back.",
+        "description": "Requires catalog.write. No body. Reads the product's current title, description, highlights, tags, type, category and SEO copy, and up to six of its pictures scaled to 1024 px when the store shares documents, and runs the AI gateway's catalog.improve task. Answers only the fields that would change, each beside its current value with a reason, and the statements the shop must check. Nothing is saved: the shop applies what it keeps through the product's own update. 409 with code ai_not_ready (the gateway is off, or has no key, cap or prices), ai_budget_exhausted, ai_credit_exhausted (the free trial or the topped-up credit is spent) or ai_policy_blocked; 502 with ai_provider_failed or ai_no_proposal when no usable answer came back.",
         "security": [
           {
             "adminToken": []

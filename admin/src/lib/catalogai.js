@@ -118,7 +118,8 @@ export function applied(form, changes, chosen) {
 
 /**
  * What a refused proposal shows, by the module's error code: the gateway's
- * settings for what only they can fix, and a retry for what may pass.
+ * settings for what only they can fix, the AI credit for a spent trial or
+ * balance, and a retry for what may pass.
  */
 export function refusal(err) {
     const message = err?.message || "Something went wrong.";
@@ -128,6 +129,8 @@ export function refusal(err) {
             return { fix: "settings", title: "The AI gateway needs setting up", message };
         case "ai_budget_exhausted":
             return { fix: "settings", title: "This month's AI budget is used up", message };
+        case "ai_credit_exhausted":
+            return { fix: "credit", title: "No AI credit left", message };
         case "ai_provider_failed":
             return { fix: "retry", title: "The model did not answer", message };
         case "ai_no_proposal":

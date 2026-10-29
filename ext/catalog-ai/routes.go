@@ -50,6 +50,7 @@ type Change struct {
 const (
 	codeNotReady = "ai_not_ready"
 	codeBudget   = "ai_budget_exhausted"
+	codeCredit   = "ai_credit_exhausted"
 	codePolicy   = "ai_policy_blocked"
 	codeProvider = "ai_provider_failed"
 	codeNoAnswer = "ai_no_proposal"
@@ -66,6 +67,7 @@ var refusals = map[string]struct {
 	code   string
 }{
 	aigateway.OutcomeBudgetExhausted: {http.StatusConflict, codeBudget},
+	aigateway.OutcomeCreditExhausted: {http.StatusConflict, codeCredit},
 	aigateway.OutcomeNoPrice:         {http.StatusConflict, codeNotReady},
 	aigateway.OutcomePolicyBlocked:   {http.StatusConflict, codePolicy},
 	aigateway.OutcomeProviderError:   {http.StatusBadGateway, codeProvider},

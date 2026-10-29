@@ -9,7 +9,7 @@
      * goes through.
      */
     import { base } from "$app/paths";
-    import { api } from "$lib/api.js";
+    import { api, can } from "$lib/api.js";
     import { formatMicro } from "$lib/ai.js";
     import { sentence } from "$lib/format.js";
     import { rise } from "$lib/motion.js";
@@ -115,7 +115,7 @@
             {/each}
         </div>
     {:else if view.kind === "refused"}
-        <div class="alert improve-refused {view.fix === 'settings' ? 'warning' : 'danger'}" role="alert" in:rise>
+        <div class="alert improve-refused {view.fix === 'retry' ? 'danger' : 'warning'}" role="alert" in:rise>
             <i class="ri-error-warning-line" aria-hidden="true"></i>
             <div>
                 <p class="tw:font-semibold">{view.title}</p>
@@ -205,6 +205,13 @@
                 <i class="ri-settings-3-line" aria-hidden="true"></i>
                 <span class="txt">AI gateway settings</span>
             </a>
+        {:else if view.kind === "refused" && view.fix === "credit"}
+            {#if can("ai.read")}
+                <a class="btn" href="{base}/dash/ai">
+                    <i class="ri-sparkling-2-line" aria-hidden="true"></i>
+                    <span class="txt">AI credit</span>
+                </a>
+            {/if}
         {:else if view.kind === "refused"}
             <button type="button" class="btn" onclick={ask}>
                 <i class="ri-refresh-line" aria-hidden="true"></i>
