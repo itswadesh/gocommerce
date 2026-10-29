@@ -3,6 +3,7 @@ package layouts
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -140,10 +141,80 @@ func TestWhatThemeSettingsMayNotHold(t *testing.T) {
 		"bad rounding":  {`{"theme_settings":{"radius":"huge"}}`, "one of its choices"},
 		"ratio as css":  {`{"theme_settings":{"product_image_ratio":"1 / 1"}}`, "one of its choices"},
 		"fit as css":    {`{"theme_settings":{"product_image_fit":"cover"}}`, "one of its choices"},
+		"sale named":    {`{"theme_settings":{"sale":"green"}}`, "Savings and offers must be a colour written #rrggbb"},
+		"scale as css":  {`{"theme_settings":{"type_scale":"15px"}}`, "Text size must be one of its choices"},
+		"weight number": {`{"theme_settings":{"heading_weight":"800"}}`, "Heading weight must be one of its choices"},
+		"lines number":  {`{"theme_settings":{"card_title_lines":2}}`, "Title must be text"},
+		"switch word":   {`{"theme_settings":{"card_vendor":"yes"}}`, "Brand line must be on or off"},
+		"stock over":    {`{"theme_settings":{"pdp_low_stock_at":21}}`, "must be between 0 and 20"},
+		"stock under":   {`{"theme_settings":{"pdp_low_stock_at":-1}}`, "must be between 0 and 20"},
+		"stock part":    {`{"theme_settings":{"pdp_low_stock_at":2.5}}`, "must be a whole number"},
+		"guide address": {`{"theme_settings":{"pdp_size_guide":"https://example.com/size-guide"}}`, "Size guide page must be a page on the store, starting with /"},
+		"guide bare":    {`{"theme_settings":{"pdp_size_guide":"size-guide"}}`, "starting with /"},
+		"guide offsite": {`{"theme_settings":{"pdp_size_guide":"//evil.example/size-guide"}}`, "starting with /"},
+		"guide script":  {`{"theme_settings":{"pdp_size_guide":"javascript:alert(1)"}}`, "starting with /"},
+		"guide spaced":  {`{"theme_settings":{"pdp_size_guide":"/size guide"}}`, "starting with /"},
 	} {
 		if _, err := Validate("home", doc(t, c.raw)); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: err = %v, want it to say %q", name, err, c.want)
 		}
+	}
+}
+
+// Every theme setting refuses a value of the wrong shape for its kind, naming
+// itself: none of them reaches the storefront unchecked.
+func TestEveryThemeSettingRefusesAWrongValue(t *testing.T) {
+	bad := map[string]any{KindColor: "#12345", KindSelect: "not-a-choice", KindBool: "on", KindNumber: 999, KindPath: "https://example.com/"}
+	for _, f := range themeSettingFields() {
+		v, ok := bad[f.Kind]
+		if !ok {
+			t.Fatalf("%s: no wrong value for kind %q", f.Key, f.Kind)
+		}
+		_, err := Validate("home", Document{ThemeSettings: map[string]any{f.Key: v}})
+		if err == nil || !strings.Contains(err.Error(), f.Label) {
+			t.Errorf("%s = %v: err = %v, want a refusal naming %q", f.Key, v, err, f.Label)
+		}
+	}
+}
+
+// The look beyond colours (D155) is kept as sent, a switch off and a count of
+// 0 included, and a key the shop did not send stays unset, so the storefront
+// keeps its own value for it.
+func TestTheLookSettingsAreKeptAsSent(t *testing.T) {
+	got, err := Validate("home", doc(t, `{"theme_settings":{"sale":"#198837","type_scale":"large","heading_weight":"semibold",
+		"density":"spacious","card_badge":"first_highlight","card_vendor":false,"card_title_lines":"two","card_rating":false,
+		"card_discount":true,"card_wishlist":false,"card_add_to_cart":true,"card_second_image":false,"list_columns_mobile":"one",
+		"list_columns_desktop":"three","list_subcategories":false,"list_quick_filters":true,"list_filters_desktop":"drawer",
+		"list_mobile_bar":false,"pdp_sticky_buy":false,"pdp_gallery":"grid","pdp_highlights_grid":false,"pdp_delivery_check":true,
+		"pdp_low_stock_at":0,"pdp_size_guide":" /size-guide "},"sections":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"sale": "#198837", "type_scale": "large", "heading_weight": "semibold",
+		"density": "spacious", "card_badge": "first_highlight", "card_vendor": false, "card_title_lines": "two", "card_rating": false,
+		"card_discount": true, "card_wishlist": false, "card_add_to_cart": true, "card_second_image": false, "list_columns_mobile": "one",
+		"list_columns_desktop": "three", "list_subcategories": false, "list_quick_filters": true, "list_filters_desktop": "drawer",
+		"list_mobile_bar": false, "pdp_sticky_buy": false, "pdp_gallery": "grid", "pdp_highlights_grid": false, "pdp_delivery_check": true,
+		"pdp_low_stock_at": 0, "pdp_size_guide": "/size-guide"}
+	if !reflect.DeepEqual(got.ThemeSettings, want) {
+		t.Fatalf("theme settings = %v\nwant %v", got.ThemeSettings, want)
+	}
+
+	one, err := Validate("home", doc(t, `{"theme_settings":{"card_vendor":true},"sections":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(one.ThemeSettings, map[string]any{"card_vendor": true}) {
+		t.Fatalf("theme settings = %v, want only the brand line: no other switch filled in", one.ThemeSettings)
+	}
+
+	// A section's switch still reads as its default when it is not sent.
+	h, err := Validate("header", doc(t, `{"sections":[{"id":"header","type":"header","settings":{}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := h.Sections[0].Settings; s["show_announcement"] != false || s["hide_menu"] != false {
+		t.Fatalf("header settings = %v, want both switches off", s)
 	}
 }
 

@@ -29,6 +29,7 @@ const (
 	KindVideo       = "video"       // a video file's address, from the Files library or pasted
 	KindMenu        = "menu"        // one of the store's menus, by its handle (Content → Menus)
 	KindIcon        = "icon"        // one of Options, each a picture's name: the panel shows a grid of them (D139)
+	KindPath        = "path"        // a path on the storefront (/…), never another site
 )
 
 // Option is one choice of a select field.
@@ -310,7 +311,7 @@ var Sections = []SectionType{
 		Type: "header", Label: "Header", Icon: "ri-layout-top-line", Pages: []string{"header"}, Fixed: true,
 		Description: "The strip of news above the header, and the menu across it. The logo, search, account and basket stay where they are.",
 		Fields: []Field{
-			{Key: "show_announcement", Label: "Show the announcement strip", Kind: KindBool},
+			{Key: "show_announcement", Label: "Show the announcement strip", Kind: KindBool, Default: false},
 			{Key: "announcement_text", Label: "Announcement", Kind: KindText, MaxLen: maxShort, ShowWhen: map[string]string{"show_announcement": "true"}},
 			{Key: "announcement_link", Label: "Announcement link", Kind: KindURL, Help: "Where the strip goes when tapped. Leave empty for none.",
 				ShowWhen: map[string]string{"show_announcement": "true"}},
@@ -443,7 +444,8 @@ type SettingGroup struct {
 
 // ThemeSettings is the store's design tokens: one set for every page the
 // storefront draws (D127). Every one is optional, and an unset one keeps the
-// storefront's own look, so there is no default to invent.
+// storefront's own look, so there is no default to invent: a field here has
+// no Default, a switch included (D155).
 var ThemeSettings = []SettingGroup{
 	{Label: "Colours", Fields: []Field{
 		{Key: "background", Label: "Background", Kind: KindColor},
@@ -451,10 +453,19 @@ var ThemeSettings = []SettingGroup{
 		{Key: "accent", Label: "Buttons and links", Kind: KindColor},
 		{Key: "accent_text", Label: "Text on buttons", Kind: KindColor},
 		{Key: "muted", Label: "Quiet backgrounds", Kind: KindColor, Help: "Bands behind a hero or a strip, and hover fills."},
+		{Key: "sale", Label: "Savings and offers", Kind: KindColor, Help: "The \"% off\" and offer lines."},
 	}},
 	{Label: "Typography", Fields: []Field{
 		{Key: "heading_font", Label: "Headings", Kind: KindSelect, Options: Fonts},
 		{Key: "body_font", Label: "Body text", Kind: KindSelect, Options: Fonts},
+		{Key: "type_scale", Label: "Text size", Kind: KindSelect,
+			Options: []Option{{"compact", "Compact (14px text)"}, {"standard", "Standard (16px text)"}, {"large", "Large (18px text)"}}},
+		{Key: "heading_weight", Label: "Heading weight", Kind: KindSelect,
+			Options: []Option{{"medium", "Medium"}, {"semibold", "Semibold"}, {"bold", "Bold"}, {"extrabold", "Extra bold"}}},
+	}},
+	{Label: "Spacing", Fields: []Field{
+		{Key: "density", Label: "Density", Kind: KindSelect, Help: "The room around sections, cards and lists.",
+			Options: []Option{{"compact", "Compact"}, {"comfortable", "Comfortable"}, {"spacious", "Spacious"}}},
 	}},
 	{Label: "Shape", Fields: []Field{
 		{Key: "radius", Label: "Corner rounding", Kind: KindSelect,
@@ -465,6 +476,38 @@ var ThemeSettings = []SettingGroup{
 			Options: []Option{{"square", "Square"}, {"portrait", "Portrait (3:4)"}, {"tall", "Tall (2:3)"}, {"landscape", "Landscape (4:3)"}}},
 		{Key: "product_image_fit", Label: "Fit", Kind: KindSelect, Help: "Fill crops a picture of another shape to the frame; whole picture leaves a margin instead.",
 			Options: []Option{{"fill", "Fill the frame"}, {"whole", "Show the whole picture"}}},
+	}},
+	{Label: "Product cards", Fields: []Field{
+		{Key: "card_badge", Label: "Badge on the picture", Kind: KindSelect, Help: "The label shown on the picture, from the product's own tags or highlights.",
+			Options: []Option{{"none", "None"}, {"first_tag", "First tag"}, {"first_highlight", "First highlight"}}},
+		{Key: "card_vendor", Label: "Brand line", Kind: KindBool},
+		{Key: "card_title_lines", Label: "Title", Kind: KindSelect,
+			Options: []Option{{"one", "One line"}, {"two", "Two lines"}}},
+		{Key: "card_rating", Label: "Star rating", Kind: KindBool, Help: "Only when the product has reviews."},
+		{Key: "card_discount", Label: "% off", Kind: KindBool, Help: "Only with a compare-at price."},
+		{Key: "card_wishlist", Label: "Wishlist button", Kind: KindBool},
+		{Key: "card_add_to_cart", Label: "Quick add", Kind: KindBool},
+		{Key: "card_second_image", Label: "Second picture on hover", Kind: KindBool},
+	}},
+	{Label: "Product lists", Fields: []Field{
+		{Key: "list_columns_mobile", Label: "Across on a phone", Kind: KindSelect,
+			Options: []Option{{"one", "One"}, {"two", "Two"}}},
+		{Key: "list_columns_desktop", Label: "Across on a computer", Kind: KindSelect,
+			Options: []Option{{"three", "Three"}, {"four", "Four"}, {"five", "Five"}}},
+		{Key: "list_subcategories", Label: "Sub-category pictures", Kind: KindBool},
+		{Key: "list_quick_filters", Label: "Quick filter chips", Kind: KindBool},
+		{Key: "list_filters_desktop", Label: "Filters on a computer", Kind: KindSelect,
+			Options: []Option{{"sidebar", "Beside the products"}, {"drawer", "In a drawer"}}},
+		{Key: "list_mobile_bar", Label: "Sort and filter bar on phones", Kind: KindBool},
+	}},
+	{Label: "Product page", Fields: []Field{
+		{Key: "pdp_sticky_buy", Label: "Buy button stays on screen on phones", Kind: KindBool},
+		{Key: "pdp_gallery", Label: "Pictures on a computer", Kind: KindSelect,
+			Options: []Option{{"carousel", "One at a time"}, {"grid", "All in a grid"}}},
+		{Key: "pdp_highlights_grid", Label: "Highlights as a grid", Kind: KindBool},
+		{Key: "pdp_delivery_check", Label: "Delivery check by PIN code", Kind: KindBool},
+		{Key: "pdp_low_stock_at", Label: "Show \"only N left\" at or below", Kind: KindNumber, Min: 0, Max: 20, Help: "0 never shows it."},
+		{Key: "pdp_size_guide", Label: "Size guide page", Kind: KindPath, MaxLen: maxShort, Help: "A page on your store, such as /size-guide."},
 	}},
 }
 
@@ -628,7 +671,7 @@ func cleanField(where string, f Field, v any) (any, error) {
 		v = f.Default
 	}
 	switch f.Kind {
-	case KindText, KindTextarea, KindURL, KindImage, KindVideo, KindSelect, KindIcon, KindColor, KindMenu:
+	case KindText, KindTextarea, KindURL, KindImage, KindVideo, KindSelect, KindIcon, KindColor, KindMenu, KindPath:
 		s, ok := v.(string)
 		if v != nil && !ok {
 			return nil, bad("must be text")
@@ -665,6 +708,10 @@ func cleanField(where string, f Field, v any) (any, error) {
 			if len(s) > 2048 || !safeURL(s) {
 				return nil, bad("must be a web address (https://…) or a path on the store (/…)")
 			}
+		case KindPath:
+			if !strings.HasPrefix(s, "/") || !safeURL(s) {
+				return nil, bad("must be a page on the store, starting with /")
+			}
 		case KindSelect, KindIcon:
 			if !hasOption(f.Options, s) {
 				return nil, bad("must be one of its choices")
@@ -696,8 +743,10 @@ func cleanField(where string, f Field, v any) (any, error) {
 		}
 		return int(n), nil
 	case KindBool:
+		// Unset and without a default is unset, as every other kind is: a
+		// theme switch left alone keeps the storefront's own choice.
 		if v == nil {
-			return false, nil
+			return nil, nil
 		}
 		b, ok := v.(bool)
 		if !ok {
