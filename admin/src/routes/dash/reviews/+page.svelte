@@ -209,7 +209,7 @@
                                 </td>
                                 <td class="col-field-type-select min-width" data-name="Status"><span class="label {statusClass(row.status)}">{STATUS[row.status]}</span></td>
                                 <td class="col-field-type-date min-width txt-hint" data-name="When" title={formatDate(row.created_at)}>{relativeTime(row.created_at)}</td>
-                                <td class="col-meta min-width">
+                                <td class="col-meta min-width row-actions">
                                     {#if writable}
                                         <div class="inline-flex gap-sm">
                                             {#if row.status !== "approved"}
@@ -306,5 +306,14 @@
         -webkit-box-orient: vertical;
         overflow: hidden;
         white-space: normal;
+    }
+
+    /* The row's buttons become a phone's only way to moderate a review, so
+       they take a finger's width there. */
+    @media (max-width: 600px) {
+        .row-actions .btn {
+            min-width: 44px;
+            min-height: 44px;
+        }
     }
 </style>
