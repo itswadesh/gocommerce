@@ -105,6 +105,11 @@ type Config struct {
 	// PollInterval is how often the runner looks for due jobs. Defaults to
 	// five seconds.
 	PollInterval time.Duration
+	// FreeTrialMinor is the AI credit a store gets to try AI before an
+	// operator tops it up, in minor units of the store's currency. Zero or
+	// less uses DefaultFreeTrialMinor. This is the platform operator's knob;
+	// the figure shipped is a placeholder (see DefaultFreeTrialMinor).
+	FreeTrialMinor int64
 }
 
 // Module is the AI gateway.
@@ -528,5 +533,53 @@ CREATE TABLE approval_requests (
 CREATE INDEX approval_requests_status ON approval_requests (store_id, status, id DESC);`,
 		},
 		gocommerce.ScopeMigration("0004_approvals_scope", "approval_requests"),
+		{
+			ID: "0005_credits",
+			SQL: `
+-- A store's prepaid AI credit (D151). AI features draw it down; every other
+-- feature is free. One row per store. Amounts are micro-minor, the millionths
+-- of a minor unit the gateway already records cost in, so a run's cost
+-- subtracts without converting.
+--
+-- free_allowance is the free trial: what a new store may spend before anyone
+-- tops it up. granted is what an operator has topped up by hand (no payment
+-- gateway yet). consumed is what AI calls have cost; a call draws free first,
+-- then granted, which is arithmetic rather than two counters. reserved is held
+-- for calls in flight, as the budget's is.
+CREATE TABLE ai_credits (
+    store_id             text NOT NULL PRIMARY KEY,
+    free_allowance_micro bigint NOT NULL DEFAULT 0 CHECK (free_allowance_micro >= 0),
+    granted_micro        bigint NOT NULL DEFAULT 0 CHECK (granted_micro >= 0),
+    consumed_micro       bigint NOT NULL DEFAULT 0 CHECK (consumed_micro >= 0),
+    reserved_micro       bigint NOT NULL DEFAULT 0 CHECK (reserved_micro >= 0),
+    currency             text NOT NULL,
+    updated_at           timestamptz NOT NULL DEFAULT now()
+);
+
+-- Who changed a store's credit, and when: an operator's hand grant or a new
+-- free allowance. Audits the change, as other admin changes are audited;
+-- amount_minor is what was added for a grant, the new figure for an allowance.
+CREATE TABLE ai_credit_ledger (
+    id           bigserial PRIMARY KEY,
+    store_id     text NOT NULL,
+    kind         text NOT NULL CHECK (kind IN ('grant', 'free_allowance')),
+    amount_minor bigint NOT NULL,
+    actor_id     bigint,
+    actor_email  text NOT NULL DEFAULT '',
+    note         text NOT NULL DEFAULT '',
+    created_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ai_credit_ledger_store ON ai_credit_ledger (store_id, id DESC);
+
+-- A call with no credit left is recorded like one over the cap, so the usage
+-- screen can tell the two apart. The constraint is replaced, not altered, so
+-- the new value is append-only beside the old ones.
+ALTER TABLE ai_executions DROP CONSTRAINT ai_executions_outcome_check;
+ALTER TABLE ai_executions ADD CONSTRAINT ai_executions_outcome_check
+    CHECK (outcome IN ('ok', 'deterministic', 'cached', 'invalid_output', 'refused',
+                       'provider_error', 'budget_exhausted', 'no_price', 'task_error',
+                       'policy_blocked', 'credit_exhausted'));`,
+		},
+		gocommerce.ScopeMigration("0006_credits_scope", "ai_credits", "ai_credit_ledger"),
 	}
 }
