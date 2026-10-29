@@ -787,18 +787,33 @@ is off. A video is a YouTube or Vimeo link or an MP4 from Files, and plays
 only when a shopper presses play.
 
 **Theme settings** are the store's colours (background, text, buttons and
-links, text on buttons, quiet backgrounds), its heading and body fonts from a
-short list the storefront can load, its corner rounding, and the shape of
-product pictures on cards and lists (square, portrait, tall or landscape) and
-whether a picture fills that frame or shows whole. Each is optional:
-one left empty keeps the storefront's own. They open from the top of the
-section list (or from **Theme settings** on the Themes screen) in the same
-place a section's settings do, and are part of the same draft — they save by
-themselves, undo, show in the frame as they change, and publish with the home
-page, after which every page of the storefront uses them, not only the home
-page. A colour pair that reads poorly — text on the background, text on
-buttons, text on quiet backgrounds below 4.5:1 — is warned about above the
-form; it is not refused.
+links, text on buttons, quiet backgrounds, and the colour of "% off" and
+offer lines), its heading and body fonts from a short list the
+storefront can load, its text size and heading weight, how roomy the pages
+are, its corner rounding, and the shape of product pictures on cards and lists
+(square, portrait, tall or landscape) and whether a picture fills that frame
+or shows whole (D127, D128). Since D155 they also set out the product cards
+(a badge from the product's first tag or highlight, the brand line, one or two
+title lines, the star rating, "% off", the wishlist button, quick add, a
+second picture on hover), the product lists (how many across on a phone and a
+computer, sub-category pictures, quick filter chips, filters beside the list or
+in a drawer, the phone's sort and filter bar) and the product page (the buy
+button staying on screen on phones, pictures one at a time or in a grid,
+highlights as a grid, the PIN code delivery check, "only N left" from a stock
+of N, and a size guide page on the store). Each is optional: a colour or text
+left empty, or a choice on **Storefront's own**, keeps the storefront's own
+value, and a switch is that same three-way choice (Storefront's own, On, Off)
+so it never claims a choice the shop did not make. A new store starts with
+explicit values for all but the colours D140 leaves alone and the size guide.
+They open from the top of the section list (or from **Theme settings** on the
+Themes screen) in the same place a section's settings do, and are part of the
+same draft — they save by themselves, undo, show in the frame as they change,
+and publish with the home page, after which every page of the storefront uses
+them, not only the home page. A colour pair that reads poorly — text on the
+background, text on buttons, text on quiet backgrounds, or savings and offers
+on the background, below 4.5:1 — is warned about under the text colour of the
+pair, with its ratio; it is not refused. A size guide that is not a path on the
+store is refused, and said so under the field.
 
 On a computer the screen is a visual editor. The sections are on the left:
 drag one by its handle, or focus the handle and use the arrow keys, to move

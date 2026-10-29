@@ -276,7 +276,7 @@ test("a store with a domain has an address to preview without a preview key", ()
 
 // ------------------------------------------------------------ Phase 3 (D127)
 
-import { contrastRatio, themeWarnings, absoluteMedia, themeSettingsSummary } from "../src/lib/layouts.js";
+import { contrastRatio, themeWarnings, absoluteMedia, themeSettingsSummary, themeSettingGroups } from "../src/lib/layouts.js";
 
 test("a show_when on a switch matches its on and off", () => {
     const fields = [
@@ -323,6 +323,46 @@ test("a low-contrast pair is warned about, never one the storefront chose", () =
     assert.deepEqual(themeWarnings({ accent_text: "#ffffff" }), []);
 });
 
+test("each warning names the pair and its ratio beside the text colour", () => {
+    const w = themeWarnings({ background: "#ffffff", text: "#999999", accent: "#ffcc00", sale: "#1a8f3a" });
+    assert.deepEqual(w.map((x) => x.key), ["text", "accent_text", "text", "sale"]);
+    assert.equal(w[3].message, "Savings and offers on the background: 4.1:1. Below 4.5:1 is hard to read for many shoppers.");
+    assert.equal(w[1].message, "Text on buttons: 1.5:1. Below 4.5:1 is hard to read for many shoppers.");
+    // The starter's green clears the floor; a background alone leaves the
+    // storefront's own savings colour, which the panel does not know, unjudged.
+    assert.deepEqual(themeWarnings({ sale: "#198837" }), []);
+    assert.deepEqual(themeWarnings({ background: "#000000", text: "#ffffff", muted: "#222222" }), []);
+});
+
+test("a theme switch offers the storefront's own as well as on and off", () => {
+    const [cards] = themeSettingGroups([
+        {
+            label: "Product cards",
+            fields: [
+                { key: "card_vendor", label: "Brand line", kind: "bool" },
+                { key: "card_title_lines", label: "Title", kind: "select", options: [{ value: "one", label: "One line" }] },
+                { key: "pdp_low_stock_at", label: "Low stock", kind: "number", max: 20 },
+            ],
+        },
+    ]);
+    assert.deepEqual(cards.fields[0], {
+        key: "card_vendor",
+        label: "Brand line",
+        kind: "select",
+        options: [
+            { value: "", label: "Storefront's own" },
+            { value: true, label: "On" },
+            { value: false, label: "Off" },
+        ],
+    });
+    assert.deepEqual(cards.fields[1].options, [
+        { value: "", label: "Storefront's own" },
+        { value: "one", label: "One line" },
+    ]);
+    assert.deepEqual(cards.fields[2], { key: "pdp_low_stock_at", label: "Low stock", kind: "number", max: 20 });
+    assert.deepEqual(themeSettingGroups(undefined), []);
+});
+
 test("Files addresses become the panel's own, for the storefront frame to load", () => {
     const doc = {
         theme_settings: { accent: "#112233" },
@@ -344,7 +384,7 @@ test("Files addresses become the panel's own, for the storefront frame to load",
 });
 
 test("the theme settings row says what is set", () => {
-    assert.equal(themeSettingsSummary({}), "The storefront's own colours and fonts");
+    assert.equal(themeSettingsSummary({}), "The storefront's own look");
     assert.equal(themeSettingsSummary({ accent: "#112233" }), "1 setting changed");
     assert.equal(themeSettingsSummary({ accent: "#112233", radius: "large" }), "2 settings changed");
 });
