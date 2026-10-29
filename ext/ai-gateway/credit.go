@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"math"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
@@ -48,12 +49,15 @@ func (m *Module) reserveCredit(ctx context.Context, amount int64) (bool, error) 
 	if err := m.ensureCredit(ctx); err != nil {
 		return false, err
 	}
+	// Only in the currency the credit is held in: a store that changed its
+	// currency after a grant would otherwise spend ₹10,000 as $10,000.
 	var held int64
 	err := m.db.QueryRowContext(ctx, `
 		UPDATE ai_credits
 		   SET reserved_micro = reserved_micro + $1, updated_at = now()
 		 WHERE free_allowance_micro + granted_micro - consumed_micro - reserved_micro >= $1
-		RETURNING reserved_micro`, amount).Scan(&held)
+		   AND currency = $2
+		RETURNING reserved_micro`, amount, m.app.Currency(ctx)).Scan(&held)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -233,6 +237,10 @@ func (m *Module) CreditLedger(ctx context.Context, limit, offset int) ([]CreditE
 // creditReason is what a run says when the store has no credit left: the
 // owner's copy, told apart by whether the store has ever been topped up.
 func (m *Module) creditReason(ctx context.Context) string {
+	var held string
+	if m.db.QueryRowContext(ctx, `SELECT currency FROM ai_credits`).Scan(&held) == nil && held != m.app.Currency(ctx) {
+		return fmt.Sprintf("This store's AI credit is held in %s and the store now sells in %s — ask the platform to move it", held, m.app.Currency(ctx))
+	}
 	c, err := m.Credit(ctx)
 	if err != nil || c.GrantedMicroMinor == 0 {
 		return "You've used your free AI trial — top up to keep using AI"

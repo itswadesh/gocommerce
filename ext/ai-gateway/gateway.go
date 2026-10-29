@@ -328,12 +328,14 @@ type settings struct {
 	platform bool
 	// unpriced is the store's currency when the platform has no rate for it.
 	unpriced string
-	provider string
-	apiKey   string
-	models   map[Tier]string
-	prices   map[Tier]prices
-	capMinor *int64
-	policy   Policy
+	// sealedKey is a key of the store's own that will not open.
+	sealedKey bool
+	provider  string
+	apiKey    string
+	models    map[Tier]string
+	prices    map[Tier]prices
+	capMinor  *int64
+	policy    Policy
 }
 
 // Where a store's calls are billed, as the usage screen shows it.
@@ -367,6 +369,9 @@ func (s *settings) ready() error {
 	switch {
 	case !s.enabled:
 		return &notReady{"the AI gateway is switched off for this store: switch it on under Settings › Plugins"}
+	case s.sealedKey:
+		return &notReady{"this store's own API key cannot be read, because it was sealed under a secrets key this install no longer has: " +
+			"enter it again under Settings › Plugins › AI gateway, or clear it to use the platform's AI"}
 	case s.apiKey == "":
 		return &notReady{"AI isn't set up for this store: add an API key under Settings › Plugins › AI gateway"}
 	case s.unpriced != "":
@@ -452,7 +457,8 @@ func (m *Module) settings(ctx context.Context) (*settings, error) {
 	// No key of the store's own: the platform's, with everything that decides
 	// what a call costs taken from the platform too. Only the cap and the data
 	// policy stay the store's.
-	if s.apiKey == "" && m.platform != nil && !slices.Contains(unopened, "api_key") {
+	s.sealedKey = slices.Contains(unopened, "api_key")
+	if s.apiKey == "" && m.platform != nil && !s.sealedKey {
 		s.platform, s.provider, s.apiKey = true, ProviderAnthropic, m.platform.key
 		s.models = maps.Clone(m.platform.models)
 		currency := m.app.Currency(ctx)

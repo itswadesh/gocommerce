@@ -46,8 +46,9 @@
 
     const API = "/api/admin/x/ai-gateway";
     const readable = $derived(can("ai.read"));
-    // Granting AI credit and setting the free trial are the platform operator's,
-    // gated on the operator-level right store owners hold but managers do not.
+    // Granting AI credit and setting the free trial are the install's act, made
+    // with its admin token (credit is what the platform's AI key spends), so
+    // no panel session can. Who holds store.operate sees the record of them.
     const operator = $derived(can("store.operate"));
     const missing = $derived(modulesKnown() && !hasModule("ai-gateway"));
     const ready = $derived(readable && modulesKnown() && hasModule("ai-gateway"));
@@ -62,10 +63,6 @@
     let budget = $state(null);
     let credit = $state(null);
     let ledger = $state(null);
-    let ops = $state(false); // the operator's grant / free-trial panel is open
-    let grantMinor = $state("");
-    let freeMinor = $state("");
-    let saving = $state("");
     let days = $state(null);
     let byTask = $state(null);
     let byModel = $state(null);
@@ -118,26 +115,6 @@
             // The ledger is the operator's extra; a store admin reading this
             // screen without the right simply does not see it.
             ledger = null;
-        }
-    }
-
-    async function changeCredit(path, minor, what) {
-        const amount = Math.round(Number(minor));
-        if (!Number.isFinite(amount) || amount < 0 || (path === "grant" && amount <= 0)) {
-            toast.error("Type the amount in minor units, a whole number.");
-            return;
-        }
-        saving = path;
-        try {
-            credit = await api.post(`${API}/credit/${path}`, { amount_minor: amount });
-            grantMinor = "";
-            freeMinor = "";
-            toast.success(what);
-            loadLedger();
-        } catch (err) {
-            toast.error(err);
-        } finally {
-            saving = "";
         }
     }
 
@@ -364,55 +341,17 @@
                             </div>
                         </dl>
 
-                        {#if operator}
+                        {#if operator && ledger && ledger.length}
                             <div class="ai-credit-ops">
-                                <button
-                                    type="button"
-                                    class="btn sm secondary"
-                                    aria-expanded={ops}
-                                    onclick={() => (ops = !ops)}
-                                >
-                                    <i class={ops ? "ri-arrow-up-s-line" : "ri-add-line"} aria-hidden="true"></i>
-                                    <span class="txt">{ops ? "Close" : "Top up or set the free trial"}</span>
-                                </button>
-
-                                {#if ops}
-                                    <div class="ai-credit-forms" transition:rise>
-                                        <form class="ai-credit-form" onsubmit={(e) => { e.preventDefault(); changeCredit("grant", grantMinor, "Credit topped up"); }}>
-                                            <label class="ai-tile-label" for="ai-grant">Top up the balance</label>
-                                            <div class="inline-flex gap-sm">
-                                                <input id="ai-grant" class="txt-input" type="number" min="1" step="1" inputmode="numeric"
-                                                    placeholder="Minor units, e.g. 2500 = {formatMoney({ amount_minor: 2500, currency })}"
-                                                    bind:value={grantMinor} />
-                                                <button type="submit" class="btn sm" class:loading={saving === "grant"} disabled={saving === "grant" || !grantMinor}>
-                                                    <span class="txt">Add</span>
-                                                </button>
-                                            </div>
-                                        </form>
-                                        <form class="ai-credit-form" onsubmit={(e) => { e.preventDefault(); changeCredit("free-allowance", freeMinor, "Free trial set"); }}>
-                                            <label class="ai-tile-label" for="ai-free">Set the free trial</label>
-                                            <div class="inline-flex gap-sm">
-                                                <input id="ai-free" class="txt-input" type="number" min="0" step="1" inputmode="numeric"
-                                                    placeholder="Minor units ({formatMicro(credit.free_allowance_micro_minor, currency)} now)"
-                                                    bind:value={freeMinor} />
-                                                <button type="submit" class="btn sm secondary" class:loading={saving === "free-allowance"} disabled={saving === "free-allowance" || freeMinor === ""}>
-                                                    <span class="txt">Set</span>
-                                                </button>
-                                            </div>
-                                        </form>
-                                        <p class="ai-tile-hint">The real figures are yours to set; there is no pricing or self-serve purchase yet. Amounts are minor units of the store's currency.</p>
-                                        {#if ledger && ledger.length}
-                                            <ul class="ai-credit-log">
-                                                {#each ledger as e (e.id)}
-                                                    <li>
-                                                        <span>{e.kind === "grant" ? "Topped up" : "Free trial set to"} {formatMoney({ amount_minor: e.amount_minor, currency })}</span>
-                                                        <span class="txt-hint txt-sm">{e.actor_email || "an operator"} · {relativeTime(e.created_at)}</span>
-                                                    </li>
-                                                {/each}
-                                            </ul>
-                                        {/if}
-                                    </div>
-                                {/if}
+                                <div class="ai-tile-label">Top-ups</div>
+                                <ul class="ai-credit-log">
+                                    {#each ledger as e (e.id)}
+                                        <li>
+                                            <span>{e.kind === "grant" ? "Topped up" : "Free trial set to"} {formatMoney({ amount_minor: e.amount_minor, currency })}</span>
+                                            <span class="txt-hint txt-sm">{e.actor_email || "the platform"} · {relativeTime(e.created_at)}</span>
+                                        </li>
+                                    {/each}
+                                </ul>
                             </div>
                         {/if}
                     </section>
@@ -451,7 +390,7 @@
                                 {#if budget?.reserved_micro_minor}
                                     {formatMicro(budget.reserved_micro_minor, currency)} held for calls in flight.
                                 {/if}
-                                Work that would pass the cap waits for a person.
+                                {#if capMicro}Work that would pass the cap waits for a person.{/if}
                             </div>
                         {/if}
                     </section>

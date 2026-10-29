@@ -3,6 +3,8 @@ package aigateway
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +21,10 @@ import (
 // platformKey is the install's own key in these tests. Long and distinctive,
 // so finding it anywhere it must not be is a plain substring search.
 const platformKey = "sk-ant-platform-0123456789abcdefSECRET"
+
+// platformAccount is what Anthropic says about the platform's own account in
+// an error: its organisation and its balance.
+const platformAccount = "Your credit balance is too low for org-PLATFORM42"
 
 // platformConfig is an install with an Anthropic key of its own, its models
 // the defaults, and its prices the standard settings' in dollars: a USD
@@ -153,8 +159,8 @@ func TestAStoreCannotChooseThePlatformsModelsOrPrices(t *testing.T) {
 // the provider repeats it back.
 func TestThePlatformKeyNeverLeavesTheServer(t *testing.T) {
 	var logs bytes.Buffer
-	s := newStandIn(t, reply(http.StatusUnauthorized,
-		`{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key `+platformKey+`"}}`))
+	s := newStandIn(t, reply(http.StatusBadRequest,
+		`{"type":"error","error":{"type":"invalid_request_error","message":"`+platformAccount+` key `+platformKey+`"}}`))
 	cfg := platformConfig()
 	cfg.Client, cfg.CallTimeout, cfg.PollInterval = s.client(), 2*time.Second, time.Hour
 	m := New(cfg)
@@ -195,6 +201,14 @@ func TestThePlatformKeyNeverLeavesTheServer(t *testing.T) {
 		if strings.Contains(text, platformKey) {
 			t.Errorf("the platform key is in the %s: %s", where, text)
 		}
+		// What Anthropic says about the platform's account is the operator's
+		// to read, in the log, and no store's.
+		if where != "logs" && strings.Contains(text, platformAccount) {
+			t.Errorf("the platform's account details are in the %s: %s", where, text)
+		}
+	}
+	if !strings.Contains(logs.String(), platformAccount) {
+		t.Error("the operator's log does not say why the platform's call failed")
 	}
 	if s.count() != 1 {
 		t.Errorf("%d provider requests, want only the run's: the check spends nothing on the platform's key", s.count())
@@ -343,5 +357,63 @@ func TestAPlatformModelWithNoPriceIsNeverCalled(t *testing.T) {
 				t.Errorf("run = %v with %d requests, want no_price before sending", err, s.count())
 			}
 		})
+	}
+}
+
+// A default price is for a tier's own default model only. Claude Haiku 5.5's
+// is for prompts up to 100,000 tokens, which only the small tier is held to:
+// on the strong tier it would undercharge a long prompt fivefold.
+func TestADefaultPriceBelongsToItsTier(t *testing.T) {
+	_, m, _ := newGatewayWith(t, Config{PlatformAnthropicKey: platformKey, PlatformStrongModel: "claude-haiku-5-5"}, reply(http.StatusOK, "{}"))
+	st, err := m.settings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.prices[TierStrong].complete || !st.prices[TierSmall].complete {
+		t.Errorf("prices = %+v, want Haiku unpriced on the strong tier", st.prices)
+	}
+}
+
+// A rate written with a decimal comma, "INR=88,50", reads as 88 and a stray
+// 50. Rather than charge at 88, one rate that does not read drops them all.
+func TestOneRateThatDoesNotReadDropsThemAll(t *testing.T) {
+	s := newStandIn(t, reply(http.StatusOK, "{}"))
+	cfg := platformConfig()
+	cfg.Client, cfg.PollInterval = s.client(), time.Hour
+	cfg.PlatformUSDRates = "INR=88,50"
+	m := New(cfg)
+	gctest.NewWithConfig(t, gocommerce.Config{Currency: "INR"}, m)
+	if err := m.Ready(context.Background()); !errors.Is(err, ErrNotReady) || !strings.Contains(err.Error(), "INR") {
+		t.Errorf("ready = %v, want not priced in INR", err)
+	}
+}
+
+// A store's own key that will not open, sealed under a secrets key the
+// install no longer has, is still the store's choice: the store is told to
+// enter it again, and is not moved onto the platform's key and its credit.
+func TestAnOwnKeyThatWillNotOpenIsNotSwappedForThePlatforms(t *testing.T) {
+	ctx := context.Background()
+	key := func() string {
+		b := make([]byte, 32)
+		if _, err := rand.Read(b); err != nil {
+			t.Fatal(err)
+		}
+		return base64.StdEncoding.EncodeToString(b)
+	}
+	first := gctest.NewWithConfig(t, gocommerce.Config{SecretsKey: key()}, New(platformConfig()))
+	configure(t, first, ctx, nil)
+
+	s := newStandIn(t, reply(http.StatusOK, answer(smallID, goodAnswer, Usage{InputTokens: 3000})))
+	cfg := platformConfig()
+	cfg.Client, cfg.PollInterval = s.client(), time.Hour
+	m := New(cfg)
+	if err := m.RegisterTask(rewriteTask()); err != nil {
+		t.Fatal(err)
+	}
+	gctest.NewWithConfig(t, gocommerce.Config{DBURL: first.Config().DBURL, SecretsKey: key()}, m)
+
+	_, err := m.Run(ctx, "test.rewrite", listing{Title: "x"})
+	if !errors.Is(err, ErrNotReady) || !strings.Contains(err.Error(), "cannot be read") || s.count() != 0 {
+		t.Errorf("run = %v with %d requests, want refused saying the store's key cannot be read", err, s.count())
 	}
 }

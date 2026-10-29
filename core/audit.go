@@ -526,7 +526,7 @@ func auditActor(ctx context.Context) (kind string, id *int64, email, role, label
 		actorID := su.ID
 		return ActorOperator, &actorID, su.Email, su.Role, label
 	}
-	if adminTokenFrom(ctx) {
+	if AdminTokenFrom(ctx) {
 		return ActorToken, nil, "", "", label
 	}
 	return ActorSystem, nil, "", "", label
