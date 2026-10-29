@@ -474,7 +474,7 @@ are media library pictures too: `logo_media_id`, `logo_dark_media_id` and
 `icon_media_id` on `PATCH /api/admin/store` (Settings › Store), served as
 `logo_url`, `logo_dark_url` and `icon_url` on `GET /api/store`. Absent leaves
 one as it is and `0` removes it; a video, another store's file or one over
-2 MiB is a `400`, and each change is audited as `store.set_images`.
+2 MiB is a `400`, and each change is audited as `store.set_images`. A picture the store shows counts as used in the media library, and deleting it is a `409`.
 
 The public product (`GET /api/products/{id}`, `/slug/{slug}`, `/sku/{sku}`)
 carries two fields no listing does:

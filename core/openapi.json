@@ -1575,7 +1575,7 @@
                 "unused"
               ]
             },
-            "description": "`used` is media at least one product displays; `unused` is the orphans, which is the reason the filter exists. Anything else is a 400 rather than an ignored filter."
+            "description": "`used` is media at least one product displays, or the store shows as its logo or icon; `unused` is the orphans, which is the reason the filter exists. Anything else is a 400 rather than an ignored filter."
           },
           {
             "name": "product_id",
