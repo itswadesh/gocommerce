@@ -13,6 +13,11 @@ Read in this order:
 3. The decision records below.
 4. [Threat model](threat-model.md).
 
+The owner's [ShopNx AI plan](shopnx-ai-plan.md) of 29 October 2026 lists the
+merchant-facing features to build on this foundation. The
+[ShopNx AI audit](shopnx-ai-audit.md) sets each one against the code and gives
+the order of work.
+
 ## Decision records
 
 | # | Decision | In one line |

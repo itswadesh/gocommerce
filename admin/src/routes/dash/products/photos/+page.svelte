@@ -51,6 +51,7 @@
     const batchID = $derived(page.url.searchParams.get("batch"));
 
     let status = $state(null); // { ready, reason, max_photos }
+    let credit = $state(null); // the store's AI credit, best-effort
     let recent = $state([]);
     let batch = $state(null);
     let items = $state([]);
@@ -84,6 +85,7 @@
         clearTimeout(timer);
         try {
             status = await api.get(`${API}/status`);
+            loadCredit();
             if (id) {
                 take(await api.get(`${API}/batches/${id}`));
                 loadCategories();
@@ -96,6 +98,18 @@
             toast.error(err);
         } finally {
             loading = false;
+        }
+    }
+
+    // Create-from-photos spends AI credit; the shop sees what is left so a
+    // blocked run is not a surprise. Best-effort: an admin without ai.read
+    // simply does not see it, and the batch still names the reason if a run is
+    // refused for want of credit.
+    async function loadCredit() {
+        try {
+            credit = await api.get("/api/admin/x/ai-gateway/credit");
+        } catch {
+            credit = null;
         }
     }
 
@@ -277,6 +291,21 @@
                             <span class="txt">AI gateway settings</span>
                         </a>
                     </section>
+                {/if}
+
+                {#if status && status.ready && credit}
+                    <p class="field-help m-b-base ai-credit-line" class:exhausted={credit.exhausted} in:rise>
+                        {#if credit.exhausted}
+                            <i class="ri-sparkling-2-line" aria-hidden="true"></i>
+                            {credit.granted_micro_minor > 0
+                                ? "You're out of AI credit — top up to keep using AI."
+                                : "You've used your free AI trial — top up to keep using AI."}
+                            {#if can("ai.read")}<a href="{base}/dash/ai">AI credit</a>{/if}
+                        {:else}
+                            AI credit left: {formatMoney({ amount_minor: Math.round(credit.available_micro_minor / 1e6), currency: credit.currency })}.
+                            Creating products from photos draws on it.
+                        {/if}
+                    </p>
                 {/if}
 
                 {#each recent.slice(0, 1) as r (r.id)}
